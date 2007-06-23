@@ -1,0 +1,310 @@
+===================
+Welcome to MOD_WSGI
+===================
+
+Copyright 2007 GRAHAM DUMPLETON
+
+The mod_wsgi adapter is an Apache module that provides a WSGI compliant
+interface for hosting Python based web applications within Apache. The
+adapter is written completely in C code against the Apache C runtime and
+for hosting WSGI applications within Apache has a lower overhead than using
+existing WSGI adapters for mod_python or CGI.
+
+The package can be compiled for and used with either Apache 1.3, 2.0 or
+2.2. On UNIX systems, either the single threaded 'prefork' or multithreaded
+'worker' Apache MPMs can be used. Development and testing of mod_wsgi has
+been carried out with Python 2.3.5, but is expected to be able to work with
+any version of Python 2.3, or later versions of Python.
+
+Whatever version of Python is used, it must have been compiled with support
+for multithreading. To avoid a measure of memory bloat with your Apache
+processes, Python should also have been compiled with shared library
+support enabled. The majority of Python binary packages for Linux systems
+are not compiled with shared library support enabled. You should therefore
+consider recompiling Python from source code with shared library support
+enabled.
+
+If using a Python binary package for a Linux system, also ensure that the
+you have the corresponding 'dev' package installed for the Python package
+you have installed. Without this package you will be missing the Python
+header files and configuration files need to build mod_wsgi. You should
+also ensure you have the corresponding 'dev' package for the Apache web
+server package you are using.
+
+At this time only build scripts for UNIX systems are supplied. The code
+should still work on Windows, but still waiting for someone to volunteer
+to help develop and test some build scripts for Windows and ensure that
+mod_wsgi works on that platform.
+
+The source code in this package is made available under the terms of the
+Apache Licence, Version 2.0. See the "LICENCE" file for more information.
+
+Installation (UNIX)
+===================
+
+To setup the package ready for building run the "configure" script.
+
+    ./configure
+
+The configure script will attempt to identify the Apache installation to
+use by searching for either the "apxs2" or "apxs" tools included with your
+Apache installation. Similarly, which Python installation to use will be
+determined by looking for the "python" executable.
+
+If these programs are not in a standard location, they cannot be found in
+your PATH, or you wish to use alternate versions to those found, the
+"--with-apxs" and "--with-python" options can be used in conjunction with the
+"configure" script.
+
+    ./configure --with-apxs=/usr/local/apache/bin/apxs \
+      --with-python=/usr/local/bin/python
+
+Note that any of the major Apache versions should be able to be used, ie.,
+all of Apache 1.3, 2.0 and 2.2 should be compatible with this package. You
+will however need to compile the package separately against each version
+and use the resultant Apache module only with the version it was compiled
+for. Which ever version of Apache is used however, it must support dynamic
+loading of Apache modules.
+
+If you have multiple versions of Python installed and you are not using
+that which is the default, you may have to organise that the PATH inherited
+by the Apache application when run will result in Apache finding the
+alternate version. Alternatively, the WSGIPythonExecutable directive should
+be used to specify the exact location of the 'python' executable
+corresponding to the version of Python compiled against. If this is not
+done, the version of Python running within Apache may attempt to use the
+Python modules from the wrong version of Python.
+
+Also note that the Apache module will be bound to the specific major/minor
+version of Python being used. If you ever upgrade to a newer version of
+Python, you will need to rebuild the mod_wsgi module.
+
+Once the package has been configured, it can be built by running:
+
+    make
+
+The only product of the build process that needs to be installed is the
+Apache module itself. There are no separate Python code files as everything
+is done within C code compiled into the Apache module.
+
+To install the Apache module into the standard location for Apache modules
+as dictated by Apache for your installation, run:
+
+    make install
+
+Installation should be done as the root user if appropriate.
+
+If you want to install the Apache module in a non standard location
+dictated by how your operating system distribution structures the
+configuration files and modules for Apache, you will need to copy the file
+manually into place.
+
+If you are using Apache 1.3 the compiled Apache module can be found in the
+same directory as this "README" file and is called "mod_wsgi.so". If you
+are using Apache 2.X the compiled Apache module can be found in the ".libs"
+subdirectory and is again called "mod_wsgi.so". The name of the file should
+be kept the same when copied into its appropriate location.
+
+To cleanup after installation, run:
+
+    make clean
+
+If you need to build the module for a different version of Apache, you
+should run:
+
+    make distclean
+
+and then rerun "configure" against the alternate version of Apache before
+attempting to run "make" again.
+
+
+Apache Configuration
+====================
+
+Once the Apache module has been installed into your Apache installation's
+module directory, it is still necessary to configure Apache to actually
+load the module.
+
+Exactly how this is done and in which of the main Apache configuration
+files it should be placed, is dependent on which version of Apache you are
+using and may also be influenced by how your operating system's Apache
+distribution has organised the Apache configuration files. You may
+therefore need to check with any documentation for your operating system to
+see in what way the procedure may need to be modified.
+
+In the simplest case, all that is required is to add a line of the form:
+
+    LoadModule wsgi_module modules/mod_wsgi.so
+
+into the main Apache "httpd.conf" configuration file at the same point that
+other Apache modules are being loaded. The last option to the directive
+should either be an absolute path to where the mod_wsgi module file is
+located, or a path expressed relative to the root of your Apache
+installation. If you used "make" to install the package, see where it
+copied the file to work out what to set this value to.
+
+With Apache 1.3, it would also be necessary to add a line of the form:
+
+    AddModule mod_wsgi.c
+
+If you wish to use mod_python at the same time as mod_wsgi, then you must
+be using a version of Python which has been configured and compiled so as
+to generate a shared library for Python. If you do not do this and either
+mod_python or mod_wsgi are compiled against a static library for Python,
+it is likely that either mod_python or mod_wsgi will crash Apache when
+used.
+
+Note that this is not the fault of either mod_python or mod_wsgi but arises
+purely because your Python installation isn't using a shared library for
+the Python library. The result of such a configuration means that there are
+actually two copies of the Python static library objects in memory at the
+same time and this can cause problems. Linux distributions where this is
+known to be a problem are any of the RedHat derived distributions. Other
+distributions such as Ubuntu do not have a problem as they use a shared
+library for the Python library.
+
+Having adding the required directives you should perform a restart of
+Apache to check everything is okay.
+
+    apachectl restart
+
+If you see any sort of problem, or if you are upgrading from an older
+version of mod_wsgi, it is recommended you actually stop/start Apache
+instead.
+
+    apachectl stop
+    apachectl start
+
+If all is okay, you should see a line of the form:
+
+    Apache/2.2.2 (Unix) mod_wsgi/1.0 Python/2.3.5 configured
+
+in the Apache error log file.
+
+If Apache is configured to also load mod_python, it would instead be:
+
+    Apache/2.2.2 (Unix) mod_python/3.3.1 Python/2.3.5 mod_wsgi/1.0 configured
+
+That "Python" is listed before "mod_wsgi" is indicative of the fact that
+when both modules are being loaded, mod_wsgi will leave it up to mod_python
+to initialise Python.
+
+Note that mod_wsgi logs various detailed information about interpreter
+creation, script loading and reloading etc, but it logs with log level of
+'info'. As the default for the Apache LogLevel directive is usually 'warn',
+such information will not be displayed in the Apache error log file. If you
+are new to mod_wsgi or need to debug issues with its use, it is recommended
+to change the Apache LogLevel directive to 'info' so that the information
+is displayed. For example:
+
+  LogLevel info
+
+If only wishing to enable this level of log information for a single
+VirtualHost this can be done by specifying the directive in the context of
+the VirtualHost container, but by doing so, only the more detailed
+information which is specific to a request against that virtual host will
+be output.
+
+
+Enabling WSGI Application
+=========================
+
+The mechanisms used to configure mod_wsgi are similar to that used by the
+Apache mod_cgi module to enable traditional CGI scripts.
+
+For example, whereas mod_cgi has the ScriptAlias directive, mod_wsgi has
+the WSGIScriptAlias directive. Like with mod_cgi, this directive can only
+appear in the main Apache configuration files. The directive should be used
+within the VirtualHost container and cannot be used within either of the
+Location, Directory or Files container directives, neither can it be used
+within a ".htaccess" files.
+
+The first way of using the WSGIScriptAlias directive to indicate the WSGI
+application to be used, is to associate a WSGI application against a specific
+URL prefix.
+
+    WSGIScriptAlias /myapp /usr/local/wsgi/scripts/myapp.wsgi
+
+The last option to the directive in this case must be a full pathname to
+the actual code file containing the WSGI application. The WSGI application
+contained within the code file should be called "application". For example:
+
+    def application(environ, start_response):
+        status = '200 OK'
+        output = 'Hello World!'
+
+        response_headers = [('Content-type', 'text/plain'),
+                            ('Content-Length', str(len(output)))]
+        start_response(status, response_headers)
+
+        return [output]
+
+Note that an absolute pathname must be used. It is not possible to specify
+an application by Python module name alone. A full path is used for a
+number of reasons, the main one being so that all the Apache access
+controls can still be applied to indicate who can actually access the WSGI
+application. Because these access controls will apply, if the WSGI
+application is located outside of any directories already known to Apache,
+it will be necessary to tell Apache that files within that directory can be
+used. To do this the Directory directive must be used.
+
+    <Directory /usr/local/wsgi/scripts>
+    Order allow,deny
+    Allow from all
+    </Directory>
+
+The second way of using the WSGIScriptAlias directive is to use it to map
+to a directory containing any number of WSGI applications.
+
+    WSGIScriptAlias /wsgi/ /usr/local/wsgi/scripts/
+
+When this is used, the next part of the URL after the URL prefix is used
+to identify which WSGI application code file within the target directory
+should be used.
+
+Note that by default each application is placed into its own distinct
+application group. This means that each application will be given its own
+distinct Python sub interpreter to run code within. Although this means
+that applications will be isolated and cannot interfere with the Python code
+components of each other, each will load its own copy of all Python modules
+it requires into memory. If you have many applications and they use a lot
+of different Python modules this can result in large process sizes.
+
+To avoid large process sizes, if you know that applications within a
+directory can safely coexist and run together within the same Python sub
+interpreter, you can specify that all applications within a certain context
+should be placed in the same application group. This is indicated by using
+the WSGIApplicationGroup directive. The argument to the directive can be
+any unique name of your choosing.
+
+    <Directory /usr/local/wsgi/scripts>
+    WSGIApplicationGroup admin-scripts
+    Order allow,deny
+    Allow from all
+    </Directory>
+
+The above only begins to describe the different ways in which mod_wsgi can
+be enabled for use. It does not cover issues such as reloading of
+application script files, additional means of managing Python sub
+interpreters, or how to supply configuration information to WSGI
+applications.
+
+For a more detailed explaination of how to use mod_wsgi, consult the
+documentation found at:
+
+    http://www.modwsgi.org
+
+If you have questions specifically about mod_wsgi and its configuration and
+use, use the Google discussion group at:
+
+    http://groups.google.com/group/modwsgi
+
+If your questions are about WSGI in general, use the Python Web-SIG or
+comp.lang.python USENET group:
+
+    http://groups.google.com/group/python-web-sig
+    http://groups.google.com/group/comp.lang.python
+
+Enjoy.
+
+Graham Dumpleton
