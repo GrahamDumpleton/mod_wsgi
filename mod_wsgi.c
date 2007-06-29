@@ -3083,6 +3083,15 @@ static void wsgi_python_init(apr_pool_t *p)
 
         PyThreadState_Swap(NULL);
 
+        /*
+         * XXX Python leaks too much memory when it is
+         * terminated and the restarted in the same process, so
+         * don't do this in the parent process for the time
+         * being. Everything should still work okay as never did
+         * this for Apache 1.3 anyway.
+         */
+
+#if 0
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
         /*
          * Trigger destruction of the Python interpreter in the
@@ -3095,6 +3104,7 @@ static void wsgi_python_init(apr_pool_t *p)
 
         apr_pool_cleanup_register(wsgi_server_pool, NULL, wsgi_python_term,
                                   apr_pool_cleanup_null);
+#endif
 #endif
 
         wsgi_python_initialized = 1;
