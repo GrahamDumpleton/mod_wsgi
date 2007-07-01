@@ -51,6 +51,7 @@ typedef unsigned int apr_port_t;
 #define apr_table_get ap_table_get
 #define apr_table_set ap_table_set
 #define apr_table_setn ap_table_setn
+#define apr_table_add ap_table_add
 #define apr_table_elts ap_table_elts
 #define apr_array_make ap_make_array
 #define apr_array_push ap_push_array
@@ -2000,10 +2001,10 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
                 set = 1;
             }
             else if (!strcasecmp(name, "WWW-Authenticate")) {
-                apr_table_set(self->r->err_headers_out, name, value);
+                apr_table_add(self->r->err_headers_out, name, value);
             }
             else {
-                apr_table_set(self->r->headers_out, name, value);
+                apr_table_add(self->r->headers_out, name, value);
             }
         }
 
