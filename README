@@ -19,8 +19,8 @@ any version of Python 2.3, or later versions of Python.
 Whatever version of Python is used, it must have been compiled with support
 for multithreading. To avoid a measure of memory bloat with your Apache
 processes, Python should also have been compiled with shared library
-support enabled. The majority of Python binary packages for Linux systems
-are not compiled with shared library support enabled. You should therefore
+support enabled. A number of Python binary packages for Linux systems are
+not compiled with shared library support enabled. You should therefore
 consider recompiling Python from source code with shared library support
 enabled.
 
@@ -38,6 +38,47 @@ mod_wsgi works on that platform.
 
 The source code in this package is made available under the terms of the
 Apache Licence, Version 2.0. See the "LICENCE" file for more information.
+
+
+Documentation
+=============
+
+Note that this README only covers installation and configuration for a
+basic WSGI application in 'embedded' mode. For a more detailed explaination
+of how to use mod_wsgi, consult the documentation found at:
+
+    http://www.modwsgi.org
+
+In particular, if you have any sort of problems in installing and getting
+working mod_wsgi, or your WSGI application, ensure you read:
+
+    http://code.google.com/p/modwsgi/wiki/InstallationIssues
+    http://code.google.com/p/modwsgi/wiki/ConfigurationIssues
+    http://code.google.com/p/modwsgi/wiki/ApplicationIssues
+    http://code.google.com/p/modwsgi/wiki/DebuggingTechniques
+
+For links to documentation explaining how to setup mod_wsgi for use with
+major Python web frameworks and applications, check out:
+
+    http://code.google.com/p/modwsgi/wiki/InstallationInstructions
+
+If you have questions specifically about mod_wsgi and its configuration and
+use, use the Google discussion group at:
+
+    http://groups.google.com/group/modwsgi
+
+In the first instance it is highly recommended that you come to the
+mod_wsgi group even when sorting out problems related to running some third
+party package on top of mod_wsgi. This is because people on other support
+forums are not going to necessarily have the knowledge to help you.
+
+If your questions are perhaps more about WSGI in general, you can also use
+the Python Web-SIG or comp.lang.python USENET groups to get further
+information:
+
+    http://groups.google.com/group/python-web-sig
+    http://groups.google.com/group/comp.lang.python
+
 
 Installation (UNIX)
 ===================
@@ -284,27 +325,13 @@ any unique name of your choosing.
     </Directory>
 
 The above only begins to describe the different ways in which mod_wsgi can
-be enabled for use. It does not cover issues such as reloading of
-application script files, additional means of managing Python sub
-interpreters, or how to supply configuration information to WSGI
-applications.
+be enabled for use. It does not cover running an application in 'daemon'
+mode not issues such as reloading of application script files, additional
+means of managing Python sub interpreters, or how to supply configuration
+information to WSGI applications. Thus, please ensure you refer to the
+documentation on the mod_wsgi web site for further information.
 
-For a more detailed explaination of how to use mod_wsgi, consult the
-documentation found at:
 
-    http://www.modwsgi.org
-
-If you have questions specifically about mod_wsgi and its configuration and
-use, use the Google discussion group at:
-
-    http://groups.google.com/group/modwsgi
-
-If your questions are about WSGI in general, use the Python Web-SIG or
-comp.lang.python USENET group:
-
-    http://groups.google.com/group/python-web-sig
-    http://groups.google.com/group/comp.lang.python
-
-Enjoy.
+Enjoy
 
 Graham Dumpleton
