@@ -3086,7 +3086,7 @@ static void wsgi_python_init(apr_pool_t *p)
 
         /*
          * XXX Python leaks too much memory when it is
-         * terminated and the restarted in the same process, so
+         * terminated and then restarted in the same process, so
          * don't do this in the parent process for the time
          * being. Everything should still work okay as never did
          * this for Apache 1.3 anyway.
