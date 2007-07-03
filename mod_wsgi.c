@@ -808,12 +808,16 @@ static void Log_dealloc(LogObject *self)
 {
     if (self->s) {
         if (self->r) {
+            Py_BEGIN_ALLOW_THREADS
             ap_log_rerror(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
                           self->r, "%s", self->s);
+            Py_END_ALLOW_THREADS
         }
         else {
+            Py_BEGIN_ALLOW_THREADS
             ap_log_error(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
                          wsgi_server, "%s", self->s);
+            Py_END_ALLOW_THREADS
         }
 
         free(self->s);
@@ -834,12 +838,16 @@ static PyObject *Log_flush(LogObject *self, PyObject *args)
 
     if (self->s) {
         if (self->r) {
+            Py_BEGIN_ALLOW_THREADS
             ap_log_rerror(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
                           self->r, "%s", self->s);
+            Py_END_ALLOW_THREADS
         }
         else {
+            Py_BEGIN_ALLOW_THREADS
             ap_log_error(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
                          wsgi_server, "%s", self->s);
+            Py_END_ALLOW_THREADS
         }
 
         free(self->s);
@@ -878,12 +886,16 @@ static void Log_output(LogObject *self, const char *msg)
             s[n-1] = '\0';
 
             if (self->r) {
+                Py_BEGIN_ALLOW_THREADS
                 ap_log_rerror(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
                               self->r, "%s", s);
+                Py_END_ALLOW_THREADS
             }
             else {
+                Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
                              wsgi_server, "%s", s);
+                Py_END_ALLOW_THREADS
             }
 
             free(self->s);
@@ -902,12 +914,16 @@ static void Log_output(LogObject *self, const char *msg)
             s[n-1] = '\0';
 
             if (self->r) {
+                Py_BEGIN_ALLOW_THREADS
                 ap_log_rerror(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
                               self->r, "%s", s);
+                Py_END_ALLOW_THREADS
             }
             else {
+                Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
                              wsgi_server, "%s", s);
+                Py_END_ALLOW_THREADS
             }
 
             free(s);
@@ -1069,14 +1085,18 @@ void wsgi_log_python_error(request_rec *r, LogObject *log)
     PyObject *traceback = NULL;
 
     if (PyErr_ExceptionMatches(PyExc_SystemExit)) {
+        Py_BEGIN_ALLOW_THREADS
         ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                       "mod_wsgi (pid=%d): SystemExit exception raised by "
                       "WSGI script '%s' ignored.", getpid(), r->filename);
+        Py_END_ALLOW_THREADS
     }
     else {
+        Py_BEGIN_ALLOW_THREADS
         ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                       "mod_wsgi (pid=%d): Exception occurred within WSGI "
                       "script '%s'.", getpid(), r->filename);
+        Py_END_ALLOW_THREADS
     }
 
     PyErr_Fetch(&type, &value, &traceback);
@@ -2397,9 +2417,11 @@ static PyObject *wsgi_signal_intercept(PyObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "iO:signal", &n, &h))
         return NULL;
 
+    Py_BEGIN_ALLOW_THREADS
     ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(0), wsgi_server,
                  "mod_wsgi (pid=%d): Callback registration for "
                  "signal %d ignored.", getpid(), n);
+    Py_END_ALLOW_THREADS
 
     m = PyImport_ImportModule("traceback");
 
@@ -2498,10 +2520,6 @@ static InterpreterObject *newInterpreterObject(const char *name,
          * need to worry about it in that case.
          */
 
-        ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                     "mod_wsgi (pid=%d): Create interpreter '%s'.",
-                     getpid(), name);
-
         tstate = Py_NewInterpreter();
 
         if (!tstate) {
@@ -2511,6 +2529,12 @@ static InterpreterObject *newInterpreterObject(const char *name,
 
             return NULL;
         }
+
+        Py_BEGIN_ALLOW_THREADS
+        ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Create interpreter '%s'.",
+                     getpid(), name);
+        Py_END_ALLOW_THREADS
 
         self->interp = tstate->interp;
         self->owner = 1;
@@ -2620,14 +2644,18 @@ static void Interpreter_dealloc(InterpreterObject *self)
         PyGILState_Ensure();
 
     if (self->owner) {
+        Py_BEGIN_ALLOW_THREADS
         ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                      "mod_wsgi (pid=%d): Destroy interpreter '%s'.",
                      getpid(), self->name);
+        Py_END_ALLOW_THREADS
     }
     else {
+        Py_BEGIN_ALLOW_THREADS
         ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                      "mod_wsgi (pid=%d): Cleanup interpreter '%s'.",
                      getpid(), self->name);
+        Py_END_ALLOW_THREADS
     }
 
     /*
@@ -2696,9 +2724,11 @@ static void Interpreter_dealloc(InterpreterObject *self)
                 PyObject *value = NULL;
                 PyObject *traceback = NULL;
 
+                Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
                              "mod_wsgi (pid=%d): Exception occurred within "
                              "threading._shutdown().", getpid());
+                Py_END_ALLOW_THREADS
 
                 PyErr_Fetch(&type, &value, &traceback);
                 PyErr_NormalizeException(&type, &value, &traceback);
@@ -2795,14 +2825,18 @@ static void Interpreter_dealloc(InterpreterObject *self)
             PyObject *traceback = NULL;
 
             if (PyErr_ExceptionMatches(PyExc_SystemExit)) {
+                Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
                              "mod_wsgi (pid=%d): SystemExit exception "
                              "raised by sys.exitfunc() ignored.", getpid());
+                Py_END_ALLOW_THREADS
             }
             else {
+                Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
                              "mod_wsgi (pid=%d): Exception occurred within "
                              "sys.exitfunc().", getpid());
+                Py_END_ALLOW_THREADS
             }
 
             PyErr_Fetch(&type, &value, &traceback);
@@ -3262,18 +3296,22 @@ static PyObject *wsgi_load_source(request_rec *r, const char *name, int found)
                                                        &wsgi_module);
 
     if (found) {
+        Py_BEGIN_ALLOW_THREADS
         ap_log_rerror(APLOG_MARK, WSGI_LOG_INFO(0), r,
                       "mod_wsgi (pid=%d, process='%s', application='%s'): "
                       "Reloading WSGI script '%s'.", getpid(),
                       config->process_group, config->application_group,
                       r->filename);
+        Py_END_ALLOW_THREADS
     }
     else {
+        Py_BEGIN_ALLOW_THREADS
         ap_log_rerror(APLOG_MARK, WSGI_LOG_INFO(0), r,
                       "mod_wsgi (pid=%d, process='%s', application='%s'): "
                       "Loading WSGI script '%s'.", getpid(),
                       config->process_group, config->application_group,
                       r->filename);
+        Py_END_ALLOW_THREADS
     }
 
     if (!(fp = fopen(r->filename, "r"))) {
@@ -3453,10 +3491,12 @@ static int wsgi_execute_script(request_rec *r)
             /* Check for interpreter or module reloading. */
 
             if (config->reload_mechanism == 1 && *config->application_group) {
+                Py_BEGIN_ALLOW_THREADS
                 ap_log_rerror(APLOG_MARK, WSGI_LOG_INFO(0), r,
                              "mod_wsgi (pid=%d): Force reload of "
                              "interpreter '%s'.", getpid(),
                              config->application_group);
+                Py_END_ALLOW_THREADS
 
                 /* Remove interpreter from set of interpreters. */
 
@@ -3561,19 +3601,23 @@ static int wsgi_execute_script(request_rec *r)
             Py_DECREF(object);
         }
         else {
+            Py_BEGIN_ALLOW_THREADS
             ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                           "mod_wsgi (pid=%d): Target WSGI script '%s' does "
                           "not contain WSGI application '%s'.",
                           getpid(), r->filename, apr_pstrcat(r->pool,
                           r->filename, "::", config->callable_object, NULL));
+            Py_END_ALLOW_THREADS
 
             status = HTTP_NOT_FOUND;
         }
     }
     else {
+        Py_BEGIN_ALLOW_THREADS
         ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                       "mod_wsgi (pid=%d): Target WSGI script '%s' cannot "
                       "be loaded as Python module.", getpid(), r->filename);
+        Py_END_ALLOW_THREADS
     }
 
     /* Log any details of exceptions if execution failed. */
