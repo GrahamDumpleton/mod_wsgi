@@ -2064,7 +2064,8 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
     }
 
     if (length) {
-#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+/* #if AP_SERVER_MAJORVERSION_NUMBER >= 2 */
+#if 0
         apr_bucket *b;
 
         if (self->r->connection->aborted) {
