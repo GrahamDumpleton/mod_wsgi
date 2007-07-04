@@ -1810,6 +1810,9 @@ static PyTypeObject Input_Type = {
 typedef struct {
         PyObject_HEAD
         request_rec *r;
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+        apr_bucket_brigade *bb;
+#endif
         WSGIRequestConfig *config;
         InputObject *input;
         LogObject *log;
@@ -1831,6 +1834,10 @@ static AdapterObject *newAdapterObject(request_rec *r)
 
     self->r = r;
 
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    self->bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+#endif
+
     self->config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
                                                              &wsgi_module);
 
@@ -1847,6 +1854,10 @@ static AdapterObject *newAdapterObject(request_rec *r)
 
 static void Adapter_dealloc(AdapterObject *self)
 {
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    apr_brigade_destroy(self->bb);
+#endif
+
     Py_XDECREF(self->headers);
     Py_XDECREF(self->sequence);
 
@@ -2053,9 +2064,44 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
     }
 
     if (length) {
-        ap_rwrite(data, length, self->r);
-        if (!self->config->output_buffering)
-            ap_rflush(self->r);
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+        apr_bucket *b;
+
+        if (self->r->connection->aborted) {
+            PyErr_SetString(PyExc_IOError, "client connection closed");
+            return 0;
+        }
+
+        b = apr_bucket_transient_create(data, length,
+                                        self->r->connection->bucket_alloc);
+        APR_BRIGADE_INSERT_TAIL(self->bb, b);
+
+        if (!self->config->output_buffering) {
+            b = apr_bucket_flush_create(self->r->connection->bucket_alloc);
+            APR_BRIGADE_INSERT_TAIL(self->bb, b);
+        }
+
+        if (ap_pass_brigade(self->r->output_filters,
+                            self->bb) != APR_SUCCESS) {
+            PyErr_SetString(PyExc_IOError, "failed to pass data "
+                            "to bucket brigade");
+            return 0;
+        }
+
+        apr_brigade_cleanup(self->bb);
+#else
+        if (ap_rwrite(data, length, self->r) == -1) {
+            PyErr_SetString(PyExc_IOError, "failed to write data");
+            return 0;
+        }
+
+        if (!self->config->output_buffering) {
+            if (ap_rflush(self->r) == -1) {
+                PyErr_SetString(PyExc_IOError, "failed to flush data");
+                return 0;
+            }
+        }
+#endif
     }
 
     return 1;
