@@ -2064,33 +2064,64 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
     }
 
     if (length) {
-/* #if AP_SERVER_MAJORVERSION_NUMBER >= 2 */
-#if 0
-        apr_bucket *b;
-
-        if (self->r->connection->aborted) {
-            PyErr_SetString(PyExc_IOError, "client connection closed");
-            return 0;
-        }
-
-        b = apr_bucket_transient_create(data, length,
-                                        self->r->connection->bucket_alloc);
-        APR_BRIGADE_INSERT_TAIL(self->bb, b);
-
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
         if (!self->config->output_buffering) {
+            apr_bucket *b;
+
+            /*
+             * When using Apache 2.X, if buffering is not enabled
+             * then can use lower level bucket brigade APIs. This
+             * is preferred as ap_rwrite()/ap_rflush() will grow
+             * memory in the request pool on each call, which will
+             * result in an increase in memory use over time when
+             * streaming of data is being performed. The memory is
+             * still reclaimed, but only at the end of the request.
+             * Using bucket brigade API avoids this, and also
+             * avoids any copying of response data due to buffering
+             * performed by ap_rwrite().
+             */
+
+            if (self->r->connection->aborted) {
+                PyErr_SetString(PyExc_IOError, "client connection closed");
+                return 0;
+            }
+
+            b = apr_bucket_transient_create(data, length,
+                                            self->r->connection->bucket_alloc);
+            APR_BRIGADE_INSERT_TAIL(self->bb, b);
+
             b = apr_bucket_flush_create(self->r->connection->bucket_alloc);
             APR_BRIGADE_INSERT_TAIL(self->bb, b);
-        }
 
-        if (ap_pass_brigade(self->r->output_filters,
-                            self->bb) != APR_SUCCESS) {
-            PyErr_SetString(PyExc_IOError, "failed to pass data "
-                            "to bucket brigade");
-            return 0;
-        }
+            if (ap_pass_brigade(self->r->output_filters,
+                                self->bb) != APR_SUCCESS) {
+                PyErr_SetString(PyExc_IOError, "failed to pass data "
+                                "to bucket brigade");
+                return 0;
+            }
 
-        apr_brigade_cleanup(self->bb);
+            apr_brigade_cleanup(self->bb);
+        }
+        else {
+            /*
+             * If buffering enabled then use ap_rwrite(). The complete
+             * response content will be automatically flushed at the
+             * completion of the request.
+             */
+
+            if (ap_rwrite(data, length, self->r) == -1) {
+                PyErr_SetString(PyExc_IOError, "failed to write data");
+                return 0;
+            }
+        }
 #else
+        /*
+         * In Apache 1.3, the bucket brigade system doesn't exist,
+         * so have no choice but to use ap_rwrite()/ap_rflush().
+         * It is not believed that Apache 1.3 suffers the memory
+         * accumulation problem when streaming lots of data.
+         */
+
         if (ap_rwrite(data, length, self->r) == -1) {
             PyErr_SetString(PyExc_IOError, "failed to write data");
             return 0;
