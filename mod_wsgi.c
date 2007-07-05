@@ -2095,8 +2095,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
 
             if (ap_pass_brigade(self->r->output_filters,
                                 self->bb) != APR_SUCCESS) {
-                PyErr_SetString(PyExc_IOError, "failed to pass data "
-                                "to bucket brigade");
+                PyErr_SetString(PyExc_IOError, "failed to write data");
                 return 0;
             }
 
@@ -2134,6 +2133,22 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
             }
         }
 #endif
+    }
+
+    /*
+     * Check whether aborted connection was found when data
+     * being written, otherwise will not be flagged until next
+     * time that data is being written. Early detection is
+     * better as it may have been the last data block being
+     * written and application may think that data has all
+     * been written. In a streaming application, we also want
+     * to avoid any additional data processing to generate any
+     * successive data.
+     */
+
+    if (self->r->connection->aborted) {
+        PyErr_SetString(PyExc_IOError, "client connection closed");
+        return 0;
     }
 
     return 1;
