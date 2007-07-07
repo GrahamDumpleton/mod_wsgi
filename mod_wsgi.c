@@ -4539,10 +4539,8 @@ static int wsgi_is_script_aliased(request_rec *r)
     return t && (!strcasecmp(t, "wsgi-script"));
 }
 
-#if !defined(WIN32)
-#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+#if defined(MOD_WSGI_WITH_DAEMONS)
 static int wsgi_execute_remote(request_rec *r);
-#endif
 #endif
 
 static int wsgi_hook_handler(request_rec *r)
@@ -4655,7 +4653,7 @@ static int wsgi_hook_handler(request_rec *r)
      * request to one of the daemon processes as appropriate.
      */
 
-#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+#if defined(MOD_WSGI_WITH_DAEMONS)
     status = wsgi_execute_remote(r);
 
     if (status != DECLINED)

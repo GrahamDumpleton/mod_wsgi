@@ -16,13 +16,19 @@ The package can be compiled for and used with either Apache 1.3, 2.0 or
 been carried out with Python 2.3.5, but is expected to be able to work with
 any version of Python 2.3, or later versions of Python.
 
-Whatever version of Python is used, it must have been compiled with support
-for multithreading. To avoid a measure of memory bloat with your Apache
-processes, Python should also have been compiled with shared library
+Note that 'daemon' mode of mod_wsgi is only available if Apache 2.0 or 2.2
+is being used on a UNIX platform and where the Apache run time library
+has been compiled with support for multithreading. Generally multithreading
+support is standard except for on some BSD variants.
+
+Whatever version of Python is used, it must also have been compiled with
+support for multithreading. To avoid a measure of memory bloat with your
+Apache processes, Python should also have been compiled with shared library
 support enabled. A number of Python binary packages for Linux systems are
 not compiled with shared library support enabled. You should therefore
 consider recompiling Python from source code with shared library support
-enabled.
+enabled. If a shared library is not used, you will have problems trying
+to use mod_wsgi on a server where mod_python is also being loaded.
 
 If using a Python binary package for a Linux system, also ensure that the
 you have the corresponding 'dev' package installed for the Python package
