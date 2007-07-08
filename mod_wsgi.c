@@ -1074,15 +1074,15 @@ static PyTypeObject Log_Type = {
 
 void wsgi_log_python_error(request_rec *r, LogObject *log)
 {
-    if (!PyErr_Occurred())
-        return;
-
     PyObject *m = NULL;
     PyObject *result = NULL;
 
     PyObject *type = NULL;
     PyObject *value = NULL;
     PyObject *traceback = NULL;
+
+    if (!PyErr_Occurred())
+        return;
 
     if (PyErr_ExceptionMatches(PyExc_SystemExit)) {
         Py_BEGIN_ALLOW_THREADS
