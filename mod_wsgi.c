@@ -2771,12 +2771,10 @@ static void Interpreter_dealloc(InterpreterObject *self)
     if (module) {
         PyObject *dict = NULL;
         PyObject *func = NULL;
-        PyObject *handle = NULL;
 
         dict = PyModule_GetDict(module);
         func = PyDict_GetItemString(dict, "currentThread");
         if (func) {
-            PyObject *args = NULL;
             PyObject *res = NULL;
             Py_INCREF(func);
             res = PyEval_CallObject(func, (PyObject *)NULL);
@@ -2799,12 +2797,10 @@ static void Interpreter_dealloc(InterpreterObject *self)
     if (module) {
         PyObject *dict = NULL;
         PyObject *func = NULL;
-        PyObject *handle = NULL;
 
         dict = PyModule_GetDict(module);
         func = PyDict_GetItemString(dict, "_shutdown");
         if (func) {
-            PyObject *args = NULL;
             PyObject *res = NULL;
             Py_INCREF(func);
             res = PyEval_CallObject(func, (PyObject *)NULL);
@@ -2896,8 +2892,9 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     /* Finally done with 'threading' module. */
 
-    if (module)
+    if (module) {
         Py_DECREF(module);
+    }
 
     /* Invoke exit functions by calling sys.exitfunc(). */
 
@@ -3084,10 +3081,6 @@ static PyTypeObject Interpreter_Type = {
 
 static int wsgi_python_initialized = 0;
 
-#if AP_SERVER_MAJORVERSION_NUMBER >= 2
-static apr_pool_t *wsgi_server_pool = NULL;
-#endif
-
 static void wsgi_python_version(void)
 {
     const char *compile = PY_VERSION;
@@ -3136,8 +3129,6 @@ static apr_status_t wsgi_python_term(void *data)
 
 static void wsgi_python_init(apr_pool_t *p)
 {
-    WSGIServerConfig *config = NULL;
-
 #if defined(DARWIN) && (AP_SERVER_MAJORVERSION_NUMBER < 2)
     static int initialized = 0;
 #else
@@ -3210,30 +3201,6 @@ static void wsgi_python_init(apr_pool_t *p)
         PyEval_ReleaseLock();
 
         PyThreadState_Swap(NULL);
-
-        /*
-         * XXX Python leaks too much memory when it is
-         * terminated and then restarted in the same process, so
-         * don't do this in the parent process for the time
-         * being. Everything should still work okay as never did
-         * this for Apache 1.3 anyway.
-         */
-
-#if 0
-#if AP_SERVER_MAJORVERSION_NUMBER >= 2
-        /*
-         * Trigger destruction of the Python interpreter in the
-         * parent process on a restart. Can only do this with
-         * Apache 2.0 and later.
-         */
-
-        apr_pool_create(&wsgi_server_pool, p);
-        apr_pool_tag(wsgi_server_pool, "mod_wsgi server pool");
-
-        apr_pool_cleanup_register(wsgi_server_pool, NULL, wsgi_python_term,
-                                  apr_pool_cleanup_null);
-#endif
-#endif
 
         wsgi_python_initialized = 1;
     }
@@ -4804,6 +4771,8 @@ module MODULE_VAR_EXPORT wsgi_module = {
 #include "http_connection.h"
 #include "apr_buckets.h"
 #include "apr_poll.h"
+#include "apr_signal.h"
+#include "http_vhost.h"
 
 #if APR_HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
@@ -4881,9 +4850,6 @@ static int wsgi_daemon_shutdown = 0;
 static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                                            const char *args)
 {
-    const char *error = NULL;
-    WSGIServerConfig *config = NULL;
-
     const char *name = NULL;
     const char *user = NULL;
     const char *group = NULL;
@@ -5294,7 +5260,6 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 {
     int sockfd = -1;
     struct sockaddr_un addr;
-    apr_socklen_t addlen;
     mode_t omask;
     int rc;
 
@@ -6182,27 +6147,6 @@ static apr_status_t wsgi_send_request(request_rec *r,
     return APR_SUCCESS;
 }
 
-static void wsgi_discard_script_output(apr_bucket_brigade *bb)
-{
-    apr_bucket *e;
-    const char *buf;
-    apr_size_t len;
-    apr_status_t rv;
-
-    for (e = APR_BRIGADE_FIRST(bb);
-         e != APR_BRIGADE_SENTINEL(bb);
-         e = APR_BUCKET_NEXT(e))
-    {
-        if (APR_BUCKET_IS_EOS(e)) {
-            break;
-        }
-        rv = apr_bucket_read(e, &buf, &len, APR_BLOCK_READ);
-        if (rv != APR_SUCCESS) {
-            break;
-        }
-    }
-}
-
 static int wsgi_execute_remote(request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
@@ -6499,7 +6443,6 @@ static apr_status_t wsgi_read_request(int sockfd, request_rec *r)
 {
     int rv;
 
-    pid_t ppid;
     char **environ;
 
     /* Read subprocess environment from request object. */
