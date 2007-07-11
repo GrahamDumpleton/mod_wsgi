@@ -61,6 +61,7 @@ typedef array_header apr_array_header_t;
 typedef table apr_table_t;
 typedef table_entry apr_table_entry_t;
 typedef int apr_size_t;
+typedef unsigned long apr_off_t;
 #define apr_psprintf ap_psprintf
 #define apr_pstrndup ap_pstrndup
 #define apr_pstrdup ap_pstrdup
@@ -4513,6 +4514,7 @@ static int wsgi_execute_remote(request_rec *r);
 static int wsgi_hook_handler(request_rec *r)
 {
     int status;
+    apr_off_t limit = 0;
 
     WSGIRequestConfig *config = NULL;
 
@@ -4600,6 +4602,24 @@ static int wsgi_hook_handler(request_rec *r)
 
     if (status != OK)
         return status;
+
+    /*
+     * Check to see if request content is too large and end
+     * request here. We do this as otherwise it will not be done
+     * until first time input data is read in application.
+     * Problem is that underlying HTTP output filter will
+     * also generate a 413 response and the error raised from
+     * the application will be appended to that. The call to
+     * ap_discard_request_body() is hopefully enough to trigger
+     * sending of the 413 response by the HTTP filter.
+     */
+
+    limit = ap_get_limit_req_body(r);
+
+    if (limit && limit < r->remaining) {
+        ap_discard_request_body(r);
+        return OK;
+    }
 
     /*
      * Construct request configuration and cache it in the
