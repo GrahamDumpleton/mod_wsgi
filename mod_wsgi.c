@@ -2163,7 +2163,7 @@ static PyObject *Adapter_environ(AdapterObject *self)
 {
     request_rec *r = NULL;
 
-    PyObject *environ = NULL;
+    PyObject *vars = NULL;
     PyObject *object = NULL;
 
     const apr_array_header_t *head = NULL;
@@ -2175,7 +2175,7 @@ static PyObject *Adapter_environ(AdapterObject *self)
 
     /* Create the WSGI environment dictionary. */
 
-    environ = PyDict_New();
+    vars = PyDict_New();
 
     /* Merge the CGI environment into the WSGI environment. */
 
@@ -2188,40 +2188,40 @@ static PyObject *Adapter_environ(AdapterObject *self)
         if (elts[i].key) {
             if (elts[i].val) {
                 object = PyString_FromString(elts[i].val);
-                PyDict_SetItemString(environ, elts[i].key, object);
+                PyDict_SetItemString(vars, elts[i].key, object);
                 Py_DECREF(object);
             }
             else
-                PyDict_SetItemString(environ, elts[i].key, Py_None);
+                PyDict_SetItemString(vars, elts[i].key, Py_None);
         }
     }
 
     /* Now setup all the WSGI specific environment values. */
 
     object = Py_BuildValue("(ii)", 1, 0);
-    PyDict_SetItemString(environ, "wsgi.version", object);
+    PyDict_SetItemString(vars, "wsgi.version", object);
     Py_DECREF(object);
 
     object = PyBool_FromLong(wsgi_multithread);
-    PyDict_SetItemString(environ, "wsgi.multithread", object);
+    PyDict_SetItemString(vars, "wsgi.multithread", object);
     Py_DECREF(object);
 
     object = PyBool_FromLong(wsgi_multiprocess);
-    PyDict_SetItemString(environ, "wsgi.multiprocess", object);
+    PyDict_SetItemString(vars, "wsgi.multiprocess", object);
     Py_DECREF(object);
 
-    PyDict_SetItemString(environ, "wsgi.run_once", Py_False);
+    PyDict_SetItemString(vars, "wsgi.run_once", Py_False);
 
     scheme = apr_table_get(r->subprocess_env, "HTTPS");
 
     if (scheme && (!strcasecmp(scheme, "On") || !strcmp(scheme, "1"))) {
         object = PyString_FromString("https");
-        PyDict_SetItemString(environ, "wsgi.url_scheme", object);
+        PyDict_SetItemString(vars, "wsgi.url_scheme", object);
         Py_DECREF(object);
     }
     else {
         object = PyString_FromString("http");
-        PyDict_SetItemString(environ, "wsgi.url_scheme", object);
+        PyDict_SetItemString(vars, "wsgi.url_scheme", object);
         Py_DECREF(object);
     }
 
@@ -2231,21 +2231,21 @@ static PyObject *Adapter_environ(AdapterObject *self)
      */
 
     object = (PyObject *)self->log;
-    PyDict_SetItemString(environ, "wsgi.errors", object);
+    PyDict_SetItemString(vars, "wsgi.errors", object);
 
     /* Setup input object for request content. */
 
     object = (PyObject *)self->input;
-    PyDict_SetItemString(environ, "wsgi.input", object);
+    PyDict_SetItemString(vars, "wsgi.input", object);
 
-    return environ;
+    return vars;
 }
 
 static int Adapter_run(AdapterObject *self, PyObject *object)
 {
     int result = HTTP_INTERNAL_SERVER_ERROR;
 
-    PyObject *environ = NULL;
+    PyObject *vars = NULL;
     PyObject *start = NULL;
     PyObject *args = NULL;
     PyObject *iterator = NULL;
@@ -2254,11 +2254,11 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     const char *msg = NULL;
     int length = 0;
 
-    environ = Adapter_environ(self);
+    vars = Adapter_environ(self);
 
     start = PyObject_GetAttrString((PyObject *)self, "start_response");
 
-    args = Py_BuildValue("(OO)", environ, start);
+    args = Py_BuildValue("(OO)", vars, start);
 
     self->sequence = PyEval_CallObject(object, args);
 
@@ -2322,7 +2322,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
     Py_DECREF(args);
     Py_DECREF(start);
-    Py_DECREF(environ);
+    Py_DECREF(vars);
 
     if (PyErr_Occurred())
         wsgi_log_python_error(self->r, self->log);
@@ -6116,7 +6116,7 @@ static apr_status_t wsgi_send_request(request_rec *r,
 {
     int rv;
 
-    char **environ;
+    char **vars;
     const apr_array_header_t *env_arr;
     const apr_table_entry_t *elts;
     int i, j;
@@ -6126,20 +6126,20 @@ static apr_status_t wsgi_send_request(request_rec *r,
     env_arr = apr_table_elts(r->subprocess_env);
     elts = (const apr_table_entry_t *)env_arr->elts;
 
-    environ = (char **)apr_palloc(r->pool,
-                                  ((2*env_arr->nelts)+1)*sizeof(char *));
+    vars = (char **)apr_palloc(r->pool,
+                               ((2*env_arr->nelts)+1)*sizeof(char *));
 
     for (i=0, j=0; i<env_arr->nelts; ++i) {
         if (!elts[i].key)
             continue;
 
-        environ[j++] = elts[i].key;
-        environ[j++] = elts[i].val ? elts[i].val : "";
+        vars[j++] = elts[i].key;
+        vars[j++] = elts[i].val ? elts[i].val : "";
     }
 
-    environ[j] = NULL;
+    vars[j] = NULL;
 
-    rv = wsgi_send_strings(daemon->fd, (const char **)environ);
+    rv = wsgi_send_strings(daemon->fd, (const char **)vars);
 
     if (rv != APR_SUCCESS)
         return rv;
@@ -6443,19 +6443,19 @@ static apr_status_t wsgi_read_request(int sockfd, request_rec *r)
 {
     int rv;
 
-    char **environ;
+    char **vars;
 
     /* Read subprocess environment from request object. */
 
-    rv = wsgi_read_strings(sockfd, &environ, r->pool);
+    rv = wsgi_read_strings(sockfd, &vars, r->pool);
 
     if (rv != APR_SUCCESS)
         return rv;
 
-    while (*environ) {
-        char *key = *environ++;
+    while (*vars) {
+        char *key = *vars++;
 
-        apr_table_setn(r->subprocess_env, key, *environ++);
+        apr_table_setn(r->subprocess_env, key, *vars++);
     }
 
     return APR_SUCCESS;
