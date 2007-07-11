@@ -119,6 +119,12 @@ typedef regmatch_t ap_regmatch_t;
 #endif
 #endif
 
+#ifndef WIN32
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+#define MOD_WSGI_WITH_BUCKETS 1
+#endif
+#endif
+
 #if defined(MOD_WSGI_WITH_DAEMONS)
 
 #if !AP_MODULE_MAGIC_AT_LEAST(20051115,0)
@@ -1811,7 +1817,7 @@ static PyTypeObject Input_Type = {
 typedef struct {
         PyObject_HEAD
         request_rec *r;
-#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+#if defined(MOD_WSGI_WITH_BUCKETS)
         apr_bucket_brigade *bb;
 #endif
         WSGIRequestConfig *config;
@@ -1835,7 +1841,7 @@ static AdapterObject *newAdapterObject(request_rec *r)
 
     self->r = r;
 
-#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+#if defined(MOD_WSGI_WITH_BUCKETS)
     self->bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 #endif
 
@@ -1855,7 +1861,7 @@ static AdapterObject *newAdapterObject(request_rec *r)
 
 static void Adapter_dealloc(AdapterObject *self)
 {
-#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+#if defined(MOD_WSGI_WITH_BUCKETS)
     apr_brigade_destroy(self->bb);
 #endif
 
@@ -2065,7 +2071,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
     }
 
     if (length) {
-#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+#if defined(MOD_WSGI_WITH_BUCKETS)
         if (!self->config->output_buffering) {
             apr_bucket *b;
 
