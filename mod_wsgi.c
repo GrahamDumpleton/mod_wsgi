@@ -23,6 +23,10 @@
  *   In Apache 1.3 it is not possible to access ap_check_cmd_context()
  *   where as this was made public in Apache 2.0.
  *
+ *   In Apache 2.X need access to ap_create_request_config().
+ *
+ *   In Apache 2.X need access to core_module.
+ *
  */
 
 #define CORE_PRIVATE 1
@@ -1842,7 +1846,7 @@ static AdapterObject *newAdapterObject(request_rec *r)
     self->r = r;
 
 #if defined(MOD_WSGI_WITH_BUCKETS)
-    self->bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+    self->bb = NULL;
 #endif
 
     self->config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
@@ -1861,10 +1865,6 @@ static AdapterObject *newAdapterObject(request_rec *r)
 
 static void Adapter_dealloc(AdapterObject *self)
 {
-#if defined(MOD_WSGI_WITH_BUCKETS)
-    apr_brigade_destroy(self->bb);
-#endif
-
     Py_XDECREF(self->headers);
     Py_XDECREF(self->sequence);
 
@@ -1945,17 +1945,20 @@ static PyObject *Adapter_start(AdapterObject *self, PyObject *args)
 static int Adapter_output(AdapterObject *self, const char *data, int length)
 {
     int i = 0;
+    request_rec *r;
 
     if (!self->status_line) {
         PyErr_SetString(PyExc_RuntimeError, "response has not been started");
         return 0;
     }
 
+    r = self->r;
+
     if (self->headers) {
         int set = 0;
 
-        self->r->status = self->status;
-        self->r->status_line = self->status_line;
+        r->status = self->status;
+        r->status_line = self->status_line;
 
         for (i = 0; i < PyList_Size(self->headers); i++) {
             PyObject *tuple = NULL;
@@ -2005,7 +2008,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
 
             if (!strcasecmp(name, "Content-Type")) {
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
-                self->r->content_type = apr_pstrdup(self->r->pool, value);
+                r->content_type = apr_pstrdup(r->pool, value);
 #else
                 /*
                  * In a daemon child process we cannot call the
@@ -2017,9 +2020,9 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
                  */
 
                 if (*self->config->process_group)
-                    self->r->content_type = apr_pstrdup(self->r->pool, value);
+                    r->content_type = apr_pstrdup(r->pool, value);
                 else
-                    ap_set_content_type(self->r, value);
+                    ap_set_content_type(r, value);
 #endif
             }
             else if (!strcasecmp(name, "Content-Length")) {
@@ -2034,15 +2037,15 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
                     return 0;
                 }
 
-                ap_set_content_length(self->r, l);
+                ap_set_content_length(r, l);
 
                 set = 1;
             }
             else if (!strcasecmp(name, "WWW-Authenticate")) {
-                apr_table_add(self->r->err_headers_out, name, value);
+                apr_table_add(r->err_headers_out, name, value);
             }
             else {
-                apr_table_add(self->r->headers_out, name, value);
+                apr_table_add(r->headers_out, name, value);
             }
         }
 
@@ -2057,14 +2060,14 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
         if (!set && self->sequence) {
             if (PySequence_Check(self->sequence)) {
                 if (PySequence_Size(self->sequence) == 1)
-                    ap_set_content_length(self->r, length);
+                    ap_set_content_length(r, length);
 
                 if (PyErr_Occurred())
                     PyErr_Clear();
             }
         }
 
-        ap_send_http_header(self->r);
+        ap_send_http_header(r);
 
         Py_DECREF(self->headers);
         self->headers = NULL;
@@ -2088,19 +2091,24 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
              * performed by ap_rwrite().
              */
 
-            if (self->r->connection->aborted) {
+            if (r->connection->aborted) {
                 PyErr_SetString(PyExc_IOError, "client connection closed");
                 return 0;
             }
 
+            if (!self->bb) {
+                self->bb = apr_brigade_create(r->pool,
+                                              r->connection->bucket_alloc);
+            }
+
             b = apr_bucket_transient_create(data, length,
-                                            self->r->connection->bucket_alloc);
+                                            r->connection->bucket_alloc);
             APR_BRIGADE_INSERT_TAIL(self->bb, b);
 
-            b = apr_bucket_flush_create(self->r->connection->bucket_alloc);
+            b = apr_bucket_flush_create(r->connection->bucket_alloc);
             APR_BRIGADE_INSERT_TAIL(self->bb, b);
 
-            if (ap_pass_brigade(self->r->output_filters,
+            if (ap_pass_brigade(r->output_filters,
                                 self->bb) != APR_SUCCESS) {
                 PyErr_SetString(PyExc_IOError, "failed to write data");
                 return 0;
@@ -2115,7 +2123,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
              * completion of the request.
              */
 
-            if (ap_rwrite(data, length, self->r) == -1) {
+            if (ap_rwrite(data, length, r) == -1) {
                 PyErr_SetString(PyExc_IOError, "failed to write data");
                 return 0;
             }
@@ -2128,13 +2136,13 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
          * accumulation problem when streaming lots of data.
          */
 
-        if (ap_rwrite(data, length, self->r) == -1) {
+        if (ap_rwrite(data, length, r) == -1) {
             PyErr_SetString(PyExc_IOError, "failed to write data");
             return 0;
         }
 
         if (!self->config->output_buffering) {
-            if (ap_rflush(self->r) == -1) {
+            if (ap_rflush(r) == -1) {
                 PyErr_SetString(PyExc_IOError, "failed to flush data");
                 return 0;
             }
@@ -2153,7 +2161,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
      * successive data.
      */
 
-    if (self->r->connection->aborted) {
+    if (r->connection->aborted) {
         PyErr_SetString(PyExc_IOError, "client connection closed");
         return 0;
     }
@@ -3661,6 +3669,10 @@ static int wsgi_execute_script(request_rec *r)
                 adapter->r = NULL;
                 adapter->input->r = NULL;
                 adapter->log->expired = 1;
+
+#if defined(MOD_WSGI_WITH_BUCKETS)
+                adapter->bb = NULL;
+#endif
             }
 
             Py_XDECREF((PyObject *)adapter);
