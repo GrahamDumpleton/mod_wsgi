@@ -123,10 +123,8 @@ typedef regmatch_t ap_regmatch_t;
 #endif
 #endif
 
-#ifndef WIN32
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
 #define MOD_WSGI_WITH_BUCKETS 1
-#endif
 #endif
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
