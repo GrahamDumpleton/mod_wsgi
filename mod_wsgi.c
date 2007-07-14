@@ -1904,6 +1904,18 @@ static PyObject *Adapter_start(AdapterObject *self, PyObject *args)
             if (!PyArg_ParseTuple(exc_info, "OOO", &type, &value, &traceback))
                 return NULL;
 
+            PyErr_NormalizeException(&type, &value, &traceback);
+
+            if (!value) {
+                value = Py_None;
+                Py_INCREF(value);
+            }
+
+            if (!traceback) {
+                traceback = Py_None;
+                Py_INCREF(traceback);
+            }
+
             PyErr_Restore(type, value, traceback);
 
             return NULL;
