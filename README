@@ -50,23 +50,25 @@ Documentation
 =============
 
 Note that this README only covers installation and configuration for a
-basic WSGI application in 'embedded' mode. For a more detailed explaination
+basic WSGI application in 'embedded' mode. For a more detailed explanation
 of how to use mod_wsgi, consult the documentation found at:
 
     http://www.modwsgi.org
 
-In particular, if you have any sort of problems in installing and getting
-working mod_wsgi, or your WSGI application, ensure you read:
+In particular, refer to the installation and configuration information in
+the following documentation:
+
+    http://code.google.com/p/modwsgi/wiki/InstallationInstructions
+    http://code.google.com/p/modwsgi/wiki/ConfigurationGuidelines
+
+If you experience any sort of problems in installing and getting mod_wsgi
+to work, or your WSGI application appears to not work properly, ensure you
+also read:
 
     http://code.google.com/p/modwsgi/wiki/InstallationIssues
     http://code.google.com/p/modwsgi/wiki/ConfigurationIssues
     http://code.google.com/p/modwsgi/wiki/ApplicationIssues
     http://code.google.com/p/modwsgi/wiki/DebuggingTechniques
-
-For links to documentation explaining how to setup mod_wsgi for use with
-major Python web frameworks and applications, check out:
-
-    http://code.google.com/p/modwsgi/wiki/InstallationInstructions
 
 If you have questions specifically about mod_wsgi and its configuration and
 use, use the Google discussion group at:
