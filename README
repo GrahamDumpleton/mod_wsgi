@@ -261,10 +261,10 @@ Apache mod_cgi module to enable traditional CGI scripts.
 
 For example, whereas mod_cgi has the ScriptAlias directive, mod_wsgi has
 the WSGIScriptAlias directive. Like with mod_cgi, this directive can only
-appear in the main Apache configuration files. The directive should be used
-within the VirtualHost container and cannot be used within either of the
-Location, Directory or Files container directives, neither can it be used
-within a ".htaccess" files.
+appear in the main Apache configuration files. The directive would be used
+at server scope or within the VirtualHost container and cannot be used
+within either of the Location, Directory or Files container directives,
+neither can it be used within a ".htaccess" files.
 
 The first way of using the WSGIScriptAlias directive to indicate the WSGI
 application to be used, is to associate a WSGI application against a specific
