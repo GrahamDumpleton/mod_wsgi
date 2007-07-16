@@ -4909,8 +4909,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     const char *home = NULL;
 
-    uid_t uid = unixd_config.user_id;
-    uid_t gid = unixd_config.group_id;
+    uid_t uid;
+    uid_t gid;
 
     const char *option = NULL;
     const char *value = NULL;
@@ -4919,6 +4919,19 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     WSGIProcessGroup *entry = NULL;
 
     int i;
+
+    /*
+     * Set the defaults for user/group from values
+     * defined for the User/Group directives in main
+     * Apache configuration.
+     */
+
+    uid = unixd_config.user_id;
+    user = unixd_config.user_name;
+
+    gid = unixd_config.group_id;
+
+    /* Now parse options for directive. */
 
     name = ap_getword_conf(cmd->temp_pool, &args);
 
