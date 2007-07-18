@@ -6442,35 +6442,31 @@ static int wsgi_execute_remote(request_rec *r)
     return OK;
 }
 
-static apr_status_t wsgi_socket_read(int fd, void *vbuf, size_t buf_size)
+static apr_status_t wsgi_socket_read(apr_socket_t *sock, void *vbuf,
+                                     apr_size_t size)
 {
     char *buf = vbuf;
-    int rc;
-    size_t bytes_read = 0;
+    apr_status_t rv;
+    apr_size_t count = 0;
+    apr_size_t len = 0;
 
     do {
-        do {
-            rc = read(fd, buf + bytes_read, buf_size - bytes_read);
-        } while (rc < 0 && (errno == EINTR || errno == EAGAIN));
-        switch(rc) {
-        case -1:
-            return errno;
-        case 0: /* unexpected */
-            return ECONNRESET;
-        default:
-            bytes_read += rc;
-        }
-    } while (bytes_read < buf_size);
+        len = size - count;
+        if ((rv = apr_socket_recv(sock, buf + count, &len)) != APR_SUCCESS)
+             return rv;
+        count += len;
+    } while (count < size);
 
     return APR_SUCCESS;
 }
 
-static apr_status_t wsgi_read_string(int fd, char **s, apr_pool_t *p)
+static apr_status_t wsgi_read_string(apr_socket_t *sock, char **s,
+                                     apr_pool_t *p)
 {
     apr_status_t rv;
     int l;
 
-    if ((rv = wsgi_socket_read(fd, &l, sizeof(l))) != APR_SUCCESS)
+    if ((rv = wsgi_socket_read(sock, &l, sizeof(l))) != APR_SUCCESS)
         return rv;
 
     *s = apr_pcalloc(p, l+1);
@@ -6478,29 +6474,30 @@ static apr_status_t wsgi_read_string(int fd, char **s, apr_pool_t *p)
     if (!l)
         return APR_SUCCESS;
 
-    return wsgi_socket_read(fd, *s, l);
+    return wsgi_socket_read(sock, *s, l);
 }
 
-static apr_status_t wsgi_read_strings(int fd, char ***s, apr_pool_t *p)
+static apr_status_t wsgi_read_strings(apr_socket_t *sock, char ***s,
+                                      apr_pool_t *p)
 {
     apr_status_t rv;
     int n;
     int i;
 
-    if ((rv = wsgi_socket_read(fd, &n, sizeof(n))) != APR_SUCCESS)
+    if ((rv = wsgi_socket_read(sock, &n, sizeof(n))) != APR_SUCCESS)
         return rv;
 
     *s = apr_pcalloc(p, (n+1)*sizeof(**s));
 
     for (i = 0; i < n; i++) {
-        if ((rv = wsgi_read_string(fd, &(*s)[i], p)) != APR_SUCCESS)
+        if ((rv = wsgi_read_string(sock, &(*s)[i], p)) != APR_SUCCESS)
             return rv;
     }
 
     return APR_SUCCESS;
 }
 
-static apr_status_t wsgi_read_request(int sockfd, request_rec *r)
+static apr_status_t wsgi_read_request(apr_socket_t *sock, request_rec *r)
 {
     int rv;
 
@@ -6508,7 +6505,7 @@ static apr_status_t wsgi_read_request(int sockfd, request_rec *r)
 
     /* Read subprocess environment from request object. */
 
-    rv = wsgi_read_strings(sockfd, &vars, r->pool);
+    rv = wsgi_read_strings(sock, &vars, r->pool);
 
     if (rv != APR_SUCCESS)
         return rv;
@@ -6615,7 +6612,6 @@ apr_status_t wsgi_header_filter(ap_filter_t *f, apr_bucket_brigade *b)
 static int wsgi_hook_daemon_handler(conn_rec *c)
 {
     apr_socket_t *csd;
-    int sockfd = -1;
     request_rec *r;
     apr_pool_t *p;
     apr_status_t rv;
@@ -6695,11 +6691,10 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      */
 
     csd = ap_get_module_config(c->conn_config, &core_module);
-    apr_os_sock_get(&sockfd, csd);
 
     /* Read in the request details and setup request object. */
 
-    if ((rv = wsgi_read_request(sockfd, r)) != APR_SUCCESS) {
+    if ((rv = wsgi_read_request(csd, r)) != APR_SUCCESS) {
         ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(rv), r,
                      "mod_wsgi (pid=%d): Unable to read WSGI request.",
                      getpid());
