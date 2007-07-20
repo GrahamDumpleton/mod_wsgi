@@ -4859,6 +4859,8 @@ typedef struct {
     int threads;
     int umask;
     const char *home;
+    int requests;
+    int timeout;
     const char *socket;
     int listener_fd;
     const char* mutex_path;
@@ -4894,6 +4896,7 @@ static apr_hash_t *wsgi_daemon_listeners = NULL;
 static WSGIDaemonProcess *wsgi_daemon_process = NULL;
 
 static int wsgi_daemon_shutdown = 0;
+static int wsgi_request_count = 0;
 
 static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                                            const char *args)
@@ -4908,6 +4911,9 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int umask = -1;
 
     const char *home = NULL;
+
+    int requests = 0;
+    int timeout = 5;
 
     uid_t uid;
     uid_t gid;
@@ -5006,6 +5012,24 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
             home = value;
         }
+        else if (strstr(option, "maximum-requests=") == option) {
+            value = option + 17;
+            if (!*value)
+                return "Invalid request count for WSGI daemon process.";
+
+            requests = atoi(value);
+            if (requests < 0)
+                return "Invalid request count for WSGI daemon process.";
+        }
+        else if (strstr(option, "shutdown-timeout=") == option) {
+            value = option + 17;
+            if (!*value)
+                return "Invalid shutdown timeout for WSGI daemon process.";
+
+            timeout = atoi(value);
+            if (timeout < 0)
+                return "Invalid shutdown timeout for WSGI daemon process.";
+        }
         else
             return "Invalid option to WSGI daemon process definition.";
     }
@@ -5046,6 +5070,9 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     entry->umask = umask;
     entry->home = home;
+
+    entry->requests = requests;
+    entry->timeout = timeout;
 
     return NULL;
 }
@@ -5565,6 +5592,21 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
         apr_pool_destroy(ptrans);
 
         thread->running = 0;
+
+        /* Check to see if maximum number of requests reached. */
+
+        if (daemon->group->requests) {
+            if (--wsgi_request_count <= 0) {
+                if (!wsgi_daemon_shutdown) {
+                    ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                                 "mod_wsgi (pid=%d): Maximum requests "
+                                 "'%s'.", getpid(), daemon->group->name);
+                }
+
+                kill(getpid(), SIGINT);
+                wsgi_daemon_shutdown++;
+            }
+        }
     }
 }
 
@@ -5580,115 +5622,137 @@ static void *wsgi_daemon_thread(apr_thread_t *thd, void *data)
     return NULL;
 }
 
+static void *wsgi_reaper_thread(apr_thread_t *thd, void *data)
+{
+    WSGIDaemonProcess *daemon = data;
+    apr_pool_t *p = apr_thread_pool_get(thd);
+
+    sleep(daemon->group->timeout);
+
+    ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                 "mod_wsgi (pid=%d): Aborting process '%s'.",
+                 getpid(), daemon->group->name);
+
+    exit(-1);
+
+    return NULL;
+}
+
 static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 {
+    WSGIDaemonThread *threads;
+    apr_threadattr_t *thread_attr;
+    apr_thread_t *reaper = NULL;
+
+    int i;
+    apr_status_t rv;
+    apr_status_t thread_rv;
+
+    /* Block all signals from being received. */
+
+    rv = apr_setup_signal_thread();
+    if (rv != APR_SUCCESS) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_EMERG(rv), wsgi_server,
+                     "mod_wsgi (pid=%d): Couldn't initialise signal "
+                     "thread in daemon process '%s'.", getpid(),
+                     daemon->group->name);
+        sleep(20);
+
+        return;
+    }
+
+    /* Initialise maximum request count for daemon. */
+
+    if (daemon->group->requests)
+        wsgi_request_count = daemon->group->requests;
+
+    /* Ensure that threads are joinable. */
+
+    apr_threadattr_create(&thread_attr, p);
+    apr_threadattr_detach_set(thread_attr, 0);
+
+    /* Start the required number of threads. */
+
+    threads = (WSGIDaemonThread *)apr_pcalloc(p, daemon->group->threads
+                                              * sizeof(WSGIDaemonThread));
+
+    ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                 "mod_wsgi (pid=%d): Starting %d threads in daemon "
+                 "process '%s'.", getpid(), daemon->group->threads,
+                 daemon->group->name);
+
+    for (i=0; i<daemon->group->threads; i++) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Starting thread %d in daemon "
+                     "process '%s'.", getpid(), i+1, daemon->group->name);
+
+        threads[i].process = daemon;
+        threads[i].running = 0;
+
+        rv = apr_thread_create(&threads[i].thread, thread_attr,
+                               wsgi_daemon_thread, &threads[i], p);
+
+        if (rv != APR_SUCCESS) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(rv), wsgi_server,
+                         "mod_wsgi (pid=%d): Couldn't create worker "
+                         "thread %d in daemon process '%s'.", getpid(),
+                         i, daemon->group->name);
+
+            /*
+             * Try to force an exit of the process if fail
+             * to create the worker threads.
+             */
+
+            kill(getpid(), SIGTERM);
+            sleep(5);
+        }
+    }
+
+    /* Block until we get a process shutdown signal. */
+
+    apr_signal_thread(wsgi_check_signal);
+
+    ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                 "mod_wsgi (pid=%d): Shutdown requested '%s'.",
+                 getpid(), daemon->group->name);
+
     /*
-     * If process running in single threaded mode only need run
-     * the main worker function. If multiple threads required
-     * then startup all the threads and wait for them to exit
-     * when shutdown is signaled.
+     * Create a reaper thread to abort process if graceful
+     * shutdown takes too long. Not recommended to disable
+     * this unless external process is controlling shutdown.
      */
 
-    if (daemon->group->threads == 1) {
-        WSGIDaemonThread thread;
+    if (daemon->group->timeout) {
+        rv = apr_thread_create(&reaper, thread_attr, wsgi_reaper_thread,
+                               daemon, p);
 
-        thread.process = daemon;
-        thread.thread = NULL;
-        thread.running = 0;
-
-        wsgi_daemon_worker(p, &thread);
-    }
-    else {
-        WSGIDaemonThread *threads;
-        apr_threadattr_t *thread_attr;
-
-        int i;
-        apr_status_t rv;
-        apr_status_t thread_rv;
-
-        /* Block all signals from being received. */
-
-        rv = apr_setup_signal_thread();
         if (rv != APR_SUCCESS) {
-            ap_log_error(APLOG_MARK, WSGI_LOG_EMERG(rv), wsgi_server,
-                         "mod_wsgi (pid=%d): Couldn't initialise signal "
+            ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(rv), wsgi_server,
+                         "mod_wsgi (pid=%d): Couldn't create reaper "
                          "thread in daemon process '%s'.", getpid(),
                          daemon->group->name);
-            sleep(20);
-
-            return;
         }
+    }
 
-        /* Ensure that threads are joinable. */
+    /*
+     * Attempt a graceful shutdown by waiting for any
+     * threads which were processing a request at the time
+     * of shutdown. In some respects this is a bit pointless
+     * as even though we allow the requests to be completed,
+     * the Apache child process which proxied the request
+     * through to this daemon process could get killed off
+     * before the daemon process and so the response gets
+     * cut off or lost.
+     */
 
-        apr_threadattr_create(&thread_attr, p);
-        apr_threadattr_detach_set(thread_attr, 0);
-
-        /* Start the required number of threads. */
-
-        threads = (WSGIDaemonThread *)apr_pcalloc(p, daemon->group->threads
-                                                  * sizeof(WSGIDaemonThread));
-
-        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
-                     "mod_wsgi (pid=%d): Starting %d threads in daemon "
-                     "process '%s'.", getpid(), daemon->group->threads,
-                     daemon->group->name);
-
-        for (i=0; i<daemon->group->threads; i++) {
-            ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
-                         "mod_wsgi (pid=%d): Starting thread %d in daemon "
-                         "process '%s'.", getpid(), i+1, daemon->group->name);
-
-            threads[i].process = daemon;
-            threads[i].running = 0;
-
-            rv = apr_thread_create(&threads[i].thread, thread_attr,
-                                   wsgi_daemon_thread, &threads[i], p);
-
+    for (i=0; i<daemon->group->threads; i++) {
+        if (threads[i].thread && threads[i].running) {
+            rv = apr_thread_join(&thread_rv, threads[i].thread);
             if (rv != APR_SUCCESS) {
-                ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(rv), wsgi_server,
-                             "mod_wsgi (pid=%d): Couldn't create worker "
-                             "thread %d in daemon process '%s'.", getpid(),
-                             i, daemon->group->name);
-
-                /*
-                 * Try to force an exit of the process if fail
-                 * to create the worker threads.
-                 */
-
-                kill(getpid(), SIGTERM);
-                sleep(5);
-            }
-        }
-
-        /* Block until we get a process shutdown signal. */
-
-        apr_signal_thread(wsgi_check_signal);
-
-        ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                     "mod_wsgi (pid=%d): Shutdown requested '%s'.",
-                     getpid(), daemon->group->name);
-
-        /*
-         * Attempt a graceful shutdown by waiting for any
-         * threads which were processing a request at the time
-         * of shutdown. In some respects this is a bit pointless
-         * as even though we allow the requests to be completed,
-         * the Apache child process which proxied the request
-         * through to this daemon process could get killed off
-         * before the daemon process and so the response gets
-         * cut off or lost.
-         */
-
-        for (i=0; i<daemon->group->threads; i++) {
-            if (threads[i].thread && threads[i].running) {
-                rv = apr_thread_join(&thread_rv, threads[i].thread);
-                if (rv != APR_SUCCESS) {
-                    ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(rv), wsgi_server,
-                                 "mod_wsgi (pid=%d): Couldn't join with "
-                                 "worker thread %d in daemon process '%s'.",
-                                 getpid(), i, daemon->group->name);
-                }
+                ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(rv), wsgi_server,
+                             "mod_wsgi (pid=%d): Couldn't join with "
+                             "worker thread %d in daemon process '%s'.",
+                             getpid(), i, daemon->group->name);
             }
         }
     }
