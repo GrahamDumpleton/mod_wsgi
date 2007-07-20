@@ -5600,7 +5600,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                 if (!wsgi_daemon_shutdown) {
                     ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                                  "mod_wsgi (pid=%d): Maximum requests "
-                                 "'%s'.", getpid(), daemon->group->name);
+                                 "reached '%s'.", getpid(),
+                                 daemon->group->name);
                 }
 
                 kill(getpid(), SIGINT);
