@@ -195,6 +195,7 @@ static apr_status_t apr_os_pipe_put_ex(apr_file_t **file,
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 1
 #define MOD_WSGI_MINORVERSION_NUMBER 0
+#define MOD_WSGI_VERSION_STRING "1.0c1"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -4690,8 +4691,7 @@ void wsgi_hook_init(server_rec *s, apr_pool_t *p)
 
     /* Setup module version information. */
 
-    sprintf(package, "mod_wsgi/%d.%d-TRUNK", MOD_WSGI_MAJORVERSION_NUMBER,
-            MOD_WSGI_MINORVERSION_NUMBER);
+    sprintf(package, "mod_wsgi/%s", MOD_WSGI_VERSION_STRING);
 
     ap_add_version_component(package);
 
@@ -6953,8 +6953,7 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
 
     /* Setup module version information. */
 
-    sprintf(package, "mod_wsgi/%d.%d-TRUNK", MOD_WSGI_MAJORVERSION_NUMBER,
-            MOD_WSGI_MINORVERSION_NUMBER);
+    sprintf(package, "mod_wsgi/%s", MOD_WSGI_VERSION_STRING);
 
     ap_add_version_component(pconf, package);
 
