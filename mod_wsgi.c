@@ -195,7 +195,7 @@ static apr_status_t apr_os_pipe_put_ex(apr_file_t **file,
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 1
 #define MOD_WSGI_MINORVERSION_NUMBER 0
-#define MOD_WSGI_VERSION_STRING "1.0c1"
+#define MOD_WSGI_VERSION_STRING "1.0c2-TRUNK"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -5000,7 +5000,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                 return "Invalid umask for WSGI daemon process.";
 
             errno = 0;
-            umask = strtol(value, (char **)&value, 7);
+            umask = strtol(value, (char **)&value, 8);
 
             if (*value || errno == ERANGE || umask < 0)
                 return "Invalid umask for WSGI daemon process.";
