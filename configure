@@ -272,7 +272,7 @@ PACKAGE_STRING=
 PACKAGE_BUGREPORT=
 
 ac_unique_file="mod_wsgi.c"
-ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS APXS PYTHON CPPFLAGS LDFLAGS LDLIBS LIBOBJS LTLIBOBJS'
+ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS APXS PYTHON CPPFLAGS LDFLAGS LDLIBS LIBEXECDIR LIBOBJS LTLIBOBJS'
 ac_subst_files=''
 
 # Initialize some variables set by options.
@@ -1392,6 +1392,9 @@ HTTPD_VERSION=`$HTTPD -v | awk '/version/ {print $3}' | awk -F/ '{print $2}'`
 echo "$as_me:$LINENO: result: $HTTPD_VERSION" >&5
 echo "${ECHO_T}$HTTPD_VERSION" >&6
 
+LIBEXECDIR="`${APXS} -q LIBEXECDIR`"
+
+
 HTTPD_MAJOR_VERSION=`echo ${HTTPD_VERSION} | sed -e 's/\..*//'`
 
 rm -f Makefile.in
@@ -2037,6 +2040,7 @@ s,@PYTHON@,$PYTHON,;t t
 s,@CPPFLAGS@,$CPPFLAGS,;t t
 s,@LDFLAGS@,$LDFLAGS,;t t
 s,@LDLIBS@,$LDLIBS,;t t
+s,@LIBEXECDIR@,$LIBEXECDIR,;t t
 s,@LIBOBJS@,$LIBOBJS,;t t
 s,@LTLIBOBJS@,$LTLIBOBJS,;t t
 CEOF

@@ -92,6 +92,9 @@ HTTPD="`${APXS} -q SBINDIR`/`${APXS} -q TARGET`"
 HTTPD_VERSION=`$HTTPD -v | awk '/version/ {print $3}' | awk -F/ '{print $2}'`
 AC_MSG_RESULT($HTTPD_VERSION)
 
+LIBEXECDIR="`${APXS} -q LIBEXECDIR`"
+AC_SUBST(LIBEXECDIR)
+
 HTTPD_MAJOR_VERSION=`echo ${HTTPD_VERSION} | sed -e 's/\..*//'`
 
 rm -f Makefile.in

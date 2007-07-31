@@ -12,8 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-APXS=@APXS@
-PYTHON=@PYTHON@
+APXS =  @APXS@
+PYTHON = @PYTHON@
+
+DESTDIR =
+LIBEXECDIR = @LIBEXECDIR@
 
 CPPFLAGS = @CPPFLAGS@
 CFLAGS =
@@ -25,8 +28,11 @@ all : mod_wsgi.so
 mod_wsgi.so : mod_wsgi.c
 	$(APXS) -c $(CPPFLAGS) $(CFLAGS) mod_wsgi.c $(LDFLAGS) $(LDLIBS)
 
-install : all
-	$(APXS) -i -n 'mod_wsgi' mod_wsgi.so
+$(DESTDIR)$(LIBEXECDIR) :
+	mkdir -p $@
+
+install : all $(DESTDIR)$(LIBEXECDIR)
+	$(APXS) -i -S LIBEXECDIR=$(DESTDIR)$(LIBEXECDIR) -n 'mod_wsgi' mod_wsgi.so
 
 clean :
 	-rm -f mod_wsgi.o mod_wsgi.so
