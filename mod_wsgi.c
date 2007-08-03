@@ -3224,9 +3224,8 @@ static void wsgi_python_init(apr_pool_t *p)
         /* Initialise threading. */
 
         PyEval_InitThreads();
-        PyEval_ReleaseLock();
-
         PyThreadState_Swap(NULL);
+        PyEval_ReleaseLock();
 
         wsgi_python_initialized = 1;
     }
