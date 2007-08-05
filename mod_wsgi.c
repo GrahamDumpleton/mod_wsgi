@@ -3188,12 +3188,10 @@ static void wsgi_python_init(apr_pool_t *p)
         if (wsgi_server_config->python_home)
             Py_SetPythonHome((char *)wsgi_server_config->python_home);
 
-#ifndef WIN32
         if (wsgi_server_config->python_path) {
             putenv(apr_psprintf(p, "PYTHONPATH=%s",
                                 wsgi_server_config->python_path));
         }
-#endif
 
         /* Initialise Python. */
 
@@ -4740,11 +4738,11 @@ static const command_rec wsgi_commands[] =
 #ifndef WIN32
     { "WSGIPythonExecutable", wsgi_set_python_executable, NULL,
         RSRC_CONF, TAKE1, "Python executable absolute path name." },
+#endif
     { "WSGIPythonHome", wsgi_set_python_home, NULL,
         RSRC_CONF, TAKE1, "Python prefix/exec_prefix absolute path names." },
     { "WSGIPythonPath", wsgi_set_python_path, NULL,
         RSRC_CONF, TAKE1, "Python module search path." },
-#endif
 
     { "WSGIRestrictStdin", wsgi_set_restrict_stdin, NULL,
         RSRC_CONF, TAKE1, "Enable/Disable restrictions on use of STDIN." },
@@ -7047,11 +7045,11 @@ static const command_rec wsgi_commands[] =
 #ifndef WIN32
     AP_INIT_TAKE1("WSGIPythonExecutable", wsgi_set_python_executable, NULL,
         RSRC_CONF, "Python executable absolute path name."),
+#endif
     AP_INIT_TAKE1("WSGIPythonHome", wsgi_set_python_home, NULL,
         RSRC_CONF, "Python prefix/exec_prefix absolute path names."),
     AP_INIT_TAKE1("WSGIPythonPath", wsgi_set_python_path, NULL,
         RSRC_CONF, "Python module search path."),
-#endif
 
     AP_INIT_TAKE1("WSGIRestrictStdin", wsgi_set_restrict_stdin, NULL,
         RSRC_CONF, "Enable/Disable restrictions on use of STDIN."),
