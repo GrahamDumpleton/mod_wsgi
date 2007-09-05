@@ -196,12 +196,13 @@ With Apache 1.3, it would also be necessary to add a line of the form:
 
     AddModule mod_wsgi.c
 
-If you wish to use mod_python at the same time as mod_wsgi, then you must
-be using a version of Python which has been configured and compiled so as
-to generate a shared library for Python. If you do not do this and either
-mod_python or mod_wsgi are compiled against a static library for Python,
-it is likely that either mod_python or mod_wsgi will crash Apache when
-used.
+If you wish to use mod_python at the same time as mod_wsgi, then mod_python
+must be compiled against the same version of Python. In addition to the
+same version of Python being used, you should use a version of Python which
+has been configured and compiled so as to generate a shared library for
+Python. If you do not do this and either mod_python or mod_wsgi are
+compiled against a static library for Python, it is likely that either
+mod_python or mod_wsgi will crash Apache when used.
 
 Note that this is not the fault of either mod_python or mod_wsgi but arises
 purely because your Python installation isn't using a shared library for
