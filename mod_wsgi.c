@@ -3614,9 +3614,6 @@ static int wsgi_execute_script(request_rec *r)
                                  "interpreter '%s'.", getpid(),
                                  config->application_group);
 
-                    if (Py_FlushLine())
-                        PyErr_Clear();
-
 #if APR_HAS_THREADS
                     apr_thread_mutex_unlock(wsgi_module_lock);
 #endif
