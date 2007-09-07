@@ -897,6 +897,9 @@ static void Log_output(LogObject *self, const char *msg)
             strncpy(s+m, p, q-p);
             s[n-1] = '\0';
 
+            free(self->s);
+            self->s = NULL;
+
             if (self->r) {
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_rerror(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
@@ -909,9 +912,6 @@ static void Log_output(LogObject *self, const char *msg)
                              wsgi_server, "%s", s);
                 Py_END_ALLOW_THREADS
             }
-
-            free(self->s);
-            self->s = NULL;
 
             free(s);
         }
