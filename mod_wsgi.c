@@ -3618,9 +3618,7 @@ static int wsgi_execute_script(request_rec *r)
                         PyErr_Clear();
 
 #if APR_HAS_THREADS
-                    Py_BEGIN_ALLOW_THREADS
                     apr_thread_mutex_unlock(wsgi_module_lock);
-                    Py_END_ALLOW_THREADS
 #endif
 
                     return HTTP_INTERNAL_SERVER_ERROR;
@@ -3641,9 +3639,7 @@ static int wsgi_execute_script(request_rec *r)
     /* Safe now to release the module lock. */
 
 #if APR_HAS_THREADS
-    Py_BEGIN_ALLOW_THREADS
     apr_thread_mutex_unlock(wsgi_module_lock);
-    Py_END_ALLOW_THREADS
 #endif
 
     /* Assume an internal server error unless everything okay. */
