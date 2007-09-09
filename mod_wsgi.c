@@ -203,6 +203,12 @@ module MODULE_VAR_EXPORT wsgi_module;
 module AP_MODULE_DECLARE_DATA wsgi_module;
 #endif
 
+/* Constants. */
+
+#define WSGI_RELOAD_MODULE 0
+#define WSGI_RELOAD_INTERPRETER 1
+#define WSGI_RELOAD_PROCESS 2
+
 /* Base server object. */
 
 static server_rec *wsgi_server = NULL;
@@ -213,9 +219,11 @@ static pid_t wsgi_parent_pid = 0;
 static int wsgi_multiprocess = 1;
 static int wsgi_multithread = 1;
 
-/* Daemon process list. */
+/* Daemon information. */
 
 apr_array_header_t *wsgi_daemon_list = NULL;
+
+static int volatile wsgi_daemon_shutdown = 0;
 
 /* Configuration objects. */
 
@@ -756,10 +764,10 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     config->reload_mechanism = dconfig->reload_mechanism;
 
-    if (config->reload_mechanism < 0) {
+    if (config->reload_mechanism == -1) {
         config->reload_mechanism = sconfig->reload_mechanism;
-        if (config->reload_mechanism < 0)
-            config->reload_mechanism = 0;
+        if (config->reload_mechanism == -1)
+            config->reload_mechanism = WSGI_RELOAD_MODULE;
     }
 
     config->output_buffering = dconfig->output_buffering;
@@ -3552,30 +3560,68 @@ static int wsgi_execute_script(request_rec *r)
         found = 1;
 
     /*
-     * If script reloading is enabled and the module exists, see
-     * if it has been modified since the last time it was
-     * accessed. If it has, interpreter reloading is enabled
-     * and it is not the main Python interpreter, we need to
-     * trigger destruction of the interpreter by removing it
-     * from the interpreters table, releasing it and then
-     * reacquiring it. If just script reloading is enabled,
-     * remove the module from the modules dictionary before
-     * reloading it again. If code is executing within the
-     * module at the time, the callers reference count on the
-     * module should ensure it isn't actually destroyed until it
-     * is finished.
+     * If script reloading is enabled and the module for it has
+     * previously been loaded, see if it has been modified since
+     * the last time it was accessed.
      */
 
     if (module && config->script_reloading) {
         if (wsgi_reload_required(r, module)) {
-            /* Discard reference to loaded module. */
+            /*
+             * Script file has changed. Discard reference to
+             * loaded module and work out what action we are
+             * supposed to take. Choices are process reloading,
+             * interpreter reloading and module reloading.
+             * Process reloading cannot be be performed unless a
+             * daemon process is being used and interpreter
+             * reloading cannot be performed on the first
+             * interpreter created by Python.
+             */
 
             Py_DECREF(module);
             module = NULL;
 
-            /* Check for interpreter or module reloading. */
+            if (*config->process_group &&
+                config->reload_mechanism == WSGI_RELOAD_PROCESS) {
 
-            if (config->reload_mechanism == 1 && *config->application_group) {
+                /*
+                 * Need to restart the daemon process. We bail
+                 * out on the request process here, sending back
+                 * a special response header indicating that
+                 * process is being restarted and that remote
+                 * end should abandon connection and attempt to
+                 * reconnect again. We also need to signal this
+                 * process so it will actually shutdown. The
+                 * process supervisor code will ensure that it
+                 * is restarted.
+                 */
+
+                Py_BEGIN_ALLOW_THREADS
+                ap_log_rerror(APLOG_MARK, WSGI_LOG_INFO(0), r,
+                             "mod_wsgi (pid=%d): Force restart of "
+                             "process '%s'.", getpid(),
+                             config->process_group);
+                Py_END_ALLOW_THREADS
+
+#if APR_HAS_THREADS
+                apr_thread_mutex_unlock(wsgi_module_lock);
+#endif
+
+                wsgi_release_interpreter(interp);
+
+                r->status = HTTP_INTERNAL_SERVER_ERROR;
+                r->status_line = "0 Restart";
+
+                wsgi_daemon_shutdown++;
+                kill(getpid(), SIGINT);
+
+                return OK;
+            }
+            else if (*config->application_group &&
+                     config->reload_mechanism == WSGI_RELOAD_INTERPRETER) {
+
+                /* Need to reload the interpreter. */
+
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_rerror(APLOG_MARK, WSGI_LOG_INFO(0), r,
                              "mod_wsgi (pid=%d): Force reload of "
@@ -3623,9 +3669,64 @@ static int wsgi_execute_script(request_rec *r)
 
                 found = 0;
             }
-            else
+            else {
+                /*
+                 * Need to reload just the script module. Remove
+                 * the module from the modules dictionary before
+                 * reloading it again. If code is executing
+                 * within the module at the time, the callers
+                 * reference count on the module should ensure
+                 * it isn't actually destroyed until it is
+                 * finished.
+                 */
+
                 PyDict_DelItemString(modules, name);
+            }
         }
+    }
+
+    /*
+     * When process reloading is in use need to indicate
+     * that request content should now be sent through.
+     * This is done by writing a special response header
+     * directly out onto the appropriate network output
+     * filter. The special response is picked up by
+     * remote end and data will then be sent.
+     */
+
+    if (*config->process_group &&
+        config->reload_mechanism == WSGI_RELOAD_PROCESS) {
+
+        ap_filter_t *filters;
+        apr_bucket_brigade *bb;
+        apr_bucket *b;
+
+        const char *data = "Status: 0 Continue\r\n\r\n";
+        int length = strlen(data);
+
+        filters = r->output_filters;
+        while (filters && filters->frec->ftype != AP_FTYPE_NETWORK) {
+            filters = filters->next;
+        }
+
+        bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+
+        b = apr_bucket_transient_create(data, length,
+                                        r->connection->bucket_alloc);
+        APR_BRIGADE_INSERT_TAIL(bb, b);
+
+        b = apr_bucket_flush_create(r->connection->bucket_alloc);
+        APR_BRIGADE_INSERT_TAIL(bb, b);
+
+        /*
+         * This should always work, so ignore any errors
+         * from passing the brigade to the network
+         * output filter. If there are are problems they
+         * will be picked up further down in processing
+         * anyway.
+         */
+
+        ap_pass_brigade(filters, bb);
     }
 
     /* Load module if not already loaded. */
@@ -3675,11 +3776,11 @@ static int wsgi_execute_script(request_rec *r)
                 adapter->input->r = NULL;
 
                 /*
-		 * Flush any data held within error log object
-		 * and mark it as expired so that it can't be
-		 * used beyond life of the request. We hope that
-		 * this doesn't error, as it will overwrite any
-		 * error from application if it does.
+                 * Flush any data held within error log object
+                 * and mark it as expired so that it can't be
+                 * used beyond life of the request. We hope that
+                 * this doesn't error, as it will overwrite any
+                 * error from application if it does.
                  */
 
                 args = PyTuple_New(0);
@@ -4204,11 +4305,15 @@ static const char *wsgi_set_reload_mechanism(cmd_parms *cmd, void *mconfig,
         dconfig = (WSGIDirectoryConfig *)mconfig;
 
         if (strcasecmp(f, "Module") == 0)
-            dconfig->reload_mechanism = 0;
+            dconfig->reload_mechanism = WSGI_RELOAD_MODULE;
         else if (strcasecmp(f, "Interpreter") == 0)
-            dconfig->reload_mechanism = 1;
-        else
-            return "WSGIReloadMechanism must be one of: Module | Interpreter";
+            dconfig->reload_mechanism = WSGI_RELOAD_INTERPRETER;
+        else if (strcasecmp(f, "Process") == 0)
+            dconfig->reload_mechanism = WSGI_RELOAD_PROCESS;
+        else {
+            return "WSGIReloadMechanism must be one of: "
+                   "Module | Interpreter | Process";
+        }
     }
     else {
         WSGIServerConfig *sconfig = NULL;
@@ -4216,11 +4321,15 @@ static const char *wsgi_set_reload_mechanism(cmd_parms *cmd, void *mconfig,
                                        &wsgi_module);
 
         if (strcasecmp(f, "Module") == 0)
-            sconfig->reload_mechanism = 0;
+            sconfig->reload_mechanism = WSGI_RELOAD_MODULE;
         else if (strcasecmp(f, "Interpreter") == 0)
-            sconfig->reload_mechanism = 1;
-        else
-            return "WSGIReloadMechanism must be one of: Module | Interpreter";
+            sconfig->reload_mechanism = WSGI_RELOAD_INTERPRETER;
+        else if (strcasecmp(f, "Process") == 0)
+            sconfig->reload_mechanism = WSGI_RELOAD_PROCESS;
+        else {
+            return "WSGIReloadMechanism must be one of: "
+                   "Module | Interpreter | Process";
+        }
     }
 
     return NULL;
@@ -4902,8 +5011,9 @@ static apr_hash_t *wsgi_daemon_listeners = NULL;
 
 static WSGIDaemonProcess *wsgi_daemon_process = NULL;
 
-static int wsgi_daemon_shutdown = 0;
-static int wsgi_request_count = 0;
+static apr_thread_mutex_t* wsgi_daemon_lock = NULL;
+
+static int volatile wsgi_request_count = 0;
 
 static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                                            const char *args)
@@ -5442,6 +5552,22 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
     while (!wsgi_daemon_shutdown) {
         apr_status_t rv;
 
+        /*
+         * Only allow one thread in this process to attempt to
+         * acquire the global process lock as the global process
+         * lock will actually allow all threads in this process
+         * through once one in this process acquires lock. Only
+         * allowing one means better chance of another process
+         * subsequently getting it thereby distributing requests
+         * across processes better and reducing chance of Python
+         * GIL contention.
+         */
+
+        apr_thread_mutex_lock(wsgi_daemon_lock);
+
+        if (wsgi_daemon_shutdown)
+            break;
+
         if (group->mutex) {
             /*
              * Grab the accept mutex across all daemon processes
@@ -5497,6 +5623,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             if (wsgi_daemon_shutdown) {
                 apr_proc_mutex_unlock(group->mutex);
 
+                apr_thread_mutex_unlock(wsgi_daemon_lock);
+
                 break;
             }
         }
@@ -5522,30 +5650,27 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
         apr_pollset_add(pollset, &pfd);
 
-        while (!wsgi_daemon_shutdown) {
-            rv = apr_pollset_poll(pollset, -1, &numdesc, &pdesc);
+        rv = apr_pollset_poll(pollset, -1, &numdesc, &pdesc);
 
-            if (rv == APR_SUCCESS)
-                break;
+        if (rv != APR_SUCCESS && !APR_STATUS_IS_EINTR(rv)) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(rv),
+                         wsgi_server, "mod_wsgi (pid=%d): "
+                         "Unable to poll daemon socket for '%s'. "
+                         "Shutting down daemon process.",
+                         getpid(), group->socket);
 
-            if (APR_STATUS_IS_EINTR(rv))
-                break;
+            wsgi_daemon_shutdown++;
+            kill(getpid(), SIGTERM);
+            sleep(5);
 
-            if (rv != APR_SUCCESS && !APR_STATUS_IS_EINTR(rv)) {
-                ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(rv),
-                             wsgi_server, "mod_wsgi (pid=%d): "
-                             "Unable to poll daemon socket for '%s'. "
-                             "Shutting down daemon process.",
-                             getpid(), group->socket);
-
-                kill(getpid(), SIGTERM);
-                sleep(5);
-            }
+            break;
         }
 
         if (wsgi_daemon_shutdown) {
             if (group->mutex)
                 apr_proc_mutex_unlock(group->mutex);
+
+            apr_thread_mutex_unlock(wsgi_daemon_lock);
 
             apr_pool_destroy(ptrans);
 
@@ -5555,6 +5680,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
         if (rv != APR_SUCCESS && APR_STATUS_IS_EINTR(rv)) {
             if (group->mutex)
                 apr_proc_mutex_unlock(group->mutex);
+
+            apr_thread_mutex_unlock(wsgi_daemon_lock);
 
             apr_pool_destroy(ptrans);
 
@@ -5570,6 +5697,7 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             rv = apr_proc_mutex_unlock(group->mutex);
             if (rv != APR_SUCCESS) {
                 if (!wsgi_daemon_shutdown) {
+                    apr_thread_mutex_unlock(wsgi_daemon_lock);
                     ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(rv),
                                  wsgi_server, "mod_wsgi (pid=%d): "
                                  "Couldn't release accept mutex '%s'.",
@@ -5581,6 +5709,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                 }
             }
         }
+
+        apr_thread_mutex_unlock(wsgi_daemon_lock);
 
         if (status != APR_SUCCESS && APR_STATUS_IS_EINTR(status)) {
             apr_pool_destroy(ptrans);
@@ -5611,8 +5741,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                                  daemon->group->name);
                 }
 
-                kill(getpid(), SIGINT);
                 wsgi_daemon_shutdown++;
+                kill(getpid(), SIGINT);
             }
         }
     }
@@ -5948,9 +6078,16 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         wsgi_daemon_process = daemon;
 
-        /* Create socket wrapper for listener file descriptor. */
+        /*
+         * Create socket wrapper for listener file descriptor
+         * and mutex for controlling which thread gets to
+         * perform the accept() when a connection is ready.
+         */
 
         apr_os_sock_put(&daemon->listener, &daemon->group->listener_fd, p);
+
+        apr_thread_mutex_create(&wsgi_daemon_lock,
+                                APR_THREAD_MUTEX_UNNESTED, p);
 
         /* Run the main routine for the daemon process. */
 
@@ -6294,7 +6431,8 @@ static int wsgi_execute_remote(request_rec *r)
     int seen_eos;
     int child_stopped_reading;
     apr_file_t *tempsock;
-    apr_bucket_brigade *bb;
+    apr_bucket_brigade *bbout;
+    apr_bucket_brigade *bbin;
     apr_bucket *b;
 
     /* Grab request configuration. */
@@ -6405,7 +6543,7 @@ static int wsgi_execute_remote(request_rec *r)
     /*
      * Wrap the socket in an APR file object so that socket can
      * be more easily written to and so that pipe bucket can be
-     * created later for reading from it. Note we file object is
+     * created later for reading from it. Note the file object is
      * initialised such that it will close socket when no longer
      * required so can kill off registration done at higher
      * level to close socket.
@@ -6414,17 +6552,114 @@ static int wsgi_execute_remote(request_rec *r)
     apr_os_pipe_put_ex(&tempsock, &daemon->fd, 1, r->pool);
     apr_pool_cleanup_kill(r->pool, daemon, wsgi_close_socket);
 
+    /* Setup bucket brigade for reading response from daemon. */
+
+    bbin = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+    b = apr_bucket_pipe_create(tempsock, r->connection->bucket_alloc);
+    APR_BRIGADE_INSERT_TAIL(bbin, b);
+    b = apr_bucket_eos_create(r->connection->bucket_alloc);
+    APR_BRIGADE_INSERT_TAIL(bbin, b);
+
+    /*
+     * If process reload mechanism enabled, then we need to look
+     * for marker indicating it is okay to transfer content, or
+     * whether process is being restarted and that we should
+     * therefore create a connection to daemon process again.
+     */
+
+    if (*config->process_group &&
+        config->reload_mechanism == WSGI_RELOAD_PROCESS) {
+
+        int retries = 0;
+        int maximum = (2*group->processes)+1;
+
+        /*
+         * While special header indicates a restart is being
+         * done, then keep trying to reconnect. Cap the number
+         * of retries to at most about 2 times the number of
+         * daemon processes in the process group. If still being
+         * told things are being restarted, the we will error
+         * indicating service is unavailable.
+         */
+
+        while (retries < maximum) {
+
+            /* Scan the CGI script like headers from daemon. */
+
+            if ((status = ap_scan_script_header_err_brigade(r, bbin, NULL)))
+                return HTTP_INTERNAL_SERVER_ERROR;
+
+            /* Status must be zero for our special headers. */
+
+            if (r->status != 0) {
+                ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                             "mod_wsgi (pid=%d): Unexpected status from "
+                             "WSGI daemon process '%d'.", getpid(), r->status);
+                return HTTP_INTERNAL_SERVER_ERROR;
+            }
+
+            if (strcmp(r->status_line, "0 Restart"))
+                break;
+
+            /* Need to close previous socket connection first. */
+
+            apr_file_close(tempsock);
+
+            /* Has maximum number of attempts been reached. */
+
+            if (retries == maximum) {
+                ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(rv), r,
+                             "mod_wsgi (pid=%d): Maximum number of WSGI "
+                             "daemon process restart connects reached '%d'.",
+                             getpid(), maximum);
+                return HTTP_SERVICE_UNAVAILABLE;
+            }
+
+            retries++;
+
+            ap_log_rerror(APLOG_MARK, WSGI_LOG_INFO(0), r,
+                         "mod_wsgi (pid=%d): Connect after WSGI daemon "
+                         "process restart, attempt #%d.", getpid(),
+                         retries);
+
+            /* Connect and setup connection just like before. */
+
+            if ((status = wsgi_connect_daemon(r, daemon)) != OK)
+                return status;
+
+            if ((rv = wsgi_send_request(r, config, daemon)) != APR_SUCCESS) {
+                ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(rv), r,
+                             "mod_wsgi (pid=%d): Unable to send request "
+                             "details to WSGI daemon process '%s' on '%s'.",
+                             getpid(), daemon->name, daemon->socket);
+
+                return HTTP_INTERNAL_SERVER_ERROR;
+            }
+
+            apr_os_pipe_put_ex(&tempsock, &daemon->fd, 1, r->pool);
+            apr_pool_cleanup_kill(r->pool, daemon, wsgi_close_socket);
+
+            apr_brigade_destroy(bbin);
+
+            bbin = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+            b = apr_bucket_pipe_create(tempsock, r->connection->bucket_alloc);
+            APR_BRIGADE_INSERT_TAIL(bbin, b);
+            b = apr_bucket_eos_create(r->connection->bucket_alloc);
+            APR_BRIGADE_INSERT_TAIL(bbin, b);
+        }
+    }
+
     /* Transfer any request content which was provided. */
 
     seen_eos = 0;
     child_stopped_reading = 0;
 
-    bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+    bbout = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 
     do {
         apr_bucket *bucket;
 
-        rv = ap_get_brigade(r->input_filters, bb, AP_MODE_READBYTES,
+        rv = ap_get_brigade(r->input_filters, bbout, AP_MODE_READBYTES,
                             APR_BLOCK_READ, HUGE_STRING_LEN);
 
         if (rv != APR_SUCCESS) {
@@ -6434,8 +6669,8 @@ static int wsgi_execute_remote(request_rec *r)
             return HTTP_INTERNAL_SERVER_ERROR;
         }
 
-        for (bucket = APR_BRIGADE_FIRST(bb);
-             bucket != APR_BRIGADE_SENTINEL(bb);
+        for (bucket = APR_BRIGADE_FIRST(bbout);
+             bucket != APR_BRIGADE_SENTINEL(bbout);
              bucket = APR_BUCKET_NEXT(bucket))
         {
             const char *data;
@@ -6471,7 +6706,7 @@ static int wsgi_execute_remote(request_rec *r)
                 child_stopped_reading = 1;
             }
         }
-        apr_brigade_cleanup(bb);
+        apr_brigade_cleanup(bbout);
     }
     while (!seen_eos);
 
@@ -6482,19 +6717,10 @@ static int wsgi_execute_remote(request_rec *r)
 
     shutdown(daemon->fd, 1);
 
-    /* Setup bucket brigade for reading response from daemon. */
-
-    bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
-    b = apr_bucket_pipe_create(tempsock, r->connection->bucket_alloc);
-    APR_BRIGADE_INSERT_TAIL(bb, b);
-    b = apr_bucket_eos_create(r->connection->bucket_alloc);
-    APR_BRIGADE_INSERT_TAIL(bb, b);
-
     /* Scan the CGI script like headers from daemon. */
 
-    if ((status = ap_scan_script_header_err_brigade(r, bb, NULL))) {
+    if ((status = ap_scan_script_header_err_brigade(r, bbin, NULL)))
         return HTTP_INTERNAL_SERVER_ERROR;
-    }
 
     /*
      * Look for special case of status being 0 and
@@ -6509,7 +6735,7 @@ static int wsgi_execute_remote(request_rec *r)
 
     /* Transfer any response content. */
 
-    ap_pass_brigade(r->output_filters, bb);
+    ap_pass_brigade(r->output_filters, bbin);
 
     return OK;
 }
@@ -6917,7 +7143,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (wsgi_execute_script(r) != OK) {
         r->status = HTTP_INTERNAL_SERVER_ERROR;
-        r->status_line = "0 Internal Server Error";
+        r->status_line = "0 Error";
     }
 
     /*
