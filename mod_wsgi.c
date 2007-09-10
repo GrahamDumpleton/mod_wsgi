@@ -3744,6 +3744,7 @@ static int wsgi_execute_script(request_rec *r)
      * remote end and data will then be sent.
      */
 
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
     if (*config->process_group &&
         config->reload_mechanism == WSGI_RELOAD_PROCESS) {
 
@@ -3778,6 +3779,7 @@ static int wsgi_execute_script(request_rec *r)
 
         ap_pass_brigade(filters, bb);
     }
+#endif
 
     /* Load module if not already loaded. */
 
