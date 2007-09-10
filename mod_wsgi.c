@@ -36,8 +36,10 @@
 #if !defined(AP_SERVER_MAJORVERSION_NUMBER)
 #if AP_MODULE_MAGIC_AT_LEAST(20010224,0)
 #define AP_SERVER_MAJORVERSION_NUMBER 2
+#define AP_SERVER_MINORVERSION_NUMBER 0
 #else
 #define AP_SERVER_MAJORVERSION_NUMBER 1
+#define AP_SERVER_MINORVERSION_NUMBER 3
 #endif
 #endif
 
@@ -2775,6 +2777,18 @@ static InterpreterObject *newInterpreterObject(const char *name,
     PyModule_AddObject(module, "version", Py_BuildValue("(ii)",
                        MOD_WSGI_MAJORVERSION_NUMBER,
                        MOD_WSGI_MINORVERSION_NUMBER));
+
+    /*
+     * Add Apache version information to the Python mod_wsgi
+     * module. This is added so that it can be used by SWIG
+     * bindings for Apache to work out which extension modules
+     * to load where bindings have been compiled and installed
+     * for multiple versions of Apache on the same host.
+     */
+
+    PyModule_AddObject(module, "ap_version", Py_BuildValue("(ii)",
+                       AP_SERVER_MAJORVERSION_NUMBER,
+                       AP_SERVER_MINORVERSION_NUMBER));
 
     /* Restore previous thread state. */
 
