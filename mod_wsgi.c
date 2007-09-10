@@ -2733,7 +2733,7 @@ static InterpreterObject *newInterpreterObject(const char *name,
     }
 
     /*
-     * Create mod_wsgi Python module. We first try and import an
+     * Create 'mod_wsgi' Python module. We first try and import an
      * external Python module of the same name. The intent is
      * that this external module would provide optional features
      * implementable using pure Python code. Don't want to
@@ -2756,39 +2756,76 @@ static InterpreterObject *newInterpreterObject(const char *name,
             PyErr_Print();
             PyDict_DelItemString(modules, "mod_wsgi");
         }
-        else if (!*name) {
-            Py_BEGIN_ALLOW_THREADS
-            ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                         "mod_wsgi (pid=%d): Python extension modules for "
-                         "mod_wsgi are not available.", getpid());
-            Py_END_ALLOW_THREADS
-        }
 
         PyErr_Clear();
 
         module = PyImport_AddModule("mod_wsgi");
+
+        Py_INCREF(module);
+    }
+    else if (!*name) {
+        Py_BEGIN_ALLOW_THREADS
+        ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Extensions for mod_wsgi available.",
+                     getpid());
+        Py_END_ALLOW_THREADS
     }
 
     /*
      * Add Apache module version information to the Python
-     * mod_wsgi module.
+     * 'mod_wsgi' module.
      */
 
     PyModule_AddObject(module, "version", Py_BuildValue("(ii)",
                        MOD_WSGI_MAJORVERSION_NUMBER,
                        MOD_WSGI_MINORVERSION_NUMBER));
 
+    Py_DECREF(module);
+
     /*
-     * Add Apache version information to the Python mod_wsgi
-     * module. This is added so that it can be used by SWIG
-     * bindings for Apache to work out which extension modules
-     * to load where bindings have been compiled and installed
-     * for multiple versions of Apache on the same host.
+     * Create 'apache' Python module. We first try and import an
+     * external Python module of the same name. The intent is
+     * that this external module would provide the SWIG bindings
+     * for the internal Apache APIs.
      */
 
-    PyModule_AddObject(module, "ap_version", Py_BuildValue("(ii)",
+    module = PyImport_ImportModule("apache");
+
+    if (!module) {
+        PyObject *modules = NULL;
+
+        modules = PyImport_GetModuleDict();
+        module = PyDict_GetItemString(modules, "apache");
+
+        if (module) {
+            PyErr_Print();
+            PyDict_DelItemString(modules, "apache");
+        }
+
+        PyErr_Clear();
+
+        module = PyImport_AddModule("apache");
+
+        Py_INCREF(module);
+    }
+    else if (!*name) {
+        Py_BEGIN_ALLOW_THREADS
+        ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Bindings for Apache available.",
+                     getpid());
+        Py_END_ALLOW_THREADS
+    }
+
+    /*
+     * Add Apache version information to the Python 'apache'
+     * module.
+     */
+
+    PyModule_AddObject(module, "version", Py_BuildValue("(ii)",
                        AP_SERVER_MAJORVERSION_NUMBER,
                        AP_SERVER_MINORVERSION_NUMBER));
+
+    Py_DECREF(module);
 
     /* Restore previous thread state. */
 
