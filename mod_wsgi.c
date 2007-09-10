@@ -223,7 +223,10 @@ static int wsgi_multithread = 1;
 
 /* Daemon information. */
 
-apr_array_header_t *wsgi_daemon_list = NULL;
+static apr_array_header_t *wsgi_daemon_list = NULL;
+
+static apr_pool_t *wsgi_parent_pool = NULL;
+static apr_pool_t *wsgi_daemon_pool = NULL;
 
 static int volatile wsgi_daemon_shutdown = 0;
 
@@ -258,6 +261,7 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
+    int pass_apache_request;
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
@@ -301,6 +305,7 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->application_group = NULL;
     object->callable_object = NULL;
 
+    object->pass_apache_request = -1;
     object->pass_authorization = -1;
     object->script_reloading = -1;
     object->reload_mechanism = -1;
@@ -364,6 +369,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->callable_object = parent->callable_object;
 
+    if (child->pass_apache_request != -1)
+        config->pass_apache_request = child->pass_apache_request;
+    else
+        config->pass_apache_request = parent->pass_apache_request;
+
     if (child->pass_authorization != -1)
         config->pass_authorization = child->pass_authorization;
     else
@@ -401,6 +411,7 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
+    int pass_apache_request;
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
@@ -420,6 +431,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->application_group = NULL;
     object->callable_object = NULL;
 
+    object->pass_apache_request = -1;
     object->pass_authorization = -1;
     object->script_reloading = -1;
     object->reload_mechanism = -1;
@@ -470,6 +482,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->callable_object = parent->callable_object;
 
+    if (child->pass_apache_request != -1)
+        config->pass_apache_request = child->pass_apache_request;
+    else
+        config->pass_apache_request = parent->pass_apache_request;
+
     if (child->pass_authorization != -1)
         config->pass_authorization = child->pass_authorization;
     else
@@ -507,6 +524,7 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
+    int pass_apache_request;
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
@@ -747,6 +765,14 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         config->callable_object = sconfig->callable_object;
 
     config->callable_object = wsgi_callable_object(r, config->callable_object);
+
+    config->pass_apache_request = dconfig->pass_apache_request;
+
+    if (config->pass_apache_request < 0) {
+        config->pass_apache_request = sconfig->pass_apache_request;
+        if (config->pass_apache_request < 0)
+            config->pass_apache_request = 0;
+    }
 
     config->pass_authorization = dconfig->pass_authorization;
 
@@ -1148,8 +1174,8 @@ void wsgi_log_python_error(request_rec *r, LogObject *log)
                                  Py_None, log);
             result = PyEval_CallObject(o, args);
             Py_DECREF(args);
+            Py_DECREF(o);
         }
-        Py_DECREF(o);
     }
 
     if (!result) {
@@ -1166,8 +1192,7 @@ void wsgi_log_python_error(request_rec *r, LogObject *log)
 
         if (!PyErr_ExceptionMatches(PyExc_SystemExit)) {
             PyErr_Print();
-            if (Py_FlushLine())
-                PyErr_Clear();
+            PyErr_Clear();
         }
         else {
             PyErr_Clear();
@@ -2276,6 +2301,68 @@ static PyObject *Adapter_environ(AdapterObject *self)
     object = (PyObject *)self->input;
     PyDict_SetItemString(vars, "wsgi.input", object);
 
+    /*
+     * If request being handled in first Python interpreter
+     * instance in embedded mode and passing of Apache request
+     * object enabled, add it to environment.
+     */
+
+    if (self->config->pass_apache_request) {
+        if (!wsgi_daemon_pool && !*self->config->application_group) {
+            PyObject *module;
+
+            module = PyImport_ImportModule("apache.httpd");
+
+            if (module) {
+                PyObject *d = NULL;
+                PyObject *o = NULL;
+
+                d = PyModule_GetDict(module);
+                o = PyDict_GetItemString(d, "request_rec");
+
+                if (o) {
+                    PyObject *v = NULL;
+                    PyObject *args = NULL;
+
+                    v = PyCObject_FromVoidPtr(self->r, 0);
+
+                    Py_INCREF(o);
+
+                    args = Py_BuildValue("(O)", v);
+                    object = PyEval_CallObject(o, args);
+                    Py_DECREF(args);
+
+                    Py_XDECREF(o);
+
+                    if (object) {
+                        PyDict_SetItemString(vars, "apache.request", object);
+                    }
+                    else {
+                        ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                                     "mod_wsgi (pid=%d): Unable to create "
+                                     "'apache.request' object.", getpid());
+
+                        PyErr_Print();
+                        PyErr_Clear();
+                    }
+
+                    Py_XDECREF(object);
+                    Py_XDECREF(v);
+                }
+            }
+            else {
+                ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Unable to import "
+                             "'apache.httpd' module.", getpid());
+
+                PyErr_Print();
+                PyErr_Clear();
+            }
+
+            Py_XDECREF(module);
+        }
+    }
+
     return vars;
 }
 
@@ -2572,8 +2659,8 @@ static PyObject *wsgi_signal_intercept(PyObject *self, PyObject *args)
             Py_XDECREF(result);
             Py_DECREF(args);
             Py_DECREF(log);
+            Py_DECREF(o);
         }
-        Py_DECREF(o);
     }
 
     Py_INCREF(m);
@@ -2754,10 +2841,10 @@ static InterpreterObject *newInterpreterObject(const char *name,
 
         if (module) {
             PyErr_Print();
+            PyErr_Clear();
+
             PyDict_DelItemString(modules, "mod_wsgi");
         }
-
-        PyErr_Clear();
 
         module = PyImport_AddModule("mod_wsgi");
 
@@ -2766,7 +2853,7 @@ static InterpreterObject *newInterpreterObject(const char *name,
     else if (!*name) {
         Py_BEGIN_ALLOW_THREADS
         ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                     "mod_wsgi (pid=%d): Extensions for mod_wsgi available.",
+                     "mod_wsgi (pid=%d): Imported 'mod_wsgi'.",
                      getpid());
         Py_END_ALLOW_THREADS
     }
@@ -2783,37 +2870,49 @@ static InterpreterObject *newInterpreterObject(const char *name,
     Py_DECREF(module);
 
     /*
-     * Create 'apache' Python module. We first try and import an
+     * Create 'apache' Python module. If this is the first
+     * interpreter created by Python, we first try and import an
      * external Python module of the same name. The intent is
      * that this external module would provide the SWIG bindings
-     * for the internal Apache APIs.
+     * for the internal Apache APIs. Only support use of such
+     * bindings in the first interpreter created due to
+     * threading issues in SWIG generated.
      */
 
-    module = PyImport_ImportModule("apache");
+    if (!*name) {
+        module = PyImport_ImportModule("apache");
 
-    if (!module) {
-        PyObject *modules = NULL;
+        if (!module) {
+            PyObject *modules = NULL;
 
-        modules = PyImport_GetModuleDict();
-        module = PyDict_GetItemString(modules, "apache");
+            modules = PyImport_GetModuleDict();
+            module = PyDict_GetItemString(modules, "apache");
 
-        if (module) {
-            PyErr_Print();
-            PyDict_DelItemString(modules, "apache");
+            if (module) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Unable to import "
+                             "'apache' extension module.", getpid());
+
+                PyErr_Print();
+                PyErr_Clear();
+
+                PyDict_DelItemString(modules, "apache");
+            }
+
+            module = PyImport_AddModule("apache");
+
+            Py_INCREF(module);
         }
-
-        PyErr_Clear();
-
+        else {
+            ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                         "mod_wsgi (pid=%d): Imported 'apache'.",
+                         getpid());
+        }
+    }
+    else {
         module = PyImport_AddModule("apache");
 
         Py_INCREF(module);
-    }
-    else if (!*name) {
-        Py_BEGIN_ALLOW_THREADS
-        ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                     "mod_wsgi (pid=%d): Bindings for Apache available.",
-                     getpid());
-        Py_END_ALLOW_THREADS
     }
 
     /*
@@ -2972,8 +3071,8 @@ static void Interpreter_dealloc(InterpreterObject *self)
                         result = PyEval_CallObject(o, args);
                         Py_DECREF(args);
                         Py_DECREF(log);
+                        Py_DECREF(o);
                     }
-                    Py_DECREF(o);
                 }
 
                 if (!result) {
@@ -2990,8 +3089,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
                     if (!PyErr_ExceptionMatches(PyExc_SystemExit)) {
                         PyErr_Print();
-                        if (Py_FlushLine())
-                            PyErr_Clear();
+                        PyErr_Clear();
                     }
                     else {
                         PyErr_Clear();
@@ -3082,8 +3180,8 @@ static void Interpreter_dealloc(InterpreterObject *self)
                     result = PyEval_CallObject(o, args);
                     Py_DECREF(args);
                     Py_DECREF(log);
+                    Py_DECREF(o);
                 }
-                Py_DECREF(o);
             }
 
             if (!result) {
@@ -3100,8 +3198,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
                 if (!PyErr_ExceptionMatches(PyExc_SystemExit)) {
                     PyErr_Print();
-                    if (Py_FlushLine())
-                        PyErr_Clear();
+                    PyErr_Clear();
                 }
                 else {
                     PyErr_Clear();
@@ -3615,8 +3712,7 @@ static int wsgi_execute_script(request_rec *r)
                       "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
                       getpid(), config->application_group);
 
-        if (Py_FlushLine())
-            PyErr_Clear();
+        PyErr_Clear();
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -4321,6 +4417,36 @@ static const char *wsgi_set_callable_object(cmd_parms *cmd, void *mconfig,
         sconfig = ap_get_module_config(cmd->server->module_config,
                                        &wsgi_module);
         sconfig->callable_object = n;
+    }
+
+    return NULL;
+}
+
+static const char *wsgi_set_pass_apache_request(cmd_parms *cmd, void *mconfig,
+                                                const char *f)
+{
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+
+        if (strcasecmp(f, "Off") == 0)
+            dconfig->pass_apache_request = 0;
+        else if (strcasecmp(f, "On") == 0)
+            dconfig->pass_apache_request = 1;
+        else
+            return "WSGIPassApacheRequest must be one of: Off | On";
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+
+        if (strcasecmp(f, "Off") == 0)
+            sconfig->pass_apache_request = 0;
+        else if (strcasecmp(f, "On") == 0)
+            sconfig->pass_apache_request = 1;
+        else
+            return "WSGIPassApacheRequest must be one of: Off | On";
     }
 
     return NULL;
@@ -5090,9 +5216,6 @@ typedef struct {
     const char *socket;
     int fd;
 } WSGIDaemonSocket;
-
-static apr_pool_t *wsgi_parent_pool = NULL;
-static apr_pool_t *wsgi_daemon_pool = NULL;
 
 static int wsgi_daemon_count = 0;
 static apr_hash_t *wsgi_daemon_index = NULL;
@@ -7407,6 +7530,8 @@ static const command_rec wsgi_commands[] =
     AP_INIT_TAKE1("WSGICallableObject", wsgi_set_callable_object, NULL,
         OR_FILEINFO, "Name of entry point in WSGI script file."),
 
+    AP_INIT_TAKE1("WSGIPassApacheRequest", wsgi_set_pass_apache_request, NULL,
+        ACCESS_CONF|RSRC_CONF, "Enable/Disable access to Apache request."),
     AP_INIT_TAKE1("WSGIPassAuthorization", wsgi_set_pass_authorization, NULL,
         ACCESS_CONF|RSRC_CONF, "Enable/Disable WSGI authorization."),
     AP_INIT_TAKE1("WSGIScriptReloading", wsgi_set_script_reloading, NULL,
