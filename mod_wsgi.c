@@ -2670,18 +2670,6 @@ static InterpreterObject *newInterpreterObject(const char *name,
     }
 
     /*
-     * Create mod_wsgi Python module. Only put the
-     * version in this for now. Might use it later
-     * on for interpreter specific information.
-     */
-
-    module = PyImport_AddModule("mod_wsgi");
-
-    PyModule_AddObject(module, "version", Py_BuildValue("(ii)",
-                       MOD_WSGI_MAJORVERSION_NUMBER,
-                       MOD_WSGI_MINORVERSION_NUMBER));
-
-    /*
      * Install restricted objects for STDIN and STDOUT,
      * or log object for STDOUT as appropriate. Don't do
      * this if not running on Win32 and we believe we
@@ -2741,6 +2729,54 @@ static InterpreterObject *newInterpreterObject(const char *name,
                            &wsgi_signal_method[0], NULL));
         Py_DECREF(module);
     }
+
+    /*
+     * Create mod_wsgi Python module. We first try and import an
+     * external Python module of the same name. The intent is
+     * that this external module would provide optional features
+     * implementable using pure Python code. Don't want to
+     * include them in the main Apache mod_wsgi package as that
+     * complicates that package and also wouldn't allow them to
+     * be released to a separate schedule. It is easier for
+     * people to replace Python modules package with a new
+     * version than it is to replace Apache module package.
+     */
+
+    module = PyImport_ImportModule("mod_wsgi");
+
+    if (!module) {
+        PyObject *modules = NULL;
+
+        modules = PyImport_GetModuleDict();
+        module = PyDict_GetItemString(modules, "mod_wsgi");
+
+        if (module) {
+            PyErr_Print();
+            PyDict_DelItemString(modules, "mod_wsgi");
+        }
+        else if (!*name) {
+            Py_BEGIN_ALLOW_THREADS
+            ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                         "mod_wsgi (pid=%d): Python extension modules for "
+                         "mod_wsgi are not available.", getpid());
+            Py_END_ALLOW_THREADS
+        }
+
+        PyErr_Clear();
+
+        module = PyImport_AddModule("mod_wsgi");
+    }
+
+    /*
+     * Add Apache module version information to the Python
+     * mod_wsgi module.
+     */
+
+    PyModule_AddObject(module, "version", Py_BuildValue("(ii)",
+                       MOD_WSGI_MAJORVERSION_NUMBER,
+                       MOD_WSGI_MINORVERSION_NUMBER));
+
+    /* Restore previous thread state. */
 
     PyThreadState_Clear(tstate);
     PyThreadState_Swap(save_tstate);
