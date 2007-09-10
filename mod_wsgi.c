@@ -5090,6 +5090,8 @@ static const command_rec wsgi_commands[] =
     { "WSGICallableObject", wsgi_set_callable_object, NULL,
         OR_FILEINFO, TAKE1, "Name of entry point in WSGI script file." },
 
+    { "WSGIPassApacheRequest", wsgi_set_pass_apache_request, NULL,
+        ACCESS_CONF|RSRC_CONF, TAKE1, "Enable/Disable Apache request object." },
     { "WSGIPassAuthorization", wsgi_set_pass_authorization, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Enable/Disable WSGI authorization." },
     { "WSGIScriptReloading", wsgi_set_script_reloading, NULL,
@@ -7531,7 +7533,7 @@ static const command_rec wsgi_commands[] =
         OR_FILEINFO, "Name of entry point in WSGI script file."),
 
     AP_INIT_TAKE1("WSGIPassApacheRequest", wsgi_set_pass_apache_request, NULL,
-        ACCESS_CONF|RSRC_CONF, "Enable/Disable access to Apache request."),
+        ACCESS_CONF|RSRC_CONF, "Enable/Disable Apache request object."),
     AP_INIT_TAKE1("WSGIPassAuthorization", wsgi_set_pass_authorization, NULL,
         ACCESS_CONF|RSRC_CONF, "Enable/Disable WSGI authorization."),
     AP_INIT_TAKE1("WSGIScriptReloading", wsgi_set_script_reloading, NULL,
