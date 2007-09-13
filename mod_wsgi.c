@@ -261,7 +261,7 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
-    int pass_apache_request;
+    int pass_request_object;
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
@@ -305,7 +305,7 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->application_group = NULL;
     object->callable_object = NULL;
 
-    object->pass_apache_request = -1;
+    object->pass_request_object = -1;
     object->pass_authorization = -1;
     object->script_reloading = -1;
     object->reload_mechanism = -1;
@@ -369,10 +369,10 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->callable_object = parent->callable_object;
 
-    if (child->pass_apache_request != -1)
-        config->pass_apache_request = child->pass_apache_request;
+    if (child->pass_request_object != -1)
+        config->pass_request_object = child->pass_request_object;
     else
-        config->pass_apache_request = parent->pass_apache_request;
+        config->pass_request_object = parent->pass_request_object;
 
     if (child->pass_authorization != -1)
         config->pass_authorization = child->pass_authorization;
@@ -411,7 +411,7 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
-    int pass_apache_request;
+    int pass_request_object;
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
@@ -431,7 +431,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->application_group = NULL;
     object->callable_object = NULL;
 
-    object->pass_apache_request = -1;
+    object->pass_request_object = -1;
     object->pass_authorization = -1;
     object->script_reloading = -1;
     object->reload_mechanism = -1;
@@ -482,10 +482,10 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->callable_object = parent->callable_object;
 
-    if (child->pass_apache_request != -1)
-        config->pass_apache_request = child->pass_apache_request;
+    if (child->pass_request_object != -1)
+        config->pass_request_object = child->pass_request_object;
     else
-        config->pass_apache_request = parent->pass_apache_request;
+        config->pass_request_object = parent->pass_request_object;
 
     if (child->pass_authorization != -1)
         config->pass_authorization = child->pass_authorization;
@@ -524,7 +524,7 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
-    int pass_apache_request;
+    int pass_request_object;
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
@@ -766,12 +766,12 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     config->callable_object = wsgi_callable_object(r, config->callable_object);
 
-    config->pass_apache_request = dconfig->pass_apache_request;
+    config->pass_request_object = dconfig->pass_request_object;
 
-    if (config->pass_apache_request < 0) {
-        config->pass_apache_request = sconfig->pass_apache_request;
-        if (config->pass_apache_request < 0)
-            config->pass_apache_request = 0;
+    if (config->pass_request_object < 0) {
+        config->pass_request_object = sconfig->pass_request_object;
+        if (config->pass_request_object < 0)
+            config->pass_request_object = 0;
     }
 
     config->pass_authorization = dconfig->pass_authorization;
@@ -1910,7 +1910,7 @@ static void Adapter_dealloc(AdapterObject *self)
     PyObject_Del(self);
 }
 
-static PyObject *Adapter_start(AdapterObject *self, PyObject *args)
+static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 {
     const char *status = NULL;
     PyObject *headers = NULL;
@@ -2304,62 +2304,15 @@ static PyObject *Adapter_environ(AdapterObject *self)
     /*
      * If request being handled in first Python interpreter
      * instance in embedded mode and passing of Apache request
-     * object enabled, add it to environment.
+     * object enabled, add callback for obtaining it to the
+     * environment.
      */
 
-    if (self->config->pass_apache_request) {
+    if (self->config->pass_request_object) {
         if (!wsgi_daemon_pool && !*self->config->application_group) {
-            PyObject *module;
-
-            module = PyImport_ImportModule("apache.httpd");
-
-            if (module) {
-                PyObject *d = NULL;
-                PyObject *o = NULL;
-
-                d = PyModule_GetDict(module);
-                o = PyDict_GetItemString(d, "request_rec");
-
-                if (o) {
-                    PyObject *v = NULL;
-                    PyObject *args = NULL;
-
-                    v = PyCObject_FromVoidPtr(self->r, 0);
-
-                    Py_INCREF(o);
-
-                    args = Py_BuildValue("(O)", v);
-                    object = PyEval_CallObject(o, args);
-                    Py_DECREF(args);
-
-                    Py_XDECREF(o);
-
-                    if (object) {
-                        PyDict_SetItemString(vars, "apache.request", object);
-                    }
-                    else {
-                        ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                                     "mod_wsgi (pid=%d): Unable to create "
-                                     "'apache.request' object.", getpid());
-
-                        PyErr_Print();
-                        PyErr_Clear();
-                    }
-
-                    Py_XDECREF(object);
-                    Py_XDECREF(v);
-                }
-            }
-            else {
-                ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                             "mod_wsgi (pid=%d): Unable to import "
-                             "'apache.httpd' module.", getpid());
-
-                PyErr_Print();
-                PyErr_Clear();
-            }
-
-            Py_XDECREF(module);
+            object = PyObject_GetAttrString((PyObject *)self, "request_object");
+            PyDict_SetItemString(vars, "apache.request_object", object);
+            Py_DECREF(object);
         }
     }
 
@@ -2489,9 +2442,58 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
     return Py_None;
 }
 
+static PyObject *Adapter_request_object(AdapterObject *self, PyObject *args)
+{
+    PyObject *module = NULL;
+    PyObject *object = NULL;
+    PyObject *dict = NULL;
+    PyObject *type = NULL;
+
+    if (!self->r) {
+        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        return NULL;
+    }
+
+    if (wsgi_daemon_pool || *self->config->application_group) {
+        PyErr_SetString(PyExc_RuntimeError, "request object unavailable");
+        return NULL;
+    }
+
+    if (!PyArg_ParseTuple(args, ":request_object"))
+        return NULL;
+
+    module = PyImport_ImportModule("apache.httpd");
+
+    if (!module)
+        return NULL;
+
+    dict = PyModule_GetDict(module);
+    type = PyDict_GetItemString(dict, "request_rec");
+
+    if (type) {
+        PyObject *req = NULL;
+        PyObject *args = NULL;
+
+        Py_INCREF(type);
+
+        req = PyCObject_FromVoidPtr(self->r, 0);
+        args = Py_BuildValue("(O)", req);
+        object = PyEval_CallObject(type, args);
+
+        Py_DECREF(args);
+        Py_DECREF(req);
+        Py_DECREF(type);
+    }
+
+    Py_DECREF(module);
+
+    return object;
+}
+
 static PyMethodDef Adapter_methods[] = {
-    { "start_response", (PyCFunction)Adapter_start, METH_VARARGS, 0},
+    { "start_response", (PyCFunction)Adapter_start_response, METH_VARARGS, 0},
     { "write",          (PyCFunction)Adapter_write, METH_VARARGS, 0},
+    { "request_object", (PyCFunction)Adapter_request_object, METH_VARARGS, 0},
     { NULL, NULL}
 };
 
@@ -4422,7 +4424,7 @@ static const char *wsgi_set_callable_object(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_pass_apache_request(cmd_parms *cmd, void *mconfig,
+static const char *wsgi_set_pass_request_object(cmd_parms *cmd, void *mconfig,
                                                 const char *f)
 {
     if (cmd->path) {
@@ -4430,11 +4432,11 @@ static const char *wsgi_set_pass_apache_request(cmd_parms *cmd, void *mconfig,
         dconfig = (WSGIDirectoryConfig *)mconfig;
 
         if (strcasecmp(f, "Off") == 0)
-            dconfig->pass_apache_request = 0;
+            dconfig->pass_request_object = 0;
         else if (strcasecmp(f, "On") == 0)
-            dconfig->pass_apache_request = 1;
+            dconfig->pass_request_object = 1;
         else
-            return "WSGIPassApacheRequest must be one of: Off | On";
+            return "WSGIPassRequestObject must be one of: Off | On";
     }
     else {
         WSGIServerConfig *sconfig = NULL;
@@ -4442,11 +4444,11 @@ static const char *wsgi_set_pass_apache_request(cmd_parms *cmd, void *mconfig,
                                        &wsgi_module);
 
         if (strcasecmp(f, "Off") == 0)
-            sconfig->pass_apache_request = 0;
+            sconfig->pass_request_object = 0;
         else if (strcasecmp(f, "On") == 0)
-            sconfig->pass_apache_request = 1;
+            sconfig->pass_request_object = 1;
         else
-            return "WSGIPassApacheRequest must be one of: Off | On";
+            return "WSGIPassRequestObject must be one of: Off | On";
     }
 
     return NULL;
@@ -5090,7 +5092,7 @@ static const command_rec wsgi_commands[] =
     { "WSGICallableObject", wsgi_set_callable_object, NULL,
         OR_FILEINFO, TAKE1, "Name of entry point in WSGI script file." },
 
-    { "WSGIPassApacheRequest", wsgi_set_pass_apache_request, NULL,
+    { "WSGIPassRequestObject", wsgi_set_pass_request_object, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Enable/Disable Apache request object." },
     { "WSGIPassAuthorization", wsgi_set_pass_authorization, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Enable/Disable WSGI authorization." },
@@ -5977,7 +5979,6 @@ static void *wsgi_daemon_thread(apr_thread_t *thd, void *data)
 static void *wsgi_reaper_thread(apr_thread_t *thd, void *data)
 {
     WSGIDaemonProcess *daemon = data;
-    apr_pool_t *p = apr_thread_pool_get(thd);
 
     sleep(daemon->group->timeout);
 
@@ -7532,7 +7533,7 @@ static const command_rec wsgi_commands[] =
     AP_INIT_TAKE1("WSGICallableObject", wsgi_set_callable_object, NULL,
         OR_FILEINFO, "Name of entry point in WSGI script file."),
 
-    AP_INIT_TAKE1("WSGIPassApacheRequest", wsgi_set_pass_apache_request, NULL,
+    AP_INIT_TAKE1("WSGIPassRequestObject", wsgi_set_pass_request_object, NULL,
         ACCESS_CONF|RSRC_CONF, "Enable/Disable Apache request object."),
     AP_INIT_TAKE1("WSGIPassAuthorization", wsgi_set_pass_authorization, NULL,
         ACCESS_CONF|RSRC_CONF, "Enable/Disable WSGI authorization."),
