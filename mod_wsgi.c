@@ -209,6 +209,8 @@ module AP_MODULE_DECLARE_DATA wsgi_module;
 
 #define WSGI_EXTENSION_REQUEST_OBJECT 1
 #define WSGI_EXTENSION_AUTH_PROVIDER 2
+#define WSGI_EXTENSION_ALL (WSGI_EXTENSION_REQUEST_OBJECT|\
+                            WSGI_EXTENSION_AUTH_PROVIDER)
 
 #define WSGI_RELOAD_MODULE 0
 #define WSGI_RELOAD_INTERPRETER 1
@@ -4436,7 +4438,7 @@ static const char *wsgi_set_apache_extensions(cmd_parms *cmd, void *mconfig,
         flags = 0;
     }
     else if (strcasecmp(args, "All") == 0) {
-        flags = ~0;
+        flags = WSGI_EXTENSION_ALL;
     }
     else {
         flags = 0;
