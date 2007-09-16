@@ -427,6 +427,7 @@ typedef struct {
     int script_reloading;
     int reload_mechanism;
     int output_buffering;
+
     int case_sensitivity;
 
     const char *auth_script;
@@ -549,6 +550,7 @@ typedef struct {
     int script_reloading;
     int reload_mechanism;
     int output_buffering;
+
     int case_sensitivity;
 } WSGIRequestConfig;
 
@@ -4618,29 +4620,21 @@ static const char *wsgi_set_output_buffering(cmd_parms *cmd, void *mconfig,
 static const char *wsgi_set_case_sensitivity(cmd_parms *cmd, void *mconfig,
                                            const char *f)
 {
-    if (cmd->path) {
-        WSGIDirectoryConfig *dconfig = NULL;
-        dconfig = (WSGIDirectoryConfig *)mconfig;
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
 
-        if (strcasecmp(f, "Off") == 0)
-            dconfig->case_sensitivity = 0;
-        else if (strcasecmp(f, "On") == 0)
-            dconfig->case_sensitivity = 1;
-        else
-            return "WSGICaseSensitivity must be one of: Off | On";
-    }
-    else {
-        WSGIServerConfig *sconfig = NULL;
-        sconfig = ap_get_module_config(cmd->server->module_config,
-                                       &wsgi_module);
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
 
-        if (strcasecmp(f, "Off") == 0)
-            sconfig->case_sensitivity = 0;
-        else if (strcasecmp(f, "On") == 0)
-            sconfig->case_sensitivity = 1;
-        else
-            return "WSGICaseSensitivity must be one of: Off | On";
-    }
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (strcasecmp(f, "Off") == 0)
+        sconfig->case_sensitivity = 0;
+    else if (strcasecmp(f, "On") == 0)
+        sconfig->case_sensitivity = 1;
+    else
+        return "WSGICaseSensitivity must be one of: Off | On";
 
     return NULL;
 }
@@ -7816,8 +7810,9 @@ static const command_rec wsgi_commands[] =
         OR_FILEINFO, "Defines what is reloaded when a reload occurs."),
     AP_INIT_TAKE1("WSGIOutputBuffering", wsgi_set_output_buffering, NULL,
         OR_FILEINFO, "Enable/Disable buffering of response."),
+
     AP_INIT_TAKE1("WSGICaseSensitivity", wsgi_set_case_sensitivity, NULL,
-        OR_FILEINFO, "Define whether file system is case sensitive."),
+        RSRC_CONF, "Define whether file system is case sensitive."),
 
 #if defined(MOD_WSGI_WITH_AUTHENTICATION)
     AP_INIT_TAKE1("WSGIAuthScript", wsgi_set_auth_script, NULL,
