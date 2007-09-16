@@ -528,7 +528,7 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->case_sensitivity = parent->case_sensitivity;
 
-    if (!child->auth_script)
+    if (child->auth_script)
         config->auth_script = child->auth_script;
     else
         config->auth_script = parent->auth_script;
@@ -7526,8 +7526,56 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
 #include "mod_auth.h"
 
-#if 0
+static authn_status wsgi_check_password(request_rec *r, const char *user,
+                                        const char *password)
+{
+    WSGIDirectoryConfig *config;
+
+    InterpreterObject *interp = NULL;
+    PyObject *modules = NULL;
     PyObject *module = NULL;
+    char *name = NULL;
+
+    const char *application_group;
+
+    authn_status status;
+
+    config = ap_get_module_config(r->per_dir_config, &wsgi_module);
+
+    if (!config->auth_script) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Location of WSGI authentication "
+                     "script not provided.", getpid());
+
+        return AUTH_GENERAL_ERROR;
+    }
+
+    /*
+     * Acquire the desired python interpreter. Once this is done
+     * it is safe to start manipulating python objects.
+     */
+
+    application_group = config->application_group;
+    if (!application_group)
+        application_group = "%{GLOBAL}";
+    
+    application_group = wsgi_application_group(r, application_group);
+
+    interp = wsgi_acquire_interpreter(application_group);
+
+    if (!interp) {
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
+                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
+                      getpid(), application_group);
+
+        PyErr_Clear();
+
+        return AUTH_GENERAL_ERROR;
+    }
+
+    /* Calculate the Python module name to be used for script. */
+
+    name = wsgi_module_name(r, config->auth_script, config->case_sensitivity);
 
     /*
      * Use a lock around the check to see if the module is
@@ -7547,151 +7595,77 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
     Py_XINCREF(module);
 
-    if (module)
-        found = 1;
-
-    /*
-     * If script reloading is enabled and the module for it has
-     * previously been loaded, see if it has been modified since
-     * the last time it was accessed.
-     */
-
-    if (module && config->script_reloading) {
-        if (wsgi_reload_required(r, module)) {
-            /*
-	     * Script file has changed. Discard reference to
-	     * loaded module and work out what action we are
-	     * supposed to take. Choices are interpreter
-	     * reloading and module reloading. Process reloading
-	     * isn't an option as auth providers are invoked
-	     * with Apache child processes and not in daemon
-	     * processes.
-             */
-
-            Py_DECREF(module);
-            module = NULL;
-
-            if (*config->application_group &&
-                config->reload_mechanism == WSGI_RELOAD_INTERPRETER) {
-
-                /* Need to reload the interpreter. */
-
-                Py_BEGIN_ALLOW_THREADS
-                ap_log_rerror(APLOG_MARK, WSGI_LOG_INFO(0), r,
-                             "mod_wsgi (pid=%d): Force reload of "
-                             "interpreter '%s'.", getpid(),
-                             config->application_group);
-                Py_END_ALLOW_THREADS
-
-                /* Remove interpreter from set of interpreters. */
-
-                wsgi_remove_interpreter(config->application_group);
-
-                /*
-                 * Release the interpreter. If nothing else is
-                 * making use of it, this will cause it to be
-                 * destroyed immediately. If something was using
-                 * it then it will hang around till the other
-                 * handler has finished using it. This will
-                 * leave us without even the Python GIL being
-                 * locked.
-                 */
-
-                wsgi_release_interpreter(interp);
-
-                /*
-                 * Now reacquire the interpreter. Because we
-                 * removed it from the interpreter set above,
-                 * this will result in it being recreated. This
-                 * also reacquires the Python GIL for us.
-                 */
-
-                interp = wsgi_acquire_interpreter(config->application_group);
-
-                if (!interp) {
-                    ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
-                                 "mod_wsgi (pid=%d): Cannot acquire "
-                                 "interpreter '%s'.", getpid(),
-                                 config->application_group);
-
-#if APR_HAS_THREADS
-                    apr_thread_mutex_unlock(wsgi_module_lock);
-#endif
-
-                    return HTTP_INTERNAL_SERVER_ERROR;
-                }
-
-                found = 0;
-            }
-            else {
-                /*
-                 * Need to reload just the script module. Remove
-                 * the module from the modules dictionary before
-                 * reloading it again. If code is executing
-                 * within the module at the time, the callers
-                 * reference count on the module should ensure
-                 * it isn't actually destroyed until it is
-                 * finished.
-                 */
-
-                PyDict_DelItemString(modules, name);
-            }
-        }
-    }
-
     /* Load module if not already loaded. */
 
-    if (!module)
-        module = wsgi_load_source(r, name, found);
+    if (!module) {
+        module = wsgi_load_source(r, name, 0, config->auth_script,
+                                  "", application_group);
+    }
 
     /* Safe now to release the module lock. */
 
 #if APR_HAS_THREADS
     apr_thread_mutex_unlock(wsgi_module_lock);
 #endif
-#endif
 
-static authn_status wsgi_check_password(request_rec *r, const char *user,
-                                        const char *password)
-{
-    InterpreterObject *interp = NULL;
+    /* Assume an internal server error unless everything okay. */
 
-    WSGIDirectoryConfig *config;
+    status = AUTH_GENERAL_ERROR;
 
-    const char *name;
+    /* Determine if script is executable and execute it. */
 
-    config = ap_get_module_config(r->per_dir_config, &wsgi_module);
+    if (module) {
+        PyObject *module_dict = NULL;
+        PyObject *object = NULL;
 
-    if (config->auth_script == 0) {
-        ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI authentication "
-                     "script not provided.", getpid());
+        module_dict = PyModule_GetDict(module);
+        object = PyDict_GetItemString(module_dict, "check_password");
 
-        return AUTH_GENERAL_ERROR;
+        if (object) {
+            PyObject *args = NULL;
+            PyObject *result = NULL;
+
+            Py_INCREF(object);
+            args = Py_BuildValue("(ss)", user, password);
+            result = PyEval_CallObject(object, args);
+            Py_DECREF(args);
+            Py_DECREF(object);
+
+            if (result) {
+                if (!PyInt_Check(result)) {
+                    PyErr_SetString(PyExc_TypeError,
+                                    "auth provider must return integer");
+                }
+                else
+                    status = PyInt_AsLong(result);
+            }
+        }
+        else {
+            Py_BEGIN_ALLOW_THREADS
+            ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                          "mod_wsgi (pid=%d): Target WSGI authentication "
+                          "script '%s' does not contain 'check_password'.",
+                          getpid(), config->auth_script, NULL);
+            Py_END_ALLOW_THREADS
+        }
+
+        /* Log any details of exceptions if execution failed. */
+
+        if (PyErr_Occurred()) {
+            LogObject *log;
+            log = newLogObject(r, APLOG_ERR);
+            wsgi_log_python_error(r, log);
+            Py_DECREF(log);
+        }
     }
 
-    /*
-     * Acquire the desired python interpreter. Once this is done
-     * it is safe to start manipulating python objects.
-     */
+    /* Cleanup and release interpreter, */
 
-    interp = wsgi_acquire_interpreter(config->application_group);
+    Py_XDECREF(module);
 
-    if (!interp) {
-        ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), config->application_group);
+    wsgi_release_interpreter(interp);
 
-        PyErr_Clear();
-
-        return AUTH_GENERAL_ERROR;
-    }
-
-    /* Calculate the Python module name to be used for script. */
-
-    name = wsgi_module_name(r, config->auth_script, config->case_sensitivity);
-
-    return AUTH_GRANTED;
+    return status;
 }
 
 static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
@@ -7709,7 +7683,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
         return AUTH_GENERAL_ERROR;
     }
 
-    return AUTH_GRANTED;
+    return AUTH_GENERAL_ERROR;
 }
 
 static const authn_provider wsgi_authn_provider =
