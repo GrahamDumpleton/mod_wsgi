@@ -7503,6 +7503,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
     PyObject *modules = NULL;
     PyObject *module = NULL;
     char *name = NULL;
+    int exists = 0;
 
     const char *application_group;
 
@@ -7563,11 +7564,37 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     Py_XINCREF(module);
 
-    /* Load module if not already loaded. */
+    if (module)
+        exists = 1;
+
+    /*
+     * If script reloading is enabled and the module for it has
+     * previously been loaded, see if it has been modified since
+     * the last time it was accessed.
+     */
+
+    if (module && config->script_reloading) {
+        if (wsgi_reload_required(r, config->auth_script, module)) {
+            /*
+             * Script file has changed. Only support module
+             * reloading for authentication scripts. Remove the
+             * module from the modules dictionary before
+             * reloading it again. If code is executing within
+             * the module at the time, the callers reference
+             * count on the module should ensure it isn't
+             * actually destroyed until it is finished.
+             */
+
+            Py_DECREF(module);
+            module = NULL;
+
+            PyDict_DelItemString(modules, name);
+        }
+    }
 
     if (!module) {
-        module = wsgi_load_source(r, name, 0, config->auth_script, "",
-                                  application_group);
+        module = wsgi_load_source(r, name, exists, config->auth_script,
+                                  "", application_group);
     }
 
     /* Safe now to release the module lock. */
@@ -7612,8 +7639,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
             Py_BEGIN_ALLOW_THREADS
             ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                           "mod_wsgi (pid=%d): Target WSGI authentication "
-                          "script '%s' does not contain 'check_password'.",
-                          getpid(), config->auth_script);
+                          "script '%s' does not provide 'Basic' auth "
+                          "provider.", getpid(), config->auth_script);
             Py_END_ALLOW_THREADS
         }
 
