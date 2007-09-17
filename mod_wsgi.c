@@ -3513,11 +3513,6 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
     return handle;
 }
 
-static void wsgi_remove_interpreter(const char *name)
-{
-    PyDict_DelItemString(wsgi_interpreters, name);
-}
-
 static void wsgi_release_interpreter(InterpreterObject *handle)
 {
     PyThreadState *tstate = NULL;
