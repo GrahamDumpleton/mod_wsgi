@@ -3562,7 +3562,7 @@ static void wsgi_release_interpreter(InterpreterObject *handle)
  */
 
 static PyObject *wsgi_load_source(request_rec *r, const char *name,
-                                  int found, const char* filename,
+                                  int exists, const char* filename,
                                   const char *process_group,
                                   const char *application_group)
 {
@@ -3570,13 +3570,18 @@ static PyObject *wsgi_load_source(request_rec *r, const char *name,
     PyObject *m = NULL;
     PyObject *co = NULL;
     struct _node *n = NULL;
+    const char *path;
 
-    if (found) {
+    path = filename;
+    if (!path)
+        path = r->filename;
+
+    if (exists) {
         Py_BEGIN_ALLOW_THREADS
         ap_log_rerror(APLOG_MARK, WSGI_LOG_INFO(0), r,
                       "mod_wsgi (pid=%d, process='%s', application='%s'): "
                       "Reloading WSGI script '%s'.", getpid(),
-                      process_group, application_group, filename);
+                      process_group, application_group, path);
         Py_END_ALLOW_THREADS
     }
     else {
@@ -3584,45 +3589,67 @@ static PyObject *wsgi_load_source(request_rec *r, const char *name,
         ap_log_rerror(APLOG_MARK, WSGI_LOG_INFO(0), r,
                       "mod_wsgi (pid=%d, process='%s', application='%s'): "
                       "Loading WSGI script '%s'.", getpid(),
-                      process_group, application_group, filename);
+                      process_group, application_group, path);
         Py_END_ALLOW_THREADS
     }
 
-    if (!(fp = fopen(filename, "r"))) {
+    if (!(fp = fopen(path, "r"))) {
         PyErr_SetFromErrno(PyExc_IOError);
         return NULL;
     }
 
-    n = PyParser_SimpleParseFile(fp, filename, Py_file_input);
+    n = PyParser_SimpleParseFile(fp, path, Py_file_input);
 
     fclose(fp);
 
     if (!n)
         return NULL;
 
-    co = (PyObject *)PyNode_Compile(n, filename);
+    co = (PyObject *)PyNode_Compile(n, path);
     PyNode_Free(n);
 
     if (co)
-        m = PyImport_ExecCodeModuleEx((char *)name, co, (char *)filename);
+        m = PyImport_ExecCodeModuleEx((char *)name, co, (char *)path);
 
     Py_XDECREF(co);
 
     if (m) {
         PyObject *object = NULL;
 
+        if (filename) {
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
-        object = PyLong_FromLongLong(r->finfo.st_mtime);
+            struct stat finfo;
+            if (stat(filename, &finfo) == -1) {
+                object = PyLong_FromLongLong(0);
+            }
+            else {
+                object = PyLong_FromLongLong(finfo.st_mtime);
+            }
 #else
-        object = PyLong_FromLongLong(r->finfo.mtime);
+            apr_finfo_t finfo;
+            if (apr_stat(&finfo, filename, APR_FINFO_SIZE,
+                         r->pool) != APR_SUCCESS) {
+                object = PyLong_FromLongLong(0);
+            }
+            else {
+                object = PyLong_FromLongLong(finfo.mtime);
+            }
 #endif
+        }
+        else {
+#if AP_SERVER_MAJORVERSION_NUMBER < 2
+            object = PyLong_FromLongLong(r->finfo.st_mtime);
+#else
+            object = PyLong_FromLongLong(r->finfo.mtime);
+#endif
+        }
         PyModule_AddObject(m, "__mtime__", object);
     }
     else {
         Py_BEGIN_ALLOW_THREADS
         ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                       "mod_wsgi (pid=%d): Target WSGI script '%s' cannot "
-                      "be loaded as Python module.", getpid(), filename);
+                      "be loaded as Python module.", getpid(), path);
         Py_END_ALLOW_THREADS
 
         LogObject *log;
@@ -3634,7 +3661,8 @@ static PyObject *wsgi_load_source(request_rec *r, const char *name,
     return m;
 }
 
-static int wsgi_reload_required(request_rec *r, PyObject *module)
+static int wsgi_reload_required(request_rec *r, const char *filename,
+                                PyObject *module)
 {
     PyObject *dict = NULL;
     PyObject *object = NULL;
@@ -3645,13 +3673,36 @@ static int wsgi_reload_required(request_rec *r, PyObject *module)
 
     if (object) {
         mtime = PyLong_AsLongLong(object);
+
+        if (filename) {
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
-        if (mtime != r->finfo.st_mtime)
-            return 1;
+            struct stat finfo;
+            if (stat(filename, &finfo) == -1) {
+                return 1;
+            }
+            else if (mtime != finfo.st_mtime) {
+                return 1;
+            }
 #else
-        if (mtime != r->finfo.mtime)
-            return 1;
+            apr_finfo_t finfo;
+            if (apr_stat(&finfo, filename, APR_FINFO_SIZE,
+                         r->pool) != APR_SUCCESS) {
+                return 1;
+            }
+            else if (mtime != finfo.mtime) {
+                return 1;
+            }
 #endif
+        }
+        else {
+#if AP_SERVER_MAJORVERSION_NUMBER < 2
+            if (mtime != r->finfo.st_mtime)
+                return 1;
+#else
+            if (mtime != r->finfo.mtime)
+                return 1;
+#endif
+        }
     }
     else
         return 1;
@@ -3693,7 +3744,7 @@ static int wsgi_execute_script(request_rec *r)
     PyObject *modules = NULL;
     PyObject *module = NULL;
     char *name = NULL;
-    int found = 0;
+    int exists = 0;
 
     int status;
 
@@ -3742,7 +3793,7 @@ static int wsgi_execute_script(request_rec *r)
     Py_XINCREF(module);
 
     if (module)
-        found = 1;
+        exists = 1;
 
     /*
      * If script reloading is enabled and the module for it has
@@ -3751,7 +3802,7 @@ static int wsgi_execute_script(request_rec *r)
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r, module)) {
+        if (wsgi_reload_required(r, NULL, module)) {
             /*
              * Script file has changed. Discard reference to
              * loaded module and work out what action we are
@@ -3867,8 +3918,7 @@ static int wsgi_execute_script(request_rec *r)
     /* Load module if not already loaded. */
 
     if (!module) {
-        module = wsgi_load_source(r, name, found, r->filename,
-                                  config->process_group,
+        module = wsgi_load_source(r, name, exists, NULL, config->process_group,
                                   config->application_group);
     }
 
@@ -7516,8 +7566,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
     /* Load module if not already loaded. */
 
     if (!module) {
-        module = wsgi_load_source(r, name, 0, config->auth_script,
-                                  "", application_group);
+        module = wsgi_load_source(r, name, 0, config->auth_script, "",
+                                  application_group);
     }
 
     /* Safe now to release the module lock. */
