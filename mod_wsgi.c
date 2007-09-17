@@ -219,8 +219,7 @@ module AP_MODULE_DECLARE_DATA wsgi_module;
                             WSGI_EXTENSION_AUTH_PROVIDER)
 
 #define WSGI_RELOAD_MODULE 0
-#define WSGI_RELOAD_INTERPRETER 1
-#define WSGI_RELOAD_PROCESS 2
+#define WSGI_RELOAD_PROCESS 1
 
 /* Base server object. */
 
@@ -3826,58 +3825,6 @@ static int wsgi_execute_script(request_rec *r)
 
                 return OK;
             }
-            else if (*config->application_group &&
-                     config->reload_mechanism == WSGI_RELOAD_INTERPRETER) {
-
-                /* Need to reload the interpreter. */
-
-                Py_BEGIN_ALLOW_THREADS
-                ap_log_rerror(APLOG_MARK, WSGI_LOG_INFO(0), r,
-                             "mod_wsgi (pid=%d): Force reload of "
-                             "interpreter '%s'.", getpid(),
-                             config->application_group);
-                Py_END_ALLOW_THREADS
-
-                /* Remove interpreter from set of interpreters. */
-
-                wsgi_remove_interpreter(config->application_group);
-
-                /*
-                 * Release the interpreter. If nothing else is
-                 * making use of it, this will cause it to be
-                 * destroyed immediately. If something was using
-                 * it then it will hang around till the other
-                 * handler has finished using it. This will
-                 * leave us without even the Python GIL being
-                 * locked.
-                 */
-
-                wsgi_release_interpreter(interp);
-
-                /*
-                 * Now reacquire the interpreter. Because we
-                 * removed it from the interpreter set above,
-                 * this will result in it being recreated. This
-                 * also reacquires the Python GIL for us.
-                 */
-
-                interp = wsgi_acquire_interpreter(config->application_group);
-
-                if (!interp) {
-                    ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
-                                 "mod_wsgi (pid=%d): Cannot acquire "
-                                 "interpreter '%s'.", getpid(),
-                                 config->application_group);
-
-#if APR_HAS_THREADS
-                    apr_thread_mutex_unlock(wsgi_module_lock);
-#endif
-
-                    return HTTP_INTERNAL_SERVER_ERROR;
-                }
-
-                found = 0;
-            }
             else {
                 /*
                  * Need to reload just the script module. Remove
@@ -4558,13 +4505,11 @@ static const char *wsgi_set_reload_mechanism(cmd_parms *cmd, void *mconfig,
 
         if (strcasecmp(f, "Module") == 0)
             dconfig->reload_mechanism = WSGI_RELOAD_MODULE;
-        else if (strcasecmp(f, "Interpreter") == 0)
-            dconfig->reload_mechanism = WSGI_RELOAD_INTERPRETER;
         else if (strcasecmp(f, "Process") == 0)
             dconfig->reload_mechanism = WSGI_RELOAD_PROCESS;
         else {
             return "WSGIReloadMechanism must be one of: "
-                   "Module | Interpreter | Process";
+                   "Module | Process";
         }
     }
     else {
@@ -4574,13 +4519,11 @@ static const char *wsgi_set_reload_mechanism(cmd_parms *cmd, void *mconfig,
 
         if (strcasecmp(f, "Module") == 0)
             sconfig->reload_mechanism = WSGI_RELOAD_MODULE;
-        else if (strcasecmp(f, "Interpreter") == 0)
-            sconfig->reload_mechanism = WSGI_RELOAD_INTERPRETER;
         else if (strcasecmp(f, "Process") == 0)
             sconfig->reload_mechanism = WSGI_RELOAD_PROCESS;
         else {
             return "WSGIReloadMechanism must be one of: "
-                   "Module | Interpreter | Process";
+                   "Module | Process";
         }
     }
 
