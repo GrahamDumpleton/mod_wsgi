@@ -265,6 +265,8 @@ typedef struct {
     int restrict_stdout;
     int restrict_signal;
 
+    int case_sensitivity;
+
     apr_table_t *restrict_process;
 
     const char *process_group;
@@ -276,7 +278,6 @@ typedef struct {
     int script_reloading;
     int reload_mechanism;
     int output_buffering;
-    int case_sensitivity;
 } WSGIServerConfig;
 
 static WSGIServerConfig *wsgi_server_config = NULL;
@@ -309,6 +310,12 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->restrict_stdout = -1;
     object->restrict_signal = -1;
 
+#if defined(WIN32) || defined(DARWIN)
+    object->case_sensitivity = 0;
+#else
+    object->case_sensitivity = 1;
+#endif
+
     object->restrict_process = NULL;
 
     object->process_group = NULL;
@@ -320,7 +327,6 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->script_reloading = -1;
     object->reload_mechanism = -1;
     object->output_buffering = -1;
-    object->case_sensitivity = -1;
 
     return object;
 }
@@ -404,11 +410,6 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->output_buffering = parent->output_buffering;
 
-    if (child->case_sensitivity != -1)
-        config->case_sensitivity = child->case_sensitivity;
-    else
-        config->case_sensitivity = parent->case_sensitivity;
-
     return config;
 }
 
@@ -426,8 +427,6 @@ typedef struct {
     int script_reloading;
     int reload_mechanism;
     int output_buffering;
-
-    int case_sensitivity;
 
     const char *auth_script;
 } WSGIDirectoryConfig;
@@ -449,7 +448,6 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->script_reloading = -1;
     object->reload_mechanism = -1;
     object->output_buffering = -1;
-    object->case_sensitivity = -1;
 
     object->auth_script = NULL;
 
@@ -522,11 +520,6 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->output_buffering = parent->output_buffering;
 
-    if (child->case_sensitivity != -1)
-        config->case_sensitivity = child->case_sensitivity;
-    else
-        config->case_sensitivity = parent->case_sensitivity;
-
     if (child->auth_script)
         config->auth_script = child->auth_script;
     else
@@ -549,8 +542,6 @@ typedef struct {
     int script_reloading;
     int reload_mechanism;
     int output_buffering;
-
-    int case_sensitivity;
 } WSGIRequestConfig;
 
 static const char *wsgi_script_name(request_rec *r)
@@ -825,19 +816,6 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         config->output_buffering = sconfig->output_buffering;
         if (config->output_buffering < 0)
             config->output_buffering = 0;
-    }
-
-    config->case_sensitivity = dconfig->case_sensitivity;
-
-    if (config->case_sensitivity < 0) {
-        config->case_sensitivity = sconfig->case_sensitivity;
-        if (config->case_sensitivity < 0) {
-#if defined(WIN32) || defined(DARWIN)
-            config->case_sensitivity = 0;
-#else
-            config->case_sensitivity = 1;
-#endif
-        }
     }
 
     return config;
@@ -3681,8 +3659,7 @@ static int wsgi_reload_required(request_rec *r, PyObject *module)
     return 0;
 }
 
-static char *wsgi_module_name(request_rec *r, const char *filename,
-                              int case_sensitivity)
+static char *wsgi_module_name(request_rec *r, const char *filename)
 {
     char *hash = NULL;
     char *file = NULL;
@@ -3699,7 +3676,7 @@ static char *wsgi_module_name(request_rec *r, const char *filename,
 
     file = (char *)filename;
 
-    if (case_sensitivity) {
+    if (wsgi_server_config->case_sensitivity) {
         file = apr_pstrdup(r->pool, file);
         ap_str_tolower(file);
     }
@@ -3744,7 +3721,7 @@ static int wsgi_execute_script(request_rec *r)
 
     /* Calculate the Python module name to be used for script. */
 
-    name = wsgi_module_name(r, r->filename, config->case_sensitivity);
+    name = wsgi_module_name(r, r->filename);
 
     /*
      * Use a lock around the check to see if the module is
@@ -4304,6 +4281,28 @@ static const char *wsgi_set_restrict_signal(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_case_sensitivity(cmd_parms *cmd, void *mconfig,
+                                           const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (strcasecmp(f, "Off") == 0)
+        sconfig->case_sensitivity = 0;
+    else if (strcasecmp(f, "On") == 0)
+        sconfig->case_sensitivity = 1;
+    else
+        return "WSGICaseSensitivity must be one of: Off | On";
+
+    return NULL;
+}
+
 static const char *wsgi_set_restrict_process(cmd_parms *cmd, void *mconfig,
                                              const char *args)
 {
@@ -4560,28 +4559,6 @@ static const char *wsgi_set_output_buffering(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_case_sensitivity(cmd_parms *cmd, void *mconfig,
-                                           const char *f)
-{
-    const char *error = NULL;
-    WSGIServerConfig *sconfig = NULL;
-
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
-
-    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
-
-    if (strcasecmp(f, "Off") == 0)
-        sconfig->case_sensitivity = 0;
-    else if (strcasecmp(f, "On") == 0)
-        sconfig->case_sensitivity = 1;
-    else
-        return "WSGICaseSensitivity must be one of: Off | On";
-
-    return NULL;
-}
-
 static const char *wsgi_set_auth_script(cmd_parms *cmd, void *mconfig,
                                         const char *n)
 {
@@ -4830,8 +4807,6 @@ static void wsgi_build_environment(request_rec *r)
                    apr_psprintf(r->pool, "%d", config->reload_mechanism));
     apr_table_setn(r->subprocess_env, "mod_wsgi.output_buffering",
                    apr_psprintf(r->pool, "%d", config->output_buffering));
-    apr_table_setn(r->subprocess_env, "mod_wsgi.case_sensitivity",
-                   apr_psprintf(r->pool, "%d", config->case_sensitivity));
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     apr_table_setn(r->subprocess_env, "mod_wsgi.listener_host",
@@ -5067,6 +5042,9 @@ static const command_rec wsgi_commands[] =
     { "WSGIRestrictSignal", wsgi_set_restrict_signal, NULL,
         RSRC_CONF, TAKE1, "Enable/Disable restrictions on use of signal()." },
 
+    { "WSGICaseSensitivity", wsgi_set_case_sensitivity, NULL,
+        RSRC_CONF, TAKE1, "Define whether file system is case sensitive." },
+
     { "WSGIApplicationGroup", wsgi_set_application_group, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Name of WSGI application group." },
     { "WSGICallableObject", wsgi_set_callable_object, NULL,
@@ -5082,8 +5060,6 @@ static const command_rec wsgi_commands[] =
         OR_FILEINFO, TAKE1, "Defines what is reloaded when a reload occurs." },
     { "WSGIOutputBuffering", wsgi_set_output_buffering, NULL,
         OR_FILEINFO, TAKE1, "Enable/Disable buffering of response." },
-    { "WSGICaseSensitivity", wsgi_set_case_sensitivity, NULL,
-        OR_FILEINFO, TAKE1, "Define whether file system is case sensitive." },
 
     { NULL }
 };
@@ -7333,8 +7309,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
                                                   "mod_wsgi.reload_mechanism"));
     config->output_buffering = atoi(apr_table_get(r->subprocess_env,
                                                   "mod_wsgi.output_buffering"));
-    config->case_sensitivity = atoi(apr_table_get(r->subprocess_env,
-                                                  "mod_wsgi.case_sensitivity"));
 
     /*
      * Define how input data is to be processed. This
@@ -7519,7 +7493,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     /* Calculate the Python module name to be used for script. */
 
-    name = wsgi_module_name(r, config->auth_script, config->case_sensitivity);
+    name = wsgi_module_name(r, config->auth_script);
 
     /*
      * Use a lock around the check to see if the module is
@@ -7706,6 +7680,9 @@ static const command_rec wsgi_commands[] =
     AP_INIT_TAKE1("WSGIRestrictSignal", wsgi_set_restrict_signal, NULL,
         RSRC_CONF, "Enable/Disable restrictions on use of signal()."),
 
+    AP_INIT_TAKE1("WSGICaseSensitivity", wsgi_set_case_sensitivity, NULL,
+        RSRC_CONF, "Define whether file system is case sensitive."),
+
 #if defined(MOD_WSGI_WITH_DAEMONS)
     AP_INIT_RAW_ARGS("WSGIRestrictProcess", wsgi_set_restrict_process, NULL,
         ACCESS_CONF|RSRC_CONF, "Limit selectable WSGI process groups."),
@@ -7728,9 +7705,6 @@ static const command_rec wsgi_commands[] =
         OR_FILEINFO, "Defines what is reloaded when a reload occurs."),
     AP_INIT_TAKE1("WSGIOutputBuffering", wsgi_set_output_buffering, NULL,
         OR_FILEINFO, "Enable/Disable buffering of response."),
-
-    AP_INIT_TAKE1("WSGICaseSensitivity", wsgi_set_case_sensitivity, NULL,
-        RSRC_CONF, "Define whether file system is case sensitive."),
 
 #if defined(MOD_WSGI_WITH_AUTHENTICATION)
     AP_INIT_TAKE1("WSGIAuthScript", wsgi_set_auth_script, NULL,
