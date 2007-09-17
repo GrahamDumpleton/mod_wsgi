@@ -1084,7 +1084,7 @@ static PyTypeObject Log_Type = {
     0,                      /*tp_is_gc*/
 };
 
-void wsgi_log_python_error(request_rec *r, LogObject *log)
+static void wsgi_log_python_error(request_rec *r, LogObject *log)
 {
     PyObject *m = NULL;
     PyObject *result = NULL;
@@ -5633,7 +5633,6 @@ static void *wsgi_daemon_thread(apr_thread_t *thd, void *data)
 static void *wsgi_reaper_thread(apr_thread_t *thd, void *data)
 {
     WSGIDaemonProcess *daemon = data;
-    apr_pool_t *p = apr_thread_pool_get(thd);
 
     sleep(daemon->group->timeout);
 
@@ -6593,7 +6592,7 @@ static apr_status_t wsgi_read_request(apr_socket_t *sock, request_rec *r)
 
 static ap_filter_rec_t *wsgi_header_filter_handle;
 
-apr_status_t wsgi_header_filter(ap_filter_t *f, apr_bucket_brigade *b)
+static apr_status_t wsgi_header_filter(ap_filter_t *f, apr_bucket_brigade *b)
 {
     request_rec *r = f->r;
 
