@@ -1142,7 +1142,7 @@ static PyTypeObject Log_Type = {
     0,                      /*tp_is_gc*/
 };
 
-void wsgi_log_python_error(request_rec *r, LogObject *log)
+static void wsgi_log_python_error(request_rec *r, LogObject *log)
 {
     PyObject *m = NULL;
     PyObject *result = NULL;
@@ -7071,7 +7071,7 @@ static apr_status_t wsgi_read_request(apr_socket_t *sock, request_rec *r)
 
 static ap_filter_rec_t *wsgi_header_filter_handle;
 
-apr_status_t wsgi_header_filter(ap_filter_t *f, apr_bucket_brigade *b)
+static apr_status_t wsgi_header_filter(ap_filter_t *f, apr_bucket_brigade *b)
 {
     request_rec *r = f->r;
 
@@ -7525,6 +7525,7 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 #if defined(MOD_WSGI_WITH_AUTHENTICATION)
 
 #include "mod_auth.h"
+#include "ap_provider.h"
 
 static authn_status wsgi_check_password(request_rec *r, const char *user,
                                         const char *password)
@@ -7645,7 +7646,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
             ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                           "mod_wsgi (pid=%d): Target WSGI authentication "
                           "script '%s' does not contain 'check_password'.",
-                          getpid(), config->auth_script, NULL);
+                          getpid(), config->auth_script);
             Py_END_ALLOW_THREADS
         }
 
