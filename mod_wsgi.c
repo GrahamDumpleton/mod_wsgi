@@ -1138,8 +1138,8 @@ void wsgi_log_python_error(request_rec *r, LogObject *log)
                                  Py_None, log);
             result = PyEval_CallObject(o, args);
             Py_DECREF(args);
+            Py_DECREF(o);
         }
-        Py_DECREF(o);
     }
 
     if (!result) {
@@ -2562,8 +2562,8 @@ static PyObject *wsgi_signal_intercept(PyObject *self, PyObject *args)
             Py_XDECREF(result);
             Py_DECREF(args);
             Py_DECREF(log);
+            Py_DECREF(o);
         }
-        Py_DECREF(o);
     }
 
     Py_INCREF(m);
@@ -2987,8 +2987,8 @@ static void Interpreter_dealloc(InterpreterObject *self)
                     result = PyEval_CallObject(o, args);
                     Py_DECREF(args);
                     Py_DECREF(log);
+                    Py_DECREF(o);
                 }
-                Py_DECREF(o);
             }
 
             if (!result) {
