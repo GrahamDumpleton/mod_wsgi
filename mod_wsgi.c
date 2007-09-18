@@ -2871,16 +2871,17 @@ static InterpreterObject *newInterpreterObject(const char *name,
     Py_DECREF(module);
 
     /*
-     * Create 'apache' Python module. If this is the first
-     * interpreter created by Python, we first try and import an
-     * external Python module of the same name. The intent is
-     * that this external module would provide the SWIG bindings
-     * for the internal Apache APIs. Only support use of such
-     * bindings in the first interpreter created due to
-     * threading issues in SWIG generated.
+     * Create 'apache' Python module. If this is not a daemon
+     * process and it is the first interpreter created by
+     * Python, we first try and import an external Python module
+     * of the same name. The intent is that this external module
+     * would provide the SWIG bindings for the internal Apache
+     * APIs. Only support use of such bindings in the first
+     * interpreter created due to threading issues in SWIG
+     * generated.
      */
 
-    if (!*name) {
+    if (!*name && !wsgi_daemon_pool) {
         module = PyImport_ImportModule("apache");
 
         if (!module) {
