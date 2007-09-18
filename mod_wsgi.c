@@ -135,6 +135,10 @@ typedef regmatch_t ap_regmatch_t;
 #endif
 #endif
 
+#if defined(MOD_WSGI_WITH_AUTHENTICATION)
+#include "mod_auth.h"
+#endif
+
 #if defined(MOD_WSGI_WITH_DAEMONS)
 
 #if !AP_MODULE_MAGIC_AT_LEAST(20051115,0)
@@ -2878,8 +2882,12 @@ static InterpreterObject *newInterpreterObject(const char *name,
      * would provide the SWIG bindings for the internal Apache
      * APIs. Only support use of such bindings in the first
      * interpreter created due to threading issues in SWIG
-     * generated.
+     * generated. If we have to add the 'apache' module, also
+     * need to create dummy 'apache.mod_auth' module as well to
+     * support auth provider mechanism if available.
      */
+
+    module = NULL;
 
     if (!*name && !wsgi_daemon_pool) {
         module = PyImport_ImportModule("apache");
@@ -2899,11 +2907,9 @@ static InterpreterObject *newInterpreterObject(const char *name,
                 PyErr_Clear();
 
                 PyDict_DelItemString(modules, "apache");
+
+                module = NULL;
             }
-
-            module = PyImport_AddModule("apache");
-
-            Py_INCREF(module);
         }
         else {
             ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
@@ -2911,7 +2917,23 @@ static InterpreterObject *newInterpreterObject(const char *name,
                          getpid());
         }
     }
-    else {
+
+    if (!module) {
+#if defined(MOD_WSGI_WITH_AUTHENTICATION)
+        module = PyImport_AddModule("apache.mod_auth");
+
+        PyModule_AddObject(module, "AUTH_DENIED",
+                           PyInt_FromLong(AUTH_DENIED));
+        PyModule_AddObject(module, "AUTH_GRANTED",
+                           PyInt_FromLong(AUTH_GRANTED));
+        PyModule_AddObject(module, "AUTH_USER_FOUND",
+                           PyInt_FromLong(AUTH_USER_FOUND));
+        PyModule_AddObject(module, "AUTH_USER_NOT_FOUND",
+                           PyInt_FromLong(AUTH_USER_NOT_FOUND));
+        PyModule_AddObject(module, "AUTH_GENERAL_ERROR",
+                           PyInt_FromLong(AUTH_GENERAL_ERROR));
+#endif
+
         module = PyImport_AddModule("apache");
 
         Py_INCREF(module);
@@ -7573,7 +7595,6 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
 #if defined(MOD_WSGI_WITH_AUTHENTICATION)
 
-#include "mod_auth.h"
 #include "ap_provider.h"
 
 static authn_status wsgi_check_password(request_rec *r, const char *user,
