@@ -5403,21 +5403,83 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
     return sockfd;
 }
 
+static int wsgi_hook_daemon_handler(conn_rec *c);
+
 static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
                                 apr_bucket_alloc_t *bucket_alloc,
                                 WSGIDaemonProcess *daemon)
 {
-    conn_rec *current_conn;
+    apr_status_t rv;
+
+    conn_rec *c;
     ap_sb_handle_t *sbh;
+    core_net_rec *net;
+
+    /*
+     * This duplicates Apache connection setup. This is done
+     * here rather than letting Apache do it so that avoid the
+     * possibility that any Apache modules, such as mod_ssl
+     * will add their own input/output filters to the chain.
+     */
 
     ap_create_sb_handle(&sbh, p, -1, 0);
 
-    current_conn = ap_run_create_connection(p, daemon->group->server, sock,
-                                            1, sbh, bucket_alloc);
-    if (current_conn) {
-        ap_process_connection(current_conn, sock);
-        ap_lingering_close(current_conn);
+    c = (conn_rec *)apr_pcalloc(p, sizeof(conn_rec));
+
+    c->sbh = sbh;
+
+    c->conn_config = ap_create_conn_config(p);
+    c->notes = apr_table_make(p, 5);
+    c->pool = p;
+    
+    if ((rv = apr_socket_addr_get(&c->local_addr, APR_LOCAL, sock))
+        != APR_SUCCESS) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_INFO(rv), wsgi_server,
+                     "mod_wsgi (pid=%d): Failed call "
+                     "apr_socket_addr_get(APR_LOCAL).", getpid());
+        apr_socket_close(sock);
+        return;
     }
+    apr_sockaddr_ip_get(&c->local_ip, c->local_addr);
+
+    if ((rv = apr_socket_addr_get(&c->remote_addr, APR_REMOTE, sock))
+        != APR_SUCCESS) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_INFO(rv), wsgi_server,
+                     "mod_wsgi (pid=%d): Failed call "
+                     "apr_socket_addr_get(APR_REMOTE).", getpid());
+        apr_socket_close(sock);
+        return;
+    }
+    apr_sockaddr_ip_get(&c->remote_ip, c->remote_addr);
+
+    c->base_server = daemon->group->server;
+
+    c->bucket_alloc = bucket_alloc;
+    c->id = 1;
+
+    net = apr_palloc(c->pool, sizeof(core_net_rec));
+
+    rv = apr_socket_timeout_set(sock, c->base_server->timeout);
+    if (rv != APR_SUCCESS) {
+        ap_log_cerror(APLOG_MARK, WSGI_LOG_DEBUG(rv), c,
+                      "mod_wsgi (pid=%d): Failed call "
+                      "apr_socket_timeout_set().", getpid());
+    }
+    
+    net->c = c;
+    net->in_ctx = NULL;
+    net->out_ctx = NULL;
+    net->client_socket = sock;
+                      
+    ap_set_module_config(net->c->conn_config, &core_module, sock);
+    ap_add_input_filter_handle(ap_core_input_filter_handle,
+                               net, NULL, net->c);
+    ap_add_output_filter_handle(ap_core_output_filter_handle,
+                                net, NULL, net->c);
+
+    wsgi_hook_daemon_handler(c);
+
+    ap_lingering_close(c);
 }
 
 static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
@@ -6700,61 +6762,10 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     core_request_config *req_cfg;
 
-    ap_filter_t *current = NULL;
-    ap_filter_t *next = NULL;
-
     /* Don't do anything if not in daemon process. */
 
     if (!wsgi_daemon_pool)
         return DECLINED;
-
-    /*
-     * XXX Remove all input/output filters except the core filters.
-     * This will ensure that any SSL filters we don't want are
-     * removed. This is a bit of a hack. Only other option is to
-     * duplicate the code for core input/output filters so can
-     * avoid full Apache connection processing, which is what is
-     * installed the SSL filters and possibly other filters for
-     * logging etc.
-     */
-
-    current = c->input_filters;
-    next = current->next;
-
-    while (current) {
-        if (current->frec == ap_core_input_filter_handle) {
-            current = next;
-            if (!current)
-                break;
-            next = current->next;
-            continue;
-        }
-
-        ap_remove_input_filter(current);
-
-        current = next;
-        if (current)
-            next = current->next;
-    }
-
-    current = c->output_filters;
-    next = current->next;
-
-    while (current) {
-        if (current->frec == ap_core_output_filter_handle) {
-            current = next;
-            if (!current)
-                break;
-            next = current->next;
-            continue;
-        }
-
-        ap_remove_output_filter(current);
-
-        current = next;
-        if (current)
-            next = current->next;
-    }
 
     /* Create and populate our own request object. */
 
