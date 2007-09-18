@@ -5743,6 +5743,13 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
     ap_sb_handle_t *sbh;
     core_net_rec *net;
 
+    /*
+     * This duplicates Apache connection setup. This is done
+     * here rather than letting Apache do it so that avoid the
+     * possibility that any Apache modules, such as mod_ssl
+     * will add their own input/output filters to the chain.
+     */
+
     ap_create_sb_handle(&sbh, p, -1, 0);
 
     c = (conn_rec *)apr_pcalloc(p, sizeof(conn_rec));
