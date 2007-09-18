@@ -5461,7 +5461,7 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
 
     rv = apr_socket_timeout_set(sock, c->base_server->timeout);
     if (rv != APR_SUCCESS) {
-        ap_log_cerror(APLOG_MARK, WSGI_LOG_DEBUG(rv), c,
+        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(rv), wsgi_server,
                       "mod_wsgi (pid=%d): Failed call "
                       "apr_socket_timeout_set().", getpid());
     }
