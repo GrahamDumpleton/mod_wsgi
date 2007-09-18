@@ -7124,17 +7124,6 @@ static apr_status_t wsgi_header_filter(ap_filter_t *f, apr_bucket_brigade *b)
     return ap_pass_brigade(f->next, b);
 }
 
-static ap_filter_t* wsgi_find_filter(ap_filter_t *filters, const char *name)
-{
-    while (filters) {
-        if (strcasecmp(filters->frec->name, name) == 0)
-            break;
-        filters = filters->next;
-    }
-
-    return filters;
-}
-
 static int wsgi_hook_daemon_handler(conn_rec *c)
 {
     apr_socket_t *csd;
@@ -7155,25 +7144,60 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     core_request_config *req_cfg;
 
+    ap_filter_t *current = NULL;
+    ap_filter_t *next = NULL;
+
     /* Don't do anything if not in daemon process. */
 
     if (!wsgi_daemon_pool)
         return DECLINED;
 
     /*
-     * XXX Ensure that SSL input/output filters removed. This is
-     * a temporary hack to work around problems with some HTTPS
-     * configurations preventing daemon mode from working.
+     * XXX Remove all input/output filters except the core filters.
+     * This will ensure that any SSL filters we don't want are
+     * removed. This is a bit of a hack. Only other option is to
+     * duplicate the code for core input/output filters so can
+     * avoid full Apache connection processing, which is what is
+     * installed the SSL filters and possibly other filters for
+     * logging etc.
      */
 
-    {
-    ap_filter_t *filter = NULL;
-    filter = wsgi_find_filter(c->input_filters, "SSL/TLS Filter");
-    if (filter)
-        ap_remove_input_filter(filter);
-    filter = wsgi_find_filter(c->output_filters, "SSL/TLS Filter");
-    if (filter)
-        ap_remove_output_filter(filter);
+    current = c->input_filters;
+    next = current->next;
+
+    while (current) {
+        if (current->frec == ap_core_input_filter_handle) {
+            current = next;
+            if (!current)
+                break;
+            next = current->next;
+            continue;
+        }
+
+        ap_remove_input_filter(current);
+
+        current = next;
+        if (current)
+            next = current->next;
+    }
+
+    current = c->output_filters;
+    next = current->next;
+
+    while (current) {
+        if (current->frec == ap_core_output_filter_handle) {
+            current = next;
+            if (!current)
+                break;
+            next = current->next;
+            continue;
+        }
+
+        ap_remove_output_filter(current);
+
+        current = next;
+        if (current)
+            next = current->next;
     }
 
     /* Create and populate our own request object. */
