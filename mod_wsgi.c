@@ -7844,8 +7844,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
             if (result) {
                 if (!PyInt_Check(result)) {
-                    PyErr_SetString(PyExc_TypeError,
-                                    "auth provider must return integer");
+                    PyErr_SetString(PyExc_TypeError, "Basic auth provider "
+                                    "must return single integer value");
                 }
                 else
                     status = PyInt_AsLong(result);
@@ -7884,9 +7884,19 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 {
     WSGIDirectoryConfig *config;
 
+    InterpreterObject *interp = NULL;
+    PyObject *modules = NULL;
+    PyObject *module = NULL;
+    char *name = NULL;
+    int exists = 0;
+
+    const char *application_group;
+
+    authn_status status;
+
     config = ap_get_module_config(r->per_dir_config, &wsgi_module);
 
-    if (config->auth_script == 0) {
+    if (!config->auth_script) {
         ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
                      "mod_wsgi (pid=%d): Location of WSGI authentication "
                      "script not provided.", getpid());
@@ -7894,7 +7904,156 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
         return AUTH_GENERAL_ERROR;
     }
 
-    return AUTH_GENERAL_ERROR;
+    /*
+     * Acquire the desired python interpreter. Once this is done
+     * it is safe to start manipulating python objects.
+     */
+
+    application_group = config->application_group;
+    if (!application_group)
+        application_group = "%{GLOBAL}";
+    
+    application_group = wsgi_application_group(r, application_group);
+
+    interp = wsgi_acquire_interpreter(application_group);
+
+    if (!interp) {
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
+                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
+                      getpid(), application_group);
+
+        PyErr_Clear();
+
+        return AUTH_GENERAL_ERROR;
+    }
+
+    /* Calculate the Python module name to be used for script. */
+
+    name = wsgi_module_name(r, config->auth_script);
+
+    /*
+     * Use a lock around the check to see if the module is
+     * already loaded and the import of the module to prevent
+     * two request handlers trying to import the module at the
+     * same time.
+     */
+
+#if APR_HAS_THREADS
+    Py_BEGIN_ALLOW_THREADS
+    apr_thread_mutex_lock(wsgi_module_lock);
+    Py_END_ALLOW_THREADS
+#endif
+
+    modules = PyImport_GetModuleDict();
+    module = PyDict_GetItemString(modules, name);
+
+    Py_XINCREF(module);
+
+    if (module)
+        exists = 1;
+
+    /*
+     * If script reloading is enabled and the module for it has
+     * previously been loaded, see if it has been modified since
+     * the last time it was accessed.
+     */
+
+    if (module && config->script_reloading) {
+        if (wsgi_reload_required(r, config->auth_script, module)) {
+            /*
+             * Script file has changed. Only support module
+             * reloading for authentication scripts. Remove the
+             * module from the modules dictionary before
+             * reloading it again. If code is executing within
+             * the module at the time, the callers reference
+             * count on the module should ensure it isn't
+             * actually destroyed until it is finished.
+             */
+
+            Py_DECREF(module);
+            module = NULL;
+
+            PyDict_DelItemString(modules, name);
+        }
+    }
+
+    if (!module) {
+        module = wsgi_load_source(r, name, exists, config->auth_script,
+                                  "", application_group);
+    }
+
+    /* Safe now to release the module lock. */
+
+#if APR_HAS_THREADS
+    apr_thread_mutex_unlock(wsgi_module_lock);
+#endif
+
+    /* Assume an internal server error unless everything okay. */
+
+    status = AUTH_GENERAL_ERROR;
+
+    /* Determine if script is executable and execute it. */
+
+    if (module) {
+        PyObject *module_dict = NULL;
+        PyObject *object = NULL;
+
+        module_dict = PyModule_GetDict(module);
+        object = PyDict_GetItemString(module_dict, "get_realm_hash");
+
+        if (object) {
+            PyObject *vars = NULL;
+            PyObject *args = NULL;
+            PyObject *result = NULL;
+
+            vars = wsgi_auth_environment(r);
+
+            Py_INCREF(object);
+            args = Py_BuildValue("(Oss)", vars, user, realm);
+            result = PyEval_CallObject(object, args);
+            Py_DECREF(args);
+            Py_DECREF(object);
+            Py_DECREF(vars);
+
+            if (result) {
+                char *hash = NULL;
+                if (!PyArg_ParseTuple(result, "is", &status, &hash)) {
+                    PyErr_SetString(PyExc_TypeError, "Digest auth "
+                                    "provider must return tuple "
+                                    "containing integer and string");
+                    status = AUTH_GENERAL_ERROR;
+                }
+                else {
+                    *rethash = apr_pstrdup(r->pool, hash);
+                }
+            }
+        }
+        else {
+            Py_BEGIN_ALLOW_THREADS
+            ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                          "mod_wsgi (pid=%d): Target WSGI authentication "
+                          "script '%s' does not provide 'Digest' auth "
+                          "provider.", getpid(), config->auth_script);
+            Py_END_ALLOW_THREADS
+        }
+
+        /* Log any details of exceptions if execution failed. */
+
+        if (PyErr_Occurred()) {
+            LogObject *log;
+            log = newLogObject(r, APLOG_ERR);
+            wsgi_log_python_error(r, log);
+            Py_DECREF(log);
+        }
+    }
+
+    /* Cleanup and release interpreter, */
+
+    Py_XDECREF(module);
+
+    wsgi_release_interpreter(interp);
+
+    return status;
 }
 
 static const authn_provider wsgi_authn_provider =
