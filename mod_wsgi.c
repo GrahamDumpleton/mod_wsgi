@@ -217,11 +217,6 @@ module AP_MODULE_DECLARE_DATA wsgi_module;
 
 /* Constants. */
 
-#define WSGI_EXTENSION_REQUEST_OBJECT 1
-#define WSGI_EXTENSION_AUTH_PROVIDER 2
-#define WSGI_EXTENSION_ALL (WSGI_EXTENSION_REQUEST_OBJECT|\
-                            WSGI_EXTENSION_AUTH_PROVIDER)
-
 #define WSGI_RELOAD_MODULE 0
 #define WSGI_RELOAD_PROCESS 1
 
@@ -277,7 +272,6 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
-    int apache_extensions;
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
@@ -326,7 +320,6 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->application_group = NULL;
     object->callable_object = NULL;
 
-    object->apache_extensions = -1;
     object->pass_authorization = -1;
     object->script_reloading = -1;
     object->reload_mechanism = -1;
@@ -389,11 +382,6 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->callable_object = parent->callable_object;
 
-    if (child->apache_extensions != -1)
-        config->apache_extensions = child->apache_extensions;
-    else
-        config->apache_extensions = parent->apache_extensions;
-
     if (child->pass_authorization != -1)
         config->pass_authorization = child->pass_authorization;
     else
@@ -426,7 +414,6 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
-    int apache_extensions;
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
@@ -447,7 +434,6 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->application_group = NULL;
     object->callable_object = NULL;
 
-    object->apache_extensions = -1;
     object->pass_authorization = -1;
     object->script_reloading = -1;
     object->reload_mechanism = -1;
@@ -499,11 +485,6 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->callable_object = parent->callable_object;
 
-    if (child->apache_extensions != -1)
-        config->apache_extensions = child->apache_extensions;
-    else
-        config->apache_extensions = parent->apache_extensions;
-
     if (child->pass_authorization != -1)
         config->pass_authorization = child->pass_authorization;
     else
@@ -541,7 +522,6 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
-    int apache_extensions;
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
@@ -781,14 +761,6 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         config->callable_object = sconfig->callable_object;
 
     config->callable_object = wsgi_callable_object(r, config->callable_object);
-
-    config->apache_extensions = dconfig->apache_extensions;
-
-    if (config->apache_extensions == -1) {
-        config->apache_extensions = sconfig->apache_extensions;
-        if (config->apache_extensions == -1)
-            config->apache_extensions = 0;
-    }
 
     config->pass_authorization = dconfig->pass_authorization;
 
@@ -2306,17 +2278,14 @@ static PyObject *Adapter_environ(AdapterObject *self)
 
     /*
      * If request being handled in first Python interpreter
-     * instance in embedded mode and passing of Apache request
-     * object enabled, add callback for obtaining it to the
-     * environment.
+     * instance in embedded mode add callback for obtaining
+     * Apache request object to the environment.
      */
 
-    if (self->config->apache_extensions & WSGI_EXTENSION_REQUEST_OBJECT) {
-        if (!wsgi_daemon_pool && !*self->config->application_group) {
-            object = PyObject_GetAttrString((PyObject *)self, "request_object");
-            PyDict_SetItemString(vars, "apache.request_object", object);
-            Py_DECREF(object);
-        }
+    if (!wsgi_daemon_pool && !*self->config->application_group) {
+        object = PyObject_GetAttrString((PyObject *)self, "request_object");
+        PyDict_SetItemString(vars, "apache.request_object", object);
+        Py_DECREF(object);
     }
 
     return vars;
@@ -4458,51 +4427,6 @@ static const char *wsgi_set_callable_object(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_apache_extensions(cmd_parms *cmd, void *mconfig,
-                                              const char *args)
-{
-    int flags = -1;
-
-    if (strcasecmp(args, "None") == 0) {
-        flags = 0;
-    }
-    else if (strcasecmp(args, "All") == 0) {
-        flags = WSGI_EXTENSION_ALL;
-    }
-    else {
-        flags = 0;
-
-        while (*args) {
-            const char *option;
-
-            option = ap_getword_conf(cmd->temp_pool, &args);
-
-            if (strcasecmp(option, "RequestObject") == 0) {
-                flags |= WSGI_EXTENSION_REQUEST_OBJECT;
-            }
-            else {
-                return apr_pstrcat(cmd->pool, "Invalid WSGI extension '",
-                                   option, "'", NULL);
-            }
-        }
-    }
-
-    if (cmd->path) {
-        WSGIDirectoryConfig *dconfig = NULL;
-        dconfig = (WSGIDirectoryConfig *)mconfig;
-        dconfig->apache_extensions = flags;
-    }
-    else {
-        WSGIServerConfig *sconfig = NULL;
-        sconfig = ap_get_module_config(cmd->server->module_config,
-                                       &wsgi_module);
-
-        sconfig->apache_extensions = flags;
-    }
-
-    return NULL;
-}
-
 static const char *wsgi_set_pass_authorization(cmd_parms *cmd, void *mconfig,
                                                const char *f)
 {
@@ -5118,8 +5042,6 @@ static const command_rec wsgi_commands[] =
     { "WSGICallableObject", wsgi_set_callable_object, NULL,
         OR_FILEINFO, TAKE1, "Name of entry point in WSGI script file." },
 
-    { "WSGIApacheExtensions", wsgi_set_apache_extensions, NULL,
-        ACCESS_CONF|RSRC_CONF, RAW_ARGS, "Enable Apache extensions." },
     { "WSGIPassAuthorization", wsgi_set_pass_authorization, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Enable/Disable WSGI authorization." },
     { "WSGIScriptReloading", wsgi_set_script_reloading, NULL,
@@ -8147,8 +8069,6 @@ static const command_rec wsgi_commands[] =
     AP_INIT_TAKE1("WSGICallableObject", wsgi_set_callable_object, NULL,
         OR_FILEINFO, "Name of entry point in WSGI script file."),
 
-    AP_INIT_RAW_ARGS("WSGIApacheExtensions", wsgi_set_apache_extensions, NULL,
-        ACCESS_CONF|RSRC_CONF, "Enable Apache extensions."),
     AP_INIT_TAKE1("WSGIPassAuthorization", wsgi_set_pass_authorization, NULL,
         ACCESS_CONF|RSRC_CONF, "Enable/Disable WSGI authorization."),
     AP_INIT_TAKE1("WSGIScriptReloading", wsgi_set_script_reloading, NULL,
@@ -8159,7 +8079,7 @@ static const command_rec wsgi_commands[] =
         OR_FILEINFO, "Enable/Disable buffering of response."),
 
 #if defined(MOD_WSGI_WITH_AUTHENTICATION)
-    AP_INIT_TAKE1("WSGIAuthScript", wsgi_set_auth_script, NULL,
+    AP_INIT_TAKE1("AuthWSGIScript", wsgi_set_auth_script, NULL,
         OR_AUTHCFG, "Define location of WSGI auth script file."),
 #endif
 
