@@ -8006,9 +8006,6 @@ static void wsgi_register_hooks(apr_pool_t *p)
     ap_hook_handler(wsgi_hook_handler, NULL, NULL, APR_HOOK_MIDDLE);
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    ap_hook_process_connection(wsgi_hook_daemon_handler, NULL, NULL,
-                               APR_HOOK_REALLY_FIRST);
-
     wsgi_header_filter_handle =
         ap_register_output_filter("WSGI_HEADER", wsgi_header_filter,
                                   NULL, AP_FTYPE_PROTOCOL);
