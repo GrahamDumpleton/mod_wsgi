@@ -7595,7 +7595,116 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
 #if defined(MOD_WSGI_WITH_AUTHENTICATION)
 
+#include "apr_lib.h"
 #include "ap_provider.h"
+
+static char *wsgi_original_uri(request_rec *r)
+{
+    char *first, *last;
+
+    if (r->the_request == NULL) {
+        return (char *) apr_pcalloc(r->pool, 1);
+    }
+
+    first = r->the_request;     /* use the request-line */
+
+    while (*first && !apr_isspace(*first)) {
+        ++first;                /* skip over the method */
+    }
+    while (apr_isspace(*first)) {
+        ++first;                /*   and the space(s)   */
+    }
+
+    last = first;
+    while (*last && !apr_isspace(*last)) {
+        ++last;                 /* end at next whitespace */
+    }
+
+    return apr_pstrmemdup(r->pool, first, last - first);
+}
+
+static PyObject *wsgi_auth_environment(request_rec *r)
+{
+    PyObject *vars;
+    PyObject *object;
+
+    server_rec *s = r->server;
+    conn_rec *c = r->connection;
+    const char *host;
+    apr_port_t rport;
+
+    vars = PyDict_New();
+
+    object = PyString_FromString(ap_psignature("", r));
+    PyDict_SetItemString(vars, "SERVER_SIGNATURE", object);
+    Py_DECREF(object);
+
+    object = PyString_FromString(ap_get_server_version());
+    PyDict_SetItemString(vars, "SERVER_SOFTWARE", object);
+    Py_DECREF(object);
+
+    object = PyString_FromString(ap_escape_html(r->pool,
+                                 ap_get_server_name(r)));
+    PyDict_SetItemString(vars, "SERVER_NAME", object);
+    Py_DECREF(object);
+
+    if (r->connection->local_ip) {
+        object = PyString_FromString(r->connection->local_ip);
+        PyDict_SetItemString(vars, "SERVER_ADDR", object);
+        Py_DECREF(object);
+    }
+
+    object = PyString_FromString(apr_psprintf(r->pool, "%u",
+                                 ap_get_server_port(r)));
+    PyDict_SetItemString(vars, "SERVER_PORT", object);
+    Py_DECREF(object);
+
+    host = ap_get_remote_host(c, r->per_dir_config, REMOTE_HOST, NULL);
+    if (host) {
+        object = PyString_FromString(host);
+        PyDict_SetItemString(vars, "REMOTE_HOST", object);
+        Py_DECREF(object);
+    }
+
+    if (c->remote_ip) {
+        object = PyString_FromString(c->remote_ip);
+        PyDict_SetItemString(vars, "REMOTE_ADDR", object);
+        Py_DECREF(object);
+    }
+
+    object = PyString_FromString(ap_document_root(r));
+    PyDict_SetItemString(vars, "DOCUMENT_ROOT", object);
+    Py_DECREF(object);
+
+    if (s->server_admin) {
+        object = PyString_FromString(s->server_admin);
+        PyDict_SetItemString(vars, "SERVER_ADMIN", object);
+        Py_DECREF(object);
+    }
+
+    rport = c->remote_addr->port;
+    object = PyString_FromString(apr_itoa(r->pool, rport));
+    PyDict_SetItemString(vars, "REMOTE_PORT", object);
+    Py_DECREF(object);
+
+    object = PyString_FromString(r->protocol);
+    PyDict_SetItemString(vars, "SERVER_PROTOCOL", object);
+    Py_DECREF(object);
+
+    object = PyString_FromString(r->method);
+    PyDict_SetItemString(vars, "REQUEST_METHOD", object);
+    Py_DECREF(object);
+
+    object = PyString_FromString(r->args ? r->args : "");
+    PyDict_SetItemString(vars, "QUERY_STRING", object);
+    Py_DECREF(object);
+
+    object = PyString_FromString(wsgi_original_uri(r));
+    PyDict_SetItemString(vars, "REQUEST_URI", object);
+    Py_DECREF(object);
+
+    return vars;
+}
 
 static authn_status wsgi_check_password(request_rec *r, const char *user,
                                         const char *password)
@@ -7720,14 +7829,18 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
         object = PyDict_GetItemString(module_dict, "check_password");
 
         if (object) {
+            PyObject *vars = NULL;
             PyObject *args = NULL;
             PyObject *result = NULL;
 
+            vars = wsgi_auth_environment(r);
+
             Py_INCREF(object);
-            args = Py_BuildValue("(ss)", user, password);
+            args = Py_BuildValue("(Oss)", vars, user, password);
             result = PyEval_CallObject(object, args);
             Py_DECREF(args);
             Py_DECREF(object);
+            Py_DECREF(vars);
 
             if (result) {
                 if (!PyInt_Check(result)) {
