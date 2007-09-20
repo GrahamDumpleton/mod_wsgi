@@ -272,6 +272,8 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
+    const char *authentication_group;
+
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
@@ -319,6 +321,8 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->process_group = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
+
+    object->authentication_group = NULL;
 
     object->pass_authorization = -1;
     object->script_reloading = -1;
@@ -382,6 +386,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->callable_object = parent->callable_object;
 
+    if (child->authentication_group)
+        config->authentication_group = child->authentication_group;
+    else
+        config->authentication_group = parent->authentication_group;
+
     if (child->pass_authorization != -1)
         config->pass_authorization = child->pass_authorization;
     else
@@ -414,6 +423,8 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
+    const char *authentication_group;
+
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
@@ -433,6 +444,8 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->process_group = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
+
+    object->authentication_group = NULL;
 
     object->pass_authorization = -1;
     object->script_reloading = -1;
@@ -484,6 +497,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
         config->callable_object = child->callable_object;
     else
         config->callable_object = parent->callable_object;
+
+    if (child->authentication_group)
+        config->authentication_group = child->authentication_group;
+    else
+        config->authentication_group = parent->authentication_group;
 
     if (child->pass_authorization != -1)
         config->pass_authorization = child->pass_authorization;
@@ -676,6 +694,40 @@ static const char *wsgi_application_group(request_rec *r, const char *s)
                 }
             }
         }
+    }
+
+    return s;
+}
+
+static const char *wsgi_authentication_group(request_rec *r, const char *s)
+{
+    const char *name = NULL;
+    const char *value = NULL;
+
+    const char *h = NULL;
+    apr_port_t p = 0;
+
+    if (!s)
+        return "";
+
+    if (*s != '%')
+        return s;
+
+    name = s + 1;
+
+    if (*name) {
+        if (!strcmp(name, "{SERVER}")) {
+            h = r->server->server_hostname;
+            p = ap_get_server_port(r);
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
+
+        if (!strcmp(name, "{GLOBAL}"))
+            return "";
     }
 
     return s;
@@ -1117,8 +1169,8 @@ static void wsgi_log_python_error(request_rec *r, LogObject *log)
     else {
         Py_BEGIN_ALLOW_THREADS
         ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
-                      "mod_wsgi (pid=%d): Exception occurred within WSGI "
-                      "script '%s'.", getpid(), r->filename);
+                      "mod_wsgi (pid=%d): Exception occurred processing "
+                      "WSGI script '%s'.", getpid(), r->filename);
         Py_END_ALLOW_THREADS
     }
 
@@ -2888,24 +2940,28 @@ static InterpreterObject *newInterpreterObject(const char *name,
     }
 
     if (!module) {
-#if defined(MOD_WSGI_WITH_AUTHENTICATION)
-        module = PyImport_AddModule("apache.mod_auth");
-
-        PyModule_AddObject(module, "AUTH_DENIED",
-                           PyInt_FromLong(AUTH_DENIED));
-        PyModule_AddObject(module, "AUTH_GRANTED",
-                           PyInt_FromLong(AUTH_GRANTED));
-        PyModule_AddObject(module, "AUTH_USER_FOUND",
-                           PyInt_FromLong(AUTH_USER_FOUND));
-        PyModule_AddObject(module, "AUTH_USER_NOT_FOUND",
-                           PyInt_FromLong(AUTH_USER_NOT_FOUND));
-        PyModule_AddObject(module, "AUTH_GENERAL_ERROR",
-                           PyInt_FromLong(AUTH_GENERAL_ERROR));
-#endif
+        PyObject *inner;
 
         module = PyImport_AddModule("apache");
 
         Py_INCREF(module);
+
+#if defined(MOD_WSGI_WITH_AUTHENTICATION)
+        inner = PyImport_AddModule("apache.mod_auth");
+
+        PyModule_AddObject(inner, "AUTH_DENIED",
+                           PyInt_FromLong(AUTH_DENIED));
+        PyModule_AddObject(inner, "AUTH_GRANTED",
+                           PyInt_FromLong(AUTH_GRANTED));
+        PyModule_AddObject(inner, "AUTH_USER_FOUND",
+                           PyInt_FromLong(AUTH_USER_FOUND));
+        PyModule_AddObject(inner, "AUTH_USER_NOT_FOUND",
+                           PyInt_FromLong(AUTH_USER_NOT_FOUND));
+        PyModule_AddObject(inner, "AUTH_GENERAL_ERROR",
+                           PyInt_FromLong(AUTH_GENERAL_ERROR));
+
+        PyModule_AddObject(module, "mod_auth", inner);
+#endif
     }
 
     /*
@@ -4422,6 +4478,24 @@ static const char *wsgi_set_callable_object(cmd_parms *cmd, void *mconfig,
         sconfig = ap_get_module_config(cmd->server->module_config,
                                        &wsgi_module);
         sconfig->callable_object = n;
+    }
+
+    return NULL;
+}
+
+static const char *wsgi_set_authentication_group(cmd_parms *cmd, void *mconfig,
+                                                 const char *n)
+{
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+        dconfig->authentication_group = n;
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+        sconfig->authentication_group = n;
     }
 
     return NULL;
@@ -7639,7 +7713,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
     char *name = NULL;
     int exists = 0;
 
-    const char *application_group;
+    const char *group;
 
     authn_status status;
 
@@ -7658,18 +7732,14 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
      * it is safe to start manipulating python objects.
      */
 
-    application_group = config->application_group;
-    if (!application_group)
-        application_group = "%{GLOBAL}";
-    
-    application_group = wsgi_application_group(r, application_group);
+    group = wsgi_authentication_group(r, config->authentication_group);
 
-    interp = wsgi_acquire_interpreter(application_group);
+    interp = wsgi_acquire_interpreter(group);
 
     if (!interp) {
         ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
                       "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), application_group);
+                      getpid(), group);
 
         PyErr_Clear();
 
@@ -7728,7 +7798,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     if (!module) {
         module = wsgi_load_source(r, name, exists, config->auth_script,
-                                  "", application_group);
+                                  "", group);
     }
 
     /* Safe now to release the module lock. */
@@ -7812,7 +7882,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
     char *name = NULL;
     int exists = 0;
 
-    const char *application_group;
+    const char *group;
 
     authn_status status;
 
@@ -7831,18 +7901,14 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
      * it is safe to start manipulating python objects.
      */
 
-    application_group = config->application_group;
-    if (!application_group)
-        application_group = "%{GLOBAL}";
+    group = wsgi_authentication_group(r, config->authentication_group);
     
-    application_group = wsgi_application_group(r, application_group);
-
-    interp = wsgi_acquire_interpreter(application_group);
+    interp = wsgi_acquire_interpreter(group);
 
     if (!interp) {
         ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
                       "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), application_group);
+                      getpid(), group);
 
         PyErr_Clear();
 
@@ -7901,7 +7967,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     if (!module) {
         module = wsgi_load_source(r, name, exists, config->auth_script,
-                                  "", application_group);
+                                  "", group);
     }
 
     /* Safe now to release the module lock. */
@@ -8078,6 +8144,8 @@ static const command_rec wsgi_commands[] =
 #if defined(MOD_WSGI_WITH_AUTHENTICATION)
     AP_INIT_TAKE1("AuthWSGIScript", wsgi_set_auth_script, NULL,
         OR_AUTHCFG, "Define location of WSGI auth script file."),
+    AP_INIT_TAKE1("AuthWSGIApplicationGroup", wsgi_set_authentication_group,
+        NULL, OR_AUTHCFG, "Name of WSGI authentication group."),
 #endif
 
     { NULL }
