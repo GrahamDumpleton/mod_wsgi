@@ -3675,11 +3675,11 @@ static int wsgi_execute_script(request_rec *r)
                 adapter->input->r = NULL;
 
                 /*
-		 * Flush any data held within error log object
-		 * and mark it as expired so that it can't be
-		 * used beyond life of the request. We hope that
-		 * this doesn't error, as it will overwrite any
-		 * error from application if it does.
+                 * Flush any data held within error log object
+                 * and mark it as expired so that it can't be
+                 * used beyond life of the request. We hope that
+                 * this doesn't error, as it will overwrite any
+                 * error from application if it does.
                  */
 
                 args = PyTuple_New(0);
@@ -5707,6 +5707,10 @@ static void *wsgi_reaper_thread(apr_thread_t *thd, void *data)
     return NULL;
 }
 
+static void ap_logio_add_bytes_out(conn_rec *c, apr_off_t bytes) {
+    /* XXX Do nothing. */
+}                    
+
 static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 {
     WSGIDaemonThread *threads;
@@ -5926,6 +5930,16 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          */
 
         ap_close_listeners();
+
+        /*
+         * Need to deregister ap_logio_add_bytes_out() function
+         * if mod_logio module is being loaded as invocation of
+         * this optional module by core filter will cause a
+         * crash in daemon process. We actually register our own
+         * version of the function that doesn't do anything.
+         */
+
+        APR_REGISTER_OPTIONAL_FN(ap_logio_add_bytes_out);
 
         /*
          * Register signal handler to receive shutdown signal
