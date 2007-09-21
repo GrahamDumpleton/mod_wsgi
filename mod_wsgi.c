@@ -2960,6 +2960,8 @@ static InterpreterObject *newInterpreterObject(const char *name,
         PyModule_AddObject(inner, "AUTH_GENERAL_ERROR",
                            PyInt_FromLong(AUTH_GENERAL_ERROR));
 
+        Py_INCREF(inner);
+
         PyModule_AddObject(module, "mod_auth", inner);
 #endif
     }
