@@ -430,7 +430,7 @@ typedef struct {
     int reload_mechanism;
     int output_buffering;
 
-    const char *auth_script;
+    const char *auth_user_script;
 } WSGIDirectoryConfig;
 
 static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
@@ -452,7 +452,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->reload_mechanism = -1;
     object->output_buffering = -1;
 
-    object->auth_script = NULL;
+    object->auth_user_script = NULL;
 
     return object;
 }
@@ -523,10 +523,10 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->output_buffering = parent->output_buffering;
 
-    if (child->auth_script)
-        config->auth_script = child->auth_script;
+    if (child->auth_user_script)
+        config->auth_user_script = child->auth_user_script;
     else
-        config->auth_script = parent->auth_script;
+        config->auth_user_script = parent->auth_user_script;
 
     return config;
 }
@@ -4627,12 +4627,12 @@ static const char *wsgi_set_output_buffering(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_auth_script(cmd_parms *cmd, void *mconfig,
-                                        const char *n)
+static const char *wsgi_set_auth_user_script(cmd_parms *cmd, void *mconfig,
+                                             const char *n)
 {
     WSGIDirectoryConfig *dconfig = NULL;
     dconfig = (WSGIDirectoryConfig *)mconfig;
-    dconfig->auth_script = n;
+    dconfig->auth_user_script = n;
 
     return NULL;
 }
@@ -7721,10 +7721,10 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     config = ap_get_module_config(r->per_dir_config, &wsgi_module);
 
-    if (!config->auth_script) {
+    if (!config->auth_user_script) {
         ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI authentication "
-                     "script not provided.", getpid());
+                     "mod_wsgi (pid=%d): Location of WSGI user "
+                     "authentication script not provided.", getpid());
 
         return AUTH_GENERAL_ERROR;
     }
@@ -7750,7 +7750,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     /* Calculate the Python module name to be used for script. */
 
-    name = wsgi_module_name(r, config->auth_script);
+    name = wsgi_module_name(r, config->auth_user_script);
 
     /*
      * Use a lock around the check to see if the module is
@@ -7780,7 +7780,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r, config->auth_script, module)) {
+        if (wsgi_reload_required(r, config->auth_user_script, module)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -7799,7 +7799,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
     }
 
     if (!module) {
-        module = wsgi_load_source(r, name, exists, config->auth_script,
+        module = wsgi_load_source(r, name, exists, config->auth_user_script,
                                   "", group);
     }
 
@@ -7848,9 +7848,10 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
         else {
             Py_BEGIN_ALLOW_THREADS
             ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
-                          "mod_wsgi (pid=%d): Target WSGI authentication "
-                          "script '%s' does not provide 'Basic' auth "
-                          "provider.", getpid(), config->auth_script);
+                          "mod_wsgi (pid=%d): Target WSGI user "
+                          "authentication script '%s' does not provide "
+                          "'Basic' auth provider.", getpid(),
+                          config->auth_user_script);
             Py_END_ALLOW_THREADS
         }
 
@@ -7890,10 +7891,10 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     config = ap_get_module_config(r->per_dir_config, &wsgi_module);
 
-    if (!config->auth_script) {
+    if (!config->auth_user_script) {
         ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI authentication "
-                     "script not provided.", getpid());
+                     "mod_wsgi (pid=%d): Location of WSGI user "
+                     "authentication script not provided.", getpid());
 
         return AUTH_GENERAL_ERROR;
     }
@@ -7919,7 +7920,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     /* Calculate the Python module name to be used for script. */
 
-    name = wsgi_module_name(r, config->auth_script);
+    name = wsgi_module_name(r, config->auth_user_script);
 
     /*
      * Use a lock around the check to see if the module is
@@ -7949,7 +7950,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r, config->auth_script, module)) {
+        if (wsgi_reload_required(r, config->auth_user_script, module)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -7968,7 +7969,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
     }
 
     if (!module) {
-        module = wsgi_load_source(r, name, exists, config->auth_script,
+        module = wsgi_load_source(r, name, exists, config->auth_user_script,
                                   "", group);
     }
 
@@ -8021,9 +8022,10 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
         else {
             Py_BEGIN_ALLOW_THREADS
             ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
-                          "mod_wsgi (pid=%d): Target WSGI authentication "
-                          "script '%s' does not provide 'Digest' auth "
-                          "provider.", getpid(), config->auth_script);
+                          "mod_wsgi (pid=%d): Target WSGI user "
+                          "authentication script '%s' does not provide "
+                          "'Digest' auth provider.", getpid(),
+                          config->auth_user_script);
             Py_END_ALLOW_THREADS
         }
 
@@ -8117,66 +8119,66 @@ static void wsgi_register_hooks(apr_pool_t *p)
 
 static const command_rec wsgi_commands[] =
 {
-    AP_INIT_TAKE2("WSGIScriptAlias", wsgi_add_script_alias, NULL,
-        RSRC_CONF, "Map location to target WSGI script file."),
-    AP_INIT_TAKE2("WSGIScriptAliasMatch", wsgi_add_script_alias, "*",
-        RSRC_CONF, "Map location pattern to target WSGI script file."),
+    AP_INIT_TAKE2("WSGIScriptAlias", wsgi_add_script_alias,
+        NULL, RSRC_CONF, "Map location to target WSGI script file."),
+    AP_INIT_TAKE2("WSGIScriptAliasMatch", wsgi_add_script_alias,
+        "*", RSRC_CONF, "Map location pattern to target WSGI script file."),
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    AP_INIT_RAW_ARGS("WSGIDaemonProcess", wsgi_add_daemon_process, NULL,
-        RSRC_CONF, "Specify details of daemon processes to start."),
-    AP_INIT_TAKE1("WSGISocketPrefix", wsgi_set_socket_prefix, NULL,
-        RSRC_CONF, "Path prefix for the daemon process sockets."),
-    AP_INIT_TAKE1("WSGIAcceptMutex", wsgi_set_accept_mutex, NULL,
-        RSRC_CONF, "Set accept mutex type for daemon processes."),
+    AP_INIT_RAW_ARGS("WSGIDaemonProcess", wsgi_add_daemon_process,
+        NULL, RSRC_CONF, "Specify details of daemon processes to start."),
+    AP_INIT_TAKE1("WSGISocketPrefix", wsgi_set_socket_prefix,
+        NULL, RSRC_CONF, "Path prefix for the daemon process sockets."),
+    AP_INIT_TAKE1("WSGIAcceptMutex", wsgi_set_accept_mutex,
+        NULL, RSRC_CONF, "Set accept mutex type for daemon processes."),
 #endif
 
-    AP_INIT_TAKE1("WSGIPythonOptimize", wsgi_set_python_optimize, NULL,
-        RSRC_CONF, "Set level of Python compiler optimisations."),
+    AP_INIT_TAKE1("WSGIPythonOptimize", wsgi_set_python_optimize,
+        NULL, RSRC_CONF, "Set level of Python compiler optimisations."),
 #ifndef WIN32
-    AP_INIT_TAKE1("WSGIPythonExecutable", wsgi_set_python_executable, NULL,
-        RSRC_CONF, "Python executable absolute path name."),
+    AP_INIT_TAKE1("WSGIPythonExecutable", wsgi_set_python_executable,
+        NULL, RSRC_CONF, "Python executable absolute path name."),
 #endif
-    AP_INIT_TAKE1("WSGIPythonHome", wsgi_set_python_home, NULL,
-        RSRC_CONF, "Python prefix/exec_prefix absolute path names."),
-    AP_INIT_TAKE1("WSGIPythonPath", wsgi_set_python_path, NULL,
-        RSRC_CONF, "Python module search path."),
+    AP_INIT_TAKE1("WSGIPythonHome", wsgi_set_python_home,
+        NULL, RSRC_CONF, "Python prefix/exec_prefix absolute path names."),
+    AP_INIT_TAKE1("WSGIPythonPath", wsgi_set_python_path,
+        NULL, RSRC_CONF, "Python module search path."),
 
-    AP_INIT_TAKE1("WSGIRestrictStdin", wsgi_set_restrict_stdin, NULL,
-        RSRC_CONF, "Enable/Disable restrictions on use of STDIN."),
-    AP_INIT_TAKE1("WSGIRestrictStdout", wsgi_set_restrict_stdout, NULL,
-        RSRC_CONF, "Enable/Disable restrictions on use of STDOUT."),
-    AP_INIT_TAKE1("WSGIRestrictSignal", wsgi_set_restrict_signal, NULL,
-        RSRC_CONF, "Enable/Disable restrictions on use of signal()."),
+    AP_INIT_TAKE1("WSGIRestrictStdin", wsgi_set_restrict_stdin,
+        NULL, RSRC_CONF, "Enable/Disable restrictions on use of STDIN."),
+    AP_INIT_TAKE1("WSGIRestrictStdout", wsgi_set_restrict_stdout,
+        NULL, RSRC_CONF, "Enable/Disable restrictions on use of STDOUT."),
+    AP_INIT_TAKE1("WSGIRestrictSignal", wsgi_set_restrict_signal,
+        NULL, RSRC_CONF, "Enable/Disable restrictions on use of signal()."),
 
-    AP_INIT_TAKE1("WSGICaseSensitivity", wsgi_set_case_sensitivity, NULL,
-        RSRC_CONF, "Define whether file system is case sensitive."),
+    AP_INIT_TAKE1("WSGICaseSensitivity", wsgi_set_case_sensitivity,
+        NULL, RSRC_CONF, "Define whether file system is case sensitive."),
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    AP_INIT_RAW_ARGS("WSGIRestrictProcess", wsgi_set_restrict_process, NULL,
-        ACCESS_CONF|RSRC_CONF, "Limit selectable WSGI process groups."),
-    AP_INIT_TAKE1("WSGIProcessGroup", wsgi_set_process_group, NULL,
-        ACCESS_CONF|RSRC_CONF, "Name of the WSGI process group."),
+    AP_INIT_RAW_ARGS("WSGIRestrictProcess", wsgi_set_restrict_process,
+        NULL, ACCESS_CONF|RSRC_CONF, "Limit selectable WSGI process groups."),
+    AP_INIT_TAKE1("WSGIProcessGroup", wsgi_set_process_group,
+        NULL, ACCESS_CONF|RSRC_CONF, "Name of the WSGI process group."),
 #endif
 
-    AP_INIT_TAKE1("WSGIApplicationGroup", wsgi_set_application_group, NULL,
-        ACCESS_CONF|RSRC_CONF, "Name of WSGI application group."),
-    AP_INIT_TAKE1("WSGICallableObject", wsgi_set_callable_object, NULL,
-        OR_FILEINFO, "Name of entry point in WSGI script file."),
+    AP_INIT_TAKE1("WSGIApplicationGroup", wsgi_set_application_group,
+        NULL, ACCESS_CONF|RSRC_CONF, "Name of WSGI application group."),
+    AP_INIT_TAKE1("WSGICallableObject", wsgi_set_callable_object,
+        NULL, OR_FILEINFO, "Name of entry point in WSGI script file."),
 
-    AP_INIT_TAKE1("WSGIPassAuthorization", wsgi_set_pass_authorization, NULL,
-        ACCESS_CONF|RSRC_CONF, "Enable/Disable WSGI authorization."),
-    AP_INIT_TAKE1("WSGIScriptReloading", wsgi_set_script_reloading, NULL,
-        OR_FILEINFO, "Enable/Disable script reloading mechanism."),
-    AP_INIT_TAKE1("WSGIReloadMechanism", wsgi_set_reload_mechanism, NULL,
-        OR_FILEINFO, "Defines what is reloaded when a reload occurs."),
-    AP_INIT_TAKE1("WSGIOutputBuffering", wsgi_set_output_buffering, NULL,
-        OR_FILEINFO, "Enable/Disable buffering of response."),
+    AP_INIT_TAKE1("WSGIPassAuthorization", wsgi_set_pass_authorization,
+         NULL, ACCESS_CONF|RSRC_CONF, "Enable/Disable WSGI authorization."),
+    AP_INIT_TAKE1("WSGIScriptReloading", wsgi_set_script_reloading,
+        NULL, OR_FILEINFO, "Enable/Disable script reloading mechanism."),
+    AP_INIT_TAKE1("WSGIReloadMechanism", wsgi_set_reload_mechanism,
+        NULL, OR_FILEINFO, "Defines what is reloaded when a reload occurs."),
+    AP_INIT_TAKE1("WSGIOutputBuffering", wsgi_set_output_buffering,
+        NULL, OR_FILEINFO, "Enable/Disable buffering of response."),
 
 #if defined(MOD_WSGI_WITH_AUTHENTICATION)
-    AP_INIT_TAKE1("AuthWSGIScript", wsgi_set_auth_script, NULL,
-        OR_AUTHCFG, "Define location of WSGI auth script file."),
-    AP_INIT_TAKE1("AuthWSGIApplicationGroup", wsgi_set_authentication_group,
+    AP_INIT_TAKE1("AuthWSGIUserScript", wsgi_set_auth_user_script,
+        NULL, OR_AUTHCFG, "Define location of WSGI user auth script file."),
+    AP_INIT_TAKE1("WSGIAuthenticationGroup", wsgi_set_authentication_group,
         NULL, OR_AUTHCFG, "Name of WSGI authentication group."),
 #endif
 
