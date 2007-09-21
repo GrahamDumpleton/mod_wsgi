@@ -5707,10 +5707,6 @@ static void *wsgi_reaper_thread(apr_thread_t *thd, void *data)
     return NULL;
 }
 
-static void ap_logio_add_bytes_out(conn_rec *c, apr_off_t bytes) {
-    /* XXX Do nothing. */
-}                    
-
 static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 {
     WSGIDaemonThread *threads;
@@ -5930,16 +5926,6 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          */
 
         ap_close_listeners();
-
-        /*
-         * Need to deregister ap_logio_add_bytes_out() function
-         * if mod_logio module is being loaded as invocation of
-         * this optional module by core filter will cause a
-         * crash in daemon process. We actually register our own
-         * version of the function that doesn't do anything.
-         */
-
-        APR_REGISTER_OPTIONAL_FN(ap_logio_add_bytes_out);
 
         /*
          * Register signal handler to receive shutdown signal
@@ -7092,11 +7078,39 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
     wsgi_python_child_init(p);
 }
 
+APR_OPTIONAL_FN_TYPE(ap_logio_add_bytes_out) *wsgi_logio_add_bytes_out;
+
+static void ap_logio_add_bytes_out(conn_rec *c, apr_off_t bytes)
+{
+    if (!wsgi_daemon_pool && wsgi_logio_add_bytes_out)
+        wsgi_logio_add_bytes_out(c, bytes);
+}
+
+static int wsgi_hook_logio(apr_pool_t *pconf, apr_pool_t *ptemp,
+                           apr_pool_t *plog, server_rec *s)
+{
+    /*
+     * This horrible fiddle is to insert a proxy function before
+     * the normal ap_logio_add_bytes_out() function so that the
+     * call to it can be disabled when mod_wsgi running in daemon
+     * mode. If this is not done, then daemon process will crash
+     * when mod_logio has been loaded.
+     */
+
+    wsgi_logio_add_bytes_out = APR_RETRIEVE_OPTIONAL_FN(ap_logio_add_bytes_out);
+
+    APR_REGISTER_OPTIONAL_FN(ap_logio_add_bytes_out);
+
+    return OK;
+}
+
 static void wsgi_register_hooks(apr_pool_t *p)
 {
-    static const char * const prev[] = { "mod_alias.c", NULL };
-    static const char * const next[]= { "mod_userdir.c",
+    static const char * const prev1[] = { "mod_alias.c", NULL };
+    static const char * const next1[]= { "mod_userdir.c",
                                         "mod_vhost_alias.c", NULL };
+
+    static const char * const next2[] = { "core.c", NULL };
 
     /*
      * Perform initialisation last in the post config phase to
@@ -7108,10 +7122,12 @@ static void wsgi_register_hooks(apr_pool_t *p)
     ap_hook_post_config(wsgi_hook_init, NULL, NULL, APR_HOOK_LAST);
     ap_hook_child_init(wsgi_hook_child_init, NULL, NULL, APR_HOOK_MIDDLE);
 
-    ap_hook_translate_name(wsgi_hook_intercept, prev, next, APR_HOOK_MIDDLE);
+    ap_hook_translate_name(wsgi_hook_intercept, prev1, next1, APR_HOOK_MIDDLE);
     ap_hook_handler(wsgi_hook_handler, NULL, NULL, APR_HOOK_MIDDLE);
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
+    ap_hook_post_config(wsgi_hook_logio, NULL, next2, APR_HOOK_REALLY_FIRST);
+
     wsgi_header_filter_handle =
         ap_register_output_filter("WSGI_HEADER", wsgi_header_filter,
                                   NULL, AP_FTYPE_PROTOCOL);
