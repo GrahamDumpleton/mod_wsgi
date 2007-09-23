@@ -137,6 +137,7 @@ typedef regmatch_t ap_regmatch_t;
 
 #if defined(MOD_WSGI_WITH_AUTHENTICATION)
 #include "mod_auth.h"
+#include "ap_provider.h"
 
 static PyTypeObject Auth_Type;
 #endif
@@ -2356,6 +2357,24 @@ static PyObject *Adapter_environ(AdapterObject *self)
         Py_DECREF(object);
     }
 
+    /*
+     * If auth provider mechanism available and application
+     * running in embedded mode, add callback for performing
+     * user authentication.
+     */
+
+#if defined(MOD_WSGI_WITH_AUTHENTICATION)
+    if (!wsgi_daemon_pool) {
+        object = PyObject_GetAttrString((PyObject *)self, "check_password");
+        PyDict_SetItemString(vars, "apache.check_password", object);
+        Py_DECREF(object);
+
+        object = PyObject_GetAttrString((PyObject *)self, "get_realm_hash");
+        PyDict_SetItemString(vars, "apache.get_realm_hash", object);
+        Py_DECREF(object);
+    }
+#endif
+
     return vars;
 }
 
@@ -2530,10 +2549,93 @@ static PyObject *Adapter_request_object(AdapterObject *self, PyObject *args)
     return object;
 }
 
+#if defined(MOD_WSGI_WITH_AUTHENTICATION)
+static PyObject *Adapter_check_password(AdapterObject *self, PyObject *args)
+{
+    const char *name = NULL;
+    const char *user = NULL;
+    const char *password = NULL;
+
+    const authn_provider *provider;
+    authn_status auth_result = AUTH_GENERAL_ERROR;
+
+    if (!self->r) {
+        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        return NULL;
+    }
+
+    if (!PyArg_ParseTuple(args, "sss:check_password", &name,
+                          &user, &password)) {
+        return NULL;
+    }
+
+    provider = ap_lookup_provider(AUTHN_PROVIDER_GROUP, name, "0");
+                                  
+    if (!provider || !provider->check_password) {
+        Py_BEGIN_ALLOW_THREADS
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), self->r,
+                      "mod_wsgi (pid=%d): No authn provider named '%s' "
+                      "configured.", getpid(), name);
+        Py_END_ALLOW_THREADS
+
+        return PyInt_FromLong(AUTH_GENERAL_ERROR);
+    }
+
+    Py_BEGIN_ALLOW_THREADS
+    auth_result = provider->check_password(self->r, user, password);
+    Py_END_ALLOW_THREADS
+
+    return PyInt_FromLong(auth_result);
+}
+
+static PyObject *Adapter_get_realm_hash(AdapterObject *self, PyObject *args)
+{
+    const char *name = NULL;
+    const char *realm = NULL;
+    const char *user = NULL;
+
+    const authn_provider *provider;
+    authn_status auth_result = AUTH_GENERAL_ERROR;
+    char* auth_hash;
+
+    if (!self->r) {
+        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        return NULL;
+    }
+
+    if (!PyArg_ParseTuple(args, "sss:get_realm_hash", &name,
+                          &user, &realm)) {
+        return NULL;
+    }
+
+    provider = ap_lookup_provider(AUTHN_PROVIDER_GROUP, name, "0");
+                                  
+    if (!provider || !provider->get_realm_hash) {
+        Py_BEGIN_ALLOW_THREADS
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), self->r,
+                      "mod_wsgi (pid=%d): No authn provider named '%s' "
+                      "configured.", getpid(), name);
+        Py_END_ALLOW_THREADS
+
+        return Py_BuildValue("(is)", AUTH_GENERAL_ERROR, "");
+    }
+
+    Py_BEGIN_ALLOW_THREADS
+    auth_result = provider->get_realm_hash(self->r, user, realm, &auth_hash);
+    Py_END_ALLOW_THREADS
+
+    return Py_BuildValue("(is)", auth_result, auth_hash);
+}
+#endif
+
 static PyMethodDef Adapter_methods[] = {
     { "start_response", (PyCFunction)Adapter_start_response, METH_VARARGS, 0},
     { "write",          (PyCFunction)Adapter_write, METH_VARARGS, 0},
     { "request_object", (PyCFunction)Adapter_request_object, METH_VARARGS, 0},
+#if defined(MOD_WSGI_WITH_AUTHENTICATION)
+    { "check_password", (PyCFunction)Adapter_check_password, METH_VARARGS, 0},
+    { "get_realm_hash", (PyCFunction)Adapter_get_realm_hash, METH_VARARGS, 0},
+#endif
     { NULL, NULL}
 };
 
@@ -7614,7 +7716,6 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 #if defined(MOD_WSGI_WITH_AUTHENTICATION)
 
 #include "apr_lib.h"
-#include "ap_provider.h"
 
 static char *wsgi_original_uri(request_rec *r)
 {
