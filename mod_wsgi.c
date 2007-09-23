@@ -3809,13 +3809,14 @@ static PyObject *wsgi_load_source(request_rec *r, const char *name,
         PyModule_AddObject(m, "__mtime__", object);
     }
     else {
+        LogObject *log;
+
         Py_BEGIN_ALLOW_THREADS
         ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                       "mod_wsgi (pid=%d): Target WSGI script '%s' cannot "
                       "be loaded as Python module.", getpid(), path);
         Py_END_ALLOW_THREADS
 
-        LogObject *log;
         log = newLogObject(r, APLOG_ERR);
         wsgi_log_python_error(r, log);
         Py_DECREF(log);
@@ -3980,6 +3981,7 @@ static int wsgi_execute_script(request_rec *r)
             Py_DECREF(module);
             module = NULL;
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
             if (*config->process_group &&
                 config->reload_mechanism == WSGI_RELOAD_PROCESS) {
 
@@ -4029,6 +4031,19 @@ static int wsgi_execute_script(request_rec *r)
 
                 PyDict_DelItemString(modules, name);
             }
+#else
+            /*
+             * Need to reload just the script module. Remove
+             * the module from the modules dictionary before
+             * reloading it again. If code is executing
+             * within the module at the time, the callers
+             * reference count on the module should ensure
+             * it isn't actually destroyed until it is
+             * finished.
+             */
+
+            PyDict_DelItemString(modules, name);
+#endif
         }
     }
 
@@ -4041,7 +4056,7 @@ static int wsgi_execute_script(request_rec *r)
      * remote end and data will then be sent.
      */
 
-#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+#if defined(MOD_WSGI_WITH_DAEMONS)
     if (*config->process_group &&
         config->reload_mechanism == WSGI_RELOAD_PROCESS) {
 
