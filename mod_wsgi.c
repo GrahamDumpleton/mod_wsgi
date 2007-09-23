@@ -2363,6 +2363,7 @@ static PyObject *Adapter_environ(AdapterObject *self)
      * user authentication.
      */
 
+#if 0
 #if defined(MOD_WSGI_WITH_AUTHENTICATION)
     if (!wsgi_daemon_pool) {
         object = PyObject_GetAttrString((PyObject *)self, "check_password");
@@ -2373,6 +2374,7 @@ static PyObject *Adapter_environ(AdapterObject *self)
         PyDict_SetItemString(vars, "apache.get_realm_hash", object);
         Py_DECREF(object);
     }
+#endif
 #endif
 
     return vars;
