@@ -195,7 +195,7 @@ static apr_status_t apr_os_pipe_put_ex(apr_file_t **file,
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 1
 #define MOD_WSGI_MINORVERSION_NUMBER 0
-#define MOD_WSGI_VERSION_STRING "1.1c1"
+#define MOD_WSGI_VERSION_STRING "1.1c2"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -7078,6 +7078,7 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
     wsgi_python_child_init(p);
 }
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
 APR_OPTIONAL_FN_TYPE(ap_logio_add_bytes_out) *wsgi_logio_add_bytes_out;
 
 static void ap_logio_add_bytes_out(conn_rec *c, apr_off_t bytes)
@@ -7103,6 +7104,7 @@ static int wsgi_hook_logio(apr_pool_t *pconf, apr_pool_t *ptemp,
 
     return OK;
 }
+#endif
 
 static void wsgi_register_hooks(apr_pool_t *p)
 {
