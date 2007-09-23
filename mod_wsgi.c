@@ -137,6 +137,8 @@ typedef regmatch_t ap_regmatch_t;
 
 #if defined(MOD_WSGI_WITH_AUTHENTICATION)
 #include "mod_auth.h"
+
+static PyTypeObject Auth_Type;
 #endif
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
@@ -540,10 +542,14 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
+    const char *authentication_group;
+
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
     int output_buffering;
+
+    const char *auth_user_script;
 } WSGIRequestConfig;
 
 static const char *wsgi_script_name(request_rec *r)
@@ -814,6 +820,14 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     config->callable_object = wsgi_callable_object(r, config->callable_object);
 
+    config->authentication_group = dconfig->authentication_group;
+
+    if (!config->authentication_group)
+        config->authentication_group = sconfig->authentication_group;
+
+    config->authentication_group = wsgi_authentication_group(r,
+            config->authentication_group);
+
     config->pass_authorization = dconfig->pass_authorization;
 
     if (config->pass_authorization < 0) {
@@ -845,6 +859,8 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         if (config->output_buffering < 0)
             config->output_buffering = 0;
     }
+
+    config->auth_user_script = dconfig->auth_user_script;
 
     return config;
 }
@@ -4175,6 +4191,10 @@ static void wsgi_python_child_init(apr_pool_t *p)
     PyType_Ready(&Adapter_Type);
     PyType_Ready(&Restricted_Type);
     PyType_Ready(&Interpreter_Type);
+
+#if defined(MOD_WSGI_WITH_AUTHENTICATION)
+    PyType_Ready(&Auth_Type);
+#endif
 
     /* Initialise Python interpreter instance table and lock. */
 
@@ -7621,11 +7641,91 @@ static char *wsgi_original_uri(request_rec *r)
     return apr_pstrmemdup(r->pool, first, last - first);
 }
 
-static PyObject *wsgi_auth_environment(request_rec *r)
+typedef struct {
+        PyObject_HEAD
+        request_rec *r;
+        WSGIRequestConfig *config;
+        LogObject *log;
+} AuthObject;
+
+static AuthObject *newAuthObject(request_rec *r, WSGIRequestConfig *config)
+{
+    AuthObject *self;
+
+    self = PyObject_New(AuthObject, &Auth_Type);
+    if (self == NULL)
+        return NULL;
+
+    self->config = config;
+
+    self->r = r;
+
+    self->log = newLogObject(r, APLOG_ERR);
+
+    return self;
+}
+
+static void Auth_dealloc(AuthObject *self)
+{
+    Py_DECREF(self->log);
+
+    PyObject_Del(self);
+}
+
+static PyObject *Auth_request_object(AuthObject *self, PyObject *args)
+{
+    PyObject *module = NULL;
+    PyObject *object = NULL;
+    PyObject *dict = NULL;
+    PyObject *type = NULL;
+
+    if (!self->r) {
+        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        return NULL;
+    }
+
+    if (wsgi_daemon_pool || *self->config->authentication_group) {
+        PyErr_SetString(PyExc_RuntimeError, "request object unavailable");
+        return NULL;
+    }
+
+    if (!PyArg_ParseTuple(args, ":request_object"))
+        return NULL;
+
+    module = PyImport_ImportModule("apache.httpd");
+
+    if (!module)
+        return NULL;
+
+    dict = PyModule_GetDict(module);
+    type = PyDict_GetItemString(dict, "request_rec");
+
+    if (type) {
+        PyObject *req = NULL;
+        PyObject *args = NULL;
+
+        Py_INCREF(type);
+
+        req = PyCObject_FromVoidPtr(self->r, 0);
+        args = Py_BuildValue("(O)", req);
+        object = PyEval_CallObject(type, args);
+
+        Py_DECREF(args);
+        Py_DECREF(req);
+        Py_DECREF(type);
+    }
+
+    Py_DECREF(module);
+
+    return object;
+}
+
+static PyObject *Auth_environ(AuthObject *self)
 {
     PyObject *vars;
     PyObject *object;
 
+    request_rec *r = self->r;
     server_rec *s = r->server;
     conn_rec *c = r->connection;
     const char *host;
@@ -7701,13 +7801,101 @@ static PyObject *wsgi_auth_environment(request_rec *r)
     PyDict_SetItemString(vars, "REQUEST_URI", object);
     Py_DECREF(object);
 
+    object = PyString_FromString(self->config->process_group);
+    PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
+    Py_DECREF(object);
+
+    object = PyString_FromString(self->config->authentication_group);
+    PyDict_SetItemString(vars, "mod_wsgi.authentication_group", object);
+    Py_DECREF(object);
+
+    object = PyInt_FromLong(self->config->script_reloading);
+    PyDict_SetItemString(vars, "mod_wsgi.script_reloading", object);
+    Py_DECREF(object);
+
+    object = PyInt_FromLong(self->config->reload_mechanism);
+    PyDict_SetItemString(vars, "mod_wsgi.reload_mechanism", object);
+    Py_DECREF(object);
+
+    /*
+     * Setup log object for WSGI errors. Don't decrement
+     * reference to log object as keep reference to it.
+     */
+
+    object = (PyObject *)self->log;
+    PyDict_SetItemString(vars, "wsgi.errors", object);
+
+    /*
+     * If request being handled in first Python interpreter
+     * instance in embedded mode add callback for obtaining
+     * Apache request object to the environment.
+     */
+
+    if (!wsgi_daemon_pool && !*self->config->authentication_group) {
+        object = PyObject_GetAttrString((PyObject *)self, "request_object");
+        PyDict_SetItemString(vars, "apache.request_object", object);
+        Py_DECREF(object);
+    }
+
     return vars;
 }
+
+static PyMethodDef Auth_methods[] = {
+    { "request_object", (PyCFunction)Auth_request_object, METH_VARARGS, 0},
+    { NULL, NULL}
+};
+
+static PyTypeObject Auth_Type = {
+    /* The ob_type field must be initialized in the module init function
+     * to be portable to Windows without using C++. */
+    PyObject_HEAD_INIT(NULL)
+    0,                      /*ob_size*/
+    "mod_wsgi.Auth",        /*tp_name*/
+    sizeof(AuthObject),     /*tp_basicsize*/
+    0,                      /*tp_itemsize*/
+    /* methods */
+    (destructor)Auth_dealloc, /*tp_dealloc*/
+    0,                      /*tp_print*/
+    0,                      /*tp_getattr*/
+    0,                      /*tp_setattr*/
+    0,                      /*tp_compare*/
+    0,                      /*tp_repr*/
+    0,                      /*tp_as_number*/
+    0,                      /*tp_as_sequence*/
+    0,                      /*tp_as_mapping*/
+    0,                      /*tp_hash*/
+    0,                      /*tp_call*/
+    0,                      /*tp_str*/
+    0,                      /*tp_getattro*/
+    0,                      /*tp_setattro*/
+    0,                      /*tp_as_buffer*/
+    Py_TPFLAGS_DEFAULT,     /*tp_flags*/
+    0,                      /*tp_doc*/
+    0,                      /*tp_traverse*/
+    0,                      /*tp_clear*/
+    0,                      /*tp_richcompare*/
+    0,                      /*tp_weaklistoffset*/
+    0,                      /*tp_iter*/
+    0,                      /*tp_iternext*/
+    Auth_methods,           /*tp_methods*/
+    0,                      /*tp_members*/
+    0,                      /*tp_getset*/
+    0,                      /*tp_base*/
+    0,                      /*tp_dict*/
+    0,                      /*tp_descr_get*/
+    0,                      /*tp_descr_set*/
+    0,                      /*tp_dictoffset*/
+    0,                      /*tp_init*/
+    0,                      /*tp_alloc*/
+    0,                      /*tp_new*/
+    0,                      /*tp_free*/
+    0,                      /*tp_is_gc*/
+};
 
 static authn_status wsgi_check_password(request_rec *r, const char *user,
                                         const char *password)
 {
-    WSGIDirectoryConfig *config;
+    WSGIRequestConfig *config;
 
     InterpreterObject *interp = NULL;
     PyObject *modules = NULL;
@@ -7719,7 +7907,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     authn_status status;
 
-    config = ap_get_module_config(r->per_dir_config, &wsgi_module);
+    config = wsgi_create_req_config(r->pool, r);
 
     if (!config->auth_user_script) {
         ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
@@ -7827,22 +8015,56 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
             PyObject *args = NULL;
             PyObject *result = NULL;
 
-            vars = wsgi_auth_environment(r);
+            AuthObject *adapter = NULL;
 
-            Py_INCREF(object);
-            args = Py_BuildValue("(Oss)", vars, user, password);
-            result = PyEval_CallObject(object, args);
-            Py_DECREF(args);
-            Py_DECREF(object);
-            Py_DECREF(vars);
+            adapter = newAuthObject(r, config);
 
-            if (result) {
-                if (!PyInt_Check(result)) {
-                    PyErr_SetString(PyExc_TypeError, "Basic auth provider "
-                                    "must return single integer value");
+            if (adapter) {
+                vars = Auth_environ(adapter);
+
+                Py_INCREF(object);
+                args = Py_BuildValue("(Oss)", vars, user, password);
+                result = PyEval_CallObject(object, args);
+                Py_DECREF(args);
+                Py_DECREF(object);
+                Py_DECREF(vars);
+
+                if (result) {
+                    if (!PyInt_Check(result)) {
+                        PyErr_SetString(PyExc_TypeError, "Basic auth provider "
+                                        "must return single integer value");
+                    }
+                    else
+                        status = PyInt_AsLong(result);
                 }
-                else
-                    status = PyInt_AsLong(result);
+
+                /*
+                 * Wipe out references to Apache request object
+                 * held by Python objects, so can detect when an
+                 * application holds on to the transient Python
+                 * objects beyond the life of the request and
+                 * thus raise an exception if they are used.
+                 */
+
+                adapter->r = NULL;
+
+                /*
+                 * Flush any data held within error log object
+                 * and mark it as expired so that it can't be
+                 * used beyond life of the request. We hope that
+                 * this doesn't error, as it will overwrite any
+                 * error from application if it does.
+                 */
+
+                args = PyTuple_New(0);
+                object = Log_flush(adapter->log, args);
+                Py_XDECREF(object);
+                Py_DECREF(args);
+
+                adapter->log->r = NULL;
+                adapter->log->expired = 1;
+
+                Py_DECREF((PyObject *)adapter);
             }
         }
         else {
@@ -7877,7 +8099,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                                         const char *realm, char **rethash)
 {
-    WSGIDirectoryConfig *config;
+    WSGIRequestConfig *config;
 
     InterpreterObject *interp = NULL;
     PyObject *modules = NULL;
@@ -7889,7 +8111,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     authn_status status;
 
-    config = ap_get_module_config(r->per_dir_config, &wsgi_module);
+    config = wsgi_create_req_config(r->pool, r);
 
     if (!config->auth_user_script) {
         ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
@@ -7997,26 +8219,60 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
             PyObject *args = NULL;
             PyObject *result = NULL;
 
-            vars = wsgi_auth_environment(r);
+            AuthObject *adapter = NULL;
 
-            Py_INCREF(object);
-            args = Py_BuildValue("(Oss)", vars, user, realm);
-            result = PyEval_CallObject(object, args);
-            Py_DECREF(args);
-            Py_DECREF(object);
-            Py_DECREF(vars);
+            adapter = newAuthObject(r, config);
 
-            if (result) {
-                char *hash = NULL;
-                if (!PyArg_ParseTuple(result, "is", &status, &hash)) {
-                    PyErr_SetString(PyExc_TypeError, "Digest auth "
-                                    "provider must return tuple "
-                                    "containing integer and string");
-                    status = AUTH_GENERAL_ERROR;
+            if (adapter) {
+                vars = Auth_environ(adapter);
+
+                Py_INCREF(object);
+                args = Py_BuildValue("(Oss)", vars, user, realm);
+                result = PyEval_CallObject(object, args);
+                Py_DECREF(args);
+                Py_DECREF(object);
+                Py_DECREF(vars);
+
+                if (result) {
+                    char *hash = NULL;
+                    if (!PyArg_ParseTuple(result, "is", &status, &hash)) {
+                        PyErr_SetString(PyExc_TypeError, "Digest auth "
+                                        "provider must return tuple "
+                                        "containing integer and string");
+                        status = AUTH_GENERAL_ERROR;
+                    }
+                    else {
+                        *rethash = apr_pstrdup(r->pool, hash);
+                    }
                 }
-                else {
-                    *rethash = apr_pstrdup(r->pool, hash);
-                }
+
+                /*
+                 * Wipe out references to Apache request object
+                 * held by Python objects, so can detect when an
+                 * application holds on to the transient Python
+                 * objects beyond the life of the request and
+                 * thus raise an exception if they are used.
+                 */
+
+                adapter->r = NULL;
+
+                /*
+                 * Flush any data held within error log object
+                 * and mark it as expired so that it can't be
+                 * used beyond life of the request. We hope that
+                 * this doesn't error, as it will overwrite any
+                 * error from application if it does.
+                 */
+
+                args = PyTuple_New(0);
+                object = Log_flush(adapter->log, args);
+                Py_XDECREF(object);
+                Py_DECREF(args);
+
+                adapter->log->r = NULL;
+                adapter->log->expired = 1;
+
+                Py_DECREF((PyObject *)adapter);
             }
         }
         else {
