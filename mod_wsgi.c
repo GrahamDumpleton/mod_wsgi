@@ -131,11 +131,11 @@ typedef regmatch_t ap_regmatch_t;
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
 #if AP_SERVER_MINORVERSION_NUMBER >= 2
-#define MOD_WSGI_WITH_AUTHENTICATION 1
+#define MOD_WSGI_WITH_AUTH_PROVIDER 1
 #endif
 #endif
 
-#if defined(MOD_WSGI_WITH_AUTHENTICATION)
+#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
 #include "mod_auth.h"
 #include "ap_provider.h"
 
@@ -272,10 +272,9 @@ typedef struct {
     apr_table_t *restrict_process;
 
     const char *process_group;
+    const char *management_group;
     const char *application_group;
     const char *callable_object;
-
-    const char *authentication_group;
 
     int pass_authorization;
     int script_reloading;
@@ -322,10 +321,9 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->restrict_process = NULL;
 
     object->process_group = NULL;
+    object->management_group = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
-
-    object->authentication_group = NULL;
 
     object->pass_authorization = -1;
     object->script_reloading = -1;
@@ -379,6 +377,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->process_group = parent->process_group;
 
+    if (child->management_group)
+        config->management_group = child->management_group;
+    else
+        config->management_group = parent->management_group;
+
     if (child->application_group)
         config->application_group = child->application_group;
     else
@@ -388,11 +391,6 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
         config->callable_object = child->callable_object;
     else
         config->callable_object = parent->callable_object;
-
-    if (child->authentication_group)
-        config->authentication_group = child->authentication_group;
-    else
-        config->authentication_group = parent->authentication_group;
 
     if (child->pass_authorization != -1)
         config->pass_authorization = child->pass_authorization;
@@ -423,10 +421,9 @@ typedef struct {
     apr_table_t *restrict_process;
 
     const char *process_group;
+    const char *management_group;
     const char *application_group;
     const char *callable_object;
-
-    const char *authentication_group;
 
     int pass_authorization;
     int script_reloading;
@@ -445,10 +442,9 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->pool = p;
 
     object->process_group = NULL;
+    object->management_group = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
-
-    object->authentication_group = NULL;
 
     object->pass_authorization = -1;
     object->script_reloading = -1;
@@ -491,6 +487,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->process_group = parent->process_group;
 
+    if (child->management_group)
+        config->management_group = child->management_group;
+    else
+        config->management_group = parent->management_group;
+
     if (child->application_group)
         config->application_group = child->application_group;
     else
@@ -500,11 +501,6 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
         config->callable_object = child->callable_object;
     else
         config->callable_object = parent->callable_object;
-
-    if (child->authentication_group)
-        config->authentication_group = child->authentication_group;
-    else
-        config->authentication_group = parent->authentication_group;
 
     if (child->pass_authorization != -1)
         config->pass_authorization = child->pass_authorization;
@@ -540,10 +536,9 @@ typedef struct {
     apr_table_t *restrict_process;
 
     const char *process_group;
+    const char *management_group;
     const char *application_group;
     const char *callable_object;
-
-    const char *authentication_group;
 
     int pass_authorization;
     int script_reloading;
@@ -621,6 +616,40 @@ static const char *wsgi_process_group(request_rec *r, const char *s)
                 }
             }
         }
+    }
+
+    return s;
+}
+
+static const char *wsgi_management_group(request_rec *r, const char *s)
+{
+    const char *name = NULL;
+    const char *value = NULL;
+
+    const char *h = NULL;
+    apr_port_t p = 0;
+
+    if (!s)
+        return "";
+
+    if (*s != '%')
+        return s;
+
+    name = s + 1;
+
+    if (*name) {
+        if (!strcmp(name, "{SERVER}")) {
+            h = r->server->server_hostname;
+            p = ap_get_server_port(r);
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
+
+        if (!strcmp(name, "{GLOBAL}"))
+            return "";
     }
 
     return s;
@@ -706,40 +735,6 @@ static const char *wsgi_application_group(request_rec *r, const char *s)
     return s;
 }
 
-static const char *wsgi_authentication_group(request_rec *r, const char *s)
-{
-    const char *name = NULL;
-    const char *value = NULL;
-
-    const char *h = NULL;
-    apr_port_t p = 0;
-
-    if (!s)
-        return "";
-
-    if (*s != '%')
-        return s;
-
-    name = s + 1;
-
-    if (*name) {
-        if (!strcmp(name, "{SERVER}")) {
-            h = r->server->server_hostname;
-            p = ap_get_server_port(r);
-
-            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
-                return apr_psprintf(r->pool, "%s:%u", h, p);
-            else
-                return h;
-        }
-
-        if (!strcmp(name, "{GLOBAL}"))
-            return "";
-    }
-
-    return s;
-}
-
 static const char *wsgi_callable_object(request_rec *r, const char *s)
 {
     const char *name = NULL;
@@ -806,6 +801,14 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     config->process_group = wsgi_process_group(r, config->process_group);
 
+    config->management_group = dconfig->management_group;
+
+    if (!config->management_group)
+        config->management_group = sconfig->management_group;
+
+    config->management_group = wsgi_management_group(r,
+            config->management_group);
+
     config->application_group = dconfig->application_group;
 
     if (!config->application_group)
@@ -820,14 +823,6 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         config->callable_object = sconfig->callable_object;
 
     config->callable_object = wsgi_callable_object(r, config->callable_object);
-
-    config->authentication_group = dconfig->authentication_group;
-
-    if (!config->authentication_group)
-        config->authentication_group = sconfig->authentication_group;
-
-    config->authentication_group = wsgi_authentication_group(r,
-            config->authentication_group);
 
     config->pass_authorization = dconfig->pass_authorization;
 
@@ -2357,26 +2352,6 @@ static PyObject *Adapter_environ(AdapterObject *self)
         Py_DECREF(object);
     }
 
-    /*
-     * If auth provider mechanism available and application
-     * running in embedded mode, add callback for performing
-     * user authentication.
-     */
-
-#if 0
-#if defined(MOD_WSGI_WITH_AUTHENTICATION)
-    if (!wsgi_daemon_pool) {
-        object = PyObject_GetAttrString((PyObject *)self, "check_password");
-        PyDict_SetItemString(vars, "apache.check_password", object);
-        Py_DECREF(object);
-
-        object = PyObject_GetAttrString((PyObject *)self, "get_realm_hash");
-        PyDict_SetItemString(vars, "apache.get_realm_hash", object);
-        Py_DECREF(object);
-    }
-#endif
-#endif
-
     return vars;
 }
 
@@ -2551,93 +2526,10 @@ static PyObject *Adapter_request_object(AdapterObject *self, PyObject *args)
     return object;
 }
 
-#if defined(MOD_WSGI_WITH_AUTHENTICATION)
-static PyObject *Adapter_check_password(AdapterObject *self, PyObject *args)
-{
-    const char *name = NULL;
-    const char *user = NULL;
-    const char *password = NULL;
-
-    const authn_provider *provider;
-    authn_status auth_result = AUTH_GENERAL_ERROR;
-
-    if (!self->r) {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
-        return NULL;
-    }
-
-    if (!PyArg_ParseTuple(args, "sss:check_password", &name,
-                          &user, &password)) {
-        return NULL;
-    }
-
-    provider = ap_lookup_provider(AUTHN_PROVIDER_GROUP, name, "0");
-                                  
-    if (!provider || !provider->check_password) {
-        Py_BEGIN_ALLOW_THREADS
-        ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), self->r,
-                      "mod_wsgi (pid=%d): No authn provider named '%s' "
-                      "configured.", getpid(), name);
-        Py_END_ALLOW_THREADS
-
-        return PyInt_FromLong(AUTH_GENERAL_ERROR);
-    }
-
-    Py_BEGIN_ALLOW_THREADS
-    auth_result = provider->check_password(self->r, user, password);
-    Py_END_ALLOW_THREADS
-
-    return PyInt_FromLong(auth_result);
-}
-
-static PyObject *Adapter_get_realm_hash(AdapterObject *self, PyObject *args)
-{
-    const char *name = NULL;
-    const char *realm = NULL;
-    const char *user = NULL;
-
-    const authn_provider *provider;
-    authn_status auth_result = AUTH_GENERAL_ERROR;
-    char* auth_hash;
-
-    if (!self->r) {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
-        return NULL;
-    }
-
-    if (!PyArg_ParseTuple(args, "sss:get_realm_hash", &name,
-                          &user, &realm)) {
-        return NULL;
-    }
-
-    provider = ap_lookup_provider(AUTHN_PROVIDER_GROUP, name, "0");
-                                  
-    if (!provider || !provider->get_realm_hash) {
-        Py_BEGIN_ALLOW_THREADS
-        ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), self->r,
-                      "mod_wsgi (pid=%d): No authn provider named '%s' "
-                      "configured.", getpid(), name);
-        Py_END_ALLOW_THREADS
-
-        return Py_BuildValue("(is)", AUTH_GENERAL_ERROR, "");
-    }
-
-    Py_BEGIN_ALLOW_THREADS
-    auth_result = provider->get_realm_hash(self->r, user, realm, &auth_hash);
-    Py_END_ALLOW_THREADS
-
-    return Py_BuildValue("(is)", auth_result, auth_hash);
-}
-#endif
-
 static PyMethodDef Adapter_methods[] = {
     { "start_response", (PyCFunction)Adapter_start_response, METH_VARARGS, 0},
     { "write",          (PyCFunction)Adapter_write, METH_VARARGS, 0},
     { "request_object", (PyCFunction)Adapter_request_object, METH_VARARGS, 0},
-#if defined(MOD_WSGI_WITH_AUTHENTICATION)
-    { "check_password", (PyCFunction)Adapter_check_password, METH_VARARGS, 0},
-    { "get_realm_hash", (PyCFunction)Adapter_get_realm_hash, METH_VARARGS, 0},
-#endif
     { NULL, NULL}
 };
 
@@ -3066,7 +2958,7 @@ static InterpreterObject *newInterpreterObject(const char *name,
 
         Py_INCREF(module);
 
-#if defined(MOD_WSGI_WITH_AUTHENTICATION)
+#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
         inner = PyImport_AddModule("apache.mod_auth");
 
         PyModule_AddObject(inner, "AUTH_DENIED",
@@ -4311,7 +4203,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
     PyType_Ready(&Restricted_Type);
     PyType_Ready(&Interpreter_Type);
 
-#if defined(MOD_WSGI_WITH_AUTHENTICATION)
+#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
     PyType_Ready(&Auth_Type);
 #endif
 
@@ -4624,19 +4516,19 @@ static const char *wsgi_set_callable_object(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_authentication_group(cmd_parms *cmd, void *mconfig,
-                                                 const char *n)
+static const char *wsgi_set_management_group(cmd_parms *cmd, void *mconfig,
+                                             const char *n)
 {
     if (cmd->path) {
         WSGIDirectoryConfig *dconfig = NULL;
         dconfig = (WSGIDirectoryConfig *)mconfig;
-        dconfig->authentication_group = n;
+        dconfig->management_group = n;
     }
     else {
         WSGIServerConfig *sconfig = NULL;
         sconfig = ap_get_module_config(cmd->server->module_config,
                                        &wsgi_module);
-        sconfig->authentication_group = n;
+        sconfig->management_group = n;
     }
 
     return NULL;
@@ -5253,7 +5145,7 @@ static const command_rec wsgi_commands[] =
         RSRC_CONF, TAKE1, "Define whether file system is case sensitive." },
 
     { "WSGIApplicationGroup", wsgi_set_application_group, NULL,
-        ACCESS_CONF|RSRC_CONF, TAKE1, "Name of WSGI application group." },
+        ACCESS_CONF|RSRC_CONF, TAKE1, "Application interpreter group." },
     { "WSGICallableObject", wsgi_set_callable_object, NULL,
         OR_FILEINFO, TAKE1, "Name of entry point in WSGI script file." },
 
@@ -7730,7 +7622,7 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
     wsgi_python_child_init(p);
 }
 
-#if defined(MOD_WSGI_WITH_AUTHENTICATION)
+#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
 
 #include "apr_lib.h"
 
@@ -7802,7 +7694,7 @@ static PyObject *Auth_request_object(AuthObject *self, PyObject *args)
         return NULL;
     }
 
-    if (wsgi_daemon_pool || *self->config->authentication_group) {
+    if (wsgi_daemon_pool || *self->config->management_group) {
         PyErr_SetString(PyExc_RuntimeError, "request object unavailable");
         return NULL;
     }
@@ -7923,8 +7815,8 @@ static PyObject *Auth_environ(AuthObject *self)
     PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
     Py_DECREF(object);
 
-    object = PyString_FromString(self->config->authentication_group);
-    PyDict_SetItemString(vars, "mod_wsgi.authentication_group", object);
+    object = PyString_FromString(self->config->management_group);
+    PyDict_SetItemString(vars, "mod_wsgi.management_group", object);
     Py_DECREF(object);
 
     object = PyInt_FromLong(self->config->script_reloading);
@@ -7949,7 +7841,7 @@ static PyObject *Auth_environ(AuthObject *self)
      * Apache request object to the environment.
      */
 
-    if (!wsgi_daemon_pool && !*self->config->authentication_group) {
+    if (!wsgi_daemon_pool && !*self->config->management_group) {
         object = PyObject_GetAttrString((PyObject *)self, "request_object");
         PyDict_SetItemString(vars, "apache.request_object", object);
         Py_DECREF(object);
@@ -8040,7 +7932,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_authentication_group(r, config->authentication_group);
+    group = wsgi_management_group(r, config->management_group);
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -8244,7 +8136,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_authentication_group(r, config->authentication_group);
+    group = wsgi_management_group(r, config->management_group);
     
     interp = wsgi_acquire_interpreter(group);
 
@@ -8485,7 +8377,7 @@ static void wsgi_register_hooks(apr_pool_t *p)
                                   NULL, AP_FTYPE_PROTOCOL);
 #endif
 
-#if defined(MOD_WSGI_WITH_AUTHENTICATION)
+#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
     ap_register_provider(p, AUTHN_PROVIDER_GROUP, "wsgi", "0",
                          &wsgi_authn_provider);
 #endif
@@ -8535,8 +8427,10 @@ static const command_rec wsgi_commands[] =
         NULL, ACCESS_CONF|RSRC_CONF, "Name of the WSGI process group."),
 #endif
 
+    AP_INIT_TAKE1("WSGIManagementGroup", wsgi_set_management_group,
+        NULL, ACCESS_CONF|RSRC_CONF, "Management interpreter group."),
     AP_INIT_TAKE1("WSGIApplicationGroup", wsgi_set_application_group,
-        NULL, ACCESS_CONF|RSRC_CONF, "Name of WSGI application group."),
+        NULL, ACCESS_CONF|RSRC_CONF, "Application interpreter group."),
     AP_INIT_TAKE1("WSGICallableObject", wsgi_set_callable_object,
         NULL, OR_FILEINFO, "Name of entry point in WSGI script file."),
 
@@ -8549,11 +8443,9 @@ static const command_rec wsgi_commands[] =
     AP_INIT_TAKE1("WSGIOutputBuffering", wsgi_set_output_buffering,
         NULL, OR_FILEINFO, "Enable/Disable buffering of response."),
 
-#if defined(MOD_WSGI_WITH_AUTHENTICATION)
-    AP_INIT_TAKE1("AuthWSGIUserScript", wsgi_set_auth_user_script,
+#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+    AP_INIT_TAKE1("WSGIAuthUserScript", wsgi_set_auth_user_script,
         NULL, OR_AUTHCFG, "Define location of WSGI user auth script file."),
-    AP_INIT_TAKE1("WSGIAuthenticationGroup", wsgi_set_authentication_group,
-        NULL, OR_AUTHCFG, "Name of WSGI authentication group."),
 #endif
 
     { NULL }
