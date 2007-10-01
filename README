@@ -196,6 +196,12 @@ With Apache 1.3, it would also be necessary to add a line of the form:
 
     AddModule mod_wsgi.c
 
+For Apache 1.3, ensure that both the LoadModule and AddModule directives
+for mod_wsgi are listed before those for mod_alias. This is to ensure that
+the Alias directive has precedence over the WSGIScriptAlias directive. In
+Apache 2.X, the order doesn't matter as the ordering dependency is defined
+within the code of the mod_wsgi module itself.
+
 If you wish to use mod_python at the same time as mod_wsgi, then mod_python
 must be compiled against the same version of Python. In addition to the
 same version of Python being used, you should use a version of Python which
