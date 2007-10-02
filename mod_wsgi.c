@@ -439,6 +439,8 @@ typedef struct {
     int output_buffering;
 
     const char *auth_user_script;
+    const char *authz_group_script;
+    int authz_authoritative;
 } WSGIDirectoryConfig;
 
 static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
@@ -461,6 +463,8 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->output_buffering = -1;
 
     object->auth_user_script = NULL;
+    object->authz_group_script = NULL;
+    object->authz_authoritative = -1;
 
     return object;
 }
@@ -541,6 +545,16 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->auth_user_script = parent->auth_user_script;
 
+    if (child->authz_group_script)
+        config->authz_group_script = child->authz_group_script;
+    else
+        config->authz_group_script = parent->authz_group_script;
+
+    if (child->authz_authoritative != -1)
+        config->authz_authoritative = child->authz_authoritative;
+    else
+        config->authz_authoritative = parent->authz_authoritative;
+
     return config;
 }
 
@@ -561,6 +575,8 @@ typedef struct {
     int output_buffering;
 
     const char *auth_user_script;
+    const char *authz_group_script;
+    int authz_authoritative;
 } WSGIRequestConfig;
 
 static const char *wsgi_script_name(request_rec *r)
@@ -880,6 +896,13 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
     }
 
     config->auth_user_script = dconfig->auth_user_script;
+
+    config->authz_group_script = dconfig->authz_group_script;
+
+    config->authz_authoritative = dconfig->authz_authoritative;
+
+    if (config->authz_authoritative == -1)
+        config->authz_authoritative = 1;
 
     return config;
 }
@@ -4672,6 +4695,32 @@ static const char *wsgi_set_auth_user_script(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_authz_group_script(cmd_parms *cmd, void *mconfig,
+                                               const char *n)
+{
+    WSGIDirectoryConfig *dconfig = NULL;
+    dconfig = (WSGIDirectoryConfig *)mconfig;
+    dconfig->authz_group_script = n;
+
+    return NULL;
+}
+
+static const char *wsgi_set_authz_authoritative(cmd_parms *cmd, void *mconfig,
+                                                const char *f)
+{
+    WSGIDirectoryConfig *dconfig = NULL;
+    dconfig = (WSGIDirectoryConfig *)mconfig;
+
+    if (strcasecmp(f, "Off") == 0)
+        dconfig->authz_authoritative = 0;
+    else if (strcasecmp(f, "On") == 0)
+        dconfig->authz_authoritative = 1;
+    else
+        return "WSGIAuthzAuthoritative must be one of: Off | On";
+
+    return NULL;
+}
+
 /* Handler for the translate name phase. */
 
 static int wsgi_alias_matches(const char *uri, const char *alias_fakename)
@@ -8272,6 +8321,327 @@ static const authn_provider wsgi_authn_provider =
     &wsgi_get_realm_hash
 };
 
+static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
+                                apr_table_t **grpstatus)
+{
+    apr_table_t *grps = apr_table_make(r->pool, 15);
+
+    InterpreterObject *interp = NULL;
+    PyObject *modules = NULL;
+    PyObject *module = NULL;
+    char *name = NULL;
+    int exists = 0;
+
+    const char *group;
+
+    int status = HTTP_INTERNAL_SERVER_ERROR;
+
+    if (!config->authz_group_script) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Location of WSGI group "
+                     "authentication script not provided.", getpid());
+
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    /*
+     * Acquire the desired python interpreter. Once this is done
+     * it is safe to start manipulating python objects.
+     */
+
+    group = wsgi_management_group(r, config->management_group);
+
+    interp = wsgi_acquire_interpreter(group);
+
+    if (!interp) {
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
+                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
+                      getpid(), group);
+
+        PyErr_Clear();
+
+        return AUTH_GENERAL_ERROR;
+    }
+
+    /* Calculate the Python module name to be used for script. */
+
+    name = wsgi_module_name(r, config->authz_group_script);
+
+    /*
+     * Use a lock around the check to see if the module is
+     * already loaded and the import of the module to prevent
+     * two request handlers trying to import the module at the
+     * same time.
+     */
+
+#if APR_HAS_THREADS
+    Py_BEGIN_ALLOW_THREADS
+    apr_thread_mutex_lock(wsgi_module_lock);
+    Py_END_ALLOW_THREADS
+#endif
+
+    modules = PyImport_GetModuleDict();
+    module = PyDict_GetItemString(modules, name);
+
+    Py_XINCREF(module);
+
+    if (module)
+        exists = 1;
+
+    /*
+     * If script reloading is enabled and the module for it has
+     * previously been loaded, see if it has been modified since
+     * the last time it was accessed.
+     */
+
+    if (module && config->script_reloading) {
+        if (wsgi_reload_required(r, config->authz_group_script, module)) {
+            /*
+             * Script file has changed. Only support module
+             * reloading for authentication scripts. Remove the
+             * module from the modules dictionary before
+             * reloading it again. If code is executing within
+             * the module at the time, the callers reference
+             * count on the module should ensure it isn't
+             * actually destroyed until it is finished.
+             */
+
+            Py_DECREF(module);
+            module = NULL;
+
+            PyDict_DelItemString(modules, name);
+        }
+    }
+
+    if (!module) {
+        module = wsgi_load_source(r, name, exists, config->authz_group_script,
+                                  "", group);
+    }
+
+    /* Safe now to release the module lock. */
+
+#if APR_HAS_THREADS
+    apr_thread_mutex_unlock(wsgi_module_lock);
+#endif
+
+    /* Assume an internal server error unless everything okay. */
+
+    status = AUTH_GENERAL_ERROR;
+
+    /* Determine if script is executable and execute it. */
+
+    if (module) {
+        PyObject *module_dict = NULL;
+        PyObject *object = NULL;
+
+        module_dict = PyModule_GetDict(module);
+        object = PyDict_GetItemString(module_dict, "groups_for_user");
+
+        if (object) {
+            PyObject *vars = NULL;
+            PyObject *args = NULL;
+            PyObject *sequence = NULL;
+
+            AuthObject *adapter = NULL;
+
+            adapter = newAuthObject(r, config);
+
+            if (adapter) {
+                vars = Auth_environ(adapter);
+
+                Py_INCREF(object);
+                args = Py_BuildValue("(Os)", vars, r->user);
+                sequence = PyEval_CallObject(object, args);
+                Py_DECREF(args);
+                Py_DECREF(object);
+                Py_DECREF(vars);
+
+                if (sequence) {
+                    PyObject *iterator;
+
+                    iterator = PyObject_GetIter(sequence);
+
+                    if (iterator) {
+                        PyObject *item;
+                        const char *name;
+
+                        status = OK;
+
+                        while ((item = PyIter_Next(iterator))) {
+                            if (!PyString_Check(item)) {
+                                Py_BEGIN_ALLOW_THREADS
+                                ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                                              "mod_wsgi (pid=%d): Groups for "
+                                              "user returned from '%s' must "
+                                              "be an iterable sequence of "
+                                              "strings.", getpid(),
+                                              config->authz_group_script);
+                                Py_END_ALLOW_THREADS
+
+                                Py_DECREF(item);
+
+                                status = HTTP_INTERNAL_SERVER_ERROR;
+
+                                break;
+                            }
+
+                            name = PyString_AsString(item);
+
+                            apr_table_setn(grps, apr_pstrdup(r->pool, name),
+                                           "1");
+
+                            Py_DECREF(item);
+                        }
+
+                        Py_DECREF(iterator);
+                    }
+                    else {
+                        Py_BEGIN_ALLOW_THREADS
+                        ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                                      "mod_wsgi (pid=%d): Groups for user "
+                                      "returned from '%s' must be an iterable "
+                                      "sequence of strings.", getpid(),
+                                      config->authz_group_script);
+                        Py_END_ALLOW_THREADS
+                    }
+
+                    Py_DECREF(sequence);
+                }
+
+                /*
+                 * Wipe out references to Apache request object
+                 * held by Python objects, so can detect when an
+                 * application holds on to the transient Python
+                 * objects beyond the life of the request and
+                 * thus raise an exception if they are used.
+                 */
+
+                adapter->r = NULL;
+
+                /*
+                 * Flush any data held within error log object
+                 * and mark it as expired so that it can't be
+                 * used beyond life of the request. We hope that
+                 * this doesn't error, as it will overwrite any
+                 * error from application if it does.
+                 */
+
+                args = PyTuple_New(0);
+                object = Log_flush(adapter->log, args);
+                Py_XDECREF(object);
+                Py_DECREF(args);
+
+                adapter->log->r = NULL;
+                adapter->log->expired = 1;
+
+                Py_DECREF((PyObject *)adapter);
+            }
+        }
+        else {
+            Py_BEGIN_ALLOW_THREADS
+            ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                          "mod_wsgi (pid=%d): Target WSGI group "
+                          "authentication script '%s' does not provide "
+                          "group provider.", getpid(),
+                          config->authz_group_script);
+            Py_END_ALLOW_THREADS
+        }
+
+        /* Log any details of exceptions if execution failed. */
+
+        if (PyErr_Occurred()) {
+            LogObject *log;
+            log = newLogObject(r, APLOG_ERR);
+            wsgi_log_python_error(r, log);
+            Py_DECREF(log);
+        }
+    }
+
+    /* Cleanup and release interpreter, */
+
+    Py_XDECREF(module);
+
+    wsgi_release_interpreter(interp);
+
+    if (status == OK)
+        *grpstatus = grps;
+
+    return status;
+}
+
+static int wsgi_hook_auth_checker(request_rec *r)
+{
+    WSGIRequestConfig *config;
+
+    int m = r->method_number;
+    const apr_array_header_t *reqs_arr;
+    require_line *reqs;
+    int required_group = 0;
+    register int x;
+    const char *t, *w;
+    apr_table_t *grpstatus = NULL;
+    char *reason = NULL;
+
+    config = wsgi_create_req_config(r->pool, r);
+
+    if (!config->authz_group_script)
+        return DECLINED;
+
+    reqs_arr = ap_requires(r);
+
+    if (!reqs_arr)
+        return DECLINED;
+
+    reqs = (require_line *)reqs_arr->elts;
+
+    for (x = 0; x < reqs_arr->nelts; x++) {
+
+        if (!(reqs[x].method_mask & (AP_METHOD_BIT << m))) {
+            continue;
+        }
+
+        t = reqs[x].requirement;
+        w = ap_getword_white(r->pool, &t);
+
+        if (!strcasecmp(w, "wsgi-group")) {
+            required_group = 1;
+
+            if (!grpstatus) {
+                int status;
+
+                status = wsgi_groups_for_user(r, config, &grpstatus);
+
+                if (status != OK)
+                    return status;
+
+                if (apr_table_elts(grpstatus)->nelts == 0) {
+                    reason = "User is not a member of any groups";
+                    break;
+                }
+            }
+
+            while (t[0]) {
+                w = ap_getword_conf(r->pool, &t);
+                if (apr_table_get(grpstatus, w)) {
+                    return OK;
+                }
+            }
+        }
+    }
+
+    if (!required_group || !config->authz_authoritative)
+        return DECLINED;
+
+    ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r, "mod_wsgi (pid=%d): "
+                  "Authorization of user '%s' to access '%s' failed. %s.",
+                  getpid(), r->user, r->uri, reason ? reason : "User is not "
+                  "a member of designated groups");
+
+    ap_note_auth_failure(r);
+
+    return HTTP_UNAUTHORIZED;
+}
+
 #endif
 
 APR_OPTIONAL_FN_TYPE(ap_logio_add_bytes_out) *wsgi_logio_add_bytes_out;
@@ -8332,6 +8702,8 @@ static void wsgi_register_hooks(apr_pool_t *p)
 #if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
     ap_register_provider(p, AUTHN_PROVIDER_GROUP, "wsgi", "0",
                          &wsgi_authn_provider);
+
+    ap_hook_auth_checker(wsgi_hook_auth_checker, NULL, NULL, APR_HOOK_MIDDLE);
 #endif
 }
 
@@ -8400,6 +8772,10 @@ static const command_rec wsgi_commands[] =
 #if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
     AP_INIT_TAKE1("WSGIAuthUserScript", wsgi_set_auth_user_script,
         NULL, OR_AUTHCFG, "Define location of WSGI user auth script file."),
+    AP_INIT_TAKE1("WSGIAuthzGroupScript", wsgi_set_authz_group_script,
+        NULL, OR_AUTHCFG, "Define location of WSGI group auth script file."),
+    AP_INIT_TAKE1("WSGIAuthzAuthoritative", wsgi_set_authz_authoritative,
+        NULL, OR_AUTHCFG, "Enable/Disable script as being authoritative."),
 #endif
 
     { NULL }
