@@ -272,7 +272,8 @@ typedef struct {
     apr_table_t *restrict_process;
 
     const char *process_group;
-    const char *management_group;
+    const char *dispatch_group;
+    const char *dispatch_script;
     const char *application_group;
     const char *callable_object;
 
@@ -322,7 +323,8 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->restrict_process = NULL;
 
     object->process_group = NULL;
-    object->management_group = NULL;
+    object->dispatch_group = NULL;
+    object->dispatch_script = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
 
@@ -379,10 +381,15 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->process_group = parent->process_group;
 
-    if (child->management_group)
-        config->management_group = child->management_group;
+    if (child->dispatch_group)
+        config->dispatch_group = child->dispatch_group;
     else
-        config->management_group = parent->management_group;
+        config->dispatch_group = parent->dispatch_group;
+
+    if (child->dispatch_script)
+        config->dispatch_script = child->dispatch_script;
+    else
+        config->dispatch_script = parent->dispatch_script;
 
     if (child->application_group)
         config->application_group = child->application_group;
@@ -428,7 +435,8 @@ typedef struct {
     apr_table_t *restrict_process;
 
     const char *process_group;
-    const char *management_group;
+    const char *dispatch_group;
+    const char *dispatch_script;
     const char *application_group;
     const char *callable_object;
 
@@ -440,7 +448,7 @@ typedef struct {
 
     const char *auth_user_script;
     const char *authz_group_script;
-    int authz_authoritative;
+    int group_authoritative;
 } WSGIDirectoryConfig;
 
 static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
@@ -452,7 +460,8 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->pool = p;
 
     object->process_group = NULL;
-    object->management_group = NULL;
+    object->dispatch_group = NULL;
+    object->dispatch_script = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
 
@@ -464,7 +473,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
 
     object->auth_user_script = NULL;
     object->authz_group_script = NULL;
-    object->authz_authoritative = -1;
+    object->group_authoritative = -1;
 
     return object;
 }
@@ -500,10 +509,15 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->process_group = parent->process_group;
 
-    if (child->management_group)
-        config->management_group = child->management_group;
+    if (child->dispatch_group)
+        config->dispatch_group = child->dispatch_group;
     else
-        config->management_group = parent->management_group;
+        config->dispatch_group = parent->dispatch_group;
+
+    if (child->dispatch_script)
+        config->dispatch_script = child->dispatch_script;
+    else
+        config->dispatch_script = parent->dispatch_script;
 
     if (child->application_group)
         config->application_group = child->application_group;
@@ -550,10 +564,10 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->authz_group_script = parent->authz_group_script;
 
-    if (child->authz_authoritative != -1)
-        config->authz_authoritative = child->authz_authoritative;
+    if (child->group_authoritative != -1)
+        config->group_authoritative = child->group_authoritative;
     else
-        config->authz_authoritative = parent->authz_authoritative;
+        config->group_authoritative = parent->group_authoritative;
 
     return config;
 }
@@ -564,7 +578,8 @@ typedef struct {
     apr_table_t *restrict_process;
 
     const char *process_group;
-    const char *management_group;
+    const char *dispatch_group;
+    const char *dispatch_script;
     const char *application_group;
     const char *callable_object;
 
@@ -576,7 +591,7 @@ typedef struct {
 
     const char *auth_user_script;
     const char *authz_group_script;
-    int authz_authoritative;
+    int group_authoritative;
 } WSGIRequestConfig;
 
 static const char *wsgi_script_name(request_rec *r)
@@ -652,7 +667,7 @@ static const char *wsgi_process_group(request_rec *r, const char *s)
     return s;
 }
 
-static const char *wsgi_management_group(request_rec *r, const char *s)
+static const char *wsgi_dispatch_group(request_rec *r, const char *s)
 {
     const char *name = NULL;
     const char *value = NULL;
@@ -832,13 +847,18 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     config->process_group = wsgi_process_group(r, config->process_group);
 
-    config->management_group = dconfig->management_group;
+    config->dispatch_group = dconfig->dispatch_group;
 
-    if (!config->management_group)
-        config->management_group = sconfig->management_group;
+    if (!config->dispatch_group)
+        config->dispatch_group = sconfig->dispatch_group;
 
-    config->management_group = wsgi_management_group(r,
-            config->management_group);
+    config->dispatch_group = wsgi_dispatch_group(r,
+            config->dispatch_group);
+
+    config->dispatch_script = dconfig->dispatch_script;
+
+    if (!config->dispatch_script)
+        config->dispatch_script = sconfig->dispatch_script;
 
     config->application_group = dconfig->application_group;
 
@@ -899,15 +919,17 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     config->authz_group_script = dconfig->authz_group_script;
 
-    config->authz_authoritative = dconfig->authz_authoritative;
+    config->group_authoritative = dconfig->group_authoritative;
 
-    if (config->authz_authoritative == -1)
-        config->authz_authoritative = 1;
+    if (config->group_authoritative == -1)
+        config->group_authoritative = 1;
 
     return config;
 }
 
 /* Class objects used by response handler. */
+
+static PyTypeObject Dispatch_Type;
 
 typedef struct {
         PyObject_HEAD
@@ -2925,7 +2947,7 @@ static InterpreterObject *newInterpreterObject(const char *name,
 
     module = NULL;
 
-    if (!*name && !wsgi_daemon_pool) {
+    if (!wsgi_daemon_pool) {
         module = PyImport_ImportModule("apache");
 
         if (!module) {
@@ -3988,7 +4010,7 @@ static int wsgi_execute_script(request_rec *r)
 
     status = HTTP_INTERNAL_SERVER_ERROR;
 
-    /* Determine if script is executable and execute it. */
+    /* Determine if script exists and execute it. */
 
     if (module) {
         PyObject *module_dict = NULL;
@@ -4047,8 +4069,7 @@ static int wsgi_execute_script(request_rec *r)
             ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                           "mod_wsgi (pid=%d): Target WSGI script '%s' does "
                           "not contain WSGI application '%s'.",
-                          getpid(), r->filename, apr_pstrcat(r->pool,
-                          r->filename, "::", config->callable_object, NULL));
+                          getpid(), r->filename, config->callable_object);
             Py_END_ALLOW_THREADS
 
             status = HTTP_NOT_FOUND;
@@ -4186,6 +4207,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
     PyType_Ready(&Adapter_Type);
     PyType_Ready(&Restricted_Type);
     PyType_Ready(&Interpreter_Type);
+    PyType_Ready(&Dispatch_Type);
 
 #if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
     PyType_Ready(&Auth_Type);
@@ -4500,19 +4522,37 @@ static const char *wsgi_set_callable_object(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_management_group(cmd_parms *cmd, void *mconfig,
+static const char *wsgi_set_dispatch_group(cmd_parms *cmd, void *mconfig,
                                              const char *n)
 {
     if (cmd->path) {
         WSGIDirectoryConfig *dconfig = NULL;
         dconfig = (WSGIDirectoryConfig *)mconfig;
-        dconfig->management_group = n;
+        dconfig->dispatch_group = n;
     }
     else {
         WSGIServerConfig *sconfig = NULL;
         sconfig = ap_get_module_config(cmd->server->module_config,
                                        &wsgi_module);
-        sconfig->management_group = n;
+        sconfig->dispatch_group = n;
+    }
+
+    return NULL;
+}
+
+static const char *wsgi_set_dispatch_script(cmd_parms *cmd, void *mconfig,
+                                            const char *n)
+{
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+        dconfig->dispatch_script = n;
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+        sconfig->dispatch_script = n;
     }
 
     return NULL;
@@ -4699,9 +4739,9 @@ static const char *wsgi_set_group_authoritative(cmd_parms *cmd, void *mconfig,
     dconfig = (WSGIDirectoryConfig *)mconfig;
 
     if (strcasecmp(f, "Off") == 0)
-        dconfig->authz_authoritative = 0;
+        dconfig->group_authoritative = 0;
     else if (strcasecmp(f, "On") == 0)
-        dconfig->authz_authoritative = 1;
+        dconfig->group_authoritative = 1;
     else
         return "WSGIGroupAuthoritative must be one of: Off | On";
 
@@ -4955,6 +4995,469 @@ static void wsgi_build_environment(request_rec *r)
 #endif
 }
 
+typedef struct {
+        PyObject_HEAD
+        request_rec *r;
+        WSGIRequestConfig *config;
+        LogObject *log;
+} DispatchObject;
+
+static DispatchObject *newDispatchObject(request_rec *r,
+                                         WSGIRequestConfig *config)
+{
+    DispatchObject *self;
+
+    self = PyObject_New(DispatchObject, &Dispatch_Type);
+    if (self == NULL)
+        return NULL;
+
+    self->config = config;
+
+    self->r = r;
+
+    self->log = newLogObject(r, APLOG_ERR);
+
+    return self;
+}
+
+static void Dispatch_dealloc(DispatchObject *self)
+{
+    Py_DECREF(self->log);
+
+    PyObject_Del(self);
+}
+
+static PyObject *Dispatch_environ(DispatchObject *self)
+{
+    request_rec *r = NULL;
+
+    PyObject *vars = NULL;
+    PyObject *object = NULL;
+
+    const apr_array_header_t *head = NULL;
+    const apr_table_entry_t *elts = NULL;
+
+    int i = 0;
+
+    /* Create the WSGI environment dictionary. */
+
+    vars = PyDict_New();
+
+    /* Merge the CGI environment into the WSGI environment. */
+
+    r = self->r;
+
+    head = apr_table_elts(r->subprocess_env);
+    elts = (apr_table_entry_t *)head->elts;
+
+    for (i = 0; i < head->nelts; ++i) {
+        if (elts[i].key) {
+            if (elts[i].val) {
+                object = PyString_FromString(elts[i].val);
+                PyDict_SetItemString(vars, elts[i].key, object);
+                Py_DECREF(object);
+            }
+            else
+                PyDict_SetItemString(vars, elts[i].key, Py_None);
+        }
+    }
+
+    /*
+     * Setup log object for WSGI errors. Don't decrement
+     * reference to log object as keep reference to it.
+     */
+
+    object = (PyObject *)self->log;
+    PyDict_SetItemString(vars, "wsgi.errors", object);
+
+    /*
+     * If Apache extensions are enabled add a CObject reference
+     * to the Apache request_rec structure instance.
+     */
+
+    if (!wsgi_daemon_pool && self->config->apache_extensions) {
+        object = PyCObject_FromVoidPtr(self->r, 0);
+        PyDict_SetItemString(vars, "apache.request_rec", object);
+        Py_DECREF(object);
+    }
+
+    return vars;
+}
+
+static PyTypeObject Dispatch_Type = {
+    /* The ob_type field must be initialized in the module init function
+     * to be portable to Windows without using C++. */
+    PyObject_HEAD_INIT(NULL)
+    0,                      /*ob_size*/
+    "mod_wsgi.Dispatch",    /*tp_name*/
+    sizeof(DispatchObject), /*tp_basicsize*/
+    0,                      /*tp_itemsize*/
+    /* methods */
+    (destructor)Dispatch_dealloc, /*tp_dealloc*/
+    0,                      /*tp_print*/
+    0,                      /*tp_getattr*/
+    0,                      /*tp_setattr*/
+    0,                      /*tp_compare*/
+    0,                      /*tp_repr*/
+    0,                      /*tp_as_number*/
+    0,                      /*tp_as_sequence*/
+    0,                      /*tp_as_mapping*/
+    0,                      /*tp_hash*/
+    0,                      /*tp_call*/
+    0,                      /*tp_str*/
+    0,                      /*tp_getattro*/
+    0,                      /*tp_setattro*/
+    0,                      /*tp_as_buffer*/
+    Py_TPFLAGS_DEFAULT,     /*tp_flags*/
+    0,                      /*tp_doc*/
+    0,                      /*tp_traverse*/
+    0,                      /*tp_clear*/
+    0,                      /*tp_richcompare*/
+    0,                      /*tp_weaklistoffset*/
+    0,                      /*tp_iter*/
+    0,                      /*tp_iternext*/
+    0,                      /*tp_methods*/
+    0,                      /*tp_members*/
+    0,                      /*tp_getset*/
+    0,                      /*tp_base*/
+    0,                      /*tp_dict*/
+    0,                      /*tp_descr_get*/
+    0,                      /*tp_descr_set*/
+    0,                      /*tp_dictoffset*/
+    0,                      /*tp_init*/
+    0,                      /*tp_alloc*/
+    0,                      /*tp_new*/
+    0,                      /*tp_free*/
+    0,                      /*tp_is_gc*/
+};
+
+static int wsgi_execute_dispatch(request_rec *r)
+{
+    WSGIRequestConfig *config;
+
+    InterpreterObject *interp = NULL;
+    PyObject *modules = NULL;
+    PyObject *module = NULL;
+    char *name = NULL;
+    int exists = 0;
+
+    const char *group;
+
+    int status;
+
+    /* Grab request configuration. */
+
+    config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
+                                                       &wsgi_module);
+
+    if (!config->dispatch_script) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Location of WSGI dispatch "
+                     "script not provided.", getpid());
+
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    /*
+     * Acquire the desired python interpreter. Once this is done
+     * it is safe to start manipulating python objects.
+     */
+
+    group = wsgi_dispatch_group(r, config->dispatch_group);
+
+    interp = wsgi_acquire_interpreter(group);
+
+    if (!interp) {
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
+                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
+                      getpid(), group);
+
+        PyErr_Clear();
+
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    /* Calculate the Python module name to be used for script. */
+
+    name = wsgi_module_name(r, config->dispatch_script);
+
+    /*
+     * Use a lock around the check to see if the module is
+     * already loaded and the import of the module to prevent
+     * two request handlers trying to import the module at the
+     * same time.
+     */
+
+#if APR_HAS_THREADS
+    Py_BEGIN_ALLOW_THREADS
+    apr_thread_mutex_lock(wsgi_module_lock);
+    Py_END_ALLOW_THREADS
+#endif
+
+    modules = PyImport_GetModuleDict();
+    module = PyDict_GetItemString(modules, name);
+
+    Py_XINCREF(module);
+
+    if (module)
+        exists = 1;
+
+    /*
+     * If script reloading is enabled and the module for it has
+     * previously been loaded, see if it has been modified since
+     * the last time it was accessed.
+     */
+
+    if (module && config->script_reloading) {
+        if (wsgi_reload_required(r, config->dispatch_script, module)) {
+            /*
+             * Script file has changed. Only support module
+             * reloading for dispatch scripts. Remove the
+             * module from the modules dictionary before
+             * reloading it again. If code is executing within
+             * the module at the time, the callers reference
+             * count on the module should ensure it isn't
+             * actually destroyed until it is finished.
+             */
+
+            Py_DECREF(module);
+            module = NULL;
+
+            PyDict_DelItemString(modules, name);
+        }
+    }
+
+    if (!module) {
+        module = wsgi_load_source(r, name, exists, config->dispatch_script,
+                                  "", group);
+    }
+
+    /* Safe now to release the module lock. */
+
+#if APR_HAS_THREADS
+    apr_thread_mutex_unlock(wsgi_module_lock);
+#endif
+
+    /* Assume everything will be okay for now. */
+
+    status = OK;
+
+    /* Determine if script exists and execute it. */
+
+    if (module) {
+        PyObject *module_dict = NULL;
+        PyObject *object = NULL;
+
+        module_dict = PyModule_GetDict(module);
+
+        DispatchObject *adapter = NULL;
+
+        adapter = newDispatchObject(r, config);
+
+        if (adapter) {
+            PyObject *vars = NULL;
+            PyObject *args = NULL;
+
+            vars = Dispatch_environ(adapter);
+
+            /* First check process_group(). */
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+            object = PyDict_GetItemString(module_dict, "process_group");
+
+            if (object) {
+                PyObject *result = NULL;
+
+                if (adapter) {
+                    Py_INCREF(object);
+                    args = Py_BuildValue("(O)", vars);
+                    result = PyEval_CallObject(object, args);
+                    Py_DECREF(args);
+                    Py_DECREF(object);
+
+                    if (result) {
+                        if (result != Py_None) {
+                            if (PyString_Check(result)) {
+                                const char *s;
+
+                                s = PyString_AsString(result);
+                                s = apr_pstrdup(r->pool, s);
+                                s = wsgi_process_group(r, s);
+                                config->process_group = s;
+
+                                apr_table_setn(r->subprocess_env,
+                                               "mod_wsgi.process_group",
+                                               config->process_group);
+                            }
+                            else {
+                                PyErr_SetString(PyExc_TypeError, "Process "
+                                                "group must be a string "
+                                                "object");
+
+                                status = HTTP_INTERNAL_SERVER_ERROR;
+                            }
+                        }
+
+                        Py_DECREF(result);
+                    }
+                    else
+                        status = HTTP_INTERNAL_SERVER_ERROR;
+                }
+                else
+                    Py_DECREF(object);
+
+                object = NULL;
+            }
+#endif
+
+            /* Now check application_group(). */
+
+            if (status == OK)
+                object = PyDict_GetItemString(module_dict, "application_group");
+
+            if (object) {
+                PyObject *result = NULL;
+
+                if (adapter) {
+                    Py_INCREF(object);
+                    args = Py_BuildValue("(O)", vars);
+                    result = PyEval_CallObject(object, args);
+                    Py_DECREF(args);
+                    Py_DECREF(object);
+
+                    if (result) {
+                        if (result != Py_None) {
+                            if (PyString_Check(result)) {
+                                const char *s;
+
+                                s = PyString_AsString(result);
+                                s = apr_pstrdup(r->pool, s);
+                                s = wsgi_application_group(r, s);
+                                config->application_group = s;
+
+                                apr_table_setn(r->subprocess_env,
+                                               "mod_wsgi.application_group",
+                                               config->application_group);
+                            }
+                            else {
+                                PyErr_SetString(PyExc_TypeError, "Application "
+                                                "group must be a string "
+                                                "object");
+
+                                status = HTTP_INTERNAL_SERVER_ERROR;
+                            }
+                        }
+
+                        Py_DECREF(result);
+                    }
+                    else
+                        status = HTTP_INTERNAL_SERVER_ERROR;
+                }
+                else
+                    Py_DECREF(object);
+
+                object = NULL;
+            }
+
+            /* Now check callable_object(). */
+
+            if (status == OK)
+                object = PyDict_GetItemString(module_dict, "callable_object");
+
+            if (object) {
+                PyObject *result = NULL;
+
+                if (adapter) {
+                    Py_INCREF(object);
+                    args = Py_BuildValue("(O)", vars);
+                    result = PyEval_CallObject(object, args);
+                    Py_DECREF(args);
+                    Py_DECREF(object);
+
+                    if (result) {
+                        if (result != Py_None) {
+                            if (PyString_Check(result)) {
+                                const char *s;
+
+                                s = PyString_AsString(result);
+                                s = apr_pstrdup(r->pool, s);
+                                s = wsgi_callable_object(r, s);
+                                config->callable_object = s;
+
+                                apr_table_setn(r->subprocess_env,
+                                               "mod_wsgi.callable_object",
+                                               config->callable_object);
+                            }
+                            else {
+                                PyErr_SetString(PyExc_TypeError, "Callable "
+                                                "object must be a string "
+                                                "object");
+
+                                status = HTTP_INTERNAL_SERVER_ERROR;
+                            }
+                        }
+
+                        Py_DECREF(result);
+                    }
+                    else
+                        status = HTTP_INTERNAL_SERVER_ERROR;
+                }
+                else
+                    Py_DECREF(object);
+
+                object = NULL;
+            }
+
+            /*
+             * Wipe out references to Apache request object
+             * held by Python objects, so can detect when an
+             * application holds on to the transient Python
+             * objects beyond the life of the request and
+             * thus raise an exception if they are used.
+             */
+
+            adapter->r = NULL;
+
+            /*
+             * Flush any data held within error log object
+             * and mark it as expired so that it can't be
+             * used beyond life of the request. We hope that
+             * this doesn't error, as it will overwrite any
+             * error from application if it does.
+             */
+
+            args = PyTuple_New(0);
+            object = Log_flush(adapter->log, args);
+            Py_XDECREF(object);
+            Py_DECREF(args);
+
+            adapter->log->r = NULL;
+            adapter->log->expired = 1;
+
+            Py_DECREF((PyObject *)adapter);
+
+            /* Log any details of exceptions if execution failed. */
+
+            if (PyErr_Occurred()) {
+                LogObject *log;
+                log = newLogObject(r, APLOG_ERR);
+                wsgi_log_python_error(r, log);
+                Py_DECREF(log);
+            }
+
+            Py_DECREF(vars);
+        }
+    }
+
+    /* Cleanup and release interpreter, */
+
+    Py_XDECREF(module);
+
+    wsgi_release_interpreter(interp);
+
+    return status;
+}
+
 static int wsgi_is_script_aliased(request_rec *r)
 {
     const char *t = NULL;
@@ -5092,6 +5595,20 @@ static int wsgi_hook_handler(request_rec *r)
     wsgi_build_environment(r);
 
     /*
+     * If a dispatch script has been provided, as appropriate
+     * allow it to override any of the configuration related
+     * to what context the script will be executed in and what
+     * the target callable object for the application is.
+     */
+
+    if (config->dispatch_script) {
+        status = wsgi_execute_dispatch(r);
+
+        if (status != OK)
+            return status;
+    }
+
+    /*
      * Execute the target WSGI application script or proxy
      * request to one of the daemon processes as appropriate.
      */
@@ -5183,6 +5700,11 @@ static const command_rec wsgi_commands[] =
 
     { "WSGICaseSensitivity", wsgi_set_case_sensitivity, NULL,
         RSRC_CONF, TAKE1, "Define whether file system is case sensitive." },
+
+    { "WSGIDispatchGroup", wsgi_set_dispatch_group, NULL,
+        ACCESS_CONF|RSRC_CONF, TAKE1, "Dispatch interpreter group." },
+    { "WSGIDispatchScript", wsgi_set_dispatch_script, NULL,
+        ACCESS_CONF|RSRC_CONF, TAKE1, "Location of WSGI dispatch script." },
 
     { "WSGIApplicationGroup", wsgi_set_application_group, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Application interpreter group." },
@@ -7805,12 +8327,8 @@ static PyObject *Auth_environ(AuthObject *self)
     PyDict_SetItemString(vars, "REQUEST_URI", object);
     Py_DECREF(object);
 
-    object = PyString_FromString(self->config->process_group);
-    PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
-    Py_DECREF(object);
-
-    object = PyString_FromString(self->config->management_group);
-    PyDict_SetItemString(vars, "mod_wsgi.management_group", object);
+    object = PyString_FromString(self->config->dispatch_group);
+    PyDict_SetItemString(vars, "mod_wsgi.dispatch_group", object);
     Py_DECREF(object);
 
     object = PyInt_FromLong(self->config->script_reloading);
@@ -7830,7 +8348,7 @@ static PyObject *Auth_environ(AuthObject *self)
     PyDict_SetItemString(vars, "wsgi.errors", object);
 
     /*
-     * If Apache extensions are enabled  add a CObject reference
+     * If Apache extensions are enabled add a CObject reference
      * to the Apache request_rec structure instance.
      */
 
@@ -7920,7 +8438,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_management_group(r, config->management_group);
+    group = wsgi_dispatch_group(r, config->dispatch_group);
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -7999,7 +8517,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     status = AUTH_GENERAL_ERROR;
 
-    /* Determine if script is executable and execute it. */
+    /* Determine if script exists and execute it. */
 
     if (module) {
         PyObject *module_dict = NULL;
@@ -8074,6 +8592,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
                 Py_DECREF((PyObject *)adapter);
             }
+            else
+                Py_DECREF(object);
         }
         else {
             Py_BEGIN_ALLOW_THREADS
@@ -8134,7 +8654,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_management_group(r, config->management_group);
+    group = wsgi_dispatch_group(r, config->dispatch_group);
     
     interp = wsgi_acquire_interpreter(group);
 
@@ -8213,7 +8733,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     status = AUTH_GENERAL_ERROR;
 
-    /* Determine if script is executable and execute it. */
+    /* Determine if script exists and execute it. */
 
     if (module) {
         PyObject *module_dict = NULL;
@@ -8288,6 +8808,8 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
                 Py_DECREF((PyObject *)adapter);
             }
+            else
+                Py_DECREF(object);
         }
         else {
             Py_BEGIN_ALLOW_THREADS
@@ -8352,7 +8874,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_management_group(r, config->management_group);
+    group = wsgi_dispatch_group(r, config->dispatch_group);
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -8431,7 +8953,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     status = AUTH_GENERAL_ERROR;
 
-    /* Determine if script is executable and execute it. */
+    /* Determine if script exists and execute it. */
 
     if (module) {
         PyObject *module_dict = NULL;
@@ -8539,6 +9061,8 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
                 Py_DECREF((PyObject *)adapter);
             }
+            else
+                Py_DECREF(object);
         }
         else {
             Py_BEGIN_ALLOW_THREADS
@@ -8632,7 +9156,7 @@ static int wsgi_hook_auth_checker(request_rec *r)
         }
     }
 
-    if (!required_group || !config->authz_authoritative)
+    if (!required_group || !config->group_authoritative)
         return DECLINED;
 
     ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r, "mod_wsgi (pid=%d): "
@@ -8754,8 +9278,11 @@ static const command_rec wsgi_commands[] =
         NULL, ACCESS_CONF|RSRC_CONF, "Name of the WSGI process group."),
 #endif
 
-    AP_INIT_TAKE1("WSGIManagementGroup", wsgi_set_management_group,
-        NULL, ACCESS_CONF|RSRC_CONF, "Management interpreter group."),
+    AP_INIT_TAKE1("WSGIDispatchGroup", wsgi_set_dispatch_group,
+        NULL, ACCESS_CONF|RSRC_CONF, "Dispatch interpreter group."),
+    AP_INIT_TAKE1("WSGIDispatchScript", wsgi_set_dispatch_script,
+        NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI dispatch script."),
+
     AP_INIT_TAKE1("WSGIApplicationGroup", wsgi_set_application_group,
         NULL, ACCESS_CONF|RSRC_CONF, "Application interpreter group."),
     AP_INIT_TAKE1("WSGICallableObject", wsgi_set_callable_object,
@@ -8774,9 +9301,9 @@ static const command_rec wsgi_commands[] =
 
 #if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
     AP_INIT_TAKE1("WSGIAuthUserScript", wsgi_set_auth_user_script,
-        NULL, OR_AUTHCFG, "Define location of WSGI user auth script file."),
+        NULL, OR_AUTHCFG, "Location of WSGI user auth script file."),
     AP_INIT_TAKE1("WSGIAuthGroupScript", wsgi_set_auth_group_script,
-        NULL, OR_AUTHCFG, "Define location of WSGI group auth script file."),
+        NULL, OR_AUTHCFG, "Location of WSGI group auth script file."),
     AP_INIT_TAKE1("WSGIGroupAuthoritative", wsgi_set_group_authoritative,
         NULL, OR_AUTHCFG, "Enable/Disable as being authoritative on groups."),
 #endif
