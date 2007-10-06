@@ -2920,9 +2920,7 @@ static InterpreterObject *newInterpreterObject(const char *name,
      * would provide the SWIG bindings for the internal Apache
      * APIs. Only support use of such bindings in the first
      * interpreter created due to threading issues in SWIG
-     * generated. If we have to add the 'apache' module, also
-     * need to create dummy 'apache.mod_auth' module as well to
-     * support auth provider mechanism if available.
+     * generated.
      */
 
     module = NULL;
@@ -2962,25 +2960,6 @@ static InterpreterObject *newInterpreterObject(const char *name,
         module = PyImport_AddModule("apache");
 
         Py_INCREF(module);
-
-#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
-        inner = PyImport_AddModule("apache.mod_auth");
-
-        PyModule_AddObject(inner, "AUTH_DENIED",
-                           PyInt_FromLong(AUTH_DENIED));
-        PyModule_AddObject(inner, "AUTH_GRANTED",
-                           PyInt_FromLong(AUTH_GRANTED));
-        PyModule_AddObject(inner, "AUTH_USER_FOUND",
-                           PyInt_FromLong(AUTH_USER_FOUND));
-        PyModule_AddObject(inner, "AUTH_USER_NOT_FOUND",
-                           PyInt_FromLong(AUTH_USER_NOT_FOUND));
-        PyModule_AddObject(inner, "AUTH_GENERAL_ERROR",
-                           PyInt_FromLong(AUTH_GENERAL_ERROR));
-
-        Py_INCREF(inner);
-
-        PyModule_AddObject(module, "mod_auth", inner);
-#endif
     }
 
     /*
@@ -8049,12 +8028,22 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                 Py_DECREF(vars);
 
                 if (result) {
-                    if (!PyInt_Check(result)) {
-                        PyErr_SetString(PyExc_TypeError, "Basic auth provider "
-                                        "must return single integer value");
+                    if (result == Py_None) {
+                        status = AUTH_USER_NOT_FOUND;
                     }
-                    else
-                        status = PyInt_AsLong(result);
+                    else if (result == Py_True) {
+                        status = AUTH_GRANTED;
+                    }
+                    else if (result == Py_False) {
+                        status = AUTH_DENIED;
+                    }
+                    else {
+                        PyErr_SetString(PyExc_TypeError, "Basic auth "
+                                        "provider must return True, False "
+                                        "or None");
+                    }
+
+                    Py_DECREF(result);
                 }
 
                 /*
@@ -8253,16 +8242,22 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                 Py_DECREF(vars);
 
                 if (result) {
-                    char *hash = NULL;
-                    if (!PyArg_ParseTuple(result, "is", &status, &hash)) {
-                        PyErr_SetString(PyExc_TypeError, "Digest auth "
-                                        "provider must return tuple "
-                                        "containing integer and string");
-                        status = AUTH_GENERAL_ERROR;
+                    if (result == Py_None) {
+                        status = AUTH_USER_NOT_FOUND;
+                    }
+                    else if (PyString_Check(result)) {
+                        *rethash = PyString_AsString(result);
+                        *rethash = apr_pstrdup(r->pool, *rethash);
+
+                        status = AUTH_USER_FOUND;
                     }
                     else {
-                        *rethash = apr_pstrdup(r->pool, hash);
+                        PyErr_SetString(PyExc_TypeError, "Digest auth "
+                                        "provider must return None "
+                                        "or string object");
                     }
+
+                    Py_DECREF(result);
                 }
 
                 /*
