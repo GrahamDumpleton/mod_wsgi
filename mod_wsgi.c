@@ -622,6 +622,13 @@ static const char *wsgi_process_group(request_rec *r, const char *s)
         if (!strcmp(name, "{GLOBAL}"))
             return "";
 
+        if (!strcmp(name, "{NOTES}")) {
+            value = apr_table_get(r->notes, "mod_wsgi.process_group");
+
+            if (value)
+                return value;
+        }
+
         if (strstr(name, "{ENV:") == name) {
             int len = 0;
 
@@ -736,6 +743,13 @@ static const char *wsgi_application_group(request_rec *r, const char *s)
         if (!strcmp(name, "{GLOBAL}"))
             return "";
 
+        if (!strcmp(name, "{NOTES}")) {
+            value = apr_table_get(r->notes, "mod_wsgi.application_group");
+
+            if (value)
+                return value;
+        }
+
         if (strstr(name, "{ENV:") == name) {
             int len = 0;
 
@@ -781,6 +795,13 @@ static const char *wsgi_callable_object(request_rec *r, const char *s)
 
     if (!*name)
         return "application";
+
+    if (!strcmp(name, "{NOTES}")) {
+        value = apr_table_get(r->notes, "mod_wsgi.callable_object");
+
+        if (value)
+            return value;
+    }
 
     if (strstr(name, "{ENV:") == name) {
         int len = 0;
