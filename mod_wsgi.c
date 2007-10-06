@@ -195,7 +195,7 @@ static apr_status_t apr_os_pipe_put_ex(apr_file_t **file,
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 1
 #define MOD_WSGI_MINORVERSION_NUMBER 0
-#define MOD_WSGI_VERSION_STRING "1.1"
+#define MOD_WSGI_VERSION_STRING "1.2-TRUNK"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -1907,17 +1907,9 @@ static PyObject *Adapter_start(AdapterObject *self, PyObject *args)
             if (!PyArg_ParseTuple(exc_info, "OOO", &type, &value, &traceback))
                 return NULL;
 
-            PyErr_NormalizeException(&type, &value, &traceback);
-
-            if (!value) {
-                value = Py_None;
-                Py_INCREF(value);
-            }
-
-            if (!traceback) {
-                traceback = Py_None;
-                Py_INCREF(traceback);
-            }
+            Py_INCREF(type);
+            Py_INCREF(value);
+            Py_INCREF(traceback);
 
             PyErr_Restore(type, value, traceback);
 
@@ -2307,7 +2299,12 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                 msg = PyString_AsString(item);
                 length = PyString_Size(item);
 
-                if (!msg || !Adapter_output(self, msg, length)) {
+                if (!msg) {
+                    Py_DECREF(item);
+                    break;
+                }
+
+                if (length && !Adapter_output(self, msg, length)) {
                     Py_DECREF(item);
                     break;
                 }
@@ -2323,8 +2320,19 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
             Py_DECREF(iterator);
         }
 
-        if (PyErr_Occurred())
+        if (PyErr_Occurred()) {
+            /*
+	     * Response content has already been sent, so cannot
+	     * return an internal server error as Apache will
+	     * append its own error page. Thus need to return OK
+	     * and just truncate the response.
+             */
+
+            if (self->status_line)
+                result = OK;
+
             wsgi_log_python_error(self->r, self->log);
+        }
 
         if (PyObject_HasAttrString(self->sequence, "close")) {
             PyObject *args = NULL;
