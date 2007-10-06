@@ -4703,7 +4703,7 @@ static const char *wsgi_set_auth_user_script(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_authz_group_script(cmd_parms *cmd, void *mconfig,
+static const char *wsgi_set_auth_group_script(cmd_parms *cmd, void *mconfig,
                                                const char *n)
 {
     WSGIDirectoryConfig *dconfig = NULL;
@@ -4713,7 +4713,7 @@ static const char *wsgi_set_authz_group_script(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_authz_authoritative(cmd_parms *cmd, void *mconfig,
+static const char *wsgi_set_group_authoritative(cmd_parms *cmd, void *mconfig,
                                                 const char *f)
 {
     WSGIDirectoryConfig *dconfig = NULL;
@@ -4724,7 +4724,7 @@ static const char *wsgi_set_authz_authoritative(cmd_parms *cmd, void *mconfig,
     else if (strcasecmp(f, "On") == 0)
         dconfig->authz_authoritative = 1;
     else
-        return "WSGIAuthzAuthoritative must be one of: Off | On";
+        return "WSGIGroupAuthoritative must be one of: Off | On";
 
     return NULL;
 }
@@ -8780,10 +8780,10 @@ static const command_rec wsgi_commands[] =
 #if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
     AP_INIT_TAKE1("WSGIAuthUserScript", wsgi_set_auth_user_script,
         NULL, OR_AUTHCFG, "Define location of WSGI user auth script file."),
-    AP_INIT_TAKE1("WSGIAuthzGroupScript", wsgi_set_authz_group_script,
+    AP_INIT_TAKE1("WSGIAuthGroupScript", wsgi_set_auth_group_script,
         NULL, OR_AUTHCFG, "Define location of WSGI group auth script file."),
-    AP_INIT_TAKE1("WSGIAuthzAuthoritative", wsgi_set_authz_authoritative,
-        NULL, OR_AUTHCFG, "Enable/Disable script as being authoritative."),
+    AP_INIT_TAKE1("WSGIGroupAuthoritative", wsgi_set_group_authoritative,
+        NULL, OR_AUTHCFG, "Enable/Disable as being authoritative on groups."),
 #endif
 
     { NULL }
