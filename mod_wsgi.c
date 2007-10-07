@@ -272,7 +272,7 @@ typedef struct {
     apr_table_t *restrict_process;
 
     const char *process_group;
-    const char *dispatch_group;
+    const char *server_group;
     const char *dispatch_script;
     const char *application_group;
     const char *callable_object;
@@ -323,7 +323,7 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->restrict_process = NULL;
 
     object->process_group = NULL;
-    object->dispatch_group = NULL;
+    object->server_group = NULL;
     object->dispatch_script = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
@@ -381,10 +381,10 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->process_group = parent->process_group;
 
-    if (child->dispatch_group)
-        config->dispatch_group = child->dispatch_group;
+    if (child->server_group)
+        config->server_group = child->server_group;
     else
-        config->dispatch_group = parent->dispatch_group;
+        config->server_group = parent->server_group;
 
     if (child->dispatch_script)
         config->dispatch_script = child->dispatch_script;
@@ -435,7 +435,7 @@ typedef struct {
     apr_table_t *restrict_process;
 
     const char *process_group;
-    const char *dispatch_group;
+    const char *server_group;
     const char *dispatch_script;
     const char *application_group;
     const char *callable_object;
@@ -460,7 +460,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->pool = p;
 
     object->process_group = NULL;
-    object->dispatch_group = NULL;
+    object->server_group = NULL;
     object->dispatch_script = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
@@ -509,10 +509,10 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->process_group = parent->process_group;
 
-    if (child->dispatch_group)
-        config->dispatch_group = child->dispatch_group;
+    if (child->server_group)
+        config->server_group = child->server_group;
     else
-        config->dispatch_group = parent->dispatch_group;
+        config->server_group = parent->server_group;
 
     if (child->dispatch_script)
         config->dispatch_script = child->dispatch_script;
@@ -578,7 +578,7 @@ typedef struct {
     apr_table_t *restrict_process;
 
     const char *process_group;
-    const char *dispatch_group;
+    const char *server_group;
     const char *dispatch_script;
     const char *application_group;
     const char *callable_object;
@@ -667,7 +667,7 @@ static const char *wsgi_process_group(request_rec *r, const char *s)
     return s;
 }
 
-static const char *wsgi_dispatch_group(request_rec *r, const char *s)
+static const char *wsgi_server_group(request_rec *r, const char *s)
 {
     const char *name = NULL;
     const char *value = NULL;
@@ -847,13 +847,13 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     config->process_group = wsgi_process_group(r, config->process_group);
 
-    config->dispatch_group = dconfig->dispatch_group;
+    config->server_group = dconfig->server_group;
 
-    if (!config->dispatch_group)
-        config->dispatch_group = sconfig->dispatch_group;
+    if (!config->server_group)
+        config->server_group = sconfig->server_group;
 
-    config->dispatch_group = wsgi_dispatch_group(r,
-            config->dispatch_group);
+    config->server_group = wsgi_server_group(r,
+            config->server_group);
 
     config->dispatch_script = dconfig->dispatch_script;
 
@@ -4522,19 +4522,19 @@ static const char *wsgi_set_callable_object(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_dispatch_group(cmd_parms *cmd, void *mconfig,
-                                             const char *n)
+static const char *wsgi_set_server_group(cmd_parms *cmd, void *mconfig,
+                                         const char *n)
 {
     if (cmd->path) {
         WSGIDirectoryConfig *dconfig = NULL;
         dconfig = (WSGIDirectoryConfig *)mconfig;
-        dconfig->dispatch_group = n;
+        dconfig->server_group = n;
     }
     else {
         WSGIServerConfig *sconfig = NULL;
         sconfig = ap_get_module_config(cmd->server->module_config,
                                        &wsgi_module);
-        sconfig->dispatch_group = n;
+        sconfig->server_group = n;
     }
 
     return NULL;
@@ -5062,6 +5062,10 @@ static PyObject *Dispatch_environ(DispatchObject *self)
         }
     }
 
+    object = PyString_FromString(self->config->server_group);
+    PyDict_SetItemString(vars, "mod_wsgi.server_group", object);
+    Py_DECREF(object);
+
     /*
      * Setup log object for WSGI errors. Don't decrement
      * reference to log object as keep reference to it.
@@ -5163,7 +5167,7 @@ static int wsgi_execute_dispatch(request_rec *r)
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_dispatch_group(r, config->dispatch_group);
+    group = wsgi_server_group(r, config->server_group);
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -5701,8 +5705,8 @@ static const command_rec wsgi_commands[] =
     { "WSGICaseSensitivity", wsgi_set_case_sensitivity, NULL,
         RSRC_CONF, TAKE1, "Define whether file system is case sensitive." },
 
-    { "WSGIDispatchGroup", wsgi_set_dispatch_group, NULL,
-        ACCESS_CONF|RSRC_CONF, TAKE1, "Dispatch interpreter group." },
+    { "WSGIServerGroup", wsgi_set_server_group, NULL,
+        ACCESS_CONF|RSRC_CONF, TAKE1, "Server interpreter group." },
     { "WSGIDispatchScript", wsgi_set_dispatch_script, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Location of WSGI dispatch script." },
 
@@ -8327,8 +8331,8 @@ static PyObject *Auth_environ(AuthObject *self)
     PyDict_SetItemString(vars, "REQUEST_URI", object);
     Py_DECREF(object);
 
-    object = PyString_FromString(self->config->dispatch_group);
-    PyDict_SetItemString(vars, "mod_wsgi.dispatch_group", object);
+    object = PyString_FromString(self->config->server_group);
+    PyDict_SetItemString(vars, "mod_wsgi.server_group", object);
     Py_DECREF(object);
 
     object = PyInt_FromLong(self->config->script_reloading);
@@ -8438,7 +8442,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_dispatch_group(r, config->dispatch_group);
+    group = wsgi_server_group(r, config->server_group);
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -8654,7 +8658,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_dispatch_group(r, config->dispatch_group);
+    group = wsgi_server_group(r, config->server_group);
     
     interp = wsgi_acquire_interpreter(group);
 
@@ -8874,7 +8878,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_dispatch_group(r, config->dispatch_group);
+    group = wsgi_server_group(r, config->server_group);
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -9278,8 +9282,8 @@ static const command_rec wsgi_commands[] =
         NULL, ACCESS_CONF|RSRC_CONF, "Name of the WSGI process group."),
 #endif
 
-    AP_INIT_TAKE1("WSGIDispatchGroup", wsgi_set_dispatch_group,
-        NULL, ACCESS_CONF|RSRC_CONF, "Dispatch interpreter group."),
+    AP_INIT_TAKE1("WSGIServerGroup", wsgi_set_server_group,
+        NULL, ACCESS_CONF|RSRC_CONF, "Server interpreter group."),
     AP_INIT_TAKE1("WSGIDispatchScript", wsgi_set_dispatch_script,
         NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI dispatch script."),
 
