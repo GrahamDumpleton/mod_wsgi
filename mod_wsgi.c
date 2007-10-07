@@ -2450,6 +2450,14 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     const char *msg = NULL;
     int length = 0;
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_inactivity_lock) {
+        apr_thread_mutex_lock(wsgi_inactivity_lock);
+        wsgi_shutdown_time = apr_time_now() + wsgi_inactivity_timeout;
+        apr_thread_mutex_unlock(wsgi_inactivity_lock);
+    }
+#endif
+
     vars = Adapter_environ(self);
 
     start = PyObject_GetAttrString((PyObject *)self, "start_response");
