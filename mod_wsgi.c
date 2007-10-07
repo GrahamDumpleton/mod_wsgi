@@ -242,6 +242,12 @@ static apr_pool_t *wsgi_daemon_pool = NULL;
 
 static int volatile wsgi_daemon_shutdown = 0;
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
+static apr_time_t wsgi_inactivity_timeout = 0;
+static apr_time_t volatile wsgi_shutdown_time = 0;
+static apr_thread_mutex_t* wsgi_inactivity_lock = NULL;
+#endif
+
 /* Configuration objects. */
 
 typedef struct {
@@ -1390,6 +1396,14 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "|l:read", &size))
         return NULL;
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_inactivity_lock) {
+        apr_thread_mutex_lock(wsgi_inactivity_lock);
+        wsgi_shutdown_time = apr_time_now() + wsgi_inactivity_timeout;
+        apr_thread_mutex_unlock(wsgi_inactivity_lock);
+    }
+#endif
+
     if (!self->init) {
         if (!ap_should_client_block(self->r))
             self->done = 1;
@@ -2093,6 +2107,14 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
 {
     int i = 0;
     request_rec *r;
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_inactivity_lock) {
+        apr_thread_mutex_lock(wsgi_inactivity_lock);
+        wsgi_shutdown_time = apr_time_now() + wsgi_inactivity_timeout;
+        apr_thread_mutex_unlock(wsgi_inactivity_lock);
+    }
+#endif
 
     if (!self->status_line) {
         PyErr_SetString(PyExc_RuntimeError, "response has not been started");
@@ -5815,8 +5837,9 @@ typedef struct {
     int threads;
     int umask;
     const char *home;
-    int requests;
-    int timeout;
+    int maximum_requests;
+    int shutdown_timeout;
+    apr_time_t inactivity_timeout;
     const char *socket;
     int listener_fd;
     const char* mutex_path;
@@ -5866,8 +5889,9 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     const char *home = NULL;
 
-    int requests = 0;
-    int timeout = 5;
+    int maximum_requests = 0;
+    int shutdown_timeout = 5;
+    int inactivity_timeout = 0;
 
     uid_t uid;
     uid_t gid;
@@ -5971,8 +5995,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (!*value)
                 return "Invalid request count for WSGI daemon process.";
 
-            requests = atoi(value);
-            if (requests < 0)
+            maximum_requests = atoi(value);
+            if (maximum_requests < 0)
                 return "Invalid request count for WSGI daemon process.";
         }
         else if (strstr(option, "shutdown-timeout=") == option) {
@@ -5980,9 +6004,18 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (!*value)
                 return "Invalid shutdown timeout for WSGI daemon process.";
 
-            timeout = atoi(value);
-            if (timeout < 0)
+            shutdown_timeout = atoi(value);
+            if (shutdown_timeout < 0)
                 return "Invalid shutdown timeout for WSGI daemon process.";
+        }
+        else if (strstr(option, "inactivity-timeout=") == option) {
+            value = option + 19;
+            if (!*value)
+                return "Invalid inactivity timeout for WSGI daemon process.";
+
+            inactivity_timeout = atoi(value);
+            if (inactivity_timeout < 0)
+                return "Invalid inactivity timeout for WSGI daemon process.";
         }
         else
             return "Invalid option to WSGI daemon process definition.";
@@ -6025,8 +6058,9 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->umask = umask;
     entry->home = home;
 
-    entry->requests = requests;
-    entry->timeout = timeout;
+    entry->maximum_requests = maximum_requests;
+    entry->shutdown_timeout = shutdown_timeout;
+    entry->inactivity_timeout = apr_time_from_sec(inactivity_timeout);
 
     return NULL;
 }
@@ -6631,7 +6665,7 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
         /* Check to see if maximum number of requests reached. */
 
-        if (daemon->group->requests) {
+        if (daemon->group->maximum_requests) {
             if (--wsgi_request_count <= 0) {
                 if (!wsgi_daemon_shutdown) {
                     ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
@@ -6663,13 +6697,55 @@ static void *wsgi_reaper_thread(apr_thread_t *thd, void *data)
 {
     WSGIDaemonProcess *daemon = data;
 
-    sleep(daemon->group->timeout);
+    sleep(daemon->group->shutdown_timeout);
 
     ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                  "mod_wsgi (pid=%d): Aborting process '%s'.",
                  getpid(), daemon->group->name);
 
     exit(-1);
+
+    return NULL;
+}
+
+static void *wsgi_inactivity_thread(apr_thread_t *thd, void *data)
+{
+    WSGIDaemonProcess *daemon = data;
+
+    ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                 "mod_wsgi (pid=%d): Enable inactivity monitor in "
+                 "process '%s' for timeout of %d seconds.", getpid(),
+                 daemon->group->name,
+                 (int)(apr_time_sec(wsgi_inactivity_timeout)));
+
+    while (1) {
+        apr_time_t when;
+        apr_time_t now;
+
+        apr_thread_mutex_lock(wsgi_inactivity_lock);
+        when = wsgi_shutdown_time;
+        apr_thread_mutex_unlock(wsgi_inactivity_lock);
+
+        now = apr_time_now();
+
+        if (when) {
+            if (when <= now) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Daemon process inactivity "
+                             "timer expired, stopping process '%s'.",
+                             getpid(), daemon->group->name);
+
+                wsgi_daemon_shutdown++;
+                kill(getpid(), SIGINT);
+
+                apr_sleep(wsgi_inactivity_timeout);
+            }
+            else
+                apr_sleep(when - now);
+        }
+        else
+            apr_sleep(wsgi_inactivity_timeout);
+    }
 
     return NULL;
 }
@@ -6699,13 +6775,32 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
     /* Initialise maximum request count for daemon. */
 
-    if (daemon->group->requests)
-        wsgi_request_count = daemon->group->requests;
+    if (daemon->group->maximum_requests)
+        wsgi_request_count = daemon->group->maximum_requests;
 
     /* Ensure that threads are joinable. */
 
     apr_threadattr_create(&thread_attr, p);
     apr_threadattr_detach_set(thread_attr, 0);
+
+    /* Start inactivity thread if required. */
+
+    if (daemon->group->inactivity_timeout) {
+        wsgi_inactivity_timeout = daemon->group->inactivity_timeout;
+
+        apr_thread_mutex_create(&wsgi_inactivity_lock,
+                                APR_THREAD_MUTEX_UNNESTED, p);
+
+        rv = apr_thread_create(&reaper, thread_attr, wsgi_inactivity_thread,
+                               daemon, p);
+
+        if (rv != APR_SUCCESS) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(rv), wsgi_server,
+                         "mod_wsgi (pid=%d): Couldn't create inactivity "
+                         "thread in daemon process '%s'.", getpid(),
+                         daemon->group->name);
+        }
+    }
 
     /* Start the required number of threads. */
 
@@ -6758,7 +6853,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
      * this unless external process is controlling shutdown.
      */
 
-    if (daemon->group->timeout) {
+    if (daemon->group->shutdown_timeout) {
         rv = apr_thread_create(&reaper, thread_attr, wsgi_reaper_thread,
                                daemon, p);
 
