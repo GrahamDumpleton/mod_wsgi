@@ -2944,7 +2944,7 @@ static InterpreterObject *newInterpreterObject(const char *name,
             if (object) {
                 struct passwd *pwent;
 
-                pwent = getpwuid(getuid());
+                pwent = getpwuid(geteuid());
                 key = PyString_FromString("HOME");
                 value = PyString_FromString(pwent->pw_dir);
 
@@ -6352,6 +6352,43 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
             ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
                          "mod_wsgi (pid=%d): Unable to change working "
                          "directory to '%s'.", getpid(), daemon->group->home);
+        }
+    }
+    else if (geteuid()) {
+        struct passwd *pwent;
+
+        pwent = getpwuid(geteuid());
+
+        if (pwent) {
+            if (chdir(pwent->pw_dir) == -1) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
+                             "mod_wsgi (pid=%d): Unable to change working "
+                             "directory to '%s'.", getpid(), pwent->pw_dir);
+            }
+        }
+        else {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
+                         "mod_wsgi (pid=%d): Unable to determine home "
+                         "directory for uid=%ld.", getpid(), geteuid());
+        }
+    }
+    else {
+        struct passwd *pwent;
+
+        pwent = getpwuid(daemon->group->uid);
+
+        if (pwent) {
+            if (chdir(pwent->pw_dir) == -1) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
+                             "mod_wsgi (pid=%d): Unable to change working "
+                             "directory to '%s'.", getpid(), pwent->pw_dir);
+            }
+        }
+        else {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
+                         "mod_wsgi (pid=%d): Unable to determine home "
+                         "directory for uid=%ld.", getpid(),
+                         daemon->group->uid);
         }
     }
 
