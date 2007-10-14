@@ -105,6 +105,10 @@ typedef regmatch_t ap_regmatch_t;
 #endif
 #endif
 
+#ifndef WIN32
+#include <pwd.h>
+#endif
+
 #include "Python.h"
 #include "compile.h"
 #include "node.h"
@@ -2913,6 +2917,47 @@ static InterpreterObject *newInterpreterObject(const char *name,
                            &wsgi_signal_method[0], NULL));
         Py_DECREF(module);
     }
+
+    /*
+     * If running in daemon process, override HOME environment
+     * variable so that is matches the home directory of the
+     * user that the process is running as. Need to do this as
+     * Apache will inherit HOME from root user or user that ran
+     * sudo and started Apache and this would be wrong. Can't
+     * update HOME for normal Apache child processes as that
+     * would change the expected environment of other Apache
+     * modules.
+     */
+
+#ifndef WIN32
+    if (wsgi_daemon_pool) {
+        module = PyImport_ImportModule("os");
+
+        if (module) {
+            PyObject *dict = NULL;
+            PyObject *key = NULL;
+            PyObject *value = NULL;
+
+            dict = PyModule_GetDict(module);
+            object = PyDict_GetItemString(dict, "environ");
+
+            if (object) {
+                struct passwd *pwent;
+
+                pwent = getpwuid(getuid());
+                key = PyString_FromString("HOME");
+                value = PyString_FromString(pwent->pw_dir);
+
+                PyObject_SetItem(object, key, value);
+
+                Py_DECREF(key);
+                Py_DECREF(value);
+            }
+
+            Py_DECREF(module);
+        }
+    }
+#endif
 
     /*
      * Create 'mod_wsgi' Python module. We first try and import an
