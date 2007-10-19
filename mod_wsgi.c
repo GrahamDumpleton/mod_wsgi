@@ -3732,6 +3732,10 @@ static PyObject *wsgi_load_source(request_rec *r, const char *name,
     }
 
     if (!(fp = fopen(path, "r"))) {
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(errno), r,
+                      "mod_wsgi (pid=%d, process='%s', application='%s'): "
+                      "Call to fopen() failed for '%s'.", getpid(),
+                      process_group, application_group, path);
         PyErr_SetFromErrno(PyExc_IOError);
         return NULL;
     }
@@ -4149,15 +4153,15 @@ static int wsgi_execute_script(request_rec *r)
 
             status = HTTP_NOT_FOUND;
         }
+    }
 
-        /* Log any details of exceptions if execution failed. */
+    /* Log any details of exceptions if execution failed. */
 
-        if (PyErr_Occurred()) {
-            LogObject *log;
-            log = newLogObject(r, APLOG_ERR);
-            wsgi_log_python_error(r, log);
-            Py_DECREF(log);
-        }
+    if (PyErr_Occurred()) {
+        LogObject *log;
+        log = newLogObject(r, APLOG_ERR);
+        wsgi_log_python_error(r, log);
+        Py_DECREF(log);
     }
 
     /* Cleanup and release interpreter, */
@@ -8139,7 +8143,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     /* Read in the request details and setup request object. */
 
     if ((rv = wsgi_read_request(csd, r)) != APR_SUCCESS) {
-        ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(rv), r,
+        ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(rv), wsgi_server,
                      "mod_wsgi (pid=%d): Unable to read WSGI request.",
                      getpid());
 
@@ -8152,14 +8156,26 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     r->filename = (char *)apr_table_get(r->subprocess_env, "SCRIPT_FILENAME");
 
-    apr_stat(&r->finfo, r->filename, APR_FINFO_SIZE, r->pool);
+    if ((rv = apr_stat(&r->finfo, r->filename, APR_FINFO_SIZE,
+                       r->pool)) != APR_SUCCESS) {
+        /*
+         * Don't fail at this point. Allow the lack of file to
+         * be detected later when trying to load the script file.
+         */
+
+        ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(rv), wsgi_server,
+                     "mod_wsgi (pid=%d): Unable to stat target WSGI script "
+                     "'%s'.", getpid(), r->filename);
+
+        r->finfo.mtime = 0;
+    }
 
     /* Check magic marker used to validate origin of request. */
 
     magic = apr_table_get(r->subprocess_env, "mod_wsgi.magic");
 
     if (!magic) {
-        ap_log_rerror(APLOG_MARK, WSGI_LOG_ALERT(rv), r,
+        ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(rv), wsgi_server,
                      "mod_wsgi (pid=%d): Request origin could not be "
                      "validated.", getpid());
 
@@ -8174,7 +8190,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     hash = ap_md5(r->pool, (const unsigned char *)hash);
 
     if (strcmp(magic, hash) != 0) {
-        ap_log_rerror(APLOG_MARK, WSGI_LOG_ALERT(rv), r,
+        ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(rv), wsgi_server,
                      "mod_wsgi (pid=%d): Request origin could not be "
                      "validated.", getpid());
 
