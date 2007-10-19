@@ -3408,6 +3408,11 @@ static PyObject *wsgi_load_source(request_rec *r, const char *name, int found)
     }
 
     if (!(fp = fopen(r->filename, "r"))) {
+         ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(errno), r,
+                       "mod_wsgi (pid=%d, process='%s', application='%s'): "
+                       "Call to fopen() failed for '%s'.", getpid(),
+                       config->process_group, config->application_group,
+                       r->filename);
         PyErr_SetFromErrno(PyExc_IOError);
         return NULL;
     }
@@ -6848,7 +6853,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     /* Read in the request details and setup request object. */
 
     if ((rv = wsgi_read_request(csd, r)) != APR_SUCCESS) {
-        ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(rv), r,
+        ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(rv), wsgi_server,
                      "mod_wsgi (pid=%d): Unable to read WSGI request.",
                      getpid());
 
@@ -6861,14 +6866,26 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     r->filename = (char *)apr_table_get(r->subprocess_env, "SCRIPT_FILENAME");
 
-    apr_stat(&r->finfo, r->filename, APR_FINFO_SIZE, r->pool);
+    if ((rv = apr_stat(&r->finfo, r->filename, APR_FINFO_SIZE,
+                       r->pool)) != APR_SUCCESS) {
+        /*
+         * Don't fail at this point. Allow the lack of file to
+         * be detected later when trying to load the script file.
+         */
+
+        ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(rv), wsgi_server,
+                     "mod_wsgi (pid=%d): Call to apr_stat() failed for '%s'.",
+                     getpid(), r->filename);
+
+        r->finfo.mtime = 0;
+    }
 
     /* Check magic marker used to validate origin of request. */
 
     magic = apr_table_get(r->subprocess_env, "mod_wsgi.magic");
 
     if (!magic) {
-        ap_log_rerror(APLOG_MARK, WSGI_LOG_ALERT(rv), r,
+        ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(rv), wsgi_server,
                      "mod_wsgi (pid=%d): Request origin could not be "
                      "validated.", getpid());
 
@@ -6883,7 +6900,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     hash = ap_md5(r->pool, (const unsigned char *)hash);
 
     if (strcmp(magic, hash) != 0) {
-        ap_log_rerror(APLOG_MARK, WSGI_LOG_ALERT(rv), r,
+        ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(rv), wsgi_server,
                      "mod_wsgi (pid=%d): Request origin could not be "
                      "validated.", getpid());
 
