@@ -6438,8 +6438,8 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
 
     if (setgid(daemon->group->gid) == -1) {
         ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
-                     "mod_wsgi (pid=%d): Unable to set group id to gid=%d.",
-                     getpid(), daemon->group->gid);
+                     "mod_wsgi (pid=%d): Unable to set group id to gid=%u.",
+                     getpid(), (unsigned)daemon->group->gid);
     }
     else {
         if (initgroups(daemon->group->user, daemon->group->gid) == -1) {
