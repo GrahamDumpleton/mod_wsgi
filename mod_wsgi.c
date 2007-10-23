@@ -5915,6 +5915,7 @@ typedef struct {
     int threads;
     int umask;
     const char *home;
+    int stack_size;
     int maximum_requests;
     int shutdown_timeout;
     apr_time_t inactivity_timeout;
@@ -5967,6 +5968,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     const char *home = NULL;
 
+    int stack_size = 0;
     int maximum_requests = 0;
     int shutdown_timeout = 5;
     int inactivity_timeout = 0;
@@ -6068,6 +6070,15 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
             home = value;
         }
+        else if (strstr(option, "stack-size=") == option) {
+            value = option + 11;
+            if (!*value)
+                return "Invalid stack size for WSGI daemon process.";
+
+            stack_size = atoi(value);
+            if (stack_size <= 0)
+                return "Invalid stack size for WSGI daemon process.";
+        }
         else if (strstr(option, "maximum-requests=") == option) {
             value = option + 17;
             if (!*value)
@@ -6136,6 +6147,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->umask = umask;
     entry->home = home;
 
+    entry->stack_size = stack_size;
     entry->maximum_requests = maximum_requests;
     entry->shutdown_timeout = shutdown_timeout;
     entry->inactivity_timeout = apr_time_from_sec(inactivity_timeout);
@@ -6897,6 +6909,17 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
     apr_threadattr_create(&thread_attr, p);
     apr_threadattr_detach_set(thread_attr, 0);
+
+    if (daemon->group->stack_size) {
+        apr_threadattr_stacksize_set(thread_attr, daemon->group->stack_size);
+    }
+#if defined(AP_MPM_WANT_SET_STACKSIZE)
+    else {
+        if (ap_thread_stacksize != 0) {
+            apr_threadattr_stacksize_set(thread_attr, ap_thread_stacksize);
+        }
+    }
+#endif
 
     /* Start inactivity thread if required. */
 
