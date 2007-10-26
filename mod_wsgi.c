@@ -4452,8 +4452,9 @@ static void wsgi_python_child_init(apr_pool_t *p)
 #ifndef WIN32
     if (wsgi_server_config->python_path) {
         if (wsgi_python_path) {
-            wsgi_python_path = apr_pstrcat(p, wsgi_server_config->python_path,
-                                           ":", wsgi_python_path, NULL);
+            wsgi_python_path = apr_pstrcat(p, wsgi_python_path, ":",
+                                           wsgi_server_config->python_path,
+                                           NULL);
         }
         else
             wsgi_python_path = wsgi_server_config->python_path;
