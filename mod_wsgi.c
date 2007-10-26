@@ -2797,6 +2797,8 @@ static PyMethodDef wsgi_signal_method[] = {
 
 /* Wrapper around Python interpreter instances. */
 
+static const char *wsgi_python_path = NULL;
+
 typedef struct {
     PyObject_HEAD
     char *name;
@@ -2979,6 +2981,126 @@ static InterpreterObject *newInterpreterObject(const char *name,
         }
     }
 #endif
+
+    /*
+     * Install user defined Python module search path. This is
+     * added using site.addsitedir() so that any Python .pth
+     * files are opened and additional directories so defined
+     * are added to default Python search path as well. This
+     * allows virtual Python environments to work.
+     */
+
+    if (wsgi_python_path) {
+        module = PyImport_ImportModule("site");
+
+        if (module) {
+            PyObject *dict = NULL;
+
+            dict = PyModule_GetDict(module);
+            object = PyDict_GetItemString(dict, "addsitedir");
+
+            if (object) {
+                const char *start;
+                const char *end;
+                const char *value;
+
+                PyObject *item;
+                PyObject *args;
+
+                PyObject *result = NULL;
+
+                start = wsgi_python_path;
+                end = strchr(start, ':');
+
+                if (end) {
+                    item = PyString_FromStringAndSize(start, end-start);
+                    start = end+1;
+
+                    value = PyString_AsString(item);
+
+                    ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                                 "mod_wsgi (pid=%d): Adding '%s' to "
+                                 "path.", getpid(), value);
+
+                    args = Py_BuildValue("(O)", item);
+                    result = PyEval_CallObject(object, args);
+
+                    if (!result) {
+                        ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+                                     "mod_wsgi (pid=%d): Call to "
+                                     "'site.addsitedir()' failed for '%s', "
+                                     "stopping.",
+                                     getpid(), value);
+                    }
+
+                    Py_XDECREF(result);
+                    Py_DECREF(item);
+                    Py_DECREF(args);
+
+                    end = strchr(start, ':');
+
+                    while (result && end) {
+                        item = PyString_FromStringAndSize(start, end-start);
+                        start = end+1;
+
+                        value = PyString_AsString(item);
+
+                        ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                                     "mod_wsgi (pid=%d): Adding '%s' to "
+                                     "path.", getpid(), value);
+
+                        args = Py_BuildValue("(O)", item);
+                        result = PyEval_CallObject(object, args);
+
+                        if (!result) {
+                            ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0),
+                                         wsgi_server, "mod_wsgi (pid=%d): "
+                                         "Call to 'site.addsitedir()' failed "
+                                         "for '%s', stopping.",
+                                         getpid(), value);
+                        }
+
+                        Py_XDECREF(result);
+                        Py_DECREF(item);
+                        Py_DECREF(args);
+
+                        end = strchr(start, ':');
+                    }
+                }
+
+                ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Adding '%s' to "
+                             "path.", getpid(), start);
+
+                args = Py_BuildValue("(s)", start);
+                result = PyEval_CallObject(object, args);
+
+                if (!result) {
+                    ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+                                 "mod_wsgi (pid=%d): Call to "
+                                 "'site.addsitedir()' failed for '%s'.",
+                                 getpid(), start);
+                }
+
+                Py_XDECREF(result);
+                Py_DECREF(args);
+
+                Py_DECREF(object);
+            }
+            else {
+                ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Unable to locate "
+                             "'site.addsitedir()'.", getpid());
+            }
+
+            Py_DECREF(module);
+        }
+        else {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+                         "mod_wsgi (pid=%d): Unable to import 'site' "
+                         "module.", getpid());
+        }
+    }
 
     /*
      * Create 'mod_wsgi' Python module. We first try and import an
@@ -3546,11 +3668,6 @@ static void wsgi_python_init(apr_pool_t *p)
 
         if (wsgi_server_config->python_home)
             Py_SetPythonHome((char *)wsgi_server_config->python_home);
-
-        if (wsgi_server_config->python_path) {
-            putenv(apr_psprintf(p, "PYTHONPATH=%s",
-                                wsgi_server_config->python_path));
-        }
 
         /* Initialise Python. */
 
@@ -4321,6 +4438,24 @@ static void wsgi_python_child_init(apr_pool_t *p)
     apr_thread_mutex_create(&wsgi_interp_lock, APR_THREAD_MUTEX_UNNESTED, p);
     apr_thread_mutex_create(&wsgi_module_lock, APR_THREAD_MUTEX_UNNESTED, p);
 #endif
+
+    /*
+     * Setup the complete Python path to be added to every
+     * Python interpreter used. This can be a combination
+     * of the global Python path for the whole server and
+     * any defined just for a daemon process. That for the
+     * daemon process was initialised prior to call of this
+     * function, so just prepending it before that.
+     */
+
+    if (wsgi_server_config->python_path) {
+        if (wsgi_python_path) {
+            wsgi_python_path = apr_pstrcat(p, wsgi_server_config->python_path,
+                                           ":", wsgi_python_path, NULL);
+        }
+        else
+            wsgi_python_path = wsgi_server_config->python_path;
+    }
 
     /*
      * Cache a reference to the first Python interpreter
@@ -5915,6 +6050,7 @@ typedef struct {
     int threads;
     int umask;
     const char *home;
+    const char *python_path;
     int stack_size;
     int maximum_requests;
     int shutdown_timeout;
@@ -5967,6 +6103,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int umask = -1;
 
     const char *home = NULL;
+    const char *python_path = NULL;
 
     int stack_size = 0;
     int maximum_requests = 0;
@@ -6070,6 +6207,11 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
             home = value;
         }
+        else if (strstr(option, "python-path=") == option) {
+            value = option + 12;
+
+            python_path = value;
+        }
         else if (strstr(option, "stack-size=") == option) {
             value = option + 11;
             if (!*value)
@@ -6146,6 +6288,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     entry->umask = umask;
     entry->home = home;
+
+    entry->python_path = python_path;
 
     entry->stack_size = stack_size;
     entry->maximum_requests = maximum_requests;
@@ -7192,6 +7336,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          */
 
         wsgi_python_initialized = 1;
+        wsgi_python_path = daemon->group->python_path;
         wsgi_python_child_init(wsgi_daemon_pool);
 
         /*
