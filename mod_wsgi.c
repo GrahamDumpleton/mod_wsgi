@@ -7134,8 +7134,6 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         wsgi_daemon_shutdown = 0;
 
-        apr_signal(SIGCHLD, SIG_IGN);
-
         if (daemon->group->threads == 1) {
             apr_signal(SIGINT, wsgi_signal_handler);
             apr_signal(SIGTERM, wsgi_signal_handler);
