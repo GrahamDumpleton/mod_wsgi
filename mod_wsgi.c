@@ -112,6 +112,7 @@ typedef regmatch_t ap_regmatch_t;
 #include "Python.h"
 #include "compile.h"
 #include "node.h"
+#include "osdefs.h"
 
 #if !defined(PY_VERSION_HEX) || PY_VERSION_HEX <= 0x02030000
 #error Sorry, mod_wsgi requires at least Python 2.3.0.
@@ -3010,7 +3011,7 @@ static InterpreterObject *newInterpreterObject(const char *name,
                 PyObject *result = NULL;
 
                 start = wsgi_python_path;
-                end = strchr(start, ':');
+                end = strchr(start, DELIM);
 
                 if (end) {
                     item = PyString_FromStringAndSize(start, end-start);
@@ -3037,7 +3038,7 @@ static InterpreterObject *newInterpreterObject(const char *name,
                     Py_DECREF(item);
                     Py_DECREF(args);
 
-                    end = strchr(start, ':');
+                    end = strchr(start, DELIM);
 
                     while (result && end) {
                         item = PyString_FromStringAndSize(start, end-start);
@@ -3064,7 +3065,7 @@ static InterpreterObject *newInterpreterObject(const char *name,
                         Py_DECREF(item);
                         Py_DECREF(args);
 
-                        end = strchr(start, ':');
+                        end = strchr(start, DELIM);
                     }
                 }
 
@@ -4448,6 +4449,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
      * function, so just prepending it before that.
      */
 
+#ifndef WIN32
     if (wsgi_server_config->python_path) {
         if (wsgi_python_path) {
             wsgi_python_path = apr_pstrcat(p, wsgi_server_config->python_path,
@@ -4456,6 +4458,9 @@ static void wsgi_python_child_init(apr_pool_t *p)
         else
             wsgi_python_path = wsgi_server_config->python_path;
     }
+#else
+    wsgi_python_path = wsgi_server_config->python_path;
+#endif
 
     /*
      * Cache a reference to the first Python interpreter
