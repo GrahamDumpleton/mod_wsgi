@@ -5492,10 +5492,9 @@ static int wsgi_execute_dispatch(request_rec *r)
     if (module) {
         PyObject *module_dict = NULL;
         PyObject *object = NULL;
+        DispatchObject *adapter = NULL;
 
         module_dict = PyModule_GetDict(module);
-
-        DispatchObject *adapter = NULL;
 
         adapter = newDispatchObject(r, config);
 
