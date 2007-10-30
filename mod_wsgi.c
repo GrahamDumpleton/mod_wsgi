@@ -7062,13 +7062,6 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     if (daemon->group->stack_size) {
         apr_threadattr_stacksize_set(thread_attr, daemon->group->stack_size);
     }
-#if defined(AP_MPM_WANT_SET_STACKSIZE)
-    else {
-        if (ap_thread_stacksize != 0) {
-            apr_threadattr_stacksize_set(thread_attr, ap_thread_stacksize);
-        }
-    }
-#endif
 
     /* Start inactivity thread if required. */
 
