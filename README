@@ -100,6 +100,14 @@ use by searching for either the "apxs2" or "apxs" tools included with your
 Apache installation. Similarly, which Python installation to use will be
 determined by looking for the "python" executable.
 
+If using a Linux system and you do not have the Apache "dev" package
+installed, then "apxs" will not be able to be found when "configure" is
+run. Also ensure that you have installed the correct "dev" package for the
+version of Apache being used. For most Linux distributions, the "dev"
+package for Apache 2 is "apache2-dev" where the corresponding Apache
+package was "apache2". Do not mix things up and install "apache-dev" by
+mistake, which is the "dev" package for Apache 1.3 called just "apache".
+
 If these programs are not in a standard location, they cannot be found in
 your PATH, or you wish to use alternate versions to those found, the
 "--with-apxs" and "--with-python" options can be used in conjunction with the
