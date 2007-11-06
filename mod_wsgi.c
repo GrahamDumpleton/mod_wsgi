@@ -2532,10 +2532,10 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         if (PyErr_Occurred()) {
             /*
-	     * Response content has already been sent, so cannot
-	     * return an internal server error as Apache will
-	     * append its own error page. Thus need to return OK
-	     * and just truncate the response.
+             * Response content has already been sent, so cannot
+             * return an internal server error as Apache will
+             * append its own error page. Thus need to return OK
+             * and just truncate the response.
              */
 
             if (self->status_line)
@@ -3010,6 +3010,8 @@ static InterpreterObject *newInterpreterObject(const char *name,
 
                 PyObject *result = NULL;
 
+                Py_INCREF(object);
+
                 start = wsgi_python_path;
                 end = strchr(start, DELIM);
 
@@ -3030,8 +3032,7 @@ static InterpreterObject *newInterpreterObject(const char *name,
                         ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
                                      "mod_wsgi (pid=%d): Call to "
                                      "'site.addsitedir()' failed for '%s', "
-                                     "stopping.",
-                                     getpid(), value);
+                                     "stopping.", getpid(), value);
                     }
 
                     Py_XDECREF(result);
