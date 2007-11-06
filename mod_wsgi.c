@@ -273,6 +273,7 @@ typedef struct {
     const char *python_executable;
     const char *python_home;
     const char *python_path;
+    const char *python_eggs;
 
     int restrict_stdin;
     int restrict_stdout;
@@ -320,6 +321,7 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->python_executable = NULL;
     object->python_home = NULL;
     object->python_path = NULL;
+    object->python_eggs = NULL;
 
     object->restrict_stdin = -1;
     object->restrict_stdout = -1;
@@ -2799,6 +2801,7 @@ static PyMethodDef wsgi_signal_method[] = {
 /* Wrapper around Python interpreter instances. */
 
 static const char *wsgi_python_path = NULL;
+static const char *wsgi_python_eggs = NULL;
 
 typedef struct {
     PyObject_HEAD
@@ -2982,6 +2985,45 @@ static InterpreterObject *newInterpreterObject(const char *name,
         }
     }
 #endif
+
+    /*
+     * Explicitly override the PYTHON_EGG_CACHE variable if it
+     * was defined by Apache configuration. For embedded processes
+     * this would have been done by using WSGIPythonEggs directive.
+     * For daemon processes the 'python-eggs' option to the
+     * WSGIDaemonProcess directive would have needed to be used.
+     */
+
+    if (!wsgi_daemon_pool)
+        wsgi_python_eggs = wsgi_server_config->python_eggs;
+
+    if (wsgi_python_eggs) {
+        module = PyImport_ImportModule("os");
+
+        if (module) {
+            PyObject *dict = NULL;
+            PyObject *key = NULL;
+            PyObject *value = NULL;
+
+            dict = PyModule_GetDict(module);
+            object = PyDict_GetItemString(dict, "environ");
+
+            if (object) {
+                struct passwd *pwent;
+
+                pwent = getpwuid(geteuid());
+                key = PyString_FromString("PYTHON_EGG_CACHE");
+                value = PyString_FromString(wsgi_python_eggs);
+
+                PyObject_SetItem(object, key, value);
+
+                Py_DECREF(key);
+                Py_DECREF(value);
+            }
+
+            Py_DECREF(module);
+        }
+    }
 
     /*
      * Install user defined Python module search path. This is
@@ -4589,6 +4631,22 @@ static const char *wsgi_set_python_path(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_python_eggs(cmd_parms *cmd, void *mconfig,
+                                        const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+    sconfig->python_eggs = f;
+
+    return NULL;
+}
+
 static const char *wsgi_set_restrict_stdin(cmd_parms *cmd, void *mconfig,
                                            const char *f)
 {
@@ -5935,6 +5993,8 @@ static const command_rec wsgi_commands[] =
         RSRC_CONF, TAKE1, "Python prefix/exec_prefix absolute path names." },
     { "WSGIPythonPath", wsgi_set_python_path, NULL,
         RSRC_CONF, TAKE1, "Python module search path." },
+    { "WSGIPythonEggs", wsgi_set_python_eggs, NULL,
+        RSRC_CONF, TAKE1, "Python eggs cache directory." },
 
     { "WSGIRestrictStdin", wsgi_set_restrict_stdin, NULL,
         RSRC_CONF, TAKE1, "Enable/Disable restrictions on use of STDIN." },
@@ -6057,6 +6117,7 @@ typedef struct {
     int umask;
     const char *home;
     const char *python_path;
+    const char *python_eggs;
     int stack_size;
     int maximum_requests;
     int shutdown_timeout;
@@ -6110,6 +6171,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     const char *home = NULL;
     const char *python_path = NULL;
+    const char *python_eggs = NULL;
 
     int stack_size = 0;
     int maximum_requests = 0;
@@ -6218,6 +6280,11 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
             python_path = value;
         }
+        else if (strstr(option, "python-eggs=") == option) {
+            value = option + 12;
+
+            python_eggs = value;
+        }
         else if (strstr(option, "stack-size=") == option) {
             value = option + 11;
             if (!*value)
@@ -6296,6 +6363,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->home = home;
 
     entry->python_path = python_path;
+    entry->python_eggs = python_eggs;
 
     entry->stack_size = stack_size;
     entry->maximum_requests = maximum_requests;
@@ -7336,6 +7404,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         wsgi_python_initialized = 1;
         wsgi_python_path = daemon->group->python_path;
+        wsgi_python_eggs = daemon->group->python_eggs;
         wsgi_python_child_init(wsgi_daemon_pool);
 
         /*
@@ -9651,6 +9720,8 @@ static const command_rec wsgi_commands[] =
         NULL, RSRC_CONF, "Python prefix/exec_prefix absolute path names."),
     AP_INIT_TAKE1("WSGIPythonPath", wsgi_set_python_path,
         NULL, RSRC_CONF, "Python module search path."),
+    AP_INIT_TAKE1("WSGIPythonEggs", wsgi_set_python_eggs,
+        NULL, RSRC_CONF, "Python eggs cache directory."),
 
     AP_INIT_TAKE1("WSGIRestrictStdin", wsgi_set_restrict_stdin,
         NULL, RSRC_CONF, "Enable/Disable restrictions on use of STDIN."),
