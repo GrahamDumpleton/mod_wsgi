@@ -3033,6 +3033,9 @@ static InterpreterObject *newInterpreterObject(const char *name,
      * allows virtual Python environments to work.
      */
 
+    if (!wsgi_daemon_pool)
+        wsgi_python_path = wsgi_server_config->python_path;
+
     if (wsgi_python_path) {
         module = PyImport_ImportModule("site");
 
@@ -4481,29 +4484,6 @@ static void wsgi_python_child_init(apr_pool_t *p)
 #if APR_HAS_THREADS
     apr_thread_mutex_create(&wsgi_interp_lock, APR_THREAD_MUTEX_UNNESTED, p);
     apr_thread_mutex_create(&wsgi_module_lock, APR_THREAD_MUTEX_UNNESTED, p);
-#endif
-
-    /*
-     * Setup the complete Python path to be added to every
-     * Python interpreter used. This can be a combination
-     * of the global Python path for the whole server and
-     * any defined just for a daemon process. That for the
-     * daemon process was initialised prior to call of this
-     * function, so just prepending it before that.
-     */
-
-#ifndef WIN32
-    if (wsgi_server_config->python_path) {
-        if (wsgi_python_path) {
-            wsgi_python_path = apr_pstrcat(p, wsgi_python_path, ":",
-                                           wsgi_server_config->python_path,
-                                           NULL);
-        }
-        else
-            wsgi_python_path = wsgi_server_config->python_path;
-    }
-#else
-    wsgi_python_path = wsgi_server_config->python_path;
 #endif
 
     /*
