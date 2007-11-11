@@ -215,7 +215,7 @@ static apr_status_t apr_os_pipe_put_ex(apr_file_t **file,
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 1
 #define MOD_WSGI_MINORVERSION_NUMBER 0
-#define MOD_WSGI_VERSION_STRING "2.0c2"
+#define MOD_WSGI_VERSION_STRING "2.0c3-TRUNK"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -3009,9 +3009,6 @@ static InterpreterObject *newInterpreterObject(const char *name,
             object = PyDict_GetItemString(dict, "environ");
 
             if (object) {
-                struct passwd *pwent;
-
-                pwent = getpwuid(geteuid());
                 key = PyString_FromString("PYTHON_EGG_CACHE");
                 value = PyString_FromString(wsgi_python_eggs);
 
