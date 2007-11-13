@@ -2505,6 +2505,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                     PyErr_Format(PyExc_TypeError, "sequence of string "
                                  "values expected, value of type %.200s found",
                                  item->ob_type->tp_name);
+                    Py_DECREF(item);
                     break;
                 }
 
