@@ -248,9 +248,11 @@ static apr_pool_t *wsgi_daemon_pool = NULL;
 static int volatile wsgi_daemon_shutdown = 0;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-static apr_time_t wsgi_inactivity_timeout = 0;
-static apr_time_t volatile wsgi_shutdown_time = 0;
-static apr_thread_mutex_t* wsgi_inactivity_lock = NULL;
+static apr_interval_time_t wsgi_deadlock_timeout = 0;
+static apr_interval_time_t wsgi_inactivity_timeout = 0;
+static apr_time_t volatile wsgi_deadlock_shutdown_time = 0;
+static apr_time_t volatile wsgi_inactivity_shutdown_time = 0;
+static apr_thread_mutex_t* wsgi_shutdown_lock = NULL;
 #endif
 
 /* Configuration objects. */
@@ -1425,10 +1427,11 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
         return NULL;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    if (wsgi_inactivity_lock) {
-        apr_thread_mutex_lock(wsgi_inactivity_lock);
-        wsgi_shutdown_time = apr_time_now() + wsgi_inactivity_timeout;
-        apr_thread_mutex_unlock(wsgi_inactivity_lock);
+    if (wsgi_inactivity_timeout) {
+        apr_thread_mutex_lock(wsgi_shutdown_lock);
+        wsgi_inactivity_shutdown_time = apr_time_now();
+        wsgi_inactivity_shutdown_time += wsgi_inactivity_timeout;
+        apr_thread_mutex_unlock(wsgi_shutdown_lock);
     }
 #endif
 
@@ -2137,10 +2140,11 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
     request_rec *r;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    if (wsgi_inactivity_lock) {
-        apr_thread_mutex_lock(wsgi_inactivity_lock);
-        wsgi_shutdown_time = apr_time_now() + wsgi_inactivity_timeout;
-        apr_thread_mutex_unlock(wsgi_inactivity_lock);
+    if (wsgi_inactivity_timeout) {
+        apr_thread_mutex_lock(wsgi_shutdown_lock);
+        wsgi_inactivity_shutdown_time = apr_time_now();
+        wsgi_inactivity_shutdown_time += wsgi_inactivity_timeout;
+        apr_thread_mutex_unlock(wsgi_shutdown_lock);
     }
 #endif
 
@@ -2479,10 +2483,11 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     int length = 0;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    if (wsgi_inactivity_lock) {
-        apr_thread_mutex_lock(wsgi_inactivity_lock);
-        wsgi_shutdown_time = apr_time_now() + wsgi_inactivity_timeout;
-        apr_thread_mutex_unlock(wsgi_inactivity_lock);
+    if (wsgi_inactivity_timeout) {
+        apr_thread_mutex_lock(wsgi_shutdown_lock);
+        wsgi_inactivity_shutdown_time = apr_time_now();
+        wsgi_inactivity_shutdown_time += wsgi_inactivity_timeout;
+        apr_thread_mutex_unlock(wsgi_shutdown_lock);
     }
 #endif
 
@@ -3804,8 +3809,21 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
     if (!handle) {
         handle = newInterpreterObject(name, NULL);
 
-        if (!handle)
+        if (!handle) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(0), wsgi_server,
+                         "mod_wsgi (pid=%d): Cannot create interpreter '%s'.",
+                         getpid(), name);
+
+            PyErr_Print();
+            PyErr_Clear();
+
+            PyEval_ReleaseLock();
+
+#if APR_HAS_THREADS
+            apr_thread_mutex_unlock(wsgi_interp_lock);
+#endif
             return NULL;
+        }
 
         PyDict_SetItemString(wsgi_interpreters, name, (PyObject *)handle);
     }
@@ -3825,16 +3843,16 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
     PyEval_ReleaseLock();
 
+#if APR_HAS_THREADS
+    apr_thread_mutex_unlock(wsgi_interp_lock);
+#endif
+
     if (*name) {
         tstate = PyThreadState_New(interp);
         PyEval_AcquireThread(tstate);
     }
     else
         PyGILState_Ensure();
-
-#if APR_HAS_THREADS
-    apr_thread_mutex_unlock(wsgi_interp_lock);
-#endif
 
     return handle;
 }
@@ -4090,8 +4108,6 @@ static int wsgi_execute_script(request_rec *r)
         ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
                       "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
                       getpid(), config->application_group);
-
-        PyErr_Clear();
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -5454,8 +5470,6 @@ static int wsgi_execute_dispatch(request_rec *r)
                       "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
                       getpid(), group);
 
-        PyErr_Clear();
-
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
@@ -6101,6 +6115,7 @@ typedef struct {
     int stack_size;
     int maximum_requests;
     int shutdown_timeout;
+    apr_time_t deadlock_timeout;
     apr_time_t inactivity_timeout;
     const char *socket;
     int listener_fd;
@@ -6156,6 +6171,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int stack_size = 0;
     int maximum_requests = 0;
     int shutdown_timeout = 5;
+    int deadlock_timeout = 300;
     int inactivity_timeout = 0;
 
     uid_t uid;
@@ -6292,6 +6308,15 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (shutdown_timeout < 0)
                 return "Invalid shutdown timeout for WSGI daemon process.";
         }
+        else if (strstr(option, "deadlock-timeout=") == option) {
+            value = option + 17;
+            if (!*value)
+                return "Invalid deadlock timeout for WSGI daemon process.";
+
+            deadlock_timeout = atoi(value);
+            if (deadlock_timeout < 0)
+                return "Invalid deadlock timeout for WSGI daemon process.";
+        }
         else if (strstr(option, "inactivity-timeout=") == option) {
             value = option + 19;
             if (!*value)
@@ -6348,6 +6373,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->stack_size = stack_size;
     entry->maximum_requests = maximum_requests;
     entry->shutdown_timeout = shutdown_timeout;
+    entry->deadlock_timeout = apr_time_from_sec(deadlock_timeout);
     entry->inactivity_timeout = apr_time_from_sec(inactivity_timeout);
 
     return NULL;
@@ -7033,43 +7059,99 @@ static void *wsgi_reaper_thread(apr_thread_t *thd, void *data)
     return NULL;
 }
 
-static void *wsgi_inactivity_thread(apr_thread_t *thd, void *data)
+static void *wsgi_deadlock_thread(apr_thread_t *thd, void *data)
 {
     WSGIDaemonProcess *daemon = data;
 
     ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                 "mod_wsgi (pid=%d): Enable inactivity monitor in "
-                 "process '%s' for timeout of %d seconds.", getpid(),
-                 daemon->group->name,
-                 (int)(apr_time_sec(wsgi_inactivity_timeout)));
+                 "mod_wsgi (pid=%d): Enable deadlock thread in "
+                 "process '%s'.", getpid(), daemon->group->name);
+
+    apr_thread_mutex_lock(wsgi_shutdown_lock);
+    wsgi_deadlock_shutdown_time = apr_time_now();
+    wsgi_deadlock_shutdown_time += wsgi_deadlock_timeout;
+    apr_thread_mutex_unlock(wsgi_shutdown_lock);
 
     while (1) {
-        apr_time_t when;
+        apr_sleep(apr_time_from_sec(1.0));
+
+        PyEval_AcquireLock();
+        PyEval_ReleaseLock();
+
+        apr_thread_mutex_lock(wsgi_shutdown_lock);
+        wsgi_deadlock_shutdown_time = apr_time_now();
+        wsgi_deadlock_shutdown_time += wsgi_deadlock_timeout;
+        apr_thread_mutex_unlock(wsgi_shutdown_lock);
+    }
+
+    return NULL;
+}
+
+static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
+{
+    WSGIDaemonProcess *daemon = data;
+
+    ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                 "mod_wsgi (pid=%d): Enable monitor thread in "
+                 "process '%s'.", getpid(), daemon->group->name);
+
+    while (1) {
         apr_time_t now;
 
-        apr_thread_mutex_lock(wsgi_inactivity_lock);
-        when = wsgi_shutdown_time;
-        apr_thread_mutex_unlock(wsgi_inactivity_lock);
+        apr_time_t deadlock_time;
+        apr_time_t inactivity_time;
+
+        int restart = 0;
+
+        apr_interval_time_t period = apr_time_from_sec(1.0);
 
         now = apr_time_now();
 
-        if (when) {
-            if (when <= now) {
+        apr_thread_mutex_lock(wsgi_shutdown_lock);
+        deadlock_time = wsgi_deadlock_shutdown_time;
+        inactivity_time = wsgi_inactivity_shutdown_time;
+        apr_thread_mutex_unlock(wsgi_shutdown_lock);
+
+        if (wsgi_deadlock_timeout) {
+            if (deadlock_time && deadlock_time <= now) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Daemon process deadlock "
+                             "timer expired, stopping process '%s'.",
+                             getpid(), daemon->group->name);
+
+                restart = 1;
+
+                period = wsgi_deadlock_timeout;
+            }
+            else {
+                period = deadlock_time - now;
+            }
+        }
+
+        if (wsgi_inactivity_timeout) {
+            if (inactivity_time && inactivity_time <= now) {
                 ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                              "mod_wsgi (pid=%d): Daemon process inactivity "
                              "timer expired, stopping process '%s'.",
                              getpid(), daemon->group->name);
 
-                wsgi_daemon_shutdown++;
-                kill(getpid(), SIGINT);
+                restart = 1;
 
-                apr_sleep(wsgi_inactivity_timeout);
+                if (!period || wsgi_inactivity_timeout < period)
+                    period = wsgi_inactivity_timeout;
             }
-            else
-                apr_sleep(when - now);
+            else {
+                if (!period || ((inactivity_time - now) < period))
+                    period = inactivity_time - now;
+            }
         }
-        else
-            apr_sleep(wsgi_inactivity_timeout);
+
+        if (restart) {
+            wsgi_daemon_shutdown++;
+            kill(getpid(), SIGINT);
+        }
+
+        apr_sleep(period);
     }
 
     return NULL;
@@ -7112,23 +7194,36 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
         apr_threadattr_stacksize_set(thread_attr, daemon->group->stack_size);
     }
 
-    /* Start inactivity thread if required. */
+    /* Start monitoring thread if required. */
 
-    if (daemon->group->inactivity_timeout) {
-        wsgi_inactivity_timeout = daemon->group->inactivity_timeout;
+    wsgi_deadlock_timeout = daemon->group->deadlock_timeout;
+    wsgi_inactivity_timeout = daemon->group->inactivity_timeout;
 
-        apr_thread_mutex_create(&wsgi_inactivity_lock,
+    if (wsgi_deadlock_timeout || wsgi_inactivity_timeout) {
+        apr_thread_mutex_create(&wsgi_shutdown_lock,
                                 APR_THREAD_MUTEX_UNNESTED, p);
 
-        rv = apr_thread_create(&reaper, thread_attr, wsgi_inactivity_thread,
+        rv = apr_thread_create(&reaper, thread_attr, wsgi_monitor_thread,
                                daemon, p);
 
         if (rv != APR_SUCCESS) {
             ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(rv), wsgi_server,
-                         "mod_wsgi (pid=%d): Couldn't create inactivity "
+                         "mod_wsgi (pid=%d): Couldn't create monitor "
                          "thread in daemon process '%s'.", getpid(),
                          daemon->group->name);
         }
+    }
+
+    if (wsgi_deadlock_timeout) {
+        if (rv != APR_SUCCESS) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(rv), wsgi_server,
+                         "mod_wsgi (pid=%d): Couldn't create deadlock "
+                         "thread in daemon process '%s'.", getpid(),
+                         daemon->group->name);
+        }
+
+        rv = apr_thread_create(&reaper, thread_attr, wsgi_deadlock_thread,
+                               daemon, p);
     }
 
     /* Start the required number of threads. */
@@ -8887,8 +8982,6 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                       "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
                       getpid(), group);
 
-        PyErr_Clear();
-
         return AUTH_GENERAL_ERROR;
     }
 
@@ -9322,8 +9415,6 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
         ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
                       "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
                       getpid(), group);
-
-        PyErr_Clear();
 
         return AUTH_GENERAL_ERROR;
     }
