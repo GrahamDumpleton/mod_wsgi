@@ -2137,6 +2137,8 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 static int Adapter_output(AdapterObject *self, const char *data, int length)
 {
     int i = 0;
+    int n = 0;
+    apr_status_t rv;
     request_rec *r;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
@@ -2268,7 +2270,9 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
             }
         }
 
+        Py_BEGIN_ALLOW_THREADS
         ap_send_http_header(r);
+        Py_END_ALLOW_THREADS
 
         Py_DECREF(self->headers);
         self->headers = NULL;
@@ -2309,13 +2313,18 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
             b = apr_bucket_flush_create(r->connection->bucket_alloc);
             APR_BRIGADE_INSERT_TAIL(self->bb, b);
 
-            if (ap_pass_brigade(r->output_filters,
-                                self->bb) != APR_SUCCESS) {
+            Py_BEGIN_ALLOW_THREADS
+            rv = ap_pass_brigade(r->output_filters, self->bb);
+            Py_END_ALLOW_THREADS
+
+            if (rv != APR_SUCCESS) {
                 PyErr_SetString(PyExc_IOError, "failed to write data");
                 return 0;
             }
 
+            Py_BEGIN_ALLOW_THREADS
             apr_brigade_cleanup(self->bb);
+            Py_END_ALLOW_THREADS
         }
         else {
             /*
@@ -2324,7 +2333,11 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
              * completion of the request.
              */
 
-            if (ap_rwrite(data, length, r) == -1) {
+            Py_BEGIN_ALLOW_THREADS
+            n = ap_rwrite(data, length, r);
+            Py_END_ALLOW_THREADS
+
+            if (n == -1) {
                 PyErr_SetString(PyExc_IOError, "failed to write data");
                 return 0;
             }
@@ -2337,13 +2350,21 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
          * accumulation problem when streaming lots of data.
          */
 
-        if (ap_rwrite(data, length, r) == -1) {
+        Py_BEGIN_ALLOW_THREADS
+        n = ap_rwrite(data, length, r);
+        Py_END_ALLOW_THREADS
+
+        if (n == -1) {
             PyErr_SetString(PyExc_IOError, "failed to write data");
             return 0;
         }
 
         if (!self->config->output_buffering) {
-            if (ap_rflush(r) == -1) {
+            Py_BEGIN_ALLOW_THREADS
+            n = ap_rflush(r);
+            Py_END_ALLOW_THREADS
+
+            if (n == -1) {
                 PyErr_SetString(PyExc_IOError, "failed to flush data");
                 return 0;
             }
@@ -3069,18 +3090,22 @@ static InterpreterObject *newInterpreterObject(const char *name,
 
                     value = PyString_AsString(item);
 
+                    Py_BEGIN_ALLOW_THREADS
                     ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                                  "mod_wsgi (pid=%d): Adding '%s' to "
                                  "path.", getpid(), value);
+                    Py_END_ALLOW_THREADS
 
                     args = Py_BuildValue("(O)", item);
                     result = PyEval_CallObject(object, args);
 
                     if (!result) {
+                        Py_BEGIN_ALLOW_THREADS
                         ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
                                      "mod_wsgi (pid=%d): Call to "
                                      "'site.addsitedir()' failed for '%s', "
                                      "stopping.", getpid(), value);
+                        Py_END_ALLOW_THREADS
                     }
 
                     Py_XDECREF(result);
@@ -3095,19 +3120,23 @@ static InterpreterObject *newInterpreterObject(const char *name,
 
                         value = PyString_AsString(item);
 
+                        Py_BEGIN_ALLOW_THREADS
                         ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                                      "mod_wsgi (pid=%d): Adding '%s' to "
                                      "path.", getpid(), value);
+                        Py_END_ALLOW_THREADS
 
                         args = Py_BuildValue("(O)", item);
                         result = PyEval_CallObject(object, args);
 
                         if (!result) {
+                            Py_BEGIN_ALLOW_THREADS
                             ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0),
                                          wsgi_server, "mod_wsgi (pid=%d): "
                                          "Call to 'site.addsitedir()' failed "
                                          "for '%s', stopping.",
                                          getpid(), value);
+                            Py_END_ALLOW_THREADS
                         }
 
                         Py_XDECREF(result);
@@ -3118,18 +3147,22 @@ static InterpreterObject *newInterpreterObject(const char *name,
                     }
                 }
 
+                Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                              "mod_wsgi (pid=%d): Adding '%s' to "
                              "path.", getpid(), start);
+                Py_END_ALLOW_THREADS
 
                 args = Py_BuildValue("(s)", start);
                 result = PyEval_CallObject(object, args);
 
                 if (!result) {
+                    Py_BEGIN_ALLOW_THREADS
                     ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
                                  "mod_wsgi (pid=%d): Call to "
                                  "'site.addsitedir()' failed for '%s'.",
                                  getpid(), start);
+                    Py_END_ALLOW_THREADS
                 }
 
                 Py_XDECREF(result);
@@ -3138,17 +3171,21 @@ static InterpreterObject *newInterpreterObject(const char *name,
                 Py_DECREF(object);
             }
             else {
+                Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
                              "mod_wsgi (pid=%d): Unable to locate "
                              "'site.addsitedir()'.", getpid());
+                Py_END_ALLOW_THREADS
             }
 
             Py_DECREF(module);
         }
         else {
+            Py_BEGIN_ALLOW_THREADS
             ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
                          "mod_wsgi (pid=%d): Unable to import 'site' "
                          "module.", getpid());
+            Py_END_ALLOW_THREADS
         }
     }
 
@@ -3225,9 +3262,11 @@ static InterpreterObject *newInterpreterObject(const char *name,
             module = PyDict_GetItemString(modules, "apache");
 
             if (module) {
+                Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                              "mod_wsgi (pid=%d): Unable to import "
                              "'apache' extension module.", getpid());
+                Py_END_ALLOW_THREADS
 
                 PyErr_Print();
                 PyErr_Clear();
@@ -3238,9 +3277,11 @@ static InterpreterObject *newInterpreterObject(const char *name,
             }
         }
         else {
+            Py_BEGIN_ALLOW_THREADS
             ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                          "mod_wsgi (pid=%d): Imported 'apache'.",
                          getpid());
+            Py_END_ALLOW_THREADS
         }
     }
 
@@ -3933,10 +3974,12 @@ static PyObject *wsgi_load_source(request_rec *r, const char *name,
     }
 
     if (!(fp = fopen(path, "r"))) {
+        Py_BEGIN_ALLOW_THREADS
         ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(errno), r,
                       "mod_wsgi (pid=%d, process='%s', application='%s'): "
                       "Call to fopen() failed for '%s'.", getpid(),
                       process_group, application_group, path);
+        Py_END_ALLOW_THREADS
         PyErr_SetFromErrno(PyExc_IOError);
         return NULL;
     }
@@ -9195,8 +9238,6 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
         ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
                       "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
                       getpid(), group);
-
-        PyErr_Clear();
 
         return AUTH_GENERAL_ERROR;
     }
