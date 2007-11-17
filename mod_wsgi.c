@@ -8117,7 +8117,7 @@ static int wsgi_execute_remote(request_rec *r)
 
     bbout = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 
-    apr_file_pipe_timeout_set(tempsock, &timeout);
+    apr_file_pipe_timeout_get(tempsock, &timeout);
     apr_file_pipe_timeout_set(tempsock, r->server->timeout);
 
     do {
