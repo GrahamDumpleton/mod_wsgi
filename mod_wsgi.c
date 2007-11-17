@@ -1971,6 +1971,8 @@ static PyObject *Adapter_start(AdapterObject *self, PyObject *args)
 static int Adapter_output(AdapterObject *self, const char *data, int length)
 {
     int i = 0;
+    int n = 0;
+    apr_status_t rv;
     request_rec *r;
 
     if (!self->status_line) {
@@ -2093,7 +2095,9 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
             }
         }
 
+        Py_BEGIN_ALLOW_THREADS
         ap_send_http_header(r);
+        Py_END_ALLOW_THREADS
 
         Py_DECREF(self->headers);
         self->headers = NULL;
@@ -2134,13 +2138,18 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
             b = apr_bucket_flush_create(r->connection->bucket_alloc);
             APR_BRIGADE_INSERT_TAIL(self->bb, b);
 
-            if (ap_pass_brigade(r->output_filters,
-                                self->bb) != APR_SUCCESS) {
+            Py_BEGIN_ALLOW_THREADS
+            rv = ap_pass_brigade(r->output_filters, self->bb);
+            Py_END_ALLOW_THREADS
+
+            if (rv != APR_SUCCESS) {
                 PyErr_SetString(PyExc_IOError, "failed to write data");
                 return 0;
             }
 
+            Py_BEGIN_ALLOW_THREADS
             apr_brigade_cleanup(self->bb);
+            Py_END_ALLOW_THREADS
         }
         else {
             /*
@@ -2149,7 +2158,11 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
              * completion of the request.
              */
 
-            if (ap_rwrite(data, length, r) == -1) {
+            Py_BEGIN_ALLOW_THREADS
+            n = ap_rwrite(data, length, r);
+            Py_END_ALLOW_THREADS
+
+            if (n == -1) {
                 PyErr_SetString(PyExc_IOError, "failed to write data");
                 return 0;
             }
@@ -2162,13 +2175,21 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
          * accumulation problem when streaming lots of data.
          */
 
-        if (ap_rwrite(data, length, r) == -1) {
+        Py_BEGIN_ALLOW_THREADS
+        n = ap_rwrite(data, length, r);
+        Py_END_ALLOW_THREADS
+
+        if (n == -1) {
             PyErr_SetString(PyExc_IOError, "failed to write data");
             return 0;
         }
 
         if (!self->config->output_buffering) {
-            if (ap_rflush(r) == -1) {
+            Py_BEGIN_ALLOW_THREADS
+            n = ap_rflush(r);
+            Py_END_ALLOW_THREADS
+
+            if (n == -1) {
                 PyErr_SetString(PyExc_IOError, "failed to flush data");
                 return 0;
             }
@@ -3430,11 +3451,13 @@ static PyObject *wsgi_load_source(request_rec *r, const char *name, int found)
     }
 
     if (!(fp = fopen(r->filename, "r"))) {
+         Py_BEGIN_ALLOW_THREADS
          ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(errno), r,
                        "mod_wsgi (pid=%d, process='%s', application='%s'): "
                        "Call to fopen() failed for '%s'.", getpid(),
                        config->process_group, config->application_group,
                        r->filename);
+        Py_END_ALLOW_THREADS
         PyErr_SetFromErrno(PyExc_IOError);
         return NULL;
     }
@@ -6385,6 +6408,7 @@ static int wsgi_execute_remote(request_rec *r)
     int status;
     apr_status_t rv;
 
+    apr_interval_time_t timeout;
     int seen_eos;
     int child_stopped_reading;
     apr_file_t *tempsock;
@@ -6515,6 +6539,9 @@ static int wsgi_execute_remote(request_rec *r)
 
     bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 
+    apr_file_pipe_timeout_get(tempsock, &timeout);
+    apr_file_pipe_timeout_set(tempsock, r->server->timeout);
+
     do {
         apr_bucket *bucket;
 
@@ -6556,7 +6583,7 @@ static int wsgi_execute_remote(request_rec *r)
             /*
              * Keep writing data to the child until done or too
              * much time elapses with no progress or an error
-             * occurs. (XXX Does a timeout actually occur?)
+             * occurs.
              */
             rv = apr_file_write_full(tempsock, data, len, NULL);
 
@@ -6568,6 +6595,8 @@ static int wsgi_execute_remote(request_rec *r)
         apr_brigade_cleanup(bb);
     }
     while (!seen_eos);
+
+    apr_file_pipe_timeout_set(tempsock, timeout);
 
     /*
      * Close socket for writing so that daemon detects end of
