@@ -7888,6 +7888,7 @@ static int wsgi_execute_remote(request_rec *r)
     int status;
     apr_status_t rv;
 
+    apr_interval_time_t timeout;
     int seen_eos;
     int child_stopped_reading;
     apr_file_t *tempsock;
@@ -8116,6 +8117,9 @@ static int wsgi_execute_remote(request_rec *r)
 
     bbout = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 
+    apr_file_pipe_timeout_set(tempsock, &timeout);
+    apr_file_pipe_timeout_set(tempsock, r->server->timeout);
+
     do {
         apr_bucket *bucket;
 
@@ -8157,7 +8161,7 @@ static int wsgi_execute_remote(request_rec *r)
             /*
              * Keep writing data to the child until done or too
              * much time elapses with no progress or an error
-             * occurs. (XXX Does a timeout actually occur?)
+             * occurs.
              */
             rv = apr_file_write_full(tempsock, data, len, NULL);
 
@@ -8169,6 +8173,8 @@ static int wsgi_execute_remote(request_rec *r)
         apr_brigade_cleanup(bbout);
     }
     while (!seen_eos);
+
+    apr_file_pipe_timeout_set(tempsock, timeout);
 
     /*
      * Close socket for writing so that daemon detects end of
