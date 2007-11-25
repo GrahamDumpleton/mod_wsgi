@@ -291,6 +291,8 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
+    const char *handler_script;
+
     int apache_extensions;
     int pass_authorization;
     int script_reloading;
@@ -342,6 +344,8 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->dispatch_script = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
+
+    object->handler_script = NULL;
 
     object->apache_extensions = -1;
     object->pass_authorization = -1;
@@ -416,6 +420,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->callable_object = parent->callable_object;
 
+    if (child->handler_script)
+        config->handler_script = child->handler_script;
+    else
+        config->handler_script = parent->handler_script;
+
     if (child->apache_extensions != -1)
         config->apache_extensions = child->apache_extensions;
     else
@@ -455,6 +464,8 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
+    const char *handler_script;
+
     int apache_extensions;
     int pass_authorization;
     int script_reloading;
@@ -480,6 +491,8 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->dispatch_script = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
+
+    object->handler_script = NULL;
 
     object->apache_extensions = -1;
     object->pass_authorization = -1;
@@ -546,6 +559,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->callable_object = parent->callable_object;
 
+    if (child->handler_script)
+        config->handler_script = child->handler_script;
+    else
+        config->handler_script = parent->handler_script;
+
     if (child->apache_extensions != -1)
         config->apache_extensions = child->apache_extensions;
     else
@@ -604,6 +622,8 @@ typedef struct {
     const char *dispatch_script;
     const char *application_group;
     const char *callable_object;
+
+    const char *handler_script;
 
     int apache_extensions;
     int pass_authorization;
@@ -866,6 +886,53 @@ static const char *wsgi_callable_object(request_rec *r, const char *s)
     return "application";
 }
 
+static const char *wsgi_handler_script(request_rec *r, const char *s)
+{
+    const char *name = NULL;
+    const char *value = NULL;
+
+    if (!s)
+        return "";
+
+    if (*s != '%')
+        return s;
+
+    name = s + 1;
+
+    if (*name) {
+        if (!strcmp(name, "{RESOURCE}"))
+            return "";
+
+        if (strstr(name, "{ENV:") == name) {
+            int len = 0;
+
+            name = name + 5;
+            len = strlen(name);
+
+            if (len && name[len-1] == '}') {
+                name = apr_pstrndup(r->pool, name, len-1);
+
+                value = apr_table_get(r->notes, name);
+
+                if (!value)
+                    value = apr_table_get(r->subprocess_env, name);
+
+                if (!value)
+                    value = getenv(name);
+
+                if (value) {
+                    if (*value == '%' && strstr(value, "%{ENV:") != value)
+                        return wsgi_handler_script(r, value);
+
+                    return value;
+                }
+            }
+        }
+    }
+
+    return s;
+}
+
 static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
@@ -918,6 +985,13 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         config->callable_object = sconfig->callable_object;
 
     config->callable_object = wsgi_callable_object(r, config->callable_object);
+
+    config->handler_script = dconfig->handler_script;
+
+    if (!config->handler_script)
+        config->handler_script = sconfig->handler_script;
+
+    config->handler_script = wsgi_handler_script(r, config->handler_script);
 
     config->apache_extensions = dconfig->apache_extensions;
 
@@ -4118,7 +4192,7 @@ static char *wsgi_module_name(request_rec *r, const char *filename)
      * same basename are still considered unique. Note that where
      * we believe a case insensitive file system is being used,
      * we always change the file name to lower case so that use
-     * of different case in name doesn't resultant in duplicate
+     * of different case in name doesn't result in duplicate
      * modules being loaded for the same file.
      */
 
@@ -4140,7 +4214,8 @@ static int wsgi_execute_script(request_rec *r)
     InterpreterObject *interp = NULL;
     PyObject *modules = NULL;
     PyObject *module = NULL;
-    char *name = NULL;
+    const char *script = NULL;
+    const char *name = NULL;
     int exists = 0;
 
     int status;
@@ -4167,7 +4242,12 @@ static int wsgi_execute_script(request_rec *r)
 
     /* Calculate the Python module name to be used for script. */
 
-    name = wsgi_module_name(r, r->filename);
+    if (config->handler_script && *config->handler_script)
+        script = config->handler_script;
+    else
+        script = r->filename;
+
+    name = wsgi_module_name(r, script);
 
     /*
      * Use a lock around the check to see if the module is
@@ -4197,7 +4277,7 @@ static int wsgi_execute_script(request_rec *r)
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r, NULL, module)) {
+        if (wsgi_reload_required(r, script, module)) {
             /*
              * Script file has changed. Discard reference to
              * loaded module and work out what action we are
@@ -4327,7 +4407,8 @@ static int wsgi_execute_script(request_rec *r)
     /* Load module if not already loaded. */
 
     if (!module) {
-        module = wsgi_load_source(r, name, exists, NULL, config->process_group,
+        module = wsgi_load_source(r, name, exists, script,
+                                  config->process_group,
                                   config->application_group);
     }
 
@@ -4869,6 +4950,24 @@ static const char *wsgi_set_callable_object(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_handler_script(cmd_parms *cmd, void *mconfig,
+                                           const char *n)
+{
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+        dconfig->handler_script = n;
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+        sconfig->handler_script = n;
+    }
+
+    return NULL;
+}
+
 static const char *wsgi_set_server_group(cmd_parms *cmd, void *mconfig,
                                          const char *n)
 {
@@ -5336,6 +5435,9 @@ static void wsgi_build_environment(request_rec *r)
                    config->application_group);
     apr_table_setn(r->subprocess_env, "mod_wsgi.callable_object",
                    config->callable_object);
+
+    apr_table_setn(r->subprocess_env, "mod_wsgi.handler_script",
+                   config->handler_script);
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.script_reloading",
                    apr_psprintf(r->pool, "%d", config->script_reloading));
@@ -6072,6 +6174,9 @@ static const command_rec wsgi_commands[] =
         ACCESS_CONF|RSRC_CONF, TAKE1, "Application interpreter group." },
     { "WSGICallableObject", wsgi_set_callable_object, NULL,
         OR_FILEINFO, TAKE1, "Name of entry point in WSGI script file." },
+
+    { "WSGIHandlerScript", wsgi_set_handler_script, NULL,
+        ACCESS_CONF|RSRC_CONF, TAKE1, "Location of WSGI handler script." },
 
     { "WSGIApacheExtensions", wsgi_set_apache_extensions, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Enable/Disable Apache extensions." },
@@ -7993,8 +8098,9 @@ static int wsgi_execute_remote(request_rec *r)
      * be trusted.
      */
 
-    hash = apr_psprintf(r->pool, "%ld|%s|%s", group->random,
-                        group->socket, r->filename);
+    hash = apr_psprintf(r->pool, "%ld|%s|%s|%s", group->random,
+                        group->socket, r->filename,
+                        config->handler_script);
     hash = ap_md5(r->pool, (const unsigned char *)hash);
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.magic", hash);
@@ -8403,6 +8509,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     char *key;
     apr_sockaddr_t *addr;
 
+    char const *script;
     char const *magic;
     char const *hash;
 
@@ -8583,9 +8690,12 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    hash = apr_psprintf(r->pool, "%ld|%s|%s",
+    script = apr_table_get(r->subprocess_env, "mod_wsgi.handler_script");
+
+    hash = apr_psprintf(r->pool, "%ld|%s|%s|%s",
                         wsgi_daemon_process->group->random,
-                        wsgi_daemon_process->group->socket, r->filename);
+                        wsgi_daemon_process->group->socket, r->filename,
+                        script);
     hash = ap_md5(r->pool, (const unsigned char *)hash);
 
     if (strcmp(magic, hash) != 0) {
@@ -8653,6 +8763,9 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
                                               "mod_wsgi.application_group");
     config->callable_object = apr_table_get(r->subprocess_env,
                                             "mod_wsgi.callable_object");
+
+    config->handler_script = apr_table_get(r->subprocess_env,
+                                           "mod_wsgi.handler_script");
 
     config->script_reloading = atoi(apr_table_get(r->subprocess_env,
                                                   "mod_wsgi.script_reloading"));
@@ -10141,6 +10254,9 @@ static const command_rec wsgi_commands[] =
         NULL, ACCESS_CONF|RSRC_CONF, "Application interpreter group."),
     AP_INIT_TAKE1("WSGICallableObject", wsgi_set_callable_object,
         NULL, OR_FILEINFO, "Name of entry point in WSGI script file."),
+
+    AP_INIT_TAKE1("WSGIHandlerScript", wsgi_set_handler_script,
+        NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI handler script."),
 
     AP_INIT_TAKE1("WSGIApacheExtensions", wsgi_set_apache_extensions,
          NULL, ACCESS_CONF|RSRC_CONF, "Enable/Disable Apache extensions."),
