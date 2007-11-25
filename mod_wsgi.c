@@ -215,7 +215,7 @@ static apr_status_t apr_os_pipe_put_ex(apr_file_t **file,
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 1
 #define MOD_WSGI_MINORVERSION_NUMBER 0
-#define MOD_WSGI_VERSION_STRING "2.0c3"
+#define MOD_WSGI_VERSION_STRING "2.0c4-TRUNK"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -9708,7 +9708,7 @@ static int wsgi_hook_auth_checker(request_rec *r)
         t = reqs[x].requirement;
         w = ap_getword_white(r->pool, &t);
 
-        if (!strcasecmp(w, "wsgi-group")) {
+        if (!strcasecmp(w, "group")) {
             required_group = 1;
 
             if (!grpstatus) {
@@ -9783,6 +9783,10 @@ static void wsgi_register_hooks(apr_pool_t *p)
 
     static const char * const next2[] = { "core.c", NULL };
 
+#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+    static const char * const next3[] = { "mod_authz_user.c", NULL };
+#endif
+
     /*
      * Perform initialisation last in the post config phase to
      * ensure that if mod_python is also being loaded that it
@@ -9808,7 +9812,7 @@ static void wsgi_register_hooks(apr_pool_t *p)
     ap_register_provider(p, AUTHN_PROVIDER_GROUP, "wsgi", "0",
                          &wsgi_authn_provider);
 
-    ap_hook_auth_checker(wsgi_hook_auth_checker, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_auth_checker(wsgi_hook_auth_checker, NULL, next3, APR_HOOK_MIDDLE);
 #endif
 }
 
