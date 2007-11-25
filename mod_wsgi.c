@@ -461,6 +461,7 @@ typedef struct {
     int reload_mechanism;
     int output_buffering;
 
+    const char *access_script;
     const char *auth_user_script;
     const char *authz_group_script;
     int group_authoritative;
@@ -486,6 +487,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->reload_mechanism = -1;
     object->output_buffering = -1;
 
+    object->access_script = NULL;
     object->auth_user_script = NULL;
     object->authz_group_script = NULL;
     object->group_authoritative = -1;
@@ -569,6 +571,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->output_buffering = parent->output_buffering;
 
+    if (child->access_script)
+        config->access_script = child->access_script;
+    else
+        config->access_script = parent->access_script;
+
     if (child->auth_user_script)
         config->auth_user_script = child->auth_user_script;
     else
@@ -604,6 +611,7 @@ typedef struct {
     int reload_mechanism;
     int output_buffering;
 
+    const char *access_script;
     const char *auth_user_script;
     const char *authz_group_script;
     int group_authoritative;
@@ -950,6 +958,8 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         if (config->output_buffering < 0)
             config->output_buffering = 0;
     }
+
+    config->access_script = dconfig->access_script;
 
     config->auth_user_script = dconfig->auth_user_script;
 
@@ -5049,6 +5059,16 @@ static const char *wsgi_set_output_buffering(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_access_script(cmd_parms *cmd, void *mconfig,
+                                          const char *n)
+{
+    WSGIDirectoryConfig *dconfig = NULL;
+    dconfig = (WSGIDirectoryConfig *)mconfig;
+    dconfig->access_script = n;
+
+    return NULL;
+}
+
 static const char *wsgi_set_auth_user_script(cmd_parms *cmd, void *mconfig,
                                              const char *n)
 {
@@ -6806,7 +6826,7 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
     c->conn_config = ap_create_conn_config(p);
     c->notes = apr_table_make(p, 5);
     c->pool = p;
-    
+
     if ((rv = apr_socket_addr_get(&c->local_addr, APR_LOCAL, sock))
         != APR_SUCCESS) {
         ap_log_error(APLOG_MARK, WSGI_LOG_INFO(rv), wsgi_server,
@@ -6840,12 +6860,12 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
                       "mod_wsgi (pid=%d): Failed call "
                       "apr_socket_timeout_set().", getpid());
     }
-    
+
     net->c = c;
     net->in_ctx = NULL;
     net->out_ctx = NULL;
     net->client_socket = sock;
-                      
+
     ap_set_module_config(net->c->conn_config, &core_module, sock);
     ap_add_input_filter_handle(ap_core_input_filter_handle,
                                net, NULL, net->c);
@@ -9237,7 +9257,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
      */
 
     group = wsgi_server_group(r, config->server_group);
-    
+
     interp = wsgi_acquire_interpreter(group);
 
     if (!interp) {
@@ -9674,6 +9694,252 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
     return status;
 }
 
+static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
+                             const char *host)
+{
+    InterpreterObject *interp = NULL;
+    PyObject *modules = NULL;
+    PyObject *module = NULL;
+    char *name = NULL;
+    int exists = 0;
+
+    const char *group;
+
+    int result = 0;
+
+    if (!config->access_script) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Location of WSGI host "
+                     "access script not provided.", getpid());
+
+        return 0;
+    }
+
+    /*
+     * Acquire the desired python interpreter. Once this is done
+     * it is safe to start manipulating python objects.
+     */
+
+    group = wsgi_server_group(r, config->server_group);
+
+    interp = wsgi_acquire_interpreter(group);
+
+    if (!interp) {
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
+                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
+                      getpid(), group);
+
+        return 0;
+    }
+
+    /* Calculate the Python module name to be used for script. */
+
+    name = wsgi_module_name(r, config->access_script);
+
+    /*
+     * Use a lock around the check to see if the module is
+     * already loaded and the import of the module to prevent
+     * two request handlers trying to import the module at the
+     * same time.
+     */
+
+#if APR_HAS_THREADS
+    Py_BEGIN_ALLOW_THREADS
+    apr_thread_mutex_lock(wsgi_module_lock);
+    Py_END_ALLOW_THREADS
+#endif
+
+    modules = PyImport_GetModuleDict();
+    module = PyDict_GetItemString(modules, name);
+
+    Py_XINCREF(module);
+
+    if (module)
+        exists = 1;
+
+    /*
+     * If script reloading is enabled and the module for it has
+     * previously been loaded, see if it has been modified since
+     * the last time it was accessed.
+     */
+
+    if (module && config->script_reloading) {
+        if (wsgi_reload_required(r, config->access_script, module)) {
+            /*
+             * Script file has changed. Only support module
+             * reloading for authentication scripts. Remove the
+             * module from the modules dictionary before
+             * reloading it again. If code is executing within
+             * the module at the time, the callers reference
+             * count on the module should ensure it isn't
+             * actually destroyed until it is finished.
+             */
+
+            Py_DECREF(module);
+            module = NULL;
+
+            PyDict_DelItemString(modules, name);
+        }
+    }
+
+    if (!module) {
+        module = wsgi_load_source(r, name, exists, config->access_script,
+                                  "", group);
+    }
+
+    /* Safe now to release the module lock. */
+
+#if APR_HAS_THREADS
+    apr_thread_mutex_unlock(wsgi_module_lock);
+#endif
+
+    /* Assume not allowed unless everything okay. */
+
+    result = 0;
+
+    /* Determine if script exists and execute it. */
+
+    if (module) {
+        PyObject *module_dict = NULL;
+        PyObject *object = NULL;
+
+        module_dict = PyModule_GetDict(module);
+        object = PyDict_GetItemString(module_dict, "allow_access");
+
+        if (object) {
+            PyObject *vars = NULL;
+            PyObject *args = NULL;
+            PyObject *flag = NULL;
+
+            AuthObject *adapter = NULL;
+
+            adapter = newAuthObject(r, config);
+
+            if (adapter) {
+                vars = Auth_environ(adapter);
+
+                Py_INCREF(object);
+                args = Py_BuildValue("(Oz)", vars, host);
+                flag = PyEval_CallObject(object, args);
+                Py_DECREF(args);
+                Py_DECREF(object);
+                Py_DECREF(vars);
+
+                if (flag) {
+                    if (flag == Py_None) {
+                        result = -1;
+                    }
+                    else if (PyBool_Check(flag)) {
+                        if (flag == Py_True)
+                            result = 1;
+                    }
+                    else {
+                        Py_BEGIN_ALLOW_THREADS
+                        ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                                      "mod_wsgi (pid=%d): Indicator of "
+                                      "host accessibility returned from '%s' "
+                                      "must a boolean or None.", getpid(),
+                                      config->access_script);
+                        Py_END_ALLOW_THREADS
+                    }
+
+                    Py_DECREF(flag);
+                }
+
+                /*
+                 * Wipe out references to Apache request object
+                 * held by Python objects, so can detect when an
+                 * application holds on to the transient Python
+                 * objects beyond the life of the request and
+                 * thus raise an exception if they are used.
+                 */
+
+                adapter->r = NULL;
+
+                /*
+                 * Flush any data held within error log object
+                 * and mark it as expired so that it can't be
+                 * used beyond life of the request. We hope that
+                 * this doesn't error, as it will overwrite any
+                 * error from application if it does.
+                 */
+
+                args = PyTuple_New(0);
+                object = Log_flush(adapter->log, args);
+                Py_XDECREF(object);
+                Py_DECREF(args);
+
+                adapter->log->r = NULL;
+                adapter->log->expired = 1;
+
+                Py_DECREF((PyObject *)adapter);
+            }
+            else
+                Py_DECREF(object);
+        }
+        else {
+            Py_BEGIN_ALLOW_THREADS
+            ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                          "mod_wsgi (pid=%d): Target WSGI host "
+                          "access script '%s' does not provide "
+                          "host validator.", getpid(),
+                          config->access_script);
+            Py_END_ALLOW_THREADS
+        }
+
+        /* Log any details of exceptions if execution failed. */
+
+        if (PyErr_Occurred()) {
+            LogObject *log;
+            log = newLogObject(r, APLOG_ERR);
+            wsgi_log_python_error(r, log);
+            Py_DECREF(log);
+        }
+    }
+
+    /* Cleanup and release interpreter, */
+
+    Py_XDECREF(module);
+
+    wsgi_release_interpreter(interp);
+
+    return result;
+}
+
+static int wsgi_hook_access_checker(request_rec *r)
+{
+    WSGIRequestConfig *config;
+
+    int allow = 0;
+    const char *host = NULL;
+
+    config = wsgi_create_req_config(r->pool, r);
+
+    if (!config->access_script)
+        return DECLINED;
+
+    host = ap_get_remote_host(r->connection, r->per_dir_config,
+                              REMOTE_HOST, NULL);
+
+    if (!host)
+        host = r->connection->remote_ip;
+
+    allow = wsgi_allow_access(r, config, host);
+
+    if (allow < 0)
+        return DECLINED;
+    else if (allow)
+        return OK;
+
+    if (ap_satisfies(r) != SATISFY_ANY || !ap_some_auth_required(r)) {
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r, "mod_wsgi (pid=%d): "
+                      "Client denied by server configuration: '%s'.",
+                      getpid(), r->filename);
+    }
+
+    return HTTP_FORBIDDEN;
+}
+
 static int wsgi_hook_auth_checker(request_rec *r)
 {
     WSGIRequestConfig *config;
@@ -9777,14 +10043,15 @@ static int wsgi_hook_logio(apr_pool_t *pconf, apr_pool_t *ptemp,
 
 static void wsgi_register_hooks(apr_pool_t *p)
 {
-    static const char * const prev1[] = { "mod_alias.c", NULL };
-    static const char * const next1[]= { "mod_userdir.c",
-                                        "mod_vhost_alias.c", NULL };
+    static const char * const p1[] = { "mod_alias.c", NULL };
+    static const char * const n1[]= { "mod_userdir.c",
+                                      "mod_vhost_alias.c", NULL };
 
-    static const char * const next2[] = { "core.c", NULL };
+    static const char * const n2[] = { "core.c", NULL };
 
 #if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
-    static const char * const next3[] = { "mod_authz_user.c", NULL };
+    static const char * const n3[] = { "mod_authz_user.c", NULL };
+    static const char * const n4[] = { "mod_authz_host.c", NULL };
 #endif
 
     /*
@@ -9797,11 +10064,11 @@ static void wsgi_register_hooks(apr_pool_t *p)
     ap_hook_post_config(wsgi_hook_init, NULL, NULL, APR_HOOK_LAST);
     ap_hook_child_init(wsgi_hook_child_init, NULL, NULL, APR_HOOK_MIDDLE);
 
-    ap_hook_translate_name(wsgi_hook_intercept, prev1, next1, APR_HOOK_MIDDLE);
+    ap_hook_translate_name(wsgi_hook_intercept, p1, n1, APR_HOOK_MIDDLE);
     ap_hook_handler(wsgi_hook_handler, NULL, NULL, APR_HOOK_MIDDLE);
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    ap_hook_post_config(wsgi_hook_logio, NULL, next2, APR_HOOK_REALLY_FIRST);
+    ap_hook_post_config(wsgi_hook_logio, NULL, n2, APR_HOOK_REALLY_FIRST);
 
     wsgi_header_filter_handle =
         ap_register_output_filter("WSGI_HEADER", wsgi_header_filter,
@@ -9812,7 +10079,8 @@ static void wsgi_register_hooks(apr_pool_t *p)
     ap_register_provider(p, AUTHN_PROVIDER_GROUP, "wsgi", "0",
                          &wsgi_authn_provider);
 
-    ap_hook_auth_checker(wsgi_hook_auth_checker, NULL, next3, APR_HOOK_MIDDLE);
+    ap_hook_auth_checker(wsgi_hook_auth_checker, NULL, n3, APR_HOOK_MIDDLE);
+    ap_hook_access_checker(wsgi_hook_access_checker, NULL, n4, APR_HOOK_MIDDLE);
 #endif
 }
 
@@ -9886,6 +10154,8 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable buffering of response."),
 
 #if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+    AP_INIT_TAKE1("WSGIAccessScript", wsgi_set_access_script,
+        NULL, OR_AUTHCFG, "Location of WSGI host access script file."),
     AP_INIT_TAKE1("WSGIAuthUserScript", wsgi_set_auth_user_script,
         NULL, OR_AUTHCFG, "Location of WSGI user auth script file."),
     AP_INIT_TAKE1("WSGIAuthGroupScript", wsgi_set_auth_group_script,
