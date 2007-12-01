@@ -474,7 +474,7 @@ typedef struct {
 
     const char *access_script;
     const char *auth_user_script;
-    const char *authz_group_script;
+    const char *auth_group_script;
     int group_authoritative;
 } WSGIDirectoryConfig;
 
@@ -502,7 +502,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
 
     object->access_script = NULL;
     object->auth_user_script = NULL;
-    object->authz_group_script = NULL;
+    object->auth_group_script = NULL;
     object->group_authoritative = -1;
 
     return object;
@@ -599,10 +599,10 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->auth_user_script = parent->auth_user_script;
 
-    if (child->authz_group_script)
-        config->authz_group_script = child->authz_group_script;
+    if (child->auth_group_script)
+        config->auth_group_script = child->auth_group_script;
     else
-        config->authz_group_script = parent->authz_group_script;
+        config->auth_group_script = parent->auth_group_script;
 
     if (child->group_authoritative != -1)
         config->group_authoritative = child->group_authoritative;
@@ -633,7 +633,7 @@ typedef struct {
 
     const char *access_script;
     const char *auth_user_script;
-    const char *authz_group_script;
+    const char *auth_group_script;
     int group_authoritative;
 } WSGIRequestConfig;
 
@@ -1037,7 +1037,7 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     config->auth_user_script = dconfig->auth_user_script;
 
-    config->authz_group_script = dconfig->authz_group_script;
+    config->auth_group_script = dconfig->auth_group_script;
 
     config->group_authoritative = dconfig->group_authoritative;
 
@@ -5183,7 +5183,7 @@ static const char *wsgi_set_auth_group_script(cmd_parms *cmd, void *mconfig,
 {
     WSGIDirectoryConfig *dconfig = NULL;
     dconfig = (WSGIDirectoryConfig *)mconfig;
-    dconfig->authz_group_script = n;
+    dconfig->auth_group_script = n;
 
     return NULL;
 }
@@ -9574,7 +9574,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     int status = HTTP_INTERNAL_SERVER_ERROR;
 
-    if (!config->authz_group_script) {
+    if (!config->auth_group_script) {
         ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
                      "mod_wsgi (pid=%d): Location of WSGI group "
                      "authentication script not provided.", getpid());
@@ -9601,7 +9601,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     /* Calculate the Python module name to be used for script. */
 
-    name = wsgi_module_name(r, config->authz_group_script);
+    name = wsgi_module_name(r, config->auth_group_script);
 
     /*
      * Use a lock around the check to see if the module is
@@ -9631,7 +9631,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r, config->authz_group_script, module)) {
+        if (wsgi_reload_required(r, config->auth_group_script, module)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -9650,7 +9650,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
     }
 
     if (!module) {
-        module = wsgi_load_source(r, name, exists, config->authz_group_script,
+        module = wsgi_load_source(r, name, exists, config->auth_group_script,
                                   "", group);
     }
 
@@ -9711,7 +9711,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                                               "user returned from '%s' must "
                                               "be an iterable sequence of "
                                               "strings.", getpid(),
-                                              config->authz_group_script);
+                                              config->auth_group_script);
                                 Py_END_ALLOW_THREADS
 
                                 Py_DECREF(item);
@@ -9737,7 +9737,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                                       "mod_wsgi (pid=%d): Groups for user "
                                       "returned from '%s' must be an iterable "
                                       "sequence of strings.", getpid(),
-                                      config->authz_group_script);
+                                      config->auth_group_script);
                         Py_END_ALLOW_THREADS
                     }
 
@@ -9781,7 +9781,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                           "mod_wsgi (pid=%d): Target WSGI group "
                           "authentication script '%s' does not provide "
                           "group provider.", getpid(),
-                          config->authz_group_script);
+                          config->auth_group_script);
             Py_END_ALLOW_THREADS
         }
 
@@ -10068,7 +10068,7 @@ static int wsgi_hook_auth_checker(request_rec *r)
 
     config = wsgi_create_req_config(r->pool, r);
 
-    if (!config->authz_group_script)
+    if (!config->auth_group_script)
         return DECLINED;
 
     reqs_arr = ap_requires(r);
