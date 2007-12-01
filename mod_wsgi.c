@@ -287,10 +287,10 @@ typedef struct {
 
     const char *process_group;
     const char *server_group;
-    const char *dispatch_script;
     const char *application_group;
     const char *callable_object;
 
+    const char *dispatch_script;
     const char *handler_script;
 
     int apache_extensions;
@@ -341,10 +341,10 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 
     object->process_group = NULL;
     object->server_group = NULL;
-    object->dispatch_script = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
 
+    object->dispatch_script = NULL;
     object->handler_script = NULL;
 
     object->apache_extensions = -1;
@@ -405,11 +405,6 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->server_group = parent->server_group;
 
-    if (child->dispatch_script)
-        config->dispatch_script = child->dispatch_script;
-    else
-        config->dispatch_script = parent->dispatch_script;
-
     if (child->application_group)
         config->application_group = child->application_group;
     else
@@ -419,6 +414,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
         config->callable_object = child->callable_object;
     else
         config->callable_object = parent->callable_object;
+
+    if (child->dispatch_script)
+        config->dispatch_script = child->dispatch_script;
+    else
+        config->dispatch_script = parent->dispatch_script;
 
     if (child->handler_script)
         config->handler_script = child->handler_script;
@@ -460,10 +460,10 @@ typedef struct {
 
     const char *process_group;
     const char *server_group;
-    const char *dispatch_script;
     const char *application_group;
     const char *callable_object;
 
+    const char *dispatch_script;
     const char *handler_script;
 
     int apache_extensions;
@@ -488,10 +488,10 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
 
     object->process_group = NULL;
     object->server_group = NULL;
-    object->dispatch_script = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
 
+    object->dispatch_script = NULL;
     object->handler_script = NULL;
 
     object->apache_extensions = -1;
@@ -544,11 +544,6 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->server_group = parent->server_group;
 
-    if (child->dispatch_script)
-        config->dispatch_script = child->dispatch_script;
-    else
-        config->dispatch_script = parent->dispatch_script;
-
     if (child->application_group)
         config->application_group = child->application_group;
     else
@@ -558,6 +553,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
         config->callable_object = child->callable_object;
     else
         config->callable_object = parent->callable_object;
+
+    if (child->dispatch_script)
+        config->dispatch_script = child->dispatch_script;
+    else
+        config->dispatch_script = parent->dispatch_script;
 
     if (child->handler_script)
         config->handler_script = child->handler_script;
@@ -619,10 +619,10 @@ typedef struct {
 
     const char *process_group;
     const char *server_group;
-    const char *dispatch_script;
     const char *application_group;
     const char *callable_object;
 
+    const char *dispatch_script;
     const char *handler_script;
 
     int apache_extensions;
@@ -966,11 +966,6 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
     config->server_group = wsgi_server_group(r,
             config->server_group);
 
-    config->dispatch_script = dconfig->dispatch_script;
-
-    if (!config->dispatch_script)
-        config->dispatch_script = sconfig->dispatch_script;
-
     config->application_group = dconfig->application_group;
 
     if (!config->application_group)
@@ -985,6 +980,11 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         config->callable_object = sconfig->callable_object;
 
     config->callable_object = wsgi_callable_object(r, config->callable_object);
+
+    config->dispatch_script = dconfig->dispatch_script;
+
+    if (!config->dispatch_script)
+        config->dispatch_script = sconfig->dispatch_script;
 
     config->handler_script = dconfig->handler_script;
 
@@ -4950,6 +4950,24 @@ static const char *wsgi_set_callable_object(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_dispatch_script(cmd_parms *cmd, void *mconfig,
+                                            const char *n)
+{
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+        dconfig->dispatch_script = n;
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+        sconfig->dispatch_script = n;
+    }
+
+    return NULL;
+}
+
 static const char *wsgi_set_handler_script(cmd_parms *cmd, void *mconfig,
                                            const char *n)
 {
@@ -4981,24 +4999,6 @@ static const char *wsgi_set_server_group(cmd_parms *cmd, void *mconfig,
         sconfig = ap_get_module_config(cmd->server->module_config,
                                        &wsgi_module);
         sconfig->server_group = n;
-    }
-
-    return NULL;
-}
-
-static const char *wsgi_set_dispatch_script(cmd_parms *cmd, void *mconfig,
-                                            const char *n)
-{
-    if (cmd->path) {
-        WSGIDirectoryConfig *dconfig = NULL;
-        dconfig = (WSGIDirectoryConfig *)mconfig;
-        dconfig->dispatch_script = n;
-    }
-    else {
-        WSGIServerConfig *sconfig = NULL;
-        sconfig = ap_get_module_config(cmd->server->module_config,
-                                       &wsgi_module);
-        sconfig->dispatch_script = n;
     }
 
     return NULL;
@@ -6167,14 +6167,14 @@ static const command_rec wsgi_commands[] =
 
     { "WSGIServerGroup", wsgi_set_server_group, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Server interpreter group." },
-    { "WSGIDispatchScript", wsgi_set_dispatch_script, NULL,
-        ACCESS_CONF|RSRC_CONF, TAKE1, "Location of WSGI dispatch script." },
 
     { "WSGIApplicationGroup", wsgi_set_application_group, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Application interpreter group." },
     { "WSGICallableObject", wsgi_set_callable_object, NULL,
         OR_FILEINFO, TAKE1, "Name of entry point in WSGI script file." },
 
+    { "WSGIDispatchScript", wsgi_set_dispatch_script, NULL,
+        ACCESS_CONF|RSRC_CONF, TAKE1, "Location of WSGI dispatch script." },
     { "WSGIHandlerScript", wsgi_set_handler_script, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Location of WSGI handler script." },
 
@@ -10247,14 +10247,14 @@ static const command_rec wsgi_commands[] =
 
     AP_INIT_TAKE1("WSGIServerGroup", wsgi_set_server_group,
         NULL, ACCESS_CONF|RSRC_CONF, "Server interpreter group."),
-    AP_INIT_TAKE1("WSGIDispatchScript", wsgi_set_dispatch_script,
-        NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI dispatch script."),
 
     AP_INIT_TAKE1("WSGIApplicationGroup", wsgi_set_application_group,
         NULL, ACCESS_CONF|RSRC_CONF, "Application interpreter group."),
     AP_INIT_TAKE1("WSGICallableObject", wsgi_set_callable_object,
         NULL, OR_FILEINFO, "Name of entry point in WSGI script file."),
 
+    AP_INIT_TAKE1("WSGIDispatchScript", wsgi_set_dispatch_script,
+        NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI dispatch script."),
     AP_INIT_TAKE1("WSGIHandlerScript", wsgi_set_handler_script,
         NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI handler script."),
 
