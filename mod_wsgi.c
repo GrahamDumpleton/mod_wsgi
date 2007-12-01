@@ -5626,7 +5626,7 @@ static int wsgi_execute_dispatch(request_rec *r)
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_server_group(r, config->server_group);
+    group = config->server_group;
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -9155,7 +9155,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_server_group(r, config->server_group);
+    group = config->server_group;
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -9369,7 +9369,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_server_group(r, config->server_group);
+    group = config->server_group;
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -9587,7 +9587,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_server_group(r, config->server_group);
+    group = config->server_group;
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -9833,7 +9833,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
      * it is safe to start manipulating python objects.
      */
 
-    group = wsgi_server_group(r, config->server_group);
+    group = config->server_group;
 
     interp = wsgi_acquire_interpreter(group);
 
