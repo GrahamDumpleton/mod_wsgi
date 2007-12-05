@@ -7263,6 +7263,13 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                  "mod_wsgi (pid=%d): Enable monitor thread in "
                  "process '%s'.", getpid(), daemon->group->name);
 
+    ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                 "mod_wsgi (pid=%d): Deadlock timeout is %d.",
+                 getpid(), (int)(apr_time_sec(wsgi_deadlock_timeout)));
+    ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                 "mod_wsgi (pid=%d): Inactivity timeout is %d.",
+                 getpid(), (int)(apr_time_sec(wsgi_inactivity_timeout)));
+
     while (1) {
         apr_time_t now;
 
@@ -7271,7 +7278,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
 
         int restart = 0;
 
-        apr_interval_time_t period = apr_time_from_sec(1.0);
+        apr_interval_time_t period = 0;
 
         now = apr_time_now();
 
@@ -7280,8 +7287,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
         inactivity_time = wsgi_inactivity_shutdown_time;
         apr_thread_mutex_unlock(wsgi_shutdown_lock);
 
-        if (wsgi_deadlock_timeout) {
-            if (deadlock_time && deadlock_time <= now) {
+        if (wsgi_deadlock_timeout && deadlock_time) {
+            if (deadlock_time <= now) {
                 ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                              "mod_wsgi (pid=%d): Daemon process deadlock "
                              "timer expired, stopping process '%s'.",
@@ -7296,8 +7303,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
             }
         }
 
-        if (wsgi_inactivity_timeout) {
-            if (inactivity_time && inactivity_time <= now) {
+        if (!restart && wsgi_inactivity_timeout && inactivity_time) {
+            if (inactivity_time <= now) {
                 ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                              "mod_wsgi (pid=%d): Daemon process inactivity "
                              "timer expired, stopping process '%s'.",
@@ -7305,7 +7312,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
 
                 restart = 1;
 
-                if (!period || wsgi_inactivity_timeout < period)
+                if (!period || (wsgi_inactivity_timeout < period))
                     period = wsgi_inactivity_timeout;
             }
             else {
@@ -7318,6 +7325,9 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
             wsgi_daemon_shutdown++;
             kill(getpid(), SIGINT);
         }
+
+        if (period <= 0)
+            period = apr_time_from_sec(1.0);
 
         apr_sleep(period);
     }
