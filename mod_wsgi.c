@@ -264,6 +264,11 @@ typedef struct {
 } WSGIAliasEntry;
 
 typedef struct {
+    const char *handler_script;
+    const char *application_group;
+} WSGIScriptFile;
+
+typedef struct {
     apr_pool_t *pool;
 
     apr_array_header_t *alias_list;
@@ -286,11 +291,10 @@ typedef struct {
     apr_table_t *restrict_process;
 
     const char *process_group;
-    const char *server_group;
     const char *application_group;
     const char *callable_object;
 
-    const char *dispatch_script;
+    WSGIScriptFile *dispatch_script;
     const char *handler_script;
 
     int apache_extensions;
@@ -301,6 +305,18 @@ typedef struct {
 } WSGIServerConfig;
 
 static WSGIServerConfig *wsgi_server_config = NULL;
+
+static WSGIScriptFile *newWSGIScriptFile(apr_pool_t *p)
+{
+    WSGIScriptFile *object = NULL;
+
+    object = (WSGIScriptFile *)apr_pcalloc(p, sizeof(WSGIScriptFile));
+
+    object->handler_script = NULL;
+    object->application_group = NULL;
+
+    return object;
+}
 
 static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 {
@@ -340,7 +356,6 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->restrict_process = NULL;
 
     object->process_group = NULL;
-    object->server_group = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
 
@@ -400,11 +415,6 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->process_group = parent->process_group;
 
-    if (child->server_group)
-        config->server_group = child->server_group;
-    else
-        config->server_group = parent->server_group;
-
     if (child->application_group)
         config->application_group = child->application_group;
     else
@@ -459,11 +469,10 @@ typedef struct {
     apr_table_t *restrict_process;
 
     const char *process_group;
-    const char *server_group;
     const char *application_group;
     const char *callable_object;
 
-    const char *dispatch_script;
+    WSGIScriptFile *dispatch_script;
     const char *handler_script;
 
     int apache_extensions;
@@ -472,9 +481,9 @@ typedef struct {
     int reload_mechanism;
     int output_buffering;
 
-    const char *access_script;
-    const char *auth_user_script;
-    const char *auth_group_script;
+    WSGIScriptFile *access_script;
+    WSGIScriptFile *auth_user_script;
+    WSGIScriptFile *auth_group_script;
     int group_authoritative;
 } WSGIDirectoryConfig;
 
@@ -487,7 +496,6 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->pool = p;
 
     object->process_group = NULL;
-    object->server_group = NULL;
     object->application_group = NULL;
     object->callable_object = NULL;
 
@@ -538,11 +546,6 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
         config->process_group = child->process_group;
     else
         config->process_group = parent->process_group;
-
-    if (child->server_group)
-        config->server_group = child->server_group;
-    else
-        config->server_group = parent->server_group;
 
     if (child->application_group)
         config->application_group = child->application_group;
@@ -618,11 +621,10 @@ typedef struct {
     apr_table_t *restrict_process;
 
     const char *process_group;
-    const char *server_group;
     const char *application_group;
     const char *callable_object;
 
-    const char *dispatch_script;
+    WSGIScriptFile *dispatch_script;
     const char *handler_script;
 
     int apache_extensions;
@@ -631,9 +633,9 @@ typedef struct {
     int reload_mechanism;
     int output_buffering;
 
-    const char *access_script;
-    const char *auth_user_script;
-    const char *auth_group_script;
+    WSGIScriptFile *access_script;
+    WSGIScriptFile *auth_user_script;
+    WSGIScriptFile *auth_group_script;
     int group_authoritative;
 } WSGIRequestConfig;
 
@@ -957,14 +959,6 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         config->process_group = sconfig->process_group;
 
     config->process_group = wsgi_process_group(r, config->process_group);
-
-    config->server_group = dconfig->server_group;
-
-    if (!config->server_group)
-        config->server_group = sconfig->server_group;
-
-    config->server_group = wsgi_server_group(r,
-            config->server_group);
 
     config->application_group = dconfig->application_group;
 
@@ -4951,18 +4945,49 @@ static const char *wsgi_set_callable_object(cmd_parms *cmd, void *mconfig,
 }
 
 static const char *wsgi_set_dispatch_script(cmd_parms *cmd, void *mconfig,
-                                            const char *n)
+                                            const char *args)
 {
+    WSGIScriptFile *object = NULL;
+
+    const char *script = NULL;
+    const char *group = NULL;
+
+    const char *option = NULL;
+    const char *value = NULL;
+
+    script = ap_getword_conf(cmd->temp_pool, &args);
+
+    if (!script || !*script)
+        return "Location of dispatch script not supplied.";
+
+    while (*args) {
+        option = ap_getword_conf(cmd->temp_pool, &args);
+
+        if (strstr(option, "application-group=") == option) {
+            value = option + 18;
+            if (!*value)
+                return "Invalid name for WSGI application group.";
+
+            group = value;
+        }
+        else
+            return "Invalid option to WSGI dispatch script definition.";
+    }
+
+    object = newWSGIScriptFile(cmd->pool);
+    object->handler_script = script;
+    object->application_group = group;
+
     if (cmd->path) {
         WSGIDirectoryConfig *dconfig = NULL;
         dconfig = (WSGIDirectoryConfig *)mconfig;
-        dconfig->dispatch_script = n;
+        dconfig->dispatch_script = object;
     }
     else {
         WSGIServerConfig *sconfig = NULL;
         sconfig = ap_get_module_config(cmd->server->module_config,
                                        &wsgi_module);
-        sconfig->dispatch_script = n;
+        sconfig->dispatch_script = object;
     }
 
     return NULL;
@@ -4981,24 +5006,6 @@ static const char *wsgi_set_handler_script(cmd_parms *cmd, void *mconfig,
         sconfig = ap_get_module_config(cmd->server->module_config,
                                        &wsgi_module);
         sconfig->handler_script = n;
-    }
-
-    return NULL;
-}
-
-static const char *wsgi_set_server_group(cmd_parms *cmd, void *mconfig,
-                                         const char *n)
-{
-    if (cmd->path) {
-        WSGIDirectoryConfig *dconfig = NULL;
-        dconfig = (WSGIDirectoryConfig *)mconfig;
-        dconfig->server_group = n;
-    }
-    else {
-        WSGIServerConfig *sconfig = NULL;
-        sconfig = ap_get_module_config(cmd->server->module_config,
-                                       &wsgi_module);
-        sconfig->server_group = n;
     }
 
     return NULL;
@@ -5159,31 +5166,124 @@ static const char *wsgi_set_output_buffering(cmd_parms *cmd, void *mconfig,
 }
 
 static const char *wsgi_set_access_script(cmd_parms *cmd, void *mconfig,
-                                          const char *n)
+                                          const char *args)
 {
     WSGIDirectoryConfig *dconfig = NULL;
+    WSGIScriptFile *object = NULL;
+
+    const char *script = NULL;
+    const char *group = NULL;
+
+    const char *option = NULL;
+    const char *value = NULL;
+
+    script = ap_getword_conf(cmd->temp_pool, &args);
+
+    if (!script || !*script)
+        return "Location of access script not supplied.";
+
+    while (*args) {
+        option = ap_getword_conf(cmd->temp_pool, &args);
+
+        if (strstr(option, "application-group=") == option) {
+            value = option + 18;
+            if (!*value)
+                return "Invalid name for WSGI application group.";
+
+            group = value;
+        }
+        else
+            return "Invalid option to WSGI access script definition.";
+    }
+
+    object = newWSGIScriptFile(cmd->pool);
+    object->handler_script = script;
+    object->application_group = group;
+
     dconfig = (WSGIDirectoryConfig *)mconfig;
-    dconfig->access_script = n;
+    dconfig->access_script = object;
 
     return NULL;
 }
 
 static const char *wsgi_set_auth_user_script(cmd_parms *cmd, void *mconfig,
-                                             const char *n)
+                                             const char *args)
 {
     WSGIDirectoryConfig *dconfig = NULL;
+    WSGIScriptFile *object = NULL;
+
+    const char *script = NULL;
+    const char *group = NULL;
+
+    const char *option = NULL;
+    const char *value = NULL;
+
+    script = ap_getword_conf(cmd->temp_pool, &args);
+
+    if (!script || !*script)
+        return "Location of auth user script not supplied.";
+
+    while (*args) {
+        option = ap_getword_conf(cmd->temp_pool, &args);
+
+        if (strstr(option, "application-group=") == option) {
+            value = option + 18;
+            if (!*value)
+                return "Invalid name for WSGI application group.";
+
+            group = value;
+        }
+        else
+            return "Invalid option to WSGI auth user script definition.";
+    }
+
+    object = newWSGIScriptFile(cmd->pool);
+    object->handler_script = script;
+    object->application_group = group;
+
     dconfig = (WSGIDirectoryConfig *)mconfig;
-    dconfig->auth_user_script = n;
+    dconfig->auth_user_script = object;
 
     return NULL;
 }
 
 static const char *wsgi_set_auth_group_script(cmd_parms *cmd, void *mconfig,
-                                               const char *n)
+                                               const char *args)
 {
     WSGIDirectoryConfig *dconfig = NULL;
+    WSGIScriptFile *object = NULL;
+
+    const char *script = NULL;
+    const char *group = NULL;
+
+    const char *option = NULL;
+    const char *value = NULL;
+
+    script = ap_getword_conf(cmd->temp_pool, &args);
+
+    if (!script || !*script)
+        return "Location of auth group script not supplied.";
+
+    while (*args) {
+        option = ap_getword_conf(cmd->temp_pool, &args);
+
+        if (strstr(option, "application-group=") == option) {
+            value = option + 18;
+            if (!*value)
+                return "Invalid name for WSGI application group.";
+
+            group = value;
+        }
+        else
+            return "Invalid option to WSGI auth group script definition.";
+    }
+
+    object = newWSGIScriptFile(cmd->pool);
+    object->handler_script = script;
+    object->application_group = group;
+
     dconfig = (WSGIDirectoryConfig *)mconfig;
-    dconfig->auth_group_script = n;
+    dconfig->auth_group_script = object;
 
     return NULL;
 }
@@ -5486,7 +5586,7 @@ static void Dispatch_dealloc(DispatchObject *self)
     PyObject_Del(self);
 }
 
-static PyObject *Dispatch_environ(DispatchObject *self)
+static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
 {
     request_rec *r = NULL;
 
@@ -5521,9 +5621,22 @@ static PyObject *Dispatch_environ(DispatchObject *self)
         }
     }
 
-    object = PyString_FromString(self->config->server_group);
-    PyDict_SetItemString(vars, "mod_wsgi.server_group", object);
+    /*
+     * Need to override process and application group as they
+     * are set to the default target, where as we need to set
+     * them to context dispatch script is run in. Also need
+     * to remove callable object reference.
+     */
+
+    object = PyString_FromString("");
+    PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
     Py_DECREF(object);
+
+    object = PyString_FromString(group);
+    PyDict_SetItemString(vars, "mod_wsgi.application_group", object);
+    Py_DECREF(object);
+
+    PyDict_DelItemString(vars, "mod_wsgi.callable_object");
 
     /*
      * Setup log object for WSGI errors. Don't decrement
@@ -5604,7 +5717,8 @@ static int wsgi_execute_dispatch(request_rec *r)
     char *name = NULL;
     int exists = 0;
 
-    const char *group;
+    const char *script = NULL;
+    const char *group = NULL;
 
     int status;
 
@@ -5626,7 +5740,8 @@ static int wsgi_execute_dispatch(request_rec *r)
      * it is safe to start manipulating python objects.
      */
 
-    group = config->server_group;
+    script = config->dispatch_script->handler_script;
+    group = wsgi_server_group(r, config->dispatch_script->application_group);
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -5640,7 +5755,7 @@ static int wsgi_execute_dispatch(request_rec *r)
 
     /* Calculate the Python module name to be used for script. */
 
-    name = wsgi_module_name(r, config->dispatch_script);
+    name = wsgi_module_name(r, script);
 
     /*
      * Use a lock around the check to see if the module is
@@ -5670,7 +5785,7 @@ static int wsgi_execute_dispatch(request_rec *r)
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r, config->dispatch_script, module)) {
+        if (wsgi_reload_required(r, script, module)) {
             /*
              * Script file has changed. Only support module
              * reloading for dispatch scripts. Remove the
@@ -5689,8 +5804,7 @@ static int wsgi_execute_dispatch(request_rec *r)
     }
 
     if (!module) {
-        module = wsgi_load_source(r, name, exists, config->dispatch_script,
-                                  "", group);
+        module = wsgi_load_source(r, name, exists, script, "", group);
     }
 
     /* Safe now to release the module lock. */
@@ -5718,7 +5832,7 @@ static int wsgi_execute_dispatch(request_rec *r)
             PyObject *vars = NULL;
             PyObject *args = NULL;
 
-            vars = Dispatch_environ(adapter);
+            vars = Dispatch_environ(adapter, group);
 
             /* First check process_group(). */
 
@@ -6165,16 +6279,13 @@ static const command_rec wsgi_commands[] =
     { "WSGICaseSensitivity", wsgi_set_case_sensitivity, NULL,
         RSRC_CONF, TAKE1, "Define whether file system is case sensitive." },
 
-    { "WSGIServerGroup", wsgi_set_server_group, NULL,
-        ACCESS_CONF|RSRC_CONF, TAKE1, "Server interpreter group." },
-
     { "WSGIApplicationGroup", wsgi_set_application_group, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Application interpreter group." },
     { "WSGICallableObject", wsgi_set_callable_object, NULL,
         OR_FILEINFO, TAKE1, "Name of entry point in WSGI script file." },
 
     { "WSGIDispatchScript", wsgi_set_dispatch_script, NULL,
-        ACCESS_CONF|RSRC_CONF, TAKE1, "Location of WSGI dispatch script." },
+        ACCESS_CONF|RSRC_CONF, RAW_ARGS, "Location of WSGI dispatch script." },
     { "WSGIHandlerScript", wsgi_set_handler_script, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Location of WSGI handler script." },
 
@@ -8973,7 +9084,7 @@ static void Auth_dealloc(AuthObject *self)
     PyObject_Del(self);
 }
 
-static PyObject *Auth_environ(AuthObject *self)
+static PyObject *Auth_environ(AuthObject *self, const char *group)
 {
     PyObject *vars;
     PyObject *object;
@@ -9054,8 +9165,12 @@ static PyObject *Auth_environ(AuthObject *self)
     PyDict_SetItemString(vars, "REQUEST_URI", object);
     Py_DECREF(object);
 
-    object = PyString_FromString(self->config->server_group);
-    PyDict_SetItemString(vars, "mod_wsgi.server_group", object);
+    object = PyString_FromString("");
+    PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
+    Py_DECREF(object);
+
+    object = PyString_FromString(group);
+    PyDict_SetItemString(vars, "mod_wsgi.application_group", object);
     Py_DECREF(object);
 
     object = PyInt_FromLong(self->config->script_reloading);
@@ -9146,6 +9261,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
     char *name = NULL;
     int exists = 0;
 
+    const char *script;
     const char *group;
 
     authn_status status;
@@ -9165,7 +9281,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
      * it is safe to start manipulating python objects.
      */
 
-    group = config->server_group;
+    script = config->auth_user_script->handler_script;
+    group = wsgi_server_group(r, config->auth_user_script->application_group);
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -9179,7 +9296,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     /* Calculate the Python module name to be used for script. */
 
-    name = wsgi_module_name(r, config->auth_user_script);
+    name = wsgi_module_name(r, script);
 
     /*
      * Use a lock around the check to see if the module is
@@ -9209,7 +9326,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r, config->auth_user_script, module)) {
+        if (wsgi_reload_required(r, script, module)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -9228,8 +9345,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
     }
 
     if (!module) {
-        module = wsgi_load_source(r, name, exists, config->auth_user_script,
-                                  "", group);
+        module = wsgi_load_source(r, name, exists, script, "", group);
     }
 
     /* Safe now to release the module lock. */
@@ -9261,7 +9377,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
             adapter = newAuthObject(r, config);
 
             if (adapter) {
-                vars = Auth_environ(adapter);
+                vars = Auth_environ(adapter, group);
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Oss)", vars, user, password);
@@ -9325,8 +9441,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
             ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                           "mod_wsgi (pid=%d): Target WSGI user "
                           "authentication script '%s' does not provide "
-                          "'Basic' auth provider.", getpid(),
-                          config->auth_user_script);
+                          "'Basic' auth provider.", getpid(), script);
             Py_END_ALLOW_THREADS
         }
 
@@ -9360,6 +9475,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
     char *name = NULL;
     int exists = 0;
 
+    const char *script;
     const char *group;
 
     authn_status status;
@@ -9379,7 +9495,8 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
      * it is safe to start manipulating python objects.
      */
 
-    group = config->server_group;
+    script = config->auth_user_script->handler_script;
+    group = wsgi_server_group(r, config->auth_user_script->application_group);
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -9393,7 +9510,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     /* Calculate the Python module name to be used for script. */
 
-    name = wsgi_module_name(r, config->auth_user_script);
+    name = wsgi_module_name(r, script);
 
     /*
      * Use a lock around the check to see if the module is
@@ -9423,7 +9540,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r, config->auth_user_script, module)) {
+        if (wsgi_reload_required(r, script, module)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -9442,8 +9559,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
     }
 
     if (!module) {
-        module = wsgi_load_source(r, name, exists, config->auth_user_script,
-                                  "", group);
+        module = wsgi_load_source(r, name, exists, script, "", group);
     }
 
     /* Safe now to release the module lock. */
@@ -9475,7 +9591,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
             adapter = newAuthObject(r, config);
 
             if (adapter) {
-                vars = Auth_environ(adapter);
+                vars = Auth_environ(adapter, group);
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Oss)", vars, user, realm);
@@ -9539,8 +9655,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
             ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                           "mod_wsgi (pid=%d): Target WSGI user "
                           "authentication script '%s' does not provide "
-                          "'Digest' auth provider.", getpid(),
-                          config->auth_user_script);
+                          "'Digest' auth provider.", getpid(), script);
             Py_END_ALLOW_THREADS
         }
 
@@ -9580,6 +9695,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
     char *name = NULL;
     int exists = 0;
 
+    const char *script;
     const char *group;
 
     int status = HTTP_INTERNAL_SERVER_ERROR;
@@ -9597,7 +9713,8 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
      * it is safe to start manipulating python objects.
      */
 
-    group = config->server_group;
+    script = config->auth_group_script->handler_script;
+    group = wsgi_server_group(r, config->auth_group_script->application_group);
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -9611,7 +9728,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     /* Calculate the Python module name to be used for script. */
 
-    name = wsgi_module_name(r, config->auth_group_script);
+    name = wsgi_module_name(r, script);
 
     /*
      * Use a lock around the check to see if the module is
@@ -9641,7 +9758,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r, config->auth_group_script, module)) {
+        if (wsgi_reload_required(r, script, module)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -9660,8 +9777,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
     }
 
     if (!module) {
-        module = wsgi_load_source(r, name, exists, config->auth_group_script,
-                                  "", group);
+        module = wsgi_load_source(r, name, exists, script, "", group);
     }
 
     /* Safe now to release the module lock. */
@@ -9693,7 +9809,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
             adapter = newAuthObject(r, config);
 
             if (adapter) {
-                vars = Auth_environ(adapter);
+                vars = Auth_environ(adapter, group);
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Os)", vars, r->user);
@@ -9720,8 +9836,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                                               "mod_wsgi (pid=%d): Groups for "
                                               "user returned from '%s' must "
                                               "be an iterable sequence of "
-                                              "strings.", getpid(),
-                                              config->auth_group_script);
+                                              "strings.", getpid(), script);
                                 Py_END_ALLOW_THREADS
 
                                 Py_DECREF(item);
@@ -9747,7 +9862,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                                       "mod_wsgi (pid=%d): Groups for user "
                                       "returned from '%s' must be an iterable "
                                       "sequence of strings.", getpid(),
-                                      config->auth_group_script);
+                                      script);
                         Py_END_ALLOW_THREADS
                     }
 
@@ -9790,8 +9905,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
             ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                           "mod_wsgi (pid=%d): Target WSGI group "
                           "authentication script '%s' does not provide "
-                          "group provider.", getpid(),
-                          config->auth_group_script);
+                          "group provider.", getpid(), script);
             Py_END_ALLOW_THREADS
         }
 
@@ -9826,6 +9940,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
     char *name = NULL;
     int exists = 0;
 
+    const char *script;
     const char *group;
 
     int result = 0;
@@ -9843,7 +9958,8 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
      * it is safe to start manipulating python objects.
      */
 
-    group = config->server_group;
+    script = config->access_script->handler_script;
+    group = wsgi_server_group(r, config->access_script->application_group);
 
     interp = wsgi_acquire_interpreter(group);
 
@@ -9857,7 +9973,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
     /* Calculate the Python module name to be used for script. */
 
-    name = wsgi_module_name(r, config->access_script);
+    name = wsgi_module_name(r, script);
 
     /*
      * Use a lock around the check to see if the module is
@@ -9887,7 +10003,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r, config->access_script, module)) {
+        if (wsgi_reload_required(r, script, module)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -9906,8 +10022,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
     }
 
     if (!module) {
-        module = wsgi_load_source(r, name, exists, config->access_script,
-                                  "", group);
+        module = wsgi_load_source(r, name, exists, script, "", group);
     }
 
     /* Safe now to release the module lock. */
@@ -9939,7 +10054,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
             adapter = newAuthObject(r, config);
 
             if (adapter) {
-                vars = Auth_environ(adapter);
+                vars = Auth_environ(adapter, group);
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Oz)", vars, host);
@@ -9962,7 +10077,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
                                       "mod_wsgi (pid=%d): Indicator of "
                                       "host accessibility returned from '%s' "
                                       "must a boolean or None.", getpid(),
-                                      config->access_script);
+                                      script);
                         Py_END_ALLOW_THREADS
                     }
 
@@ -10005,8 +10120,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
             ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                           "mod_wsgi (pid=%d): Target WSGI host "
                           "access script '%s' does not provide "
-                          "host validator.", getpid(),
-                          config->access_script);
+                          "host validator.", getpid(), script);
             Py_END_ALLOW_THREADS
         }
 
@@ -10255,15 +10369,12 @@ static const command_rec wsgi_commands[] =
         NULL, ACCESS_CONF|RSRC_CONF, "Name of the WSGI process group."),
 #endif
 
-    AP_INIT_TAKE1("WSGIServerGroup", wsgi_set_server_group,
-        NULL, ACCESS_CONF|RSRC_CONF, "Server interpreter group."),
-
     AP_INIT_TAKE1("WSGIApplicationGroup", wsgi_set_application_group,
         NULL, ACCESS_CONF|RSRC_CONF, "Application interpreter group."),
     AP_INIT_TAKE1("WSGICallableObject", wsgi_set_callable_object,
         NULL, OR_FILEINFO, "Name of entry point in WSGI script file."),
 
-    AP_INIT_TAKE1("WSGIDispatchScript", wsgi_set_dispatch_script,
+    AP_INIT_RAW_ARGS("WSGIDispatchScript", wsgi_set_dispatch_script,
         NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI dispatch script."),
     AP_INIT_TAKE1("WSGIHandlerScript", wsgi_set_handler_script,
         NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI handler script."),
@@ -10280,11 +10391,11 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable buffering of response."),
 
 #if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
-    AP_INIT_TAKE1("WSGIAccessScript", wsgi_set_access_script,
+    AP_INIT_RAW_ARGS("WSGIAccessScript", wsgi_set_access_script,
         NULL, OR_AUTHCFG, "Location of WSGI host access script file."),
-    AP_INIT_TAKE1("WSGIAuthUserScript", wsgi_set_auth_user_script,
+    AP_INIT_RAW_ARGS("WSGIAuthUserScript", wsgi_set_auth_user_script,
         NULL, OR_AUTHCFG, "Location of WSGI user auth script file."),
-    AP_INIT_TAKE1("WSGIAuthGroupScript", wsgi_set_auth_group_script,
+    AP_INIT_RAW_ARGS("WSGIAuthGroupScript", wsgi_set_auth_group_script,
         NULL, OR_AUTHCFG, "Location of WSGI group auth script file."),
     AP_INIT_TAKE1("WSGIGroupAuthoritative", wsgi_set_group_authoritative,
         NULL, OR_AUTHCFG, "Enable/Disable as being authoritative on groups."),
