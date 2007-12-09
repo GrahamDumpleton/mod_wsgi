@@ -5982,6 +5982,55 @@ static int wsgi_execute_dispatch(request_rec *r)
                 object = NULL;
             }
 
+            /* Now check handler_script(). */
+
+            if (status == OK)
+                object = PyDict_GetItemString(module_dict, "handler_script");
+
+            if (object) {
+                PyObject *result = NULL;
+
+                if (adapter) {
+                    Py_INCREF(object);
+                    args = Py_BuildValue("(O)", vars);
+                    result = PyEval_CallObject(object, args);
+                    Py_DECREF(args);
+                    Py_DECREF(object);
+
+                    if (result) {
+                        if (result != Py_None) {
+                            if (PyString_Check(result)) {
+                                const char *s;
+
+                                s = PyString_AsString(result);
+                                s = apr_pstrdup(r->pool, s);
+                                s = wsgi_callable_object(r, s);
+                                config->handler_script = s;
+
+                                apr_table_setn(r->subprocess_env,
+                                               "mod_wsgi.handler_script",
+                                               config->handler_script);
+                            }
+                            else {
+                                PyErr_SetString(PyExc_TypeError, "Handler "
+                                                "script must be a string "
+                                                "object");
+
+                                status = HTTP_INTERNAL_SERVER_ERROR;
+                            }
+                        }
+
+                        Py_DECREF(result);
+                    }
+                    else
+                        status = HTTP_INTERNAL_SERVER_ERROR;
+                }
+                else
+                    Py_DECREF(object);
+
+                object = NULL;
+            }
+
             /*
              * Wipe out references to Apache request object
              * held by Python objects, so can detect when an
