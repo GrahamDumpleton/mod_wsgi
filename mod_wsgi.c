@@ -3385,8 +3385,6 @@ static InterpreterObject *newInterpreterObject(const char *name,
     }
 
     if (!module) {
-        PyObject *inner;
-
         module = PyImport_AddModule("apache");
 
         Py_INCREF(module);
