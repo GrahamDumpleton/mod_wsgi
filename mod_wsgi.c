@@ -132,19 +132,21 @@ typedef regmatch_t ap_regmatch_t;
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
 #define MOD_WSGI_WITH_BUCKETS 1
+#define MOD_WSGI_WITH_AAA_HANDLERS 1
 #endif
 
+#if defined(MOD_WSGI_WITH_AAA_HANDLERS)
+static PyTypeObject Auth_Type;
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
 #if AP_SERVER_MINORVERSION_NUMBER >= 2
 #define MOD_WSGI_WITH_AUTH_PROVIDER 1
+#endif
 #endif
 #endif
 
 #if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
 #include "mod_auth.h"
 #include "ap_provider.h"
-
-static PyTypeObject Auth_Type;
 #endif
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
@@ -490,6 +492,7 @@ typedef struct {
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
     WSGIScriptFile *auth_group_script;
+    int user_authoritative;
     int group_authoritative;
 } WSGIDirectoryConfig;
 
@@ -517,6 +520,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->access_script = NULL;
     object->auth_user_script = NULL;
     object->auth_group_script = NULL;
+    object->user_authoritative = -1;
     object->group_authoritative = -1;
 
     return object;
@@ -613,6 +617,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->auth_group_script = parent->auth_group_script;
 
+    if (child->user_authoritative != -1)
+        config->user_authoritative = child->user_authoritative;
+    else
+        config->user_authoritative = parent->user_authoritative;
+
     if (child->group_authoritative != -1)
         config->group_authoritative = child->group_authoritative;
     else
@@ -642,6 +651,7 @@ typedef struct {
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
     WSGIScriptFile *auth_group_script;
+    int user_authoritative;
     int group_authoritative;
 } WSGIRequestConfig;
 
@@ -1038,6 +1048,11 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
     config->auth_user_script = dconfig->auth_user_script;
 
     config->auth_group_script = dconfig->auth_group_script;
+
+    config->user_authoritative = dconfig->user_authoritative;
+
+    if (config->user_authoritative == -1)
+        config->user_authoritative = 1;
 
     config->group_authoritative = dconfig->group_authoritative;
 
@@ -4661,7 +4676,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
     PyType_Ready(&Interpreter_Type);
     PyType_Ready(&Dispatch_Type);
 
-#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+#if defined(MOD_WSGI_WITH_AAA_HANDLERS)
     PyType_Ready(&Auth_Type);
 #endif
 
@@ -5489,6 +5504,22 @@ static const char *wsgi_set_auth_group_script(cmd_parms *cmd, void *mconfig,
 
     dconfig = (WSGIDirectoryConfig *)mconfig;
     dconfig->auth_group_script = object;
+
+    return NULL;
+}
+
+static const char *wsgi_set_user_authoritative(cmd_parms *cmd, void *mconfig,
+                                               const char *f)
+{
+    WSGIDirectoryConfig *dconfig = NULL;
+    dconfig = (WSGIDirectoryConfig *)mconfig;
+
+    if (strcasecmp(f, "Off") == 0)
+        dconfig->user_authoritative = 0;
+    else if (strcasecmp(f, "On") == 0)
+        dconfig->user_authoritative = 1;
+    else
+        return "WSGIUserAuthoritative must be one of: Off | On";
 
     return NULL;
 }
@@ -9281,7 +9312,7 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
     wsgi_python_child_init(p);
 }
 
-#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+#if defined(MOD_WSGI_WITH_AAA_HANDLERS)
 
 #include "apr_lib.h"
 
@@ -9507,6 +9538,7 @@ static PyTypeObject Auth_Type = {
     0,                      /*tp_is_gc*/
 };
 
+#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
 static authn_status wsgi_check_password(request_rec *r, const char *user,
                                         const char *password)
 {
@@ -9940,6 +9972,7 @@ static const authn_provider wsgi_authn_provider =
     &wsgi_check_password,
     &wsgi_get_realm_hash
 };
+#endif
 
 static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                                 apr_table_t **grpstatus)
@@ -9980,7 +10013,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                       "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
                       getpid(), group);
 
-        return AUTH_GENERAL_ERROR;
+        return HTTP_INTERNAL_SERVER_ERROR;
     }
 
     /* Calculate the Python module name to be used for script. */
@@ -10045,7 +10078,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     /* Assume an internal server error unless everything okay. */
 
-    status = AUTH_GENERAL_ERROR;
+    status = HTTP_INTERNAL_SERVER_ERROR;
 
     /* Determine if script exists and execute it. */
 
@@ -10434,6 +10467,238 @@ static int wsgi_hook_access_checker(request_rec *r)
     return HTTP_FORBIDDEN;
 }
 
+static int wsgi_hook_check_user_id(request_rec *r)
+{
+    WSGIRequestConfig *config;
+
+    int status = -1;
+
+    const char *password;                         
+
+    InterpreterObject *interp = NULL;
+    PyObject *modules = NULL;
+    PyObject *module = NULL;
+    char *name = NULL;
+    int exists = 0;
+
+    const char *script;
+    const char *group;
+
+    if ((status = ap_get_basic_auth_pw(r, &password)))
+        return status;
+
+    config = wsgi_create_req_config(r->pool, r);
+
+    if (!config->auth_user_script)
+        return DECLINED;
+
+    /*
+     * Acquire the desired python interpreter. Once this is done
+     * it is safe to start manipulating python objects.
+     */
+
+    script = config->auth_user_script->handler_script;
+    group = wsgi_server_group(r, config->auth_user_script->application_group);
+
+    interp = wsgi_acquire_interpreter(group);
+
+    if (!interp) {
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_CRIT(0), r,
+                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
+                      getpid(), group);
+
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    /* Calculate the Python module name to be used for script. */
+
+    name = wsgi_module_name(r->pool, script);
+
+    /*
+     * Use a lock around the check to see if the module is
+     * already loaded and the import of the module to prevent
+     * two request handlers trying to import the module at the
+     * same time.
+     */
+
+#if APR_HAS_THREADS
+    Py_BEGIN_ALLOW_THREADS
+    apr_thread_mutex_lock(wsgi_module_lock);
+    Py_END_ALLOW_THREADS
+#endif
+
+    modules = PyImport_GetModuleDict();
+    module = PyDict_GetItemString(modules, name);
+
+    Py_XINCREF(module);
+
+    if (module)
+        exists = 1;
+
+    /*
+     * If script reloading is enabled and the module for it has
+     * previously been loaded, see if it has been modified since
+     * the last time it was accessed.
+     */
+
+    if (module && config->script_reloading) {
+        if (wsgi_reload_required(r->pool, r, script, module)) {
+            /*
+             * Script file has changed. Only support module
+             * reloading for authentication scripts. Remove the
+             * module from the modules dictionary before
+             * reloading it again. If code is executing within
+             * the module at the time, the callers reference
+             * count on the module should ensure it isn't
+             * actually destroyed until it is finished.
+             */
+
+            Py_DECREF(module);
+            module = NULL;
+
+            PyDict_DelItemString(modules, name);
+        }
+    }
+
+    if (!module) {
+        module = wsgi_load_source(r->pool, r, name, exists, script, "", group);
+    }
+
+    /* Safe now to release the module lock. */
+
+#if APR_HAS_THREADS
+    apr_thread_mutex_unlock(wsgi_module_lock);
+#endif
+
+    /* Assume an internal server error unless everything okay. */
+
+    status = HTTP_INTERNAL_SERVER_ERROR;
+
+    /* Determine if script exists and execute it. */
+
+    if (module) {
+        PyObject *module_dict = NULL;
+        PyObject *object = NULL;
+
+        module_dict = PyModule_GetDict(module);
+        object = PyDict_GetItemString(module_dict, "check_password");
+
+        if (object) {
+            PyObject *vars = NULL;
+            PyObject *args = NULL;
+            PyObject *result = NULL;
+
+            AuthObject *adapter = NULL;
+
+            adapter = newAuthObject(r, config);
+
+            if (adapter) {
+                vars = Auth_environ(adapter, group);
+
+                Py_INCREF(object);
+                args = Py_BuildValue("(Oss)", vars, r->user, password);
+                result = PyEval_CallObject(object, args);
+                Py_DECREF(args);
+                Py_DECREF(object);
+                Py_DECREF(vars);
+
+                if (result) {
+                    if (result == Py_None) {
+                        if (config->user_authoritative) {
+                            ap_note_basic_auth_failure(r);
+                            status = HTTP_UNAUTHORIZED;
+
+                            ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                                          "mod_wsgi (pid=%d): User '%s' not "
+                                          "found in executing authentication "
+                                          "script '%s', for uri '%s'.",
+                                          getpid(), r->user, script, r->uri);
+                        }
+                        else
+                            status = DECLINED;
+                    }
+                    else if (result == Py_True) {
+                        status = OK;
+                    }
+                    else if (result == Py_False) {
+                        ap_note_basic_auth_failure(r);
+                        status = HTTP_UNAUTHORIZED;
+
+                        ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                                      "mod_wsgi (pid=%d): Password mismatch "
+                                      "for user '%s' in executing "
+                                      "authentication script '%s', for uri "
+                                      "'%s'.", getpid(), r->user, script,
+                                      r->uri);
+                    }
+                    else {
+                        PyErr_SetString(PyExc_TypeError, "Basic auth "
+                                        "provider must return True, False "
+                                        "or None");
+                    }
+
+                    Py_DECREF(result);
+                }
+
+                /*
+                 * Wipe out references to Apache request object
+                 * held by Python objects, so can detect when an
+                 * application holds on to the transient Python
+                 * objects beyond the life of the request and
+                 * thus raise an exception if they are used.
+                 */
+
+                adapter->r = NULL;
+
+                /*
+                 * Flush any data held within error log object
+                 * and mark it as expired so that it can't be
+                 * used beyond life of the request. We hope that
+                 * this doesn't error, as it will overwrite any
+                 * error from application if it does.
+                 */
+
+                args = PyTuple_New(0);
+                object = Log_flush(adapter->log, args);
+                Py_XDECREF(object);
+                Py_DECREF(args);
+
+                adapter->log->r = NULL;
+                adapter->log->expired = 1;
+
+                Py_DECREF((PyObject *)adapter);
+            }
+            else
+                Py_DECREF(object);
+        }
+        else {
+            Py_BEGIN_ALLOW_THREADS
+            ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                          "mod_wsgi (pid=%d): Target WSGI user "
+                          "authentication script '%s' does not provide "
+                          "'Basic' auth provider.", getpid(), script);
+            Py_END_ALLOW_THREADS
+        }
+
+        /* Log any details of exceptions if execution failed. */
+
+        if (PyErr_Occurred()) {
+            LogObject *log;
+            log = newLogObject(r, APLOG_ERR);
+            wsgi_log_python_error(r, log, script);
+            Py_DECREF(log);
+        }
+    }
+
+    /* Cleanup and release interpreter, */
+
+    Py_XDECREF(module);
+
+    wsgi_release_interpreter(interp);
+
+    return status;
+}
+
 static int wsgi_hook_auth_checker(request_rec *r)
 {
     WSGIRequestConfig *config;
@@ -10543,9 +10808,12 @@ static void wsgi_register_hooks(apr_pool_t *p)
 
     static const char * const n2[] = { "core.c", NULL };
 
-#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
-    static const char * const n3[] = { "mod_authz_user.c", NULL };
-    static const char * const n4[] = { "mod_authz_host.c", NULL };
+#if defined(MOD_WSGI_WITH_AAA_HANDLERS)
+#if !defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+    static const char * const p3[] = { "mod_auth.c", NULL };
+#endif
+    static const char * const n4[] = { "mod_authz_user.c", NULL };
+    static const char * const n5[] = { "mod_authz_host.c", NULL };
 #endif
 
     /*
@@ -10569,12 +10837,15 @@ static void wsgi_register_hooks(apr_pool_t *p)
                                   NULL, AP_FTYPE_PROTOCOL);
 #endif
 
-#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+#if defined(MOD_WSGI_WITH_AAA_HANDLERS)
+#if !defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+    ap_hook_check_user_id(wsgi_hook_check_user_id, p3, NULL, APR_HOOK_MIDDLE);
+#else
     ap_register_provider(p, AUTHN_PROVIDER_GROUP, "wsgi", "0",
                          &wsgi_authn_provider);
-
-    ap_hook_auth_checker(wsgi_hook_auth_checker, NULL, n3, APR_HOOK_MIDDLE);
-    ap_hook_access_checker(wsgi_hook_access_checker, NULL, n4, APR_HOOK_MIDDLE);
+#endif
+    ap_hook_auth_checker(wsgi_hook_auth_checker, NULL, n4, APR_HOOK_MIDDLE);
+    ap_hook_access_checker(wsgi_hook_access_checker, NULL, n5, APR_HOOK_MIDDLE);
 #endif
 }
 
@@ -10649,13 +10920,17 @@ static const command_rec wsgi_commands[] =
     AP_INIT_TAKE1("WSGIOutputBuffering", wsgi_set_output_buffering,
         NULL, OR_FILEINFO, "Enable/Disable buffering of response."),
 
-#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+#if defined(MOD_WSGI_WITH_AAA_HANDLERS)
     AP_INIT_RAW_ARGS("WSGIAccessScript", wsgi_set_access_script,
         NULL, OR_AUTHCFG, "Location of WSGI host access script file."),
     AP_INIT_RAW_ARGS("WSGIAuthUserScript", wsgi_set_auth_user_script,
         NULL, OR_AUTHCFG, "Location of WSGI user auth script file."),
     AP_INIT_RAW_ARGS("WSGIAuthGroupScript", wsgi_set_auth_group_script,
         NULL, OR_AUTHCFG, "Location of WSGI group auth script file."),
+#if !defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+    AP_INIT_TAKE1("WSGIUserAuthoritative", wsgi_set_user_authoritative,
+        NULL, OR_AUTHCFG, "Enable/Disable as being authoritative on users."),
+#endif
     AP_INIT_TAKE1("WSGIGroupAuthoritative", wsgi_set_group_authoritative,
         NULL, OR_AUTHCFG, "Enable/Disable as being authoritative on groups."),
 #endif
