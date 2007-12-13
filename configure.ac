@@ -92,7 +92,7 @@ fi
 CFLAGS=""
 if test -x /usr/bin/lipo; then
     LDFLAGS3=""
-    ARCHITECTURES=`/usr/bin/lipo -info $HTTPD | sed -e 's/.*are://'`
+    ARCHITECTURES=`/usr/bin/lipo -info $HTTPD | sed -e 's/.*://'`
     for ARCH in $ARCHITECTURES; do
         CFLAGS="${CFLAGS} -Wc,'-arch ${ARCH}'" 
         LDFLAGS3="${LDFLAGS3} -arch ${ARCH}" 
