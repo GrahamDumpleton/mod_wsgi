@@ -29,6 +29,11 @@ fi
 
 AC_SUBST(APXS)
 
+AC_MSG_CHECKING(Apache version)
+HTTPD="`${APXS} -q SBINDIR`/`${APXS} -q TARGET`"
+HTTPD_VERSION=`$HTTPD -v | awk '/version/ {print $3}' | awk -F/ '{print $2}'`
+AC_MSG_RESULT($HTTPD_VERSION)
+
 AC_ARG_WITH(python, AC_HELP_STRING([--with-python=NAME],
             [name of the python executable [[python]]]),
             [PYTHON="$with_python"])
@@ -84,13 +89,20 @@ else
         print sysconfig.get_config_var("LIBS")'`
 fi
 
+CFLAGS=""
+if test -x /usr/bin/lipo; then
+    LDFLAGS3=""
+    ARCHITECTURES=`/usr/bin/lipo -info $HTTPD | sed -e 's/.*are://'`
+    for ARCH in $ARCHITECTURES; do
+        CFLAGS="${CFLAGS} -Wc,'-arch ${ARCH}'" 
+        LDFLAGS3="${LDFLAGS3} -arch ${ARCH}" 
+    done
+    LDFLAGS="${LDFLAGS3} ${LDFLAGS}"
+fi
+
+AC_SUBST(CFLAGS)
 AC_SUBST(LDFLAGS)
 AC_SUBST(LDLIBS)
-
-AC_MSG_CHECKING(Apache version)
-HTTPD="`${APXS} -q SBINDIR`/`${APXS} -q TARGET`"
-HTTPD_VERSION=`$HTTPD -v | awk '/version/ {print $3}' | awk -F/ '{print $2}'`
-AC_MSG_RESULT($HTTPD_VERSION)
 
 LIBEXECDIR="`${APXS} -q LIBEXECDIR`"
 AC_SUBST(LIBEXECDIR)
