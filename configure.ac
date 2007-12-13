@@ -61,6 +61,8 @@ AC_SUBST(CPPFLAGS)
 
 PYTHONFRAMEWORKDIR=`${PYTHON} -c 'from distutils import sysconfig; \
     print sysconfig.get_config_var("PYTHONFRAMEWORKDIR")'`
+PYTHONFRAMEWORKPREFIX=`${PYTHON} -c 'from distutils import sysconfig; \
+    print sysconfig.get_config_var("PYTHONFRAMEWORKPREFIX")'`
 PYTHONFRAMEWORK=`${PYTHON} -c 'from distutils import sysconfig; \
     print sysconfig.get_config_var("PYTHONFRAMEWORK")'`
 
@@ -75,7 +77,7 @@ if test "${PYTHONFRAMEWORKDIR}" = "no-framework"; then
 
     LDLIBS="${LDLIBS1} ${LDLIBS2}"
 else
-    LDFLAGS1="-framework ${PYTHONFRAMEWORK}"
+    LDFLAGS1="-Wl,-F${PYTHONFRAMEWORKPREFIX} -framework ${PYTHONFRAMEWORK}"
 
     VERSION="${PYTHON_VERSION}"
     STRING="${PYTHONFRAMEWORKDIR}/Versions/${VERSION}/${PYTHONFRAMEWORK}"
