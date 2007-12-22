@@ -18,6 +18,11 @@ dnl Process this file with autoconf to produce a configure script.
 
 AC_INIT(mod_wsgi.c)
 
+AC_ARG_ENABLE(embedded, AC_HELP_STRING([--disable-embedded],
+            [disable mod_wsgi embedded mode]),
+            [ENABLE_EMBEDDED=$enableval],
+	    [ENABLE_EMBEDDED=yes])
+
 AC_ARG_WITH(apxs, AC_HELP_STRING([--with-apxs=NAME],
             [name of the apxs executable [[apxs]]]),
             [APXS="$with_apxs"])
@@ -55,7 +60,13 @@ CPPFLAGS2=`${PYTHON} -c 'from distutils import sysconfig; \
     print " ".join(filter(lambda x: x.startswith("-D"), \
     sysconfig.get_config_var("CFLAGS").split()))'`
 
-CPPFLAGS="${CPPFLAGS1} ${CPPFLAGS2}"
+if test "${ENABLE_EMBEDDED}" != "yes"; then
+CPPFLAGS3="-DMOD_WSGI_DISABLE_EMBEDDED"
+else
+CPPFLAGS3=""
+fi
+
+CPPFLAGS="${CPPFLAGS1} ${CPPFLAGS2} ${CPPFLAGS3}"
 
 AC_SUBST(CPPFLAGS)
 

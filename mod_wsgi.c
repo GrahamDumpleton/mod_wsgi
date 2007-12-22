@@ -217,7 +217,7 @@ static apr_status_t apr_os_pipe_put_ex(apr_file_t **file,
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 1
 #define MOD_WSGI_MINORVERSION_NUMBER 0
-#define MOD_WSGI_VERSION_STRING "2.0c4"
+#define MOD_WSGI_VERSION_STRING "2.0c5-TRUNK"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -6479,6 +6479,12 @@ static int wsgi_hook_handler(request_rec *r)
         return status;
 #endif
 
+#if defined(MOD_WSGI_DISABLE_EMBEDDED)
+    wsgi_log_script_error(r, "Embedded mode of mod_wsgi disabled at compile "
+                          "time", r->filename);
+    return HTTP_INTERNAL_SERVER_ERROR;
+#endif
+
     return wsgi_execute_script(r);
 }
 
@@ -6573,8 +6579,10 @@ static const command_rec wsgi_commands[] =
         RSRC_CONF, RAW_ARGS, "Location of WSGI import script." },
     { "WSGIDispatchScript", wsgi_set_dispatch_script, NULL,
         ACCESS_CONF|RSRC_CONF, RAW_ARGS, "Location of WSGI dispatch script." },
+#if 0
     { "WSGIHandlerScript", wsgi_set_handler_script, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Location of WSGI handler script." },
+#endif
 
     { "WSGIApacheExtensions", wsgi_set_apache_extensions, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Enable/Disable Apache extensions." },
@@ -10906,8 +10914,10 @@ static const command_rec wsgi_commands[] =
         NULL, RSRC_CONF, "Location of WSGI import script."),
     AP_INIT_RAW_ARGS("WSGIDispatchScript", wsgi_set_dispatch_script,
         NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI dispatch script."),
+#if 0
     AP_INIT_TAKE1("WSGIHandlerScript", wsgi_set_handler_script,
         NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI handler script."),
+#endif
 
     AP_INIT_TAKE1("WSGIApacheExtensions", wsgi_set_apache_extensions,
          NULL, ACCESS_CONF|RSRC_CONF, "Enable/Disable Apache extensions."),
