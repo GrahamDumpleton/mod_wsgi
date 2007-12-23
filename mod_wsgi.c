@@ -287,6 +287,7 @@ typedef struct {
     const char *python_path;
     const char *python_eggs;
 
+    int restrict_embedded;
     int restrict_stdin;
     int restrict_stdout;
     int restrict_signal;
@@ -350,6 +351,7 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->python_path = NULL;
     object->python_eggs = NULL;
 
+    object->restrict_embedded = -1;
     object->restrict_stdin = -1;
     object->restrict_stdout = -1;
     object->restrict_signal = -1;
@@ -4936,6 +4938,28 @@ static const char *wsgi_set_python_eggs(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_restrict_embedded(cmd_parms *cmd, void *mconfig,
+                                              const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (strcasecmp(f, "Off") == 0)
+        sconfig->restrict_embedded = 0;
+    else if (strcasecmp(f, "On") == 0)
+        sconfig->restrict_embedded = 1;
+    else
+        return "WSGIRestrictEmbedded must be one of: Off | On";
+
+    return NULL;
+}
+
 static const char *wsgi_set_restrict_stdin(cmd_parms *cmd, void *mconfig,
                                            const char *f)
 {
@@ -6485,6 +6509,12 @@ static int wsgi_hook_handler(request_rec *r)
     return HTTP_INTERNAL_SERVER_ERROR;
 #endif
 
+    if (wsgi_server_config->restrict_embedded == 1) {
+	wsgi_log_script_error(r, "Embedded mode of mod_wsgi disabled by "
+                              "runtime configuration", r->filename);
+	return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
     return wsgi_execute_script(r);
 }
 
@@ -6560,6 +6590,8 @@ static const command_rec wsgi_commands[] =
     { "WSGIPythonEggs", wsgi_set_python_eggs, NULL,
         RSRC_CONF, TAKE1, "Python eggs cache directory." },
 
+    { "WSGIRestrictEmbedded", wsgi_set_restrict_embedded, NULL,
+        RSRC_CONF, TAKE1, "Enable/Disable use of embedded mode." },
     { "WSGIRestrictStdin", wsgi_set_restrict_stdin, NULL,
         RSRC_CONF, TAKE1, "Enable/Disable restrictions on use of STDIN." },
     { "WSGIRestrictStdout", wsgi_set_restrict_stdout, NULL,
@@ -10888,6 +10920,8 @@ static const command_rec wsgi_commands[] =
     AP_INIT_TAKE1("WSGIPythonEggs", wsgi_set_python_eggs,
         NULL, RSRC_CONF, "Python eggs cache directory."),
 
+    AP_INIT_TAKE1("WSGIRestrictEmbedded", wsgi_set_restrict_embedded,
+        NULL, RSRC_CONF, "Enable/Disable use of embedded mode."),
     AP_INIT_TAKE1("WSGIRestrictStdin", wsgi_set_restrict_stdin,
         NULL, RSRC_CONF, "Enable/Disable restrictions on use of STDIN."),
     AP_INIT_TAKE1("WSGIRestrictStdout", wsgi_set_restrict_stdout,
