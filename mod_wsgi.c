@@ -2139,6 +2139,15 @@ typedef struct {
 
 static PyTypeObject Adapter_Type;
 
+typedef struct {
+        PyObject_HEAD
+        AdapterObject *adapter;
+        PyObject *filelike;
+        apr_size_t blksize;
+} PipeObject;
+
+static PyTypeObject Pipe_Type;
+
 static AdapterObject *newAdapterObject(request_rec *r)
 {
     AdapterObject *self;
@@ -2508,6 +2517,66 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
 }
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
+static int Adapter_pipe(AdapterObject *self, int fd)
+{
+    request_rec *r;
+    apr_file_t *tempfile;
+    apr_bucket *b;
+    apr_status_t rv;
+    apr_bucket_brigade *bb;
+
+    r = self->r;
+
+    if (r->connection->aborted) {
+        PyErr_SetString(PyExc_IOError, "client connection closed");
+        return 0;
+    }
+
+    bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+
+    /*
+     * Need to duplicate the file descriptor as pipe bucket will
+     * close the file descriptor when it reaches the end of
+     * available input. If don't duplicate it then Python will
+     * try and close it again by which time that file descriptor
+     * may be in use by something else.
+     */
+
+    fd = dup(fd);
+
+    apr_os_pipe_put_ex(&tempfile, &fd, 1, r->pool);
+
+    b = apr_bucket_pipe_create(tempfile, r->connection->bucket_alloc);
+    APR_BRIGADE_INSERT_TAIL(bb, b);
+
+    b = apr_bucket_eos_create(r->connection->bucket_alloc);
+    APR_BRIGADE_INSERT_TAIL(bb, b);
+
+    Py_BEGIN_ALLOW_THREADS
+    rv = ap_pass_brigade(r->output_filters, bb);
+    Py_END_ALLOW_THREADS
+
+    apr_file_close(tempfile);
+
+    if (rv != APR_SUCCESS) {
+        PyErr_SetString(PyExc_IOError, "failed to write data");
+        return 0;
+    }
+
+    Py_BEGIN_ALLOW_THREADS
+    apr_brigade_destroy(bb);
+    Py_END_ALLOW_THREADS
+
+    if (r->connection->aborted) {
+        PyErr_SetString(PyExc_IOError, "client connection closed");
+        return 0;
+    }
+
+    return 1;
+}
+#endif
+
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
 APR_DECLARE_OPTIONAL_FN(int, ssl_is_https, (conn_rec *));
 static APR_OPTIONAL_FN_TYPE(ssl_is_https) *wsgi_is_https = NULL;
 #endif
@@ -2591,6 +2660,12 @@ static PyObject *Adapter_environ(AdapterObject *self)
     object = (PyObject *)self->input;
     PyDict_SetItemString(vars, "wsgi.input", object);
 
+    /* Setup file wrapper object for efficient file responses. */
+
+    object = PyObject_GetAttrString((PyObject *)self, "file_wrapper");
+    PyDict_SetItemString(vars, "wsgi.file_wrapper", object);
+    Py_DECREF(object);
+
     /*
      * If Apache extensions are enabled and running in embedded
      * mode add a CObject reference to the Apache request_rec
@@ -2637,34 +2712,63 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     self->sequence = PyEval_CallObject(object, args);
 
     if (self->sequence != NULL) {
-        iterator = PyObject_GetIter(self->sequence);
+        int pipe = -1;
 
-        if (iterator != NULL) {
-            PyObject *item = NULL;
+#if 0
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+        if (self->sequence->ob_type == &Pipe_Type) {
+            PyObject *filelike = NULL;
+            PyObject *method = NULL;
+            PyObject *object = NULL;
 
-            while ((item = PyIter_Next(iterator))) {
-                if (!PyString_Check(item)) {
-                    PyErr_Format(PyExc_TypeError, "sequence of string "
-                                 "values expected, value of type %.200s found",
-                                 item->ob_type->tp_name);
-                    Py_DECREF(item);
-                    break;
+            filelike = ((PipeObject *)self->sequence)->filelike;
+            method = PyObject_GetAttrString(filelike, "fileno");
+            if (method) {
+                object = PyEval_CallObject(method, NULL);
+                if (object && PyInt_Check(object)) {
+                    pipe = PyInt_AsLong(object);
+                    if (Adapter_output(self, "", 0)) {
+                        if (Adapter_pipe(self, pipe))
+                            result = OK;
+                    }
                 }
+                Py_XDECREF(object);
+                Py_DECREF(method);
+            }
+        }
+#endif
+#endif
 
-                msg = PyString_AsString(item);
-                length = PyString_Size(item);
+        if (pipe == -1) {
+            iterator = PyObject_GetIter(self->sequence);
 
-                if (!msg) {
+            if (iterator != NULL) {
+                PyObject *item = NULL;
+
+                while ((item = PyIter_Next(iterator))) {
+                    if (!PyString_Check(item)) {
+                        PyErr_Format(PyExc_TypeError, "sequence of string "
+                                     "values expected, value of type %.200s "
+                                     "found", item->ob_type->tp_name);
+                        Py_DECREF(item);
+                        break;
+                    }
+
+                    msg = PyString_AsString(item);
+                    length = PyString_Size(item);
+
+                    if (!msg) {
+                        Py_DECREF(item);
+                        break;
+                    }
+
+                    if (length && !Adapter_output(self, msg, length)) {
+                        Py_DECREF(item);
+                        break;
+                    }
+
                     Py_DECREF(item);
-                    break;
                 }
-
-                if (length && !Adapter_output(self, msg, length)) {
-                    Py_DECREF(item);
-                    break;
-                }
-
-                Py_DECREF(item);
             }
 
             if (!PyErr_Occurred()) {
@@ -2755,9 +2859,30 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
     return Py_None;
 }
 
+static PyObject *newPipeObject(AdapterObject *adapter, PyObject *filelike,
+                                 apr_size_t blksize);
+
+static PyObject *Adapter_file_wrapper(AdapterObject *self, PyObject *args)
+{
+    PyObject *filelike = NULL;
+    apr_size_t blksize = HUGE_STRING_LEN;
+    PyObject *result = NULL;
+
+    if (!self->r) {
+        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        return NULL;
+    }
+
+    if (!PyArg_ParseTuple(args, "O|l:file_wrapper", &filelike, &blksize))
+        return NULL;
+
+    return newPipeObject(self, filelike, blksize);
+}
+
 static PyMethodDef Adapter_methods[] = {
     { "start_response", (PyCFunction)Adapter_start_response, METH_VARARGS, 0},
     { "write",          (PyCFunction)Adapter_write, METH_VARARGS, 0},
+    { "file_wrapper",   (PyCFunction)Adapter_file_wrapper, METH_VARARGS, 0},
     { NULL, NULL}
 };
 
@@ -2794,6 +2919,165 @@ static PyTypeObject Adapter_Type = {
     0,                      /*tp_iter*/
     0,                      /*tp_iternext*/
     Adapter_methods,        /*tp_methods*/
+    0,                      /*tp_members*/
+    0,                      /*tp_getset*/
+    0,                      /*tp_base*/
+    0,                      /*tp_dict*/
+    0,                      /*tp_descr_get*/
+    0,                      /*tp_descr_set*/
+    0,                      /*tp_dictoffset*/
+    0,                      /*tp_init*/
+    0,                      /*tp_alloc*/
+    0,                      /*tp_new*/
+    0,                      /*tp_free*/
+    0,                      /*tp_is_gc*/
+};
+
+static PyObject *newPipeObject(AdapterObject *adapter, PyObject *filelike,
+                                 apr_size_t blksize)
+{
+    PipeObject *self;
+
+    self = PyObject_New(PipeObject, &Pipe_Type);
+    if (self == NULL)
+        return NULL;
+
+    self->adapter = adapter;
+    self->filelike = filelike;
+    self->blksize = blksize;
+
+    Py_INCREF(self->adapter);
+    Py_INCREF(self->filelike);
+
+    return (PyObject *)self;
+}
+
+static void Pipe_dealloc(PipeObject *self)
+{
+    Py_DECREF(self->filelike);
+    Py_DECREF(self->adapter);
+
+    PyObject_Del(self);
+}
+
+static PyObject *Pipe_iter(PipeObject *self)
+{
+    if (!self->adapter->r) {
+        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        return NULL;
+    }
+
+    Py_INCREF(self);
+    return (PyObject *)self;
+}
+
+static PyObject *Pipe_iternext(PipeObject *self)
+{
+    PyObject *method = NULL;
+    PyObject *args = NULL;
+    PyObject *result = NULL;
+
+    if (!self->adapter->r) {
+        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        return NULL;
+    }
+
+    method = PyObject_GetAttrString(self->filelike, "read");
+
+    if (!method) {
+        PyErr_SetString(PyExc_KeyError,
+                        "file like object has no read() method");
+        return 0;
+    }
+
+    args = Py_BuildValue("(l)", self->blksize);
+    result = PyEval_CallObject(method, args);
+
+    Py_DECREF(method);
+
+    if (!result) {
+        Py_DECREF(args);
+        return 0;
+    }
+
+    if (!PyString_Check(result)) {
+        PyErr_SetString(PyExc_TypeError,
+                        "file like object yielded non string type");
+        Py_DECREF(args);
+        Py_DECREF(result);
+        return 0;
+    }
+
+    if (*PyString_AsString(result) == '\0') {
+        PyErr_SetObject(PyExc_StopIteration, Py_None);
+        Py_DECREF(args);
+        Py_DECREF(result);
+        return 0;
+    }
+
+    Py_DECREF(args);
+
+    return result;
+}
+
+static PyObject *Pipe_close(PipeObject *self, PyObject *args)
+{
+    PyObject *method = NULL;
+    PyObject *result = NULL;
+
+    method = PyObject_GetAttrString(self->filelike, "close");
+
+    if (method) {
+        result = PyEval_CallObject(method, (PyObject *)NULL);
+        if (!result)
+            PyErr_Clear();
+        Py_DECREF(method);
+    }
+
+    Py_XDECREF(result);
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+static PyMethodDef Pipe_methods[] = {
+    { "close",      (PyCFunction)Pipe_close,      METH_VARARGS, 0},
+    { NULL, NULL}
+};
+
+static PyTypeObject Pipe_Type = {
+    /* The ob_type field must be initialized in the module init function
+     * to be portable to Windows without using C++. */
+    PyObject_HEAD_INIT(NULL)
+    0,                      /*ob_size*/
+    "mod_wsgi.Pipe",        /*tp_name*/
+    sizeof(InputObject),    /*tp_basicsize*/
+    0,                      /*tp_itemsize*/
+    /* methods */
+    (destructor)Pipe_dealloc, /*tp_dealloc*/
+    0,                      /*tp_print*/
+    0,                      /*tp_getattr*/
+    0,                      /*tp_setattr*/
+    0,                      /*tp_compare*/
+    0,                      /*tp_repr*/
+    0,                      /*tp_as_number*/
+    0,                      /*tp_as_sequence*/
+    0,                      /*tp_as_mapping*/
+    0,                      /*tp_hash*/
+    0,                      /*tp_call*/
+    0,                      /*tp_str*/
+    0,                      /*tp_getattro*/
+    0,                      /*tp_setattro*/
+    0,                      /*tp_as_buffer*/
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER, /*tp_flags*/
+    0,                      /*tp_doc*/
+    0,                      /*tp_traverse*/
+    0,                      /*tp_clear*/
+    0,                      /*tp_richcompare*/
+    0,                      /*tp_weaklistoffset*/
+    (getiterfunc)Pipe_iter, /*tp_iter*/
+    (iternextfunc)Pipe_iternext, /*tp_iternext*/
+    Pipe_methods,           /*tp_methods*/
     0,                      /*tp_members*/
     0,                      /*tp_getset*/
     0,                      /*tp_base*/
@@ -4672,6 +4956,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
     /* Finalise any Python objects required by child process. */
 
     PyType_Ready(&Log_Type);
+    PyType_Ready(&Pipe_Type);
     PyType_Ready(&Input_Type);
     PyType_Ready(&Adapter_Type);
     PyType_Ready(&Restricted_Type);
@@ -6510,9 +6795,9 @@ static int wsgi_hook_handler(request_rec *r)
 #endif
 
     if (wsgi_server_config->restrict_embedded == 1) {
-	wsgi_log_script_error(r, "Embedded mode of mod_wsgi disabled by "
+        wsgi_log_script_error(r, "Embedded mode of mod_wsgi disabled by "
                               "runtime configuration", r->filename);
-	return HTTP_INTERNAL_SERVER_ERROR;
+        return HTTP_INTERNAL_SERVER_ERROR;
     }
 
     return wsgi_execute_script(r);
@@ -10513,7 +10798,7 @@ static int wsgi_hook_check_user_id(request_rec *r)
 
     int status = -1;
 
-    const char *password;                         
+    const char *password;
 
     InterpreterObject *interp = NULL;
     PyObject *modules = NULL;
