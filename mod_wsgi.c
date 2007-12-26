@@ -2144,9 +2144,9 @@ typedef struct {
         AdapterObject *adapter;
         PyObject *filelike;
         apr_size_t blksize;
-} PipeObject;
+} StreamObject;
 
-static PyTypeObject Pipe_Type;
+static PyTypeObject Stream_Type;
 
 static AdapterObject *newAdapterObject(request_rec *r)
 {
@@ -2517,10 +2517,10 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
 }
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
-static int Adapter_pipe(AdapterObject *self, int fd)
+static int Adapter_stream(AdapterObject *self, apr_file_t* tempfile,
+                          apr_off_t offset, apr_size_t len)
 {
     request_rec *r;
-    apr_file_t *tempfile;
     apr_bucket *b;
     apr_status_t rv;
     apr_bucket_brigade *bb;
@@ -2542,11 +2542,17 @@ static int Adapter_pipe(AdapterObject *self, int fd)
      * may be in use by something else.
      */
 
+#if 0
     fd = dup(fd);
 
-    apr_os_pipe_put_ex(&tempfile, &fd, 1, r->pool);
+    apr_os_pipe_put_ex(&tempfile, &fd, 0, r->pool);
+#endif
 
+#if 0
     b = apr_bucket_pipe_create(tempfile, r->connection->bucket_alloc);
+#endif
+    b = apr_bucket_file_create(tempfile, offset, len, r->pool,
+                               r->connection->bucket_alloc);
     APR_BRIGADE_INSERT_TAIL(bb, b);
 
     b = apr_bucket_eos_create(r->connection->bucket_alloc);
@@ -2556,7 +2562,9 @@ static int Adapter_pipe(AdapterObject *self, int fd)
     rv = ap_pass_brigade(r->output_filters, bb);
     Py_END_ALLOW_THREADS
 
+#if 0
     apr_file_close(tempfile);
+#endif
 
     if (rv != APR_SUCCESS) {
         PyErr_SetString(PyExc_IOError, "failed to write data");
@@ -2714,29 +2722,46 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     if (self->sequence != NULL) {
         int pipe = -1;
 
-#if 0
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
-        if (self->sequence->ob_type == &Pipe_Type) {
+        if (self->sequence->ob_type == &Stream_Type) {
             PyObject *filelike = NULL;
             PyObject *method = NULL;
             PyObject *object = NULL;
 
-            filelike = ((PipeObject *)self->sequence)->filelike;
+            filelike = ((StreamObject *)self->sequence)->filelike;
             method = PyObject_GetAttrString(filelike, "fileno");
             if (method) {
                 object = PyEval_CallObject(method, NULL);
                 if (object && PyInt_Check(object)) {
-                    pipe = PyInt_AsLong(object);
-                    if (Adapter_output(self, "", 0)) {
-                        if (Adapter_pipe(self, pipe))
-                            result = OK;
+                    apr_file_t *tempfile;
+                    apr_finfo_t finfo;
+                    apr_off_t offset = 0;
+
+                    pipe = dup(PyInt_AsLong(object));
+                    apr_os_pipe_put_ex(&tempfile, &pipe, 0, self->r->pool);
+
+                    if (apr_file_info_get(&finfo, APR_FINFO_SIZE,
+                                          tempfile) == APR_SUCCESS) {
+                        if (apr_file_seek(tempfile, APR_CUR,
+                                          &offset) == APR_SUCCESS) {
+                            if (Adapter_output(self, "", 0)) {
+                                if (Adapter_stream(self, tempfile, offset,
+                                                   finfo.size - offset))
+                                    result = OK;
+                            }
+                        }
+                        else
+                            pipe = -1;
                     }
+                    else
+                        pipe = -1;
+
+                    apr_file_close(tempfile);
                 }
                 Py_XDECREF(object);
                 Py_DECREF(method);
             }
         }
-#endif
 #endif
 
         if (pipe == -1) {
@@ -2859,7 +2884,7 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
     return Py_None;
 }
 
-static PyObject *newPipeObject(AdapterObject *adapter, PyObject *filelike,
+static PyObject *newStreamObject(AdapterObject *adapter, PyObject *filelike,
                                  apr_size_t blksize);
 
 static PyObject *Adapter_file_wrapper(AdapterObject *self, PyObject *args)
@@ -2876,7 +2901,7 @@ static PyObject *Adapter_file_wrapper(AdapterObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "O|l:file_wrapper", &filelike, &blksize))
         return NULL;
 
-    return newPipeObject(self, filelike, blksize);
+    return newStreamObject(self, filelike, blksize);
 }
 
 static PyMethodDef Adapter_methods[] = {
@@ -2933,12 +2958,12 @@ static PyTypeObject Adapter_Type = {
     0,                      /*tp_is_gc*/
 };
 
-static PyObject *newPipeObject(AdapterObject *adapter, PyObject *filelike,
+static PyObject *newStreamObject(AdapterObject *adapter, PyObject *filelike,
                                  apr_size_t blksize)
 {
-    PipeObject *self;
+    StreamObject *self;
 
-    self = PyObject_New(PipeObject, &Pipe_Type);
+    self = PyObject_New(StreamObject, &Stream_Type);
     if (self == NULL)
         return NULL;
 
@@ -2952,7 +2977,7 @@ static PyObject *newPipeObject(AdapterObject *adapter, PyObject *filelike,
     return (PyObject *)self;
 }
 
-static void Pipe_dealloc(PipeObject *self)
+static void Stream_dealloc(StreamObject *self)
 {
     Py_DECREF(self->filelike);
     Py_DECREF(self->adapter);
@@ -2960,7 +2985,7 @@ static void Pipe_dealloc(PipeObject *self)
     PyObject_Del(self);
 }
 
-static PyObject *Pipe_iter(PipeObject *self)
+static PyObject *Stream_iter(StreamObject *self)
 {
     if (!self->adapter->r) {
         PyErr_SetString(PyExc_RuntimeError, "request object has expired");
@@ -2971,7 +2996,7 @@ static PyObject *Pipe_iter(PipeObject *self)
     return (PyObject *)self;
 }
 
-static PyObject *Pipe_iternext(PipeObject *self)
+static PyObject *Stream_iternext(StreamObject *self)
 {
     PyObject *method = NULL;
     PyObject *args = NULL;
@@ -3020,7 +3045,7 @@ static PyObject *Pipe_iternext(PipeObject *self)
     return result;
 }
 
-static PyObject *Pipe_close(PipeObject *self, PyObject *args)
+static PyObject *Stream_close(StreamObject *self, PyObject *args)
 {
     PyObject *method = NULL;
     PyObject *result = NULL;
@@ -3040,21 +3065,21 @@ static PyObject *Pipe_close(PipeObject *self, PyObject *args)
     return Py_None;
 }
 
-static PyMethodDef Pipe_methods[] = {
-    { "close",      (PyCFunction)Pipe_close,      METH_VARARGS, 0},
+static PyMethodDef Stream_methods[] = {
+    { "close",      (PyCFunction)Stream_close,      METH_VARARGS, 0},
     { NULL, NULL}
 };
 
-static PyTypeObject Pipe_Type = {
+static PyTypeObject Stream_Type = {
     /* The ob_type field must be initialized in the module init function
      * to be portable to Windows without using C++. */
     PyObject_HEAD_INIT(NULL)
     0,                      /*ob_size*/
-    "mod_wsgi.Pipe",        /*tp_name*/
+    "mod_wsgi.Stream",      /*tp_name*/
     sizeof(InputObject),    /*tp_basicsize*/
     0,                      /*tp_itemsize*/
     /* methods */
-    (destructor)Pipe_dealloc, /*tp_dealloc*/
+    (destructor)Stream_dealloc, /*tp_dealloc*/
     0,                      /*tp_print*/
     0,                      /*tp_getattr*/
     0,                      /*tp_setattr*/
@@ -3075,9 +3100,9 @@ static PyTypeObject Pipe_Type = {
     0,                      /*tp_clear*/
     0,                      /*tp_richcompare*/
     0,                      /*tp_weaklistoffset*/
-    (getiterfunc)Pipe_iter, /*tp_iter*/
-    (iternextfunc)Pipe_iternext, /*tp_iternext*/
-    Pipe_methods,           /*tp_methods*/
+    (getiterfunc)Stream_iter, /*tp_iter*/
+    (iternextfunc)Stream_iternext, /*tp_iternext*/
+    Stream_methods,         /*tp_methods*/
     0,                      /*tp_members*/
     0,                      /*tp_getset*/
     0,                      /*tp_base*/
@@ -4956,7 +4981,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
     /* Finalise any Python objects required by child process. */
 
     PyType_Ready(&Log_Type);
-    PyType_Ready(&Pipe_Type);
+    PyType_Ready(&Stream_Type);
     PyType_Ready(&Input_Type);
     PyType_Ready(&Adapter_Type);
     PyType_Ready(&Restricted_Type);
