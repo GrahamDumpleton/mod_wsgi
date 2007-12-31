@@ -2382,18 +2382,34 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
          * response from application, see if response is a
          * sequence consisting of only one item and if so use
          * the current length of data being output as the
-         * content length to use.
+         * content length to use, given that there cannot be
+         * any further data.
          */
 
-        if (!set && self->sequence) {
-            if (PySequence_Check(self->sequence)) {
-                if (PySequence_Size(self->sequence) == 1)
+        if (self->sequence && PySequence_Check(self->sequence)) {
+            if (PySequence_Size(self->sequence) == 1) {
+                if (!set)
                     ap_set_content_length(r, length);
 
-                if (PyErr_Occurred())
-                    PyErr_Clear();
+                /*
+                 * XXX Fiddle to throw away any remaining
+                 * request content when running in daemon mode.
+                 * This is to at limit possibility of socket
+                 * deadlock when application doesn't consume
+                 * large request content before sending a large
+                 * response. Can remove this later when rework
+                 * daemon socket code.
+                 */
+
+                if (wsgi_daemon_pool)
+                    ap_discard_request_body(r);
             }
+
+            if (PyErr_Occurred())
+                PyErr_Clear();
         }
+
+        /* Force output of headers. Only required for Apache 1.3. */
 
         Py_BEGIN_ALLOW_THREADS
         ap_send_http_header(r);
@@ -2744,6 +2760,21 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                                           tempfile) == APR_SUCCESS) {
                         if (apr_file_seek(tempfile, APR_CUR,
                                           &offset) == APR_SUCCESS) {
+                            /*
+                             * XXX Fiddle to throw away any remaining
+                             * request content when running in daemon mode.
+                             * This is to at limit possibility of socket
+                             * deadlock when application doesn't consume
+                             * large request content before sending a large
+                             * response. Can remove this later when rework
+                             * daemon socket code.
+                             */
+
+                            if (wsgi_daemon_pool)
+                                ap_discard_request_body(self->r);
+
+                            /* Flush headers and then send file contents. */
+
                             if (Adapter_output(self, "", 0)) {
                                 if (Adapter_stream(self, tempfile, offset,
                                                    finfo.size - offset))
@@ -9288,7 +9319,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
         return DECLINED;
 
     /*
-     * XXX Remove all input/output filters except the core filters.
+     * Remove all input/output filters except the core filters.
      * This will ensure that any SSL filters we don't want are
      * removed. This is a bit of a hack. Only other option is to
      * duplicate the code for core input/output filters so can
