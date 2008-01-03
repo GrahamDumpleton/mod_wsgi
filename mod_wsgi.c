@@ -1033,8 +1033,12 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     if (config->reload_mechanism == -1) {
         config->reload_mechanism = sconfig->reload_mechanism;
-        if (config->reload_mechanism == -1)
-            config->reload_mechanism = WSGI_RELOAD_MODULE;
+        if (config->reload_mechanism == -1) {
+            if (*config->process_group)
+                config->reload_mechanism = WSGI_RELOAD_PROCESS;
+            else
+                config->reload_mechanism = WSGI_RELOAD_MODULE;
+        }
     }
 
     config->output_buffering = dconfig->output_buffering;
