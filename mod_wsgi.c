@@ -7564,7 +7564,9 @@ static void wsgi_setup_daemon_name(WSGIDaemonProcess *daemon, apr_pool_t *p)
 {
     const char *display_name = NULL;
 
-    int len = 0;
+    int slen = 0;
+    int dlen = 0;
+
     char *argv0 = NULL;
 
     display_name = daemon->group->display_name;
@@ -7586,9 +7588,19 @@ static void wsgi_setup_daemon_name(WSGIDaemonProcess *daemon, apr_pool_t *p)
 
     argv0 = (char*)wsgi_server->process->argv[0];
 
-    len = strlen(argv0);
-    memset(argv0, '\0', len);
-    strncpy(argv0, display_name, len);
+    dlen = strlen(argv0);
+    slen = strlen(display_name);
+
+    memset(argv0, ' ', dlen);
+
+    if (slen < dlen)
+        memcpy(argv0, display_name, slen);
+    else
+        memcpy(argv0, display_name, dlen);
+
+            ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(0), wsgi_server,
+                         "mod_wsgi (pid=%d): DST '%s'.",
+                         getpid(), argv0);
 }
 
 static void wsgi_setup_access(WSGIDaemonProcess *daemon)
