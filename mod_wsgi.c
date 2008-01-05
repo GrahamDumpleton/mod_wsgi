@@ -7068,6 +7068,7 @@ typedef struct {
     int shutdown_timeout;
     apr_time_t deadlock_timeout;
     apr_time_t inactivity_timeout;
+    const char *display_name;
     const char *socket;
     int listener_fd;
     const char* mutex_path;
@@ -7124,6 +7125,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int shutdown_timeout = 5;
     int deadlock_timeout = 300;
     int inactivity_timeout = 0;
+
+    const char *display_name = NULL;
 
     uid_t uid;
     uid_t gid;
@@ -7277,6 +7280,11 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (inactivity_timeout < 0)
                 return "Invalid inactivity timeout for WSGI daemon process.";
         }
+        else if (strstr(option, "display-name=") == option) {
+            value = option + 13;
+
+            display_name = value;
+        }
         else
             return "Invalid option to WSGI daemon process definition.";
     }
@@ -7326,6 +7334,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->shutdown_timeout = shutdown_timeout;
     entry->deadlock_timeout = apr_time_from_sec(deadlock_timeout);
     entry->inactivity_timeout = apr_time_from_sec(inactivity_timeout);
+
+    entry->display_name = display_name;
 
     return NULL;
 }
@@ -7548,6 +7558,37 @@ static void wsgi_manage_process(int reason, void *data, apr_wait_t status)
             break;
         }
     }
+}
+
+static void wsgi_setup_daemon_name(WSGIDaemonProcess *daemon, apr_pool_t *p)
+{
+    const char *display_name = NULL;
+
+    int len = 0;
+    char *argv0 = NULL;
+
+    display_name = daemon->group->display_name;
+
+    if (!display_name)
+        return;
+
+    if (!strcmp(display_name, "%{GROUP}")) {
+        display_name = apr_pstrcat(p, "(wsgi:", daemon->group->name,
+                                   ")", NULL);
+    }
+
+    /*
+     * Only argv[0] is guaranteed to be the real things as MPM
+     * modules may make modifications to subsequent arguments.
+     * Thus can only replace the argv[0] value. Because length
+     * is restricted, need to truncate display name if too long.
+     */
+
+    argv0 = (char*)wsgi_server->process->argv[0];
+
+    len = strlen(argv0);
+    memset(argv0, '\0', len);
+    strncpy(argv0, display_name, len);
 }
 
 static void wsgi_setup_access(WSGIDaemonProcess *daemon)
@@ -8316,6 +8357,10 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
                          getpid());
         }
 #endif
+
+        /* Setup daemon process name displayed by 'ps'. */
+
+        wsgi_setup_daemon_name(daemon, p);
 
         /* Setup daemon process user/group/umask etc. */
 
