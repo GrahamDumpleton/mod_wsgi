@@ -7235,6 +7235,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
             python_eggs = value;
         }
+#if (APR_MAJOR_VERSION >= 1)
         else if (strstr(option, "stack-size=") == option) {
             value = option + 11;
             if (!*value)
@@ -7244,6 +7245,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (stack_size <= 0)
                 return "Invalid stack size for WSGI daemon process.";
         }
+#endif
         else if (strstr(option, "maximum-requests=") == option) {
             value = option + 17;
             if (!*value)
@@ -8200,9 +8202,11 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     apr_threadattr_create(&thread_attr, p);
     apr_threadattr_detach_set(thread_attr, 0);
 
+#if (APR_MAJOR_VERSION >= 1)
     if (daemon->group->stack_size) {
         apr_threadattr_stacksize_set(thread_attr, daemon->group->stack_size);
     }
+#endif
 
     /* Start monitoring thread if required. */
 
