@@ -7597,10 +7597,6 @@ static void wsgi_setup_daemon_name(WSGIDaemonProcess *daemon, apr_pool_t *p)
         memcpy(argv0, display_name, slen);
     else
         memcpy(argv0, display_name, dlen);
-
-            ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(0), wsgi_server,
-                         "mod_wsgi (pid=%d): DST '%s'.",
-                         getpid(), argv0);
 }
 
 static void wsgi_setup_access(WSGIDaemonProcess *daemon)
