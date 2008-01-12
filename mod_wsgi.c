@@ -2394,19 +2394,6 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
             if (PySequence_Size(self->sequence) == 1) {
                 if (!set)
                     ap_set_content_length(r, length);
-
-                /*
-                 * XXX Fiddle to throw away any remaining
-                 * request content when running in daemon mode.
-                 * This is to at limit possibility of socket
-                 * deadlock when application doesn't consume
-                 * large request content before sending a large
-                 * response. Can remove this later when rework
-                 * daemon socket code.
-                 */
-
-                if (wsgi_daemon_pool)
-                    ap_discard_request_body(r);
             }
 
             if (PyErr_Occurred())
@@ -2764,19 +2751,6 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                                           tempfile) == APR_SUCCESS) {
                         if (apr_file_seek(tempfile, APR_CUR,
                                           &offset) == APR_SUCCESS) {
-                            /*
-                             * XXX Fiddle to throw away any remaining
-                             * request content when running in daemon mode.
-                             * This is to at limit possibility of socket
-                             * deadlock when application doesn't consume
-                             * large request content before sending a large
-                             * response. Can remove this later when rework
-                             * daemon socket code.
-                             */
-
-                            if (wsgi_daemon_pool)
-                                ap_discard_request_body(self->r);
-
                             /* Flush headers and then send file contents. */
 
                             if (Adapter_output(self, "", 0)) {
