@@ -2709,6 +2709,10 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     const char *msg = NULL;
     int length = 0;
 
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    apr_file_t *tempfile = NULL;
+#endif
+
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_inactivity_timeout) {
         apr_thread_mutex_lock(wsgi_shutdown_lock);
@@ -2740,7 +2744,6 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
             if (method) {
                 object = PyEval_CallObject(method, NULL);
                 if (object && PyInt_Check(object)) {
-                    apr_file_t *tempfile;
                     apr_finfo_t finfo;
                     apr_off_t offset = 0;
 
@@ -2764,8 +2767,6 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                     }
                     else
                         pipe = -1;
-
-                    apr_file_close(tempfile);
                 }
                 Py_XDECREF(object);
                 Py_DECREF(method);
@@ -2847,6 +2848,11 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         Py_DECREF(self->sequence);
 
         self->sequence = NULL;
+
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+        if (tempfile)
+            apr_file_close(tempfile);
+#endif
     }
 
     Py_DECREF(args);
