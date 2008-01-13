@@ -4834,12 +4834,9 @@ static int wsgi_execute_script(request_rec *r)
             /*
              * Script file has changed. Discard reference to
              * loaded module and work out what action we are
-             * supposed to take. Choices are process reloading,
-             * interpreter reloading and module reloading.
-             * Process reloading cannot be be performed unless a
-             * daemon process is being used and interpreter
-             * reloading cannot be performed on the first
-             * interpreter created by Python.
+             * supposed to take. Choices are process reloading
+             * and module reloading. Process reloading cannot be
+             * performed unless a daemon process is being used.
              */
 
             Py_DECREF(module);
