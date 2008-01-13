@@ -194,6 +194,34 @@ static apr_status_t apr_os_pipe_put_ex(apr_file_t **file,
 
 #endif
 
+#if AP_SERVER_MAJORVERSION_NUMBER < 2
+
+static char *apr_off_t_toa(apr_pool_t *p, apr_off_t n)
+{
+    const int BUFFER_SIZE = sizeof(apr_off_t) * 3 + 2;
+    char *buf = apr_palloc(p, BUFFER_SIZE);
+    char *start = buf + BUFFER_SIZE - 1;
+    int negative;
+    if (n < 0) {
+        negative = 1;
+        n = -n;
+    }
+    else {
+        negative = 0;
+    }
+    *start = 0;
+    do {
+        *--start = '0' + (char)(n % 10);
+        n /= 10;
+    } while (n);
+    if (negative) {
+        *--start = '-';
+    }
+    return start;
+}
+
+#endif
+
 /* Compatibility macros for log level and status. */
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
@@ -2139,6 +2167,9 @@ typedef struct {
         const char *status_line;
         PyObject *headers;
         PyObject *sequence;
+        int content_length_set;
+        apr_off_t content_length;
+        apr_off_t output_length;
 } AdapterObject;
 
 static PyTypeObject Adapter_Type;
@@ -2173,6 +2204,10 @@ static AdapterObject *newAdapterObject(request_rec *r)
     self->status_line = NULL;
     self->headers = NULL;
     self->sequence = NULL;
+
+    self->content_length_set = 0;
+    self->content_length = 0;
+    self->output_length = 0;
 
     self->input = newInputObject(r);
     self->log = newLogObject(r, APLOG_ERR);
@@ -2287,8 +2322,6 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
     r = self->r;
 
     if (self->headers) {
-        int set = 0;
-
         r->status = self->status;
         r->status_line = self->status_line;
 
@@ -2371,7 +2404,8 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
 
                 ap_set_content_length(r, l);
 
-                set = 1;
+                self->content_length_set = 1;
+                self->content_length = l;
             }
             else if (!strcasecmp(name, "WWW-Authenticate")) {
                 apr_table_add(r->err_headers_out, name, value);
@@ -2392,7 +2426,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
 
         if (self->sequence && PySequence_Check(self->sequence)) {
             if (PySequence_Size(self->sequence) == 1) {
-                if (!set)
+                if (!self->content_length_set)
                     ap_set_content_length(r, length);
             }
 
@@ -2409,6 +2443,28 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
         Py_DECREF(self->headers);
         self->headers = NULL;
     }
+
+    /*
+     * If content length was specified, ensure that we don't
+     * actually output more data than was specified as being
+     * sent as otherwise technically in violation of HTTP RFC.
+     */
+
+    if (length) {
+        int output_length = length;
+
+        if (self->content_length_set) {
+            if (self->output_length < self->content_length) {
+                if (self->output_length + length > self->content_length) {
+                    length = self->content_length - self->output_length;
+                }
+            }
+        }
+
+        self->output_length += output_length;
+    }
+
+    /* Now output any data. */
 
     if (length) {
 #if defined(MOD_WSGI_WITH_BUCKETS)
@@ -2524,8 +2580,8 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
 }
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
-static int Adapter_stream(AdapterObject *self, apr_file_t* tempfile,
-                          apr_off_t offset, apr_size_t len)
+static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
+                               apr_off_t offset, apr_size_t len)
 {
     request_rec *r;
     apr_bucket *b;
@@ -2541,24 +2597,7 @@ static int Adapter_stream(AdapterObject *self, apr_file_t* tempfile,
 
     bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 
-    /*
-     * Need to duplicate the file descriptor as pipe bucket will
-     * close the file descriptor when it reaches the end of
-     * available input. If don't duplicate it then Python will
-     * try and close it again by which time that file descriptor
-     * may be in use by something else.
-     */
-
-#if 0
-    fd = dup(fd);
-
-    apr_os_pipe_put_ex(&tempfile, &fd, 0, r->pool);
-#endif
-
-#if 0
-    b = apr_bucket_pipe_create(tempfile, r->connection->bucket_alloc);
-#endif
-    b = apr_bucket_file_create(tempfile, offset, len, r->pool,
+    b = apr_bucket_file_create(tmpfile, offset, len, r->pool,
                                r->connection->bucket_alloc);
     APR_BRIGADE_INSERT_TAIL(bb, b);
 
@@ -2569,9 +2608,48 @@ static int Adapter_stream(AdapterObject *self, apr_file_t* tempfile,
     rv = ap_pass_brigade(r->output_filters, bb);
     Py_END_ALLOW_THREADS
 
-#if 0
-    apr_file_close(tempfile);
-#endif
+    if (rv != APR_SUCCESS) {
+        PyErr_SetString(PyExc_IOError, "failed to write data");
+        return 0;
+    }
+
+    Py_BEGIN_ALLOW_THREADS
+    apr_brigade_destroy(bb);
+    Py_END_ALLOW_THREADS
+
+    if (r->connection->aborted) {
+        PyErr_SetString(PyExc_IOError, "client connection closed");
+        return 0;
+    }
+
+    return 1;
+}
+
+static int Adapter_output_pipe(AdapterObject *self, apr_file_t* tmpfile)
+{
+    request_rec *r;
+    apr_bucket *b;
+    apr_status_t rv;
+    apr_bucket_brigade *bb;
+
+    r = self->r;
+
+    if (r->connection->aborted) {
+        PyErr_SetString(PyExc_IOError, "client connection closed");
+        return 0;
+    }
+
+    bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+
+    b = apr_bucket_pipe_create(tmpfile, r->connection->bucket_alloc);
+    APR_BRIGADE_INSERT_TAIL(bb, b);
+
+    b = apr_bucket_eos_create(r->connection->bucket_alloc);
+    APR_BRIGADE_INSERT_TAIL(bb, b);
+
+    Py_BEGIN_ALLOW_THREADS
+    rv = ap_pass_brigade(r->output_filters, bb);
+    Py_END_ALLOW_THREADS
 
     if (rv != APR_SUCCESS) {
         PyErr_SetString(PyExc_IOError, "failed to write data");
@@ -2710,7 +2788,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     int length = 0;
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
-    apr_file_t *tempfile = NULL;
+    apr_file_t *tmpfile = NULL;
 #endif
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
@@ -2731,50 +2809,125 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     self->sequence = PyEval_CallObject(object, args);
 
     if (self->sequence != NULL) {
-        int pipe = -1;
+        int done = 0;
+
+        if (self->sequence->ob_type == &Stream_Type) {
+            /*
+	     * For a file wrapper object need to always ensure
+	     * that headers are flushed. This is done so that if
+             * the content length header has been defined we can
+             * get its value and use it to limit how much of a
+             * file is being sent. The WSGI 1.0 specification says
+             * that we are meant to send all available bytes from
+             * the file, however this is questionable as sending
+             * more than content length would violate HTTP RFC.
+             */
+
+            if (!Adapter_output(self, "", 0))
+                done = 1;
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
-        if (self->sequence->ob_type == &Stream_Type) {
-            PyObject *filelike = NULL;
-            PyObject *method = NULL;
-            PyObject *object = NULL;
+            if (!done) {
+                PyObject *filelike = NULL;
+                PyObject *method = NULL;
+                PyObject *object = NULL;
 
-            filelike = ((StreamObject *)self->sequence)->filelike;
-            method = PyObject_GetAttrString(filelike, "fileno");
-            if (method) {
-                object = PyEval_CallObject(method, NULL);
-                if (object && PyInt_Check(object)) {
-                    apr_finfo_t finfo;
-                    apr_off_t offset = 0;
+                /*
+                 * Now work out if file wrapper is associated with a
+                 * file like object with an associated file descriptor.
+                 * If it does then we can optimise how the contents
+                 * of the file is sent out. If no such associated
+                 * file descriptor then fall through and process it
+                 * like any other iterable value.
+                 */
 
-                    pipe = dup(PyInt_AsLong(object));
-                    apr_os_pipe_put_ex(&tempfile, &pipe, 0, self->r->pool);
+                filelike = ((StreamObject *)self->sequence)->filelike;
+                method = PyObject_GetAttrString(filelike, "fileno");
 
-                    if (apr_file_info_get(&finfo, APR_FINFO_SIZE,
-                                          tempfile) == APR_SUCCESS) {
-                        if (apr_file_seek(tempfile, APR_CUR,
+                if (method) {
+                    object = PyEval_CallObject(method, NULL);
+                    if (object && PyInt_Check(object)) {
+                        apr_finfo_t finfo;
+                        apr_off_t offset = 0;
+                        int fd = 0;
+
+                        fd = dup(PyInt_AsLong(object));
+                        apr_os_pipe_put_ex(&tmpfile, &fd, 0, self->r->pool);
+
+                        /*
+                         * Need to now determine whether we have a file
+                         * descriptor or not. Other options are a socket
+                         * descriptor or a pipe. Do this by attempting
+                         * to work out the current offset into the file
+                         * as we need this anyway.
+                         */
+
+                        if (apr_file_seek(tmpfile, APR_CUR,
                                           &offset) == APR_SUCCESS) {
-                            /* Flush headers and then send file contents. */
+                            /*
+			     * Have a file descriptor. If this is the
+			     * case and content length wasn't defined
+			     * then try to determine the amount of data
+			     * which is available to send and set the
+			     * content length response header. Either
+			     * way, if can work out length then send
+			     * data otherwise fall through and treat it
+			     * as normal iterable.
+                             */
 
-                            if (Adapter_output(self, "", 0)) {
-                                if (Adapter_stream(self, tempfile, offset,
-                                                   finfo.size - offset))
+                            apr_off_t length = 0;
+
+                            if (!self->content_length_set) {
+                                if (apr_file_info_get(&finfo, APR_FINFO_SIZE,
+                                                      tmpfile) == APR_SUCCESS) {
+                                    length = finfo.size - offset;
+                                    ap_set_content_length(self->r, length);
+
+                                    if (Adapter_output_file(self, tmpfile,
+                                                            offset, length)) {
+                                        result = OK;
+                                    }
+
+                                    done = 1;
+                                }
+                            }
+                            else {
+                                length = self->r->clength;
+
+                                if (Adapter_output_file(self, tmpfile,
+                                                        offset, length)) {
                                     result = OK;
+                                }
+
+                                done = 1;
                             }
                         }
-                        else
-                            pipe = -1;
-                    }
-                    else
-                        pipe = -1;
-                }
-                Py_XDECREF(object);
-                Py_DECREF(method);
-            }
-        }
-#endif
+                        else {
+                            /*
+                             * Must have a socket or pipe. If this is
+                             * the case and content length wasn't defined
+                             * then can use a pipe bucket. If there was
+                             * a length, must revert back to treating
+                             * it as an iterable as pipe buckets don't
+                             * support concept of how much data to send.
+                             */
 
-        if (pipe == -1) {
+                            if (!self->content_length_set) {
+                                if (Adapter_output_pipe(self, tmpfile))
+                                    result = OK;
+
+                                done = 1;
+                            }
+                        }
+                    }
+                    Py_XDECREF(object);
+                    Py_DECREF(method);
+                }
+            }
+#endif
+        }
+
+        if (!done) {
             iterator = PyObject_GetIter(self->sequence);
 
             if (iterator != NULL) {
@@ -2850,14 +3003,33 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         self->sequence = NULL;
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
-        if (tempfile)
-            apr_file_close(tempfile);
+        if (tmpfile)
+            apr_file_close(tmpfile);
 #endif
     }
 
     Py_DECREF(args);
     Py_DECREF(start);
     Py_DECREF(vars);
+
+    /*
+     * Log warning if more response content generated than was
+     * indicated, or less if there was no errors generated by
+     * the application.
+     */
+
+    if (self->content_length_set && ((!PyErr_Occurred() &&
+        self->output_length != self->content_length) ||
+        (self->output_length > self->content_length))) {
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_WARNING(0), self->r,
+                      "mod_wsgi (pid=%d): Content length mismatch, "
+                      "expected %s, response generated %s: %s", getpid(),
+                      apr_off_t_toa(self->r->pool, self->content_length),
+                      apr_off_t_toa(self->r->pool, self->output_length),
+                      self->r->filename);
+    }
+
+    /* Log details of any final Python exceptions. */
 
     if (PyErr_Occurred())
         wsgi_log_python_error(self->r, self->log, self->r->filename);
@@ -8847,7 +9019,7 @@ static int wsgi_execute_remote(request_rec *r)
     apr_interval_time_t timeout;
     int seen_eos;
     int child_stopped_reading;
-    apr_file_t *tempsock;
+    apr_file_t *tmpsock;
     apr_bucket_brigade *bbout;
     apr_bucket_brigade *bbin;
     apr_bucket *b;
@@ -8967,13 +9139,13 @@ static int wsgi_execute_remote(request_rec *r)
      * level to close socket.
      */
 
-    apr_os_pipe_put_ex(&tempsock, &daemon->fd, 1, r->pool);
+    apr_os_pipe_put_ex(&tmpsock, &daemon->fd, 1, r->pool);
     apr_pool_cleanup_kill(r->pool, daemon, wsgi_close_socket);
 
     /* Setup bucket brigade for reading response from daemon. */
 
     bbin = apr_brigade_create(r->pool, r->connection->bucket_alloc);
-    b = apr_bucket_pipe_create(tempsock, r->connection->bucket_alloc);
+    b = apr_bucket_pipe_create(tmpsock, r->connection->bucket_alloc);
     APR_BRIGADE_INSERT_TAIL(bbin, b);
     b = apr_bucket_eos_create(r->connection->bucket_alloc);
     APR_BRIGADE_INSERT_TAIL(bbin, b);
@@ -9021,7 +9193,7 @@ static int wsgi_execute_remote(request_rec *r)
 
             /* Need to close previous socket connection first. */
 
-            apr_file_close(tempsock);
+            apr_file_close(tmpsock);
 
             /* Has maximum number of attempts been reached. */
 
@@ -9054,13 +9226,13 @@ static int wsgi_execute_remote(request_rec *r)
                 return HTTP_INTERNAL_SERVER_ERROR;
             }
 
-            apr_os_pipe_put_ex(&tempsock, &daemon->fd, 1, r->pool);
+            apr_os_pipe_put_ex(&tmpsock, &daemon->fd, 1, r->pool);
             apr_pool_cleanup_kill(r->pool, daemon, wsgi_close_socket);
 
             apr_brigade_destroy(bbin);
 
             bbin = apr_brigade_create(r->pool, r->connection->bucket_alloc);
-            b = apr_bucket_pipe_create(tempsock, r->connection->bucket_alloc);
+            b = apr_bucket_pipe_create(tmpsock, r->connection->bucket_alloc);
             APR_BRIGADE_INSERT_TAIL(bbin, b);
             b = apr_bucket_eos_create(r->connection->bucket_alloc);
             APR_BRIGADE_INSERT_TAIL(bbin, b);
@@ -9074,8 +9246,8 @@ static int wsgi_execute_remote(request_rec *r)
 
     bbout = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 
-    apr_file_pipe_timeout_get(tempsock, &timeout);
-    apr_file_pipe_timeout_set(tempsock, r->server->timeout);
+    apr_file_pipe_timeout_get(tmpsock, &timeout);
+    apr_file_pipe_timeout_set(tmpsock, r->server->timeout);
 
     do {
         apr_bucket *bucket;
@@ -9120,7 +9292,7 @@ static int wsgi_execute_remote(request_rec *r)
              * much time elapses with no progress or an error
              * occurs.
              */
-            rv = apr_file_write_full(tempsock, data, len, NULL);
+            rv = apr_file_write_full(tmpsock, data, len, NULL);
 
             if (rv != APR_SUCCESS) {
                 /* Daemon stopped reading, discard remainder. */
@@ -9131,7 +9303,7 @@ static int wsgi_execute_remote(request_rec *r)
     }
     while (!seen_eos);
 
-    apr_file_pipe_timeout_set(tempsock, timeout);
+    apr_file_pipe_timeout_set(tmpsock, timeout);
 
     /*
      * Close socket for writing so that daemon detects end of
