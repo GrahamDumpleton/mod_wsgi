@@ -73,6 +73,7 @@ typedef unsigned long apr_off_t;
 #define apr_pstrdup ap_pstrdup
 #define apr_pstrcat ap_pstrcat
 #define apr_pcalloc ap_pcalloc
+#define apr_palloc ap_palloc
 typedef time_t apr_time_t;
 #include "http_config.h"
 typedef int apr_lockmech_e;
