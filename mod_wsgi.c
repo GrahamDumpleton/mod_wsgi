@@ -2581,6 +2581,11 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
 }
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
+
+/* Split buckets at 1GB when sending large files. */
+
+#define MAX_BUCKET_SIZE (0x40000000)
+
 static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
                                apr_off_t offset, apr_size_t len)
 {
@@ -2598,8 +2603,31 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
 
     bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 
-    b = apr_bucket_file_create(tmpfile, offset, len, r->pool,
-                               r->connection->bucket_alloc);
+    if (sizeof(apr_off_t) == sizeof(apr_size_t) || len < MAX_BUCKET_SIZE) {
+        /* Can use a single bucket to send file. */
+
+        b = apr_bucket_file_create(tmpfile, offset, len, r->pool,
+                                   r->connection->bucket_alloc);
+    }
+    else {
+        /* Need to create multiple buckets to send file. */
+
+        b = apr_bucket_file_create(tmpfile, offset, MAX_BUCKET_SIZE, r->pool,
+                                   r->connection->bucket_alloc);
+
+        while (len > MAX_BUCKET_SIZE) {
+            apr_bucket *cb;
+            apr_bucket_copy(b, &cb);
+            APR_BRIGADE_INSERT_TAIL(bb, cb);
+            b->start += MAX_BUCKET_SIZE;
+            len -= MAX_BUCKET_SIZE;
+        }
+
+        /* Resize just the last bucket */
+
+        b->length = (apr_size_t)len;
+    }
+
     APR_BRIGADE_INSERT_TAIL(bb, b);
 
     b = apr_bucket_eos_create(r->connection->bucket_alloc);
@@ -2668,6 +2696,7 @@ static int Adapter_output_pipe(AdapterObject *self, apr_file_t* tmpfile)
 
     return 1;
 }
+
 #endif
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
