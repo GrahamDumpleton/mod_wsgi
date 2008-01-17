@@ -330,7 +330,6 @@ typedef struct {
 
     apr_array_header_t *import_list;
     WSGIScriptFile *dispatch_script;
-    const char *handler_script;
 
     int apache_extensions;
     int pass_authorization;
@@ -397,7 +396,6 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 
     object->import_list = NULL;
     object->dispatch_script = NULL;
-    object->handler_script = NULL;
 
     object->apache_extensions = -1;
     object->pass_authorization = -1;
@@ -467,11 +465,6 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->dispatch_script = parent->dispatch_script;
 
-    if (child->handler_script)
-        config->handler_script = child->handler_script;
-    else
-        config->handler_script = parent->handler_script;
-
     if (child->apache_extensions != -1)
         config->apache_extensions = child->apache_extensions;
     else
@@ -510,7 +503,6 @@ typedef struct {
     const char *callable_object;
 
     WSGIScriptFile *dispatch_script;
-    const char *handler_script;
 
     int apache_extensions;
     int pass_authorization;
@@ -538,7 +530,6 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->callable_object = NULL;
 
     object->dispatch_script = NULL;
-    object->handler_script = NULL;
 
     object->apache_extensions = -1;
     object->pass_authorization = -1;
@@ -600,11 +591,6 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
         config->dispatch_script = child->dispatch_script;
     else
         config->dispatch_script = parent->dispatch_script;
-
-    if (child->handler_script)
-        config->handler_script = child->handler_script;
-    else
-        config->handler_script = parent->handler_script;
 
     if (child->apache_extensions != -1)
         config->apache_extensions = child->apache_extensions;
@@ -669,7 +655,6 @@ typedef struct {
     const char *callable_object;
 
     WSGIScriptFile *dispatch_script;
-    const char *handler_script;
 
     int apache_extensions;
     int pass_authorization;
@@ -933,53 +918,6 @@ static const char *wsgi_callable_object(request_rec *r, const char *s)
     return "application";
 }
 
-static const char *wsgi_handler_script(request_rec *r, const char *s)
-{
-    const char *name = NULL;
-    const char *value = NULL;
-
-    if (!s)
-        return "";
-
-    if (*s != '%')
-        return s;
-
-    name = s + 1;
-
-    if (*name) {
-        if (!strcmp(name, "{RESOURCE}"))
-            return "";
-
-        if (strstr(name, "{ENV:") == name) {
-            int len = 0;
-
-            name = name + 5;
-            len = strlen(name);
-
-            if (len && name[len-1] == '}') {
-                name = apr_pstrndup(r->pool, name, len-1);
-
-                value = apr_table_get(r->notes, name);
-
-                if (!value)
-                    value = apr_table_get(r->subprocess_env, name);
-
-                if (!value)
-                    value = getenv(name);
-
-                if (value) {
-                    if (*value == '%' && strstr(value, "%{ENV:") != value)
-                        return wsgi_handler_script(r, value);
-
-                    return value;
-                }
-            }
-        }
-    }
-
-    return s;
-}
-
 static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
@@ -1024,13 +962,6 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     if (!config->dispatch_script)
         config->dispatch_script = sconfig->dispatch_script;
-
-    config->handler_script = dconfig->handler_script;
-
-    if (!config->handler_script)
-        config->handler_script = sconfig->handler_script;
-
-    config->handler_script = wsgi_handler_script(r, config->handler_script);
 
     config->apache_extensions = dconfig->apache_extensions;
 
@@ -4820,10 +4751,7 @@ static int wsgi_execute_script(request_rec *r)
 
     /* Calculate the Python module name to be used for script. */
 
-    if (config->handler_script && *config->handler_script)
-        script = config->handler_script;
-    else
-        script = r->filename;
+    script = r->filename;
 
     name = wsgi_module_name(r->pool, script);
 
@@ -5755,24 +5683,6 @@ static const char *wsgi_set_dispatch_script(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_handler_script(cmd_parms *cmd, void *mconfig,
-                                           const char *n)
-{
-    if (cmd->path) {
-        WSGIDirectoryConfig *dconfig = NULL;
-        dconfig = (WSGIDirectoryConfig *)mconfig;
-        dconfig->handler_script = n;
-    }
-    else {
-        WSGIServerConfig *sconfig = NULL;
-        sconfig = ap_get_module_config(cmd->server->module_config,
-                                       &wsgi_module);
-        sconfig->handler_script = n;
-    }
-
-    return NULL;
-}
-
 static const char *wsgi_set_apache_extensions(cmd_parms *cmd, void *mconfig,
                                               const char *f)
 {
@@ -6299,9 +6209,6 @@ static void wsgi_build_environment(request_rec *r)
     apr_table_setn(r->subprocess_env, "mod_wsgi.callable_object",
                    config->callable_object);
 
-    apr_table_setn(r->subprocess_env, "mod_wsgi.handler_script",
-                   config->handler_script);
-
     apr_table_setn(r->subprocess_env, "mod_wsgi.script_reloading",
                    apr_psprintf(r->pool, "%d", config->script_reloading));
     apr_table_setn(r->subprocess_env, "mod_wsgi.reload_mechanism",
@@ -6745,55 +6652,6 @@ static int wsgi_execute_dispatch(request_rec *r)
                 object = NULL;
             }
 
-            /* Now check handler_script(). */
-
-            if (status == OK)
-                object = PyDict_GetItemString(module_dict, "handler_script");
-
-            if (object) {
-                PyObject *result = NULL;
-
-                if (adapter) {
-                    Py_INCREF(object);
-                    args = Py_BuildValue("(O)", vars);
-                    result = PyEval_CallObject(object, args);
-                    Py_DECREF(args);
-                    Py_DECREF(object);
-
-                    if (result) {
-                        if (result != Py_None) {
-                            if (PyString_Check(result)) {
-                                const char *s;
-
-                                s = PyString_AsString(result);
-                                s = apr_pstrdup(r->pool, s);
-                                s = wsgi_callable_object(r, s);
-                                config->handler_script = s;
-
-                                apr_table_setn(r->subprocess_env,
-                                               "mod_wsgi.handler_script",
-                                               config->handler_script);
-                            }
-                            else {
-                                PyErr_SetString(PyExc_TypeError, "Handler "
-                                                "script must be a string "
-                                                "object");
-
-                                status = HTTP_INTERNAL_SERVER_ERROR;
-                            }
-                        }
-
-                        Py_DECREF(result);
-                    }
-                    else
-                        status = HTTP_INTERNAL_SERVER_ERROR;
-                }
-                else
-                    Py_DECREF(object);
-
-                object = NULL;
-            }
-
             /*
              * Wipe out references to Apache request object
              * held by Python objects, so can detect when an
@@ -7108,10 +6966,6 @@ static const command_rec wsgi_commands[] =
         RSRC_CONF, RAW_ARGS, "Location of WSGI import script." },
     { "WSGIDispatchScript", wsgi_set_dispatch_script, NULL,
         ACCESS_CONF|RSRC_CONF, RAW_ARGS, "Location of WSGI dispatch script." },
-#if 0
-    { "WSGIHandlerScript", wsgi_set_handler_script, NULL,
-        ACCESS_CONF|RSRC_CONF, TAKE1, "Location of WSGI handler script." },
-#endif
 
     { "WSGIApacheExtensions", wsgi_set_apache_extensions, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Enable/Disable Apache extensions." },
@@ -9101,9 +8955,8 @@ static int wsgi_execute_remote(request_rec *r)
      * be trusted.
      */
 
-    hash = apr_psprintf(r->pool, "%ld|%s|%s|%s", group->random,
-                        group->socket, r->filename,
-                        config->handler_script);
+    hash = apr_psprintf(r->pool, "%ld|%s|%s", group->random,
+                        group->socket, r->filename);
     hash = ap_md5(r->pool, (const unsigned char *)hash);
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.magic", hash);
@@ -9512,7 +9365,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     char *key;
     apr_sockaddr_t *addr;
 
-    char const *script;
     char const *magic;
     char const *hash;
 
@@ -9693,12 +9545,9 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    script = apr_table_get(r->subprocess_env, "mod_wsgi.handler_script");
-
-    hash = apr_psprintf(r->pool, "%ld|%s|%s|%s",
+    hash = apr_psprintf(r->pool, "%ld|%s|%s",
                         wsgi_daemon_process->group->random,
-                        wsgi_daemon_process->group->socket, r->filename,
-                        script);
+                        wsgi_daemon_process->group->socket, r->filename);
     hash = ap_md5(r->pool, (const unsigned char *)hash);
 
     if (strcmp(magic, hash) != 0) {
@@ -9766,9 +9615,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
                                               "mod_wsgi.application_group");
     config->callable_object = apr_table_get(r->subprocess_env,
                                             "mod_wsgi.callable_object");
-
-    config->handler_script = apr_table_get(r->subprocess_env,
-                                           "mod_wsgi.handler_script");
 
     config->script_reloading = atoi(apr_table_get(r->subprocess_env,
                                                   "mod_wsgi.script_reloading"));
@@ -11496,10 +11342,6 @@ static const command_rec wsgi_commands[] =
         NULL, RSRC_CONF, "Location of WSGI import script."),
     AP_INIT_RAW_ARGS("WSGIDispatchScript", wsgi_set_dispatch_script,
         NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI dispatch script."),
-#if 0
-    AP_INIT_TAKE1("WSGIHandlerScript", wsgi_set_handler_script,
-        NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI handler script."),
-#endif
 
     AP_INIT_TAKE1("WSGIApacheExtensions", wsgi_set_apache_extensions,
          NULL, ACCESS_CONF|RSRC_CONF, "Enable/Disable Apache extensions."),
