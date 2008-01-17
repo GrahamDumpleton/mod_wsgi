@@ -8339,6 +8339,10 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
     ap_listen_rec *lr;
 
+    WSGIProcessGroup *entries = NULL;
+    WSGIProcessGroup *entry = NULL;
+    int i = 0;
+
     if ((status = apr_proc_fork(&daemon->process, p)) < 0) {
         ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
                      "mod_wsgi: Couldn't spawn process '%s'.",
@@ -8436,6 +8440,22 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          */
 
         ap_close_listeners();
+
+        /*
+         * Wipe out random value used in magic token so that not
+         * possible for user code running in daemon process to
+         * discover this value for other daemon process groups.
+         * In other words, wipe out all but our own.
+         */
+
+        entries = (WSGIProcessGroup *)wsgi_daemon_list->elts;
+
+        for (i = 0; i < wsgi_daemon_list->nelts; ++i) {
+            entry = &entries[i];
+
+            if (entry != daemon->group)
+                entry->random = 0;
+        }
 
         /*
          * Register signal handler to receive shutdown signal
