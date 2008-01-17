@@ -8885,6 +8885,7 @@ static int wsgi_execute_remote(request_rec *r)
     WSGIDaemonSocket *daemon = NULL;
     WSGIProcessGroup *group = NULL;
 
+    char *key = NULL;
     char const *hash = NULL;
 
     int status;
@@ -8972,12 +8973,15 @@ static int wsgi_execute_remote(request_rec *r)
     /*
      * Add magic marker into request environment so that daemon
      * process can verify that request is from a sender that can
-     * be trusted.
+     * be trusted. Wipe out original key to make it a bit harder
+     * for rogue code in Apache child processes to trawl through
+     * memory looking for unhashed string.
      */
 
-    hash = apr_psprintf(r->pool, "%ld|%s|%s", group->random,
-                        group->socket, r->filename);
-    hash = ap_md5(r->pool, (const unsigned char *)hash);
+    key = apr_psprintf(r->pool, "%ld|%s|%s", group->random,
+                       group->socket, r->filename);
+    hash = ap_md5(r->pool, (const unsigned char *)key);
+    memset(key, '\0', strlen(key));
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.magic", hash);
 
@@ -9565,10 +9569,11 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    hash = apr_psprintf(r->pool, "%ld|%s|%s",
-                        wsgi_daemon_process->group->random,
-                        wsgi_daemon_process->group->socket, r->filename);
-    hash = ap_md5(r->pool, (const unsigned char *)hash);
+    key = apr_psprintf(r->pool, "%ld|%s|%s",
+                       wsgi_daemon_process->group->random,
+                       wsgi_daemon_process->group->socket, r->filename);
+    hash = ap_md5(r->pool, (const unsigned char *)key);
+    memset(key, '\0', strlen(key));
 
     if (strcmp(magic, hash) != 0) {
         ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(rv), wsgi_server,
