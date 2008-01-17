@@ -311,7 +311,6 @@ typedef struct {
     apr_lockmech_e lock_mechanism;
 
     int python_optimize;
-    const char *python_executable;
     const char *python_home;
     const char *python_path;
     const char *python_eggs;
@@ -375,7 +374,6 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 #endif
 
     object->python_optimize = -1;
-    object->python_executable = NULL;
     object->python_home = NULL;
     object->python_path = NULL;
     object->python_eggs = NULL;
@@ -4394,9 +4392,6 @@ static void wsgi_python_init(apr_pool_t *p)
         else
             Py_OptimizeFlag = 0;
 
-        if (wsgi_server_config->python_executable)
-            Py_SetProgramName((char *)wsgi_server_config->python_executable);
-
         if (wsgi_server_config->python_home)
             Py_SetPythonHome((char *)wsgi_server_config->python_home);
 
@@ -5394,22 +5389,6 @@ static const char *wsgi_set_python_optimize(cmd_parms *cmd, void *mconfig,
 
     sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
     sconfig->python_optimize = atoi(f);
-
-    return NULL;
-}
-
-static const char *wsgi_set_python_executable(cmd_parms *cmd, void *mconfig,
-                                              const char *f)
-{
-    const char *error = NULL;
-    WSGIServerConfig *sconfig = NULL;
-
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
-
-    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
-    sconfig->python_executable = f;
 
     return NULL;
 }
@@ -7101,12 +7080,6 @@ static const command_rec wsgi_commands[] =
 
     { "WSGIPythonOptimize", wsgi_set_python_optimize, NULL,
         RSRC_CONF, TAKE1, "Set level of Python compiler optimisations." },
-#if 0
-#ifndef WIN32
-    { "WSGIPythonExecutable", wsgi_set_python_executable, NULL,
-        RSRC_CONF, TAKE1, "Python executable absolute path name." },
-#endif
-#endif
     { "WSGIPythonHome", wsgi_set_python_home, NULL,
         RSRC_CONF, TAKE1, "Python prefix/exec_prefix absolute path names." },
     { "WSGIPythonPath", wsgi_set_python_path, NULL,
@@ -11488,12 +11461,6 @@ static const command_rec wsgi_commands[] =
 
     AP_INIT_TAKE1("WSGIPythonOptimize", wsgi_set_python_optimize,
         NULL, RSRC_CONF, "Set level of Python compiler optimisations."),
-#if 0
-#ifndef WIN32
-    AP_INIT_TAKE1("WSGIPythonExecutable", wsgi_set_python_executable,
-        NULL, RSRC_CONF, "Python executable absolute path name."),
-#endif
-#endif
     AP_INIT_TAKE1("WSGIPythonHome", wsgi_set_python_home,
         NULL, RSRC_CONF, "Python prefix/exec_prefix absolute path names."),
     AP_INIT_TAKE1("WSGIPythonPath", wsgi_set_python_path,
