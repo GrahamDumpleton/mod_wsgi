@@ -6327,35 +6327,43 @@ static apr_status_t wsgi_socket_send(int fd, const void *buf, size_t buf_size)
     return APR_SUCCESS;
 }
 
-static apr_status_t wsgi_send_string(int fd, const char *s)
+static apr_status_t wsgi_send_strings(apr_pool_t *p, int fd, const char **s)
 {
     apr_status_t rv;
-    int l;
 
-    l = strlen(s);
+    apr_size_t total = 0;
 
-    if ((rv = wsgi_socket_send(fd, &l, sizeof(l))) != APR_SUCCESS)
-        return rv;
+    apr_size_t n;
+    apr_size_t i;
+    apr_size_t l;
 
-    return wsgi_socket_send(fd, s, l);
-}
+    char *buffer;
+    char *offset;
 
-static apr_status_t wsgi_send_strings(int fd, const char **s)
-{
-    apr_status_t rv;
-    int n;
-    int i;
+    total += sizeof(n);
 
     for (n = 0; s[n]; n++)
-        continue;
+        total += (strlen(s[n]) + 1);
 
-    if ((rv = wsgi_socket_send(fd, &n, sizeof(n))) != APR_SUCCESS)
-        return rv;
+    buffer = apr_palloc(p, total + sizeof(total));
+    offset = buffer;
+
+    memcpy(offset, &total, sizeof(total));
+    offset += sizeof(total);
+
+    memcpy(offset, &n, sizeof(n));
+    offset += sizeof(n);
 
     for (i = 0; i < n; i++) {
-        if ((rv = wsgi_send_string(fd, s[i])) != APR_SUCCESS)
-            return rv;
+        l = (strlen(s[i]) + 1);
+        memcpy(offset, s[i], l);
+        offset += l;
     }
+
+    total += sizeof(total);
+
+    if ((rv = wsgi_socket_send(fd, buffer, total)) != APR_SUCCESS)
+        return rv;
 
     return APR_SUCCESS;
 }
@@ -6389,7 +6397,7 @@ static apr_status_t wsgi_send_request(request_rec *r,
 
     vars[j] = NULL;
 
-    rv = wsgi_send_strings(daemon->fd, (const char **)vars);
+    rv = wsgi_send_strings(r->pool, daemon->fd, (const char **)vars);
 
     if (rv != APR_SUCCESS)
         return rv;
@@ -6655,38 +6663,38 @@ static apr_status_t wsgi_socket_read(apr_socket_t *sock, void *vbuf,
     return APR_SUCCESS;
 }
 
-static apr_status_t wsgi_read_string(apr_socket_t *sock, char **s,
-                                     apr_pool_t *p)
-{
-    apr_status_t rv;
-    int l;
-
-    if ((rv = wsgi_socket_read(sock, &l, sizeof(l))) != APR_SUCCESS)
-        return rv;
-
-    *s = apr_pcalloc(p, l+1);
-
-    if (!l)
-        return APR_SUCCESS;
-
-    return wsgi_socket_read(sock, *s, l);
-}
-
 static apr_status_t wsgi_read_strings(apr_socket_t *sock, char ***s,
                                       apr_pool_t *p)
 {
     apr_status_t rv;
-    int n;
-    int i;
 
-    if ((rv = wsgi_socket_read(sock, &n, sizeof(n))) != APR_SUCCESS)
+    apr_size_t total;
+
+    apr_size_t n;
+    apr_size_t i;
+    apr_size_t l;
+
+    char *buffer;
+    char *offset;
+
+    if ((rv = wsgi_socket_read(sock, &total, sizeof(total))) != APR_SUCCESS)
         return rv;
+
+    buffer = apr_palloc(p, total);
+    offset = buffer;
+
+    if ((rv = wsgi_socket_read(sock, buffer, total)) != APR_SUCCESS)
+        return rv;
+
+    memcpy(&n, offset, sizeof(n));
+    offset += sizeof(n);
 
     *s = apr_pcalloc(p, (n+1)*sizeof(**s));
 
     for (i = 0; i < n; i++) {
-        if ((rv = wsgi_read_string(sock, &(*s)[i], p)) != APR_SUCCESS)
-            return rv;
+        l = strlen(offset) + 1;
+        (*s)[i] = offset;
+        offset += l;
     }
 
     return APR_SUCCESS;
