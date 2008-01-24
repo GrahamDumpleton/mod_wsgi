@@ -1,7 +1,7 @@
 /* vim: set sw=4 expandtab : */
 
 /*
- * Copyright 2007 GRAHAM DUMPLETON
+ * Copyright 2007-2008 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
