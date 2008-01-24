@@ -1,6 +1,6 @@
 dnl  vim: set sw=4 expandtab :
 dnl
-dnl  Copyright 2007 GRAHAM DUMPLETON
+dnl  Copyright 2007-2008 GRAHAM DUMPLETON
 dnl 
 dnl  Licensed under the Apache License, Version 2.0 (the "License");
 dnl  you may not use this file except in compliance with the License.
@@ -29,6 +29,11 @@ fi
 
 AC_SUBST(APXS)
 
+AC_MSG_CHECKING(Apache version)
+HTTPD="`${APXS} -q SBINDIR`/`${APXS} -q TARGET`"
+HTTPD_VERSION=`$HTTPD -v | awk '/version/ {print $3}' | awk -F/ '{print $2}'`
+AC_MSG_RESULT($HTTPD_VERSION)
+
 AC_ARG_WITH(python, AC_HELP_STRING([--with-python=NAME],
             [name of the python executable [[python]]]),
             [PYTHON="$with_python"])
@@ -56,6 +61,8 @@ AC_SUBST(CPPFLAGS)
 
 PYTHONFRAMEWORKDIR=`${PYTHON} -c 'from distutils import sysconfig; \
     print sysconfig.get_config_var("PYTHONFRAMEWORKDIR")'`
+PYTHONFRAMEWORKPREFIX=`${PYTHON} -c 'from distutils import sysconfig; \
+    print sysconfig.get_config_var("PYTHONFRAMEWORKPREFIX")'`
 PYTHONFRAMEWORK=`${PYTHON} -c 'from distutils import sysconfig; \
     print sysconfig.get_config_var("PYTHONFRAMEWORK")'`
 
@@ -70,7 +77,7 @@ if test "${PYTHONFRAMEWORKDIR}" = "no-framework"; then
 
     LDLIBS="${LDLIBS1} ${LDLIBS2}"
 else
-    LDFLAGS1="-framework ${PYTHONFRAMEWORK}"
+    LDFLAGS1="-Wl,-F${PYTHONFRAMEWORKPREFIX} -framework ${PYTHONFRAMEWORK}"
 
     VERSION="${PYTHON_VERSION}"
     STRING="${PYTHONFRAMEWORKDIR}/Versions/${VERSION}/${PYTHONFRAMEWORK}"
@@ -84,13 +91,20 @@ else
         print sysconfig.get_config_var("LIBS")'`
 fi
 
+CFLAGS=""
+if test -x /usr/bin/lipo; then
+    LDFLAGS3=""
+    ARCHITECTURES=`/usr/bin/lipo -info $HTTPD | sed -e 's/.*://'`
+    for ARCH in $ARCHITECTURES; do
+        CFLAGS="${CFLAGS} -Wc,'-arch ${ARCH}'" 
+        LDFLAGS3="${LDFLAGS3} -arch ${ARCH}" 
+    done
+    LDFLAGS="${LDFLAGS3} ${LDFLAGS}"
+fi
+
+AC_SUBST(CFLAGS)
 AC_SUBST(LDFLAGS)
 AC_SUBST(LDLIBS)
-
-AC_MSG_CHECKING(Apache version)
-HTTPD="`${APXS} -q SBINDIR`/`${APXS} -q TARGET`"
-HTTPD_VERSION=`$HTTPD -v | awk '/version/ {print $3}' | awk -F/ '{print $2}'`
-AC_MSG_RESULT($HTTPD_VERSION)
 
 LIBEXECDIR="`${APXS} -q LIBEXECDIR`"
 AC_SUBST(LIBEXECDIR)
