@@ -8809,44 +8809,18 @@ static apr_status_t wsgi_socket_send(int fd, const void *buf, size_t buf_size)
     return APR_SUCCESS;
 }
 
-static apr_status_t wsgi_send_string(int fd, const char *s)
-{
-    apr_status_t rv;
-    int l;
-
-    l = strlen(s);
-
-    if ((rv = wsgi_socket_send(fd, &l, sizeof(l))) != APR_SUCCESS)
-        return rv;
-
-    return wsgi_socket_send(fd, s, l);
-}
-
 static apr_status_t wsgi_send_strings(apr_pool_t *p, int fd, const char **s)
 {
     apr_status_t rv;
 
-    int total = 0;
+    apr_size_t total = 0;
 
-    int n;
-    int i;
-    int l;
+    apr_size_t n;
+    apr_size_t i;
+    apr_size_t l;
 
     char *buffer;
     char *offset;
-
-#if 0
-    for (n = 0; s[n]; n++)
-        continue;
-
-    if ((rv = wsgi_socket_send(fd, &n, sizeof(n))) != APR_SUCCESS)
-        return rv;
-
-    for (i = 0; i < n; i++) {
-        if ((rv = wsgi_send_string(fd, s[i])) != APR_SUCCESS)
-            return rv;
-    }
-#endif
 
     total += sizeof(n);
 
@@ -9264,48 +9238,19 @@ static apr_status_t wsgi_socket_read(apr_socket_t *sock, void *vbuf,
     return APR_SUCCESS;
 }
 
-static apr_status_t wsgi_read_string(apr_socket_t *sock, char **s,
-                                     apr_pool_t *p)
-{
-    apr_status_t rv;
-    int l;
-
-    if ((rv = wsgi_socket_read(sock, &l, sizeof(l))) != APR_SUCCESS)
-        return rv;
-
-    *s = apr_pcalloc(p, l+1);
-
-    if (!l)
-        return APR_SUCCESS;
-
-    return wsgi_socket_read(sock, *s, l);
-}
-
 static apr_status_t wsgi_read_strings(apr_socket_t *sock, char ***s,
                                       apr_pool_t *p)
 {
     apr_status_t rv;
 
-    int total;
+    apr_size_t total;
 
-    int n;
-    int i;
-    int l;
+    apr_size_t n;
+    apr_size_t i;
+    apr_size_t l;
 
     char *buffer;
     char *offset;
-
-#if 0
-    if ((rv = wsgi_socket_read(sock, &n, sizeof(n))) != APR_SUCCESS)
-        return rv;
-
-    *s = apr_pcalloc(p, (n+1)*sizeof(**s));
-
-    for (i = 0; i < n; i++) {
-        if ((rv = wsgi_read_string(sock, &(*s)[i], p)) != APR_SUCCESS)
-            return rv;
-    }
-#endif
 
     if ((rv = wsgi_socket_read(sock, &total, sizeof(total))) != APR_SUCCESS)
         return rv;
