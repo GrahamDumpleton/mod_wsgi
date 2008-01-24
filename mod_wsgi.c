@@ -9079,7 +9079,7 @@ static int wsgi_execute_remote(request_rec *r)
          * done, then keep trying to reconnect. Cap the number
          * of retries to at most about 2 times the number of
          * daemon processes in the process group. If still being
-         * told things are being restarted, the we will error
+         * told things are being restarted, then we will error
          * indicating service is unavailable.
          */
 
