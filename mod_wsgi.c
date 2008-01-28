@@ -6167,6 +6167,23 @@ static void wsgi_build_environment(request_rec *r)
     ap_add_cgi_vars(r);
     ap_add_common_vars(r);
 
+    /*
+     * Mutate a HEAD request into a GET request. This is
+     * required because WSGI specification doesn't lay out
+     * clearly how WSGI applications should treat a HEAD
+     * request. Generally authors of WSGI applications or
+     * frameworks take it that they do not need to return any
+     * content, but this screws up any Apache output filters
+     * which need to see all the response content in order to
+     * correctly set up response headers for a HEAD request such
+     * that they are the same as a GET request. Thus change a
+     * HEAD request into a GET request to ensure that request
+     * content is generated.
+     */
+
+    if (!strcmp(r->method, "HEAD"))
+        apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
+
     /* Determine whether connection uses HTTPS protocol. */
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
