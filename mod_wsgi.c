@@ -1433,6 +1433,7 @@ static void wsgi_log_python_error(request_rec *r, LogObject *log,
 typedef struct {
         PyObject_HEAD
         request_rec *r;
+        int headers;
         int init;
         int done;
         char *buffer;
@@ -1452,6 +1453,7 @@ static InputObject *newInputObject(request_rec *r)
         return NULL;
 
     self->r = r;
+    self->headers = 0;
     self->init = 0;
     self->done = 0;
 
@@ -1481,6 +1483,20 @@ static void Input_start(InputObject *self)
     int length = strlen(data);
 
     request_rec *r = self->r;
+
+    /* Only do this if in a daemon process. */
+
+    if (!wsgi_daemon_pool)
+        return;
+
+    /*
+     * Don't send status if response headers already sent. This
+     * means that if input not read by time that the response
+     * headers sent then request content is discarded.
+     */
+
+    if (self->headers)
+        return;
 
     filters = r->output_filters;
     while (filters && filters->frec->ftype != AP_FTYPE_NETWORK) {
@@ -2292,6 +2308,8 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
     r = self->r;
 
     if (self->headers) {
+        self->input->headers = 1;
+
         r->status = self->status;
         r->status_line = self->status_line;
 
