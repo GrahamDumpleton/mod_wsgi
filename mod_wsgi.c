@@ -1484,6 +1484,12 @@ static void Input_start(InputObject *self)
 
     request_rec *r = self->r;
 
+    /* XXX Disable request content handshaking for now. */
+
+    return;
+
+    /* XXX */
+
     /* Only do this if in a daemon process. */
 
     if (!wsgi_daemon_pool)
@@ -9223,8 +9229,15 @@ static int wsgi_execute_remote(request_rec *r)
          * headers.
          */
 
+        /* XXX Disable request content handshaking for now. */
+
+#if 0
         if ((status = ap_scan_script_header_err_brigade(r, bbin, NULL)))
             return HTTP_INTERNAL_SERVER_ERROR;
+#else
+        r->status_line = "0 Waiting";
+#endif
+        /* XXX */
 
         if (!strcmp(r->status_line, "0 Waiting")) {
             int seen_eos;
