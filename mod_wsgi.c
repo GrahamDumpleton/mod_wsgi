@@ -6159,10 +6159,11 @@ static void wsgi_build_environment(request_rec *r)
      */
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
-    if (r->header_only && r->output_filters->frec->ftype < AP_FTYPE_PROTOCOL)
+    if (r->method_number == M_GET && r->header_only &&
+        r->output_filters->frec->ftype < AP_FTYPE_PROTOCOL)
         apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
 #else
-    if (r->header_only)
+    if (r->method_number == M_GET && r->header_only)
         apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
 #endif
 
