@@ -1433,7 +1433,6 @@ static void wsgi_log_python_error(request_rec *r, LogObject *log,
 typedef struct {
         PyObject_HEAD
         request_rec *r;
-        int headers;
         int init;
         int done;
         char *buffer;
@@ -1453,7 +1452,6 @@ static InputObject *newInputObject(request_rec *r)
         return NULL;
 
     self->r = r;
-    self->headers = 0;
     self->init = 0;
     self->done = 0;
 
@@ -1471,62 +1469,6 @@ static void Input_dealloc(InputObject *self)
         free(self->buffer);
 
     PyObject_Del(self);
-}
-
-static void Input_start(InputObject *self)
-{
-    ap_filter_t *filters;
-    apr_bucket_brigade *bb;
-    apr_bucket *b;
-
-    const char *data = "Status: 0 Waiting\r\n\r\n";
-    int length = strlen(data);
-
-    request_rec *r = self->r;
-
-    /* XXX Disable request content handshaking for now. */
-
-    return;
-
-    /* XXX */
-
-    /* Only do this if in a daemon process. */
-
-    if (!wsgi_daemon_pool)
-        return;
-
-    /*
-     * Don't send status if response headers already sent. This
-     * means that if input not read by time that the response
-     * headers sent then request content is discarded.
-     */
-
-    if (self->headers)
-        return;
-
-    filters = r->output_filters;
-    while (filters && filters->frec->ftype != AP_FTYPE_NETWORK) {
-        filters = filters->next;
-    }
-
-    bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
-
-    b = apr_bucket_transient_create(data, length,
-                                    r->connection->bucket_alloc);
-    APR_BRIGADE_INSERT_TAIL(bb, b);
-
-    b = apr_bucket_flush_create(r->connection->bucket_alloc);
-    APR_BRIGADE_INSERT_TAIL(bb, b);
-
-    /*
-     * This should always work, so ignore any errors
-     * from passing the brigade to the network
-     * output filter. If there are are problems they
-     * will be picked up further down in processing
-     * anyway.
-     */
-
-    ap_pass_brigade(filters, bb);
 }
 
 static PyObject *Input_close(InputObject *self, PyObject *args)
@@ -1572,9 +1514,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 #endif
 
     if (!self->init) {
-        if (ap_should_client_block(self->r))
-            Input_start(self);
-        else
+        if (!ap_should_client_block(self->r))
             self->done = 1;
 
         self->init = 1;
@@ -1714,9 +1654,7 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
         return NULL;
 
     if (!self->init) {
-        if (ap_should_client_block(self->r))
-            Input_start(self);
-        else
+        if (!ap_should_client_block(self->r))
             self->done = 1;
 
         self->init = 1;
@@ -2314,8 +2252,6 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
     r = self->r;
 
     if (self->headers) {
-        self->input->headers = 1;
-
         r->status = self->status;
         r->status_line = self->status_line;
 
@@ -4889,7 +4825,7 @@ static int wsgi_execute_script(request_rec *r)
                 wsgi_release_interpreter(interp);
 
                 r->status = HTTP_INTERNAL_SERVER_ERROR;
-                r->status_line = "0 Restarting";
+                r->status_line = "0 Rejected";
 
                 wsgi_daemon_shutdown++;
                 kill(getpid(), SIGINT);
@@ -4942,7 +4878,7 @@ static int wsgi_execute_script(request_rec *r)
         apr_bucket_brigade *bb;
         apr_bucket *b;
 
-        const char *data = "Status: 0 Running\r\n\r\n";
+        const char *data = "Status: 0 Continue\r\n\r\n";
         int length = strlen(data);
 
         filters = r->output_filters;
@@ -8981,7 +8917,10 @@ static int wsgi_execute_remote(request_rec *r)
     apr_status_t rv;
 
     apr_interval_time_t timeout;
+    int seen_eos;
+    int child_stopped_reading;
     apr_file_t *tmpsock;
+    apr_bucket_brigade *bbout;
     apr_bucket_brigade *bbin;
     apr_bucket *b;
 
@@ -9137,13 +9076,7 @@ static int wsgi_execute_remote(request_rec *r)
 
         while (retries < maximum) {
 
-            /*
-             * Scan the CGI script like headers from daemon. In
-             * this case we are looking for indicating of
-             * whether the daemon process is being restarted or
-             * whether the application is running and has
-             * started processing the request.
-             */
+            /* Scan the CGI script like headers from daemon. */
 
             if ((status = ap_scan_script_header_err_brigade(r, bbin, NULL)))
                 return HTTP_INTERNAL_SERVER_ERROR;
@@ -9157,10 +9090,10 @@ static int wsgi_execute_remote(request_rec *r)
                 return HTTP_INTERNAL_SERVER_ERROR;
             }
 
-            if (!strcmp(r->status_line, "0 Running"))
+            if (!strcmp(r->status_line, "0 Continue"))
                 break;
 
-            if (strcmp(r->status_line, "0 Restarting")) {
+            if (strcmp(r->status_line, "0 Rejected")) {
                 ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                              "mod_wsgi (pid=%d): Unexpected status from "
                              "WSGI daemon process '%d'.", getpid(), r->status);
@@ -9217,101 +9150,69 @@ static int wsgi_execute_remote(request_rec *r)
 
     /* Transfer any request content which was provided. */
 
-    r->status = 0;
-    r->status_line = NULL;
+    seen_eos = 0;
+    child_stopped_reading = 0;
 
-    if (r->remaining > 0) {
-        /*
-         * Scan the CGI script like headers from daemon. In this
-         * case we are looking for indication that the WSGI
-         * application has tried to read the request content and
-         * thus is waiting for input, or a final set of response
-         * headers.
-         */
+    bbout = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 
-        /* XXX Disable request content handshaking for now. */
+    apr_file_pipe_timeout_get(tmpsock, &timeout);
+    apr_file_pipe_timeout_set(tmpsock, r->server->timeout);
 
-#if 0
-        if ((status = ap_scan_script_header_err_brigade(r, bbin, NULL)))
+    do {
+        apr_bucket *bucket;
+
+        rv = ap_get_brigade(r->input_filters, bbout, AP_MODE_READBYTES,
+                            APR_BLOCK_READ, HUGE_STRING_LEN);
+
+        if (rv != APR_SUCCESS) {
+            ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(rv), r,
+                         "mod_wsgi (pid=%d): Unable to get bucket brigade "
+                         "for request.", getpid());
             return HTTP_INTERNAL_SERVER_ERROR;
-#else
-        r->status_line = "0 Waiting";
-#endif
-        /* XXX */
-
-        if (!strcmp(r->status_line, "0 Waiting")) {
-            int seen_eos;
-            int child_stopped_reading;
-            apr_bucket_brigade *bbout;
-
-            r->status = 0;
-            r->status_line = NULL;
-
-            seen_eos = 0;
-            child_stopped_reading = 0;
-
-            bbout = apr_brigade_create(r->pool, r->connection->bucket_alloc);
-
-            apr_file_pipe_timeout_get(tmpsock, &timeout);
-            apr_file_pipe_timeout_set(tmpsock, r->server->timeout);
-
-            do {
-                apr_bucket *bucket;
-
-                rv = ap_get_brigade(r->input_filters, bbout, AP_MODE_READBYTES,
-                                    APR_BLOCK_READ, HUGE_STRING_LEN);
-
-                if (rv != APR_SUCCESS) {
-                    ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(rv), r,
-                                 "mod_wsgi (pid=%d): Unable to get bucket "
-                                 "brigade for request.", getpid());
-                    return HTTP_INTERNAL_SERVER_ERROR;
-                }
-
-                for (bucket = APR_BRIGADE_FIRST(bbout);
-                     bucket != APR_BRIGADE_SENTINEL(bbout);
-                     bucket = APR_BUCKET_NEXT(bucket))
-                {
-                    const char *data;
-                    apr_size_t len;
-
-                    if (APR_BUCKET_IS_EOS(bucket)) {
-                        seen_eos = 1;
-                        break;
-                    }
-
-                    /* We can't do much with this. */
-                    if (APR_BUCKET_IS_FLUSH(bucket)) {
-                        continue;
-                    }
-
-                    /* If the child stopped, we still must read to EOS. */
-                    if (child_stopped_reading) {
-                        continue;
-                    }
-
-                    /* Read block. */
-                    apr_bucket_read(bucket, &data, &len, APR_BLOCK_READ);
-
-                    /*
-                     * Keep writing data to the child until done or too
-                     * much time elapses with no progress or an error
-                     * occurs.
-                     */
-                    rv = apr_file_write_full(tmpsock, data, len, NULL);
-
-                    if (rv != APR_SUCCESS) {
-                        /* Daemon stopped reading, discard remainder. */
-                        child_stopped_reading = 1;
-                    }
-                }
-                apr_brigade_cleanup(bbout);
-            }
-            while (!seen_eos);
-
-            apr_file_pipe_timeout_set(tmpsock, timeout);
         }
+
+        for (bucket = APR_BRIGADE_FIRST(bbout);
+             bucket != APR_BRIGADE_SENTINEL(bbout);
+             bucket = APR_BUCKET_NEXT(bucket))
+        {
+            const char *data;
+            apr_size_t len;
+
+            if (APR_BUCKET_IS_EOS(bucket)) {
+                seen_eos = 1;
+                break;
+            }
+
+            /* We can't do much with this. */
+            if (APR_BUCKET_IS_FLUSH(bucket)) {
+                continue;
+            }
+
+            /* If the child stopped, we still must read to EOS. */
+            if (child_stopped_reading) {
+                continue;
+            }
+
+            /* Read block. */
+            apr_bucket_read(bucket, &data, &len, APR_BLOCK_READ);
+
+            /*
+             * Keep writing data to the child until done or too
+             * much time elapses with no progress or an error
+             * occurs.
+             */
+            rv = apr_file_write_full(tmpsock, data, len, NULL);
+
+            if (rv != APR_SUCCESS) {
+                /* Daemon stopped reading, discard remainder. */
+                child_stopped_reading = 1;
+            }
+        }
+        apr_brigade_cleanup(bbout);
     }
+    while (!seen_eos);
+
+    apr_file_pipe_timeout_set(tmpsock, timeout);
 
     /*
      * Close socket for writing so that daemon detects end of
@@ -9320,17 +9221,10 @@ static int wsgi_execute_remote(request_rec *r)
 
     shutdown(daemon->fd, 1);
 
-    /*
-     * Scan the CGI script like headers from daemon. In this
-     * case we are waiting for final response headers, presuming
-     * we didn't receive them above as a result of application
-     * not actually reading the request content.
-     */
+    /* Scan the CGI script like headers from daemon. */
 
-    if (!r->status_line) {
-        if ((status = ap_scan_script_header_err_brigade(r, bbin, NULL)))
-            return HTTP_INTERNAL_SERVER_ERROR;
-    }
+    if ((status = ap_scan_script_header_err_brigade(r, bbin, NULL)))
+        return HTTP_INTERNAL_SERVER_ERROR;
 
     /*
      * Look for special case of status being 0 and
@@ -9340,7 +9234,7 @@ static int wsgi_execute_remote(request_rec *r)
      * their own error document.
      */
 
-    if (!strcmp(r->status_line, "0 Error"))
+    if (r->status == 0)
         return HTTP_INTERNAL_SERVER_ERROR;
 
     /* Transfer any response content. */
