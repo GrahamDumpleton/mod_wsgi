@@ -6153,11 +6153,18 @@ static void wsgi_build_environment(request_rec *r)
      * correctly set up response headers for a HEAD request such
      * that they are the same as a GET request. Thus change a
      * HEAD request into a GET request to ensure that request
-     * content is generated.
+     * content is generated. If using Apache 2.X we can skip
+     * doing this if we know there is no output filter that
+     * might change the content and/or headers.
      */
 
-    if (!strcmp(r->method, "HEAD"))
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    if (r->header_only && r->output_filters->frec->ftype < AP_FTYPE_PROTOCOL)
         apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
+#else
+    if (r->header_only)
+        apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
+#endif
 
     /* Determine whether connection uses HTTPS protocol. */
 
