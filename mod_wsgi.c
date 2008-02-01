@@ -2364,11 +2364,26 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
                 PyErr_Clear();
         }
 
-        /* Force output of headers. Only required for Apache 1.3. */
+        /* Need to force output of headers when using Apache 1.3. */
 
         Py_BEGIN_ALLOW_THREADS
         ap_send_http_header(r);
         Py_END_ALLOW_THREADS
+
+        /*
+         * Reset flag indicating whether '100 Continue' response
+         * expected. If we don't do this then if an attempt to read
+         * input for the first time is after headers have been
+         * sent, then Apache is wrongly generate the '100 Continue'
+         * response into the response content. Not sure if this is
+         * a bug in Apache, or that it truly believes that input
+         * will never be read after the response headers have been
+         * sent.
+         */
+
+        r->expecting_100 = 0;
+
+        /* No longer need headers now that they have been sent. */
 
         Py_DECREF(self->headers);
         self->headers = NULL;
