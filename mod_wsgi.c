@@ -1520,13 +1520,32 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
         self->init = 1;
     }
 
+    /* No point continuing if no more data to be consumed. */
+
+    if (self->done && self->length == 0)
+        return PyString_FromString("");
+
     /*
-     * No point continuing if requested size is zero or if no
-     * more data to read and no buffered data.
+     * If requested size if zero bytes, then still need to pass
+     * this through to Apache input filters so that any
+     * 100-continue response is triggered.
      */
 
-    if ((self->done && self->length == 0) || size == 0)
+    if (size == 0) {
+        char dummy[1];
+
+        Py_BEGIN_ALLOW_THREADS
+        n = ap_get_client_block(self->r, dummy, 0);
+        Py_END_ALLOW_THREADS
+
+        if (n == -1) {
+            PyErr_SetString(PyExc_IOError, "request data read error");
+            Py_DECREF(result);
+            return NULL;
+        }
+
         return PyString_FromString("");
+    }
 
     /*
      * If size is not specified for the number of bytes to read
@@ -1534,6 +1553,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
      * Denote that blocking until we accumulate data of
      * specified size is disabled in this case.
      */
+
 
     if (size < 0) {
         size = HUGE_STRING_LEN;
