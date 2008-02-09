@@ -7234,6 +7234,8 @@ typedef struct {
     apr_time_t deadlock_timeout;
     apr_time_t inactivity_timeout;
     const char *display_name;
+    int send_buffer_size;
+    int recv_buffer_size;
     const char *socket;
     int listener_fd;
     const char* mutex_path;
@@ -7292,6 +7294,9 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int inactivity_timeout = 0;
 
     const char *display_name = NULL;
+
+    int send_buffer_size = 0;
+    int recv_buffer_size = 0;
 
     uid_t uid;
     uid_t gid;
@@ -7452,6 +7457,28 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
             display_name = value;
         }
+        else if (strstr(option, "send-buffer-size=") == option) {
+            value = option + 17;
+            if (!*value)
+                return "Invalid send buffer size for WSGI daemon process.";
+
+            send_buffer_size = atoi(value);
+            if (send_buffer_size < 512 && send_buffer_size != 0) {
+                return "Send buffer size must be >= 512 bytes, "
+                       "or 0 for system default.";
+            }
+        }
+        else if (strstr(option, "receive-buffer-size=") == option) {
+            value = option + 20;
+            if (!*value)
+                return "Invalid receive buffer size for WSGI daemon process.";
+
+            recv_buffer_size = atoi(value);
+            if (recv_buffer_size < 512 && recv_buffer_size != 0) {
+                return "Receive buffer size must be >= 512 bytes, "
+                       "or 0 for system default.";
+            }
+        }
         else
             return "Invalid option to WSGI daemon process definition.";
     }
@@ -7503,6 +7530,9 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->inactivity_timeout = apr_time_from_sec(inactivity_timeout);
 
     entry->display_name = display_name;
+
+    entry->send_buffer_size = send_buffer_size;
+    entry->recv_buffer_size = recv_buffer_size;
 
     return NULL;
 }
@@ -7857,6 +7887,9 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
     mode_t omask;
     int rc;
 
+    int sendsz = process->send_buffer_size;
+    int recvsz = process->recv_buffer_size;
+
     ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
                  "mod_wsgi (pid=%d): Socket for '%s' is '%s'.",
                  getpid(), process->name, process->socket);
@@ -7867,6 +7900,27 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
                      "socket.", getpid());
         return -1;
     }
+
+#ifdef SO_SNDBUF
+    if (sendsz) {
+        if (setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF,
+                       (void *)&sendsz, sizeof(sendsz)) == -1) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(errno), wsgi_server,
+                         "mod_wsgi (pid=%d): Failed to set send buffer "
+                         "size on daemon process socket.", getpid());
+        }
+    }
+#endif
+#ifdef SO_RCVBUF
+    if (recvsz) {
+        if (setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF,
+                       (void *)&recvsz, sizeof(recvsz)) == -1) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(errno), wsgi_server,
+                         "mod_wsgi (pid=%d): Failed to set receive buffer "
+                         "size on daemon process socket.", getpid());
+        }
+    }
+#endif
 
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
