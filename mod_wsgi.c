@@ -11560,8 +11560,10 @@ static const command_rec wsgi_commands[] =
 
     AP_INIT_TAKE1("WSGIPythonOptimize", wsgi_set_python_optimize,
         NULL, RSRC_CONF, "Set level of Python compiler optimisations."),
+#ifndef WIN32
     AP_INIT_TAKE1("WSGIPythonHome", wsgi_set_python_home,
         NULL, RSRC_CONF, "Python prefix/exec_prefix absolute path names."),
+#endif
     AP_INIT_TAKE1("WSGIPythonPath", wsgi_set_python_path,
         NULL, RSRC_CONF, "Python module search path."),
     AP_INIT_TAKE1("WSGIPythonEggs", wsgi_set_python_eggs,
