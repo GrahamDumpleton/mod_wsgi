@@ -2906,14 +2906,23 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         if (self->sequence->ob_type == &Stream_Type) {
             /*
-             * For a file wrapper object need to always ensure
-             * that headers are flushed. This is done so that if
-             * the content length header has been defined we can
-             * get its value and use it to limit how much of a
-             * file is being sent. The WSGI 1.0 specification says
-             * that we are meant to send all available bytes from
-             * the file, however this is questionable as sending
-             * more than content length would violate HTTP RFC.
+	     * For a file wrapper object need to always ensure
+	     * that response headers are parsed. This is done so
+	     * that if the content length header has been
+	     * defined we can get its value and use it to limit
+	     * how much of a file is being sent. The WSGI 1.0
+	     * specification says that we are meant to send all
+	     * available bytes from the file, however this is
+	     * questionable as sending more than content length
+	     * would violate HTTP RFC. Note that this doesn't
+             * actually flush the headers out when using Apache
+             * 2.X. This is good, as we want to still be able to
+             * set the content length header if none set and file
+             * is seekable. If file wrappers are ever properly
+             * implemented on Apache 1.3 this code will need to
+             * change as parsing of response headers also causes
+             * them to be flushed which wouldn't allow us to set
+             * the content length.
              */
 
             if (!Adapter_output(self, "", 0))
