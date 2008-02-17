@@ -2059,7 +2059,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
 
                 errno = 0;
                 l = strtol(v, &v, 10);
-                if (*v || errno == ERANGE) {
+                if (*v || errno == ERANGE || l < 0) {
                     PyErr_SetString(PyExc_ValueError,
                                     "invalid content length");
                     return 0;
@@ -2371,7 +2371,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 	     * and just truncate the response.
              */
 
-            if (self->status_line)
+            if (self->status_line && !self->headers)
                 result = OK;
 
             wsgi_log_python_error(self->r, self->log);
