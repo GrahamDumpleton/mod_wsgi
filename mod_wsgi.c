@@ -3153,7 +3153,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     if (self->content_length_set && ((!PyErr_Occurred() &&
         self->output_length != self->content_length) ||
         (self->output_length > self->content_length))) {
-        ap_log_rerror(APLOG_MARK, WSGI_LOG_WARNING(0), self->r,
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_DEBUG(0), self->r,
                       "mod_wsgi (pid=%d): Content length mismatch, "
                       "expected %s, response generated %s: %s", getpid(),
                       apr_off_t_toa(self->r->pool, self->content_length),
