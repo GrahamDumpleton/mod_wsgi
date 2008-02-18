@@ -3021,7 +3021,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                             else {
                                 length = self->content_length;
 
-                                self->output_length = length;
+                                self->output_length += length;
 
                                 if (Adapter_output_file(self, tmpfile,
                                                         offset, length)) {
