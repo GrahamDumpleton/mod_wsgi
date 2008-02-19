@@ -7866,7 +7866,7 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
         else {
             ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
                          "mod_wsgi (pid=%d): Unable to determine home "
-                         "directory for uid=%ld.", getpid(), geteuid());
+                         "directory for uid=%ld.", getpid(), (long)geteuid());
         }
     }
     else {
@@ -7885,7 +7885,7 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
             ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
                          "mod_wsgi (pid=%d): Unable to determine home "
                          "directory for uid=%ld.", getpid(),
-                         daemon->group->uid);
+                         (long)daemon->group->uid);
         }
     }
 
