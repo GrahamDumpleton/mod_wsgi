@@ -335,7 +335,6 @@ typedef struct {
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
-    int output_buffering;
 } WSGIServerConfig;
 
 static WSGIServerConfig *wsgi_server_config = NULL;
@@ -401,7 +400,6 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->pass_authorization = -1;
     object->script_reloading = -1;
     object->reload_mechanism = -1;
-    object->output_buffering = -1;
 
     return object;
 }
@@ -485,11 +483,6 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->reload_mechanism = parent->reload_mechanism;
 
-    if (child->output_buffering != -1)
-        config->output_buffering = child->output_buffering;
-    else
-        config->output_buffering = parent->output_buffering;
-
     return config;
 }
 
@@ -508,7 +501,6 @@ typedef struct {
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
-    int output_buffering;
 
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
@@ -535,7 +527,6 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->pass_authorization = -1;
     object->script_reloading = -1;
     object->reload_mechanism = -1;
-    object->output_buffering = -1;
 
     object->access_script = NULL;
     object->auth_user_script = NULL;
@@ -612,11 +603,6 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->reload_mechanism = parent->reload_mechanism;
 
-    if (child->output_buffering != -1)
-        config->output_buffering = child->output_buffering;
-    else
-        config->output_buffering = parent->output_buffering;
-
     if (child->access_script)
         config->access_script = child->access_script;
     else
@@ -660,7 +646,6 @@ typedef struct {
     int pass_authorization;
     int script_reloading;
     int reload_mechanism;
-    int output_buffering;
 
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
@@ -997,14 +982,6 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
             else
                 config->reload_mechanism = WSGI_RELOAD_MODULE;
         }
-    }
-
-    config->output_buffering = dconfig->output_buffering;
-
-    if (config->output_buffering < 0) {
-        config->output_buffering = sconfig->output_buffering;
-        if (config->output_buffering < 0)
-            config->output_buffering = 0;
     }
 
     config->access_script = dconfig->access_script;
@@ -2538,68 +2515,51 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
 
     if (length) {
 #if defined(MOD_WSGI_WITH_BUCKETS)
-        if (!self->config->output_buffering) {
-            apr_bucket *b;
+        apr_bucket *b;
 
-            /*
-             * When using Apache 2.X, if buffering is not enabled
-             * then can use lower level bucket brigade APIs. This
-             * is preferred as ap_rwrite()/ap_rflush() will grow
-             * memory in the request pool on each call, which will
-             * result in an increase in memory use over time when
-             * streaming of data is being performed. The memory is
-             * still reclaimed, but only at the end of the request.
-             * Using bucket brigade API avoids this, and also
-             * avoids any copying of response data due to buffering
-             * performed by ap_rwrite().
-             */
+        /*
+         * When using Apache 2.X can use lower level
+         * bucket brigade APIs. This is preferred as
+         * ap_rwrite()/ap_rflush() will grow memory in
+         * the request pool on each call, which will
+         * result in an increase in memory use over time
+         * when streaming of data is being performed.
+         * The memory is still reclaimed, but only at
+         * the end of the request. Using bucket brigade
+         * API avoids this, and also avoids any copying
+         * of response data due to buffering performed
+         * by ap_rwrite().
+         */
 
-            if (r->connection->aborted) {
-                PyErr_SetString(PyExc_IOError, "client connection closed");
-                return 0;
-            }
-
-            if (!self->bb) {
-                self->bb = apr_brigade_create(r->pool,
-                                              r->connection->bucket_alloc);
-            }
-
-            b = apr_bucket_transient_create(data, length,
-                                            r->connection->bucket_alloc);
-            APR_BRIGADE_INSERT_TAIL(self->bb, b);
-
-            b = apr_bucket_flush_create(r->connection->bucket_alloc);
-            APR_BRIGADE_INSERT_TAIL(self->bb, b);
-
-            Py_BEGIN_ALLOW_THREADS
-            rv = ap_pass_brigade(r->output_filters, self->bb);
-            Py_END_ALLOW_THREADS
-
-            if (rv != APR_SUCCESS) {
-                PyErr_SetString(PyExc_IOError, "failed to write data");
-                return 0;
-            }
-
-            Py_BEGIN_ALLOW_THREADS
-            apr_brigade_cleanup(self->bb);
-            Py_END_ALLOW_THREADS
+        if (r->connection->aborted) {
+            PyErr_SetString(PyExc_IOError, "client connection closed");
+            return 0;
         }
-        else {
-            /*
-             * If buffering enabled then use ap_rwrite(). The complete
-             * response content will be automatically flushed at the
-             * completion of the request.
-             */
 
-            Py_BEGIN_ALLOW_THREADS
-            n = ap_rwrite(data, length, r);
-            Py_END_ALLOW_THREADS
-
-            if (n == -1) {
-                PyErr_SetString(PyExc_IOError, "failed to write data");
-                return 0;
-            }
+        if (!self->bb) {
+            self->bb = apr_brigade_create(r->pool,
+                                          r->connection->bucket_alloc);
         }
+
+        b = apr_bucket_transient_create(data, length,
+                                        r->connection->bucket_alloc);
+        APR_BRIGADE_INSERT_TAIL(self->bb, b);
+
+        b = apr_bucket_flush_create(r->connection->bucket_alloc);
+        APR_BRIGADE_INSERT_TAIL(self->bb, b);
+
+        Py_BEGIN_ALLOW_THREADS
+        rv = ap_pass_brigade(r->output_filters, self->bb);
+        Py_END_ALLOW_THREADS
+
+        if (rv != APR_SUCCESS) {
+            PyErr_SetString(PyExc_IOError, "failed to write data");
+            return 0;
+        }
+
+        Py_BEGIN_ALLOW_THREADS
+        apr_brigade_cleanup(self->bb);
+        Py_END_ALLOW_THREADS
 #else
         /*
          * In Apache 1.3, the bucket brigade system doesn't exist,
@@ -2617,15 +2577,13 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
             return 0;
         }
 
-        if (!self->config->output_buffering) {
-            Py_BEGIN_ALLOW_THREADS
-            n = ap_rflush(r);
-            Py_END_ALLOW_THREADS
+        Py_BEGIN_ALLOW_THREADS
+        n = ap_rflush(r);
+        Py_END_ALLOW_THREADS
 
-            if (n == -1) {
-                PyErr_SetString(PyExc_IOError, "failed to flush data");
-                return 0;
-            }
+        if (n == -1) {
+            PyErr_SetString(PyExc_IOError, "failed to flush data");
+            return 0;
         }
 #endif
     }
@@ -2930,15 +2888,15 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         if (self->output_length == 0 &&
             self->sequence->ob_type == &Stream_Type) {
             /*
-	     * For a file wrapper object need to always ensure
-	     * that response headers are parsed. This is done so
-	     * that if the content length header has been
-	     * defined we can get its value and use it to limit
-	     * how much of a file is being sent. The WSGI 1.0
-	     * specification says that we are meant to send all
-	     * available bytes from the file, however this is
-	     * questionable as sending more than content length
-	     * would violate HTTP RFC. Note that this doesn't
+             * For a file wrapper object need to always ensure
+             * that response headers are parsed. This is done so
+             * that if the content length header has been
+             * defined we can get its value and use it to limit
+             * how much of a file is being sent. The WSGI 1.0
+             * specification says that we are meant to send all
+             * available bytes from the file, however this is
+             * questionable as sending more than content length
+             * would violate HTTP RFC. Note that this doesn't
              * actually flush the headers out when using Apache
              * 2.X. This is good, as we want to still be able to
              * set the content length header if none set and file
@@ -2986,14 +2944,14 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                         if (apr_file_seek(tmpfile, APR_CUR,
                                           &offset) == APR_SUCCESS) {
                             /*
-			     * Have a file descriptor. If this is the
-			     * case and content length wasn't defined
-			     * then try to determine the amount of data
-			     * which is available to send and set the
-			     * content length response header. Either
-			     * way, if can work out length then send
-			     * data otherwise fall through and treat it
-			     * as normal iterable.
+                             * Have a file descriptor. If this is the
+                             * case and content length wasn't defined
+                             * then try to determine the amount of data
+                             * which is available to send and set the
+                             * content length response header. Either
+                             * way, if can work out length then send
+                             * data otherwise fall through and treat it
+                             * as normal iterable.
                              */
 
                             apr_off_t length = 0;
@@ -5980,36 +5938,6 @@ static const char *wsgi_set_reload_mechanism(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_output_buffering(cmd_parms *cmd, void *mconfig,
-                                             const char *f)
-{
-    if (cmd->path) {
-        WSGIDirectoryConfig *dconfig = NULL;
-        dconfig = (WSGIDirectoryConfig *)mconfig;
-
-        if (strcasecmp(f, "Off") == 0)
-            dconfig->output_buffering = 0;
-        else if (strcasecmp(f, "On") == 0)
-            dconfig->output_buffering = 1;
-        else
-            return "WSGIOutputBuffering must be one of: Off | On";
-    }
-    else {
-        WSGIServerConfig *sconfig = NULL;
-        sconfig = ap_get_module_config(cmd->server->module_config,
-                                       &wsgi_module);
-
-        if (strcasecmp(f, "Off") == 0)
-            sconfig->output_buffering = 0;
-        else if (strcasecmp(f, "On") == 0)
-            sconfig->output_buffering = 1;
-        else
-            return "WSGIOutputBuffering must be one of: Off | On";
-    }
-
-    return NULL;
-}
-
 static const char *wsgi_set_access_script(cmd_parms *cmd, void *mconfig,
                                           const char *args)
 {
@@ -6411,8 +6339,6 @@ static void wsgi_build_environment(request_rec *r)
                    apr_psprintf(r->pool, "%d", config->script_reloading));
     apr_table_setn(r->subprocess_env, "mod_wsgi.reload_mechanism",
                    apr_psprintf(r->pool, "%d", config->reload_mechanism));
-    apr_table_setn(r->subprocess_env, "mod_wsgi.output_buffering",
-                   apr_psprintf(r->pool, "%d", config->output_buffering));
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     apr_table_setn(r->subprocess_env, "mod_wsgi.listener_host",
@@ -7173,8 +7099,6 @@ static const command_rec wsgi_commands[] =
         OR_FILEINFO, TAKE1, "Enable/Disable script reloading mechanism." },
     { "WSGIReloadMechanism", wsgi_set_reload_mechanism, NULL,
         OR_FILEINFO, TAKE1, "Defines what is reloaded when a reload occurs." },
-    { "WSGIOutputBuffering", wsgi_set_output_buffering, NULL,
-        OR_FILEINFO, TAKE1, "Enable/Disable buffering of response." },
 
     { NULL }
 };
@@ -9912,8 +9836,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
                                                   "mod_wsgi.script_reloading"));
     config->reload_mechanism = atoi(apr_table_get(r->subprocess_env,
                                                   "mod_wsgi.reload_mechanism"));
-    config->output_buffering = atoi(apr_table_get(r->subprocess_env,
-                                                  "mod_wsgi.output_buffering"));
 
     /*
      * Define how input data is to be processed. This
@@ -11645,8 +11567,6 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable script reloading mechanism."),
     AP_INIT_TAKE1("WSGIReloadMechanism", wsgi_set_reload_mechanism,
         NULL, OR_FILEINFO, "Defines what is reloaded when a reload occurs."),
-    AP_INIT_TAKE1("WSGIOutputBuffering", wsgi_set_output_buffering,
-        NULL, OR_FILEINFO, "Enable/Disable buffering of response."),
 
 #if defined(MOD_WSGI_WITH_AAA_HANDLERS)
     AP_INIT_RAW_ARGS("WSGIAccessScript", wsgi_set_access_script,
