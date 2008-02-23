@@ -2989,14 +2989,10 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
                                     self->output_length += length;
 
-    ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(0), wsgi_server,
-                 "mod_wsgi (pid=%d): Begin output %d.", getpid(), fd);
                                     if (Adapter_output_file(self, tmpfile,
                                                             offset, length)) {
                                         result = OK;
                                     }
-    ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(0), wsgi_server,
-                 "mod_wsgi (pid=%d): End output %d.", getpid(), fd);
 
                                     done = 1;
                                 }
