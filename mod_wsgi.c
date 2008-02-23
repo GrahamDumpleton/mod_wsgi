@@ -2351,12 +2351,12 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
 
     if (self->headers) {
         /*
-	 * Force a zero length read before sending the
-	 * headers. This will ensure that if no request
-	 * content has been read that any '100 Continue'
-	 * response will be flushed and sent back to the
-	 * client if client was expecting one. Only
-	 * want to do this for 2xx and 3xx status values.
+         * Force a zero length read before sending the
+         * headers. This will ensure that if no request
+         * content has been read that any '100 Continue'
+         * response will be flushed and sent back to the
+         * client if client was expecting one. Only
+         * want to do this for 2xx and 3xx status values.
          */
 
         if (self->status >= 200 && self->status < 400) {
@@ -2871,10 +2871,6 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     const char *msg = NULL;
     int length = 0;
 
-#if AP_SERVER_MAJORVERSION_NUMBER >= 2
-    apr_file_t *tmpfile = NULL;
-#endif
-
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_inactivity_timeout) {
         apr_thread_mutex_lock(wsgi_shutdown_lock);
@@ -2950,12 +2946,13 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                 if (method) {
                     object = PyEval_CallObject(method, NULL);
                     if (object && PyInt_Check(object)) {
+                        apr_file_t *tmpfile = NULL;
                         apr_finfo_t finfo;
                         apr_off_t offset = 0;
                         int fd = 0;
 
-                        fd = dup(PyInt_AsLong(object));
-                        apr_os_pipe_put_ex(&tmpfile, &fd, 0, self->r->pool);
+                        fd = PyInt_AsLong(object);
+                        apr_os_file_put(&tmpfile, &fd, 0, self->r->pool);
 
                         /*
                          * Need to now determine whether we have a file
@@ -2992,10 +2989,14 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
                                     self->output_length += length;
 
+    ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(0), wsgi_server,
+                 "mod_wsgi (pid=%d): Begin output %d.", getpid(), fd);
                                     if (Adapter_output_file(self, tmpfile,
                                                             offset, length)) {
                                         result = OK;
                                     }
+    ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(0), wsgi_server,
+                 "mod_wsgi (pid=%d): End output %d.", getpid(), fd);
 
                                     done = 1;
                                 }
@@ -3016,18 +3017,37 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                         else {
                             /*
                              * Must have a socket or pipe. If this is
-                             * the case and content length wasn't defined
-                             * then can use a pipe bucket. If there was
-                             * a length, must revert back to treating
-                             * it as an iterable as pipe buckets don't
-                             * support concept of how much data to send.
-                             * Thus wouldn't be able to truncate amount
-                             * sent based on content length header.
+                             * the case and content length wasn't
+                             * defined then can use a pipe bucket. If
+                             * there was a length, must revert back to
+                             * treating it as an iterable as pipe
+                             * buckets don't support concept of how much
+                             * data to send. Thus wouldn't be able to
+                             * truncate amount sent based on content
+                             * length header. Note that we need to dup()
+                             * the file descriptor as a pipe bucket will
+                             * close it when done. If this is allowed it
+                             * causes problem for Python code as it will
+                             * then find a file descriptor which has
+                             * been closed or even potentially reused.
+                             * This would cause a failure to close the
+                             * file descriptor, or result in a file now
+                             * in use by something else being closed.
+                             * There should be no problem with file
+                             * locking as the file descriptor wouldn't
+                             * actually be that for a file and so couldn't
+                             * have a lock active on it.
                              */
 
                             if (!self->content_length_set) {
+                                fd = dup(fd);
+                                apr_os_pipe_put_ex(&tmpfile, &fd, 0,
+                                                   self->r->pool);
+
                                 if (Adapter_output_pipe(self, tmpfile))
                                     result = OK;
+
+                                apr_file_close(tmpfile);
 
                                 done = 1;
                             }
@@ -3115,11 +3135,6 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         Py_DECREF(self->sequence);
 
         self->sequence = NULL;
-
-#if AP_SERVER_MAJORVERSION_NUMBER >= 2
-        if (tmpfile)
-            apr_file_close(tmpfile);
-#endif
     }
 
     Py_DECREF(args);
