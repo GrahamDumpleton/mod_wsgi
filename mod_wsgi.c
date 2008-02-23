@@ -2959,7 +2959,11 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                          * descriptor or not. Other options are a socket
                          * descriptor or a pipe. Do this by attempting
                          * to work out the current offset into the file
-                         * as we need this anyway.
+                         * as we need this anyway. We only perform the
+                         * optimisations when it truly is a file as not
+                         * much too be gained when it is a socket or
+                         * pipe as Apache can't do memory mapping of file
+                         * in those circumstances.
                          */
 
                         if (apr_file_seek(tmpfile, APR_CUR,
@@ -3006,44 +3010,6 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                                                         offset, length)) {
                                     result = OK;
                                 }
-
-                                done = 1;
-                            }
-                        }
-                        else {
-                            /*
-                             * Must have a socket or pipe. If this is
-                             * the case and content length wasn't
-                             * defined then can use a pipe bucket. If
-                             * there was a length, must revert back to
-                             * treating it as an iterable as pipe
-                             * buckets don't support concept of how much
-                             * data to send. Thus wouldn't be able to
-                             * truncate amount sent based on content
-                             * length header. Note that we need to dup()
-                             * the file descriptor as a pipe bucket will
-                             * close it when done. If this is allowed it
-                             * causes problem for Python code as it will
-                             * then find a file descriptor which has
-                             * been closed or even potentially reused.
-                             * This would cause a failure to close the
-                             * file descriptor, or result in a file now
-                             * in use by something else being closed.
-                             * There should be no problem with file
-                             * locking as the file descriptor wouldn't
-                             * actually be that for a file and so couldn't
-                             * have a lock active on it.
-                             */
-
-                            if (!self->content_length_set) {
-                                fd = dup(fd);
-                                apr_os_pipe_put_ex(&tmpfile, &fd, 0,
-                                                   self->r->pool);
-
-                                if (Adapter_output_pipe(self, tmpfile))
-                                    result = OK;
-
-                                apr_file_close(tmpfile);
 
                                 done = 1;
                             }
