@@ -2891,6 +2891,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     if (self->sequence != NULL) {
         int done = 0;
 
+#ifndef WIN32
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
         /*
          * Perform file wrapper optimisations where possible.
@@ -2949,7 +2950,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                         apr_file_t *tmpfile = NULL;
                         apr_finfo_t finfo;
                         apr_off_t offset = 0;
-                        int fd = 0;
+                        apr_os_file_t fd = 0;
 
                         fd = PyInt_AsLong(object);
                         apr_os_file_put(&tmpfile, &fd, 0, self->r->pool);
@@ -3021,6 +3022,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                 }
             }
         }
+#endif
 #endif
 
         if (!done) {
