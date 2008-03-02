@@ -2182,6 +2182,7 @@ static PyTypeObject Input_Type = {
 
 typedef struct {
         PyObject_HEAD
+        int result;
         request_rec *r;
 #if defined(MOD_WSGI_WITH_BUCKETS)
         apr_bucket_brigade *bb;
@@ -2216,6 +2217,8 @@ static AdapterObject *newAdapterObject(request_rec *r)
     self = PyObject_New(AdapterObject, &Adapter_Type);
     if (self == NULL)
         return NULL;
+
+    self->result = HTTP_INTERNAL_SERVER_ERROR;
 
     self->r = r;
 
@@ -2858,10 +2861,148 @@ static PyObject *Adapter_environ(AdapterObject *self)
     return vars;
 }
 
+static int Adapter_process_file_wrapper(AdapterObject *self)
+{
+    int done = 0;
+
+#ifndef WIN32
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+
+    PyObject *filelike = NULL;
+    PyObject *method = NULL;
+    PyObject *object = NULL;
+
+    /*
+     * Perform file wrapper optimisations where possible.
+     * Note that only attempt to perform optimisations if
+     * the write() function returned by start_response()
+     * function has not been called with non zero length
+     * data. In other words if no prior response content
+     * generated. Technically it could be done, but want
+     * to have a consistent rule about how specifying a
+     * content length affects how much of a file is sent.
+     * Don't want that having to take into consideration
+     * whether write() function has been called or not.
+     */
+
+    if (self->sequence->ob_type != &Stream_Type)
+        return 0;
+
+    if (self->output_length != 0)
+        return 0;
+
+    /*
+     * For a file wrapper object need to always ensure
+     * that response headers are parsed. This is done so
+     * that if the content length header has been
+     * defined we can get its value and use it to limit
+     * how much of a file is being sent. The WSGI 1.0
+     * specification says that we are meant to send all
+     * available bytes from the file, however this is
+     * questionable as sending more than content length
+     * would violate HTTP RFC. Note that this doesn't
+     * actually flush the headers out when using Apache
+     * 2.X. This is good, as we want to still be able to
+     * set the content length header if none set and file
+     * is seekable.
+     */
+
+    if (!Adapter_output(self, "", 0))
+        return 1;
+
+    /*
+     * Now work out if file wrapper is associated with a
+     * file like object with an associated file descriptor.
+     * If it does then we can optimise how the contents
+     * of the file are sent out. If no such associated
+     * file descriptor then fall through and process it
+     * like any other iterable value.
+     */
+
+    filelike = ((StreamObject *)self->sequence)->filelike;
+    method = PyObject_GetAttrString(filelike, "fileno");
+
+    if (!method)
+        return 0;
+    
+    object = PyEval_CallObject(method, NULL);
+    if (object && PyInt_Check(object)) {
+        apr_file_t *tmpfile = NULL;
+        apr_finfo_t finfo;
+        apr_off_t offset = 0;
+        apr_os_file_t fd = 0;
+
+        fd = PyInt_AsLong(object);
+        apr_os_file_put(&tmpfile, &fd, APR_SENDFILE_ENABLED,
+                        self->r->pool);
+
+        /*
+         * Need to now determine whether we have a file
+         * descriptor or not. Other options are a socket
+         * descriptor or a pipe. Do this by attempting
+         * to work out the current offset into the file
+         * as we need this anyway. We only perform the
+         * optimisations when it truly is a file as not
+         * much too be gained when it is a socket or
+         * pipe as Apache can't do memory mapping of file
+         * in those circumstances.
+         */
+
+        if (apr_file_seek(tmpfile, APR_CUR, &offset) == APR_SUCCESS) {
+            /*
+             * Have a file descriptor. If this is the
+             * case and content length wasn't defined
+             * then try to determine the amount of data
+             * which is available to send and set the
+             * content length response header. Either
+             * way, if can work out length then send
+             * data otherwise fall through and treat it
+             * as normal iterable.
+             */
+
+            apr_off_t length = 0;
+
+            if (!self->content_length_set) {
+                if (apr_file_info_get(&finfo, APR_FINFO_SIZE,
+                                      tmpfile) == APR_SUCCESS) {
+                    length = finfo.size - offset;
+
+                    ap_set_content_length(self->r, length);
+
+                    self->content_length_set = 1;
+                    self->content_length = length;
+
+                    self->output_length += length;
+
+                    if (Adapter_output_file(self, tmpfile, offset, length))
+                        self->result = OK;
+
+                    done = 1;
+                }
+            }
+            else {
+                length = self->content_length;
+
+                self->output_length += length;
+
+                if (Adapter_output_file(self, tmpfile, offset, length))
+                    self->result = OK;
+
+                done = 1;
+            }
+        }
+    }
+
+    Py_XDECREF(object);
+    Py_DECREF(method);
+#endif
+#endif
+
+    return done;
+}
+
 static int Adapter_run(AdapterObject *self, PyObject *object)
 {
-    int result = HTTP_INTERNAL_SERVER_ERROR;
-
     PyObject *vars = NULL;
     PyObject *start = NULL;
     PyObject *args = NULL;
@@ -2889,144 +3030,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     self->sequence = PyEval_CallObject(object, args);
 
     if (self->sequence != NULL) {
-        int done = 0;
-
-#ifndef WIN32
-#if AP_SERVER_MAJORVERSION_NUMBER >= 2
-        /*
-         * Perform file wrapper optimisations where possible.
-         * Note that only attempt to perform optimisations if
-         * the write() function returned by start_response()
-         * function has not been called with non zero length
-         * data. In other words if no prior response content
-         * generated. Technically it could be done, but want
-         * to have a consistent rule about how specifying a
-         * content length affects how much of a file is sent.
-         * Don't want that having to take into consideration
-         * whether write() function has been called or not.
-         */
-
-        if (self->output_length == 0 &&
-            self->sequence->ob_type == &Stream_Type) {
-            /*
-             * For a file wrapper object need to always ensure
-             * that response headers are parsed. This is done so
-             * that if the content length header has been
-             * defined we can get its value and use it to limit
-             * how much of a file is being sent. The WSGI 1.0
-             * specification says that we are meant to send all
-             * available bytes from the file, however this is
-             * questionable as sending more than content length
-             * would violate HTTP RFC. Note that this doesn't
-             * actually flush the headers out when using Apache
-             * 2.X. This is good, as we want to still be able to
-             * set the content length header if none set and file
-             * is seekable.
-             */
-
-            if (!Adapter_output(self, "", 0))
-                done = 1;
-
-            if (!done) {
-                PyObject *filelike = NULL;
-                PyObject *method = NULL;
-                PyObject *object = NULL;
-
-                /*
-                 * Now work out if file wrapper is associated with a
-                 * file like object with an associated file descriptor.
-                 * If it does then we can optimise how the contents
-                 * of the file are sent out. If no such associated
-                 * file descriptor then fall through and process it
-                 * like any other iterable value.
-                 */
-
-                filelike = ((StreamObject *)self->sequence)->filelike;
-                method = PyObject_GetAttrString(filelike, "fileno");
-
-                if (method) {
-                    object = PyEval_CallObject(method, NULL);
-                    if (object && PyInt_Check(object)) {
-                        apr_file_t *tmpfile = NULL;
-                        apr_finfo_t finfo;
-                        apr_off_t offset = 0;
-                        apr_os_file_t fd = 0;
-
-                        fd = PyInt_AsLong(object);
-                        apr_os_file_put(&tmpfile, &fd, APR_SENDFILE_ENABLED,
-                                        self->r->pool);
-
-                        /*
-                         * Need to now determine whether we have a file
-                         * descriptor or not. Other options are a socket
-                         * descriptor or a pipe. Do this by attempting
-                         * to work out the current offset into the file
-                         * as we need this anyway. We only perform the
-                         * optimisations when it truly is a file as not
-                         * much too be gained when it is a socket or
-                         * pipe as Apache can't do memory mapping of file
-                         * in those circumstances.
-                         */
-
-                        if (apr_file_seek(tmpfile, APR_CUR,
-                                          &offset) == APR_SUCCESS) {
-                            /*
-                             * Have a file descriptor. If this is the
-                             * case and content length wasn't defined
-                             * then try to determine the amount of data
-                             * which is available to send and set the
-                             * content length response header. Either
-                             * way, if can work out length then send
-                             * data otherwise fall through and treat it
-                             * as normal iterable.
-                             */
-
-                            apr_off_t length = 0;
-
-                            if (!self->content_length_set) {
-                                if (apr_file_info_get(&finfo, APR_FINFO_SIZE,
-                                                      tmpfile) == APR_SUCCESS) {
-                                    length = finfo.size - offset;
-
-                                    ap_set_content_length(self->r, length);
-
-                                    self->content_length_set = 1;
-                                    self->content_length = length;
-
-                                    self->output_length += length;
-
-                                    if (Adapter_output_file(self, tmpfile,
-                                                            offset, length)) {
-                                        result = OK;
-                                    }
-
-                                    done = 1;
-                                }
-                            }
-                            else {
-                                length = self->content_length;
-
-                                self->output_length += length;
-
-                                if (Adapter_output_file(self, tmpfile,
-                                                        offset, length)) {
-                                    result = OK;
-                                }
-
-                                done = 1;
-                            }
-                        }
-                    }
-
-                    Py_XDECREF(object);
-                    Py_DECREF(method);
-                }
-            }
-        }
-#endif
-#endif
-
-        if (!done) {
+        if (!Adapter_process_file_wrapper(self)) {
             iterator = PyObject_GetIter(self->sequence);
 
             if (iterator != NULL) {
@@ -3060,7 +3064,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
             if (!PyErr_Occurred()) {
                 if (Adapter_output(self, "", 0))
-                    result = OK;
+                    self->result = OK;
             }
 
             Py_DECREF(iterator);
@@ -3075,7 +3079,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
              */
 
             if (self->status_line && !self->headers)
-                result = OK;
+                self->result = OK;
 
             wsgi_log_python_error(self->r, self->log, self->r->filename);
         }
@@ -3135,10 +3139,10 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
      * in any error page automatically generated by Apache.
      */
 
-    if (result == HTTP_INTERNAL_SERVER_ERROR)
+    if (self->result == HTTP_INTERNAL_SERVER_ERROR)
         self->r->status_line = "500 Internal Server Error";
 
-    return result;
+    return self->result;
 }
 
 static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
