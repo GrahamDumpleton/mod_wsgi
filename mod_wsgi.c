@@ -2953,7 +2953,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                         apr_os_file_t fd = 0;
 
                         fd = PyInt_AsLong(object);
-                        apr_os_file_put(&tmpfile, &fd, 0, self->r->pool);
+                        apr_os_file_put(&tmpfile, &fd, APR_SENDFILE_ENABLED,
+                                        self->r->pool);
 
                         /*
                          * Need to now determine whether we have a file
