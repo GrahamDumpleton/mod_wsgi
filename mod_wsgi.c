@@ -2983,14 +2983,22 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
         return 0;
     }
 
-#if !defined(HAVE_LARGEFILE_SUPPORT)
-    fo_offset = PyInt_AsLong(object);
+   if (PyInt_Check(object)) {
+       fo_offset = PyInt_AsLong(object);
+   }
+   else if (PyLong_Check(object)) {
+#if defined(HAVE_LONG_LONG)
+       fo_offset = PyLong_AsLongLong(object);
 #else
-    if (!PyLong_Check(object))
-        fo_offset = PyLong_AsLongLong(object);
-    else
-        fo_offset = PyInt_AsLong(object);
+       fo_offset = PyLong_AsLong(object);
 #endif
+   }
+
+   if (PyErr_Occurred()){
+       Py_DECREF(object);
+       PyErr_Clear();
+       return 0;
+   }
 
     Py_DECREF(object);
 
