@@ -2641,7 +2641,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
 #define MAX_BUCKET_SIZE (0x40000000)
 
 static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
-                               apr_off_t offset, apr_size_t len)
+                               apr_off_t offset, apr_off_t len)
 {
     request_rec *r;
     apr_bucket *b;
@@ -2663,7 +2663,7 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
     if (sizeof(apr_off_t) == sizeof(apr_size_t) || len < MAX_BUCKET_SIZE) {
         /* Can use a single bucket to send file. */
 
-        b = apr_bucket_file_create(tmpfile, offset, len, r->pool,
+        b = apr_bucket_file_create(tmpfile, offset, (apr_size_t)len, r->pool,
                                    r->connection->bucket_alloc);
     }
     else {
