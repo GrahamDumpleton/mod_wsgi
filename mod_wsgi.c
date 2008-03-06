@@ -2711,49 +2711,6 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
     return 1;
 }
 
-static int Adapter_output_pipe(AdapterObject *self, apr_file_t* tmpfile)
-{
-    request_rec *r;
-    apr_bucket *b;
-    apr_status_t rv;
-    apr_bucket_brigade *bb;
-
-    r = self->r;
-
-    if (r->connection->aborted) {
-        PyErr_SetString(PyExc_IOError, "client connection closed");
-        return 0;
-    }
-
-    bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
-
-    b = apr_bucket_pipe_create(tmpfile, r->connection->bucket_alloc);
-    APR_BRIGADE_INSERT_TAIL(bb, b);
-
-    b = apr_bucket_eos_create(r->connection->bucket_alloc);
-    APR_BRIGADE_INSERT_TAIL(bb, b);
-
-    Py_BEGIN_ALLOW_THREADS
-    rv = ap_pass_brigade(r->output_filters, bb);
-    Py_END_ALLOW_THREADS
-
-    if (rv != APR_SUCCESS) {
-        PyErr_SetString(PyExc_IOError, "failed to write data");
-        return 0;
-    }
-
-    Py_BEGIN_ALLOW_THREADS
-    apr_brigade_destroy(bb);
-    Py_END_ALLOW_THREADS
-
-    if (r->connection->aborted) {
-        PyErr_SetString(PyExc_IOError, "client connection closed");
-        return 0;
-    }
-
-    return 1;
-}
-
 #endif
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
