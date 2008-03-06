@@ -2905,27 +2905,6 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
         return 0;
 
     /*
-     * For a file wrapper object need to always ensure
-     * that response headers are parsed. This is done so
-     * that if the content length header has been
-     * defined we can get its value and use it to limit
-     * how much of a file is being sent. The WSGI 1.0
-     * specification says that we are meant to send all
-     * available bytes from the file, however this is
-     * questionable as sending more than content length
-     * would violate HTTP RFC. Note that this doesn't
-     * actually flush the headers out when using Apache
-     * 2.X. This is good, as we want to still be able to
-     * set the content length header if none set and file
-     * is seekable. If processing response headers fails,
-     * then need to return as if done, with error being
-     * logged later.
-     */
-
-    if (!Adapter_output(self, "", 0))
-        return 1;
-
-    /*
      * Work out if file wrapper is associated with a
      * file like object, where that file object is
      * associated with a regular file. If it does then
@@ -3001,6 +2980,27 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
    }
 
     Py_DECREF(object);
+
+    /*
+     * For a file wrapper object need to always ensure
+     * that response headers are parsed. This is done so
+     * that if the content length header has been
+     * defined we can get its value and use it to limit
+     * how much of a file is being sent. The WSGI 1.0
+     * specification says that we are meant to send all
+     * available bytes from the file, however this is
+     * questionable as sending more than content length
+     * would violate HTTP RFC. Note that this doesn't
+     * actually flush the headers out when using Apache
+     * 2.X. This is good, as we want to still be able to
+     * set the content length header if none set and file
+     * is seekable. If processing response headers fails,
+     * then need to return as if done, with error being
+     * logged later.
+     */
+
+    if (!Adapter_output(self, "", 0))
+        return 1;
 
     /*
      * If content length wasn't defined then determine
