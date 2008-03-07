@@ -2880,9 +2880,9 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
     }
 
     /*
-     * XXX On some platforms when using daemon mode, sendfile
-     * feature is not working. Not known why yet, but disable
-     * it to avoid possibility of problems.
+     * On some platforms, such as Linux, sendfile() system call
+     * will not work on UNIX sockets. Thus when using daemon mode
+     * cannot enable that feature.
      */
 
     if (!wsgi_daemon_pool)
