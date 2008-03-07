@@ -2879,13 +2879,16 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
         return 0;
     }
 
-    /* XXX APR_SENDFILE_ENABLED causing problems on Ubuntu. */
+    /*
+     * XXX On some platforms when using daemon mode, sendfile
+     * feature is not working. Not known why yet, but disable
+     * it to avoid possibility of problems.
+     */
 
-#if 0
-    apr_os_file_put(&tmpfile, &fd, APR_SENDFILE_ENABLED, self->r->pool);
-#endif
-
-    apr_os_file_put(&tmpfile, &fd, 0, self->r->pool);
+    if (!wsgi_daemon_pool)
+        apr_os_file_put(&tmpfile, &fd, APR_SENDFILE_ENABLED, self->r->pool);
+    else
+        apr_os_file_put(&tmpfile, &fd, 0, self->r->pool);
 
     rv = apr_file_info_get(&finfo, APR_FINFO_SIZE|APR_FINFO_TYPE, tmpfile);
     if (rv != APR_SUCCESS || finfo.filetype != APR_REG)
