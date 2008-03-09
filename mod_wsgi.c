@@ -3378,7 +3378,7 @@ static PyTypeObject Stream_Type = {
     PyObject_HEAD_INIT(NULL)
     0,                      /*ob_size*/
     "mod_wsgi.Stream",      /*tp_name*/
-    sizeof(InputObject),    /*tp_basicsize*/
+    sizeof(StreamObject),   /*tp_basicsize*/
     0,                      /*tp_itemsize*/
     /* methods */
     (destructor)Stream_dealloc, /*tp_dealloc*/
