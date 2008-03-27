@@ -50,15 +50,18 @@ fi
 
 AC_SUBST(PYTHON)
 
-PYTHON_VERSION=`${PYTHON} -c 'from distutils import sysconfig; \
-    print sysconfig.get_config_var("VERSION")'`
+PYTHON_VERSION=`${PYTHON} -c 'from sys import stdout; \
+    from distutils import sysconfig; \
+    stdout.write((sysconfig.get_config_var("VERSION")))'`
 
-CPPFLAGS1=`${PYTHON} -c 'from distutils import sysconfig; \
-    print "-I" + sysconfig.get_config_var("INCLUDEPY")'`
+CPPFLAGS1=`${PYTHON} -c 'from sys import stdout; \
+    from distutils import sysconfig; \
+    stdout.write("-I" + sysconfig.get_config_var("INCLUDEPY"))'`
 
-CPPFLAGS2=`${PYTHON} -c 'from distutils import sysconfig; \
-    print " ".join(filter(lambda x: x.startswith("-D"), \
-    sysconfig.get_config_var("CFLAGS").split()))'`
+CPPFLAGS2=`${PYTHON} -c 'from sys import stdout; \
+    from distutils import sysconfig; \
+    stdout.write(" ".join(filter(lambda x: x.startswith("-D"), \
+    sysconfig.get_config_var("CFLAGS").split())))'`
 
 if test "${ENABLE_EMBEDDED}" != "yes"; then
 CPPFLAGS3="-DMOD_WSGI_DISABLE_EMBEDDED"
@@ -70,21 +73,27 @@ CPPFLAGS="${CPPFLAGS1} ${CPPFLAGS2} ${CPPFLAGS3}"
 
 AC_SUBST(CPPFLAGS)
 
-PYTHONFRAMEWORKDIR=`${PYTHON} -c 'from distutils import sysconfig; \
-    print sysconfig.get_config_var("PYTHONFRAMEWORKDIR")'`
-PYTHONFRAMEWORKPREFIX=`${PYTHON} -c 'from distutils import sysconfig; \
-    print sysconfig.get_config_var("PYTHONFRAMEWORKPREFIX")'`
-PYTHONFRAMEWORK=`${PYTHON} -c 'from distutils import sysconfig; \
-    print sysconfig.get_config_var("PYTHONFRAMEWORK")'`
+PYTHONFRAMEWORKDIR=`${PYTHON} -c 'from sys import stdout; \
+    from distutils import sysconfig; \
+    stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORKDIR"))'`
+PYTHONFRAMEWORKPREFIX=`${PYTHON} -c 'from sys import stdout; \
+    from distutils import sysconfig; \
+    stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORKPREFIX"))'`
+PYTHONFRAMEWORK=`${PYTHON} -c 'from sys import stdout; \
+    from distutils import sysconfig; \
+    stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORK"))'`
 
 if test "${PYTHONFRAMEWORKDIR}" = "no-framework"; then
-    LDFLAGS=`${PYTHON} -c 'import distutils.sysconfig; \
-        print "-L" + distutils.sysconfig.get_python_lib(plat_specific=1, \
-        standard_lib=1) +"/config"'`
+    LDFLAGS=`${PYTHON} -c 'from sys import stdout; \
+        import distutils.sysconfig; \
+        stdout.write("-L" + \
+        distutils.sysconfig.get_python_lib(plat_specific=1, \
+        standard_lib=1) +"/config")'`
 
     LDLIBS1="-lpython${PYTHON_VERSION}"
-    LDLIBS2=`${PYTHON} -c 'from distutils import sysconfig; \
-        print sysconfig.get_config_var("LIBS")'`
+    LDLIBS2=`${PYTHON} -c 'from sys import stdout; \
+        from distutils import sysconfig; \
+        stdout.write(sysconfig.get_config_var("LIBS"))'`
 
     LDLIBS="${LDLIBS1} ${LDLIBS2}"
 else
@@ -92,14 +101,16 @@ else
 
     VERSION="${PYTHON_VERSION}"
     STRING="${PYTHONFRAMEWORKDIR}/Versions/${VERSION}/${PYTHONFRAMEWORK}"
-    LDFLAGS2=`${PYTHON} -c "from distutils import sysconfig; \
-        print sysconfig.get_config_var(\"LINKFORSHARED\").replace( \
-        \"${STRING}\", '')"`
+    LDFLAGS2=`${PYTHON} -c "from sys import stdout; \
+        from distutils import sysconfig; \
+        stdout.write(sysconfig.get_config_var(\"LINKFORSHARED\").replace( \
+        \"${STRING}\", ''))"`
 
     LDFLAGS="${LDFLAGS1} ${LDFLAGS2}"
 
-    LDLIBS=`${PYTHON} -c 'from distutils import sysconfig; \
-        print sysconfig.get_config_var("LIBS")'`
+    LDLIBS=`${PYTHON} -c 'from sys import stdout; \
+        from distutils import sysconfig; \
+        stdout.write(sysconfig.get_config_var("LIBS"))'`
 fi
 
 CFLAGS=""

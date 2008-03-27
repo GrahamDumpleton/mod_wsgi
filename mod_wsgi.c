@@ -123,6 +123,11 @@ typedef regmatch_t ap_regmatch_t;
 #error Sorry, mod_wsgi requires that Python supporting thread.
 #endif
 
+#ifndef PyVarObject_HEAD_INIT
+#define PyVarObject_HEAD_INIT(type, size)       \
+        PyObject_HEAD_INIT(type) size,
+#endif
+
 #ifndef WIN32
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
 #if APR_HAS_OTHER_CHILD && APR_HAS_THREADS && APR_HAS_FORK
@@ -244,9 +249,9 @@ static char *apr_off_t_toa(apr_pool_t *p, apr_off_t n)
 
 /* Version and module information. */
 
-#define MOD_WSGI_MAJORVERSION_NUMBER 1
-#define MOD_WSGI_MINORVERSION_NUMBER 0
-#define MOD_WSGI_VERSION_STRING "2.0"
+#define MOD_WSGI_MAJORVERSION_NUMBER 2
+#define MOD_WSGI_MINORVERSION_NUMBER 1
+#define MOD_WSGI_VERSION_STRING "2.1-TRUNK"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -1257,10 +1262,7 @@ static PyMethodDef Log_methods[] = {
 };
 
 static PyTypeObject Log_Type = {
-    /* The ob_type field must be initialized in the module init function
-     * to be portable to Windows without using C++. */
-    PyObject_HEAD_INIT(NULL)
-    0,                      /*ob_size*/
+    PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "mod_wsgi.Log",         /*tp_name*/
     sizeof(LogObject),      /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -2134,10 +2136,7 @@ static PyObject *Input_iternext(InputObject *self)
 }
 
 static PyTypeObject Input_Type = {
-    /* The ob_type field must be initialized in the module init function
-     * to be portable to Windows without using C++. */
-    PyObject_HEAD_INIT(NULL)
-    0,                      /*ob_size*/
+    PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "mod_wsgi.Input",       /*tp_name*/
     sizeof(InputObject),    /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -2157,7 +2156,11 @@ static PyTypeObject Input_Type = {
     0,                      /*tp_getattro*/
     0,                      /*tp_setattro*/
     0,                      /*tp_as_buffer*/
+#if defined(Py_TPFLAGS_HAVE_ITER)
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER, /*tp_flags*/
+#else
+    Py_TPFLAGS_DEFAULT,     /*tp_flags*/
+#endif
     0,                      /*tp_doc*/
     0,                      /*tp_traverse*/
     0,                      /*tp_clear*/
@@ -2406,21 +2409,51 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
             object1 = PyTuple_GetItem(tuple, 0);
             object2 = PyTuple_GetItem(tuple, 1);
 
-            if (!PyString_Check(object1)) {
-                PyErr_SetString(PyExc_TypeError, "expected string object "
-                                "for header name");
+            if (PyString_Check(object1)) {
+                name = PyString_AsString(object1);
+            }
+#if PY_MAJOR_VERSION >= 3
+            else if (PyUnicode_Check(object1)) {
+                PyObject *latin_object;
+                latin_object = PyUnicode_AsLatin1String(object1);
+                if (!latin_object) {
+                    PyErr_Format(PyExc_TypeError, "header name "
+                                 "contained non 'latin-1' characters ");
+                    return 0;
+                }
+
+                name = PyString_AsString(latin_object);
+                Py_DECREF(latin_object);
+            }
+#endif
+            else {
+                PyErr_Format(PyExc_TypeError, "expected string object "
+                             "for header name, value of type %.200s "
+                             "found", object1->ob_type->tp_name);
                 return 0;
             }
 
-            if (!PyString_Check(object2)) {
-                PyErr_SetString(PyExc_TypeError, "expected string object "
-                                "for header value");
-                return 0;
+            if (PyString_Check(object2)) {
+                value = PyString_AsString(object2);
             }
+#if PY_MAJOR_VERSION >= 3
+            else if (PyUnicode_Check(object2)) {
+                PyObject *latin_object;
+                latin_object = PyUnicode_AsLatin1String(object2);
+                if (!latin_object) {
+                    PyErr_Format(PyExc_TypeError, "header value "
+                                 "contained non 'latin-1' characters ");
+                    return 0;
+                }
 
-            if (!PyArg_ParseTuple(tuple, "ss", &name, &value)) {
-                PyErr_SetString(PyExc_TypeError, "header name and value "
-                                "must be string objects without null bytes");
+                value = PyString_AsString(latin_object);
+                Py_DECREF(latin_object);
+            }
+#endif
+            else {
+                PyErr_Format(PyExc_TypeError, "expected string object "
+                             "for header value, value of type %.200s "
+                             "found", object2->ob_type->tp_name);
                 return 0;
             }
 
@@ -2746,7 +2779,11 @@ static PyObject *Adapter_environ(AdapterObject *self)
     for (i = 0; i < head->nelts; ++i) {
         if (elts[i].key) {
             if (elts[i].val) {
+#if PY_MAJOR_VERSION >= 3
+                object = PyUnicode_FromString(elts[i].val);
+#else
                 object = PyString_FromString(elts[i].val);
+#endif
                 PyDict_SetItemString(vars, elts[i].key, object);
                 Py_DECREF(object);
             }
@@ -2774,12 +2811,20 @@ static PyObject *Adapter_environ(AdapterObject *self)
     scheme = apr_table_get(r->subprocess_env, "HTTPS");
 
     if (scheme && (!strcasecmp(scheme, "On") || !strcmp(scheme, "1"))) {
+#if PY_MAJOR_VERSION >= 3
+        object = PyUnicode_FromString("https");
+#else
         object = PyString_FromString("https");
+#endif
         PyDict_SetItemString(vars, "wsgi.url_scheme", object);
         Py_DECREF(object);
     }
     else {
+#if PY_MAJOR_VERSION >= 3
+        object = PyUnicode_FromString("http");
+#else
         object = PyString_FromString("http");
+#endif
         PyDict_SetItemString(vars, "wsgi.url_scheme", object);
         Py_DECREF(object);
     }
@@ -2928,15 +2973,21 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
         return 0;
     }
 
-   if (PyInt_Check(object)) {
-       fo_offset = PyInt_AsLong(object);
-   }
-   else if (PyLong_Check(object)) {
+   if (PyLong_Check(object)) {
 #if defined(HAVE_LONG_LONG)
        fo_offset = PyLong_AsLongLong(object);
 #else
        fo_offset = PyLong_AsLong(object);
 #endif
+   }
+#if PY_MAJOR_VERSION < 3
+   else if (PyInt_Check(object)) {
+       fo_offset = PyInt_AsLong(object);
+   }
+#endif
+   else {
+       Py_DECREF(object);
+       return 0;
    }
 
    if (PyErr_Occurred()){
@@ -3054,6 +3105,24 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                 PyObject *item = NULL;
 
                 while ((item = PyIter_Next(iterator))) {
+#if PY_MAJOR_VERSION >= 3
+                    if (PyUnicode_Check(item)) {
+                        PyObject *latin_item;
+                        latin_item = PyUnicode_AsLatin1String(item);
+                        if (!latin_item) {
+                            PyErr_Format(PyExc_TypeError, "sequence of "
+                                         "string values expected, value "
+                                         "containing non 'latin-1' characters "
+                                         "found");
+                            Py_DECREF(item);
+                            break;
+                        }
+
+                        Py_DECREF(item);
+                        item = latin_item;
+                    }
+#endif
+
                     if (!PyString_Check(item)) {
                         PyErr_Format(PyExc_TypeError, "sequence of string "
                                      "values expected, value of type %.200s "
@@ -3214,10 +3283,7 @@ static PyMethodDef Adapter_methods[] = {
 };
 
 static PyTypeObject Adapter_Type = {
-    /* The ob_type field must be initialized in the module init function
-     * to be portable to Windows without using C++. */
-    PyObject_HEAD_INIT(NULL)
-    0,                      /*ob_size*/
+    PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "mod_wsgi.Adapter",     /*tp_name*/
     sizeof(AdapterObject),  /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -3373,10 +3439,7 @@ static PyMethodDef Stream_methods[] = {
 };
 
 static PyTypeObject Stream_Type = {
-    /* The ob_type field must be initialized in the module init function
-     * to be portable to Windows without using C++. */
-    PyObject_HEAD_INIT(NULL)
-    0,                      /*ob_size*/
+    PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "mod_wsgi.Stream",      /*tp_name*/
     sizeof(StreamObject),   /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -3396,7 +3459,11 @@ static PyTypeObject Stream_Type = {
     0,                      /*tp_getattro*/
     0,                      /*tp_setattro*/
     0,                      /*tp_as_buffer*/
+#if defined(Py_TPFLAGS_HAVE_ITER)
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER, /*tp_flags*/
+#else
+    Py_TPFLAGS_DEFAULT,     /*tp_flags*/
+#endif
     0,                      /*tp_doc*/
     0,                      /*tp_traverse*/
     0,                      /*tp_clear*/
@@ -3454,10 +3521,7 @@ static PyObject *Restricted_getattr(RestrictedObject *self, char *name)
 }
 
 static PyTypeObject Restricted_Type = {
-    /* The ob_type field must be initialized in the module init function
-     * to be portable to Windows without using C++. */
-    PyObject_HEAD_INIT(NULL)
-    0,                      /*ob_size*/
+    PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "mod_wsgi.Restricted",  /*tp_name*/
     sizeof(RestrictedObject), /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -3681,7 +3745,11 @@ static InterpreterObject *newInterpreterObject(const char *name,
      */
 
     object = PyList_New(0);
+#if PY_MAJOR_VERSION >= 3
+    item = PyUnicode_FromString("mod_wsgi");
+#else
     item = PyString_FromString("mod_wsgi");
+#endif
     PyList_Append(object, item);
     PySys_SetObject("argv", object);
     Py_DECREF(item);
@@ -3726,8 +3794,13 @@ static InterpreterObject *newInterpreterObject(const char *name,
                 struct passwd *pwent;
 
                 pwent = getpwuid(geteuid());
+#if PY_MAJOR_VERSION >= 3
+                key = PyUnicode_FromString("HOME");
+                value = PyUnicode_FromString(pwent->pw_dir);
+#else
                 key = PyString_FromString("HOME");
                 value = PyString_FromString(pwent->pw_dir);
+#endif
 
                 PyObject_SetItem(object, key, value);
 
@@ -3763,8 +3836,13 @@ static InterpreterObject *newInterpreterObject(const char *name,
             object = PyDict_GetItemString(dict, "environ");
 
             if (object) {
+#if PY_MAJOR_VERSION >= 3
+                key = PyUnicode_FromString("PYTHON_EGG_CACHE");
+                value = PyUnicode_FromString(wsgi_python_eggs);
+#else
                 key = PyString_FromString("PYTHON_EGG_CACHE");
                 value = PyString_FromString(wsgi_python_eggs);
+#endif
 
                 PyObject_SetItem(object, key, value);
 
@@ -3812,7 +3890,11 @@ static InterpreterObject *newInterpreterObject(const char *name,
                 end = strchr(start, DELIM);
 
                 if (end) {
+#if PY_MAJOR_VERSION >= 3
+                    item = PyUnicode_FromStringAndSize(start, end-start);
+#else
                     item = PyString_FromStringAndSize(start, end-start);
+#endif
                     start = end+1;
 
                     value = PyString_AsString(item);
@@ -3842,7 +3924,11 @@ static InterpreterObject *newInterpreterObject(const char *name,
                     end = strchr(start, DELIM);
 
                     while (result && end) {
+#if PY_MAJOR_VERSION >= 3
+                        item = PyUnicode_FromStringAndSize(start, end-start);
+#else
                         item = PyString_FromStringAndSize(start, end-start);
+#endif
                         start = end+1;
 
                         value = PyString_AsString(item);
@@ -4346,10 +4432,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 }
 
 static PyTypeObject Interpreter_Type = {
-    /* The ob_type field must be initialized in the module init function
-     * to be portable to Windows without using C++. */
-    PyObject_HEAD_INIT(NULL)
-    0,                      /*ob_size*/
+    PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "mod_wsgi.Interpreter",  /*tp_name*/
     sizeof(InterpreterObject), /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -4539,6 +4622,8 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
     PyInterpreterState *interp = NULL;
     InterpreterObject *handle = NULL;
 
+    PyGILState_STATE state;
+
     /*
      * In a multithreaded MPM must protect the
      * interpreters table. This lock is only needed to
@@ -4559,7 +4644,11 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
      * Python GIL is held, so need to acquire it.
      */
 
+#if 0
     PyEval_AcquireLock();
+#endif
+
+    state = PyGILState_Ensure();
 
     /*
      * Check if already have interpreter instance and
@@ -4580,7 +4669,11 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
             PyErr_Print();
             PyErr_Clear();
 
+#if 0
             PyEval_ReleaseLock();
+#endif
+
+            PyGILState_Release(state);
 
 #if APR_HAS_THREADS
             apr_thread_mutex_unlock(wsgi_interp_lock);
@@ -4604,7 +4697,11 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
      * extension modules which use that will still work.
      */
 
+#if 0
     PyEval_ReleaseLock();
+#endif
+
+    PyGILState_Release(state);
 
 #if APR_HAS_THREADS
     apr_thread_mutex_unlock(wsgi_interp_lock);
@@ -6431,7 +6528,11 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
     for (i = 0; i < head->nelts; ++i) {
         if (elts[i].key) {
             if (elts[i].val) {
+#if PY_MAJOR_VERSION >= 3
+                object = PyUnicode_FromString(elts[i].val);
+#else
                 object = PyString_FromString(elts[i].val);
+#endif
                 PyDict_SetItemString(vars, elts[i].key, object);
                 Py_DECREF(object);
             }
@@ -6447,11 +6548,19 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
      * to remove callable object reference.
      */
 
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString("");
+#else
     object = PyString_FromString("");
+#endif
     PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
     Py_DECREF(object);
 
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString(group);
+#else
     object = PyString_FromString(group);
+#endif
     PyDict_SetItemString(vars, "mod_wsgi.application_group", object);
     Py_DECREF(object);
 
@@ -6480,10 +6589,7 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
 }
 
 static PyTypeObject Dispatch_Type = {
-    /* The ob_type field must be initialized in the module init function
-     * to be portable to Windows without using C++. */
-    PyObject_HEAD_INIT(NULL)
-    0,                      /*ob_size*/
+    PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "mod_wsgi.Dispatch",    /*tp_name*/
     sizeof(DispatchObject), /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -10064,87 +10170,153 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 
     vars = PyDict_New();
 
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString(ap_psignature("", r));
+#else
     object = PyString_FromString(ap_psignature("", r));
+#endif
     PyDict_SetItemString(vars, "SERVER_SIGNATURE", object);
     Py_DECREF(object);
 
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString(ap_get_server_version());
+#else
     object = PyString_FromString(ap_get_server_version());
+#endif
     PyDict_SetItemString(vars, "SERVER_SOFTWARE", object);
     Py_DECREF(object);
 
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString(ap_escape_html(r->pool,
+                                  ap_get_server_name(r)));
+#else
     object = PyString_FromString(ap_escape_html(r->pool,
                                  ap_get_server_name(r)));
+#endif
     PyDict_SetItemString(vars, "SERVER_NAME", object);
     Py_DECREF(object);
 
     if (r->connection->local_ip) {
+#if PY_MAJOR_VERSION >= 3
+        object = PyUnicode_FromString(r->connection->local_ip);
+#else
         object = PyString_FromString(r->connection->local_ip);
+#endif
         PyDict_SetItemString(vars, "SERVER_ADDR", object);
         Py_DECREF(object);
     }
 
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString(apr_psprintf(r->pool, "%u",
+                                  ap_get_server_port(r)));
+#else
     object = PyString_FromString(apr_psprintf(r->pool, "%u",
                                  ap_get_server_port(r)));
+#endif
     PyDict_SetItemString(vars, "SERVER_PORT", object);
     Py_DECREF(object);
 
     host = ap_get_remote_host(c, r->per_dir_config, REMOTE_HOST, NULL);
     if (host) {
+#if PY_MAJOR_VERSION >= 3
+        object = PyUnicode_FromString(host);
+#else
         object = PyString_FromString(host);
+#endif
         PyDict_SetItemString(vars, "REMOTE_HOST", object);
         Py_DECREF(object);
     }
 
     if (c->remote_ip) {
+#if PY_MAJOR_VERSION >= 3
+        object = PyUnicode_FromString(c->remote_ip);
+#else
         object = PyString_FromString(c->remote_ip);
+#endif
         PyDict_SetItemString(vars, "REMOTE_ADDR", object);
         Py_DECREF(object);
     }
 
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString(ap_document_root(r));
+#else
     object = PyString_FromString(ap_document_root(r));
+#endif
     PyDict_SetItemString(vars, "DOCUMENT_ROOT", object);
     Py_DECREF(object);
 
     if (s->server_admin) {
+#if PY_MAJOR_VERSION >= 3
+        object = PyUnicode_FromString(s->server_admin);
+#else
         object = PyString_FromString(s->server_admin);
+#endif
         PyDict_SetItemString(vars, "SERVER_ADMIN", object);
         Py_DECREF(object);
     }
 
     rport = c->remote_addr->port;
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString(apr_itoa(r->pool, rport));
+#else
     object = PyString_FromString(apr_itoa(r->pool, rport));
+#endif
     PyDict_SetItemString(vars, "REMOTE_PORT", object);
     Py_DECREF(object);
 
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString(r->protocol);
+#else
     object = PyString_FromString(r->protocol);
+#endif
     PyDict_SetItemString(vars, "SERVER_PROTOCOL", object);
     Py_DECREF(object);
 
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString(r->method);
+#else
     object = PyString_FromString(r->method);
+#endif
     PyDict_SetItemString(vars, "REQUEST_METHOD", object);
     Py_DECREF(object);
 
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString(r->args ? r->args : "");
+#else
     object = PyString_FromString(r->args ? r->args : "");
+#endif
     PyDict_SetItemString(vars, "QUERY_STRING", object);
     Py_DECREF(object);
 
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString(wsgi_original_uri(r));
+#else
     object = PyString_FromString(wsgi_original_uri(r));
+#endif
     PyDict_SetItemString(vars, "REQUEST_URI", object);
     Py_DECREF(object);
 
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString("");
+#else
     object = PyString_FromString("");
+#endif
     PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
     Py_DECREF(object);
 
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString(group);
+#else
     object = PyString_FromString(group);
+#endif
     PyDict_SetItemString(vars, "mod_wsgi.application_group", object);
     Py_DECREF(object);
 
-    object = PyInt_FromLong(self->config->script_reloading);
+    object = PyLong_FromLong(self->config->script_reloading);
     PyDict_SetItemString(vars, "mod_wsgi.script_reloading", object);
     Py_DECREF(object);
 
-    object = PyInt_FromLong(self->config->reload_mechanism);
+    object = PyLong_FromLong(self->config->reload_mechanism);
     PyDict_SetItemString(vars, "mod_wsgi.reload_mechanism", object);
     Py_DECREF(object);
 
@@ -10171,10 +10343,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 }
 
 static PyTypeObject Auth_Type = {
-    /* The ob_type field must be initialized in the module init function
-     * to be portable to Windows without using C++. */
-    PyObject_HEAD_INIT(NULL)
-    0,                      /*ob_size*/
+    PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "mod_wsgi.Auth",        /*tp_name*/
     sizeof(AuthObject),     /*tp_basicsize*/
     0,                      /*tp_itemsize*/
