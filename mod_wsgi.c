@@ -2780,7 +2780,8 @@ static PyObject *Adapter_environ(AdapterObject *self)
         if (elts[i].key) {
             if (elts[i].val) {
 #if PY_MAJOR_VERSION >= 3
-                object = PyUnicode_FromString(elts[i].val);
+                object = PyUnicode_DecodeLatin1(elts[i].val,
+                                                strlen(elts[i].val), NULL);
 #else
                 object = PyString_FromString(elts[i].val);
 #endif
@@ -3796,7 +3797,7 @@ static InterpreterObject *newInterpreterObject(const char *name,
                 pwent = getpwuid(geteuid());
 #if PY_MAJOR_VERSION >= 3
                 key = PyUnicode_FromString("HOME");
-                value = PyUnicode_FromString(pwent->pw_dir);
+                value = PyUnicode_DecodeFSDefault(pwent->pw_dir);
 #else
                 key = PyString_FromString("HOME");
                 value = PyString_FromString(pwent->pw_dir);
@@ -6529,7 +6530,8 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
         if (elts[i].key) {
             if (elts[i].val) {
 #if PY_MAJOR_VERSION >= 3
-                object = PyUnicode_FromString(elts[i].val);
+                object = PyUnicode_DecodeLatin1(elts[i].val,
+                                                strlen(elts[i].val), NULL);
 #else
                 object = PyString_FromString(elts[i].val);
 #endif
