@@ -3243,8 +3243,31 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
         return NULL;
     }
 
-    if (!PyArg_ParseTuple(args, "S:write", &item))
+    if (!PyArg_ParseTuple(args, "O:write", &item))
         return NULL;
+
+#if PY_MAJOR_VERSION >= 3
+    if (PyUnicode_Check(item)) {
+        PyObject *latin_item;
+        latin_item = PyUnicode_AsLatin1String(item);
+        if (!latin_item) {
+            PyErr_Format(PyExc_TypeError, "string value expected, value "
+                         "containing non 'latin-1' characters found");
+            Py_DECREF(item);
+            return NULL;
+        }
+
+        Py_DECREF(item);
+        item = latin_item;
+    }
+#endif
+
+    if (!PyString_Check(item)) {
+        PyErr_Format(PyExc_TypeError, "string value expected, value "
+                     "of type %.200s found", item->ob_type->tp_name);
+        Py_DECREF(item);
+        return NULL;
+    }
 
     data = PyString_AsString(item);
     length = PyString_Size(item);
