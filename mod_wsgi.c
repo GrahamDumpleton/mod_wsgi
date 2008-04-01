@@ -3112,7 +3112,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                         latin_item = PyUnicode_AsLatin1String(item);
                         if (!latin_item) {
                             PyErr_Format(PyExc_TypeError, "sequence of "
-                                         "string values expected, value "
+                                         "byte string values expected, value "
                                          "containing non 'latin-1' characters "
                                          "found");
                             Py_DECREF(item);
@@ -3125,9 +3125,10 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 #endif
 
                     if (!PyString_Check(item)) {
-                        PyErr_Format(PyExc_TypeError, "sequence of string "
-                                     "values expected, value of type %.200s "
-                                     "found", item->ob_type->tp_name);
+                        PyErr_Format(PyExc_TypeError, "sequence of byte "
+                                     "string values expected, value of "
+                                     "type %.200s found",
+                                     item->ob_type->tp_name);
                         Py_DECREF(item);
                         break;
                     }
@@ -3251,8 +3252,8 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
         PyObject *latin_item;
         latin_item = PyUnicode_AsLatin1String(item);
         if (!latin_item) {
-            PyErr_Format(PyExc_TypeError, "string value expected, value "
-                         "containing non 'latin-1' characters found");
+            PyErr_Format(PyExc_TypeError, "byte string value expected, "
+                         "value containing non 'latin-1' characters found");
             Py_DECREF(item);
             return NULL;
         }
@@ -3263,7 +3264,7 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
 #endif
 
     if (!PyString_Check(item)) {
-        PyErr_Format(PyExc_TypeError, "string value expected, value "
+        PyErr_Format(PyExc_TypeError, "byte string value expected, value "
                      "of type %.200s found", item->ob_type->tp_name);
         Py_DECREF(item);
         return NULL;
@@ -3411,30 +3412,39 @@ static PyObject *Stream_iternext(StreamObject *self)
     result = PyEval_CallObject(method, args);
 
     Py_DECREF(method);
-
-    if (!result) {
-        Py_DECREF(args);
-        return 0;
-    }
-
-    if (!PyString_Check(result)) {
-        PyErr_SetString(PyExc_TypeError,
-                        "file like object yielded non string type");
-        Py_DECREF(args);
-        Py_DECREF(result);
-        return 0;
-    }
-
-    if (*PyString_AsString(result) == '\0') {
-        PyErr_SetObject(PyExc_StopIteration, Py_None);
-        Py_DECREF(args);
-        Py_DECREF(result);
-        return 0;
-    }
-
     Py_DECREF(args);
 
-    return result;
+    if (!result)
+        return 0;
+
+    if (PyString_Check(result)) {
+        if (PyString_Size(result) == 0) {
+            PyErr_SetObject(PyExc_StopIteration, Py_None);
+            Py_DECREF(result);
+            return 0;
+        }
+
+        return result;
+    }
+
+#if PY_MAJOR_VERSION >= 3
+    if (PyUnicode_Check(result)) {
+        if (PyUnicode_GetSize(result) == 0) {
+            PyErr_SetObject(PyExc_StopIteration, Py_None);
+            Py_DECREF(result);
+            return 0;
+        }
+
+        return result;
+    }
+#endif
+
+    Py_DECREF(result);
+
+    PyErr_SetString(PyExc_TypeError,
+                    "file like object yielded non string type");
+
+    return 0;
 }
 
 static PyObject *Stream_close(StreamObject *self, PyObject *args)
