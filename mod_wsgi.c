@@ -6823,10 +6823,39 @@ static int wsgi_execute_dispatch(request_rec *r)
                                                "mod_wsgi.process_group",
                                                config->process_group);
                             }
+#if PY_MAJOR_VERSION >= 3
+                            else if (PyUnicode_Check(result)) {
+                                PyObject *latin_item;
+                                latin_item = PyUnicode_AsLatin1String(result);
+                                if (!latin_item) {
+                                    PyErr_SetString(PyExc_TypeError,
+                                                    "Process group must be "
+                                                    "a byte string, value "
+                                                    "containing non 'latin-1' "
+                                                    "characters found");
+
+                                    status = HTTP_INTERNAL_SERVER_ERROR;
+                                }
+                                else {
+                                    const char *s;
+
+                                    Py_DECREF(result);
+                                    result = latin_item;
+
+                                    s = PyString_AsString(result);
+                                    s = apr_pstrdup(r->pool, s);
+                                    s = wsgi_process_group(r, s);
+                                    config->process_group = s;
+
+                                    apr_table_setn(r->subprocess_env,
+                                                   "mod_wsgi.process_group",
+                                                   config->process_group);
+                                }
+                            }
+#endif
                             else {
                                 PyErr_SetString(PyExc_TypeError, "Process "
-                                                "group must be a string "
-                                                "object");
+                                                "group must be a byte string");
 
                                 status = HTTP_INTERNAL_SERVER_ERROR;
                             }
@@ -6873,6 +6902,36 @@ static int wsgi_execute_dispatch(request_rec *r)
                                                "mod_wsgi.application_group",
                                                config->application_group);
                             }
+#if PY_MAJOR_VERSION >= 3
+                            else if (PyUnicode_Check(result)) {
+                                PyObject *latin_item;
+                                latin_item = PyUnicode_AsLatin1String(result);
+                                if (!latin_item) {
+                                    PyErr_SetString(PyExc_TypeError,
+                                                    "Application group must "
+                                                    "be a byte string, value "
+                                                    "containing non 'latin-1' "
+                                                    "characters found");
+
+                                    status = HTTP_INTERNAL_SERVER_ERROR;
+                                }
+                                else {
+                                    const char *s;
+
+                                    Py_DECREF(result);
+                                    result = latin_item;
+
+                                    s = PyString_AsString(result);
+                                    s = apr_pstrdup(r->pool, s);
+                                    s = wsgi_application_group(r, s);
+                                    config->application_group = s;
+
+                                    apr_table_setn(r->subprocess_env,
+                                                   "mod_wsgi.application_group",
+                                                   config->application_group);
+                                }
+                            }
+#endif
                             else {
                                 PyErr_SetString(PyExc_TypeError, "Application "
                                                 "group must be a string "
@@ -6922,6 +6981,36 @@ static int wsgi_execute_dispatch(request_rec *r)
                                                "mod_wsgi.callable_object",
                                                config->callable_object);
                             }
+#if PY_MAJOR_VERSION >= 3
+                            else if (PyUnicode_Check(result)) {
+                                PyObject *latin_item;
+                                latin_item = PyUnicode_AsLatin1String(result);
+                                if (!latin_item) {
+                                    PyErr_SetString(PyExc_TypeError,
+                                                    "Callable object must "
+                                                    "be a byte string, value "
+                                                    "containing non 'latin-1' "
+                                                    "characters found");
+
+                                    status = HTTP_INTERNAL_SERVER_ERROR;
+                                }
+                                else {
+                                    const char *s;
+
+                                    Py_DECREF(result);
+                                    result = latin_item;
+
+                                    s = PyString_AsString(result);
+                                    s = apr_pstrdup(r->pool, s);
+                                    s = wsgi_callable_object(r, s);
+                                    config->callable_object = s;
+
+                                    apr_table_setn(r->subprocess_env,
+                                                   "mod_wsgi.callable_object",
+                                                   config->callable_object);
+                                }
+                            }
+#endif
                             else {
                                 PyErr_SetString(PyExc_TypeError, "Callable "
                                                 "object must be a string "
@@ -10782,6 +10871,28 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
                         status = AUTH_USER_FOUND;
                     }
+#if PY_MAJOR_VERSION >= 3
+                    else if (PyUnicode_Check(result)) {
+                        PyObject *latin_item;
+                        latin_item = PyUnicode_AsLatin1String(result);
+                        if (!latin_item) {
+                            PyErr_SetString(PyExc_TypeError, "Digest auth "
+                                            "provider must return None "
+                                            "or string object, value "
+                                            "containing non 'latin-1' "
+                                            "characters found");
+                        }
+                        else {
+                            Py_DECREF(result);
+                            result = latin_item;
+
+                            *rethash = PyString_AsString(result);
+                            *rethash = apr_pstrdup(r->pool, *rethash);
+
+                            status = AUTH_USER_FOUND;
+                        }
+                    }
+#endif
                     else {
                         PyErr_SetString(PyExc_TypeError, "Digest auth "
                                         "provider must return None "
@@ -11003,13 +11114,44 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                         status = OK;
 
                         while ((item = PyIter_Next(iterator))) {
+#if PY_MAJOR_VERSION >= 3
+                            if (PyUnicode_Check(item)) {
+                                PyObject *latin_item;
+                                latin_item = PyUnicode_AsLatin1String(item);
+                                if (!latin_item) {
+                                    Py_BEGIN_ALLOW_THREADS
+                                    ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0),
+                                                  r, "mod_wsgi (pid=%d): "
+                                                  "Groups for user returned "
+                                                  "from '%s' must be an "
+                                                  "iterable sequence of "
+                                                  "byte strings, value "
+                                                  "containing non 'latin-1' "
+                                                  "characters found",
+                                                  getpid(), script);
+                                    Py_END_ALLOW_THREADS
+
+                                    Py_DECREF(item);
+
+                                    status = HTTP_INTERNAL_SERVER_ERROR;
+
+                                    break;
+                                }
+                                else {
+                                    Py_DECREF(item);
+                                    item = latin_item;
+                                }
+                            }
+#endif
+
                             if (!PyString_Check(item)) {
                                 Py_BEGIN_ALLOW_THREADS
                                 ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                                               "mod_wsgi (pid=%d): Groups for "
                                               "user returned from '%s' must "
                                               "be an iterable sequence of "
-                                              "strings.", getpid(), script);
+                                              "byte strings.", getpid(),
+                                              script);
                                 Py_END_ALLOW_THREADS
 
                                 Py_DECREF(item);
@@ -11034,7 +11176,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                         ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                                       "mod_wsgi (pid=%d): Groups for user "
                                       "returned from '%s' must be an iterable "
-                                      "sequence of strings.", getpid(),
+                                      "sequence of byte strings.", getpid(),
                                       script);
                         Py_END_ALLOW_THREADS
                     }
