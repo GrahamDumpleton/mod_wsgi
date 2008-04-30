@@ -8949,7 +8949,22 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          * hosts log file.
          */
 
-        wsgi_server = daemon->group->server;
+        if (daemon->group->server) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                         "mod_wsgi (pid=%d): Process '%s' logging to '%s' "
+                         "with log level %d.", getpid(), daemon->group->name,
+                         daemon->group->server->server_hostname,
+                         daemon->group->server->loglevel);
+
+            wsgi_server = daemon->group->server;
+        }
+        else {
+            ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                         "mod_wsgi (pid=%d): Process '%s' forced to log to "
+                         "'%s' with log level %d.", getpid(),
+                         daemon->group->name, wsgi_server->server_hostname,
+                         wsgi_server->loglevel);
+        }
 
         /* Retain a reference to daemon process details. */
 
