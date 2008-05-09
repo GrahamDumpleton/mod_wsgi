@@ -315,6 +315,8 @@ typedef struct {
     const char *socket_prefix;
     apr_lockmech_e lock_mechanism;
 
+    int verbose_debugging;
+
     int python_optimize;
     const char *python_home;
     const char *python_path;
@@ -375,6 +377,8 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
                                          getpid());
     object->socket_prefix = ap_server_root_relative(p, object->socket_prefix);
 #endif
+
+    object->verbose_debugging = 0;
 
     object->python_optimize = -1;
     object->python_home = NULL;
@@ -5592,6 +5596,28 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_verbose_debugging(cmd_parms *cmd, void *mconfig,
+                                              const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (strcasecmp(f, "Off") == 0)
+        sconfig->verbose_debugging = 0;
+    else if (strcasecmp(f, "On") == 0)
+        sconfig->verbose_debugging = 1;
+    else
+        return "WSGIVerboseDebugging must be one of: Off | On";
+
+    return NULL;
+}
+
 static const char *wsgi_set_python_optimize(cmd_parms *cmd, void *mconfig,
                                             const char *f)
 {
@@ -7319,6 +7345,9 @@ static const command_rec wsgi_commands[] =
         RSRC_CONF, TAKE2, "Map location to target WSGI script file." },
     { "WSGIScriptAliasMatch", wsgi_add_script_alias, "*",
         RSRC_CONF, TAKE2, "Map location to target WSGI script file." },
+
+    { "WSGIVerboseDebugging", wsgi_set_verbose_debugging, NULL,
+        RSRC_CONF, TAKE1, "Enable/Disable verbose debugging messages." },
 
     { "WSGIPythonOptimize", wsgi_set_python_optimize, NULL,
         RSRC_CONF, TAKE1, "Set level of Python compiler optimisations." },
@@ -9457,6 +9486,13 @@ static int wsgi_execute_remote(request_rec *r)
 
     /* Send request details and subprocess environment. */
 
+    if (wsgi_server_config->verbose_debugging) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Request server was "
+                     "'%s|%d'.", getpid(), r->server->server_hostname,
+                     r->server->port);
+    }
+
     if ((rv = wsgi_send_request(r, config, daemon)) != APR_SUCCESS) {
         ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(rv), r,
                      "mod_wsgi (pid=%d): Unable to send request details "
@@ -10068,13 +10104,33 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
                        apr_table_get(r->subprocess_env,
                                      "mod_wsgi.listener_port"));
 
+    if (wsgi_server_config->verbose_debugging) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Server listener address '%s'.",
+                     getpid(), key);
+    }
+
     addr = (apr_sockaddr_t *)apr_hash_get(wsgi_daemon_listeners,
                                           key, APR_HASH_KEY_STRING);
 
-    if (addr)
+    if (wsgi_server_config->verbose_debugging) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Server listener address '%s' was"
+                     "%s found.", getpid(), key, addr ? "" : " not");
+    }
+
+    if (addr) {
         c->local_addr = addr;
+    }
 
     ap_update_vhost_given_ip(r->connection);
+
+    if (wsgi_server_config->verbose_debugging) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Connection server matched was "
+                     "'%s|%d'.", getpid(), c->base_server->server_hostname,
+                     c->base_server->port);
+    }
 
     r->server = c->base_server;
 
@@ -10086,6 +10142,12 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     }
 
     ap_update_vhost_from_headers(r);
+
+    if (wsgi_server_config->verbose_debugging) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Request server matched was '%s|%d'.",
+                     getpid(), r->server->server_hostname, r->server->port);
+    }
 
     /*
      * Set content length of any request content and add the
@@ -11911,6 +11973,9 @@ static const command_rec wsgi_commands[] =
     AP_INIT_TAKE1("WSGIAcceptMutex", wsgi_set_accept_mutex,
         NULL, RSRC_CONF, "Set accept mutex type for daemon processes."),
 #endif
+
+    AP_INIT_TAKE1("WSGIVerboseDebugging", wsgi_set_verbose_debugging,
+        NULL, RSRC_CONF, "Enable/Disable verbose debugging messages."),
 
     AP_INIT_TAKE1("WSGIPythonOptimize", wsgi_set_python_optimize,
         NULL, RSRC_CONF, "Set level of Python compiler optimisations."),
