@@ -6523,11 +6523,6 @@ static void wsgi_build_environment(request_rec *r)
                    apr_psprintf(r->pool, "%d", config->reload_mechanism));
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    if (r->hostname) {
-        apr_table_setn(r->subprocess_env, "mod_wsgi.server_hostname",
-                       r->hostname ? r->hostname : "");
-    }
-
     apr_table_setn(r->subprocess_env, "mod_wsgi.listener_host",
                    c->local_addr->hostname ? c->local_addr->hostname : "");
     apr_table_setn(r->subprocess_env, "mod_wsgi.listener_port",
@@ -10133,8 +10128,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     }
 
     r->server = c->base_server;
-
-    r->hostname = apr_table_get(r->subprocess_env, "mod_wsgi.server_hostname");
 
     if (apr_table_get(r->subprocess_env, "HTTP_HOST")) {
         apr_table_setn(r->headers_in, "Host",
