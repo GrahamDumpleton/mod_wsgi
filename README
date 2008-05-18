@@ -258,6 +258,12 @@ The init.d script may be called 'apache2'. Similarly, the 'apachectl'
 script may even be called 'apachectl2' on some systems where they allow
 both Apache 1.3 and Apache 2.X to be installed at the same time.
 
+In general, for any system where you are using a prepackaged version of
+Apache, it is wise to always check the documentation for that package or
+system to determine the correct way to stop/start the Apache service. This
+is because they often use a wrapper around 'apachectl', or replace it, with
+a script which performs additional actions.
+
 If all is okay, you should see a line of the form:
 
     Apache/2.2.2 (Unix) mod_wsgi/1.0 Python/2.3.5 configured
