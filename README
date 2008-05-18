@@ -247,6 +247,17 @@ instead.
     apachectl stop
     apachectl start
 
+Note that on some Linux systems using 'apachectl' may not work properly.
+On these systems, if you have problems using 'apachectl' ensure instead
+you use the init.d script for Apache instead.
+
+    /etc/init.d/httpd stop
+    /etc/init.d/httpd start
+
+The init.d script may be called 'apache2'. Similarly, the 'apachectl'
+script may even be called 'apachectl2' on some systems where they allow
+both Apache 1.3 and Apache 2.X to be installed at the same time.
+
 If all is okay, you should see a line of the form:
 
     Apache/2.2.2 (Unix) mod_wsgi/1.0 Python/2.3.5 configured
