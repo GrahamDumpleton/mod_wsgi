@@ -6871,7 +6871,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     r->read_length = 0;
     r->read_body = REQUEST_NO_BODY;
 
-    r->status = HTTP_INTERNAL_SERVER_ERROR;
+    r->status = HTTP_OK;
     r->the_request = NULL;
 
     r->used_path_info = AP_REQ_DEFAULT_PATH_INFO;
