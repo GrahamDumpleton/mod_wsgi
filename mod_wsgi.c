@@ -3159,7 +3159,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                     self->result = OK;
             }
 
-            Py_DECREF(iterator);
+            Py_XDECREF(iterator);
         }
 
         if (PyErr_Occurred()) {
