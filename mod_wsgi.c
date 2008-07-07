@@ -8207,7 +8207,19 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
     omask = umask(0077);
     rc = bind(sockfd, (struct sockaddr *)&addr, sizeof(addr));
+
+    if (rc < 0 && errno == EADDRINUSE) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(errno), wsgi_server,
+                     "mod_wsgi (pid=%d): Removing stale unix domain "
+                     "socket '%s'.", getpid(), process->socket);
+
+        unlink(process->socket);
+
+        rc = bind(sockfd, (struct sockaddr *)&addr, sizeof(addr));
+    }
+
     umask(omask);
+
     if (rc < 0) {
         ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
                      "mod_wsgi (pid=%d): Couldn't bind unix domain "
