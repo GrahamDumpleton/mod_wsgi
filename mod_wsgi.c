@@ -52,7 +52,9 @@ typedef int apr_status_t;
 #define APR_SUCCESS 0
 typedef pool apr_pool_t;
 typedef unsigned int apr_port_t;
+#include "ap_ctype.h"
 #include "ap_alloc.h"
+#define apr_isspace ap_isspace
 #define apr_table_make ap_make_table
 #define apr_table_get ap_table_get
 #define apr_table_set ap_table_set
@@ -78,6 +80,7 @@ typedef time_t apr_time_t;
 #include "http_config.h"
 typedef int apr_lockmech_e;
 #else
+#include "apr_lib.h"
 #include "ap_mpm.h"
 #include "ap_compat.h"
 #include "apr_tables.h"
@@ -5569,6 +5572,41 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
 /* The processors for directives. */
 
+static int wsgi_parse_option(apr_pool_t *p, const char **line,
+                             const char **name, const char **value)
+{
+    const char *str = *line, *strend;
+
+    while (*str && apr_isspace(*str))
+        ++str;
+
+    if (!*str || *str == '=') {
+        *line = str;
+        return !APR_SUCCESS;
+    }
+
+    /* Option must be of form name=value. Extract the name. */
+
+    strend = str;
+    while (*strend && *strend != '=' && !apr_isspace(*strend))
+        ++strend;
+
+    if (*strend != '=') {
+        *line = str;
+        return !APR_SUCCESS;
+    }
+
+    *name = apr_pstrndup(p, str, strend-str);
+
+    *line = strend+1;
+
+    /* Now extract the value. Note that value can be quoted. */
+
+    *value = ap_getword_conf(p, line);
+
+    return APR_SUCCESS;
+}
+
 static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
                                          const char *l, const char *a)
 {
@@ -5911,18 +5949,19 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
         return "Location of import script not supplied.";
 
     while (*args) {
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+                              &value) != APR_SUCCESS) {
+            return "Invalid option to WSGI import script definition.";
+        }
 
-        if (strstr(option, "application-group=") == option) {
-            value = option + 18;
+        if (!strcmp(option, "application-group")) {
             if (!*value)
                 return "Invalid name for WSGI application group.";
 
             object->application_group = value;
         }
 #if defined(MOD_WSGI_WITH_DAEMONS)
-        else if (strstr(option, "process-group=") == option) {
-            value = option + 14;
+        else if (!strcmp(option, "process-group")) {
             if (!*value)
                 return "Invalid name for WSGI process group.";
 
@@ -5968,10 +6007,12 @@ static const char *wsgi_set_dispatch_script(cmd_parms *cmd, void *mconfig,
         return "Location of dispatch script not supplied.";
 
     while (*args) {
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+                              &value) != APR_SUCCESS) {
+            return "Invalid option to WSGI dispatch script definition.";
+        }
 
-        if (strstr(option, "application-group=") == option) {
-            value = option + 18;
+        if (!strcmp(option, "application-group")) {
             if (!*value)
                 return "Invalid name for WSGI application group.";
 
@@ -6137,10 +6178,12 @@ static const char *wsgi_set_access_script(cmd_parms *cmd, void *mconfig,
         return "Location of access script not supplied.";
 
     while (*args) {
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+                              &value) != APR_SUCCESS) {
+            return "Invalid option to WSGI access script definition.";
+        }
 
-        if (strstr(option, "application-group=") == option) {
-            value = option + 18;
+        if (!strcmp(option, "application-group")) {
             if (!*value)
                 return "Invalid name for WSGI application group.";
 
@@ -6173,9 +6216,12 @@ static const char *wsgi_set_auth_user_script(cmd_parms *cmd, void *mconfig,
         return "Location of auth user script not supplied.";
 
     while (*args) {
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+                              &value) != APR_SUCCESS) {
+            return "Invalid option to WSGI auth user script definition.";
+        }
 
-        if (strstr(option, "application-group=") == option) {
+        if (!strcmp(option, "application-group")) {
             value = option + 18;
             if (!*value)
                 return "Invalid name for WSGI application group.";
@@ -6209,10 +6255,12 @@ static const char *wsgi_set_auth_group_script(cmd_parms *cmd, void *mconfig,
         return "Location of auth group script not supplied.";
 
     while (*args) {
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+                              &value) != APR_SUCCESS) {
+            return "Invalid option to WSGI auth group script definition.";
+        }
 
-        if (strstr(option, "application-group=") == option) {
-            value = option + 18;
+        if (!strcmp(option, "application-group")) {
             if (!*value)
                 return "Invalid name for WSGI application group.";
 
@@ -7575,10 +7623,12 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
         return "Name of WSGI daemon process not supplied.";
 
     while (*args) {
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+                              &value) != APR_SUCCESS) {
+            return "Invalid option to WSGI daemon process definition.";
+        }
 
-        if (strstr(option, "user=") == option) {
-            value = option + 5;
+        if (!strcmp(option, "user")) {
             if (!*value)
                 return "Invalid user for WSGI daemon process.";
 
@@ -7596,16 +7646,14 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                 user = entry->pw_name;
             }
         }
-        else if (strstr(option, "group=") == option) {
-            value = option + 6;
+        else if (!strcmp(option, "group")) {
             if (!*value)
                 return "Invalid group for WSGI daemon process.";
 
             group = value;
             gid = ap_gname2id(group);
         }
-        else if (strstr(option, "processes=") == option) {
-            value = option + 10;
+        else if (!strcmp(option, "processes")) {
             if (!*value)
                 return "Invalid process count for WSGI daemon process.";
 
@@ -7615,8 +7663,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
             multiprocess = 1;
         }
-        else if (strstr(option, "threads=") == option) {
-            value = option + 8;
+        else if (!strcmp(option, "threads")) {
             if (!*value)
                 return "Invalid thread count for WSGI daemon process.";
 
@@ -7624,8 +7671,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (threads < 1)
                 return "Invalid thread count for WSGI daemon process.";
         }
-        else if (strstr(option, "umask=") == option) {
-            value = option + 6;
+        else if (!strcmp(option, "umask")) {
             if (!*value)
                 return "Invalid umask for WSGI daemon process.";
 
@@ -7635,26 +7681,20 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (*value || errno == ERANGE || umask < 0)
                 return "Invalid umask for WSGI daemon process.";
         }
-        else if (strstr(option, "home=") == option) {
-            value = option + 5;
+        else if (!strcmp(option, "home")) {
             if (*value != '/')
                 return "Invalid home directory for WSGI daemon process.";
 
             home = value;
         }
-        else if (strstr(option, "python-path=") == option) {
-            value = option + 12;
-
+        else if (!strcmp(option, "python-path")) {
             python_path = value;
         }
-        else if (strstr(option, "python-eggs=") == option) {
-            value = option + 12;
-
+        else if (!strcmp(option, "python-eggs")) {
             python_eggs = value;
         }
 #if (APR_MAJOR_VERSION >= 1)
-        else if (strstr(option, "stack-size=") == option) {
-            value = option + 11;
+        else if (!strcmp(option, "stack-size")) {
             if (!*value)
                 return "Invalid stack size for WSGI daemon process.";
 
@@ -7663,8 +7703,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                 return "Invalid stack size for WSGI daemon process.";
         }
 #endif
-        else if (strstr(option, "maximum-requests=") == option) {
-            value = option + 17;
+        else if (!strcmp(option, "maximum-requests")) {
             if (!*value)
                 return "Invalid request count for WSGI daemon process.";
 
@@ -7672,8 +7711,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (maximum_requests < 0)
                 return "Invalid request count for WSGI daemon process.";
         }
-        else if (strstr(option, "shutdown-timeout=") == option) {
-            value = option + 17;
+        else if (!strcmp(option, "shutdown-timeout")) {
             if (!*value)
                 return "Invalid shutdown timeout for WSGI daemon process.";
 
@@ -7681,8 +7719,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (shutdown_timeout < 0)
                 return "Invalid shutdown timeout for WSGI daemon process.";
         }
-        else if (strstr(option, "deadlock-timeout=") == option) {
-            value = option + 17;
+        else if (!strcmp(option, "deadlock-timeout")) {
             if (!*value)
                 return "Invalid deadlock timeout for WSGI daemon process.";
 
@@ -7690,8 +7727,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (deadlock_timeout < 0)
                 return "Invalid deadlock timeout for WSGI daemon process.";
         }
-        else if (strstr(option, "inactivity-timeout=") == option) {
-            value = option + 19;
+        else if (!strcmp(option, "inactivity-timeout")) {
             if (!*value)
                 return "Invalid inactivity timeout for WSGI daemon process.";
 
@@ -7699,13 +7735,10 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (inactivity_timeout < 0)
                 return "Invalid inactivity timeout for WSGI daemon process.";
         }
-        else if (strstr(option, "display-name=") == option) {
-            value = option + 13;
-
+        else if (!strcmp(option, "display-name")) {
             display_name = value;
         }
-        else if (strstr(option, "send-buffer-size=") == option) {
-            value = option + 17;
+        else if (!strcmp(option, "send-buffer-size")) {
             if (!*value)
                 return "Invalid send buffer size for WSGI daemon process.";
 
@@ -7715,8 +7748,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                        "or 0 for system default.";
             }
         }
-        else if (strstr(option, "receive-buffer-size=") == option) {
-            value = option + 20;
+        else if (!strcmp(option, "receive-buffer-size")) {
             if (!*value)
                 return "Invalid receive buffer size for WSGI daemon process.";
 
