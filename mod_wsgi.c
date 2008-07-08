@@ -194,8 +194,8 @@ static apr_status_t apr_os_pipe_put_ex(apr_file_t **file,
 /* Version and module information. */
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 1
-#define MOD_WSGI_MINORVERSION_NUMBER 4
-#define MOD_WSGI_VERSION_STRING "1.4-BRANCH"
+#define MOD_WSGI_MINORVERSION_NUMBER 5
+#define MOD_WSGI_VERSION_STRING "1.5-BRANCH"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
