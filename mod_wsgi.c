@@ -302,6 +302,10 @@ typedef struct {
     const char *location;
     const char *application;
     ap_regex_t *regexp;
+    const char *process_group;
+    const char *application_group;
+    const char *callable_object;
+    int pass_authorization;
 } WSGIAliasEntry;
 
 typedef struct {
@@ -5608,19 +5612,101 @@ static int wsgi_parse_option(apr_pool_t *p, const char **line,
 }
 
 static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
-                                         const char *l, const char *a)
+                                         const char *args)
 {
-    WSGIServerConfig *config = NULL;
+    const char *l = NULL;
+    const char *a = NULL;
+
+    WSGIServerConfig *sconfig = NULL;
     WSGIAliasEntry *entry = NULL;
 
-    config = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+    const char *option = NULL;
+    const char *value = NULL;
 
-    if (!config->alias_list) {
-        config->alias_list = apr_array_make(config->pool, 20,
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    const char *process_group = NULL;
+#else
+    const char *process_group = "";
+#endif
+
+    const char *application_group = NULL;
+    const char *callable_object = NULL;
+
+    int pass_authorization = -1;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (!sconfig->alias_list) {
+        sconfig->alias_list = apr_array_make(sconfig->pool, 20,
                                             sizeof(WSGIAliasEntry));
     }
 
-    entry = (WSGIAliasEntry *)apr_array_push(config->alias_list);
+    l = ap_getword_conf(cmd->pool, &args);
+
+    if (*l == '\0' || *args == 0) {
+        return apr_pstrcat(cmd->pool, cmd->cmd->name,
+                           " requires at least two arguments",
+                           cmd->cmd->errmsg ? ", " : NULL,
+                           cmd->cmd->errmsg, NULL);
+    }
+
+    a = ap_getword_conf(cmd->pool, &args);
+
+    if (*a == '\0') {
+        return apr_pstrcat(cmd->pool, cmd->cmd->name,
+                           " requires at least two arguments",
+                           cmd->cmd->errmsg ? ", " : NULL,
+                           cmd->cmd->errmsg, NULL);
+    }
+
+    while (*args) {
+        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+                              &value) != APR_SUCCESS) {
+            return "Invalid option to WSGI script alias definition.";
+        }
+
+        if (!strcmp(option, "application-group")) {
+            if (!*value)
+                return "Invalid name for WSGI application group.";
+
+            if (!strcmp(value, "%{GLOBAL}"))
+                value = "";
+
+            application_group = value;
+        }
+#if defined(MOD_WSGI_WITH_DAEMONS)
+        else if (!strcmp(option, "process-group")) {
+            if (!*value)
+                return "Invalid name for WSGI process group.";
+
+            if (!strcmp(value, "%{GLOBAL}"))
+                value = "";
+
+            process_group = value;
+        }
+#endif
+        else if (!strcmp(option, "callable-object")) {
+            if (!*value)
+                return "Invalid name for WSGI callable object.";
+
+            callable_object = value;
+        }
+        else if (!strcmp(option, "pass-authorization")) {
+            if (!*value)
+                return "Invalid value for authorization flag.";
+
+            if (strcasecmp(value, "Off") == 0)
+                pass_authorization = 0;
+            else if (strcasecmp(value, "On") == 0)
+                pass_authorization = 1;
+            else
+                return "Invalid value for authorization flag.";
+        }
+        else
+            return "Invalid option to WSGI script alias definition.";
+    }
+
+    entry = (WSGIAliasEntry *)apr_array_push(sconfig->alias_list);
 
     if (cmd->info) {
         entry->regexp = ap_pregcomp(cmd->pool, l, AP_REG_EXTENDED);
@@ -5630,6 +5716,26 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
 
     entry->location = l;
     entry->application = a;
+
+    entry->process_group = process_group;
+    entry->application_group = application_group;
+    entry->callable_object = callable_object;
+    entry->pass_authorization = pass_authorization;
+
+    if (!cmd->info && process_group && application_group) {
+        WSGIScriptFile *object = NULL;
+
+        if (!sconfig->import_list) {
+            sconfig->import_list = apr_array_make(sconfig->pool, 20,
+                                                  sizeof(WSGIScriptFile));
+        }
+
+        object = (WSGIScriptFile *)apr_array_push(sconfig->import_list);
+
+        object->handler_script = a;
+        object->process_group = process_group;
+        object->application_group = application_group;
+    }
 
     return NULL;
 }
@@ -6416,6 +6522,24 @@ static int wsgi_hook_intercept(request_rec *r)
             r->handler = "wsgi-script";
             apr_table_setn(r->notes, "alias-forced-type", r->handler);
 
+            if (entry->process_group) {
+                apr_table_setn(r->notes, "mod_wsgi.process_group",
+                               entry->process_group);
+            }
+            if (entry->application_group) {
+                apr_table_setn(r->notes, "mod_wsgi.application_group",
+                               entry->application_group);
+            }
+            if (entry->callable_object) {
+                apr_table_setn(r->notes, "mod_wsgi.callable_object",
+                               entry->callable_object);
+            }
+
+            if (entry->pass_authorization == 0)
+                apr_table_setn(r->notes, "mod_wsgi.pass_authorization", "0");
+            else if (entry->pass_authorization == 1)
+                apr_table_setn(r->notes, "mod_wsgi.pass_authorization", "1");
+
             return OK;
         }
     }
@@ -7174,6 +7298,8 @@ static int wsgi_hook_handler(request_rec *r)
 
     WSGIRequestConfig *config = NULL;
 
+    char const *value = NULL;
+
     /*
      * Only process requests for this module. Honour a content
      * type here because mod_rewrite prior to Apache 2.2 only
@@ -7286,6 +7412,29 @@ static int wsgi_hook_handler(request_rec *r)
     config = wsgi_create_req_config(r->pool, r);
 
     ap_set_module_config(r->request_config, &wsgi_module, config);
+
+    /*
+     * Allow any configuration supplied through request notes to
+     * override respective values. Request notes are used when
+     * configuration supplied with WSGIScriptAlias directives.
+     * A custom module could also set configuration in request
+     * notes. Note that dispatch script below still has option
+     * to override these again.
+     */
+
+    if (value = apr_table_get(r->notes, "mod_wsgi.process_group"))
+        config->process_group = value;
+    if (value = apr_table_get(r->notes, "mod_wsgi.application_group"))
+        config->application_group = value;
+    if (value = apr_table_get(r->notes, "mod_wsgi.callable_object"))
+        config->callable_object = value;
+
+    if (value = apr_table_get(r->notes, "mod_wsgi.pass_authorization")) {
+        if (!strcmp(value, "1"))
+            config->pass_authorization = 1;
+        else
+            config->pass_authorization = 0;
+    }
 
     /* Build the sub process environment. */
 
@@ -11997,9 +12146,9 @@ static void wsgi_register_hooks(apr_pool_t *p)
 
 static const command_rec wsgi_commands[] =
 {
-    AP_INIT_TAKE2("WSGIScriptAlias", wsgi_add_script_alias,
+    AP_INIT_RAW_ARGS("WSGIScriptAlias", wsgi_add_script_alias,
         NULL, RSRC_CONF, "Map location to target WSGI script file."),
-    AP_INIT_TAKE2("WSGIScriptAliasMatch", wsgi_add_script_alias,
+    AP_INIT_RAW_ARGS("WSGIScriptAliasMatch", wsgi_add_script_alias,
         "*", RSRC_CONF, "Map location pattern to target WSGI script file."),
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
