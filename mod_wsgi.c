@@ -11495,15 +11495,10 @@ static void wsgi_register_hooks(apr_pool_t *p)
     static const char * const n5[] = { "mod_authz_host.c", NULL };
 #endif
 
-    /*
-     * Perform initialisation last in the post config phase to
-     * ensure that if mod_python is also being loaded that it
-     * gets to perform interpreter initialisation in preference
-     * to mod_wsgi doing it.
-     */
+    static const char * const p6[] = { "mod_python.c", NULL };
 
-    ap_hook_post_config(wsgi_hook_init, NULL, NULL, APR_HOOK_LAST);
-    ap_hook_child_init(wsgi_hook_child_init, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_post_config(wsgi_hook_init, p6, NULL, APR_HOOK_MIDDLE);
+    ap_hook_child_init(wsgi_hook_child_init, p6, NULL, APR_HOOK_MIDDLE);
 
     ap_hook_translate_name(wsgi_hook_intercept, p1, n1, APR_HOOK_MIDDLE);
     ap_hook_handler(wsgi_hook_handler, NULL, NULL, APR_HOOK_MIDDLE);
