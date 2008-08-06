@@ -9123,8 +9123,10 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         for (i = 0; i < wsgi_daemon_list->nelts; ++i) {
             entry = &entries[i];
 
-            if (entry != daemon->group && entry->listener_fd != -1)
+            if (entry != daemon->group && entry->listener_fd != -1) {
                 close(entry->listener_fd);
+                entry->listener_fd = -1;
+            }
         }
 
         /*
@@ -10519,6 +10521,7 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
         entry = &entries[i];
 
         close(entry->listener_fd);
+        entry->listener_fd = -1;
     }
 
     /* Setup Python in Apache worker processes. */
