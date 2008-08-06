@@ -380,8 +380,6 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     object->socket_prefix = DEFAULT_REL_RUNTIMEDIR "/wsgi";
-    object->socket_prefix = apr_psprintf(p, "%s.%d", object->socket_prefix,
-                                         getpid());
     object->socket_prefix = ap_server_root_relative(p, object->socket_prefix);
 #endif
 
@@ -7979,9 +7977,7 @@ static const char *wsgi_set_socket_prefix(cmd_parms *cmd, void *mconfig,
 
     sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
 
-    sconfig->socket_prefix = apr_psprintf(cmd->pool, "%s.%d", arg, getpid());
-    sconfig->socket_prefix = ap_server_root_relative(cmd->pool,
-                                                     sconfig->socket_prefix);
+    sconfig->socket_prefix = ap_server_root_relative(cmd->pool, arg);
 
     if (!sconfig->socket_prefix) {
         return apr_pstrcat(cmd->pool, "Invalid WSGISocketPrefix '",
@@ -9307,9 +9303,9 @@ static int wsgi_start_daemons(apr_pool_t *p)
          * create the socket.
          */
 
-        entry->socket = apr_psprintf(p, "%s.%d.%d.sock",
+        entry->socket = apr_psprintf(p, "%s.%d.%d.%d.sock",
                                      wsgi_server_config->socket_prefix,
-                                     ap_my_generation, entry->id);
+                                     getpid(), ap_my_generation, entry->id);
 
         apr_hash_set(wsgi_daemon_index, entry->name, APR_HASH_KEY_STRING,
                      entry);
@@ -9327,9 +9323,10 @@ static int wsgi_start_daemons(apr_pool_t *p)
          */
 
         if (entry->processes > 1) {
-            entry->mutex_path = apr_psprintf(p, "%s.%d.%d.lock",
+            entry->mutex_path = apr_psprintf(p, "%s.%d.%d.%d.lock",
                                              wsgi_server_config->socket_prefix,
-                                             ap_my_generation, entry->id);
+                                             getpid(), ap_my_generation,
+                                             entry->id);
 
             status = apr_proc_mutex_create(&entry->mutex, entry->mutex_path,
                                            wsgi_server_config->lock_mechanism,
