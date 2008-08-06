@@ -7962,6 +7962,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->send_buffer_size = send_buffer_size;
     entry->recv_buffer_size = recv_buffer_size;
 
+    entry->listener_fd = -1;
+
     return NULL;
 }
 
@@ -9112,6 +9114,21 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (entry != daemon->group)
                 entry->random = 0;
+        }
+
+        /*
+         * Close listener socket for daemon processes for other
+         * daemon process groups. In other words, close all but
+         * our own.
+         */
+
+        entries = (WSGIProcessGroup *)wsgi_daemon_list->elts;
+
+        for (i = 0; i < wsgi_daemon_list->nelts; ++i) {
+            entry = &entries[i];
+
+            if (entry != daemon->group && entry->listener_fd != -1)
+                close(entry->listener_fd);
         }
 
         /*
@@ -10492,6 +10509,23 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
 
 static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 {
+    WSGIProcessGroup *entries = NULL;
+    WSGIProcessGroup *entry = NULL;
+
+    int i;
+
+    /* Close listener sockets for daemon processes. */
+
+    entries = (WSGIProcessGroup *)wsgi_daemon_list->elts;
+
+    for (i = 0; i < wsgi_daemon_list->nelts; ++i) {
+        entry = &entries[i];
+
+        close(entry->listener_fd);
+    }
+
+    /* Setup Python in Apache worker processes. */
+
     wsgi_python_child_init(p);
 }
 
