@@ -7771,6 +7771,9 @@ static void wsgi_setup_daemon_name(WSGIDaemonProcess *daemon, apr_pool_t *p)
      * is restricted, need to truncate display name if too long.
      */
 
+#if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    setproctitle(display_name);
+#else
     argv0 = (char*)wsgi_server->process->argv[0];
 
     dlen = strlen(argv0);
@@ -7782,6 +7785,7 @@ static void wsgi_setup_daemon_name(WSGIDaemonProcess *daemon, apr_pool_t *p)
         memcpy(argv0, display_name, slen);
     else
         memcpy(argv0, display_name, dlen);
+#endif
 }
 
 static void wsgi_setup_access(WSGIDaemonProcess *daemon)
