@@ -8127,28 +8127,6 @@ static void wsgi_manage_process(int reason, void *data, apr_wait_t status)
 
             apr_proc_other_child_unregister(daemon);
 
-            /*
-             * Remove socket used for communicating with daemon
-             * when the process to be notified is the first in
-             * the process group.
-             */
-
-            if (daemon->instance == 1) {
-                if (close(daemon->group->listener_fd) < 0) {
-                    ap_log_error(APLOG_MARK, WSGI_LOG_ERR(errno),
-                                 wsgi_server, "mod_wsgi (pid=%d): "
-                                 "Couldn't close unix domain socket '%s'.",
-                                 getpid(), daemon->group->socket);
-                }
-
-                if (unlink(daemon->group->socket) < 0 && errno != ENOENT) {
-                    ap_log_error(APLOG_MARK, WSGI_LOG_ERR(errno),
-                                 wsgi_server, "mod_wsgi (pid=%d): "
-                                 "Couldn't unlink unix domain socket '%s'.",
-                                 getpid(), daemon->group->socket);
-                }
-            }
-
             break;
         }
 
@@ -8988,6 +8966,34 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     }
 }
 
+static apr_status_t wsgi_cleanup_process(void *data)
+{
+    WSGIProcessGroup *group = (WSGIProcessGroup *)data;
+
+    /* Only do cleanup if in Apache parent process. */
+
+    if (wsgi_parent_pid != getpid())
+        return APR_SUCCESS;
+
+    if (group->listener_fd != -1) {
+        if (close(group->listener_fd) < 0) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ERR(errno),
+                         wsgi_server, "mod_wsgi (pid=%d): "
+                         "Couldn't close unix domain socket '%s'.",
+                         getpid(), group->socket);
+        }
+
+        if (unlink(group->socket) < 0 && errno != ENOENT) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ERR(errno),
+                         wsgi_server, "mod_wsgi (pid=%d): "
+                         "Couldn't unlink unix domain socket '%s'.",
+                         getpid(), group->socket);
+        }
+    }
+
+    return APR_SUCCESS;
+}
+
 static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 {
     apr_status_t status;
@@ -9316,6 +9322,13 @@ static int wsgi_start_daemons(apr_pool_t *p)
 
         if (entry->listener_fd == -1)
             return DECLINED;
+
+        /*
+         * Register cleanup so that listener socket is cleaned
+         * up properly on a restart and on shutdown.
+         */
+
+        apr_pool_cleanup_register(p, entry, wsgi_cleanup_process, NULL);
 
         /*
          * If there is more than one daemon process in the group
