@@ -10528,13 +10528,15 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
     /* Close listener sockets for daemon processes. */
 
-    entries = (WSGIProcessGroup *)wsgi_daemon_list->elts;
+    if (wsgi_daemon_list) {
+        entries = (WSGIProcessGroup *)wsgi_daemon_list->elts;
 
-    for (i = 0; i < wsgi_daemon_list->nelts; ++i) {
-        entry = &entries[i];
+        for (i = 0; i < wsgi_daemon_list->nelts; ++i) {
+            entry = &entries[i];
 
-        close(entry->listener_fd);
-        entry->listener_fd = -1;
+            close(entry->listener_fd);
+            entry->listener_fd = -1;
+        }
     }
 
     /* Setup Python in Apache worker processes. */
