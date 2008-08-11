@@ -271,8 +271,6 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     object->socket_prefix = DEFAULT_REL_RUNTIMEDIR "/wsgi";
-    object->socket_prefix = apr_psprintf(p, "%s.%d", object->socket_prefix,
-                                         getpid());
     object->socket_prefix = ap_server_root_relative(p, object->socket_prefix);
 #endif
 
@@ -5139,6 +5137,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->requests = requests;
     entry->timeout = timeout;
 
+    entry->listener_fd = -1;
+
     return NULL;
 }
 
@@ -5154,9 +5154,7 @@ static const char *wsgi_set_socket_prefix(cmd_parms *cmd, void *mconfig,
 
     sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
 
-    sconfig->socket_prefix = apr_psprintf(cmd->pool, "%s.%d", arg, getpid());
-    sconfig->socket_prefix = ap_server_root_relative(cmd->pool,
-                                                     sconfig->socket_prefix);
+    sconfig->socket_prefix = ap_server_root_relative(cmd->pool, arg);
 
     if (!sconfig->socket_prefix) {
         return apr_pstrcat(cmd->pool, "Invalid WSGISocketPrefix '",
@@ -5305,28 +5303,6 @@ static void wsgi_manage_process(int reason, void *data, apr_wait_t status)
             /* Stop watching the existing process. */
 
             apr_proc_other_child_unregister(daemon);
-
-            /*
-             * Remove socket used for communicating with daemon
-             * when the process to be notified is the first in
-             * the process group.
-             */
-
-            if (daemon->instance == 1) {
-                if (close(daemon->group->listener_fd) < 0) {
-                    ap_log_error(APLOG_MARK, WSGI_LOG_ERR(errno),
-                                 wsgi_server, "mod_wsgi (pid=%d): "
-                                 "Couldn't close unix domain socket '%s'.",
-                                 getpid(), daemon->group->socket);
-                }
-
-                if (unlink(daemon->group->socket) < 0 && errno != ENOENT) {
-                    ap_log_error(APLOG_MARK, WSGI_LOG_ERR(errno),
-                                 wsgi_server, "mod_wsgi (pid=%d): "
-                                 "Couldn't unlink unix domain socket '%s'.",
-                                 getpid(), daemon->group->socket);
-                }
-            }
 
             break;
         }
@@ -5885,11 +5861,43 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     }
 }
 
+static apr_status_t wsgi_cleanup_process(void *data)
+{
+    WSGIProcessGroup *group = (WSGIProcessGroup *)data;
+
+    /* Only do cleanup if in Apache parent process. */
+
+    if (wsgi_parent_pid != getpid())
+        return APR_SUCCESS;
+
+    if (group->listener_fd != -1) {
+        if (close(group->listener_fd) < 0) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ERR(errno),
+                         wsgi_server, "mod_wsgi (pid=%d): "
+                         "Couldn't close unix domain socket '%s'.",
+                         getpid(), group->socket);
+        }
+
+        if (unlink(group->socket) < 0 && errno != ENOENT) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ERR(errno),
+                         wsgi_server, "mod_wsgi (pid=%d): "
+                         "Couldn't unlink unix domain socket '%s'.",
+                         getpid(), group->socket);
+        }
+    }
+
+    return APR_SUCCESS;
+}
+
 static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 {
     apr_status_t status;
 
     ap_listen_rec *lr;
+
+    WSGIProcessGroup *entries = NULL;
+    WSGIProcessGroup *entry = NULL;
+    int i = 0;
 
     if ((status = apr_proc_fork(&daemon->process, p)) < 0) {
         ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
@@ -5984,6 +5992,23 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          */
 
         ap_close_listeners();
+
+        /*
+         * Close listener socket for daemon processes for other
+         * daemon process groups. In other words, close all but
+         * our own.
+         */
+
+        entries = (WSGIProcessGroup *)wsgi_daemon_list->elts;
+
+        for (i = 0; i < wsgi_daemon_list->nelts; ++i) {
+            entry = &entries[i];
+
+            if (entry != daemon->group && entry->listener_fd != -1) {
+                close(entry->listener_fd);
+                entry->listener_fd = -1;
+            }
+        }
 
         /*
          * Register signal handler to receive shutdown signal
@@ -6136,9 +6161,9 @@ static int wsgi_start_daemons(apr_pool_t *p)
          * create the socket.
          */
 
-        entry->socket = apr_psprintf(p, "%s.%d.%d.sock",
+        entry->socket = apr_psprintf(p, "%s.%d.%d.%d.sock",
                                      wsgi_server_config->socket_prefix,
-                                     ap_my_generation, entry->id);
+                                     getpid(), ap_my_generation, entry->id);
 
         apr_hash_set(wsgi_daemon_index, entry->name, APR_HASH_KEY_STRING,
                      entry);
@@ -6149,6 +6174,13 @@ static int wsgi_start_daemons(apr_pool_t *p)
             return DECLINED;
 
         /*
+         * Register cleanup so that listener socket is cleaned
+         * up properly on a restart and on shutdown.
+         */
+
+        apr_pool_cleanup_register(p, entry, wsgi_cleanup_process, NULL);
+
+        /*
          * If there is more than one daemon process in the group
          * then need to create an accept mutex for the daemon
          * processes to use so they don't interfere with each
@@ -6156,9 +6188,10 @@ static int wsgi_start_daemons(apr_pool_t *p)
          */
 
         if (entry->processes > 1) {
-            entry->mutex_path = apr_psprintf(p, "%s.%d.%d.lock",
+            entry->mutex_path = apr_psprintf(p, "%s.%d.%d.%d.lock",
                                              wsgi_server_config->socket_prefix,
-                                             ap_my_generation, entry->id);
+                                             getpid(), ap_my_generation,
+                                             entry->id);
 
             status = apr_proc_mutex_create(&entry->mutex, entry->mutex_path,
                                            wsgi_server_config->lock_mechanism,
@@ -7157,6 +7190,26 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
 
 static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 {
+    WSGIProcessGroup *entries = NULL;
+    WSGIProcessGroup *entry = NULL;
+
+    int i;
+
+    /* Close listener sockets for daemon processes. */
+
+    if (wsgi_daemon_list) {
+        entries = (WSGIProcessGroup *)wsgi_daemon_list->elts;
+
+        for (i = 0; i < wsgi_daemon_list->nelts; ++i) {
+            entry = &entries[i];
+
+            close(entry->listener_fd);
+            entry->listener_fd = -1;
+        }
+    }
+
+    /* Setup Python in Apache worker processes. */
+
     wsgi_python_child_init(p);
 }
 
