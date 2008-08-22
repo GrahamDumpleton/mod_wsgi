@@ -7532,9 +7532,9 @@ static const handler_rec wsgi_handlers[] = {
 static const command_rec wsgi_commands[] =
 {
     { "WSGIScriptAlias", wsgi_add_script_alias, NULL,
-        RSRC_CONF, TAKE2, "Map location to target WSGI script file." },
+        RSRC_CONF, RAW_ARGS, "Map location to target WSGI script file." },
     { "WSGIScriptAliasMatch", wsgi_add_script_alias, "*",
-        RSRC_CONF, TAKE2, "Map location to target WSGI script file." },
+        RSRC_CONF, RAW_ARGS, "Map location to target WSGI script file." },
 
     { "WSGIVerboseDebugging", wsgi_set_verbose_debugging, NULL,
         RSRC_CONF, TAKE1, "Enable/Disable verbose debugging messages." },
