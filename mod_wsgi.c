@@ -3333,7 +3333,7 @@ static PyObject *Stream_iternext(StreamObject *self)
         return 0;
     }
 
-    if (*PyString_AsString(result) == '\0') {
+    if (PyString_Size(result) == 0) {
         PyErr_SetObject(PyExc_StopIteration, Py_None);
         Py_DECREF(args);
         Py_DECREF(result);
