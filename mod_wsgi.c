@@ -246,7 +246,7 @@ static char *apr_off_t_toa(apr_pool_t *p, apr_off_t n)
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 2
 #define MOD_WSGI_MINORVERSION_NUMBER 2
-#define MOD_WSGI_VERSION_STRING "2.2"
+#define MOD_WSGI_VERSION_STRING "2.3"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -7725,10 +7725,12 @@ static void wsgi_setup_daemon_name(WSGIDaemonProcess *daemon, apr_pool_t *p)
 {
     const char *display_name = NULL;
 
+#if !(defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__))
     int slen = 0;
     int dlen = 0;
 
     char *argv0 = NULL;
+#endif
 
     display_name = daemon->group->display_name;
 
@@ -7748,7 +7750,7 @@ static void wsgi_setup_daemon_name(WSGIDaemonProcess *daemon, apr_pool_t *p)
      */
 
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
-    setproctitle(display_name);
+    setproctitle("%s", display_name);
 #else
     argv0 = (char*)wsgi_server->process->argv[0];
 
@@ -8873,7 +8875,8 @@ static int wsgi_start_daemons(apr_pool_t *p)
          * up properly on a restart and on shutdown.
          */
 
-        apr_pool_cleanup_register(p, entry, wsgi_cleanup_process, NULL);
+        apr_pool_cleanup_register(p, entry, wsgi_cleanup_process,
+                                  apr_pool_cleanup_null);
 
         /*
          * If there is more than one daemon process in the group
