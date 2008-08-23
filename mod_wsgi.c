@@ -8165,10 +8165,12 @@ static void wsgi_setup_daemon_name(WSGIDaemonProcess *daemon, apr_pool_t *p)
 {
     const char *display_name = NULL;
 
+#if !(defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__))
     int slen = 0;
     int dlen = 0;
 
     char *argv0 = NULL;
+#endif
 
     display_name = daemon->group->display_name;
 
@@ -8188,7 +8190,7 @@ static void wsgi_setup_daemon_name(WSGIDaemonProcess *daemon, apr_pool_t *p)
      */
 
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
-    setproctitle(display_name);
+    setproctitle("%s", display_name);
 #else
     argv0 = (char*)wsgi_server->process->argv[0];
 
