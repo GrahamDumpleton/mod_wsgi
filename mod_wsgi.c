@@ -9328,7 +9328,8 @@ static int wsgi_start_daemons(apr_pool_t *p)
          * up properly on a restart and on shutdown.
          */
 
-        apr_pool_cleanup_register(p, entry, wsgi_cleanup_process, NULL);
+        apr_pool_cleanup_register(p, entry, wsgi_cleanup_process,
+                                  apr_pool_cleanup_null);
 
         /*
          * If there is more than one daemon process in the group
