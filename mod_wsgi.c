@@ -194,8 +194,8 @@ static apr_status_t apr_os_pipe_put_ex(apr_file_t **file,
 /* Version and module information. */
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 1
-#define MOD_WSGI_MINORVERSION_NUMBER 5
-#define MOD_WSGI_VERSION_STRING "1.5"
+#define MOD_WSGI_MINORVERSION_NUMBER 6
+#define MOD_WSGI_VERSION_STRING "1.6"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -6178,7 +6178,8 @@ static int wsgi_start_daemons(apr_pool_t *p)
          * up properly on a restart and on shutdown.
          */
 
-        apr_pool_cleanup_register(p, entry, wsgi_cleanup_process, NULL);
+        apr_pool_cleanup_register(p, entry, wsgi_cleanup_process,
+                                  apr_pool_cleanup_null);
 
         /*
          * If there is more than one daemon process in the group
