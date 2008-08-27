@@ -140,8 +140,8 @@ loading of Apache modules.
 If you have multiple versions of Python installed and you are not using
 that which is the default, you may have to organise that the PATH inherited
 by the Apache application when run will result in Apache finding the
-alternate version. Alternatively, the WSGIPythonExecutable directive should
-be used to specify the exact location of the 'python' executable
+alternate version. Alternatively, the WSGIPythonHome directive should
+be used to specify the exact location of the Python installation
 corresponding to the version of Python compiled against. If this is not
 done, the version of Python running within Apache may attempt to use the
 Python modules from the wrong version of Python.
@@ -217,6 +217,9 @@ copied the file to work out what to set this value to.
 With Apache 1.3, it would also be necessary to add a line of the form:
 
     AddModule mod_wsgi.c
+
+For Apache 1.3, the LoadModule and AddModule lines related to mod_wsgi
+must appear prior to those for the Apache code module called mod_alias. 
 
 If you wish to use mod_python at the same time as mod_wsgi, then mod_python
 must be compiled against the same version of Python. In addition to the
