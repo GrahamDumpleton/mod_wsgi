@@ -245,8 +245,8 @@ static char *apr_off_t_toa(apr_pool_t *p, apr_off_t n)
 /* Version and module information. */
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 2
-#define MOD_WSGI_MINORVERSION_NUMBER 3
-#define MOD_WSGI_VERSION_STRING "2.3"
+#define MOD_WSGI_MINORVERSION_NUMBER 4
+#define MOD_WSGI_VERSION_STRING "2.4-BRANCH"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -10036,6 +10036,7 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
 
 static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 {
+#if defined(MOD_WSGI_WITH_DAEMONS)
     WSGIProcessGroup *entries = NULL;
     WSGIProcessGroup *entry = NULL;
 
@@ -10053,6 +10054,7 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
             entry->listener_fd = -1;
         }
     }
+#endif
 
     /* Setup Python in Apache worker processes. */
 
