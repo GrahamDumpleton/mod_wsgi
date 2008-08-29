@@ -194,8 +194,8 @@ static apr_status_t apr_os_pipe_put_ex(apr_file_t **file,
 /* Version and module information. */
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 1
-#define MOD_WSGI_MINORVERSION_NUMBER 6
-#define MOD_WSGI_VERSION_STRING "1.6"
+#define MOD_WSGI_MINORVERSION_NUMBER 7
+#define MOD_WSGI_VERSION_STRING "1.7-BRANCH"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -7191,6 +7191,7 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
 
 static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 {
+#if defined(MOD_WSGI_WITH_DAEMONS)
     WSGIProcessGroup *entries = NULL;
     WSGIProcessGroup *entry = NULL;
 
@@ -7208,6 +7209,7 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
             entry->listener_fd = -1;
         }
     }
+#endif
 
     /* Setup Python in Apache worker processes. */
 
