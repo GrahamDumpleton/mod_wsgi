@@ -10524,6 +10524,7 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
 
 static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 {
+#if defined(MOD_WSGI_WITH_DAEMONS) 
     WSGIProcessGroup *entries = NULL;
     WSGIProcessGroup *entry = NULL;
 
@@ -10541,6 +10542,7 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
             entry->listener_fd = -1;
         }
     }
+#endif
 
     /* Setup Python in Apache worker processes. */
 
