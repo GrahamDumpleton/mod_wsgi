@@ -131,6 +131,18 @@ typedef regmatch_t ap_regmatch_t;
         PyObject_HEAD_INIT(type) size,
 #endif
 
+#if PY_MAJOR_VERSION >= 3
+#define PyStringObject PyBytesObject
+#define PyString_Check PyBytes_Check
+#define PyString_Size PyBytes_Size
+#define PyString_AsString PyBytes_AsString
+#define PyString_FromString PyBytes_FromString
+#define PyString_FromStringAndSize PyBytes_FromStringAndSize
+#define PyString_AS_STRING PyBytes_AS_STRING
+#define PyString_GET_SIZE PyBytes_GET_SIZE
+#define _PyString_Resize _PyBytes_Resize
+#endif
+
 #ifndef WIN32
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
 #if APR_HAS_OTHER_CHILD && APR_HAS_THREADS && APR_HAS_FORK
@@ -4605,8 +4617,19 @@ static void wsgi_python_init(apr_pool_t *p)
         else
             Py_OptimizeFlag = 0;
 
+#if PY_MAJOR_VERSION >= 3
+        if (wsgi_server_config->python_home) {
+            wchar_t *s = NULL;
+            int len = strlen(wsgi_server_config->python_home)+1;
+
+            s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
+            mbstowcs(s, wsgi_server_config->python_home, len);
+            Py_SetPySetHome(s);
+        }
+#else
         if (wsgi_server_config->python_home)
             Py_SetPythonHome((char *)wsgi_server_config->python_home);
+#endif
 
         /* Initialise Python. */
 
