@@ -4085,6 +4085,16 @@ static InterpreterObject *newInterpreterObject(const char *name,
                        MOD_WSGI_MAJORVERSION_NUMBER,
                        MOD_WSGI_MINORVERSION_NUMBER));
 
+    /*
+     * Add information about process group and application
+     * group to the Python 'mod_wsgi' module.
+     */
+
+    PyModule_AddObject(module, "process_group",
+                       PyString_FromString(wsgi_daemon_group));
+    PyModule_AddObject(module, "application_group",
+                       PyString_FromString(name));
+
     Py_DECREF(module);
 
     /*
