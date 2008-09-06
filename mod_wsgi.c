@@ -2324,7 +2324,8 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     return PyObject_GetAttrString((PyObject *)self, "write");
 }
 
-static int Adapter_output(AdapterObject *self, const char *data, int length)
+static int Adapter_output(AdapterObject *self, const char *data, int length,
+                          int exception_when_aborted)
 {
     int i = 0;
     int n = 0;
@@ -2586,7 +2587,14 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
          */
 
         if (r->connection->aborted) {
-            PyErr_SetString(PyExc_IOError, "client connection closed");
+            if (!exception_when_aborted) {
+                ap_log_rerror(APLOG_MARK, WSGI_LOG_DEBUG(0), self->r,
+                              "mod_wsgi (pid=%d): Client closed connection.",
+                              getpid());
+            }
+            else
+                PyErr_SetString(PyExc_IOError, "client connection closed");
+
             return 0;
         }
 
@@ -2654,7 +2662,14 @@ static int Adapter_output(AdapterObject *self, const char *data, int length)
      */
 
     if (r->connection->aborted) {
-        PyErr_SetString(PyExc_IOError, "client connection closed");
+        if (!exception_when_aborted) {
+            ap_log_rerror(APLOG_MARK, WSGI_LOG_DEBUG(0), self->r,
+                          "mod_wsgi (pid=%d): Client closed connection.",
+                          getpid());
+        }
+        else
+            PyErr_SetString(PyExc_IOError, "client connection closed");
+
         return 0;
     }
 
@@ -3018,7 +3033,7 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
      * logged later.
      */
 
-    if (!Adapter_output(self, "", 0))
+    if (!Adapter_output(self, "", 0, 0))
         return 1;
 
     /*
@@ -3101,6 +3116,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
     if (self->sequence != NULL) {
         if (!Adapter_process_file_wrapper(self)) {
+            int aborted = 0;
+
             iterator = PyObject_GetIter(self->sequence);
 
             if (iterator != NULL) {
@@ -3142,7 +3159,9 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                         break;
                     }
 
-                    if (length && !Adapter_output(self, msg, length)) {
+                    if (length && !Adapter_output(self, msg, length, 0)) {
+                        if (!PyErr_Occurred())
+                            aborted = 1;
                         Py_DECREF(item);
                         break;
                     }
@@ -3151,8 +3170,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                 }
             }
 
-            if (!PyErr_Occurred()) {
-                if (Adapter_output(self, "", 0))
+            if (!PyErr_Occurred() && !aborted) {
+                if (Adapter_output(self, "", 0, 0))
                     self->result = OK;
             }
 
@@ -3274,7 +3293,7 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
     data = PyString_AsString(item);
     length = PyString_Size(item);
 
-    if (!Adapter_output(self, data, length))
+    if (!Adapter_output(self, data, length, 1))
         return NULL;
 
     Py_INCREF(Py_None);
