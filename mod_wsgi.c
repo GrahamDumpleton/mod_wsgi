@@ -2843,6 +2843,13 @@ static PyObject *Adapter_environ(AdapterObject *self)
     PyDict_SetItemString(vars, "wsgi.file_wrapper", object);
     Py_DECREF(object);
 
+    /* Add mod_wsgi version information. */
+
+    object = Py_BuildValue("(ii)", MOD_WSGI_MAJORVERSION_NUMBER,
+                           MOD_WSGI_MINORVERSION_NUMBER);
+    PyDict_SetItemString(vars, "mod_wsgi.version", object);
+    Py_DECREF(object);
+
     /*
      * If Apache extensions are enabled and running in embedded
      * mode add a CObject reference to the Apache request_rec
