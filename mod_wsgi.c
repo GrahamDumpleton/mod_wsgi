@@ -360,7 +360,6 @@ typedef struct {
     int apache_extensions;
     int pass_authorization;
     int script_reloading;
-    int reload_mechanism;
 } WSGIServerConfig;
 
 static WSGIServerConfig *wsgi_server_config = NULL;
@@ -425,7 +424,6 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->apache_extensions = -1;
     object->pass_authorization = -1;
     object->script_reloading = -1;
-    object->reload_mechanism = -1;
 
     return object;
 }
@@ -504,11 +502,6 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->script_reloading = parent->script_reloading;
 
-    if (child->reload_mechanism != -1)
-        config->reload_mechanism = child->reload_mechanism;
-    else
-        config->reload_mechanism = parent->reload_mechanism;
-
     return config;
 }
 
@@ -526,7 +519,6 @@ typedef struct {
     int apache_extensions;
     int pass_authorization;
     int script_reloading;
-    int reload_mechanism;
 
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
@@ -552,7 +544,6 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->apache_extensions = -1;
     object->pass_authorization = -1;
     object->script_reloading = -1;
-    object->reload_mechanism = -1;
 
     object->access_script = NULL;
     object->auth_user_script = NULL;
@@ -624,11 +615,6 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->script_reloading = parent->script_reloading;
 
-    if (child->reload_mechanism != -1)
-        config->reload_mechanism = child->reload_mechanism;
-    else
-        config->reload_mechanism = parent->reload_mechanism;
-
     if (child->access_script)
         config->access_script = child->access_script;
     else
@@ -671,7 +657,6 @@ typedef struct {
     int apache_extensions;
     int pass_authorization;
     int script_reloading;
-    int reload_mechanism;
 
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
@@ -996,18 +981,6 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         config->script_reloading = sconfig->script_reloading;
         if (config->script_reloading < 0)
             config->script_reloading = 1;
-    }
-
-    config->reload_mechanism = dconfig->reload_mechanism;
-
-    if (config->reload_mechanism == -1) {
-        config->reload_mechanism = sconfig->reload_mechanism;
-        if (config->reload_mechanism == -1) {
-            if (*config->process_group)
-                config->reload_mechanism = WSGI_RELOAD_PROCESS;
-            else
-                config->reload_mechanism = WSGI_RELOAD_MODULE;
-        }
     }
 
     config->access_script = dconfig->access_script;
@@ -5115,9 +5088,7 @@ static int wsgi_execute_script(request_rec *r)
             module = NULL;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-            if (*config->process_group &&
-                config->reload_mechanism == WSGI_RELOAD_PROCESS) {
-
+            if (*config->process_group) {
                 /*
                  * Need to restart the daemon process. We bail
                  * out on the request process here, sending back
@@ -5190,9 +5161,7 @@ static int wsgi_execute_script(request_rec *r)
      */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    if (*config->process_group &&
-        config->reload_mechanism == WSGI_RELOAD_PROCESS) {
-
+    if (*config->process_group) {
         ap_filter_t *filters;
         apr_bucket_brigade *bb;
         apr_bucket *b;
@@ -6254,40 +6223,6 @@ static const char *wsgi_set_script_reloading(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_reload_mechanism(cmd_parms *cmd, void *mconfig,
-                                             const char *f)
-{
-    if (cmd->path) {
-        WSGIDirectoryConfig *dconfig = NULL;
-        dconfig = (WSGIDirectoryConfig *)mconfig;
-
-        if (strcasecmp(f, "Module") == 0)
-            dconfig->reload_mechanism = WSGI_RELOAD_MODULE;
-        else if (strcasecmp(f, "Process") == 0)
-            dconfig->reload_mechanism = WSGI_RELOAD_PROCESS;
-        else {
-            return "WSGIReloadMechanism must be one of: "
-                   "Module | Process";
-        }
-    }
-    else {
-        WSGIServerConfig *sconfig = NULL;
-        sconfig = ap_get_module_config(cmd->server->module_config,
-                                       &wsgi_module);
-
-        if (strcasecmp(f, "Module") == 0)
-            sconfig->reload_mechanism = WSGI_RELOAD_MODULE;
-        else if (strcasecmp(f, "Process") == 0)
-            sconfig->reload_mechanism = WSGI_RELOAD_PROCESS;
-        else {
-            return "WSGIReloadMechanism must be one of: "
-                   "Module | Process";
-        }
-    }
-
-    return NULL;
-}
-
 static const char *wsgi_set_access_script(cmd_parms *cmd, void *mconfig,
                                           const char *args)
 {
@@ -6712,8 +6647,6 @@ static void wsgi_build_environment(request_rec *r)
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.script_reloading",
                    apr_psprintf(r->pool, "%d", config->script_reloading));
-    apr_table_setn(r->subprocess_env, "mod_wsgi.reload_mechanism",
-                   apr_psprintf(r->pool, "%d", config->reload_mechanism));
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     apr_table_setn(r->subprocess_env, "mod_wsgi.listener_host",
@@ -7599,8 +7532,6 @@ static const command_rec wsgi_commands[] =
         OR_FILEINFO, TAKE1, "Enable/Disable WSGI authorization." },
     { "WSGIScriptReloading", wsgi_set_script_reloading, NULL,
         OR_FILEINFO, TAKE1, "Enable/Disable script reloading mechanism." },
-    { "WSGIReloadMechanism", wsgi_set_reload_mechanism, NULL,
-        OR_FILEINFO, TAKE1, "Defines what is reloaded when a reload occurs." },
 
     { NULL }
 };
@@ -9776,9 +9707,7 @@ static int wsgi_execute_remote(request_rec *r)
      * therefore create a connection to daemon process again.
      */
 
-    if (*config->process_group &&
-        config->reload_mechanism == WSGI_RELOAD_PROCESS) {
-
+    if (*config->process_group) {
         int retries = 0;
         int maximum = (2*group->processes)+1;
 
@@ -10418,8 +10347,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     config->script_reloading = atoi(apr_table_get(r->subprocess_env,
                                                   "mod_wsgi.script_reloading"));
-    config->reload_mechanism = atoi(apr_table_get(r->subprocess_env,
-                                                  "mod_wsgi.reload_mechanism"));
 
     /*
      * Define how input data is to be processed. This
@@ -10789,10 +10716,6 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 
     object = PyLong_FromLong(self->config->script_reloading);
     PyDict_SetItemString(vars, "mod_wsgi.script_reloading", object);
-    Py_DECREF(object);
-
-    object = PyLong_FromLong(self->config->reload_mechanism);
-    PyDict_SetItemString(vars, "mod_wsgi.reload_mechanism", object);
     Py_DECREF(object);
 
     /*
@@ -12285,8 +12208,6 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable WSGI authorization."),
     AP_INIT_TAKE1("WSGIScriptReloading", wsgi_set_script_reloading,
         NULL, OR_FILEINFO, "Enable/Disable script reloading mechanism."),
-    AP_INIT_TAKE1("WSGIReloadMechanism", wsgi_set_reload_mechanism,
-        NULL, OR_FILEINFO, "Defines what is reloaded when a reload occurs."),
 
 #if defined(MOD_WSGI_WITH_AAA_HANDLERS)
     AP_INIT_RAW_ARGS("WSGIAccessScript", wsgi_set_access_script,
