@@ -1056,6 +1056,20 @@ static void Log_dealloc(LogObject *self)
     PyObject_Del(self);
 }
 
+static PyObject *Log_close(LogObject *self, PyObject *args)
+{
+    if (self->expired) {
+        PyErr_SetString(PyExc_RuntimeError, "log object has expired");
+        return NULL;
+    }
+
+    if (!PyArg_ParseTuple(args, ":close"))
+        return NULL;
+
+    PyErr_SetString(PyExc_RuntimeError, "log object cannot be closed");
+    return NULL;
+}
+
 static PyObject *Log_flush(LogObject *self, PyObject *args)
 {
     if (self->expired) {
@@ -1248,11 +1262,30 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
     return Py_None;
 }
 
+static PyObject *Log_closed(LogObject *self, void *closure)
+{
+    Py_INCREF(Py_False);
+    return Py_False;
+}
+
+static PyObject *Log_isatty(LogObject *self, void *closure)
+{
+    Py_INCREF(Py_False);
+    return Py_False;
+}
+
 static PyMethodDef Log_methods[] = {
-    { "flush",      (PyCFunction)Log_flush,      METH_VARARGS, 0},
-    { "write",      (PyCFunction)Log_write,      METH_VARARGS, 0},
-    { "writelines", (PyCFunction)Log_writelines, METH_VARARGS, 0},
+    { "close",      (PyCFunction)Log_close,      METH_VARARGS, 0 },
+    { "flush",      (PyCFunction)Log_flush,      METH_VARARGS, 0 },
+    { "write",      (PyCFunction)Log_write,      METH_VARARGS, 0 },
+    { "writelines", (PyCFunction)Log_writelines, METH_VARARGS, 0 },
     { NULL, NULL}
+};
+
+static PyGetSetDef Log_getset[] = {
+    { "closed", (getter)Log_closed, NULL, 0 },
+    { "isatty", (getter)Log_isatty, NULL, 0 },
+    { NULL },
 };
 
 static PyTypeObject Log_Type = {
@@ -1286,7 +1319,7 @@ static PyTypeObject Log_Type = {
     0,                      /*tp_iternext*/
     Log_methods,            /*tp_methods*/
     0,                      /*tp_members*/
-    0,                      /*tp_getset*/
+    Log_getset,             /*tp_getset*/
     0,                      /*tp_base*/
     0,                      /*tp_dict*/
     0,                      /*tp_descr_get*/
@@ -2080,10 +2113,10 @@ static PyObject *Input_readlines(InputObject *self, PyObject *args)
 }
 
 static PyMethodDef Input_methods[] = {
-    { "close",     (PyCFunction)Input_close,     METH_VARARGS, 0},
-    { "read",      (PyCFunction)Input_read,      METH_VARARGS, 0},
-    { "readline",  (PyCFunction)Input_readline,  METH_VARARGS, 0},
-    { "readlines", (PyCFunction)Input_readlines, METH_VARARGS, 0},
+    { "close",     (PyCFunction)Input_close,     METH_VARARGS, 0 },
+    { "read",      (PyCFunction)Input_read,      METH_VARARGS, 0 },
+    { "readline",  (PyCFunction)Input_readline,  METH_VARARGS, 0 },
+    { "readlines", (PyCFunction)Input_readlines, METH_VARARGS, 0 },
     { NULL, NULL}
 };
 
@@ -3321,9 +3354,9 @@ static PyObject *Adapter_file_wrapper(AdapterObject *self, PyObject *args)
 }
 
 static PyMethodDef Adapter_methods[] = {
-    { "start_response", (PyCFunction)Adapter_start_response, METH_VARARGS, 0},
-    { "write",          (PyCFunction)Adapter_write, METH_VARARGS, 0},
-    { "file_wrapper",   (PyCFunction)Adapter_file_wrapper, METH_VARARGS, 0},
+    { "start_response", (PyCFunction)Adapter_start_response, METH_VARARGS, 0 },
+    { "write",          (PyCFunction)Adapter_write, METH_VARARGS, 0 },
+    { "file_wrapper",   (PyCFunction)Adapter_file_wrapper, METH_VARARGS, 0 },
     { NULL, NULL}
 };
 
@@ -3488,7 +3521,7 @@ static PyObject *Stream_close(StreamObject *self, PyObject *args)
 }
 
 static PyMethodDef Stream_methods[] = {
-    { "close",      (PyCFunction)Stream_close,      METH_VARARGS, 0},
+    { "close",      (PyCFunction)Stream_close,      METH_VARARGS, 0 },
     { NULL, NULL}
 };
 
