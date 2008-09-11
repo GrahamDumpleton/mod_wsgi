@@ -7690,6 +7690,7 @@ typedef struct {
     int multiprocess;
     int threads;
     int umask;
+    const char *root;
     const char *home;
     const char *python_path;
     const char *python_eggs;
@@ -7748,6 +7749,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int threads = 15;
     int umask = -1;
 
+    const char *root = NULL;
     const char *home = NULL;
     const char *python_path = NULL;
     const char *python_eggs = NULL;
@@ -7850,6 +7852,15 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
             if (*value || errno == ERANGE || umask < 0)
                 return "Invalid umask for WSGI daemon process.";
+        }
+        else if (!strcmp(option, "root")) {
+            if (geteuid())
+                return "Cannot chroot WSGI daemon process when not root.";
+
+            if (*value != '/')
+                return "Invalid chroot directory for WSGI daemon process.";
+
+            root = value;
         }
         else if (!strcmp(option, "home")) {
             if (*value != '/')
@@ -7967,6 +7978,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->threads = threads;
 
     entry->umask = umask;
+    entry->root = root;
     entry->home = home;
 
     entry->python_path = python_path;
@@ -8235,6 +8247,16 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
 
     if (daemon->group->umask != -1)
         umask(daemon->group->umask);
+
+    /* Change to chroot environment. */
+
+    if (daemon->group->root) {
+        if (chroot(daemon->group->root) == -1) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
+                         "mod_wsgi (pid=%d): Unable to change root "
+                         "directory to '%s'.", getpid(), daemon->group->root);
+        }
+    }
 
     /* Setup the working directory.*/
 
