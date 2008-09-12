@@ -7853,7 +7853,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (*value || errno == ERANGE || umask < 0)
                 return "Invalid umask for WSGI daemon process.";
         }
-        else if (!strcmp(option, "root")) {
+        else if (!strcmp(option, "chroot")) {
             if (geteuid())
                 return "Cannot chroot WSGI daemon process when not root.";
 
