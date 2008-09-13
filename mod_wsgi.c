@@ -5719,7 +5719,7 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
     }
 
     while (*args) {
-        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+        if (wsgi_parse_option(cmd->pool, &args, &option,
                               &value) != APR_SUCCESS) {
             return "Invalid option to WSGI script alias definition.";
         }
@@ -6017,7 +6017,7 @@ static const char *wsgi_set_restrict_process(cmd_parms *cmd, void *mconfig,
     while (*args) {
         char const *option;
 
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        option = ap_getword_conf(cmd->pool, &args);
 
         if (!strcmp(option, "%{GLOBAL}"))
             option = "";
@@ -6106,7 +6106,7 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
 
     object = (WSGIScriptFile *)apr_array_push(sconfig->import_list);
 
-    object->handler_script = ap_getword_conf(cmd->temp_pool, &args);
+    object->handler_script = ap_getword_conf(cmd->pool, &args);
     object->process_group = NULL;
     object->application_group = NULL;
 
@@ -6114,7 +6114,7 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
         return "Location of import script not supplied.";
 
     while (*args) {
-        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+        if (wsgi_parse_option(cmd->pool, &args, &option,
                               &value) != APR_SUCCESS) {
             return "Invalid option to WSGI import script definition.";
         }
@@ -6166,13 +6166,13 @@ static const char *wsgi_set_dispatch_script(cmd_parms *cmd, void *mconfig,
 
     object = newWSGIScriptFile(cmd->pool);
 
-    object->handler_script = ap_getword_conf(cmd->temp_pool, &args);
+    object->handler_script = ap_getword_conf(cmd->pool, &args);
 
     if (!object->handler_script || !*object->handler_script)
         return "Location of dispatch script not supplied.";
 
     while (*args) {
-        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+        if (wsgi_parse_option(cmd->pool, &args, &option,
                               &value) != APR_SUCCESS) {
             return "Invalid option to WSGI dispatch script definition.";
         }
@@ -6303,13 +6303,13 @@ static const char *wsgi_set_access_script(cmd_parms *cmd, void *mconfig,
 
     object = newWSGIScriptFile(cmd->pool);
 
-    object->handler_script = ap_getword_conf(cmd->temp_pool, &args);
+    object->handler_script = ap_getword_conf(cmd->pool, &args);
 
     if (!object->handler_script || !*object->handler_script)
         return "Location of access script not supplied.";
 
     while (*args) {
-        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+        if (wsgi_parse_option(cmd->pool, &args, &option,
                               &value) != APR_SUCCESS) {
             return "Invalid option to WSGI access script definition.";
         }
@@ -6341,13 +6341,13 @@ static const char *wsgi_set_auth_user_script(cmd_parms *cmd, void *mconfig,
 
     object = newWSGIScriptFile(cmd->pool);
 
-    object->handler_script = ap_getword_conf(cmd->temp_pool, &args);
+    object->handler_script = ap_getword_conf(cmd->pool, &args);
 
     if (!object->handler_script || !*object->handler_script)
         return "Location of auth user script not supplied.";
 
     while (*args) {
-        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+        if (wsgi_parse_option(cmd->pool, &args, &option,
                               &value) != APR_SUCCESS) {
             return "Invalid option to WSGI auth user script definition.";
         }
@@ -6380,13 +6380,13 @@ static const char *wsgi_set_auth_group_script(cmd_parms *cmd, void *mconfig,
 
     object = newWSGIScriptFile(cmd->pool);
 
-    object->handler_script = ap_getword_conf(cmd->temp_pool, &args);
+    object->handler_script = ap_getword_conf(cmd->pool, &args);
 
     if (!object->handler_script || !*object->handler_script)
         return "Location of auth group script not supplied.";
 
     while (*args) {
-        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+        if (wsgi_parse_option(cmd->pool, &args, &option,
                               &value) != APR_SUCCESS) {
             return "Invalid option to WSGI auth group script definition.";
         }
@@ -7789,13 +7789,13 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     /* Now parse options for directive. */
 
-    name = ap_getword_conf(cmd->temp_pool, &args);
+    name = ap_getword_conf(cmd->pool, &args);
 
     if (!name || !*name)
         return "Name of WSGI daemon process not supplied.";
 
     while (*args) {
-        if (wsgi_parse_option(cmd->temp_pool, &args, &option,
+        if (wsgi_parse_option(cmd->pool, &args, &option,
                               &value) != APR_SUCCESS) {
             return "Invalid option to WSGI daemon process definition.";
         }
@@ -10166,6 +10166,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     char *key;
     apr_sockaddr_t *addr;
 
+    char const *filename;
     char const *magic;
     char const *hash;
 
@@ -10314,25 +10315,9 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    /* Set target of request and recalculate modification time. */
-
-    r->filename = (char *)apr_table_get(r->subprocess_env, "SCRIPT_FILENAME");
-
-    if ((rv = apr_stat(&r->finfo, r->filename, APR_FINFO_SIZE,
-                       r->pool)) != APR_SUCCESS) {
-        /*
-         * Don't fail at this point. Allow the lack of file to
-         * be detected later when trying to load the script file.
-         */
-
-        ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(rv), wsgi_server,
-                     "mod_wsgi (pid=%d): Unable to stat target WSGI script "
-                     "'%s'.", getpid(), r->filename);
-
-        r->finfo.mtime = 0;
-    }
-
     /* Check magic marker used to validate origin of request. */
+
+    filename = apr_table_get(r->subprocess_env, "SCRIPT_FILENAME");
 
     magic = apr_table_get(r->subprocess_env, "mod_wsgi.magic");
 
@@ -10348,7 +10333,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     key = apr_psprintf(r->pool, "%ld|%s|%s",
                        wsgi_daemon_process->group->random,
-                       wsgi_daemon_process->group->socket, r->filename);
+                       wsgi_daemon_process->group->socket, filename);
     hash = ap_md5(r->pool, (const unsigned char *)key);
     memset(key, '\0', strlen(key));
 
@@ -10363,6 +10348,69 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     }
 
     apr_table_unset(r->subprocess_env, "mod_wsgi.magic");
+
+    /*
+     * If we are executing in a chroot environment, we need to
+     * adjust SCRIPT_FILENAME to remove leading portion of path
+     * that corresponds to the location of the chroot directory.
+     * Also need to adjust DOCUMENT_ROOT as well, although in
+     * that case if it doesn't actually fall within the choot
+     * directory, we just delete it outright as would be incorrect
+     * if that directory lay outside of the chroot directory.
+     */
+
+    if (wsgi_daemon_process->group->root) {
+        const char *root;
+        const char *path;
+
+        root = wsgi_daemon_process->group->root;
+
+        path = filename;
+
+        if (strstr(path, root) == path && path[strlen(root)] == '/') {
+            path += strlen(root);
+
+            apr_table_set(r->subprocess_env, "SCRIPT_FILENAME", path);
+
+            filename = path;
+        }
+        else {
+            ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(rv), wsgi_server,
+                         "mod_wsgi (pid=%d): WSGI script '%s' not located "
+                         "within chroot directory '%s'.", getpid(), path, root);
+
+            return HTTP_INTERNAL_SERVER_ERROR;
+        }
+
+        path = (char *)apr_table_get(r->subprocess_env, "DOCUMENT_ROOT");
+
+        if (strstr(path, root) == path) {
+            path += strlen(root);
+
+            apr_table_set(r->subprocess_env, "DOCUMENT_ROOT", path);
+        }
+        else {
+            apr_table_unset(r->subprocess_env, "DOCUMENT_ROOT");
+        }
+    }
+
+    r->filename = (char *)filename;
+
+    /* Recalculate WSGI script file modification time. */
+
+    if ((rv = apr_stat(&r->finfo, filename, APR_FINFO_SIZE,
+                       r->pool)) != APR_SUCCESS) {
+        /*
+         * Don't fail at this point. Allow the lack of file to
+         * be detected later when trying to load the script file.
+         */
+
+        ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(rv), wsgi_server,
+                     "mod_wsgi (pid=%d): Unable to stat target WSGI script "
+                     "'%s'.", getpid(), filename);
+
+        r->finfo.mtime = 0;
+    }
 
     /*
      * Trigger mapping of host information to server configuration
