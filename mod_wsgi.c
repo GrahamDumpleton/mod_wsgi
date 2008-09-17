@@ -337,6 +337,8 @@ typedef struct {
     int verbose_debugging;
 
     int python_optimize;
+    int py3k_warning_flag;
+
     const char *python_home;
     const char *python_path;
     const char *python_eggs;
@@ -396,7 +398,9 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 
     object->verbose_debugging = 0;
 
+    object->py3k_warning_flag = -1;
     object->python_optimize = -1;
+
     object->python_home = NULL;
     object->python_path = NULL;
     object->python_eggs = NULL;
@@ -4652,6 +4656,13 @@ static void wsgi_python_init(apr_pool_t *p)
         const char *token = NULL;
         const char *version = NULL;
 
+        /* Enable Python 3.0 migration warnings. */
+
+#if PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6
+        if (wsgi_server_config->py3k_warning_flag == 1)
+            Py_Py3kWarningFlag++;
+#endif
+
         /* Check for Python paths and optimisation flag. */
 
         if (wsgi_server_config->python_optimize > 0)
@@ -5817,6 +5828,28 @@ static const char *wsgi_set_verbose_debugging(cmd_parms *cmd, void *mconfig,
         sconfig->verbose_debugging = 1;
     else
         return "WSGIVerboseDebugging must be one of: Off | On";
+
+    return NULL;
+}
+
+static const char *wsgi_set_py3k_warning_flag(cmd_parms *cmd, void *mconfig,
+                                              const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (strcasecmp(f, "Off") == 0)
+        sconfig->py3k_warning_flag = 0;
+    else if (strcasecmp(f, "On") == 0)
+        sconfig->py3k_warning_flag = 1;
+    else
+        return "WSGIPy3kWarningFlag must be one of: Off | On";
 
     return NULL;
 }
@@ -7563,6 +7596,11 @@ static const command_rec wsgi_commands[] =
 
     { "WSGIVerboseDebugging", wsgi_set_verbose_debugging, NULL,
         RSRC_CONF, TAKE1, "Enable/Disable verbose debugging messages." },
+
+#if PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6
+    { "WSGIPy3kWarningFlag", wsgi_set_py3k_warning_flag, NULL,
+        RSRC_CONF, TAKE1, "Enable/Disable Python 3.0 warnings." },
+#endif
 
     { "WSGIPythonOptimize", wsgi_set_python_optimize, NULL,
         RSRC_CONF, TAKE1, "Set level of Python compiler optimisations." },
@@ -12308,6 +12346,11 @@ static const command_rec wsgi_commands[] =
 
     AP_INIT_TAKE1("WSGIVerboseDebugging", wsgi_set_verbose_debugging,
         NULL, RSRC_CONF, "Enable/Disable verbose debugging messages."),
+
+#if PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6
+    AP_INIT_TAKE1("WSGIPy3kWarningFlag", wsgi_set_py3k_warning_flag,
+        NULL, RSRC_CONF, "Enable/Disable Python 3.0 warnings."),
+#endif
 
     AP_INIT_TAKE1("WSGIPythonOptimize", wsgi_set_python_optimize,
         NULL, RSRC_CONF, "Set level of Python compiler optimisations."),
