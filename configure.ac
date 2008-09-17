@@ -69,7 +69,7 @@ else
 CPPFLAGS3=""
 fi
 
-CPPFLAGS="${CPPFLAGS1} ${CPPFLAGS2} ${CPPFLAGS3}"
+CPPFLAGS="${CPPFLAGS} ${CPPFLAGS1} ${CPPFLAGS2} ${CPPFLAGS3}"
 
 AC_SUBST(CPPFLAGS)
 
@@ -84,7 +84,7 @@ PYTHONFRAMEWORK=`${PYTHON} -c 'from sys import stdout; \
     stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORK"))'`
 
 if test "${PYTHONFRAMEWORKDIR}" = "no-framework"; then
-    LDFLAGS=`${PYTHON} -c 'from sys import stdout; \
+    LDFLAGS1=`${PYTHON} -c 'from sys import stdout; \
         import distutils.sysconfig; \
         stdout.write("-L" + \
         distutils.sysconfig.get_python_lib(plat_specific=1, \
@@ -94,8 +94,6 @@ if test "${PYTHONFRAMEWORKDIR}" = "no-framework"; then
     LDLIBS2=`${PYTHON} -c 'from sys import stdout; \
         from distutils import sysconfig; \
         stdout.write(sysconfig.get_config_var("LIBS"))'`
-
-    LDLIBS="${LDLIBS1} ${LDLIBS2}"
 else
     LDFLAGS1="-Wl,-F${PYTHONFRAMEWORKPREFIX} -framework ${PYTHONFRAMEWORK}"
 
@@ -106,9 +104,7 @@ else
         stdout.write(sysconfig.get_config_var(\"LINKFORSHARED\").replace( \
         \"${STRING}\", ''))"`
 
-    LDFLAGS="${LDFLAGS1} ${LDFLAGS2}"
-
-    LDLIBS=`${PYTHON} -c 'from sys import stdout; \
+    LDLIBS1=`${PYTHON} -c 'from sys import stdout; \
         from distutils import sysconfig; \
         stdout.write(sysconfig.get_config_var("LIBS"))'`
 fi
@@ -121,8 +117,10 @@ if test -x /usr/bin/lipo; then
         CFLAGS="${CFLAGS} -Wc,'-arch ${ARCH}'" 
         LDFLAGS3="${LDFLAGS3} -arch ${ARCH}" 
     done
-    LDFLAGS="${LDFLAGS3} ${LDFLAGS}"
 fi
+
+LDFLAGS="${LDFLAGS} ${LDFLAGS1} ${LDFLAGS2} ${LDFLAGS3}"
+LDLIBS="${LDLIBS} ${LDLIBS1} ${LDLIBS2}"
 
 AC_SUBST(CFLAGS)
 AC_SUBST(LDFLAGS)
