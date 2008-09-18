@@ -4677,7 +4677,7 @@ static void wsgi_python_init(apr_pool_t *p)
 
             s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
             mbstowcs(s, wsgi_server_config->python_home, len);
-            Py_SetPySetHome(s);
+            Py_SetPythonHome(s);
         }
 #else
         if (wsgi_server_config->python_home)
