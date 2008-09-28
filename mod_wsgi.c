@@ -2489,6 +2489,13 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
                 return 0;
             }
 
+            if (strchr(name, '\n') != 0 || strchr(value, '\n') != 0) {
+                PyErr_Format(PyExc_ValueError, "embedded newline in "
+                             "response header with name '%s' and value '%s'",
+                             name, value);
+                return 0;
+            }
+
             if (!strcasecmp(name, "Content-Type")) {
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
                 r->content_type = apr_pstrdup(r->pool, value);
