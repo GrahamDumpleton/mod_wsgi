@@ -156,6 +156,11 @@ typedef regmatch_t ap_regmatch_t;
 #define MOD_WSGI_WITH_AAA_HANDLERS 1
 #endif
 
+/* Apache 2.3 has change authorisation interfaces. */
+#if !(AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER == 2)
+#undef MOD_WSGI_WITH_AAA_HANDLERS
+#endif
+
 #if defined(MOD_WSGI_WITH_AAA_HANDLERS)
 static PyTypeObject Auth_Type;
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
@@ -10760,6 +10765,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     server_rec *s = r->server;
     conn_rec *c = r->connection;
     const char *host;
+    const char *banner;
     apr_port_t rport;
 
     vars = PyDict_New();
@@ -10772,10 +10778,15 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     PyDict_SetItemString(vars, "SERVER_SIGNATURE", object);
     Py_DECREF(object);
 
-#if PY_MAJOR_VERSION >= 3
-    object = PyUnicode_FromString(ap_get_server_version());
+#if AP_MODULE_MAGIC_AT_LEAST(20060905,0)
+    banner = ap_get_server_banner();
 #else
-    object = PyString_FromString(ap_get_server_version());
+    banner = ap_get_server_version();
+#endif
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_FromString(banner);
+#else
+    object = PyString_FromString(banner);
 #endif
     PyDict_SetItemString(vars, "SERVER_SOFTWARE", object);
     Py_DECREF(object);
