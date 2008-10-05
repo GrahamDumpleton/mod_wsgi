@@ -173,6 +173,9 @@ static PyTypeObject Auth_Type;
 #if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
 #include "mod_auth.h"
 #include "ap_provider.h"
+#ifndef AUTHN_PROVIDER_VERSION
+#define AUTHN_PROVIDER_VERSION "0"
+#endif
 #endif
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
@@ -12338,8 +12341,8 @@ static void wsgi_register_hooks(apr_pool_t *p)
 #if !defined(MOD_WSGI_WITH_AUTH_PROVIDER)
     ap_hook_check_user_id(wsgi_hook_check_user_id, p3, NULL, APR_HOOK_MIDDLE);
 #else
-    ap_register_provider(p, AUTHN_PROVIDER_GROUP, "wsgi", "0",
-                         &wsgi_authn_provider);
+    ap_register_provider(p, AUTHN_PROVIDER_GROUP, "wsgi",
+                         AUTHN_PROVIDER_VERSION, &wsgi_authn_provider);
 #endif
     ap_hook_auth_checker(wsgi_hook_auth_checker, NULL, n4, APR_HOOK_MIDDLE);
     ap_hook_access_checker(wsgi_hook_access_checker, NULL, n5, APR_HOOK_MIDDLE);
