@@ -156,21 +156,19 @@ typedef regmatch_t ap_regmatch_t;
 #define MOD_WSGI_WITH_AAA_HANDLERS 1
 #endif
 
-/* Apache 2.3 has change authorisation interfaces. */
-#if !(AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER == 2)
-#undef MOD_WSGI_WITH_AAA_HANDLERS
-#endif
-
 #if defined(MOD_WSGI_WITH_AAA_HANDLERS)
 static PyTypeObject Auth_Type;
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
 #if AP_SERVER_MINORVERSION_NUMBER >= 2
-#define MOD_WSGI_WITH_AUTH_PROVIDER 1
+#define MOD_WSGI_WITH_AUTHN_PROVIDER 1
 #endif
+#endif
+#if AP_MODULE_MAGIC_AT_LEAST(20060110,0)
+#define MOD_WSGI_WITH_AUTHZ_PROVIDER 1
 #endif
 #endif
 
-#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+#if defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
 #include "mod_auth.h"
 #include "ap_provider.h"
 #ifndef AUTHN_PROVIDER_VERSION
@@ -6401,7 +6399,6 @@ static const char *wsgi_set_auth_user_script(cmd_parms *cmd, void *mconfig,
         }
 
         if (!strcmp(option, "application-group")) {
-            value = option + 18;
             if (!*value)
                 return "Invalid name for WSGI application group.";
 
@@ -10990,7 +10987,7 @@ static PyTypeObject Auth_Type = {
     0,                      /*tp_is_gc*/
 };
 
-#if defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+#if defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
 static authn_status wsgi_check_password(request_rec *r, const char *user,
                                         const char *password)
 {
@@ -12204,6 +12201,62 @@ static int wsgi_hook_check_user_id(request_rec *r)
     return status;
 }
 
+#if defined(MOD_WSGI_WITH_AUTHZ_PROVIDER)
+
+static authz_status wsgi_check_authorization(request_rec *r,
+                                             const char *require_args)
+{
+    WSGIRequestConfig *config;
+
+    apr_table_t *grpstatus = NULL;
+    const char *t, *w;
+    int status;
+
+    config = wsgi_create_req_config(r->pool, r);
+
+    if (!config->auth_group_script) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Location of WSGI group "
+                     "authorization script not provided.", getpid());
+
+        return AUTHZ_DENIED;
+    }
+
+    status = wsgi_groups_for_user(r, config, &grpstatus);
+
+    if (status != OK)
+        return AUTHZ_DENIED;
+
+    if (apr_table_elts(grpstatus)->nelts == 0) {
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r, "mod_wsgi (pid=%d): "
+                      "Authorization of user '%s' to access '%s' failed. ",
+                      "User is not a member of any groups.", getpid(),
+                      r->user, r->uri);
+        return AUTHZ_DENIED;
+    }
+
+    t = require_args;
+    while ((w = ap_getword_conf(r->pool, &t)) && w[0]) {
+        if (apr_table_get(grpstatus, w)) {
+            return AUTHZ_GRANTED;
+        }
+    }
+
+    ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r, "mod_wsgi (pid=%d): "
+                  "Authorization of user '%s' to access '%s' failed. "
+                  "User is not a member of designated groups.", getpid(),
+                  r->user, r->uri);
+
+    return AUTHZ_DENIED;
+}
+
+static const authz_provider wsgi_authz_provider =
+{
+    &wsgi_check_authorization,
+};
+
+#else
+
 static int wsgi_hook_auth_checker(request_rec *r)
 {
     WSGIRequestConfig *config;
@@ -12238,7 +12291,7 @@ static int wsgi_hook_auth_checker(request_rec *r)
         t = reqs[x].requirement;
         w = ap_getword_white(r->pool, &t);
 
-        if (!strcasecmp(w, "group")) {
+        if (!strcasecmp(w, "group") || !strcasecmp(w, "wsgi-group")) {
             required_group = 1;
 
             if (!grpstatus) {
@@ -12279,6 +12332,8 @@ static int wsgi_hook_auth_checker(request_rec *r)
 
 #endif
 
+#endif
+
 APR_OPTIONAL_FN_TYPE(ap_logio_add_bytes_out) *wsgi_logio_add_bytes_out;
 
 static void ap_logio_add_bytes_out(conn_rec *c, apr_off_t bytes)
@@ -12314,10 +12369,12 @@ static void wsgi_register_hooks(apr_pool_t *p)
     static const char * const n2[] = { "core.c", NULL };
 
 #if defined(MOD_WSGI_WITH_AAA_HANDLERS)
-#if !defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+#if !defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
     static const char * const p3[] = { "mod_auth.c", NULL };
 #endif
+#if !defined(MOD_WSGI_WITH_AUTHZ_PROVIDER)
     static const char * const n4[] = { "mod_authz_user.c", NULL };
+#endif
     static const char * const n5[] = { "mod_authz_host.c", NULL };
 #endif
 
@@ -12338,13 +12395,18 @@ static void wsgi_register_hooks(apr_pool_t *p)
 #endif
 
 #if defined(MOD_WSGI_WITH_AAA_HANDLERS)
-#if !defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+#if !defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
     ap_hook_check_user_id(wsgi_hook_check_user_id, p3, NULL, APR_HOOK_MIDDLE);
 #else
     ap_register_provider(p, AUTHN_PROVIDER_GROUP, "wsgi",
                          AUTHN_PROVIDER_VERSION, &wsgi_authn_provider);
 #endif
+#if !defined(MOD_WSGI_WITH_AUTHZ_PROVIDER)
     ap_hook_auth_checker(wsgi_hook_auth_checker, NULL, n4, APR_HOOK_MIDDLE);
+#else
+    ap_register_provider(p, AUTHZ_PROVIDER_GROUP, "wsgi-group",
+                         AUTHZ_PROVIDER_VERSION, &wsgi_authz_provider);
+#endif
     ap_hook_access_checker(wsgi_hook_access_checker, NULL, n5, APR_HOOK_MIDDLE);
 #endif
 }
@@ -12427,7 +12489,7 @@ static const command_rec wsgi_commands[] =
         NULL, OR_AUTHCFG, "Location of WSGI user auth script file."),
     AP_INIT_RAW_ARGS("WSGIAuthGroupScript", wsgi_set_auth_group_script,
         NULL, OR_AUTHCFG, "Location of WSGI group auth script file."),
-#if !defined(MOD_WSGI_WITH_AUTH_PROVIDER)
+#if !defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
     AP_INIT_TAKE1("WSGIUserAuthoritative", wsgi_set_user_authoritative,
         NULL, OR_AUTHCFG, "Enable/Disable as being authoritative on users."),
 #endif
