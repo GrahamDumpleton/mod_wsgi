@@ -95,7 +95,7 @@ if test "${PYTHONFRAMEWORKDIR}" = "no-framework"; then
         from distutils import sysconfig; \
         stdout.write(sysconfig.get_config_var("LIBS"))'`
 else
-    LDFLAGS1="-Wl,-F${PYTHONFRAMEWORKPREFIX} -framework ${PYTHONFRAMEWORK}"
+    LDFLAGS1="-F${PYTHONFRAMEWORKPREFIX} -framework ${PYTHONFRAMEWORK}"
 
     VERSION="${PYTHON_VERSION}"
     STRING="${PYTHONFRAMEWORKDIR}/Versions/${VERSION}/${PYTHONFRAMEWORK}"
@@ -121,6 +121,9 @@ fi
 
 LDFLAGS="${LDFLAGS} ${LDFLAGS1} ${LDFLAGS2} ${LDFLAGS3}"
 LDLIBS="${LDLIBS} ${LDLIBS1} ${LDLIBS2}"
+
+LDFLAGS=`echo ${LDFLAGS} | sed -e "s/\([[^ ]][[^ ]]*\)/-Wl,\1/g"`
+LDLIBS=`echo ${LDLIBS} | sed -e "s/\([[^ ]][[^ ]]*\)/-Wl,\1/g"`
 
 AC_SUBST(CFLAGS)
 AC_SUBST(LDFLAGS)
