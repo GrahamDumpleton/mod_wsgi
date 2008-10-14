@@ -37,9 +37,11 @@
 #if AP_MODULE_MAGIC_AT_LEAST(20010224,0)
 #define AP_SERVER_MAJORVERSION_NUMBER 2
 #define AP_SERVER_MINORVERSION_NUMBER 0
+#define AP_SERVER_PATCHLEVEL_NUMBER 0
 #else
 #define AP_SERVER_MAJORVERSION_NUMBER 1
 #define AP_SERVER_MINORVERSION_NUMBER 3
+#define AP_SERVER_PATCHLEVEL_NUMBER 0
 #endif
 #endif
 
@@ -1541,9 +1543,15 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
         return PyString_FromString("");
 
     /*
-     * If requested size if zero bytes, then still need to pass
+     * If requested size is zero bytes, then still need to pass
      * this through to Apache input filters so that any
-     * 100-continue response is triggered.
+     * 100-continue response is triggered. Note that this will
+     * cause an assertion failure in HTTP_IN input filter when
+     * Apache maintainer mode is enabled. It is arguable that
+     * the assertion check, which prohibits a zero length read,
+     * shouldn't exist, as why should a zero length read be not
+     * allowed if input filter processing still works when it
+     * does occur.
      */
 
     if (size == 0) {
@@ -2395,13 +2403,23 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
 
     if (self->headers) {
         /*
-         * Force a zero length read before sending the
+         * Apache prior to Apache 2.2.8 has a bug in it
+         * whereby it doesn't force '100 Continue' response
+         * before responding with headers if no read. So,
+         * force a zero length read before sending the
          * headers. This will ensure that if no request
          * content has been read that any '100 Continue'
          * response will be flushed and sent back to the
          * client if client was expecting one. Only
          * want to do this for 2xx and 3xx status values.
          */
+
+#if (AP_SERVER_MAJORVERSION_NUMBER == 1) || \
+    (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
+     AP_SERVER_MINORVERSION_NUMBER < 2) || \
+    (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
+     AP_SERVER_MINORVERSION_NUMBER == 2 && \
+     AP_SERVER_PATCHLEVEL_NUMBER < 8)
 
         if (self->status >= 200 && self->status < 400) {
             PyObject *args = NULL;
@@ -2413,6 +2431,8 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
             Py_DECREF(args);
             Py_XDECREF(result);
         }
+
+#endif
 
         /* Now setup response headers in request object. */
 
