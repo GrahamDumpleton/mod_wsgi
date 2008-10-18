@@ -3768,10 +3768,6 @@ static InterpreterObject *newInterpreterObject(const char *name,
     if (self == NULL)
         return NULL;
 
-    /* Remember active thread state so can restore it. */
-
-    save_tstate = PyThreadState_Swap(NULL);
-
     /* Save away the interpreter name. */
 
     self->name = strdup(name);
@@ -3779,7 +3775,8 @@ static InterpreterObject *newInterpreterObject(const char *name,
     if (interp) {
         /*
          * Interpreter provided to us so will not be
-         * responsible for deleting it later.
+         * responsible for deleting it later. This will
+         * be the case for the main Python interpreter.
          */
 
         ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
@@ -3788,17 +3785,16 @@ static InterpreterObject *newInterpreterObject(const char *name,
 
         self->interp = interp;
         self->owner = 0;
-
-        /*
-         * Need though now to create a thread state
-         * against the interpreter so we can preload
-         * it with our modules and fixups.
-         */
-
-        tstate = PyThreadState_New(self->interp);
-        PyThreadState_Swap(tstate);
     }
     else {
+        /*
+	 * Remember active thread state so can restore
+	 * it. This is actually the thread state
+	 * associated with simplified GIL state API.
+         */
+
+        save_tstate = PyThreadState_Swap(NULL);
+
         /*
          * Create the interpreter. If creation of the
          * interpreter fails it will restore the
@@ -4249,11 +4245,16 @@ static InterpreterObject *newInterpreterObject(const char *name,
 
     Py_DECREF(module);
 
-    /* Restore previous thread state. */
+    /*
+     * Restore previous thread state. Only need to
+     * do this where had to create a new interpreter.
+     */
 
-    PyThreadState_Clear(tstate);
-    PyThreadState_Swap(save_tstate);
-    PyThreadState_Delete(tstate);
+    if (!interp) {
+        PyThreadState_Clear(tstate);
+        PyThreadState_Swap(save_tstate);
+        PyThreadState_Delete(tstate);
+    }
 
     return self;
 }
@@ -4796,10 +4797,6 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
      * Python GIL is held, so need to acquire it.
      */
 
-#if 0
-    PyEval_AcquireLock();
-#endif
-
     state = PyGILState_Ensure();
 
     /*
@@ -4820,10 +4817,6 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
             PyErr_Print();
             PyErr_Clear();
-
-#if 0
-            PyEval_ReleaseLock();
-#endif
 
             PyGILState_Release(state);
 
@@ -4848,10 +4841,6 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
      * use the simplified API for GIL locking so any
      * extension modules which use that will still work.
      */
-
-#if 0
-    PyEval_ReleaseLock();
-#endif
 
     PyGILState_Release(state);
 
@@ -5484,15 +5473,13 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
 
 static void wsgi_python_child_init(apr_pool_t *p)
 {
+    PyGILState_STATE state;
     PyInterpreterState *interp = NULL;
-    PyThreadState *tstate = NULL;
-    PyThreadState *save_tstate = NULL;
-
     PyObject *object = NULL;
 
     /* Working with Python, so must acquire GIL. */
 
-    PyEval_AcquireLock();
+    state = PyGILState_Ensure();
 
     /*
      * Get a reference to the main Python interpreter created
@@ -5502,9 +5489,6 @@ static void wsgi_python_child_init(apr_pool_t *p)
     interp = PyInterpreterState_Head();
     while (interp->next)
         interp = interp->next;
-
-    tstate = PyThreadState_New(interp);
-    save_tstate = PyThreadState_Swap(tstate);
 
     /*
      * Trigger any special Python stuff required after a fork.
@@ -5554,11 +5538,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
     /* Restore the prior thread state and release the GIL. */
 
-    PyThreadState_Clear(tstate);
-    PyThreadState_Swap(save_tstate);
-    PyThreadState_Delete(tstate);
-
-    PyEval_ReleaseLock();
+    PyGILState_Release(state);
 
     /* Register cleanups to performed on process shutdown. */
 
