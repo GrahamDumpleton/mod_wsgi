@@ -1510,6 +1510,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
     PyObject *result = NULL;
     char *buffer = NULL;
     apr_size_t length = 0;
+    int init = 0;
 
     apr_size_t n;
 
@@ -1530,6 +1531,8 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
     }
 #endif
 
+    init = self->init;
+
     if (!self->init) {
         if (!ap_should_client_block(self->r))
             self->done = 1;
@@ -1545,26 +1548,29 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
     /*
      * If requested size is zero bytes, then still need to pass
      * this through to Apache input filters so that any
-     * 100-continue response is triggered. Note that this will
-     * cause an assertion failure in HTTP_IN input filter when
-     * Apache maintainer mode is enabled. It is arguable that
-     * the assertion check, which prohibits a zero length read,
+     * 100-continue response is triggered. Only do this if very
+     * first attempt to read data. Note that this will cause an
+     * assertion failure in HTTP_IN input filter when Apache
+     * maintainer mode is enabled. It is arguable that the
+     * assertion check, which prohibits a zero length read,
      * shouldn't exist, as why should a zero length read be not
      * allowed if input filter processing still works when it
      * does occur.
      */
 
     if (size == 0) {
-        char dummy[1];
+        if (!init) {
+            char dummy[1];
 
-        Py_BEGIN_ALLOW_THREADS
-        n = ap_get_client_block(self->r, dummy, 0);
-        Py_END_ALLOW_THREADS
+            Py_BEGIN_ALLOW_THREADS
+            n = ap_get_client_block(self->r, dummy, 0);
+            Py_END_ALLOW_THREADS
 
-        if (n == -1) {
-            PyErr_SetString(PyExc_IOError, "request data read error");
-            Py_DECREF(result);
-            return NULL;
+            if (n == -1) {
+                PyErr_SetString(PyExc_IOError, "request data read error");
+                Py_DECREF(result);
+                return NULL;
+            }
         }
 
         return PyString_FromString("");
@@ -3788,9 +3794,9 @@ static InterpreterObject *newInterpreterObject(const char *name,
     }
     else {
         /*
-	 * Remember active thread state so can restore
-	 * it. This is actually the thread state
-	 * associated with simplified GIL state API.
+         * Remember active thread state so can restore
+         * it. This is actually the thread state
+         * associated with simplified GIL state API.
          */
 
         save_tstate = PyThreadState_Swap(NULL);
