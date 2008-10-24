@@ -3734,7 +3734,7 @@ static PyObject *wsgi_signal_intercept(PyObject *self, PyObject *args)
         }
     }
 
-    Py_INCREF(m);
+    Py_XDECREF(m);
 
     Py_INCREF(h);
 
@@ -4307,12 +4307,12 @@ static void Interpreter_dealloc(InterpreterObject *self)
      * Because the thread state we are using was created outside
      * of any Python code and is not the same as the Python main
      * thread, there is no record of it within the 'threading'
-     * module. We thus need to call the 'currentThread()'
-     * function of the 'threading' module to force it to create
-     * a thread handle for the thread. If we do not do this,
-     * then the 'threading' modules exit function will always
-     * fail because it will not be able to find a handle for
-     * this thread.
+     * module. We thus need to access current thread function of
+     * the 'threading' module to force it to create a thread
+     * handle for the thread. If we do not do this, then the
+     * 'threading' modules exit function will always fail
+     * because it will not be able to find a handle for this
+     * thread.
      */
 
     module = PyImport_ImportModule("threading");
@@ -4325,7 +4325,11 @@ static void Interpreter_dealloc(InterpreterObject *self)
         PyObject *func = NULL;
 
         dict = PyModule_GetDict(module);
+#if PY_MAJOR_VERSION >= 3
+        func = PyDict_GetItemString(dict, "current_thread");
+#else
         func = PyDict_GetItemString(dict, "currentThread");
+#endif
         if (func) {
             PyObject *res = NULL;
             Py_INCREF(func);
@@ -4433,7 +4437,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
                 Py_XDECREF(result);
 
-                Py_DECREF(m);
+                Py_XDECREF(m);
             }
 
             Py_XDECREF(res);
@@ -4443,13 +4447,36 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     /* Finally done with 'threading' module. */
 
-    if (module) {
+    if (module)
         Py_DECREF(module);
+
+    /*
+     * Invoke exit functions by calling sys.exitfunc() for
+     * Python 2.X and atexit._run_exitfuncs() for Python 3.X.
+     * Note that in Python 3.X we can't call this on main Python
+     * interpreter as for Python 3.X it doesn't deregister
+     * functions as called, so have no choice but to rely on
+     * Py_Finalize() to do it for the main interpreter. Now
+     * that simplified GIL state API usage sorted out, this
+     * should be okay.
+     */
+
+#if PY_MAJOR_VERSION >= 3
+    if (self->owner) {
+        module = PyImport_ImportModule("atexit");
+
+        if (module) {
+            PyObject *dict = NULL;
+
+            dict = PyModule_GetDict(module);
+            exitfunc = PyDict_GetItemString(dict, "_run_exitfuncs");
+        }
+        else
+            PyErr_Clear();
     }
-
-    /* Invoke exit functions by calling sys.exitfunc(). */
-
+#else
     exitfunc = PySys_GetObject("exitfunc");
+#endif
 
     if (exitfunc) {
         PyObject *res = NULL;
@@ -4542,7 +4569,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
             Py_XDECREF(result);
 
-            Py_DECREF(m);
+            Py_XDECREF(m);
         }
 
         Py_XDECREF(res);
