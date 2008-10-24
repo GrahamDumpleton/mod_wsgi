@@ -4181,10 +4181,17 @@ static InterpreterObject *newInterpreterObject(const char *name,
      * group to the Python 'mod_wsgi' module.
      */
 
+#if PY_MAJOR_VERSION >= 3
+    PyModule_AddObject(module, "process_group",
+                       PyUnicode_FromString(wsgi_daemon_group));
+    PyModule_AddObject(module, "application_group",
+                       PyUnicode_FromString(name));
+#else
     PyModule_AddObject(module, "process_group",
                        PyString_FromString(wsgi_daemon_group));
     PyModule_AddObject(module, "application_group",
                        PyString_FromString(name));
+#endif
 
     Py_DECREF(module);
 
