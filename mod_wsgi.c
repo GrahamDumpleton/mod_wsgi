@@ -4183,9 +4183,10 @@ static InterpreterObject *newInterpreterObject(const char *name,
 
 #if PY_MAJOR_VERSION >= 3
     PyModule_AddObject(module, "process_group",
-                       PyUnicode_FromString(wsgi_daemon_group));
+                       PyUnicode_DecodeLatin1(wsgi_daemon_group,
+                       strlen(wsgi_daemon_group), NULL));
     PyModule_AddObject(module, "application_group",
-                       PyUnicode_FromString(name));
+                       PyUnicode_DecodeLatin1(name, strlen(name), NULL));
 #else
     PyModule_AddObject(module, "process_group",
                        PyString_FromString(wsgi_daemon_group));
@@ -4503,14 +4504,14 @@ static void Interpreter_dealloc(InterpreterObject *self)
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
                              "mod_wsgi (pid=%d): SystemExit exception "
-                             "raised by sys.exitfunc() ignored.", getpid());
+                             "raised by exit functions ignored.", getpid());
                 Py_END_ALLOW_THREADS
             }
             else {
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
                              "mod_wsgi (pid=%d): Exception occurred within "
-                             "sys.exitfunc().", getpid());
+                             "exit functions.", getpid());
                 Py_END_ALLOW_THREADS
             }
 
