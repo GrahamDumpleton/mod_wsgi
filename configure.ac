@@ -94,6 +94,9 @@ if test "${PYTHONFRAMEWORKDIR}" = "no-framework"; then
     LDLIBS2=`${PYTHON} -c 'from sys import stdout; \
         from distutils import sysconfig; \
         stdout.write(sysconfig.get_config_var("LIBS"))'`
+    LDLIBS3=`${PYTHON} -c 'from sys import stdout; \
+        from distutils import sysconfig; \
+        stdout.write(sysconfig.get_config_var("SYSLIBS"))'`
 else
     LDFLAGS1="-F${PYTHONFRAMEWORKPREFIX} -framework ${PYTHONFRAMEWORK}"
 
@@ -120,7 +123,7 @@ if test -x /usr/bin/lipo; then
 fi
 
 LDFLAGS="${LDFLAGS} ${LDFLAGS1} ${LDFLAGS2} ${LDFLAGS3}"
-LDLIBS="${LDLIBS} ${LDLIBS1} ${LDLIBS2}"
+LDLIBS="${LDLIBS} ${LDLIBS1} ${LDLIBS2} ${LDLIBS3}"
 
 LDFLAGS=`echo ${LDFLAGS} | sed -e "s/\([[^ ]][[^ ]]*\)/-Wl,\1/g"`
 LDLIBS=`echo ${LDLIBS} | sed -e "s/\([[^ ]][[^ ]]*\)/-Wl,\1/g"`
