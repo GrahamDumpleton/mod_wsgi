@@ -4201,10 +4201,11 @@ static InterpreterObject *newInterpreterObject(const char *name,
 
         if (module) {
             PyErr_Print();
-            PyErr_Clear();
 
             PyDict_DelItemString(modules, "mod_wsgi");
         }
+
+        PyErr_Clear();
 
         module = PyImport_AddModule("mod_wsgi");
 
@@ -4277,12 +4278,13 @@ static InterpreterObject *newInterpreterObject(const char *name,
                 Py_END_ALLOW_THREADS
 
                 PyErr_Print();
-                PyErr_Clear();
 
                 PyDict_DelItemString(modules, "apache");
 
                 module = NULL;
             }
+
+            PyErr_Clear();
         }
         else {
             Py_BEGIN_ALLOW_THREADS
