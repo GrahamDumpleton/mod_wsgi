@@ -4708,12 +4708,14 @@ static PyTypeObject Interpreter_Type = {
  * Startup and shutdown of Python interpreter. In mod_wsgi if
  * the Python interpreter hasn't been initialised by another
  * Apache module such as mod_python, we will take control and
- * initialise it. Need to remember that we initialised Python as
- * in doing that we also take responsibility for performing
- * special Python fixups after Apache is forked and child
- * process has run.
+ * initialise it. Need to remember that we initialised Python
+ * and whether done in parent or child process as when done in
+ * the parent we also take responsibility for performing special
+ * Python fixups after Apache is forked and child process has
+ * run.
  */
 
+static int wsgi_python_after_fork = 1;
 static int wsgi_python_initialized = 0;
 
 static void wsgi_python_version(void)
@@ -4770,19 +4772,9 @@ static void wsgi_python_init(apr_pool_t *p)
     static int initialized = 1;
 #endif
 
-    /*
-     * Check that the version of Python found at
-     * runtime is what was used at compilation.
-     */
-
-    wsgi_python_version();
-
     /* Perform initialisation if required. */
 
     if (!Py_IsInitialized() || !initialized) {
-        char buffer[256];
-        const char *token = NULL;
-        const char *version = NULL;
 
         /* Enable Python 3.0 migration warnings. */
 
@@ -4815,28 +4807,11 @@ static void wsgi_python_init(apr_pool_t *p)
         /* Initialise Python. */
 
         ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                     "mod_wsgi: Initializing Python.");
+                     "mod_wsgi (pid=%d): Initializing Python.", getpid());
 
         initialized = 1;
 
         Py_Initialize();
-
-        /* Record version string with Apache. */
-
-        version = Py_GetVersion();
-
-        token = version;
-        while (*token && *token != ' ')
-            token++;
-
-        strcpy(buffer, "Python/");
-        strncat(buffer, version, token - version);
-
-#if AP_SERVER_MAJORVERSION_NUMBER < 2
-        ap_add_version_component(buffer);
-#else
-        ap_add_version_component(p, buffer);
-#endif
 
         /* Initialise threading. */
 
@@ -5588,10 +5563,11 @@ static void wsgi_python_child_init(apr_pool_t *p)
      * Trigger any special Python stuff required after a fork.
      * Only do this though if we were responsible for the
      * initialisation of the Python interpreter in the first
-     * place to avoid it being done multiple times.
+     * place to avoid it being done multiple times. Also only
+     * do it if Python was initialised in parent process.
      */
 
-    if (wsgi_python_initialized)
+    if (wsgi_python_initialized && !wsgi_python_after_fork)
         PyOS_AfterFork();
 
     /* Finalise any Python objects required by child process. */
@@ -7659,6 +7635,25 @@ static void wsgi_hook_init(server_rec *s, apr_pool_t *p)
 
     ap_add_version_component(package);
 
+    /* Record Python version string with Apache. */
+
+    if (!Py_IsInitialized()) {
+        char buffer[256];
+        const char *token = NULL;
+        const char *version = NULL;
+        
+        version = Py_GetVersion();
+
+        token = version;
+        while (*token && *token != ' ')
+            token++;
+
+        strcpy(buffer, "Python/");
+        strncat(buffer, version, token - version);
+
+        ap_add_version_component(buffer);
+    }
+
     /* Retain reference to base server. */
 
     wsgi_server = s;
@@ -7676,13 +7671,41 @@ static void wsgi_hook_init(server_rec *s, apr_pool_t *p)
 
     wsgi_server_config = ap_get_module_config(s->module_config, &wsgi_module);
 
-    /* Initialise Python if not already done. */
+    /*
+     * Check that the version of Python found at
+     * runtime is what was used at compilation.
+     */
 
-    wsgi_python_init(p);
+    wsgi_python_version();
+
+    /*
+     * Initialise Python if required to be done in
+     * the parent process. Note that it will not be
+     * initialised if mod_python loaded and it has
+     * already been done.
+     */
+
+    if (!wsgi_python_after_fork)
+        wsgi_python_init(p);
 }
 
 static void wsgi_hook_child_init(server_rec *s, apr_pool_t *p)
 {
+    /*
+     * Initialise Python if required to be done in
+     * the child process. Note that it will not be
+     * initialised if mod_python loaded and it has
+     * already been done.
+     */
+
+    if (wsgi_python_after_fork)
+        wsgi_python_init(p);
+
+    /*
+     * Now perform additional initialisation steps
+     * always done in child process.
+     */
+
     wsgi_python_child_init(p);
 }
 
@@ -9363,6 +9386,15 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         apr_pool_create(&wsgi_daemon_pool, p);
 
         /*
+	 * Initialise Python if required to be done in the child
+	 * process. Note that it will not be initialised if
+	 * mod_python loaded and it has already been done.
+         */
+
+        if (wsgi_python_after_fork)
+            wsgi_python_init(p);
+
+        /*
          * If mod_python is also being loaded and thus it was
          * responsible for initialising Python it can leave in
          * place an active thread state. Under normal conditions
@@ -10727,6 +10759,27 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
 
     ap_add_version_component(pconf, package);
 
+    /* Record Python version string with Apache. */
+
+    if (!Py_IsInitialized()) {
+        char buffer[256];
+        const char *token = NULL;
+        const char *version = NULL;
+        
+        version = Py_GetVersion();
+
+        token = version;
+        while (*token && *token != ' ')
+            token++;
+
+        strcpy(buffer, "Python/");
+        strncat(buffer, version, token - version);
+
+        ap_add_version_component(pconf, buffer);
+    }
+
+    /* Retain reference to base server. */
+
     /* Retain reference to base server. */
 
     wsgi_server = s;
@@ -10750,9 +10803,22 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
 
     wsgi_server_config = ap_get_module_config(s->module_config, &wsgi_module);
 
-    /* Initialise Python if not already done. */
+    /*
+     * Check that the version of Python found at
+     * runtime is what was used at compilation.
+     */
 
-    wsgi_python_init(pconf);
+    wsgi_python_version();
+
+    /*
+     * Initialise Python if required to be done in
+     * the parent process. Note that it will not be
+     * initialised if mod_python loaded and it has
+     * already been done.
+     */
+
+    if (!wsgi_python_after_fork)
+        wsgi_python_init(pconf);
 
     /* Startup separate named daemon processes. */
 
@@ -10785,7 +10851,20 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
     }
 #endif
 
-    /* Setup Python in Apache worker processes. */
+    /*
+     * Initialise Python if required to be done in
+     * the child process. Note that it will not be
+     * initialised if mod_python loaded and it has
+     * already been done.
+     */
+
+    if (wsgi_python_after_fork)
+        wsgi_python_init(p);
+
+    /*
+     * Now perform additional initialisation steps
+     * always done in child process.
+     */
 
     wsgi_python_child_init(p);
 }
