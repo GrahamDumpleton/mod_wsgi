@@ -1685,7 +1685,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
         size = size + (size >> 2);
 
         if (size < 256)
-            size = 256;
+            size = self->r->read_chunked ? 8192 : 256;
 
         /* Allocate string of the estimated size. */
 
@@ -7548,14 +7548,18 @@ static int wsgi_hook_handler(request_rec *r)
 
     /*
      * Setup policy to apply if request contains a body. Note
-     * that it is not possible to have chunked transfer encoding
-     * for the request content. This is actually a limitation in
-     * WSGI specification as it has no way of indicating that
-     * there is content of unknown length, nor a way to deal
-     * with trailers appearing after any chunked content.
+     * that WSGI specification doesn't strictly allow for chunked
+     * request content as CONTENT_LENGTH required when reading
+     * input and application isn't meant to read more than what
+     * is defined by CONTENT_LENGTH. To allow chunked request
+     * content tell Apache to dechunk it. For application to use
+     * the content, it has to ignore WSGI specification and use
+     * read() with no arguments to read all available input, or
+     * call read() with specific block size until read() returns
+     * an empty string.
      */
 
-    status = ap_setup_client_block(r, REQUEST_CHUNKED_ERROR);
+    status = ap_setup_client_block(r, REQUEST_CHUNKED_DECHUNK);
 
     if (status != OK)
         return status;
