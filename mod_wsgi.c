@@ -316,6 +316,14 @@ static apr_time_t volatile wsgi_inactivity_shutdown_time = 0;
 static apr_thread_mutex_t* wsgi_shutdown_lock = NULL;
 #endif
 
+/* Python information. */
+
+#if defined(MOD_WSGI_DISABLE_EMBEDDED)
+static int wsgi_python_required = 0;
+#else
+static int wsgi_python_required = -1;
+#endif
+
 /* Configuration objects. */
 
 typedef struct {
@@ -6060,6 +6068,11 @@ static const char *wsgi_set_restrict_embedded(cmd_parms *cmd, void *mconfig,
     else
         return "WSGIRestrictEmbedded must be one of: Off | On";
 
+    if (sconfig->restrict_embedded) {
+        if (wsgi_python_required == -1)
+            wsgi_python_required = 0;
+    }
+
     return NULL;
 }
 
@@ -6355,6 +6368,8 @@ static const char *wsgi_set_dispatch_script(cmd_parms *cmd, void *mconfig,
         sconfig->dispatch_script = object;
     }
 
+    wsgi_python_required = 1;
+
     return NULL;
 }
 
@@ -6483,6 +6498,8 @@ static const char *wsgi_set_access_script(cmd_parms *cmd, void *mconfig,
     dconfig = (WSGIDirectoryConfig *)mconfig;
     dconfig->access_script = object;
 
+    wsgi_python_required = 1;
+
     return NULL;
 }
 
@@ -6521,6 +6538,8 @@ static const char *wsgi_set_auth_user_script(cmd_parms *cmd, void *mconfig,
     dconfig = (WSGIDirectoryConfig *)mconfig;
     dconfig->auth_user_script = object;
 
+    wsgi_python_required = 1;
+
     return NULL;
 }
 
@@ -6558,6 +6577,8 @@ static const char *wsgi_set_auth_group_script(cmd_parms *cmd, void *mconfig,
 
     dconfig = (WSGIDirectoryConfig *)mconfig;
     dconfig->auth_group_script = object;
+
+    wsgi_python_required = 1;
 
     return NULL;
 }
@@ -7735,22 +7756,24 @@ static void wsgi_hook_init(server_rec *s, apr_pool_t *p)
 
 static void wsgi_hook_child_init(server_rec *s, apr_pool_t *p)
 {
-    /*
-     * Initialise Python if required to be done in
-     * the child process. Note that it will not be
-     * initialised if mod_python loaded and it has
-     * already been done.
-     */
+    if (wsgi_python_required) {
+        /*
+         * Initialise Python if required to be done in
+         * the child process. Note that it will not be
+         * initialised if mod_python loaded and it has
+         * already been done.
+         */
 
-    if (wsgi_python_after_fork)
-        wsgi_python_init(p);
+        if (wsgi_python_after_fork)
+            wsgi_python_init(p);
 
-    /*
-     * Now perform additional initialisation steps
-     * always done in child process.
-     */
+        /*
+         * Now perform additional initialisation steps
+         * always done in child process.
+         */
 
-    wsgi_python_child_init(p);
+        wsgi_python_child_init(p);
+    }
 }
 
 /* Dispatch list of content handlers */
@@ -10824,8 +10847,6 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
 
     /* Retain reference to base server. */
 
-    /* Retain reference to base server. */
-
     wsgi_server = s;
 
     /* Retain record of parent process ID. */
@@ -10861,6 +10882,9 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
      * already been done.
      */
 
+    if (wsgi_python_required == -1)
+        wsgi_python_required = 1;
+
     if (!wsgi_python_after_fork)
         wsgi_python_init(pconf);
 
@@ -10895,22 +10919,24 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
     }
 #endif
 
-    /*
-     * Initialise Python if required to be done in
-     * the child process. Note that it will not be
-     * initialised if mod_python loaded and it has
-     * already been done.
-     */
+    if (wsgi_python_required) {
+        /*
+         * Initialise Python if required to be done in
+         * the child process. Note that it will not be
+         * initialised if mod_python loaded and it has
+         * already been done.
+         */
 
-    if (wsgi_python_after_fork)
-        wsgi_python_init(p);
+        if (wsgi_python_after_fork)
+            wsgi_python_init(p);
 
-    /*
-     * Now perform additional initialisation steps
-     * always done in child process.
-     */
+        /*
+         * Now perform additional initialisation steps
+         * always done in child process.
+         */
 
-    wsgi_python_child_init(p);
+        wsgi_python_child_init(p);
+    }
 }
 
 #if defined(MOD_WSGI_WITH_AAA_HANDLERS)
