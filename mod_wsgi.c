@@ -6322,6 +6322,9 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
     object->process_group = "";
 #endif
 
+    if (!*object->process_group)
+        wsgi_python_required = 1;
+
     return NULL;
 }
 
