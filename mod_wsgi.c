@@ -316,14 +316,6 @@ static apr_time_t volatile wsgi_inactivity_shutdown_time = 0;
 static apr_thread_mutex_t* wsgi_shutdown_lock = NULL;
 #endif
 
-/* Python information. */
-
-#if defined(MOD_WSGI_DISABLE_EMBEDDED)
-static int wsgi_python_required = 0;
-#else
-static int wsgi_python_required = -1;
-#endif
-
 /* Configuration objects. */
 
 typedef struct {
@@ -4723,8 +4715,15 @@ static PyTypeObject Interpreter_Type = {
  * run.
  */
 
-static int wsgi_python_after_fork = 1;
 static int wsgi_python_initialized = 0;
+
+#if defined(MOD_WSGI_DISABLE_EMBEDDED)
+static int wsgi_python_required = 0;
+#else
+static int wsgi_python_required = -1;
+#endif
+
+static int wsgi_python_after_fork = 0;
 
 static void wsgi_python_version(void)
 {
