@@ -78,6 +78,8 @@ typedef unsigned long apr_off_t;
 #define apr_pstrcat ap_pstrcat
 #define apr_pcalloc ap_pcalloc
 #define apr_palloc ap_palloc
+#define apr_isalnum isalnum
+#define apr_toupper toupper
 typedef time_t apr_time_t;
 #include "http_config.h"
 typedef int apr_lockmech_e;
@@ -10970,6 +10972,31 @@ static char *wsgi_original_uri(request_rec *r)
     return apr_pstrmemdup(r->pool, first, last - first);
 }
 
+static char *wsgi_http2env(apr_pool_t *a, const char *w)
+{
+    char *res = (char *)apr_palloc(a, sizeof("HTTP_") + strlen(w));
+    char *cp = res;
+    char c;
+
+    *cp++ = 'H';
+    *cp++ = 'T';
+    *cp++ = 'T';
+    *cp++ = 'P';
+    *cp++ = '_';
+
+    while ((c = *w++) != 0) {
+        if (!apr_isalnum(c)) {
+            *cp++ = '_';
+        }
+        else {
+            *cp++ = apr_toupper(c);
+        }
+    }
+    *cp = 0;
+
+    return res;
+}
+
 typedef struct {
         PyObject_HEAD
         request_rec *r;
@@ -11013,7 +11040,54 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     const char *banner;
     apr_port_t rport;
 
+    const apr_array_header_t *hdrs_arr;
+    const apr_table_entry_t *hdrs;
+
+    int i;
+
     vars = PyDict_New();
+
+    hdrs_arr = apr_table_elts(r->headers_in);
+    hdrs = (const apr_table_entry_t *) hdrs_arr->elts;
+
+    for (i = 0; i < hdrs_arr->nelts; ++i) {
+        if (!hdrs[i].key) {
+            continue;
+        }
+
+        if (!strcasecmp(hdrs[i].key, "Content-type")) {
+#if PY_MAJOR_VERSION >= 3
+            object = PyUnicode_FromString(hdrs[i].val);
+#else
+            object = PyString_FromString(hdrs[i].val);
+#endif
+            PyDict_SetItemString(vars, "CONTENT_TYPE", object);
+            Py_DECREF(object);
+        }
+        else if (!strcasecmp(hdrs[i].key, "Content-length")) {
+#if PY_MAJOR_VERSION >= 3
+            object = PyUnicode_FromString(hdrs[i].val);
+#else
+            object = PyString_FromString(hdrs[i].val);
+#endif
+            PyDict_SetItemString(vars, "CONTENT_LENGTH", object);
+            Py_DECREF(object);
+        }
+        else if (!strcasecmp(hdrs[i].key, "Authorization")
+                 || !strcasecmp(hdrs[i].key, "Proxy-Authorization")) {
+            continue;
+        }
+        else {
+#if PY_MAJOR_VERSION >= 3
+            object = PyUnicode_FromString(hdrs[i].val);
+#else
+            object = PyString_FromString(hdrs[i].val);
+#endif
+            PyDict_SetItemString(vars, wsgi_http2env(r->pool, hdrs[i].key),
+                                 object);
+            Py_DECREF(object);
+        }
+    }
 
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_FromString(ap_psignature("", r));
