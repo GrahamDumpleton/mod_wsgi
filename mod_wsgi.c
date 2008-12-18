@@ -5655,7 +5655,7 @@ static const char *wsgi_set_restrict_process(cmd_parms *cmd, void *mconfig,
     while (*args) {
         char const *option;
 
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        option = ap_getword_conf(cmd->pool, &args);
 
         if (!strcmp(option, "%{GLOBAL}"))
             option = "";
@@ -5744,7 +5744,7 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
 
     object = (WSGIScriptFile *)apr_array_push(sconfig->import_list);
 
-    object->handler_script = ap_getword_conf(cmd->temp_pool, &args);
+    object->handler_script = ap_getword_conf(cmd->pool, &args);
     object->process_group = NULL;
     object->application_group = NULL;
 
@@ -5752,7 +5752,7 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
         return "Location of import script not supplied.";
 
     while (*args) {
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        option = ap_getword_conf(cmd->pool, &args);
 
         if (strstr(option, "application-group=") == option) {
             value = option + 18;
@@ -5803,13 +5803,13 @@ static const char *wsgi_set_dispatch_script(cmd_parms *cmd, void *mconfig,
 
     object = newWSGIScriptFile(cmd->pool);
 
-    object->handler_script = ap_getword_conf(cmd->temp_pool, &args);
+    object->handler_script = ap_getword_conf(cmd->pool, &args);
 
     if (!object->handler_script || !*object->handler_script)
         return "Location of dispatch script not supplied.";
 
     while (*args) {
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        option = ap_getword_conf(cmd->pool, &args);
 
         if (strstr(option, "application-group=") == option) {
             value = option + 18;
@@ -5972,13 +5972,13 @@ static const char *wsgi_set_access_script(cmd_parms *cmd, void *mconfig,
 
     object = newWSGIScriptFile(cmd->pool);
 
-    object->handler_script = ap_getword_conf(cmd->temp_pool, &args);
+    object->handler_script = ap_getword_conf(cmd->pool, &args);
 
     if (!object->handler_script || !*object->handler_script)
         return "Location of access script not supplied.";
 
     while (*args) {
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        option = ap_getword_conf(cmd->pool, &args);
 
         if (strstr(option, "application-group=") == option) {
             value = option + 18;
@@ -6008,13 +6008,13 @@ static const char *wsgi_set_auth_user_script(cmd_parms *cmd, void *mconfig,
 
     object = newWSGIScriptFile(cmd->pool);
 
-    object->handler_script = ap_getword_conf(cmd->temp_pool, &args);
+    object->handler_script = ap_getword_conf(cmd->pool, &args);
 
     if (!object->handler_script || !*object->handler_script)
         return "Location of auth user script not supplied.";
 
     while (*args) {
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        option = ap_getword_conf(cmd->pool, &args);
 
         if (strstr(option, "application-group=") == option) {
             value = option + 18;
@@ -6044,13 +6044,13 @@ static const char *wsgi_set_auth_group_script(cmd_parms *cmd, void *mconfig,
 
     object = newWSGIScriptFile(cmd->pool);
 
-    object->handler_script = ap_getword_conf(cmd->temp_pool, &args);
+    object->handler_script = ap_getword_conf(cmd->pool, &args);
 
     if (!object->handler_script || !*object->handler_script)
         return "Location of auth group script not supplied.";
 
     while (*args) {
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        option = ap_getword_conf(cmd->pool, &args);
 
         if (strstr(option, "application-group=") == option) {
             value = option + 18;
@@ -7308,13 +7308,13 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     /* Now parse options for directive. */
 
-    name = ap_getword_conf(cmd->temp_pool, &args);
+    name = ap_getword_conf(cmd->pool, &args);
 
     if (!name || !*name)
         return "Name of WSGI daemon process not supplied.";
 
     while (*args) {
-        option = ap_getword_conf(cmd->temp_pool, &args);
+        option = ap_getword_conf(cmd->pool, &args);
 
         if (strstr(option, "user=") == option) {
             value = option + 5;
