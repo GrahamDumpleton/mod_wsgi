@@ -4739,9 +4739,6 @@ static void wsgi_python_version(void)
                      "mod_wsgi: Compiled for Python/%s.", compile);
         ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(0), wsgi_server,
                      "mod_wsgi: Runtime using Python/%s.", dynamic);
-        ap_log_error(APLOG_MARK, WSGI_LOG_WARNING(0), wsgi_server,
-                     "mod_wsgi: Python module path '%s'.",
-                     Py_GetPath());
     }
 }
 
