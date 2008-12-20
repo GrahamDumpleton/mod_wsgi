@@ -125,8 +125,10 @@ fi
 LDFLAGS="${LDFLAGS} ${LDFLAGS1} ${LDFLAGS2} ${LDFLAGS3}"
 LDLIBS="${LDLIBS} ${LDLIBS1} ${LDLIBS2} ${LDLIBS3}"
 
-LDFLAGS=`echo ${LDFLAGS} | sed -e "s/\([[^ ]][[^ ]]*\)/-Wl,\1/g"`
-LDLIBS=`echo ${LDLIBS} | sed -e "s/\([[^ ]][[^ ]]*\)/-Wl,\1/g"`
+LDFLAGS=`echo ${LDFLAGS} | \
+ sed -e "s/-Wl,\([[^ ]][[^ ]]*\)/\1/g" -e "s/\([[^ ]][[^ ]]*\)/-Wl,\1/g"`
+LDLIBS=`echo ${LDLIBS} | \
+ sed -e "s/-Wl,\([[^ ]][[^ ]]*\)/\1/g" -e "s/\([[^ ]][[^ ]]*\)/-Wl,\1/g"`
 
 AC_SUBST(CFLAGS)
 AC_SUBST(LDFLAGS)
