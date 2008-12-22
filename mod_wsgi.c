@@ -318,6 +318,10 @@ static apr_time_t volatile wsgi_inactivity_shutdown_time = 0;
 static apr_thread_mutex_t* wsgi_shutdown_lock = NULL;
 #endif
 
+/* Script information. */
+
+static apr_array_header_t *wsgi_import_list = NULL;
+
 /* Configuration objects. */
 
 typedef struct {
@@ -366,7 +370,6 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
 
-    apr_array_header_t *import_list;
     WSGIScriptFile *dispatch_script;
 
     int apache_extensions;
@@ -432,7 +435,6 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->application_group = NULL;
     object->callable_object = NULL;
 
-    object->import_list = NULL;
     object->dispatch_script = NULL;
 
     object->apache_extensions = -1;
@@ -1015,6 +1017,108 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     return config;
 }
+
+/*
+ * Apache 2.X and UNIX specific definitions related to
+ * distinct daemon processes.
+ */
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+
+#include "unixd.h"
+#include "scoreboard.h"
+#include "mpm_common.h"
+#include "apr_proc_mutex.h"
+#include "http_connection.h"
+#include "apr_buckets.h"
+#include "apr_poll.h"
+#include "apr_signal.h"
+#include "http_vhost.h"
+
+#if APR_HAVE_SYS_SOCKET_H
+#include <sys/socket.h>
+#endif
+#if APR_HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+#if APR_HAVE_SYS_TYPES_H
+#include <sys/types.h>
+#endif
+#ifdef HAVE_SYS_SEM_H
+#include <sys/sem.h>
+#endif
+
+#include <sys/un.h>
+
+#ifndef WSGI_LISTEN_BACKLOG
+#define WSGI_LISTEN_BACKLOG 100
+#endif
+
+#ifndef WSGI_CONNECT_ATTEMPTS
+#define WSGI_CONNECT_ATTEMPTS 15
+#endif
+
+typedef struct {
+    server_rec *server;
+    long random;
+    int id;
+    const char *name;
+    const char *user;
+    uid_t uid;
+    const char *group;
+    gid_t gid;
+    int processes;
+    int multiprocess;
+    int threads;
+    int umask;
+    const char *root;
+    const char *home;
+    const char *python_path;
+    const char *python_eggs;
+    int stack_size;
+    int maximum_requests;
+    int shutdown_timeout;
+    apr_time_t deadlock_timeout;
+    apr_time_t inactivity_timeout;
+    const char *display_name;
+    int send_buffer_size;
+    int recv_buffer_size;
+    const char *socket;
+    int listener_fd;
+    const char* mutex_path;
+    apr_proc_mutex_t* mutex;
+} WSGIProcessGroup;
+
+typedef struct {
+    WSGIProcessGroup *group;
+    int instance;
+    apr_proc_t process;
+    apr_socket_t *listener;
+} WSGIDaemonProcess;
+
+typedef struct {
+    WSGIDaemonProcess *process;
+    apr_thread_t *thread;
+    int running;
+} WSGIDaemonThread;
+
+typedef struct {
+    const char *name;
+    const char *socket;
+    int fd;
+} WSGIDaemonSocket;
+
+static int wsgi_daemon_count = 0;
+static apr_hash_t *wsgi_daemon_index = NULL;
+static apr_hash_t *wsgi_daemon_listeners = NULL;
+
+static WSGIDaemonProcess *wsgi_daemon_process = NULL;
+
+static apr_thread_mutex_t* wsgi_daemon_lock = NULL;
+
+static int volatile wsgi_request_count = 0;
+
+#endif
 
 /* Class objects used by response handler. */
 
@@ -5665,7 +5769,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
     /* Loop through import scripts for this process and load them. */
 
-    if (wsgi_server_config->import_list) {
+    if (wsgi_import_list) {
         apr_array_header_t *scripts = NULL;
 
         WSGIScriptFile *entries;
@@ -5673,7 +5777,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
         int i;
 
-        scripts = wsgi_server_config->import_list;
+        scripts = wsgi_import_list;
         entries = (WSGIScriptFile *)scripts->elts;
 
         for (i = 0; i < scripts->nelts; ++i) {
@@ -5864,7 +5968,7 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
             return "Invalid option to WSGI script alias definition.";
         }
 
-        if (!strcmp(option, "application-group")) {
+        if (!cmd->info && !strcmp(option, "application-group")) {
             if (!*value)
                 return "Invalid name for WSGI application group.";
 
@@ -5874,7 +5978,7 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
             application_group = value;
         }
 #if defined(MOD_WSGI_WITH_DAEMONS)
-        else if (!strcmp(option, "process-group")) {
+        else if (!cmd->info && !strcmp(option, "process-group")) {
             if (!*value)
                 return "Invalid name for WSGI process group.";
 
@@ -5921,19 +6025,48 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
     entry->callable_object = callable_object;
     entry->pass_authorization = pass_authorization;
 
-    if (!cmd->info && process_group && application_group) {
+    if (process_group && application_group) {
         WSGIScriptFile *object = NULL;
 
-        if (!sconfig->import_list) {
-            sconfig->import_list = apr_array_make(sconfig->pool, 20,
-                                                  sizeof(WSGIScriptFile));
+        if (!wsgi_import_list) {
+            wsgi_import_list = apr_array_make(sconfig->pool, 20,
+                                              sizeof(WSGIScriptFile));
         }
 
-        object = (WSGIScriptFile *)apr_array_push(sconfig->import_list);
+        object = (WSGIScriptFile *)apr_array_push(wsgi_import_list);
 
         object->handler_script = a;
         object->process_group = process_group;
         object->application_group = application_group;
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+        if (*object->process_group) {
+            WSGIProcessGroup *group = NULL;
+            WSGIProcessGroup *entries = NULL;
+            WSGIProcessGroup *entry = NULL;
+            int i;
+
+            if (!wsgi_daemon_list)
+                return "WSGI process group not yet configured.";
+
+            entries = (WSGIProcessGroup *)wsgi_daemon_list->elts;
+
+            for (i = 0; i < wsgi_daemon_list->nelts; ++i) {
+                entry = &entries[i];
+
+                if (!strcmp(entry->name, object->process_group)) {
+                    group = entry;
+                    break;
+                }
+            }
+
+            if (!group)
+                return "WSGI process group not yet configured.";
+
+            if (group->server != cmd->server && group->server->is_virtual)
+                return "WSGI process group not accessible.";
+        }
+#endif
     }
 
     return NULL;
@@ -6254,24 +6387,16 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
 {
     const char *error = NULL;
     WSGIScriptFile *object = NULL;
-    WSGIServerConfig *sconfig = NULL;
 
     const char *option = NULL;
     const char *value = NULL;
 
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
-
-    sconfig = ap_get_module_config(cmd->server->module_config,
-                                   &wsgi_module);
-
-    if (!sconfig->import_list) {
-        sconfig->import_list = apr_array_make(sconfig->pool, 20,
-                                              sizeof(WSGIScriptFile));
+    if (!wsgi_import_list) {
+        wsgi_import_list = apr_array_make(cmd->pool, 20,
+                                          sizeof(WSGIScriptFile));
     }
 
-    object = (WSGIScriptFile *)apr_array_push(sconfig->import_list);
+    object = (WSGIScriptFile *)apr_array_push(wsgi_import_list);
 
     object->handler_script = ap_getword_conf(cmd->pool, &args);
     object->process_group = NULL;
@@ -6316,6 +6441,33 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
 
     if (!strcmp(object->process_group, "%{GLOBAL}"))
         object->process_group = "";
+
+    if (*object->process_group) {
+        WSGIProcessGroup *group = NULL;
+        WSGIProcessGroup *entries = NULL;
+        WSGIProcessGroup *entry = NULL;
+        int i;
+
+        if (!wsgi_daemon_list)
+            return "WSGI process group not yet configured.";
+
+        entries = (WSGIProcessGroup *)wsgi_daemon_list->elts;
+
+        for (i = 0; i < wsgi_daemon_list->nelts; ++i) {
+            entry = &entries[i];
+
+            if (!strcmp(entry->name, object->process_group)) {
+                group = entry;
+                break;
+            }
+        }
+
+        if (!group)
+            return "WSGI process group not yet configured.";
+
+        if (group->server != cmd->server && group->server->is_virtual)
+            return "WSGI process group not accessible.";
+    }
 #else
     object->process_group = "";
 #endif
@@ -7878,99 +8030,6 @@ module MODULE_VAR_EXPORT wsgi_module = {
  */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-
-#include "unixd.h"
-#include "scoreboard.h"
-#include "mpm_common.h"
-#include "apr_proc_mutex.h"
-#include "http_connection.h"
-#include "apr_buckets.h"
-#include "apr_poll.h"
-#include "apr_signal.h"
-#include "http_vhost.h"
-
-#if APR_HAVE_SYS_SOCKET_H
-#include <sys/socket.h>
-#endif
-#if APR_HAVE_UNISTD_H
-#include <unistd.h>
-#endif
-#if APR_HAVE_SYS_TYPES_H
-#include <sys/types.h>
-#endif
-#ifdef HAVE_SYS_SEM_H
-#include <sys/sem.h>
-#endif
-
-#include <sys/un.h>
-
-#ifndef WSGI_LISTEN_BACKLOG
-#define WSGI_LISTEN_BACKLOG 100
-#endif
-
-#ifndef WSGI_CONNECT_ATTEMPTS
-#define WSGI_CONNECT_ATTEMPTS 15
-#endif
-
-typedef struct {
-    server_rec *server;
-    long random;
-    int id;
-    const char *name;
-    const char *user;
-    uid_t uid;
-    const char *group;
-    gid_t gid;
-    int processes;
-    int multiprocess;
-    int threads;
-    int umask;
-    const char *root;
-    const char *home;
-    const char *python_path;
-    const char *python_eggs;
-    int stack_size;
-    int maximum_requests;
-    int shutdown_timeout;
-    apr_time_t deadlock_timeout;
-    apr_time_t inactivity_timeout;
-    const char *display_name;
-    int send_buffer_size;
-    int recv_buffer_size;
-    const char *socket;
-    int listener_fd;
-    const char* mutex_path;
-    apr_proc_mutex_t* mutex;
-} WSGIProcessGroup;
-
-typedef struct {
-    WSGIProcessGroup *group;
-    int instance;
-    apr_proc_t process;
-    apr_socket_t *listener;
-} WSGIDaemonProcess;
-
-typedef struct {
-    WSGIDaemonProcess *process;
-    apr_thread_t *thread;
-    int running;
-} WSGIDaemonThread;
-
-typedef struct {
-    const char *name;
-    const char *socket;
-    int fd;
-} WSGIDaemonSocket;
-
-static int wsgi_daemon_count = 0;
-static apr_hash_t *wsgi_daemon_index = NULL;
-static apr_hash_t *wsgi_daemon_listeners = NULL;
-
-static WSGIDaemonProcess *wsgi_daemon_process = NULL;
-
-static apr_thread_mutex_t* wsgi_daemon_lock = NULL;
-
-static int volatile wsgi_request_count = 0;
 
 static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                                            const char *args)
