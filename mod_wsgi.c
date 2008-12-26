@@ -2998,7 +2998,20 @@ static PyObject *Adapter_environ(AdapterObject *self)
     PyDict_SetItemString(vars, "wsgi.multiprocess", object);
     Py_DECREF(object);
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_daemon_process) {
+        if (wsgi_daemon_process->group->threads == 1 &&
+            wsgi_daemon_process->group->maximum_requests == 1) {
+            PyDict_SetItemString(vars, "wsgi.run_once", Py_True);
+        }
+        else
+            PyDict_SetItemString(vars, "wsgi.run_once", Py_False);
+    }
+    else
+        PyDict_SetItemString(vars, "wsgi.run_once", Py_False);
+#else
     PyDict_SetItemString(vars, "wsgi.run_once", Py_False);
+#endif
 
     scheme = apr_table_get(r->subprocess_env, "HTTPS");
 
