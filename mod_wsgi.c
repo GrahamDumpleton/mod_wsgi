@@ -12832,13 +12832,13 @@ static const command_rec wsgi_commands[] =
         NULL, RSRC_CONF, "Path prefix for the daemon process sockets."),
     AP_INIT_TAKE1("WSGIAcceptMutex", wsgi_set_accept_mutex,
         NULL, RSRC_CONF, "Set accept mutex type for daemon processes."),
+
+    AP_INIT_TAKE1("WSGILazyInitialization", wsgi_set_lazy_initialization,
+        NULL, RSRC_CONF, "Enable/Disable lazy Python initialization."),
 #endif
 
     AP_INIT_TAKE1("WSGIVerboseDebugging", wsgi_set_verbose_debugging,
         NULL, RSRC_CONF, "Enable/Disable verbose debugging messages."),
-
-    AP_INIT_TAKE1("WSGILazyInitialization", wsgi_set_lazy_initialization,
-        NULL, RSRC_CONF, "Enable/Disable lazy Python initialization."),
 
 #if PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6
     AP_INIT_TAKE1("WSGIPy3kWarningFlag", wsgi_set_py3k_warning_flag,
