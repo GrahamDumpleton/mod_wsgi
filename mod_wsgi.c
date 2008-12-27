@@ -4420,7 +4420,7 @@ static void wsgi_python_version(void)
     }
 }
 
-static apr_status_t wsgi_python_term(void *data)
+static apr_status_t wsgi_python_term()
 {
     PyInterpreterState *interp = NULL;
     PyThreadState *tstate = NULL;
@@ -4447,6 +4447,30 @@ static apr_status_t wsgi_python_term(void *data)
 
     return APR_SUCCESS;
 }
+
+#if AP_SERVER_MAJORVERSION_NUMBER < 2
+static void wsgi_python_parent_cleanup(void *data)
+#else
+static apr_status_t wsgi_python_parent_cleanup(void *data)
+#endif
+{
+    if (wsgi_parent_pid == getpid()) {
+        /*
+	 * Destroy Python itself including the main
+	 * interpreter. If mod_python is being loaded it
+	 * is left to mod_python to destroy Python,
+	 * although it currently doesn't do so.
+         */
+
+        if (wsgi_python_initialized)
+            wsgi_python_term();
+    }
+
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    return APR_SUCCESS;
+#endif
+}
+
 
 static void wsgi_python_init(apr_pool_t *p)
 {
@@ -4483,7 +4507,7 @@ static void wsgi_python_init(apr_pool_t *p)
         /* Initialise Python. */
 
         ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                     "mod_wsgi: Initializing Python.");
+                     "mod_wsgi (pid=%d): Initializing Python.", getpid());
 
         initialized = 1;
 
@@ -4513,6 +4537,19 @@ static void wsgi_python_init(apr_pool_t *p)
         PyEval_ReleaseLock();
 
         wsgi_python_initialized = 1;
+
+    /*
+     * Register cleanups to be performed on parent restart
+     * or shutdown. This will destroy Python itself.
+     */
+
+#if AP_SERVER_MAJORVERSION_NUMBER < 2
+        ap_register_cleanup(p, NULL, wsgi_python_parent_cleanup,
+                            ap_null_cleanup);
+#else
+        apr_pool_cleanup_register(p, NULL, wsgi_python_parent_cleanup,
+                                  apr_pool_cleanup_null);
+#endif
     }
 }
 
@@ -5164,7 +5201,7 @@ static int wsgi_execute_script(request_rec *r)
 }
 
 /*
- * Apache child process initialision and cleanup. Initialise
+ * Apache child process initialisation and cleanup. Initialise
  * global table containing Python interpreter instances and
  * cache reference to main interpreter. Also register cleanup
  * function to delete interpreter on process shutdown.
@@ -5224,11 +5261,11 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     /*
      * Destroy Python itself including the main interpreter.
      * If mod_python is being loaded it is left to mod_python to
-     * destroy mod_python, although it currently doesn't do so.
+     * destroy Python, although it currently doesn't do so.
      */
 
     if (wsgi_python_initialized)
-        wsgi_python_term(0);
+        wsgi_python_term();
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
     return APR_SUCCESS;
