@@ -6107,6 +6107,25 @@ static const char *wsgi_set_verbose_debugging(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_lazy_initialization(cmd_parms *cmd, void *mconfig,
+                                                const char *f)
+{
+    const char *error = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    if (strcasecmp(f, "Off") == 0)
+        wsgi_python_after_fork = 0;
+    else if (strcasecmp(f, "On") == 0)
+        wsgi_python_after_fork = 1;
+    else
+        return "WSGILazyInitialization must be one of: Off | On";
+
+    return NULL;
+}
+
 static const char *wsgi_set_py3k_warning_flag(cmd_parms *cmd, void *mconfig,
                                               const char *f)
 {
@@ -12817,6 +12836,9 @@ static const command_rec wsgi_commands[] =
 
     AP_INIT_TAKE1("WSGIVerboseDebugging", wsgi_set_verbose_debugging,
         NULL, RSRC_CONF, "Enable/Disable verbose debugging messages."),
+
+    AP_INIT_TAKE1("WSGILazyInitialization", wsgi_set_lazy_initialization,
+        NULL, RSRC_CONF, "Enable/Disable lazy Python initialization."),
 
 #if PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6
     AP_INIT_TAKE1("WSGIPy3kWarningFlag", wsgi_set_py3k_warning_flag,
