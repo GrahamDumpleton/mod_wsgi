@@ -2592,7 +2592,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
                     return 0;
                 }
 
-                name = PyString_AsString(latin_object);
+                name = apr_pstrdup(r->pool, PyString_AsString(latin_object));
                 Py_DECREF(latin_object);
             }
 #endif
@@ -2616,7 +2616,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
                     return 0;
                 }
 
-                value = PyString_AsString(latin_object);
+                value = apr_pstrdup(r->pool, PyString_AsString(latin_object));
                 Py_DECREF(latin_object);
             }
 #endif
