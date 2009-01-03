@@ -372,7 +372,7 @@ typedef struct {
 
     WSGIScriptFile *dispatch_script;
 
-    int apache_extensions;
+    int pass_apache_request;
     int pass_authorization;
     int script_reloading;
 } WSGIServerConfig;
@@ -437,7 +437,7 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 
     object->dispatch_script = NULL;
 
-    object->apache_extensions = -1;
+    object->pass_apache_request = -1;
     object->pass_authorization = -1;
     object->script_reloading = -1;
 
@@ -503,10 +503,10 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->dispatch_script = parent->dispatch_script;
 
-    if (child->apache_extensions != -1)
-        config->apache_extensions = child->apache_extensions;
+    if (child->pass_apache_request != -1)
+        config->pass_apache_request = child->pass_apache_request;
     else
-        config->apache_extensions = parent->apache_extensions;
+        config->pass_apache_request = parent->pass_apache_request;
 
     if (child->pass_authorization != -1)
         config->pass_authorization = child->pass_authorization;
@@ -532,7 +532,7 @@ typedef struct {
 
     WSGIScriptFile *dispatch_script;
 
-    int apache_extensions;
+    int pass_apache_request;
     int pass_authorization;
     int script_reloading;
 
@@ -557,7 +557,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
 
     object->dispatch_script = NULL;
 
-    object->apache_extensions = -1;
+    object->pass_apache_request = -1;
     object->pass_authorization = -1;
     object->script_reloading = -1;
 
@@ -616,10 +616,10 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->dispatch_script = parent->dispatch_script;
 
-    if (child->apache_extensions != -1)
-        config->apache_extensions = child->apache_extensions;
+    if (child->pass_apache_request != -1)
+        config->pass_apache_request = child->pass_apache_request;
     else
-        config->apache_extensions = parent->apache_extensions;
+        config->pass_apache_request = parent->pass_apache_request;
 
     if (child->pass_authorization != -1)
         config->pass_authorization = child->pass_authorization;
@@ -670,7 +670,7 @@ typedef struct {
 
     WSGIScriptFile *dispatch_script;
 
-    int apache_extensions;
+    int pass_apache_request;
     int pass_authorization;
     int script_reloading;
 
@@ -975,12 +975,12 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
     if (!config->dispatch_script)
         config->dispatch_script = sconfig->dispatch_script;
 
-    config->apache_extensions = dconfig->apache_extensions;
+    config->pass_apache_request = dconfig->pass_apache_request;
 
-    if (config->apache_extensions < 0) {
-        config->apache_extensions = sconfig->apache_extensions;
-        if (config->apache_extensions < 0)
-            config->apache_extensions = 0;
+    if (config->pass_apache_request < 0) {
+        config->pass_apache_request = sconfig->pass_apache_request;
+        if (config->pass_apache_request < 0)
+            config->pass_apache_request = 0;
     }
 
     config->pass_authorization = dconfig->pass_authorization;
@@ -3066,7 +3066,7 @@ static PyObject *Adapter_environ(AdapterObject *self)
      * structure instance.
      */
 
-    if (!wsgi_daemon_pool && self->config->apache_extensions) {
+    if (!wsgi_daemon_pool && self->config->pass_apache_request) {
         object = PyCObject_FromVoidPtr(self->r, 0);
         PyDict_SetItemString(vars, "apache.request_rec", object);
         Py_DECREF(object);
@@ -6558,19 +6558,19 @@ static const char *wsgi_set_dispatch_script(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_apache_extensions(cmd_parms *cmd, void *mconfig,
-                                              const char *f)
+static const char *wsgi_set_pass_apache_request(cmd_parms *cmd, void *mconfig,
+                                                const char *f)
 {
     if (cmd->path) {
         WSGIDirectoryConfig *dconfig = NULL;
         dconfig = (WSGIDirectoryConfig *)mconfig;
 
         if (strcasecmp(f, "Off") == 0)
-            dconfig->apache_extensions = 0;
+            dconfig->pass_apache_request = 0;
         else if (strcasecmp(f, "On") == 0)
-            dconfig->apache_extensions = 1;
+            dconfig->pass_apache_request = 1;
         else
-            return "WSGIApacheExtensions must be one of: Off | On";
+            return "WSGIPassApacheRequest must be one of: Off | On";
     }
     else {
         WSGIServerConfig *sconfig = NULL;
@@ -6578,11 +6578,11 @@ static const char *wsgi_set_apache_extensions(cmd_parms *cmd, void *mconfig,
                                        &wsgi_module);
 
         if (strcasecmp(f, "Off") == 0)
-            sconfig->apache_extensions = 0;
+            sconfig->pass_apache_request = 0;
         else if (strcasecmp(f, "On") == 0)
-            sconfig->apache_extensions = 1;
+            sconfig->pass_apache_request = 1;
         else
-            return "WSGIApacheExtensions must be one of: Off | On";
+            return "WSGIPassApacheRequest must be one of: Off | On";
     }
 
     return NULL;
@@ -7196,7 +7196,7 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
      * to the Apache request_rec structure instance.
      */
 
-    if (!wsgi_daemon_pool && self->config->apache_extensions) {
+    if (!wsgi_daemon_pool && self->config->pass_apache_request) {
         object = PyCObject_FromVoidPtr(self->r, 0);
         PyDict_SetItemString(vars, "apache.request_rec", object);
         Py_DECREF(object);
@@ -8014,8 +8014,6 @@ static const command_rec wsgi_commands[] =
     { "WSGIDispatchScript", wsgi_set_dispatch_script, NULL,
         ACCESS_CONF|RSRC_CONF, RAW_ARGS, "Location of WSGI dispatch script." },
 
-    { "WSGIApacheExtensions", wsgi_set_apache_extensions, NULL,
-        ACCESS_CONF|RSRC_CONF, TAKE1, "Enable/Disable Apache extensions." },
     { "WSGIPassAuthorization", wsgi_set_pass_authorization, NULL,
         OR_FILEINFO, TAKE1, "Enable/Disable WSGI authorization." },
     { "WSGIScriptReloading", wsgi_set_script_reloading, NULL,
@@ -11341,7 +11339,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
      * to the Apache request_rec structure instance.
      */
 
-    if (!wsgi_daemon_pool && self->config->apache_extensions) {
+    if (!wsgi_daemon_pool && self->config->pass_apache_request) {
         object = PyCObject_FromVoidPtr(self->r, 0);
         PyDict_SetItemString(vars, "apache.request_rec", object);
         Py_DECREF(object);
@@ -12885,8 +12883,8 @@ static const command_rec wsgi_commands[] =
     AP_INIT_RAW_ARGS("WSGIDispatchScript", wsgi_set_dispatch_script,
         NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI dispatch script."),
 
-    AP_INIT_TAKE1("WSGIApacheExtensions", wsgi_set_apache_extensions,
-        NULL, ACCESS_CONF|RSRC_CONF, "Enable/Disable Apache extensions."),
+    AP_INIT_TAKE1("WSGIPassApacheRequest", wsgi_set_pass_apache_request,
+        NULL, ACCESS_CONF|RSRC_CONF, "Enable/Disable Apache request object."),
     AP_INIT_TAKE1("WSGIPassAuthorization", wsgi_set_pass_authorization,
         NULL, OR_FILEINFO, "Enable/Disable WSGI authorization."),
     AP_INIT_TAKE1("WSGIScriptReloading", wsgi_set_script_reloading,
