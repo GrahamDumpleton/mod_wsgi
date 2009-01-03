@@ -10226,6 +10226,15 @@ static int wsgi_execute_remote(request_rec *r)
         }
     }
 
+
+    /*
+     * Need to reset request status value to HTTP_OK else it
+     * screws up HTTP input filter when processing a POST
+     * request with 100-continue requirement.
+     */
+
+    r->status = HTTP_OK;
+
     /* Transfer any request content which was provided. */
 
     seen_eos = 0;
