@@ -4895,10 +4895,10 @@ static apr_status_t wsgi_python_parent_cleanup(void *data)
 {
     if (wsgi_parent_pid == getpid()) {
         /*
-	 * Destroy Python itself including the main
-	 * interpreter. If mod_python is being loaded it
-	 * is left to mod_python to destroy Python,
-	 * although it currently doesn't do so.
+         * Destroy Python itself including the main
+         * interpreter. If mod_python is being loaded it
+         * is left to mod_python to destroy Python,
+         * although it currently doesn't do so.
          */
 
         if (wsgi_python_initialized)
@@ -9543,9 +9543,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         apr_pool_create(&wsgi_daemon_pool, p);
 
         /*
-	 * Initialise Python if required to be done in the child
-	 * process. Note that it will not be initialised if
-	 * mod_python loaded and it has already been done.
+         * Initialise Python if required to be done in the child
+         * process. Note that it will not be initialised if
+         * mod_python loaded and it has already been done.
          */
 
         if (wsgi_python_after_fork)
@@ -9575,6 +9575,35 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
                 PyThreadState_Swap(NULL);
 
             PyEval_ReleaseLock();
+        }
+
+        /*
+         * If daemon is associated with a virtual host and it
+         * has a virtual host specific error log file, then
+         * tie stderr to that log file instead. This way any
+         * debugging sent direct to stderr from C code also
+         * goes to the virtual host error log file. Bit nasty,
+         * but do this by comparing what what file or pipe
+         * each is associated with, if they differ then we
+         * assume stderr would have been main server error log
+         * previously and so replace stderr with that from the
+         * virtual host.
+         */
+
+        if (daemon->group->server->error_log) {
+            const char *main = NULL;
+            const char *vhost = NULL;
+
+            apr_file_name_get(&main, wsgi_server->error_log);
+            apr_file_name_get(&vhost, daemon->group->server->error_log);
+
+            if (main && vhost && strcmp(main, vhost)) {
+                apr_file_t *errfile = NULL;
+
+                apr_file_open_stderr(&errfile, wsgi_server->process->pool);
+                apr_file_dup2(errfile, daemon->group->server->error_log,
+                              wsgi_server->process->pool);
+            }
         }
 
         /*
