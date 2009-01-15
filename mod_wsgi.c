@@ -9578,22 +9578,23 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         }
 
         /*
-         * If the daemon is associated with a virtual host and
-         * it has a virtual host specific error log file, then
-         * tie stderr to that log file instead. This way any
-         * debugging sent direct to stderr from C code also goes
-         * to the virtual host error log file. At the same time
-         * we do this, we can also go close all the error logs
-         * for other server host contexts that aren't the same
-         * as that for the virtual host. This eliminates
-         * possibility that user code executing in daemon
-         * process could maliciously dump messages into error
-         * log for a different virtual host, as well as stop them
-         * being reopened with mode that would allow seeking
-         * back to start of file and read any information in them.
+         * If the daemon is associated with a virtual host then
+         * we can close all other error logs so long as they
+         * aren't the same one as being used for the virtual
+         * host. If the virtual host error log is different to
+         * the main server error log, then also tie stderr to
+         * that log file instead. This way any debugging sent
+         * direct to stderr from C code also goes to the virtual
+         * host error log. We close the error logs that aren't
+         * required as that eliminates possibility that user
+         * code executing in daemon process could maliciously
+         * dump messages into error log for a different virtual
+         * host, as well as stop them being reopened with mode
+         * that would allow seeking back to start of file and
+         * read any information in them.
          */
 
-        if (daemon->group->server->error_log != wsgi_server->error_log) {
+        if (daemon->group->server->is_virtual) {
             server_rec *server = NULL;
             apr_file_t *errfile = NULL;
 
@@ -9612,21 +9613,26 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             }
 
             /*
-             * Reassociate stderr with error log from the
-             * virtual host the daemon is associated with.
+             * Reassociate stderr output with error log from the
+             * virtual host the daemon is associated with. Close
+             * the virtual host error log and point it at stderr
+             * log instead. Do the latter so don't get two
+             * references to same open file. Just in case
+             * anything still accesses error log of main server,
+             * map main server error log to that of the virtual
+             * host.
              */
 
-            apr_file_open_stderr(&errfile, wsgi_server->process->pool);
-            apr_file_dup2(errfile, daemon->group->server->error_log,
-                          wsgi_server->process->pool);
+            if (daemon->group->server->error_log != wsgi_server->error_log) {
+                apr_file_open_stderr(&errfile, wsgi_server->process->pool);
+                apr_file_dup2(errfile, daemon->group->server->error_log,
+                              wsgi_server->process->pool);
 
-            /*
-             * Just in case anything still accesses error log of
-             * main server, map main server error log to that of
-             * the virtual host.
-             */
+                apr_file_close(daemon->group->server->error_log);
+                daemon->group->server->error_log = errfile;
 
-            wsgi_server->error_log = daemon->group->server->error_log;
+                wsgi_server->error_log = daemon->group->server->error_log;
+            }
         }
 
         /*
