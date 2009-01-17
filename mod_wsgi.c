@@ -1083,7 +1083,7 @@ typedef struct {
     const char *display_name;
     int send_buffer_size;
     int recv_buffer_size;
-    apr_hash_t *script_owner;
+    const char *script_user;
     const char *socket;
     int listener_fd;
     const char* mutex_path;
@@ -8090,7 +8090,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int send_buffer_size = 0;
     int recv_buffer_size = 0;
 
-    apr_hash_t *script_owner = NULL;
+    const char *script_user = NULL;
 
     uid_t uid;
     uid_t gid;
@@ -8266,61 +8266,24 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                        "or 0 for system default.";
             }
         }
-        else if (!strcmp(option, "script-owner")) {
+        else if (!strcmp(option, "script-user")) {
+            uid_t script_uid;
+
             if (!*value)
-                return "Invalid list of users for WSGI script owner.";
+                return "Invalid script user for WSGI daemon process.";
 
-            if (strcmp(value, "*")) {
-                const char *p = NULL;
-                const char *q = NULL;
-                char *name;
+            script_uid = ap_uname2id(value);
 
-                script_owner = apr_hash_make(cmd->pool);
+            if (*value == '#') {
+                struct passwd *entry = NULL;
 
-                p = value;
-                q = strchr(p, ',');
+                if ((entry = getpwuid(script_uid)) == NULL)
+                    return "Couldn't determine uid from script user.";
 
-                while (q) {
-                    uid_t owner;
-
-                    name = apr_pstrndup(cmd->pool, p, q-p);
-                    owner = ap_uname2id(name);
-
-                    if (*name == '#') {
-                        struct passwd *entry = NULL;
-
-                        if ((entry = getpwuid(owner)) == NULL)
-                            return "Couldn't determine owner from uid.";
-
-                        name = entry->pw_name;
-                    }
-
-                    apr_hash_set(script_owner, name,
-                                 APR_HASH_KEY_STRING, name);
-
-                    p = q+1;
-                    q = strchr(p, ',');
-                }
-
-                if (*p) {
-                    uid_t owner;
-
-                    name = apr_pstrndup(cmd->pool, p, q-p);
-                    owner = ap_uname2id(name);
-
-                    if (*name == '#') {
-                        struct passwd *entry = NULL;
-
-                        if ((entry = getpwuid(owner)) == NULL)
-                            return "Couldn't determine owner from uid.";
-
-                        name = entry->pw_name;
-                    }
-
-                    apr_hash_set(script_owner, name,
-                                 APR_HASH_KEY_STRING, name);
-                }
+                value = entry->pw_name;
             }
+
+            script_user = value;
         }
         else
             return "Invalid option to WSGI daemon process definition.";
@@ -8378,7 +8341,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->send_buffer_size = send_buffer_size;
     entry->recv_buffer_size = recv_buffer_size;
 
-    entry->script_owner = script_owner;
+    entry->script_user = script_user;
 
     entry->listener_fd = -1;
 
@@ -10192,7 +10155,7 @@ static int wsgi_execute_remote(request_rec *r)
      * the WSGI script file. If not satisfied forbid access.
      */
 
-    if (group->script_owner) {
+    if (group->script_user) {
         apr_uid_t uid;
         struct passwd *pwent = NULL;
         const char *user = NULL;
@@ -10202,17 +10165,17 @@ static int wsgi_execute_remote(request_rec *r)
         if ((pwent = getpwuid(uid)) == NULL) {
             wsgi_log_script_error(r, apr_psprintf(r->pool, "Couldn't "
                                   "determine owner of WSGI script file, "
-                                  "uid=%ld.", (long)uid), r->filename);
+                                  "uid=%ld", (long)uid), r->filename);
             return HTTP_FORBIDDEN;
         }
 
         user = pwent->pw_name;
 
-        if (!apr_hash_get(group->script_owner, user, APR_HASH_KEY_STRING)) {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "WSGI script "
-                                  "owner not a member of restricted set "
-                                  "of script owners for daemon process, "
-                                  "user=%s.", user), r->filename);
+        if (strcmp(group->script_user, user)) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Owner of WSGI "
+                                  "script file does not match required user "
+                                  "for daemon process, user=%s", user),
+                                  r->filename);
             return HTTP_FORBIDDEN;
         }
     }
