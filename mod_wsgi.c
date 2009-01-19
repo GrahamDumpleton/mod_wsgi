@@ -103,6 +103,13 @@ typedef int apr_lockmech_e;
 #include "util_script.h"
 #include "util_md5.h"
 
+#ifndef APR_FPROT_GWRITE
+#define APR_FPROT_GWRITE APR_GWRITE
+#endif
+#ifndef APR_FPROT_WWRITE
+#define APR_FPROT_WWRITE APR_WWRITE
+#endif
+
 #if !AP_MODULE_MAGIC_AT_LEAST(20050127,0)
 /* Debian backported ap_regex_t to Apache 2.0 and
  * thus made official version checking break. */
@@ -5223,7 +5230,7 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
             }
 #else
             apr_finfo_t finfo;
-            if (apr_stat(&finfo, filename, APR_FINFO_SIZE,
+            if (apr_stat(&finfo, filename, APR_FINFO_NORM,
                          pool) != APR_SUCCESS) {
                 object = PyLong_FromLongLong(0);
             }
@@ -5289,7 +5296,7 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
             }
 #else
             apr_finfo_t finfo;
-            if (apr_stat(&finfo, filename, APR_FINFO_SIZE,
+            if (apr_stat(&finfo, filename, APR_FINFO_NORM,
                          pool) != APR_SUCCESS) {
                 return 1;
             }
@@ -10159,6 +10166,15 @@ static int wsgi_execute_remote(request_rec *r)
         apr_uid_t uid;
         struct passwd *pwent = NULL;
         const char *user = NULL;
+        apr_finfo_t finfo;
+        const char *dirname = NULL;
+
+        if (!(r->finfo.valid & APR_FINFO_USER)) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "User "
+                                  "information not available for WSGI "
+                                  "script file"), r->filename);
+            return HTTP_FORBIDDEN;
+        }
 
         uid = r->finfo.user;
 
@@ -10178,6 +10194,37 @@ static int wsgi_execute_remote(request_rec *r)
                                   r->filename);
             return HTTP_FORBIDDEN;
         }
+
+        if (!(r->finfo.valid & APR_FINFO_GPROT)) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Group "
+                                  "permissions not available for WSGI "
+                                  "script file"), r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+        if (r->finfo.protection & APR_FPROT_GWRITE) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "WSGI script "
+                                  "file is writable to group"), r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+        if (!(r->finfo.valid & APR_FINFO_WPROT)) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "World "
+                                  "permissions not available for WSGI "
+                                  "script file"), r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+        if (r->finfo.protection & APR_FPROT_WWRITE) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "WSGI script "
+                                  "file is writable to world"), r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+#if XXX
+        if (apr_stat(&finfo, dirname, APR_FINFO_NORM, r->pool) != APR_SUCCESS) {
+        }
+#endif
     }
 
     /*
@@ -10852,7 +10899,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     /* Recalculate WSGI script file modification time. */
 
-    if ((rv = apr_stat(&r->finfo, filename, APR_FINFO_SIZE,
+    if ((rv = apr_stat(&r->finfo, filename, APR_FINFO_NORM,
                        r->pool)) != APR_SUCCESS) {
         /*
          * Don't fail at this point. Allow the lack of file to
