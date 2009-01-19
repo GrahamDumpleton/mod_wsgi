@@ -4790,7 +4790,7 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
             }
 #else
             apr_finfo_t finfo;
-            if (apr_stat(&finfo, filename, APR_FINFO_SIZE,
+            if (apr_stat(&finfo, filename, APR_FINFO_NORM,
                          pool) != APR_SUCCESS) {
                 object = PyLong_FromLongLong(0);
             }
@@ -4856,7 +4856,7 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
             }
 #else
             apr_finfo_t finfo;
-            if (apr_stat(&finfo, filename, APR_FINFO_SIZE,
+            if (apr_stat(&finfo, filename, APR_FINFO_NORM,
                          pool) != APR_SUCCESS) {
                 return 1;
             }
@@ -9850,7 +9850,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     r->filename = (char *)apr_table_get(r->subprocess_env, "SCRIPT_FILENAME");
 
-    if ((rv = apr_stat(&r->finfo, r->filename, APR_FINFO_SIZE,
+    if ((rv = apr_stat(&r->finfo, r->filename, APR_FINFO_NORM,
                        r->pool)) != APR_SUCCESS) {
         /*
          * Don't fail at this point. Allow the lack of file to
