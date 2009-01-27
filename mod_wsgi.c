@@ -1091,6 +1091,7 @@ typedef struct {
     int send_buffer_size;
     int recv_buffer_size;
     const char *script_user;
+    const char *script_group;
     const char *socket;
     int listener_fd;
     const char* mutex_path;
@@ -8100,6 +8101,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int recv_buffer_size = 0;
 
     const char *script_user = NULL;
+    const char *script_group = NULL;
 
     uid_t uid;
     uid_t gid;
@@ -8294,9 +8296,31 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
             script_user = value;
         }
+        else if (!strcmp(option, "script-group")) {
+            gid_t script_gid;
+
+            if (!*value)
+                return "Invalid script group for WSGI daemon process.";
+
+            script_gid = ap_gname2id(value);
+
+            if (*value == '#') {
+                struct group *entry = NULL;
+
+                if ((entry = getgrgid(script_gid)) == NULL)
+                    return "Couldn't determine gid from script group.";
+
+                value = entry->gr_name;
+            }
+
+            script_group = value;
+        }
         else
             return "Invalid option to WSGI daemon process definition.";
     }
+
+    if (script_user && script_group)
+        return "Only one of script-user and script-group allowed.";
 
     if (!wsgi_daemon_list) {
         wsgi_daemon_list = apr_array_make(cmd->pool, 20,
@@ -8351,6 +8375,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->recv_buffer_size = recv_buffer_size;
 
     entry->script_user = script_user;
+    entry->script_group = script_group;
 
     entry->listener_fd = -1;
 
@@ -10160,16 +10185,106 @@ static int wsgi_execute_remote(request_rec *r)
     }
 
     /*
+     * Check restrictions related to the group of the WSGI
+     * script file and who has write access to the directory it
+     * is contained in. If not satisfied forbid access.
+     */
+
+    if (group->script_group) {
+        apr_uid_t gid;
+        struct group *grent = NULL;
+        const char *grname = NULL;
+        apr_finfo_t finfo;
+        const char *path = NULL;
+
+        if (!(r->finfo.valid & APR_FINFO_GROUP)) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Group "
+                                  "information not available for WSGI "
+                                  "script file"), r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+        gid = r->finfo.group;
+
+        if ((grent = getgrgid(gid)) == NULL) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Couldn't "
+                                  "determine group of WSGI script file, "
+                                  "gid=%ld", (long)gid), r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+        grname = grent->gr_name;
+
+        if (strcmp(group->script_group, grname)) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Group of WSGI "
+                                  "script file does not match required group "
+                                  "for daemon process, group=%s", grname),
+                                  r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+        if (!(r->finfo.valid & APR_FINFO_WPROT)) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "World "
+                                  "permissions not available for WSGI "
+                                  "script file"), r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+        if (r->finfo.protection & APR_FPROT_WWRITE) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "WSGI script "
+                                  "file is writable to world"), r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+        path = ap_make_dirstr_parent(r->pool, r->filename);
+
+        if (apr_stat(&finfo, path, APR_FINFO_NORM, r->pool) != APR_SUCCESS) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Unable to stat "
+                                  "parent directory of WSGI script"), path);
+            return HTTP_FORBIDDEN;
+        }
+
+        gid = finfo.group;
+
+        if ((grent = getgrgid(gid)) == NULL) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Couldn't "
+                                  "determine group of parent directory of "
+                                  "WSGI script file, gid=%ld", (long)gid),
+                                  r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+        grname = grent->gr_name;
+
+        if (strcmp(group->script_group, grname)) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Group of parent "
+                                  "directory of WSGI script file does not "
+                                  "match required group for daemon process, "
+                                  "group=%s", grname), r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+        if (finfo.protection & APR_FPROT_WWRITE) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Parent directory "
+                                  "of WSGI script file is writable to world"),
+                                  r->filename);
+            return HTTP_FORBIDDEN;
+        }
+    }
+
+    /*
      * Check restrictions related to who can be the owner of
-     * the WSGI script file. If not satisfied forbid access.
+     * the WSGI script file and who has write access to the
+     * directory it is contained in. If not satisfied forbid
+     * access.
      */
 
     if (group->script_user) {
         apr_uid_t uid;
         struct passwd *pwent = NULL;
-        const char *user = NULL;
+        const char *pwname = NULL;
         apr_finfo_t finfo;
-        const char *dirname = NULL;
+        const char *path = NULL;
 
         if (!(r->finfo.valid & APR_FINFO_USER)) {
             wsgi_log_script_error(r, apr_psprintf(r->pool, "User "
@@ -10187,12 +10302,12 @@ static int wsgi_execute_remote(request_rec *r)
             return HTTP_FORBIDDEN;
         }
 
-        user = pwent->pw_name;
+        pwname = pwent->pw_name;
 
-        if (strcmp(group->script_user, user)) {
+        if (strcmp(group->script_user, pwname)) {
             wsgi_log_script_error(r, apr_psprintf(r->pool, "Owner of WSGI "
                                   "script file does not match required user "
-                                  "for daemon process, user=%s", user),
+                                  "for daemon process, user=%s", pwname),
                                   r->filename);
             return HTTP_FORBIDDEN;
         }
@@ -10223,10 +10338,27 @@ static int wsgi_execute_remote(request_rec *r)
             return HTTP_FORBIDDEN;
         }
 
-#if XXX
-        if (apr_stat(&finfo, dirname, APR_FINFO_NORM, r->pool) != APR_SUCCESS) {
+        path = ap_make_dirstr_parent(r->pool, r->filename);
+
+        if (apr_stat(&finfo, path, APR_FINFO_NORM, r->pool) != APR_SUCCESS) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Unable to stat "
+                                  "parent directory of WSGI script"), path);
+            return HTTP_FORBIDDEN;
         }
-#endif
+
+        if (finfo.protection & APR_FPROT_WWRITE) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Parent directory "
+                                  "of WSGI script file is writable to world"),
+                                  r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+        if (finfo.protection & APR_FPROT_GWRITE) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Parent directory "
+                                  "of WSGI script file is writable to group"),
+                                  r->filename);
+            return HTTP_FORBIDDEN;
+        }
     }
 
     /*
