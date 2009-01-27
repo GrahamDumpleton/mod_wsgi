@@ -10345,6 +10345,26 @@ static int wsgi_execute_remote(request_rec *r)
             return HTTP_FORBIDDEN;
         }
 
+        uid = finfo.user;
+
+        if ((pwent = getpwuid(uid)) == NULL) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Couldn't "
+                                  "determine owner of parent directory of "
+                                  "WSGI script file, uid=%ld", (long)uid),
+                                  r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+        pwname = pwent->pw_name;
+
+        if (strcmp(group->script_user, pwname)) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Owner of parent "
+                                  "directory of WSGI script file does not "
+                                  "match required user for daemon process, "
+                                  "user=%s", pwname), r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
         if (finfo.protection & APR_FPROT_WWRITE) {
             wsgi_log_script_error(r, apr_psprintf(r->pool, "Parent directory "
                                   "of WSGI script file is writable to world"),
