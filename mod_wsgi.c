@@ -1138,6 +1138,7 @@ typedef struct {
         request_rec *r;
         int level;
         char *s;
+        int l;
         int expired;
 } LogObject;
 
@@ -1154,6 +1155,7 @@ static LogObject *newLogObject(request_rec *r, int level)
     self->r = r;
     self->level = APLOG_NOERRNO|level;
     self->s = NULL;
+    self->s = 0;
     self->expired = 0;
 
     return self;
@@ -1223,22 +1225,30 @@ static PyObject *Log_flush(LogObject *self, PyObject *args)
 
         free(self->s);
         self->s = NULL;
+        self->l = 0;
     }
 
     Py_INCREF(Py_None);
     return Py_None;
 }
 
-static void Log_output(LogObject *self, const char *msg)
+static void Log_output(LogObject *self, const char *msg, int len)
 {
     const char *p = NULL;
     const char *q = NULL;
+    const char *e = NULL;
 
     p = msg;
+    e = p + len;
 
-    q = strchr(p, '\n');
+    q = p;
+    while (q != e) {
+        if (!*q || *q == '\n')
+            break;
+        q++;
+    }
 
-    while (q) {
+    while (q != e) {
         /* Output each complete line. */
 
         if (self->s) {
@@ -1248,16 +1258,17 @@ static void Log_output(LogObject *self, const char *msg)
             int n = 0;
             char *s = NULL;
 
-            m = strlen(self->s);
+            m = self->l;
             n = m+q-p+1;
 
             s = (char *)malloc(n);
-            strncpy(s, self->s, m);
-            strncpy(s+m, p, q-p);
+            memcpy(s, self->s, m);
+            memcpy(s+m, p, q-p);
             s[n-1] = '\0';
 
             free(self->s);
             self->s = NULL;
+            self->l = 0;
 
             if (self->r) {
                 Py_BEGIN_ALLOW_THREADS
@@ -1281,7 +1292,7 @@ static void Log_output(LogObject *self, const char *msg)
             n = q-p+1;
 
             s = (char *)malloc(n);
-            strncpy(s, p, q-p);
+            memcpy(s, p, q-p);
             s[n-1] = '\0';
 
             if (self->r) {
@@ -1301,10 +1312,16 @@ static void Log_output(LogObject *self, const char *msg)
         }
 
         p = q+1;
-        q = strchr(p, '\n');
+
+        q = p;
+        while (q != e) {
+            if (!*q || *q == '\n')
+                break;
+            q++;
+        }
     }
 
-    if (*p) {
+    if (p != e) {
         /* Save away incomplete line. */
 
         if (self->s) {
@@ -1313,16 +1330,23 @@ static void Log_output(LogObject *self, const char *msg)
             int m = 0;
             int n = 0;
 
-            m = strlen(self->s);
-            n = strlen(p);
+            m = self->l;
+            n = m+e-p+1;
 
-            self->s = (char *)realloc(self->s, m+n+1);
-            strncpy(self->s+m, p, n);
-            self->s[m+n] = '\0';
+            self->s = (char *)realloc(self->s, n);
+            memcpy(self->s+m, p, e-p);
+            self->s[n-1] = '\0';
+            self->l = n-1;
         }
         else {
-            self->s = (char *)malloc(strlen(p)+1);
-            strcpy(self->s, p);
+            int n = 0;
+
+            n = e-p+1;
+
+            self->s = (char *)malloc(n);
+            memcpy(self->s, p, n-1);
+            self->s[n-1] = '\0';
+            self->l = n-1;
         }
     }
 }
@@ -1330,16 +1354,17 @@ static void Log_output(LogObject *self, const char *msg)
 static PyObject *Log_write(LogObject *self, PyObject *args)
 {
     const char *msg = NULL;
+    int len = -1;
 
     if (self->expired) {
         PyErr_SetString(PyExc_RuntimeError, "log object has expired");
         return NULL;
     }
 
-    if (!PyArg_ParseTuple(args, "s:write", &msg))
+    if (!PyArg_ParseTuple(args, "s#:write", &msg, &len))
         return NULL;
 
-    Log_output(self, msg);
+    Log_output(self, msg, len);
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -1362,28 +1387,29 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
 
     iterator = PyObject_GetIter(sequence);
 
-    if (iterator == NULL)
+    if (iterator == NULL) {
+        PyErr_SetString(PyExc_TypeError,
+                        "argument must be sequence of strings");
+
         return NULL;
+    }
 
     while ((item = PyIter_Next(iterator))) {
-        msg = PyString_AsString(item);
+        PyObject *result = NULL;
 
-        if (msg) {
-            Log_output(self, msg);
+        result = Log_write(self, item);
 
-            Py_DECREF(item);
-        }
-        else {
-            Py_DECREF(item);
+        if (!result) {
+            Py_DECREF(iterator);
 
-            break;
+            PyErr_SetString(PyExc_TypeError,
+                            "argument must be sequence of strings");
+
+            return NULL;
         }
     }
 
     Py_DECREF(iterator);
-
-    if (item && !msg)
-        return NULL;
 
     Py_INCREF(Py_None);
     return Py_None;
