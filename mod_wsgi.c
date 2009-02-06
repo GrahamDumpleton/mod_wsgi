@@ -9836,6 +9836,37 @@ static int wsgi_start_daemons(apr_pool_t *p)
         entry = &entries[i];
 
         /*
+         * Check for whether the daemon process user and
+         * group are the default Apache values. If they are
+         * then reset them to the current values configured for
+         * Apache. This is to work around where the User/Group
+         * directives had not been set before the WSGIDaemonProcess
+         * directive was used in configuration file. In this case,
+         * where no 'user' and 'group' options were provided,
+         * the default values would have been used, but these
+         * were later overridden thus why we need to update it.
+         */
+
+        if (entry->uid == ap_uname2id(DEFAULT_USER)) {
+            entry->uid = unixd_config.user_id;
+            entry->user = unixd_config.user_name;
+
+            ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                         "mod_wsgi (pid=%d): Reset default user for "
+                         "daemon process group '%s' to uid=%ld.",
+                         getpid(), entry->name, (long)entry->uid);
+        }
+
+        if (entry->gid == ap_gname2id(DEFAULT_GROUP)) {
+            entry->gid = unixd_config.group_id;
+
+            ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                         "mod_wsgi (pid=%d): Reset default group for "
+                         "daemon process group '%s' to gid=%ld.",
+                         getpid(), entry->name, (long)entry->gid);
+        }
+
+        /*
          * Calculate path for socket to accept requests on and
          * create the socket.
          */
