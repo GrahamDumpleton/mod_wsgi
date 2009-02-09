@@ -4984,22 +4984,14 @@ static apr_status_t wsgi_python_term()
     ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                  "mod_wsgi (pid=%d): Terminating Python.", getpid());
 
-    PyEval_AcquireLock();
-
-    interp = PyInterpreterState_Head();
-    while (interp->next)
-        interp = interp->next;
-
-    tstate = PyThreadState_New(interp);
-    PyThreadState_Swap(tstate);
+    PyGILState_Ensure();
 
     Py_Finalize();
 
-    PyThreadState_Swap(NULL);
-
-    PyEval_ReleaseLock();
-
     wsgi_python_initialized = 0;
+
+    ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                 "mod_wsgi (pid=%d): Python has shutdown.", getpid());
 
     return APR_SUCCESS;
 }
@@ -5128,10 +5120,7 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
      * interpreters table. This lock is only needed to
      * avoid a secondary thread coming in and creating
      * the same interpreter if Python releases the GIL
-     * when an interpreter is being created. When
-     * are removing an interpreter from the table in
-     * preparation for reloading, don't need to have
-     * it.
+     * when an interpreter is being created.
      */
 
 #if APR_HAS_THREADS
