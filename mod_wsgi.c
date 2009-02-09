@@ -1155,7 +1155,7 @@ static LogObject *newLogObject(request_rec *r, int level)
     self->r = r;
     self->level = APLOG_NOERRNO|level;
     self->s = NULL;
-    self->s = 0;
+    self->l = 0;
     self->expired = 0;
 
     return self;
