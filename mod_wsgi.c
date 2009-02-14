@@ -2948,6 +2948,9 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
 
     APR_BRIGADE_INSERT_TAIL(bb, b);
 
+    b = apr_bucket_flush_create(r->connection->bucket_alloc);
+    APR_BRIGADE_INSERT_TAIL(bb, b);
+
     b = apr_bucket_eos_create(r->connection->bucket_alloc);
     APR_BRIGADE_INSERT_TAIL(bb, b);
 
