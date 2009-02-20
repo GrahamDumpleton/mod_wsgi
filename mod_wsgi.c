@@ -8571,20 +8571,17 @@ static const char *wsgi_set_accept_mutex(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static apr_file_t *wsgi_signal_pipe_in = NULL;
+static apr_file_t *wsgi_signal_pipe_out = NULL;
+
 static void wsgi_signal_handler(int signum)
 {
+    apr_size_t nbytes = 1;
+
+    apr_file_write(wsgi_signal_pipe_out, "X", &nbytes);
+    apr_file_flush(wsgi_signal_pipe_out);
+
     wsgi_daemon_shutdown++;
-}
-
-static int wsgi_check_signal(int signum)
-{
-    if (signum == SIGINT || signum == SIGTERM) {
-        wsgi_daemon_shutdown++;
-
-        return 1;
-    }
-
-    return 0;
 }
 
 static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon);
@@ -9344,18 +9341,30 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     apr_status_t rv;
     apr_status_t thread_rv;
 
-    /* Block all signals from being received. */
+    apr_pollfd_t poll_fd;
+    apr_int32_t poll_count = 0;
 
-    rv = apr_setup_signal_thread();
+    /*
+     * Create pipe by which signal handler can notify the main
+     * thread that signal has arrived indicating that process
+     * needs to shutdown.
+     */
+
+    rv = apr_file_pipe_create(&wsgi_signal_pipe_in, &wsgi_signal_pipe_out, p);
+
     if (rv != APR_SUCCESS) {
         ap_log_error(APLOG_MARK, WSGI_LOG_EMERG(rv), wsgi_server,
                      "mod_wsgi (pid=%d): Couldn't initialise signal "
-                     "thread in daemon process '%s'.", getpid(),
+                     "pipe in daemon process '%s'.", getpid(),
                      daemon->group->name);
         sleep(20);
 
         return;
     }
+
+    poll_fd.desc_type = APR_POLL_FILE;
+    poll_fd.reqevents = APR_POLLIN;
+    poll_fd.desc.f = wsgi_signal_pipe_in;
 
     /* Initialise maximum request count for daemon. */
 
@@ -9444,7 +9453,9 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
     /* Block until we get a process shutdown signal. */
 
-    apr_signal_thread(wsgi_check_signal);
+    do {
+        rv = apr_poll(&poll_fd, 1, &poll_count, -1);
+    } while (APR_STATUS_IS_EINTR(rv));
 
     ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                  "mod_wsgi (pid=%d): Shutdown requested '%s'.",
@@ -9676,10 +9687,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         wsgi_daemon_shutdown = 0;
 
-        if (daemon->group->threads == 1) {
-            apr_signal(SIGINT, wsgi_signal_handler);
-            apr_signal(SIGTERM, wsgi_signal_handler);
-        }
+        apr_signal(SIGINT, wsgi_signal_handler);
+        apr_signal(SIGTERM, wsgi_signal_handler);
 
         /*
          * Flag whether multiple daemon processes or denoted
