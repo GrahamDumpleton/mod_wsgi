@@ -73,6 +73,9 @@ CPPFLAGS="${CPPFLAGS} ${CPPFLAGS1} ${CPPFLAGS2} ${CPPFLAGS3}"
 
 AC_SUBST(CPPFLAGS)
 
+PYTHONLIBDIR=`${PYTHON} -c 'from sys import stdout; \
+    from distutils import sysconfig; \
+    stdout.write(sysconfig.get_config_var("LIBDIR"))'`
 PYTHONFRAMEWORKDIR=`${PYTHON} -c 'from sys import stdout; \
     from distutils import sysconfig; \
     stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORKDIR"))'`
@@ -84,7 +87,8 @@ PYTHONFRAMEWORK=`${PYTHON} -c 'from sys import stdout; \
     stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORK"))'`
 
 if test "${PYTHONFRAMEWORKDIR}" = "no-framework"; then
-    LDFLAGS1=`${PYTHON} -c 'from sys import stdout; \
+    LDFLAGS1="-L${PYTHONLIBDIR}"
+    LDFLAGS2=`${PYTHON} -c 'from sys import stdout; \
         import distutils.sysconfig; \
         stdout.write("-L" + \
         distutils.sysconfig.get_python_lib(plat_specific=1, \
