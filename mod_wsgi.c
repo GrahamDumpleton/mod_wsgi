@@ -1,7 +1,7 @@
 /* vim: set sw=4 expandtab : */
 
 /*
- * Copyright 2007-2008 GRAHAM DUMPLETON
+ * Copyright 2007-2009 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -3910,28 +3910,54 @@ static PyMethodDef wsgi_signal_method[] = {
 static const char *wsgi_python_path = NULL;
 static const char *wsgi_python_eggs = NULL;
 
+#if defined(APR_HAS_THREADS)
+static int wsgi_thread_count = 0;
+static apr_threadkey_t *wsgi_thread_key;
+#endif
+
 typedef struct {
     PyObject_HEAD
     char *name;
     PyInterpreterState *interp;
     int owner;
+#if defined(APR_HAS_THREADS)
+    apr_hash_t *tstate_table;
+#else
+    PyThreadState *tstate;
+#endif
 } InterpreterObject;
 
 static PyTypeObject Interpreter_Type;
 
-static InterpreterObject *newInterpreterObject(const char *name,
-                                               PyInterpreterState *interp)
+static InterpreterObject *newInterpreterObject(const char *name)
 {
-    InterpreterObject *self;
+    PyInterpreterState *interp = NULL;
+    InterpreterObject *self = NULL;
     PyThreadState *tstate = NULL;
     PyThreadState *save_tstate = NULL;
     PyObject *module = NULL;
     PyObject *object = NULL;
     PyObject *item = NULL;
 
+    /* Create handle for interpreter and local data. */
+
     self = PyObject_New(InterpreterObject, &Interpreter_Type);
     if (self == NULL)
         return NULL;
+
+    /*
+     * If interpreter not named, then we want to bind
+     * to the first Python interpreter instance created.
+     * Give this interpreter an empty string as name.
+     */
+
+    if (!name) {
+        interp = PyInterpreterState_Head();
+        while (interp->next)
+            interp = interp->next;
+
+        name = "";
+    }
 
     /* Save away the interpreter name. */
 
@@ -4552,14 +4578,55 @@ static InterpreterObject *newInterpreterObject(const char *name,
     Py_DECREF(module);
 
     /*
-     * Restore previous thread state. Only need to
-     * do this where had to create a new interpreter.
+     * Restore previous thread state. Only need to do
+     * this where had to create a new interpreter. This
+     * is basically anything except the first Python
+     * interpreter instance. We need to restore it in
+     * these cases as came into the function holding the
+     * simplified GIL state for this thread but creating
+     * the interpreter has resulted in a new thread
+     * state object being created bound to the newly
+     * created interpreter. In doing this though we want
+     * to cache the thread state object which has been
+     * created when interpreter is created. This is so
+     * it can be reused later ensuring that thread local
+     * data persists between requests.
      */
 
-    if (!interp) {
-        PyThreadState_Clear(tstate);
+    if (self->owner) {
+#if defined(APR_HAS_THREADS)
+        int thread_id = 0;
+        int *thread_handle = NULL;
+
+        self->tstate_table = apr_hash_make(wsgi_server->process->pool);
+
+        apr_threadkey_private_get((void**)&thread_handle, wsgi_thread_key);
+
+        if (!thread_handle) {
+            thread_id = wsgi_thread_count++;
+            thread_handle = (int*)apr_pmemdup(wsgi_server->process->pool,
+                                              &thread_id, sizeof(thread_id));
+            apr_threadkey_private_set(thread_handle, wsgi_thread_key);
+        }
+        else {
+            thread_id = *thread_handle;
+        }
+
+        if (wsgi_server_config->verbose_debugging) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                         "mod_wsgi (pid=%d): Bind thread state for "
+                         "thread %d against interpreter '%s'.", getpid(),
+                         thread_id, self->name);
+        }
+
+        apr_hash_set(self->tstate_table, thread_handle,
+                     sizeof(*thread_handle), tstate);
+
         PyThreadState_Swap(save_tstate);
-        PyThreadState_Delete(tstate);
+#else
+        self->tstate = tstate;
+        PyThreadState_Swap(save_tstate);
+#endif
     }
 
     return self;
@@ -4582,7 +4649,42 @@ static void Interpreter_dealloc(InterpreterObject *self)
     PyEval_ReleaseLock();
 
     if (*self->name) {
-        tstate = PyThreadState_New(self->interp);
+#if defined(APR_HAS_THREADS)
+        int thread_id = 0;
+        int *thread_handle = NULL;
+
+        apr_threadkey_private_get((void**)&thread_handle, wsgi_thread_key);
+
+        if (!thread_handle) {
+            thread_id = wsgi_thread_count++;
+            thread_handle = (int*)apr_pmemdup(wsgi_server->process->pool,
+                                              &thread_id, sizeof(thread_id));
+            apr_threadkey_private_set(thread_handle, wsgi_thread_key);
+        }
+        else {
+            thread_id = *thread_handle;
+        }
+
+        tstate = apr_hash_get(self->tstate_table, &thread_id,
+                              sizeof(thread_id));
+
+        if (!tstate) {
+            tstate = PyThreadState_New(self->interp);
+
+            if (wsgi_server_config->verbose_debugging) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Create thread state for "
+                             "thread %d against interpreter '%s'.", getpid(),
+                             thread_id, self->name);
+            }
+
+            apr_hash_set(self->tstate_table, thread_handle,
+                         sizeof(*thread_handle), tstate);
+        }
+#else
+        tstate = self->tstate;
+#endif
+
         PyEval_AcquireThread(tstate);
     }
     else
@@ -4880,6 +4982,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     if (!self->owner) {
         if (*self->name) {
+            /* XXX In practice not sure this condition arises. */
             tstate = PyThreadState_Get();
 
             PyThreadState_Clear(tstate);
@@ -4891,8 +4994,43 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
         PyEval_AcquireLock();
     }
-    else
+    else {
+        /*
+         * We need to destroy all the thread state objects
+         * associated with the interpreter. If there are
+         * background threads that were created then this
+         * may well cause them to crash the next time they
+         * try to run. Only saving grace is that we are
+         * trying to shutdown the process.
+         */
+
+        /* XXX Yuck. */
+
+        PyThreadState *tstate_save = tstate;
+        PyThreadState *tstate_next = NULL;
+
+        PyThreadState_Swap(NULL);
+
+        tstate = tstate->interp->tstate_head;
+        while (tstate) {
+            tstate_next = tstate->next;
+            if (tstate != tstate_save) {
+                PyThreadState_Swap(tstate);
+                PyThreadState_Clear(tstate);
+                PyThreadState_Swap(NULL);
+                PyThreadState_Delete(tstate);
+            }
+            tstate = tstate_next;
+        }
+
+        tstate = tstate_save;
+
+        PyThreadState_Swap(tstate);
+
+        /* Can now destroy the interpreter. */
+
         Py_EndInterpreter(tstate);
+    }
 
     free(self->name);
 
@@ -5146,7 +5284,7 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
                                                        name);
 
     if (!handle) {
-        handle = newInterpreterObject(name, NULL);
+        handle = newInterpreterObject(name);
 
         if (!handle) {
             ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(0), wsgi_server,
@@ -5187,7 +5325,42 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
 #endif
 
     if (*name) {
-        tstate = PyThreadState_New(interp);
+#if APR_HAS_THREADS
+        int thread_id = 0;
+        int *thread_handle = NULL;
+
+        apr_threadkey_private_get((void**)&thread_handle, wsgi_thread_key);
+
+        if (!thread_handle) {
+            thread_id = wsgi_thread_count++;
+            thread_handle = (int*)apr_pmemdup(wsgi_server->process->pool,
+                                              &thread_id, sizeof(thread_id));
+            apr_threadkey_private_set(thread_handle, wsgi_thread_key);
+        }
+        else {
+            thread_id = *thread_handle;
+        }
+
+        tstate = apr_hash_get(handle->tstate_table, &thread_id,
+                              sizeof(thread_id));
+
+        if (!tstate) {
+            tstate = PyThreadState_New(interp);
+
+            if (wsgi_server_config->verbose_debugging) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Create thread state for "
+                             "thread %d against interpreter '%s'.", getpid(),
+                             thread_id, handle->name);
+            }
+
+            apr_hash_set(handle->tstate_table, thread_handle,
+                         sizeof(*thread_handle), tstate);
+        }
+#else
+        tstate = handle->tstate;
+#endif
+
         PyEval_AcquireThread(tstate);
     }
     else
@@ -5212,10 +5385,7 @@ static void wsgi_release_interpreter(InterpreterObject *handle)
 
     if (*handle->name) {
         tstate = PyThreadState_Get();
-
-        PyThreadState_Clear(tstate);
         PyEval_ReleaseThread(tstate);
-        PyThreadState_Delete(tstate);
     }
     else
         PyGILState_Release(PyGILState_UNLOCKED);
@@ -5774,6 +5944,9 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
      * destroying interpreters we own.
      */
 
+    ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                 "mod_wsgi (pid=%d): Destroying interpreters.", getpid());
+
     PyDict_Clear(wsgi_interpreters);
 
 #if APR_HAS_THREADS
@@ -5815,18 +5988,12 @@ static void wsgi_python_child_init(apr_pool_t *p)
     PyInterpreterState *interp = NULL;
     PyObject *object = NULL;
 
+    int thread_id = 0;
+    int *thread_handle = NULL;
+
     /* Working with Python, so must acquire GIL. */
 
     state = PyGILState_Ensure();
-
-    /*
-     * Get a reference to the main Python interpreter created
-     * and associate our own thread state against it.
-     */
-
-    interp = PyInterpreterState_Head();
-    while (interp->next)
-        interp = interp->next;
 
     /*
      * Trigger any special Python stuff required after a fork.
@@ -5863,15 +6030,32 @@ static void wsgi_python_child_init(apr_pool_t *p)
 #endif
 
     /*
+     * Initialise the key for data related to a thread. At
+     * the moment we only record an integer thread ID to be
+     * used in lookup table to thread states associated with
+     * an interprter.
+     */
+
+#if APR_HAS_THREADS
+    apr_threadkey_private_create(&wsgi_thread_key, NULL, p);
+
+    thread_id = wsgi_thread_count++;
+    thread_handle = (int*)apr_pmemdup(wsgi_server->process->pool,
+                                      &thread_id, sizeof(thread_id));
+    apr_threadkey_private_set(thread_handle, wsgi_thread_key);
+#endif
+
+    /*
      * Cache a reference to the first Python interpreter
      * instance. This interpreter is special as some third party
      * Python modules will only work when used from within this
      * interpreter. This is generally when they use the Python
      * simplified GIL API or otherwise don't use threading API
-     * properly.
+     * properly. An empty string for name is used to identify
+     * the first Python interpreter instance.
      */
 
-    object = (PyObject *)newInterpreterObject("", interp);
+    object = (PyObject *)newInterpreterObject(NULL);
     PyDict_SetItemString(wsgi_interpreters, "", object);
     Py_DECREF(object);
 
@@ -9227,9 +9411,11 @@ static void *wsgi_deadlock_thread(apr_thread_t *thd, void *data)
 {
     WSGIDaemonProcess *daemon = data;
 
-    ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                 "mod_wsgi (pid=%d): Enable deadlock thread in "
-                 "process '%s'.", getpid(), daemon->group->name);
+    if (wsgi_server_config->verbose_debugging) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Enable deadlock thread in "
+                     "process '%s'.", getpid(), daemon->group->name);
+    }
 
     apr_thread_mutex_lock(wsgi_shutdown_lock);
     wsgi_deadlock_shutdown_time = apr_time_now();
@@ -9255,16 +9441,18 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
 {
     WSGIDaemonProcess *daemon = data;
 
-    ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                 "mod_wsgi (pid=%d): Enable monitor thread in "
-                 "process '%s'.", getpid(), daemon->group->name);
+    if (wsgi_server_config->verbose_debugging) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Enable monitor thread in "
+                     "process '%s'.", getpid(), daemon->group->name);
 
-    ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
-                 "mod_wsgi (pid=%d): Deadlock timeout is %d.",
-                 getpid(), (int)(apr_time_sec(wsgi_deadlock_timeout)));
-    ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
-                 "mod_wsgi (pid=%d): Inactivity timeout is %d.",
-                 getpid(), (int)(apr_time_sec(wsgi_inactivity_timeout)));
+        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Deadlock timeout is %d.",
+                     getpid(), (int)(apr_time_sec(wsgi_deadlock_timeout)));
+        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Inactivity timeout is %d.",
+                     getpid(), (int)(apr_time_sec(wsgi_inactivity_timeout)));
+    }
 
     while (1) {
         apr_time_t now;
@@ -9419,15 +9607,19 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     threads = (WSGIDaemonThread *)apr_pcalloc(p, daemon->group->threads
                                               * sizeof(WSGIDaemonThread));
 
-    ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
-                 "mod_wsgi (pid=%d): Starting %d threads in daemon "
-                 "process '%s'.", getpid(), daemon->group->threads,
-                 daemon->group->name);
+    if (wsgi_server_config->verbose_debugging) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Starting %d threads in daemon "
+                     "process '%s'.", getpid(), daemon->group->threads,
+                     daemon->group->name);
+    }
 
     for (i=0; i<daemon->group->threads; i++) {
-        ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
-                     "mod_wsgi (pid=%d): Starting thread %d in daemon "
-                     "process '%s'.", getpid(), i+1, daemon->group->name);
+        if (wsgi_server_config->verbose_debugging) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                         "mod_wsgi (pid=%d): Starting thread %d in daemon "
+                         "process '%s'.", getpid(), i+1, daemon->group->name);
+        }
 
         threads[i].process = daemon;
         threads[i].running = 0;
@@ -9807,20 +9999,25 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          */
 
         if (daemon->group->server) {
-            ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
-                         "mod_wsgi (pid=%d): Process '%s' logging to '%s' "
-                         "with log level %d.", getpid(), daemon->group->name,
-                         daemon->group->server->server_hostname,
-                         daemon->group->server->loglevel);
+            if (wsgi_server_config->verbose_debugging) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Process '%s' logging to "
+                             "'%s' with log level %d.", getpid(),
+                             daemon->group->name,
+                             daemon->group->server->server_hostname,
+                             daemon->group->server->loglevel);
+            }
 
             wsgi_server = daemon->group->server;
         }
         else {
-            ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
-                         "mod_wsgi (pid=%d): Process '%s' forced to log to "
-                         "'%s' with log level %d.", getpid(),
-                         daemon->group->name, wsgi_server->server_hostname,
-                         wsgi_server->loglevel);
+            if (wsgi_server_config->verbose_debugging) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Process '%s' forced to log "
+                             "to '%s' with log level %d.", getpid(),
+                             daemon->group->name, wsgi_server->server_hostname,
+                             wsgi_server->loglevel);
+            }
         }
 
         /* Retain a reference to daemon process details. */
