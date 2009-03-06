@@ -382,6 +382,7 @@ typedef struct {
     int pass_apache_request;
     int pass_authorization;
     int script_reloading;
+    int error_override;
 } WSGIServerConfig;
 
 static WSGIServerConfig *wsgi_server_config = NULL;
@@ -447,6 +448,7 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->pass_apache_request = -1;
     object->pass_authorization = -1;
     object->script_reloading = -1;
+    object->error_override = -1;
 
     return object;
 }
@@ -525,6 +527,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->script_reloading = parent->script_reloading;
 
+    if (child->error_override != -1)
+        config->error_override = child->error_override;
+    else
+        config->error_override = parent->error_override;
+
     return config;
 }
 
@@ -542,6 +549,7 @@ typedef struct {
     int pass_apache_request;
     int pass_authorization;
     int script_reloading;
+    int error_override;
 
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
@@ -567,6 +575,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->pass_apache_request = -1;
     object->pass_authorization = -1;
     object->script_reloading = -1;
+    object->error_override = -1;
 
     object->access_script = NULL;
     object->auth_user_script = NULL;
@@ -638,6 +647,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->script_reloading = parent->script_reloading;
 
+    if (child->error_override != -1)
+        config->error_override = child->error_override;
+    else
+        config->error_override = parent->error_override;
+
     if (child->access_script)
         config->access_script = child->access_script;
     else
@@ -680,6 +694,7 @@ typedef struct {
     int pass_apache_request;
     int pass_authorization;
     int script_reloading;
+    int error_override;
 
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
@@ -1004,6 +1019,14 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         config->script_reloading = sconfig->script_reloading;
         if (config->script_reloading < 0)
             config->script_reloading = 1;
+    }
+
+    config->error_override = dconfig->error_override;
+
+    if (config->error_override < 0) {
+        config->error_override = sconfig->error_override;
+        if (config->error_override < 0)
+            config->error_override = 0;
     }
 
     config->access_script = dconfig->access_script;
@@ -6941,6 +6964,36 @@ static const char *wsgi_set_script_reloading(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_error_override(cmd_parms *cmd, void *mconfig,
+                                           const char *f)
+{
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+
+        if (strcasecmp(f, "Off") == 0)
+            dconfig->error_override = 0;
+        else if (strcasecmp(f, "On") == 0)
+            dconfig->error_override = 1;
+        else
+            return "WSGIErrorOverride must be one of: Off | On";
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+
+        if (strcasecmp(f, "Off") == 0)
+            sconfig->error_override = 0;
+        else if (strcasecmp(f, "On") == 0)
+            sconfig->error_override = 1;
+        else
+            return "WSGIErrorOverride must be one of: Off | On";
+    }
+
+    return NULL;
+}
+
 static const char *wsgi_set_access_script(cmd_parms *cmd, void *mconfig,
                                           const char *args)
 {
@@ -10996,13 +11049,9 @@ static int wsgi_execute_remote(request_rec *r)
 
     /*
      * Look for 'Location' header and if an internal
-     * redirect, execute the redirect. Note that this
-     * relies on fact that location is always meant
-     * to have a 'http(s)://' prefix if to be sent
-     * back to the browser. Some browsers may still
-     * handle it without, but not gauranteed. This
-     * behaviour is consistent with how mod_cgi and
-     * mod_cgid work.
+     * redirect, execute the redirect. This behaviour is
+     * consistent with how mod_cgi and mod_cgid work and
+     * what is permitted by the CGI specification.
      */
 
     location = apr_table_get(r->headers_out, "Location");
@@ -11028,7 +11077,7 @@ static int wsgi_execute_remote(request_rec *r)
          * We already read the message body (if any), so
          * don't allow the redirected request to think
          * it has one. Not sure if we need to worry
-         * about remove 'Transfer-Encoding' header.
+         * about removing 'Transfer-Encoding' header.
          */
 
         apr_table_unset(r->headers_in, "Content-Length");
@@ -11036,6 +11085,32 @@ static int wsgi_execute_remote(request_rec *r)
         ap_internal_redirect_handler(location, r);
 
         return OK;
+    }
+
+    /*
+     * Allow the web server to override any error
+     * page produced by the WSGI application.
+     */
+
+    if (config->error_override && ap_is_HTTP_ERROR(r->status)) {
+        status = r->status;
+
+        r->status = HTTP_OK;
+        r->status_line = NULL;
+
+        /*
+         * Discard all response content returned from
+         * the daemon process if any expected.
+         */
+
+        if (!r->header_only && /* not HEAD request */
+            (status != HTTP_NO_CONTENT) && /* not 204 */
+            (status != HTTP_NOT_MODIFIED)) { /* not 304 */
+            wsgi_discard_output(bbin);
+            apr_brigade_destroy(bbin);
+        }
+
+        return status;
     }
 
     /* Transfer any response content. */
@@ -13612,6 +13687,8 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable WSGI authorization."),
     AP_INIT_TAKE1("WSGIScriptReloading", wsgi_set_script_reloading,
         NULL, OR_FILEINFO, "Enable/Disable script reloading mechanism."),
+    AP_INIT_TAKE1("WSGIErrorOverride", wsgi_set_error_override,
+        NULL, OR_FILEINFO, "Enable/Disable overriding of error pages."),
 
 #if defined(MOD_WSGI_WITH_AAA_HANDLERS)
     AP_INIT_RAW_ARGS("WSGIAccessScript", wsgi_set_access_script,
