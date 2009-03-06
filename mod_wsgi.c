@@ -6640,7 +6640,7 @@ static const char *wsgi_set_restrict_process(cmd_parms *cmd, void *mconfig,
     }
 
     while (*args) {
-        char const *option;
+        const char *option;
 
         option = ap_getword_conf(cmd->pool, &args);
 
@@ -7974,7 +7974,7 @@ static int wsgi_hook_handler(request_rec *r)
 
     WSGIRequestConfig *config = NULL;
 
-    char const *value = NULL;
+    const char *value = NULL;
 
     /*
      * Only process requests for this module. Honour a content
@@ -10427,6 +10427,27 @@ static apr_status_t wsgi_send_request(request_rec *r,
     return APR_SUCCESS;
 }
 
+static void wsgi_discard_output(apr_bucket_brigade *bb)
+{
+    apr_bucket *e;
+    const char *buf;
+    apr_size_t len;
+    apr_status_t rv;
+
+    for (e = APR_BRIGADE_FIRST(bb);
+         e != APR_BRIGADE_SENTINEL(bb);
+         e = APR_BUCKET_NEXT(e))
+    {
+        if (APR_BUCKET_IS_EOS(e)) {
+            break;
+        }
+        rv = apr_bucket_read(e, &buf, &len, APR_BLOCK_READ);
+        if (rv != APR_SUCCESS) {
+            break;
+        }
+    }
+}
+
 static int wsgi_execute_remote(request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
@@ -10434,7 +10455,7 @@ static int wsgi_execute_remote(request_rec *r)
     WSGIProcessGroup *group = NULL;
 
     char *key = NULL;
-    char const *hash = NULL;
+    const char *hash = NULL;
 
     int status;
     apr_status_t rv;
@@ -10446,6 +10467,8 @@ static int wsgi_execute_remote(request_rec *r)
     apr_bucket_brigade *bbout;
     apr_bucket_brigade *bbin;
     apr_bucket *b;
+
+    const char *location = NULL;
 
     /* Grab request configuration. */
 
@@ -10971,6 +10994,50 @@ static int wsgi_execute_remote(request_rec *r)
     if (r->status == 0)
         return HTTP_INTERNAL_SERVER_ERROR;
 
+    /*
+     * Look for 'Location' header and if an internal
+     * redirect, execute the redirect. Note that this
+     * relies on fact that location is always meant
+     * to have a 'http(s)://' prefix if to be sent
+     * back to the browser. Some browsers may still
+     * handle it without, but not gauranteed. This
+     * behaviour is consistent with how mod_cgi and
+     * mod_cgid work.
+     */
+
+    location = apr_table_get(r->headers_out, "Location");
+
+    if (location && location[0] == '/' && r->status == 200) {
+        /*
+         * Discard all response content returned from
+         * the daemon process.
+         */
+
+        wsgi_discard_output(bbin);
+        apr_brigade_destroy(bbin);
+
+        /*
+         * The internal redirect needs to be a GET no
+         * matter what the original method was.
+         */
+
+        r->method = apr_pstrdup(r->pool, "GET");
+        r->method_number = M_GET;
+
+        /*
+         * We already read the message body (if any), so
+         * don't allow the redirected request to think
+         * it has one. Not sure if we need to worry
+         * about remove 'Transfer-Encoding' header.
+         */
+
+        apr_table_unset(r->headers_in, "Content-Length");
+
+        ap_internal_redirect_handler(location, r);
+
+        return OK;
+    }
+
     /* Transfer any response content. */
 
     ap_pass_brigade(r->output_filters, bbin);
@@ -11155,9 +11222,9 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     char *key;
     apr_sockaddr_t *addr;
 
-    char const *filename;
-    char const *magic;
-    char const *hash;
+    const char *filename;
+    const char *magic;
+    const char *hash;
 
     WSGIRequestConfig *config;
 
