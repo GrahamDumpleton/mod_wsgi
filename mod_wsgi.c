@@ -1,7 +1,7 @@
 /* vim: set sw=4 expandtab : */
 
 /*
- * Copyright 2007-2008 GRAHAM DUMPLETON
+ * Copyright 2007-2009 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1684,14 +1684,16 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
          */
 
         while (!self->done) {
-            /* Increase the size of the string by 25%. */
+            if (length == size) {
+                /* Increase the size of the string by 25%. */
 
-            size = size + (size >> 2);
+                size = size + (size >> 2);
 
-            if (_PyString_Resize(&result, size))
-                return NULL;
+                if (_PyString_Resize(&result, size))
+                    return NULL;
 
-            buffer = PyString_AS_STRING((PyStringObject *)result);
+                buffer = PyString_AS_STRING((PyStringObject *)result);
+            }
 
             /* Now make succesive attempt at reading data. */
 
@@ -1992,7 +1994,7 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
                     memcpy(self->buffer, p, self->size);
                 }
 
-                if (buffer[length-1] != '\n') {
+                if (buffer[length-1] != '\n' && length == size) {
                     /* Increase size of string and keep going. */
 
                     size = size + (size >> 2);
