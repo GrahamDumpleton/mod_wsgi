@@ -1119,6 +1119,7 @@ typedef struct {
     int recv_buffer_size;
     const char *script_user;
     const char *script_group;
+    int cpu_time_limit;
     const char *socket;
     int listener_fd;
     const char* mutex_path;
@@ -8485,6 +8486,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     const char *script_user = NULL;
     const char *script_group = NULL;
 
+    int cpu_time_limit = 0;
+
     uid_t uid;
     uid_t gid;
 
@@ -8697,6 +8700,14 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
             script_group = value;
         }
+        else if (!strcmp(option, "cpu-time-limit")) {
+            if (!*value)
+                return "Invalid CPU time limit for WSGI daemon process.";
+
+            cpu_time_limit = atoi(value);
+            if (cpu_time_limit < 0)
+                return "Invalid CPU time limit for WSGI daemon process.";
+        }
         else
             return "Invalid option to WSGI daemon process definition.";
     }
@@ -8758,6 +8769,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     entry->script_user = script_user;
     entry->script_group = script_group;
+
+    entry->cpu_time_limit = cpu_time_limit;
 
     entry->listener_fd = -1;
 
@@ -8859,9 +8872,14 @@ static const char *wsgi_set_accept_mutex(cmd_parms *cmd, void *mconfig,
 static apr_file_t *wsgi_signal_pipe_in = NULL;
 static apr_file_t *wsgi_signal_pipe_out = NULL;
 
+static int wsgi_cpu_time_limit_exceeded = 0;
+
 static void wsgi_signal_handler(int signum)
 {
     apr_size_t nbytes = 1;
+
+    if (signum == SIGXCPU)
+        wsgi_cpu_time_limit_exceeded = 1;
 
     apr_file_write(wsgi_signal_pipe_out, "X", &nbytes);
     apr_file_flush(wsgi_signal_pipe_out);
@@ -9750,6 +9768,12 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
         rv = apr_poll(&poll_fd, 1, &poll_count, -1);
     } while (APR_STATUS_IS_EINTR(rv));
 
+    if (wsgi_cpu_time_limit_exceeded) {
+        ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                     "mod_wsgi (pid=%d): Exceeded CPU time limit '%s'.",
+                     getpid(), daemon->group->name);
+    }
+
     ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                  "mod_wsgi (pid=%d): Shutdown requested '%s'.",
                  getpid(), daemon->group->name);
@@ -9982,6 +10006,28 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         apr_signal(SIGINT, wsgi_signal_handler);
         apr_signal(SIGTERM, wsgi_signal_handler);
+#ifdef SIGXCPU
+        apr_signal(SIGXCPU, wsgi_signal_handler);
+#endif
+
+        /* Set limits on amount of CPU time that can be used. */
+
+        if (daemon->group->cpu_time_limit > 0) {
+            struct rlimit limit;
+
+            limit.rlim_cur = daemon->group->cpu_time_limit;
+
+            limit.rlim_max = daemon->group->cpu_time_limit + 1;
+            limit.rlim_max += daemon->group->shutdown_timeout;
+
+            if (setrlimit(RLIMIT_CPU, &limit) == -1) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Couldn't set CPU time "
+                             "limit of %d seconds for process '%s'.", getpid(),
+                             daemon->group->cpu_time_limit,
+                             daemon->group->name);
+            }
+        }
 
         /*
          * Flag whether multiple daemon processes or denoted
