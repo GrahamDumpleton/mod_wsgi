@@ -357,6 +357,8 @@ typedef struct {
 
     int verbose_debugging;
 
+    apr_array_header_t *python_warnings;
+
     int python_optimize;
     int py3k_warning_flag;
 
@@ -418,6 +420,8 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 #endif
 
     object->verbose_debugging = 0;
+
+    object->python_warnings = NULL;
 
     object->py3k_warning_flag = -1;
     object->python_optimize = -1;
@@ -5210,6 +5214,23 @@ static void wsgi_python_init(apr_pool_t *p)
         else
             Py_OptimizeFlag = 0;
 
+        /* Check for control options for Python warnings. */
+
+        if (wsgi_server_config->python_warnings) {
+            apr_array_header_t *options = NULL;
+            char **entries;
+
+            int i;
+
+            options = wsgi_server_config->python_warnings;
+            entries = (char **)options->elts;
+
+            for (i = 0; i < options->nelts; ++i)
+                PySys_AddWarnOption(entries[i]);
+        }
+
+        /* Check for Python HOME being overridden. */
+
 #if PY_MAJOR_VERSION >= 3
         if (wsgi_server_config->python_home) {
             wchar_t *s = NULL;
@@ -6438,6 +6459,31 @@ static const char *wsgi_set_lazy_initialization(cmd_parms *cmd, void *mconfig,
         wsgi_python_after_fork = 1;
     else
         return "WSGILazyInitialization must be one of: Off | On";
+
+    return NULL;
+}
+
+static const char *wsgi_add_python_warnings(cmd_parms *cmd, void *mconfig,
+                                            const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+
+    char **entry = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (!sconfig->python_warnings) {
+        sconfig->python_warnings = apr_array_make(sconfig->pool, 5,
+                                                  sizeof(char*));
+    }
+
+    entry = (char **)apr_array_push(sconfig->python_warnings);
+    *entry = apr_pstrdup(sconfig->pool, f);
 
     return NULL;
 }
@@ -8328,6 +8374,8 @@ static const command_rec wsgi_commands[] =
         RSRC_CONF, TAKE1, "Enable/Disable Python 3.0 warnings." },
 #endif
 
+    { "WSGIPythonWarnings", wsgi_add_python_warnings, NULL,
+        RSRC_CONF, TAKE1, "Control Python warning messages." },
     { "WSGIPythonOptimize", wsgi_set_python_optimize, NULL,
         RSRC_CONF, TAKE1, "Set level of Python compiler optimisations." },
     { "WSGIPythonHome", wsgi_set_python_home, NULL,
@@ -13641,6 +13689,8 @@ static const command_rec wsgi_commands[] =
         NULL, RSRC_CONF, "Enable/Disable Python 3.0 warnings."),
 #endif
 
+    AP_INIT_TAKE1("WSGIPythonWarnings", wsgi_add_python_warnings,
+        NULL, RSRC_CONF, "Control Python warning messages."),
     AP_INIT_TAKE1("WSGIPythonOptimize", wsgi_set_python_optimize,
         NULL, RSRC_CONF, "Set level of Python compiler optimisations."),
 #ifndef WIN32
