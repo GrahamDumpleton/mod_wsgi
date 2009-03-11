@@ -5226,8 +5226,18 @@ static void wsgi_python_init(apr_pool_t *p)
             options = wsgi_server_config->python_warnings;
             entries = (char **)options->elts;
 
-            for (i = 0; i < options->nelts; ++i)
+            for (i = 0; i < options->nelts; ++i) {
+#if PY_MAJOR_VERSION >= 3
+                wchar_t *s = NULL;
+                int len = strlen(entries[i])+1;
+
+                s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
+                mbstowcs(s, entries[i], len);
+                PySys_AddWarnOption(s);
+#else
                 PySys_AddWarnOption(entries[i]);
+#endif
+            }
         }
 
         /* Check for Python HOME being overridden. */
