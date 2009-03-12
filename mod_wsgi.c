@@ -8262,17 +8262,11 @@ static int wsgi_hook_handler(request_rec *r)
     return HTTP_INTERNAL_SERVER_ERROR;
 #endif
 
-#if defined(MOD_WSGI_WITH_DAEMONS)
-    if (wsgi_server_config->restrict_embedded != 0) {
+    if (wsgi_server_config->restrict_embedded == 1) {
         wsgi_log_script_error(r, "Embedded mode of mod_wsgi disabled by "
-                              "runtime configuration, configure daemon mode "
-                              "using the WSGIDaemonProcess/WSGIProcessGroup "
-                              "directives, or if you think you know what you "
-                              "are doing enable embedded mode using the "
-                              "WSGIRestrictEmbedded directive", r->filename);
+                              "runtime configuration", r->filename);
         return HTTP_INTERNAL_SERVER_ERROR;
     }
-#endif
 
     return wsgi_execute_script(r);
 }
