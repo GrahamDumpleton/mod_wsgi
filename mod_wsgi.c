@@ -8262,11 +8262,17 @@ static int wsgi_hook_handler(request_rec *r)
     return HTTP_INTERNAL_SERVER_ERROR;
 #endif
 
-    if (wsgi_server_config->restrict_embedded == 1) {
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_server_config->restrict_embedded != 0) {
         wsgi_log_script_error(r, "Embedded mode of mod_wsgi disabled by "
-                              "runtime configuration", r->filename);
+                              "runtime configuration, configure daemon mode "
+                              "using the WSGIDaemonProcess/WSGIProcessGroup "
+                              "directives, or if you think you know what you "
+                              "are doing enable embedded mode using the "
+                              "WSGIRestrictEmbedded directive", r->filename);
         return HTTP_INTERNAL_SERVER_ERROR;
     }
+#endif
 
     return wsgi_execute_script(r);
 }
@@ -8396,8 +8402,6 @@ static const command_rec wsgi_commands[] =
     { "WSGIPythonEggs", wsgi_set_python_eggs, NULL,
         RSRC_CONF, TAKE1, "Python eggs cache directory." },
 
-    { "WSGIRestrictEmbedded", wsgi_set_restrict_embedded, NULL,
-        RSRC_CONF, TAKE1, "Enable/Disable use of embedded mode." },
     { "WSGIRestrictStdin", wsgi_set_restrict_stdin, NULL,
         RSRC_CONF, TAKE1, "Enable/Disable restrictions on use of STDIN." },
     { "WSGIRestrictStdout", wsgi_set_restrict_stdout, NULL,
@@ -13758,8 +13762,10 @@ static const command_rec wsgi_commands[] =
     AP_INIT_TAKE1("WSGIPythonEggs", wsgi_set_python_eggs,
         NULL, RSRC_CONF, "Python eggs cache directory."),
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
     AP_INIT_TAKE1("WSGIRestrictEmbedded", wsgi_set_restrict_embedded,
         NULL, RSRC_CONF, "Enable/Disable use of embedded mode."),
+#endif
     AP_INIT_TAKE1("WSGIRestrictStdin", wsgi_set_restrict_stdin,
         NULL, RSRC_CONF, "Enable/Disable restrictions on use of STDIN."),
     AP_INIT_TAKE1("WSGIRestrictStdout", wsgi_set_restrict_stdout,
