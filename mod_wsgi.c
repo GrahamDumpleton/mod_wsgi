@@ -5494,6 +5494,9 @@ static void wsgi_python_child_init(apr_pool_t *p)
                                               entry->handler_script,
                                               entry->process_group,
                                               entry->application_group);
+
+                    if (PyErr_Occurred()) 
+                        PyErr_Clear(); 
                 }
 
                 /* Safe now to release the module lock. */
