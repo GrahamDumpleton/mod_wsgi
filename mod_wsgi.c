@@ -3583,7 +3583,7 @@ static PyObject *wsgi_signal_intercept(PyObject *self, PyObject *args)
         }
     }
 
-    Py_INCREF(m);
+    Py_XDECREF(m);
 
     Py_INCREF(h);
 
@@ -4249,7 +4249,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
                 Py_XDECREF(result);
 
-                Py_DECREF(m);
+                Py_XDECREF(m);
             }
 
             Py_XDECREF(res);
@@ -4358,7 +4358,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
             Py_XDECREF(result);
 
-            Py_DECREF(m);
+            Py_XDECREF(m);
         }
 
         Py_XDECREF(res);
