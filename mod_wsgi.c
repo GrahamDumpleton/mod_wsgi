@@ -3824,17 +3824,39 @@ static InterpreterObject *newInterpreterObject(const char *name,
      * added using site.addsitedir() so that any Python .pth
      * files are opened and additional directories so defined
      * are added to default Python search path as well. This
-     * allows virtual Python environments to work.
+     * allows virtual Python environments to work. Note that
+     * site.addsitedir() adds new directories at the end of
+     * sys.path when they really need to be added in order at
+     * the start. We therefore need to do a fiddle and shift
+     * any newly added directories to the start of sys.path.
      */
 
     if (!wsgi_daemon_pool)
         wsgi_python_path = wsgi_server_config->python_path;
 
     if (wsgi_python_path) {
-        module = PyImport_ImportModule("site");
+        PyObject *path = NULL;
 
-        if (module) {
+        module = PyImport_ImportModule("site");
+        path = PySys_GetObject("path");
+
+        if (module && path) {
             PyObject *dict = NULL;
+
+            PyObject *old = NULL;
+            PyObject *new = NULL;
+            PyObject *tmp = NULL;
+
+            PyObject *item = NULL;
+
+            int i = 0;
+
+            old = PyList_New(0);
+            new = PyList_New(0);
+            tmp = PyList_New(0);
+
+            for (i=0; i<PyList_Size(path); i++)
+                PyList_Append(old, PyList_GetItem(path, i));
 
             dict = PyModule_GetDict(module);
             object = PyDict_GetItemString(dict, "addsitedir");
@@ -3948,14 +3970,43 @@ static InterpreterObject *newInterpreterObject(const char *name,
                 Py_END_ALLOW_THREADS
             }
 
+            for (i=0; i<PyList_Size(path); i++)
+                PyList_Append(tmp, PyList_GetItem(path, i));
+
+            for (i=0; i<PyList_Size(tmp); i++) {
+                item = PyList_GetItem(tmp, i);
+                if (!PySequence_Contains(old, item)) {
+                    int index = PySequence_Index(path, item);
+                    PyList_Append(new, item);
+                    if (index != -1)
+                        PySequence_DelItem(path, index); 
+                }
+            }
+
+            PyList_SetSlice(path, 0, 0, new);
+
+            Py_DECREF(old);
+            Py_DECREF(new);
+            Py_DECREF(tmp);
+
             Py_DECREF(module);
         }
         else {
-            Py_BEGIN_ALLOW_THREADS
-            ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
-                         "mod_wsgi (pid=%d): Unable to import 'site' "
-                         "module.", getpid());
-            Py_END_ALLOW_THREADS
+            if (!module) {
+                Py_BEGIN_ALLOW_THREADS
+                ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Unable to import 'site' "
+                             "module.", getpid());
+                Py_END_ALLOW_THREADS
+            }
+
+            if (!path) {
+                Py_BEGIN_ALLOW_THREADS
+                ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Lookup for 'sys.path' "
+                             "failed.", getpid());
+                Py_END_ALLOW_THREADS
+            }
         }
     }
 
