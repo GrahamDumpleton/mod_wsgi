@@ -8760,6 +8760,14 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         ap_close_listeners();
 
         /*
+         * Cleanup the Apache scoreboard to ensure that any
+         * shared memory segments or memory mapped files not
+         * available to code in daemon processes.
+         */
+
+        ap_cleanup_scoreboard(0);
+
+        /*
          * Wipe out random value used in magic token so that not
          * possible for user code running in daemon process to
          * discover this value for other daemon process groups.
