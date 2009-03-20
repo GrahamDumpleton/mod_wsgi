@@ -3750,6 +3750,71 @@ static InterpreterObject *newInterpreterObject(const char *name,
     }
 
     /*
+     * If running in daemon process, override as appropriate
+     * the USER, USERNAME or LOGNAME environment  variables
+     * so that they match the user that the process is running
+     * as. Need to do this else we inherit the value from the
+     * Apache parent process which is likely wrong as will be
+     * root or the user than ran sudo when Apache started.
+     * Can't update these for normal Apache child processes
+     * as that would change the expected environment of other
+     * Apache modules.
+     */
+
+#ifndef WIN32
+    if (wsgi_daemon_pool) {
+        module = PyImport_ImportModule("os");
+
+        if (module) {
+            PyObject *dict = NULL;
+            PyObject *key = NULL;
+            PyObject *value = NULL;
+
+            dict = PyModule_GetDict(module);
+            object = PyDict_GetItemString(dict, "environ");
+
+            if (object) {
+                struct passwd *pwent;
+
+                pwent = getpwuid(geteuid());
+
+                if (getenv("USER")) {
+                    key = PyString_FromString("USER");
+                    value = PyString_FromString(pwent->pw_name);
+
+                    PyObject_SetItem(object, key, value);
+
+                    Py_DECREF(key);
+                    Py_DECREF(value);
+                }
+
+                if (getenv("USERNAME")) {
+                    key = PyString_FromString("USERNAME");
+                    value = PyString_FromString(pwent->pw_name);
+
+                    PyObject_SetItem(object, key, value);
+
+                    Py_DECREF(key);
+                    Py_DECREF(value);
+                }
+
+                if (getenv("LOGNAME")) {
+                    key = PyString_FromString("LOGNAME");
+                    value = PyString_FromString(pwent->pw_name);
+
+                    PyObject_SetItem(object, key, value);
+
+                    Py_DECREF(key);
+                    Py_DECREF(value);
+                }
+            }
+
+            Py_DECREF(module);
+        }
+    }
+#endif
+
+    /*
      * If running in daemon process, override HOME environment
      * variable so that is matches the home directory of the
      * user that the process is running as. Need to do this as
