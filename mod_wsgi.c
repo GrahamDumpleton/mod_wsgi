@@ -1163,6 +1163,7 @@ static PyTypeObject Dispatch_Type;
 
 typedef struct {
         PyObject_HEAD
+        const char *target;
         request_rec *r;
         int level;
         char *s;
@@ -1172,7 +1173,7 @@ typedef struct {
 
 static PyTypeObject Log_Type;
 
-static LogObject *newLogObject(request_rec *r, int level)
+static LogObject *newLogObject(request_rec *r, int level, const char *target)
 {
     LogObject *self;
 
@@ -1180,6 +1181,7 @@ static LogObject *newLogObject(request_rec *r, int level)
     if (self == NULL)
         return NULL;
 
+    self->target = target;
     self->r = r;
     self->level = APLOG_NOERRNO|level;
     self->s = NULL;
@@ -1189,22 +1191,131 @@ static LogObject *newLogObject(request_rec *r, int level)
     return self;
 }
 
+static void Log_file(LogObject *self, const char *s, int l)
+{
+    char errstr[MAX_STRING_LEN];
+
+    int plen = 0;
+    int slen = 0;
+
+#if AP_SERVER_MAJORVERSION_NUMBER < 2
+    FILE *logf;
+#else
+    apr_file_t *logf = NULL;
+#endif
+
+    if (self->r)
+        logf = self->r->server->error_log;
+    else
+        logf = wsgi_server->error_log;
+
+#if AP_SERVER_MAJORVERSION_NUMBER < 2
+    plen = ap_snprintf(errstr, sizeof(errstr), "[%s] ", ap_get_time());
+#else
+    errstr[0] = '[';
+    ap_recent_ctime(errstr + 1, apr_time_now());
+    errstr[1 + APR_CTIME_LEN - 1] = ']';
+    errstr[1 + APR_CTIME_LEN    ] = ' ';
+    plen = 1 + APR_CTIME_LEN + 1;
+#endif
+
+    if (self->target) {
+        int len;
+
+        errstr[plen++] = '[';
+
+        len = strlen(self->target);
+        memcpy(errstr+plen, self->target, len);
+
+        plen += len;
+
+        errstr[plen++] = ']';
+        errstr[plen++] = ' ';
+    }
+
+    slen = MAX_STRING_LEN - plen - 1;
+
+    Py_BEGIN_ALLOW_THREADS
+
+    /*
+     * We actually break long lines up into segments
+     * of around 8192 characters, with the date/time
+     * and target information prefixing each line.
+     */
+
+    while (1) {
+        if (l > slen) {
+            memcpy(errstr+plen, s, slen);
+            errstr[plen+slen] = '\n';
+#if AP_SERVER_MAJORVERSION_NUMBER < 2
+            fwrite(errstr, plen+slen+1, 1, logf);
+            fflush(logf);
+#else
+            apr_file_write_full(logf, errstr, plen+slen+1, NULL);
+            apr_file_flush(logf);
+#endif
+            s += slen;
+            l -= slen;
+        }
+        else {
+            memcpy(errstr+plen, s, l);
+            errstr[plen+l] = '\n';
+#if AP_SERVER_MAJORVERSION_NUMBER < 2
+            fwrite(errstr, plen+l+1, 1, logf);
+            fflush(logf);
+#else
+            apr_file_write_full(logf, errstr, plen+l+1, NULL);
+            apr_file_flush(logf);
+#endif
+            break;
+        }
+    }
+
+    Py_END_ALLOW_THREADS
+}
+
+static void Log_call(LogObject *self, const char *s, int l)
+{
+    /*
+     * The length of the string to be logged is ignored
+     * for now. We just pass the whole string to the
+     * Apache error log functions. It will actually
+     * truncate it at some value less than 8192
+     * characters depending on the length of the prefix
+     * to go at the front. We do not have to deal with
+     * embedded NULLs here as that has been sorted out
+     * in function that calls this, with embedded NULLs
+     * being treated as if they are a newline. Yes there
+     * is potential loss of information doing it this
+     * way, but don't have much choice. In cases where
+     * logging to Apache error log functions, normally
+     * only dealing with Python tracebacks and no single
+     * line in that case is likely to be anywhere near
+     * 8192 characters.
+     */
+
+    if (self->r) {
+        Py_BEGIN_ALLOW_THREADS
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
+                      self->r, "%s", s);
+        Py_END_ALLOW_THREADS
+    }
+    else {
+        Py_BEGIN_ALLOW_THREADS
+        ap_log_error(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
+                     wsgi_server, "%s", s);
+        Py_END_ALLOW_THREADS
+    }
+}
+
 static void Log_dealloc(LogObject *self)
 {
     if (self->s) {
         if (!self->expired) {
-            if (self->r) {
-                Py_BEGIN_ALLOW_THREADS
-                ap_log_rerror(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
-                              self->r, "%s", self->s);
-                Py_END_ALLOW_THREADS
-            }
-            else {
-                Py_BEGIN_ALLOW_THREADS
-                ap_log_error(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
-                             wsgi_server, "%s", self->s);
-                Py_END_ALLOW_THREADS
-            }
+            if (self->target)
+                Log_file(self, self->s, self->l);
+            else
+                Log_call(self, self->s, self->l);
         }
 
         free(self->s);
@@ -1238,18 +1349,10 @@ static PyObject *Log_flush(LogObject *self, PyObject *args)
         return NULL;
 
     if (self->s) {
-        if (self->r) {
-            Py_BEGIN_ALLOW_THREADS
-            ap_log_rerror(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
-                          self->r, "%s", self->s);
-            Py_END_ALLOW_THREADS
-        }
-        else {
-            Py_BEGIN_ALLOW_THREADS
-            ap_log_error(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
-                         wsgi_server, "%s", self->s);
-            Py_END_ALLOW_THREADS
-        }
+        if (self->target)
+            Log_file(self, self->s, self->l);
+        else
+            Log_call(self, self->s, self->l);
 
         free(self->s);
         self->s = NULL;
@@ -1260,7 +1363,7 @@ static PyObject *Log_flush(LogObject *self, PyObject *args)
     return Py_None;
 }
 
-static void Log_output(LogObject *self, const char *msg, int len)
+static void Log_queue(LogObject *self, const char *msg, int len)
 {
     const char *p = NULL;
     const char *q = NULL;
@@ -1268,6 +1371,17 @@ static void Log_output(LogObject *self, const char *msg, int len)
 
     p = msg;
     e = p + len;
+
+    /*
+     * Break string on newline or embedded NULL. This is
+     * because we treat embedded NULLs as is they were
+     * newlines. This isn't ideal, but Apache error log
+     * functions only deal with null terminated strings
+     * and not possible to give arbitrary string plus
+     * length. In the case where bypass the Apache error
+     * log functions, technically don't need to do this,
+     * but for consistency we still do it.
+     */
 
     q = p;
     while (q != e) {
@@ -1298,18 +1412,10 @@ static void Log_output(LogObject *self, const char *msg, int len)
             self->s = NULL;
             self->l = 0;
 
-            if (self->r) {
-                Py_BEGIN_ALLOW_THREADS
-                ap_log_rerror(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
-                              self->r, "%s", s);
-                Py_END_ALLOW_THREADS
-            }
-            else {
-                Py_BEGIN_ALLOW_THREADS
-                ap_log_error(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
-                             wsgi_server, "%s", s);
-                Py_END_ALLOW_THREADS
-            }
+            if (self->target)
+                Log_file(self, s, n);
+            else
+                Log_call(self, s, n);
 
             free(s);
         }
@@ -1323,23 +1429,17 @@ static void Log_output(LogObject *self, const char *msg, int len)
             memcpy(s, p, q-p);
             s[n-1] = '\0';
 
-            if (self->r) {
-                Py_BEGIN_ALLOW_THREADS
-                ap_log_rerror(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
-                              self->r, "%s", s);
-                Py_END_ALLOW_THREADS
-            }
-            else {
-                Py_BEGIN_ALLOW_THREADS
-                ap_log_error(APLOG_MARK, WSGI_LOG_LEVEL(self->level),
-                             wsgi_server, "%s", s);
-                Py_END_ALLOW_THREADS
-            }
+            if (self->target)
+                Log_file(self, s, n);
+            else
+                Log_call(self, s, n);
 
             free(s);
         }
 
         p = q+1;
+
+        /* Break string on newline or embedded NULL. */
 
         q = p;
         while (q != e) {
@@ -1392,7 +1492,7 @@ static PyObject *Log_write(LogObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "s#:write", &msg, &len))
         return NULL;
 
-    Log_output(self, msg, len);
+    Log_queue(self, msg, len);
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -2464,7 +2564,7 @@ static AdapterObject *newAdapterObject(request_rec *r)
     self->output_length = 0;
 
     self->input = newInputObject(r);
-    self->log = newLogObject(r, APLOG_ERR);
+    self->log = newLogObject(r, APLOG_ERR, NULL);
 
     return self;
 }
@@ -3911,7 +4011,7 @@ static PyObject *wsgi_signal_intercept(PyObject *self, PyObject *args)
             PyObject *args = NULL;
             PyObject *result = NULL;
             Py_INCREF(o);
-            log = (PyObject *)newLogObject(NULL, APLOG_WARNING);
+            log = (PyObject *)newLogObject(NULL, APLOG_WARNING, NULL);
             args = Py_BuildValue("(OOO)", Py_None, Py_None, log);
             result = PyEval_CallObject(o, args);
             Py_XDECREF(result);
@@ -4050,7 +4150,7 @@ static InterpreterObject *newInterpreterObject(const char *name)
      * the 'pdb' module.
      */
 
-    object = (PyObject *)newLogObject(NULL, APLOG_ERR);
+    object = (PyObject *)newLogObject(NULL, APLOG_ERR, "stderr");
     PySys_SetObject("stderr", object);
     Py_DECREF(object);
 
@@ -4063,7 +4163,7 @@ static InterpreterObject *newInterpreterObject(const char *name)
             Py_DECREF(object);
         }
         else {
-            object = (PyObject *)newLogObject(NULL, APLOG_ERR);
+            object = (PyObject *)newLogObject(NULL, APLOG_ERR, "stdout");
             PySys_SetObject("stdout", object);
             Py_DECREF(object);
         }
@@ -4829,7 +4929,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
                         PyObject *log = NULL;
                         PyObject *args = NULL;
                         Py_INCREF(o);
-                        log = (PyObject *)newLogObject(NULL, APLOG_ERR);
+                        log = (PyObject *)newLogObject(NULL, APLOG_ERR, NULL);
                         args = Py_BuildValue("(OOOOO)", type, value,
                                              traceback, Py_None, log);
                         result = PyEval_CallObject(o, args);
@@ -4961,7 +5061,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
                     PyObject *log = NULL;
                     PyObject *args = NULL;
                     Py_INCREF(o);
-                    log = (PyObject *)newLogObject(NULL, APLOG_ERR);
+                    log = (PyObject *)newLogObject(NULL, APLOG_ERR, NULL);
                     args = Py_BuildValue("(OOOOO)", type, value,
                                          traceback, Py_None, log);
                     result = PyEval_CallObject(o, args);
@@ -5590,7 +5690,7 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         }
         Py_END_ALLOW_THREADS
 
-        log = newLogObject(r, APLOG_ERR);
+        log = newLogObject(r, APLOG_ERR, NULL);
         wsgi_log_python_error(r, log, filename);
         Py_DECREF(log);
     }
@@ -5948,7 +6048,7 @@ static int wsgi_execute_script(request_rec *r)
 
     if (PyErr_Occurred()) {
         LogObject *log;
-        log = newLogObject(r, APLOG_ERR);
+        log = newLogObject(r, APLOG_ERR, NULL);
         wsgi_log_python_error(r, log, r->filename);
         Py_DECREF(log);
     }
@@ -7508,7 +7608,7 @@ static DispatchObject *newDispatchObject(request_rec *r,
 
     self->r = r;
 
-    self->log = newLogObject(r, APLOG_ERR);
+    self->log = newLogObject(r, APLOG_ERR, NULL);
 
     return self;
 }
@@ -8047,7 +8147,7 @@ static int wsgi_execute_dispatch(request_rec *r)
 
             if (PyErr_Occurred()) {
                 LogObject *log;
-                log = newLogObject(r, APLOG_ERR);
+                log = newLogObject(r, APLOG_ERR, NULL);
                 wsgi_log_python_error(r, log, script);
                 Py_DECREF(log);
             }
@@ -12002,7 +12102,7 @@ static AuthObject *newAuthObject(request_rec *r, WSGIRequestConfig *config)
 
     self->r = r;
 
-    self->log = newLogObject(r, APLOG_ERR);
+    self->log = newLogObject(r, APLOG_ERR, NULL);
 
     return self;
 }
@@ -12492,7 +12592,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
         if (PyErr_Occurred()) {
             LogObject *log;
-            log = newLogObject(r, APLOG_ERR);
+            log = newLogObject(r, APLOG_ERR, NULL);
             wsgi_log_python_error(r, log, script);
             Py_DECREF(log);
         }
@@ -12728,7 +12828,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
         if (PyErr_Occurred()) {
             LogObject *log;
-            log = newLogObject(r, APLOG_ERR);
+            log = newLogObject(r, APLOG_ERR, NULL);
             wsgi_log_python_error(r, log, script);
             Py_DECREF(log);
         }
@@ -13010,7 +13110,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
         if (PyErr_Occurred()) {
             LogObject *log;
-            log = newLogObject(r, APLOG_ERR);
+            log = newLogObject(r, APLOG_ERR, NULL);
             wsgi_log_python_error(r, log, script);
             Py_DECREF(log);
         }
@@ -13225,7 +13325,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
         if (PyErr_Occurred()) {
             LogObject *log;
-            log = newLogObject(r, APLOG_ERR);
+            log = newLogObject(r, APLOG_ERR, NULL);
             wsgi_log_python_error(r, log, script);
             Py_DECREF(log);
         }
@@ -13491,7 +13591,7 @@ static int wsgi_hook_check_user_id(request_rec *r)
 
         if (PyErr_Occurred()) {
             LogObject *log;
-            log = newLogObject(r, APLOG_ERR);
+            log = newLogObject(r, APLOG_ERR, NULL);
             wsgi_log_python_error(r, log, script);
             Py_DECREF(log);
         }
