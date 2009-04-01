@@ -1191,8 +1191,21 @@ static LogObject *newLogObject(request_rec *r, int level, const char *target)
     return self;
 }
 
+#if 0
 static void Log_file(LogObject *self, const char *s, int l)
 {
+    /*
+     * XXX This function is not currently being used.
+     * The intention was that it be called instead of
+     * Log_call() when 'target' is non zero. This would
+     * be the case for 'stdout' and 'stderr'. Doing
+     * this bypasses normally Apache logging mechanisms
+     * though. May reawaken this code in mod_wsgi 4.0
+     * by way of a mechanism to divert logging from a
+     * daemon process to specfic log file or pipe using
+     * an option to WSGIDaemonProcess.
+     */
+
     char errstr[MAX_STRING_LEN];
 
     int plen = 0;
@@ -1241,6 +1254,11 @@ static void Log_file(LogObject *self, const char *s, int l)
      * We actually break long lines up into segments
      * of around 8192 characters, with the date/time
      * and target information prefixing each line.
+     * This is just to avoid having to allocate more
+     * memory just to format the line with prefix.
+     * We want to avoid writing the prefix separately
+     * so at least try and write line in one atomic
+     * operation.
      */
 
     while (1) {
@@ -1273,6 +1291,7 @@ static void Log_file(LogObject *self, const char *s, int l)
 
     Py_END_ALLOW_THREADS
 }
+#endif
 
 static void Log_call(LogObject *self, const char *s, int l)
 {
@@ -1282,16 +1301,11 @@ static void Log_call(LogObject *self, const char *s, int l)
      * Apache error log functions. It will actually
      * truncate it at some value less than 8192
      * characters depending on the length of the prefix
-     * to go at the front. We do not have to deal with
-     * embedded NULLs here as that has been sorted out
-     * in function that calls this, with embedded NULLs
-     * being treated as if they are a newline. Yes there
-     * is potential loss of information doing it this
-     * way, but don't have much choice. In cases where
-     * logging to Apache error log functions, normally
-     * only dealing with Python tracebacks and no single
-     * line in that case is likely to be anywhere near
-     * 8192 characters.
+     * to go at the front. If there are embedded NULLs
+     * then truncation will occur at that point. That
+     * truncation occurs like this is also what happens
+     * if using FASTCGI solutions for Apache, so not
+     * doing anything different here.
      */
 
     if (self->r) {
@@ -1311,12 +1325,8 @@ static void Log_call(LogObject *self, const char *s, int l)
 static void Log_dealloc(LogObject *self)
 {
     if (self->s) {
-        if (!self->expired) {
-            if (self->target)
-                Log_file(self, self->s, self->l);
-            else
-                Log_call(self, self->s, self->l);
-        }
+        if (!self->expired)
+            Log_call(self, self->s, self->l);
 
         free(self->s);
     }
@@ -1349,10 +1359,7 @@ static PyObject *Log_flush(LogObject *self, PyObject *args)
         return NULL;
 
     if (self->s) {
-        if (self->target)
-            Log_file(self, self->s, self->l);
-        else
-            Log_call(self, self->s, self->l);
+        Log_call(self, self->s, self->l);
 
         free(self->s);
         self->s = NULL;
@@ -1373,19 +1380,13 @@ static void Log_queue(LogObject *self, const char *msg, int len)
     e = p + len;
 
     /*
-     * Break string on newline or embedded NULL. This is
-     * because we treat embedded NULLs as is they were
-     * newlines. This isn't ideal, but Apache error log
-     * functions only deal with null terminated strings
-     * and not possible to give arbitrary string plus
-     * length. In the case where bypass the Apache error
-     * log functions, technically don't need to do this,
-     * but for consistency we still do it.
+     * Break string on newline. This is on assumption
+     * that primarily textual information being logged.
      */
 
     q = p;
     while (q != e) {
-        if (!*q || *q == '\n')
+        if (*q == '\n')
             break;
         q++;
     }
@@ -1412,10 +1413,7 @@ static void Log_queue(LogObject *self, const char *msg, int len)
             self->s = NULL;
             self->l = 0;
 
-            if (self->target)
-                Log_file(self, s, n);
-            else
-                Log_call(self, s, n);
+            Log_call(self, s, n-1);
 
             free(s);
         }
@@ -1429,21 +1427,18 @@ static void Log_queue(LogObject *self, const char *msg, int len)
             memcpy(s, p, q-p);
             s[n-1] = '\0';
 
-            if (self->target)
-                Log_file(self, s, n);
-            else
-                Log_call(self, s, n);
+            Log_call(self, s, n-1);
 
             free(s);
         }
 
         p = q+1;
 
-        /* Break string on newline or embedded NULL. */
+        /* Break string on newline. */
 
         q = p;
         while (q != e) {
-            if (!*q || *q == '\n')
+            if (*q == '\n')
                 break;
             q++;
         }
