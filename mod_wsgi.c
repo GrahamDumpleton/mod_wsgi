@@ -4152,7 +4152,7 @@ static InterpreterObject *newInterpreterObject(const char *name)
 #ifndef WIN32
     if (wsgi_parent_pid != getpid()) {
 #endif
-        if (wsgi_server_config->restrict_stdout != 0) {
+        if (wsgi_server_config->restrict_stdout == 1) {
             object = (PyObject *)newRestrictedObject("sys.stdout");
             PySys_SetObject("stdout", object);
             Py_DECREF(object);
@@ -4163,7 +4163,7 @@ static InterpreterObject *newInterpreterObject(const char *name)
             Py_DECREF(object);
         }
 
-        if (wsgi_server_config->restrict_stdin != 0) {
+        if (wsgi_server_config->restrict_stdin == 1) {
             object = (PyObject *)newRestrictedObject("sys.stdin");
             PySys_SetObject("stdin", object);
             Py_DECREF(object);
