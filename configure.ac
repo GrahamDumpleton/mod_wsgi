@@ -1,6 +1,6 @@
 dnl  vim: set sw=4 expandtab :
 dnl
-dnl  Copyright 2007-2008 GRAHAM DUMPLETON
+dnl  Copyright 2007-2009 GRAHAM DUMPLETON
 dnl 
 dnl  Licensed under the Apache License, Version 2.0 (the "License");
 dnl  you may not use this file except in compliance with the License.
@@ -129,10 +129,10 @@ fi
 LDFLAGS="${LDFLAGS} ${LDFLAGS1} ${LDFLAGS2} ${LDFLAGS3}"
 LDLIBS="${LDLIBS} ${LDLIBS1} ${LDLIBS2} ${LDLIBS3}"
 
-LDFLAGS=`echo ${LDFLAGS} | \
- sed -e "s/-Wl,\([[^ ]][[^ ]]*\)/\1/g" -e "s/\([[^ ]][[^ ]]*\)/-Wl,\1/g"`
-LDLIBS=`echo ${LDLIBS} | \
- sed -e "s/-Wl,\([[^ ]][[^ ]]*\)/\1/g" -e "s/\([[^ ]][[^ ]]*\)/-Wl,\1/g"`
+#LDFLAGS=`echo ${LDFLAGS} | \
+# sed -e "s/-Wl,\([[^ ]][[^ ]]*\)/\1/g" -e "s/\([[^ ]][[^ ]]*\)/-Wl,\1/g"`
+#LDLIBS=`echo ${LDLIBS} | \
+# sed -e "s/-Wl,\([[^ ]][[^ ]]*\)/\1/g" -e "s/\([[^ ]][[^ ]]*\)/-Wl,\1/g"`
 
 AC_SUBST(CFLAGS)
 AC_SUBST(LDFLAGS)
