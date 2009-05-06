@@ -3183,20 +3183,28 @@ static PyObject *Adapter_environ(AdapterObject *self)
     scheme = apr_table_get(r->subprocess_env, "HTTPS");
 
     if (scheme && (!strcasecmp(scheme, "On") || !strcmp(scheme, "1"))) {
+/*
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_FromString("https");
 #else
+*/
         object = PyString_FromString("https");
+/*
 #endif
+*/
         PyDict_SetItemString(vars, "wsgi.url_scheme", object);
         Py_DECREF(object);
     }
     else {
+/*
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_FromString("http");
 #else
+*/
         object = PyString_FromString("http");
+/*
 #endif
+*/
         PyDict_SetItemString(vars, "wsgi.url_scheme", object);
         Py_DECREF(object);
     }
@@ -7670,19 +7678,27 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
      * to remove callable object reference.
      */
 
+    /*
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_FromString("");
 #else
+*/
     object = PyString_FromString("");
+/*
 #endif
+*/
     PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
     Py_DECREF(object);
 
+/*
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_FromString(group);
 #else
+*/
     object = PyString_FromString(group);
+/*
 #endif
+*/
     PyDict_SetItemString(vars, "mod_wsgi.application_group", object);
     Py_DECREF(object);
 
