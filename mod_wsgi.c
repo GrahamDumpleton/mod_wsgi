@@ -7522,10 +7522,6 @@ static void wsgi_build_environment(request_rec *r)
             apr_table_setn(r->subprocess_env, "HTTP_AUTHORIZATION", value);
     }
 
-    /*XXX*/
-
-    apr_table_setn(r->subprocess_env, "UNPARSERD_URI", r->unparsed_uri);
-
     /* If PATH_INFO not set, set it to an empty string. */
 
     value = apr_table_get(r->subprocess_env, "PATH_INFO");
