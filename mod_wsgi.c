@@ -3133,12 +3133,16 @@ static PyObject *Adapter_environ(AdapterObject *self)
     for (i = 0; i < head->nelts; ++i) {
         if (elts[i].key) {
             if (elts[i].val) {
+/*
 #if PY_MAJOR_VERSION >= 3
                 object = PyUnicode_DecodeLatin1(elts[i].val,
                                                 strlen(elts[i].val), NULL);
 #else
+*/
                 object = PyString_FromString(elts[i].val);
+/*
 #endif
+*/
                 PyDict_SetItemString(vars, elts[i].key, object);
                 Py_DECREF(object);
             }
@@ -7518,6 +7522,10 @@ static void wsgi_build_environment(request_rec *r)
             apr_table_setn(r->subprocess_env, "HTTP_AUTHORIZATION", value);
     }
 
+    /*XXX*/
+
+    apr_table_setn(r->subprocess_env, "UNPARSERD_URI", r->unparsed_uri);
+
     /* If PATH_INFO not set, set it to an empty string. */
 
     value = apr_table_get(r->subprocess_env, "PATH_INFO");
@@ -7641,12 +7649,16 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
     for (i = 0; i < head->nelts; ++i) {
         if (elts[i].key) {
             if (elts[i].val) {
+/*
 #if PY_MAJOR_VERSION >= 3
                 object = PyUnicode_DecodeLatin1(elts[i].val,
                                                 strlen(elts[i].val), NULL);
 #else
+*/
                 object = PyString_FromString(elts[i].val);
+/*
 #endif
+*/
                 PyDict_SetItemString(vars, elts[i].key, object);
                 Py_DECREF(object);
             }
