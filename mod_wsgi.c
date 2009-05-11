@@ -1544,12 +1544,6 @@ static PyObject *Log_closed(LogObject *self, void *closure)
     return Py_False;
 }
 
-static PyObject *Log_isatty(LogObject *self, void *closure)
-{
-    Py_INCREF(Py_False);
-    return Py_False;
-}
-
 static PyMethodDef Log_methods[] = {
     { "close",      (PyCFunction)Log_close,      METH_VARARGS, 0 },
     { "flush",      (PyCFunction)Log_flush,      METH_VARARGS, 0 },
@@ -1560,7 +1554,6 @@ static PyMethodDef Log_methods[] = {
 
 static PyGetSetDef Log_getset[] = {
     { "closed", (getter)Log_closed, NULL, 0 },
-    { "isatty", (getter)Log_isatty, NULL, 0 },
     { NULL },
 };
 
