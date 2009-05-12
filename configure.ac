@@ -113,7 +113,7 @@ else
             from distutils import sysconfig; \
             stdout.write(sysconfig.get_config_var("SYSLIBS"))'`
     else
-        LDFLAGS1="-F${PYTHONFRAMEWORKPREFIX} -framework ${PYTHONFRAMEWORK}"
+        LDFLAGS1="-Wl,-F${PYTHONFRAMEWORKPREFIX} -framework ${PYTHONFRAMEWORK}"
 
         VERSION="${PYTHON_VERSION}"
         STRING="${PYTHONFRAMEWORKDIR}/Versions/${VERSION}/${PYTHONFRAMEWORK}"

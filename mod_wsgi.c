@@ -246,7 +246,7 @@ static char *apr_off_t_toa(apr_pool_t *p, apr_off_t n)
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 2
 #define MOD_WSGI_MINORVERSION_NUMBER 5
-#define MOD_WSGI_VERSION_STRING "2.5"
+#define MOD_WSGI_VERSION_STRING "2.6-BRANCH"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
