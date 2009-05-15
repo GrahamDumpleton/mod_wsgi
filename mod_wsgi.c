@@ -1120,6 +1120,7 @@ typedef struct {
     const char *script_user;
     const char *script_group;
     int cpu_time_limit;
+    int cpu_priority;
     const char *socket;
     int listener_fd;
     const char* mutex_path;
@@ -8583,6 +8584,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     const char *script_group = NULL;
 
     int cpu_time_limit = 0;
+    int cpu_priority = 0;
 
     uid_t uid;
     uid_t gid;
@@ -8804,6 +8806,12 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (cpu_time_limit < 0)
                 return "Invalid CPU time limit for WSGI daemon process.";
         }
+        else if (!strcmp(option, "cpu-priority")) {
+            if (!*value)
+                return "Invalid CPU priority for WSGI daemon process.";
+
+            cpu_priority = atoi(value);
+        }
         else
             return "Invalid option to WSGI daemon process definition.";
     }
@@ -8867,6 +8875,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->script_group = script_group;
 
     entry->cpu_time_limit = cpu_time_limit;
+    entry->cpu_priority = cpu_priority;
 
     entry->listener_fd = -1;
 
@@ -9994,6 +10003,18 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         /* Setup daemon process name displayed by 'ps'. */
 
         wsgi_setup_daemon_name(daemon, p);
+
+        /* Adjust CPU priority if overridden. */
+
+        if (daemon->group->cpu_priority != 0) {
+            if (setpriority(PRIO_PROCESS, 0,
+                            daemon->group->cpu_priority) == -1) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_ERR(errno), wsgi_server,
+                             "mod_wsgi (pid=%d): Couldn't set CPU priority "
+                             "in daemon process '%d'.", getpid(),
+                             daemon->group->cpu_priority);
+            }
+        }
 
         /* Setup daemon process user/group/umask etc. */
 
