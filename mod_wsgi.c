@@ -385,6 +385,8 @@ typedef struct {
     int pass_authorization;
     int script_reloading;
     int error_override;
+
+    apr_table_t *variable_encoding;
 } WSGIServerConfig;
 
 static WSGIServerConfig *wsgi_server_config = NULL;
@@ -453,6 +455,8 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->pass_authorization = -1;
     object->script_reloading = -1;
     object->error_override = -1;
+
+    object->variable_encoding = NULL;
 
     return object;
 }
@@ -536,6 +540,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->error_override = parent->error_override;
 
+    if (child->variable_encoding)
+        config->variable_encoding = child->variable_encoding;
+    else
+        config->variable_encoding = parent->variable_encoding;
+
     return config;
 }
 
@@ -554,6 +563,8 @@ typedef struct {
     int pass_authorization;
     int script_reloading;
     int error_override;
+
+    apr_table_t *variable_encoding;
 
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
@@ -656,6 +667,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->error_override = parent->error_override;
 
+    if (child->variable_encoding)
+        config->variable_encoding = child->variable_encoding;
+    else
+        config->variable_encoding = parent->variable_encoding;
+
     if (child->access_script)
         config->access_script = child->access_script;
     else
@@ -699,6 +715,8 @@ typedef struct {
     int pass_authorization;
     int script_reloading;
     int error_override;
+
+    apr_table_t *variable_encoding;
 
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
@@ -1027,11 +1045,13 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     config->error_override = dconfig->error_override;
 
-    if (config->error_override < 0) {
+    if (config->error_override < 0)
         config->error_override = sconfig->error_override;
-        if (config->error_override < 0)
-            config->error_override = 0;
-    }
+
+    config->variable_encoding = dconfig->variable_encoding;
+
+    if (!config->variable_encoding)
+        config->variable_encoding = sconfig->variable_encoding;
 
     config->access_script = dconfig->access_script;
 
@@ -3128,8 +3148,34 @@ static PyObject *Adapter_environ(AdapterObject *self)
         if (elts[i].key) {
             if (elts[i].val) {
 #if PY_MAJOR_VERSION >= 3
-                object = PyUnicode_DecodeLatin1(elts[i].val,
-                                                strlen(elts[i].val), NULL);
+                if (self->config->variable_encoding) {
+                    const char *value;
+
+                    value = apr_table_get(self->config->variable_encoding,
+                                          elts[i].key);
+
+                    if (!value)
+                        value = apr_table_get(self->config->variable_encoding,
+                                              "*");
+
+                    if (value) {
+                        if (!strcmp(value, "-"))
+                            object = PyBytes_FromString(elts[i].val);
+                        else
+                            object = PyUnicode_Decode(elts[i].val,
+                                                      strlen(elts[i].val),
+                                                      value, "replace");
+                    }
+                    else {
+                        object = PyUnicode_DecodeLatin1(elts[i].val,
+                                                        strlen(elts[i].val),
+                                                        NULL);
+                    }
+                }
+                else {
+                    object = PyUnicode_DecodeLatin1(elts[i].val,
+                                                    strlen(elts[i].val), NULL);
+                }
 #else
                 object = PyString_FromString(elts[i].val);
 #endif
@@ -7140,6 +7186,32 @@ static const char *wsgi_set_error_override(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_variable_encoding(cmd_parms *cmd, void *mconfig,
+                                              const char *n, const char *v)
+{
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+
+        if (!dconfig->variable_encoding)
+            dconfig->variable_encoding = apr_table_make(cmd->pool, 2);
+
+        apr_table_setn(dconfig->variable_encoding, n, v);
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+
+        if (!sconfig->variable_encoding)
+            sconfig->variable_encoding = apr_table_make(cmd->pool, 2);
+
+        apr_table_setn(sconfig->variable_encoding, n, v);
+    }
+
+    return NULL;
+}
+
 static const char *wsgi_set_access_script(cmd_parms *cmd, void *mconfig,
                                           const char *args)
 {
@@ -8509,6 +8581,11 @@ static const command_rec wsgi_commands[] =
         OR_FILEINFO, TAKE1, "Enable/Disable WSGI authorization." },
     { "WSGIScriptReloading", wsgi_set_script_reloading, NULL,
         OR_FILEINFO, TAKE1, "Enable/Disable script reloading mechanism." },
+
+#if PY_MAJOR_VERSION >= 3
+    { "WSGIVariableEncoding", wsgi_set_variable_encoding, NULL,
+        OR_FILEINFO, TAKE2, "Encoding to be used for WSGI environment." },
+#endif
 
     { NULL }
 };
@@ -13904,6 +13981,11 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable script reloading mechanism."),
     AP_INIT_TAKE1("WSGIErrorOverride", wsgi_set_error_override,
         NULL, OR_FILEINFO, "Enable/Disable overriding of error pages."),
+
+#if PY_MAJOR_VERSION >= 3
+    AP_INIT_TAKE2("WSGIVariableEncoding", wsgi_set_variable_encoding,
+        NULL, OR_FILEINFO, "Encoding to be used for WSGI environment."),
+#endif
 
 #if defined(MOD_WSGI_WITH_AAA_HANDLERS)
     AP_INIT_RAW_ARGS("WSGIAccessScript", wsgi_set_access_script,
