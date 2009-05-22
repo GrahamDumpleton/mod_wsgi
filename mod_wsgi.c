@@ -3159,12 +3159,31 @@ static PyObject *Adapter_environ(AdapterObject *self)
                                               "*");
 
                     if (value) {
-                        if (!strcmp(value, "-"))
+                        if (!strcmp(value, "-")) {
                             object = PyBytes_FromString(elts[i].val);
-                        else
+                        }
+                        else {
                             object = PyUnicode_Decode(elts[i].val,
                                                       strlen(elts[i].val),
                                                       value, "replace");
+
+                            if (!object) {
+                                /*
+                                 * An invalid encoding name was supplied
+                                 * or the value could not be decoded using
+                                 * the supplied encoding name. Generate an
+                                 * error and fallback to passing the value
+                                 * as latin-1.
+                                 */
+
+                                wsgi_log_python_error(self->r, self->log,
+                                                      self->r->filename);
+
+                                object = PyUnicode_DecodeLatin1(elts[i].val,
+                                                        strlen(elts[i].val),
+                                                        NULL);
+                            }
+                        }
                     }
                     else {
                         object = PyUnicode_DecodeLatin1(elts[i].val,
@@ -5145,7 +5164,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     if (!self->owner) {
         if (*self->name) {
-            /* XXX In practice not sure this condition arises. */
             tstate = PyThreadState_Get();
 
             PyThreadState_Clear(tstate);
@@ -5166,8 +5184,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
          * try to run. Only saving grace is that we are
          * trying to shutdown the process.
          */
-
-        /* XXX Yuck. */
 
         PyThreadState *tstate_save = tstate;
         PyThreadState *tstate_next = NULL;
