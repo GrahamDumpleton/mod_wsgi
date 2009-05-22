@@ -3148,7 +3148,8 @@ static PyObject *Adapter_environ(AdapterObject *self)
         if (elts[i].key) {
             if (elts[i].val) {
 #if PY_MAJOR_VERSION >= 3
-                if (self->config->variable_encoding) {
+                if (self->config->variable_encoding &&
+                    strstr(elts[i].key, "mod_wsgi.") != elts[i].key) {
                     const char *value;
 
                     value = apr_table_get(self->config->variable_encoding,
@@ -7663,6 +7664,33 @@ static void wsgi_build_environment(request_rec *r)
     apr_table_setn(r->subprocess_env, "mod_wsgi.listener_port",
                    apr_psprintf(r->pool, "%d", c->local_addr->port));
 #endif
+
+    if (config->variable_encoding) {
+        const apr_array_header_t *head = NULL;
+        const apr_table_entry_t *elts = NULL;
+
+        int i = 0;
+
+        head = apr_table_elts(config->variable_encoding);
+        elts = (apr_table_entry_t *)head->elts;
+
+        for (i = 0; i < head->nelts; ++i) {
+            if (elts[i].key) {
+                if (elts[i].val) {
+                    if (!strcmp(elts[i].key, "*")) {
+                        apr_table_setn(r->subprocess_env,
+                                       "mod_wsgi.variable_encoding",
+                                       elts[i].val);
+                    }
+                    else {
+                        apr_table_setn(r->subprocess_env, apr_pstrcat(r->pool,
+                                       "mod_wsgi.variable_encoding.", 
+                                       elts[i].key, NULL), elts[i].val);
+                    }
+                }
+            }
+        }
+    }
 }
 
 typedef struct {
@@ -11615,6 +11643,11 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     ap_filter_t *current = NULL;
     ap_filter_t *next = NULL;
 
+    const apr_array_header_t *head = NULL;
+    const apr_table_entry_t *elts = NULL;
+
+    int i = 0;
+
     /* Don't do anything if not in daemon process. */
 
     if (!wsgi_daemon_pool)
@@ -11929,6 +11962,32 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     config->script_reloading = atoi(apr_table_get(r->subprocess_env,
                                                   "mod_wsgi.script_reloading"));
+
+    /* Setup table for mapping encoding of variables. */
+
+#if PY_MAJOR_VERSION >= 3
+    head = apr_table_elts(r->subprocess_env);
+    elts = (apr_table_entry_t *)head->elts;
+
+    for (i = 0; i < head->nelts; ++i) {
+        if (elts[i].key) {
+            if (elts[i].val) {
+                if (!strcmp(elts[i].key, "mod_wsgi.variable_encoding")) {
+                    if (!config->variable_encoding)
+                        config->variable_encoding = apr_table_make(r->pool, 2);
+                    apr_table_setn(config->variable_encoding, "*", elts[i].val);
+                }
+                else if (strstr(elts[i].key,
+                         "mod_wsgi.variable_encoding.") == elts[i].key) {
+                    if (!config->variable_encoding)
+                        config->variable_encoding = apr_table_make(r->pool, 2);
+                    apr_table_setn(config->variable_encoding,
+                                   elts[i].key+27, elts[i].val);
+                }
+            }
+        }
+    }
+#endif
 
     /*
      * Define how input data is to be processed. This
