@@ -102,7 +102,10 @@ if test "${PYTHONFRAMEWORKDIR}" = "no-framework"; then
         from distutils import sysconfig; \
         stdout.write(sysconfig.get_config_var("SYSLIBS"))'`
 else
-    if test -f "${PYTHONCFGDIR}/libpython${PYTHON_VERSION}.a"; then
+    if test "${PYTHON_VERSION}" != "2.3" && \
+            test "${PYTHON_VERSION}" != "2.4" && \
+            test "${PYTHON_VERSION}" != "2.5" && \
+            test -f "${PYTHONCFGDIR}/libpython${PYTHON_VERSION}.a"; then
         LDFLAGS2="-L${PYTHONCFGDIR}"
 
         LDLIBS1="-lpython${PYTHON_VERSION}"
