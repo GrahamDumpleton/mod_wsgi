@@ -345,6 +345,7 @@ typedef struct {
     const char *handler_script;
     const char *process_group;
     const char *application_group;
+    const char *callable_object;
 } WSGIScriptFile;
 
 typedef struct {
@@ -387,6 +388,10 @@ typedef struct {
     int error_override;
 
     apr_table_t *variable_encoding;
+
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    apr_hash_t *handler_scripts;
+#endif
 } WSGIServerConfig;
 
 static WSGIServerConfig *wsgi_server_config = NULL;
@@ -545,6 +550,17 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->variable_encoding = parent->variable_encoding;
 
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    if (!child->handler_scripts)
+        config->handler_scripts = parent->handler_scripts;
+    else if (!parent->handler_scripts)
+        config->handler_scripts = child->handler_scripts;
+    else {
+        config->handler_scripts = apr_hash_overlay(p, child->handler_scripts,
+                                                   parent->handler_scripts);
+    }
+#endif
+
     return config;
 }
 
@@ -571,6 +587,10 @@ typedef struct {
     WSGIScriptFile *auth_group_script;
     int user_authoritative;
     int group_authoritative;
+
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    apr_hash_t *handler_scripts;
+#endif
 } WSGIDirectoryConfig;
 
 static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
@@ -697,6 +717,17 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->group_authoritative = parent->group_authoritative;
 
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    if (!child->handler_scripts)
+        config->handler_scripts = parent->handler_scripts;
+    else if (!parent->handler_scripts)
+        config->handler_scripts = child->handler_scripts;
+    else {
+        config->handler_scripts = apr_hash_overlay(p, child->handler_scripts,
+                                                   parent->handler_scripts);
+    }
+#endif
+
     return config;
 }
 
@@ -723,6 +754,10 @@ typedef struct {
     WSGIScriptFile *auth_group_script;
     int user_authoritative;
     int group_authoritative;
+
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    apr_hash_t *handler_scripts;
+#endif
 } WSGIRequestConfig;
 
 static int wsgi_find_path_info(const char *uri, const char *path_info)
@@ -1068,6 +1103,17 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     if (config->group_authoritative == -1)
         config->group_authoritative = 1;
+
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    if (!dconfig->handler_scripts)
+        config->handler_scripts = sconfig->handler_scripts;
+    else if (!sconfig->handler_scripts)
+        config->handler_scripts = dconfig->handler_scripts;
+    else {
+        config->handler_scripts = apr_hash_overlay(p, dconfig->handler_scripts,
+                                                   sconfig->handler_scripts);
+    }
+#endif
 
     return config;
 }
@@ -7380,6 +7426,84 @@ static const char *wsgi_set_group_authoritative(cmd_parms *cmd, void *mconfig,
 
     return NULL;
 }
+
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+static const char *wsgi_add_handler_script(cmd_parms *cmd, void *mconfig,
+                                           const char *args)
+{
+    WSGIServerConfig *sconfig = NULL;
+    WSGIDirectoryConfig *dconfig = NULL;
+    WSGIScriptFile *object = NULL;
+
+    const char *name = NULL;
+    const char *option = NULL;
+    const char *value = NULL;
+
+    name = ap_getword_conf(cmd->pool, &args);
+
+    if (!name || !*name)
+        return "Name for handler script not supplied.";
+
+    object = newWSGIScriptFile(cmd->pool);
+
+    object->handler_script = ap_getword_conf(cmd->pool, &args);
+
+    if (!object->handler_script || !*object->handler_script)
+        return "Location of handler script not supplied.";
+
+    while (*args) {
+        if (wsgi_parse_option(cmd->pool, &args, &option,
+                              &value) != APR_SUCCESS) {
+            return "Invalid option to WSGI handler script definition.";
+        }
+
+        if (!strcmp(option, "process-group")) {
+            if (!*value)
+                return "Invalid name for WSGI process group.";
+
+            object->application_group = value;
+        }
+        else if (!strcmp(option, "application-group")) {
+            if (!*value)
+                return "Invalid name for WSGI application group.";
+
+            object->application_group = value;
+        }
+        else if (!strcmp(option, "callable-object")) {
+            if (!*value)
+                return "Invalid name for WSGI callable object.";
+
+            object->application_group = value;
+        }
+        else
+            return "Invalid option to WSGI handler script definition.";
+    }
+
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+
+        if (!dconfig->handler_scripts)
+            dconfig->handler_scripts = apr_hash_make(cmd->pool);
+
+        apr_hash_set(dconfig->handler_scripts, name, APR_HASH_KEY_STRING,
+                     object);
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+
+        if (!sconfig->handler_scripts)
+            sconfig->handler_scripts = apr_hash_make(cmd->pool);
+
+        apr_hash_set(sconfig->handler_scripts, name, APR_HASH_KEY_STRING,
+                     object);
+    }
+
+    return NULL;
+}
+#endif
 
 /* Handler for the translate name phase. */
 
@@ -14076,6 +14200,9 @@ static const command_rec wsgi_commands[] =
     AP_INIT_TAKE1("WSGIGroupAuthoritative", wsgi_set_group_authoritative,
         NULL, OR_AUTHCFG, "Enable/Disable as being authoritative on groups."),
 #endif
+
+    AP_INIT_RAW_ARGS("WSGIHandlerScript", wsgi_add_handler_script,
+        NULL, OR_AUTHCFG, "Location of WSGI handler script file."),
 
     { NULL }
 };
