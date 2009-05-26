@@ -14265,7 +14265,7 @@ static const command_rec wsgi_commands[] =
 #endif
 
     AP_INIT_RAW_ARGS("WSGIHandlerScript", wsgi_add_handler_script,
-        NULL, OR_FILEINFO, "Location of WSGI handler script file."),
+        NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI handler script file."),
 
     { NULL }
 };
