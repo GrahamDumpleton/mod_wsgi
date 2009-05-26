@@ -7797,6 +7797,7 @@ static void wsgi_build_environment(request_rec *r)
     apr_table_setn(r->subprocess_env, "mod_wsgi.callable_object",
                    config->callable_object);
 
+    apr_table_setn(r->subprocess_env, "mod_wsgi.request_handler", r->handler);
     apr_table_setn(r->subprocess_env, "mod_wsgi.handler_script",
                    config->handler_script);
 
