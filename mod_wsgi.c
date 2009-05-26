@@ -346,6 +346,7 @@ typedef struct {
     const char *process_group;
     const char *application_group;
     const char *callable_object;
+    const char *pass_authorization;
 } WSGIScriptFile;
 
 typedef struct {
@@ -758,6 +759,7 @@ typedef struct {
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
     apr_hash_t *handler_scripts;
 #endif
+    const char *handler_script;
 } WSGIRequestConfig;
 
 static int wsgi_find_path_info(const char *uri, const char *path_info)
@@ -1114,6 +1116,8 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
                                                    sconfig->handler_scripts);
     }
 #endif
+
+    config->handler_script = "";
 
     return config;
 }
@@ -5906,7 +5910,10 @@ static int wsgi_execute_script(request_rec *r)
 
     /* Calculate the Python module name to be used for script. */
 
-    script = r->filename;
+    if (config->handler_script && *config->handler_script)
+        script = config->handler_script;
+    else
+        script = r->filename;
 
     name = wsgi_module_name(r->pool, script);
 
@@ -7475,6 +7482,17 @@ static const char *wsgi_add_handler_script(cmd_parms *cmd, void *mconfig,
 
             object->application_group = value;
         }
+        else if (!strcmp(option, "pass-authorization")) {
+            if (!*value)
+                return "Invalid value for authorization flag.";
+
+            if (strcasecmp(value, "Off") == 0)
+                object->pass_authorization = "0";
+            else if (strcasecmp(value, "On") == 0)
+                object->pass_authorization = "1";
+            else
+                return "Invalid value for authorization flag.";
+        }
         else
             return "Invalid option to WSGI handler script definition.";
     }
@@ -7778,6 +7796,9 @@ static void wsgi_build_environment(request_rec *r)
                    config->application_group);
     apr_table_setn(r->subprocess_env, "mod_wsgi.callable_object",
                    config->callable_object);
+
+    apr_table_setn(r->subprocess_env, "mod_wsgi.handler_script",
+                   config->handler_script);
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.script_reloading",
                    apr_psprintf(r->pool, "%d", config->script_reloading));
@@ -8415,61 +8436,130 @@ static int wsgi_hook_handler(request_rec *r)
 
     const char *value = NULL;
 
-    /*
-     * Only process requests for this module. Honour a content
-     * type here because mod_rewrite prior to Apache 2.2 only
-     * provides a means of setting content type and doesn't
-     * provide a means of setting the handler name explicitly.
-     */
+    /* Filter out the obvious case of no handler defined. */
 
-    if (!r->handler || (strcmp(r->handler, "wsgi-script") &&
-        strcmp(r->handler, "application/x-httpd-wsgi"))) {
+    if (!r->handler)
         return DECLINED;
-    }
 
     /*
-     * Ensure that have adequate privileges to run the WSGI
-     * script. Require ExecCGI to be specified in Options for
-     * this. In doing this, using the wider interpretation that
-     * ExecCGI refers to any executable like script even though
-     * not a separate process execution.
+     * Construct request configuration and cache it in the
+     * request object against this module so can access it later
+     * from handler code.
      */
 
-    if (!(ap_allow_options(r) & OPT_EXECCGI) && !wsgi_is_script_aliased(r)) {
-        wsgi_log_script_error(r, "Options ExecCGI is off in this directory",
-                              r->filename);
-        return HTTP_FORBIDDEN;
-    }
+    config = wsgi_create_req_config(r->pool, r);
 
-    /* Ensure target script exists and is a file. */
+    ap_set_module_config(r->request_config, &wsgi_module, config);
+
+    /*
+     * Only process requests for this module. First check for
+     * where target is the actual WSGI script. Then need to
+     * check for the case where handler name mapped to a handler
+     * script definition.
+     */
+
+    if (!strcmp(r->handler, "wsgi-script") ||
+        !strcmp(r->handler, "application/x-httpd-wsgi")) {
+
+        /*
+         * Ensure that have adequate privileges to run the WSGI
+         * script. Require ExecCGI to be specified in Options for
+         * this. In doing this, using the wider interpretation that
+         * ExecCGI refers to any executable like script even though
+         * not a separate process execution.
+         */
+
+        if (!(ap_allow_options(r) & OPT_EXECCGI) &&
+            !wsgi_is_script_aliased(r)) {
+            wsgi_log_script_error(r, "Options ExecCGI is off in this "
+                                  "directory", r->filename);
+            return HTTP_FORBIDDEN;
+        }
+
+        /* Ensure target script exists and is a file. */
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
-    if (r->finfo.st_mode == 0) {
-        wsgi_log_script_error(r, "Target WSGI script not found or unable "
-                              "to stat", r->filename);
-        return HTTP_NOT_FOUND;
-    }
+        if (r->finfo.st_mode == 0) {
+            wsgi_log_script_error(r, "Target WSGI script not found or unable "
+                                  "to stat", r->filename);
+            return HTTP_NOT_FOUND;
+        }
 #else
-    if (r->finfo.filetype == 0) {
-        wsgi_log_script_error(r, "Target WSGI script not found or unable "
-                              "to stat", r->filename);
-        return HTTP_NOT_FOUND;
-    }
+        if (r->finfo.filetype == 0) {
+            wsgi_log_script_error(r, "Target WSGI script not found or unable "
+                                  "to stat", r->filename);
+            return HTTP_NOT_FOUND;
+        }
 #endif
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
-    if (S_ISDIR(r->finfo.st_mode)) {
-        wsgi_log_script_error(r, "Attempt to invoke directory as WSGI "
-                              "application", r->filename);
-        return HTTP_FORBIDDEN;
-    }
+        if (S_ISDIR(r->finfo.st_mode)) {
+            wsgi_log_script_error(r, "Attempt to invoke directory as WSGI "
+                                  "application", r->filename);
+            return HTTP_FORBIDDEN;
+        }
 #else
-    if (r->finfo.filetype == APR_DIR) {
-        wsgi_log_script_error(r, "Attempt to invoke directory as WSGI "
-                              "application", r->filename);
-        return HTTP_FORBIDDEN;
+        if (r->finfo.filetype == APR_DIR) {
+            wsgi_log_script_error(r, "Attempt to invoke directory as WSGI "
+                                  "application", r->filename);
+            return HTTP_FORBIDDEN;
+        }
+#endif
+
+        if (wsgi_is_script_aliased(r)) {
+            /*
+             * Allow any configuration supplied through request notes to
+             * override respective values. Request notes are used when
+             * configuration supplied with WSGIScriptAlias directives.
+             */
+
+            if (value = apr_table_get(r->notes, "mod_wsgi.process_group"))
+                config->process_group = wsgi_process_group(r, value);
+            if (value = apr_table_get(r->notes, "mod_wsgi.application_group"))
+                config->application_group = wsgi_application_group(r, value);
+            if (value = apr_table_get(r->notes, "mod_wsgi.callable_object"))
+                config->callable_object = value;
+
+            if (value = apr_table_get(r->notes,
+                                      "mod_wsgi.pass_authorization")) {
+                if (!strcmp(value, "1"))
+                    config->pass_authorization = 1;
+                else
+                    config->pass_authorization = 0;
+            }
+        }
+    }
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    else if (config->handler_scripts) {
+        WSGIScriptFile *entry;
+
+        entry = (WSGIScriptFile *)apr_hash_get(config->handler_scripts,
+                                               r->handler,
+                                               APR_HASH_KEY_STRING);
+
+        if (entry) {
+            config->handler_script = entry->handler_script;
+
+            if (value = entry->process_group)
+                config->process_group = wsgi_process_group(r, value);
+            if (value = entry->application_group)
+                config->application_group = wsgi_application_group(r, value);
+            if (value = entry->callable_object)
+                config->callable_object = value;
+
+            if (value = entry->pass_authorization) {
+                if (!strcmp(value, "1"))
+                    config->pass_authorization = 1;
+                else
+                    config->pass_authorization = 0;
+            }
+        }
+        else
+            return DECLINED;
     }
 #endif
+    else
+        return DECLINED;
 
     /*
      * For Apache 2.0+ honour AcceptPathInfo directive. Default
@@ -8520,39 +8610,6 @@ static int wsgi_hook_handler(request_rec *r)
     if (limit && limit < r->remaining) {
         ap_discard_request_body(r);
         return OK;
-    }
-
-    /*
-     * Construct request configuration and cache it in the
-     * request object against this module so can access it
-     * later from handler code.
-     */
-
-    config = wsgi_create_req_config(r->pool, r);
-
-    ap_set_module_config(r->request_config, &wsgi_module, config);
-
-    /*
-     * Allow any configuration supplied through request notes to
-     * override respective values. Request notes are used when
-     * configuration supplied with WSGIScriptAlias directives.
-     * A custom module could also set configuration in request
-     * notes. Note that dispatch script below still has option
-     * to override these again.
-     */
-
-    if (value = apr_table_get(r->notes, "mod_wsgi.process_group"))
-        config->process_group = value;
-    if (value = apr_table_get(r->notes, "mod_wsgi.application_group"))
-        config->application_group = value;
-    if (value = apr_table_get(r->notes, "mod_wsgi.callable_object"))
-        config->callable_object = value;
-
-    if (value = apr_table_get(r->notes, "mod_wsgi.pass_authorization")) {
-        if (!strcmp(value, "1"))
-            config->pass_authorization = 1;
-        else
-            config->pass_authorization = 0;
     }
 
     /* Build the sub process environment. */
@@ -11255,8 +11312,8 @@ static int wsgi_execute_remote(request_rec *r)
      * memory looking for unhashed string.
      */
 
-    key = apr_psprintf(r->pool, "%ld|%s|%s", group->random,
-                       group->socket, r->filename);
+    key = apr_psprintf(r->pool, "%ld|%s|%s|%s", group->random,
+                       group->socket, r->filename, config->handler_script);
     hash = ap_md5(r->pool, (const unsigned char *)key);
     memset(key, '\0', strlen(key));
 
@@ -11754,6 +11811,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     apr_sockaddr_t *addr;
 
     const char *filename;
+    const char *script;
     const char *magic;
     const char *hash;
 
@@ -11910,6 +11968,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     /* Check magic marker used to validate origin of request. */
 
     filename = apr_table_get(r->subprocess_env, "SCRIPT_FILENAME");
+    script = apr_table_get(r->subprocess_env, "mod_wsgi.handler_script");
 
     magic = apr_table_get(r->subprocess_env, "mod_wsgi.magic");
 
@@ -11923,9 +11982,9 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    key = apr_psprintf(r->pool, "%ld|%s|%s",
+    key = apr_psprintf(r->pool, "%ld|%s|%s|%s",
                        wsgi_daemon_process->group->random,
-                       wsgi_daemon_process->group->socket, filename);
+                       wsgi_daemon_process->group->socket, filename, script);
     hash = ap_md5(r->pool, (const unsigned char *)key);
     memset(key, '\0', strlen(key));
 
@@ -12083,6 +12142,9 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
                                               "mod_wsgi.application_group");
     config->callable_object = apr_table_get(r->subprocess_env,
                                             "mod_wsgi.callable_object");
+
+     config->handler_script = apr_table_get(r->subprocess_env,
+                                            "mod_wsgi.handler_script");
 
     config->script_reloading = atoi(apr_table_get(r->subprocess_env,
                                                   "mod_wsgi.script_reloading"));
@@ -14202,7 +14264,7 @@ static const command_rec wsgi_commands[] =
 #endif
 
     AP_INIT_RAW_ARGS("WSGIHandlerScript", wsgi_add_handler_script,
-        NULL, OR_AUTHCFG, "Location of WSGI handler script file."),
+        NULL, OR_FILEINFO, "Location of WSGI handler script file."),
 
     { NULL }
 };
