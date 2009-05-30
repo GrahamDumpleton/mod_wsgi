@@ -6591,7 +6591,10 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
     entry->callable_object = callable_object;
     entry->pass_authorization = pass_authorization;
 
-    if (process_group && application_group) {
+    if (process_group && application_group &&
+        !strstr(process_group, "%{") &&
+        !strstr(application_group, "%{")) {
+
         WSGIScriptFile *object = NULL;
 
         if (!wsgi_import_list) {
