@@ -2007,7 +2007,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
         size = self->length;
 
-        if (self->r->remaining > 0)
+        if (!self->r->read_chunked && self->r->remaining > 0)
             size += self->r->remaining;
 
         size = size + (size >> 2);
@@ -11834,6 +11834,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     int i = 0;
 
+    const char *item;
+
     /* Don't do anything if not in daemon process. */
 
     if (!wsgi_daemon_pool)
@@ -12131,10 +12133,12 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      * for request content will work.
      */
 
-    if (apr_table_get(r->subprocess_env, "CONTENT_LENGTH")) {
-        apr_table_setn(r->headers_in, "Content-Length",
-                       apr_table_get(r->subprocess_env, "CONTENT_LENGTH"));
-    }
+    item = apr_table_get(r->subprocess_env, "CONTENT_LENGTH");
+
+    if (item)
+        apr_table_setn(r->headers_in, "Content-Length", item);
+
+    /* Install the standard HTTP input filter. */
 
     ap_add_input_filter("HTTP_IN", NULL, r, r->connection);
 
@@ -12188,6 +12192,32 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      */
 
     ap_setup_client_block(r, REQUEST_CHUNKED_ERROR);
+
+    /*
+     * Where original request used chunked transfer
+     * encoding, we have to do a further fiddle here and
+     * make Apache think that request content length is
+     * maximum length possible. This is to satisfy the
+     * HTTP_IN input filter. Also flag request as being
+     * chunked so WSGI input function doesn't think that
+     * there may actually be that amount of data
+     * remaining.
+     */
+
+    item = apr_table_get(r->subprocess_env, "HTTP_TRANSFER_ENCODING");
+
+    if (item && !strcasecmp(item, "chunked")) {
+        if (sizeof(apr_off_t) == sizeof(long)) {
+            apr_table_setn(r->headers_in, "Content-Length",
+                           apr_psprintf(r->pool, "%ld", LONG_MAX));
+        }
+        else {
+            apr_table_setn(r->headers_in, "Content-Length",
+                           apr_psprintf(r->pool, "%d", INT_MAX));
+        }
+
+        r->read_chunked = 1;
+    }
 
     /*
      * Execute the actual target WSGI application. In
