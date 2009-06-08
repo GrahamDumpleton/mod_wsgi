@@ -2739,15 +2739,22 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
 
     if (self->headers) {
         /*
-         * Apache prior to Apache 2.2.8 has a bug in it
-         * whereby it doesn't force '100 Continue' response
-         * before responding with headers if no read. So,
-         * force a zero length read before sending the
-         * headers. This will ensure that if no request
-         * content has been read that any '100 Continue'
-         * response will be flushed and sent back to the
-         * client if client was expecting one. Only
-         * want to do this for 2xx and 3xx status values.
+	 * Apache prior to Apache 2.2.8 has a bug in it
+	 * whereby it doesn't force '100 Continue'
+	 * response before responding with headers if no
+	 * read. So, force a zero length read before
+	 * sending the headers if haven't yet attempted
+	 * to read anything. This will ensure that if no
+	 * request content has been read that any '100
+	 * Continue' response will be flushed and sent
+	 * back to the client if client was expecting
+	 * one. Only want to do this for 2xx and 3xx
+	 * status values. Note that even though Apple
+	 * supplied version of Apache on MacOS X Leopard
+	 * is newer than version 2.2.8, the header file
+	 * has never been patched when they make updates
+	 * and so anything compiled against it thinks it
+	 * is older.
          */
 
 #if (AP_SERVER_MAJORVERSION_NUMBER == 1) || \
@@ -2757,15 +2764,17 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
      AP_SERVER_MINORVERSION_NUMBER == 2 && \
      AP_SERVER_PATCHLEVEL_NUMBER < 8)
 
-        if (self->status >= 200 && self->status < 400) {
-            PyObject *args = NULL;
-            PyObject *result = NULL;
-            args = Py_BuildValue("(i)", 0);
-            result = Input_read(self->input, args);
-            if (PyErr_Occurred())
-                PyErr_Clear();
-            Py_DECREF(args);
-            Py_XDECREF(result);
+        if (!self->input->init) {
+            if (self->status >= 200 && self->status < 400) {
+                PyObject *args = NULL;
+                PyObject *result = NULL;
+                args = Py_BuildValue("(i)", 0);
+                result = Input_read(self->input, args);
+                if (PyErr_Occurred())
+                    PyErr_Clear();
+                Py_DECREF(args);
+                Py_XDECREF(result);
+            }
         }
 
 #endif
