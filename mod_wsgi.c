@@ -7814,6 +7814,9 @@ static void wsgi_build_environment(request_rec *r)
                    apr_psprintf(r->pool, "%d", c->local_addr->port));
 #endif
 
+    apr_table_setn(r->subprocess_env, "mod_wsgi.input_chunked",
+                   apr_psprintf(r->pool, "%d", !!r->read_chunked));
+
     if (config->variable_encoding) {
         const apr_array_header_t *head = NULL;
         const apr_table_entry_t *elts = NULL;
@@ -12204,9 +12207,9 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      * remaining.
      */
 
-    item = apr_table_get(r->subprocess_env, "HTTP_TRANSFER_ENCODING");
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.input_chunked");
 
-    if (item && !strcasecmp(item, "chunked")) {
+    if (item && !strcasecmp(item, "1")) {
         if (sizeof(apr_off_t) == sizeof(long)) {
             apr_table_setn(r->headers_in, "Content-Length",
                            apr_psprintf(r->pool, "%ld", LONG_MAX));
