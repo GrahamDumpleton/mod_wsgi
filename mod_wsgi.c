@@ -283,7 +283,7 @@ static char *apr_off_t_toa(apr_pool_t *p, apr_off_t n)
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 3
 #define MOD_WSGI_MINORVERSION_NUMBER 0
-#define MOD_WSGI_VERSION_STRING "3.0c2"
+#define MOD_WSGI_VERSION_STRING "3.0c3-TRUNK"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -1896,7 +1896,6 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
             if (n == -1) {
                 PyErr_SetString(PyExc_IOError, "request data read error");
-                Py_DECREF(result);
                 return NULL;
             }
         }
