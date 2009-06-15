@@ -1540,7 +1540,6 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
         if (n == -1) {
             PyErr_SetString(PyExc_IOError, "request data read error");
-            Py_DECREF(result);
             return NULL;
         }
 
