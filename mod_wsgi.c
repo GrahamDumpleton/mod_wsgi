@@ -1629,7 +1629,7 @@ static PyGetSetDef Log_getset[] = {
 };
 
 static PyTypeObject Log_Type = {
-    PyVarObject_HEAD_INIT(&PyType_Type, 0)
+    PyVarObject_HEAD_INIT(NULL, 0)
     "mod_wsgi.Log",         /*tp_name*/
     sizeof(LogObject),      /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -2516,7 +2516,7 @@ static PyObject *Input_iternext(InputObject *self)
 }
 
 static PyTypeObject Input_Type = {
-    PyVarObject_HEAD_INIT(&PyType_Type, 0)
+    PyVarObject_HEAD_INIT(NULL, 0)
     "mod_wsgi.Input",       /*tp_name*/
     sizeof(InputObject),    /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -3804,7 +3804,7 @@ static PyMethodDef Adapter_methods[] = {
 };
 
 static PyTypeObject Adapter_Type = {
-    PyVarObject_HEAD_INIT(&PyType_Type, 0)
+    PyVarObject_HEAD_INIT(NULL, 0)
     "mod_wsgi.Adapter",     /*tp_name*/
     sizeof(AdapterObject),  /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -3969,7 +3969,7 @@ static PyMethodDef Stream_methods[] = {
 };
 
 static PyTypeObject Stream_Type = {
-    PyVarObject_HEAD_INIT(&PyType_Type, 0)
+    PyVarObject_HEAD_INIT(NULL, 0)
     "mod_wsgi.Stream",      /*tp_name*/
     sizeof(StreamObject),   /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -4051,7 +4051,7 @@ static PyObject *Restricted_getattr(RestrictedObject *self, char *name)
 }
 
 static PyTypeObject Restricted_Type = {
-    PyVarObject_HEAD_INIT(&PyType_Type, 0)
+    PyVarObject_HEAD_INIT(NULL, 0)
     "mod_wsgi.Restricted",  /*tp_name*/
     sizeof(RestrictedObject), /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -5276,7 +5276,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 }
 
 static PyTypeObject Interpreter_Type = {
-    PyVarObject_HEAD_INIT(&PyType_Type, 0)
+    PyVarObject_HEAD_INIT(NULL, 0)
     "mod_wsgi.Interpreter",  /*tp_name*/
     sizeof(InterpreterObject), /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -7973,7 +7973,7 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
 }
 
 static PyTypeObject Dispatch_Type = {
-    PyVarObject_HEAD_INIT(&PyType_Type, 0)
+    PyVarObject_HEAD_INIT(NULL, 0)
     "mod_wsgi.Dispatch",    /*tp_name*/
     sizeof(DispatchObject), /*tp_basicsize*/
     0,                      /*tp_itemsize*/
@@ -12741,7 +12741,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 }
 
 static PyTypeObject Auth_Type = {
-    PyVarObject_HEAD_INIT(&PyType_Type, 0)
+    PyVarObject_HEAD_INIT(NULL, 0)
     "mod_wsgi.Auth",        /*tp_name*/
     sizeof(AuthObject),     /*tp_basicsize*/
     0,                      /*tp_itemsize*/
