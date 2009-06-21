@@ -1,12 +1,13 @@
 CPPFLAGS = \
+ /DWIN32 \
+ /DNDEBUG \
  /I"c:\Program Files\Microsoft Visual Studio 9.0\VC\include" \
  /I"c:\Program Files\Microsoft SDKs\Windows\v6.0A\Include" \
  /I"c:\Program Files\Apache Software Foundation\Apache2.2\include" \
  /I"c:\Python30\include"
 
 CFLAGS = \
- /DWIN32 \
- /DNDEBUG \
+ /MD \
  /GF \
  /Gy \
  /O2 \
@@ -32,7 +33,7 @@ LDLIBS = \
  libaprutil-1.lib
 
 mod_wsgi.so : mod_wsgi.c
-	cl $(CPPFLAGS) $(CFLAGS) $? /LD /MD $(LDFLAGS) $(LDLIBS) /OUT:$@
+	cl $(CPPFLAGS) $(CFLAGS) $? /LD $(LDFLAGS) $(LDLIBS) /OUT:$@
         mt -manifest $@.manifest -outputresource:$@;2
 
 clean :
