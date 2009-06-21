@@ -172,6 +172,6 @@ AC_SUBST(LIBEXECDIR)
 HTTPD_MAJOR_VERSION=`echo ${HTTPD_VERSION} | sed -e 's/\..*//'`
 
 rm -f Makefile.in
-ln -s Makefile-${HTTPD_MAJOR_VERSION}.X.in Makefile.in
+ln -s posix-ap${HTTPD_MAJOR_VERSION}X.mk.in Makefile.in
 
 AC_OUTPUT(Makefile)
