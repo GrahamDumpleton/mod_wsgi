@@ -10,11 +10,9 @@ adapter is written completely in C code against the Apache C runtime and
 for hosting WSGI applications within Apache has a lower overhead than using
 existing WSGI adapters for mod_python or CGI.
 
-The package can be compiled for and used with either Apache 1.3, 2.0 or
-2.2. On UNIX systems, either the single threaded 'prefork' or multithreaded
-'worker' Apache MPMs can be used. Development and testing of mod_wsgi has
-been carried out with Python 2.3.5, but is expected to be able to work with
-any version of Python 2.3, or later versions of Python.
+The package can be compiled for and used with either Apache 1.3, 2.0 or 2.2.
+On UNIX systems, either the single threaded 'prefork' or multithreaded
+'worker' Apache MPMs can be used.
 
 Note that 'daemon' mode of mod_wsgi is only available if Apache 2.0 or 2.2
 is being used on a UNIX platform and where the Apache run time library
