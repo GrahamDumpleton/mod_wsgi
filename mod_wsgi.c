@@ -283,7 +283,7 @@ static char *apr_off_t_toa(apr_pool_t *p, apr_off_t n)
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 3
 #define MOD_WSGI_MINORVERSION_NUMBER 0
-#define MOD_WSGI_VERSION_STRING "3.0c3"
+#define MOD_WSGI_VERSION_STRING "3.0c4-TRUNK"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -11620,7 +11620,7 @@ static int wsgi_execute_remote(request_rec *r)
      * page produced by the WSGI application.
      */
 
-    if (config->error_override && ap_is_HTTP_ERROR(r->status)) {
+    if (config->error_override == 1 && ap_is_HTTP_ERROR(r->status)) {
         status = r->status;
 
         r->status = HTTP_OK;
