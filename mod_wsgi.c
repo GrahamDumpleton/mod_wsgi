@@ -6563,8 +6563,20 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
         }
 #endif
         else if (!strcmp(option, "callable-object")) {
+            /*
+	     * The 'callable-object' option is now deprecated.
+             * The option 'application- object' should be used
+	     * instead.
+             */
+
             if (!*value)
                 return "Invalid name for WSGI callable object.";
+
+            callable_object = value;
+        }
+        else if (!strcmp(option, "application-object")) {
+            if (!*value)
+                return "Invalid name for WSGI application object.";
 
             callable_object = value;
         }
@@ -7464,6 +7476,8 @@ static const char *wsgi_add_handler_script(cmd_parms *cmd, void *mconfig,
 
     object = newWSGIScriptFile(cmd->pool);
 
+    object->callable_object = "handler";
+
     object->handler_script = ap_getword_conf(cmd->pool, &args);
 
     if (!object->handler_script || !*object->handler_script)
@@ -7479,7 +7493,7 @@ static const char *wsgi_add_handler_script(cmd_parms *cmd, void *mconfig,
             if (!*value)
                 return "Invalid name for WSGI process group.";
 
-            object->application_group = value;
+            object->process_group = value;
         }
         else if (!strcmp(option, "application-group")) {
             if (!*value)
@@ -7487,11 +7501,11 @@ static const char *wsgi_add_handler_script(cmd_parms *cmd, void *mconfig,
 
             object->application_group = value;
         }
-        else if (!strcmp(option, "callable-object")) {
+        else if (!strcmp(option, "handler-object")) {
             if (!*value)
                 return "Invalid name for WSGI callable object.";
 
-            object->application_group = value;
+            object->callable_object = value;
         }
         else if (!strcmp(option, "pass-authorization")) {
             if (!*value)
@@ -8809,7 +8823,15 @@ static const command_rec wsgi_commands[] =
 
     { "WSGIApplicationGroup", wsgi_set_application_group, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Application interpreter group." },
+
+    /*
+     * The WSGICallableObject directive is now deprecated. The
+     * WSGIApplicationObject directive should be used instead.
+     */
+
     { "WSGICallableObject", wsgi_set_callable_object, NULL,
+        OR_FILEINFO, TAKE1, "Name of entry point in WSGI script file." },
+    { "WSGIApplicationObject", wsgi_set_callable_object, NULL,
         OR_FILEINFO, TAKE1, "Name of entry point in WSGI script file." },
 
     { "WSGIImportScript", wsgi_add_import_script, NULL,
@@ -14271,7 +14293,15 @@ static const command_rec wsgi_commands[] =
 
     AP_INIT_TAKE1("WSGIApplicationGroup", wsgi_set_application_group,
         NULL, ACCESS_CONF|RSRC_CONF, "Application interpreter group."),
+
+    /*
+     * The WSGICallableObject directive is now deprecated. The
+     * WSGIApplicationObject directive should be used instead.
+     */
+
     AP_INIT_TAKE1("WSGICallableObject", wsgi_set_callable_object,
+        NULL, OR_FILEINFO, "Name of entry point in WSGI script file."),
+    AP_INIT_TAKE1("WSGIApplicationObject", wsgi_set_callable_object,
         NULL, OR_FILEINFO, "Name of entry point in WSGI script file."),
 
     AP_INIT_RAW_ARGS("WSGIImportScript", wsgi_add_import_script,
