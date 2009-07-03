@@ -347,6 +347,7 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
     const char *pass_authorization;
+    const char *reloader_object;
 } WSGIScriptFile;
 
 typedef struct {
@@ -760,6 +761,7 @@ typedef struct {
     apr_hash_t *handler_scripts;
 #endif
     const char *handler_script;
+    const char *reloader_object;
 } WSGIRequestConfig;
 
 static int wsgi_find_path_info(const char *uri, const char *path_info)
@@ -1118,6 +1120,8 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 #endif
 
     config->handler_script = "";
+
+    config->reloader_object = "";
 
     return config;
 }
@@ -7503,9 +7507,15 @@ static const char *wsgi_add_handler_script(cmd_parms *cmd, void *mconfig,
         }
         else if (!strcmp(option, "handler-object")) {
             if (!*value)
-                return "Invalid name for WSGI callable object.";
+                return "Invalid name for WSGI handler object.";
 
             object->callable_object = value;
+        }
+        else if (!strcmp(option, "reloader-object")) {
+            if (!*value)
+                return "Invalid name for WSGI reloader object.";
+
+            object->reloader_object = value;
         }
         else if (!strcmp(option, "pass-authorization")) {
             if (!*value)
@@ -7825,6 +7835,8 @@ static void wsgi_build_environment(request_rec *r)
     apr_table_setn(r->subprocess_env, "mod_wsgi.request_handler", r->handler);
     apr_table_setn(r->subprocess_env, "mod_wsgi.handler_script",
                    config->handler_script);
+    apr_table_setn(r->subprocess_env, "mod_wsgi.reloader_object",
+                   config->reloader_object);
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.script_reloading",
                    apr_psprintf(r->pool, "%d", config->script_reloading));
@@ -8315,9 +8327,17 @@ static int wsgi_execute_dispatch(request_rec *r)
                 object = NULL;
             }
 
-            /* Now check callable_object(). */
+            /*
+             * Now check application_object(). Have now
+             * deprecated callable_object(), but still check
+             * for it at present as fallback.
+             */
 
             if (status == OK)
+                object = PyDict_GetItemString(module_dict,
+                                              "application_object");
+
+            if (status == OK && !object)
                 object = PyDict_GetItemString(module_dict, "callable_object");
 
             if (object) {
@@ -8575,6 +8595,8 @@ static int wsgi_hook_handler(request_rec *r)
                 config->application_group = wsgi_application_group(r, value);
             if (value = entry->callable_object)
                 config->callable_object = value;
+            if (value = entry->reloader_object)
+                config->reloader_object = value;
 
             if (value = entry->pass_authorization) {
                 if (!strcmp(value, "1"))
@@ -12184,8 +12206,10 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     config->callable_object = apr_table_get(r->subprocess_env,
                                             "mod_wsgi.callable_object");
 
-     config->handler_script = apr_table_get(r->subprocess_env,
-                                            "mod_wsgi.handler_script");
+    config->handler_script = apr_table_get(r->subprocess_env,
+                                           "mod_wsgi.handler_script");
+    config->reloader_object = apr_table_get(r->subprocess_env,
+                                           "mod_wsgi.reloader_object");
 
     config->script_reloading = atoi(apr_table_get(r->subprocess_env,
                                                   "mod_wsgi.script_reloading"));
