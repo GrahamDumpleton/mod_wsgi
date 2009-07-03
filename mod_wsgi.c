@@ -5813,7 +5813,8 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
 }
 
 static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
-                                const char *filename, PyObject *module)
+                                const char *filename, PyObject *module,
+                                const char *reloader)
 {
     PyObject *dict = NULL;
     PyObject *object = NULL;
@@ -5895,6 +5896,7 @@ static int wsgi_execute_script(request_rec *r)
     PyObject *modules = NULL;
     PyObject *module = NULL;
     const char *script = NULL;
+    const char *reloader = NULL;
     const char *name = NULL;
     int exists = 0;
 
@@ -5922,8 +5924,10 @@ static int wsgi_execute_script(request_rec *r)
 
     /* Calculate the Python module name to be used for script. */
 
-    if (config->handler_script && *config->handler_script)
+    if (config->handler_script && *config->handler_script) {
         script = config->handler_script;
+        reloader = config->reloader_object;
+    }
     else
         script = r->filename;
 
@@ -5957,7 +5961,7 @@ static int wsgi_execute_script(request_rec *r)
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module)) {
+        if (wsgi_reload_required(r->pool, r, script, module, reloader)) {
             /*
              * Script file has changed. Discard reference to
              * loaded module and work out what action we are
@@ -6411,7 +6415,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
                 if (module && wsgi_server_config->script_reloading) {
                     if (wsgi_reload_required(p, NULL, entry->handler_script,
-                                             module)) {
+                                             module, NULL)) {
                         /*
                          * Script file has changed. Only support module
                          * reloading for dispatch scripts. Remove the
@@ -8120,7 +8124,7 @@ static int wsgi_execute_dispatch(request_rec *r)
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module)) {
+        if (wsgi_reload_required(r->pool, r, script, module, NULL)) {
             /*
              * Script file has changed. Only support module
              * reloading for dispatch scripts. Remove the
@@ -12907,7 +12911,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module)) {
+        if (wsgi_reload_required(r->pool, r, script, module, NULL)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -13121,7 +13125,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module)) {
+        if (wsgi_reload_required(r->pool, r, script, module, NULL)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -13362,7 +13366,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module)) {
+        if (wsgi_reload_required(r->pool, r, script, module, NULL)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -13638,7 +13642,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module)) {
+        if (wsgi_reload_required(r->pool, r, script, module, NULL)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -13887,7 +13891,7 @@ static int wsgi_hook_check_user_id(request_rec *r)
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module)) {
+        if (wsgi_reload_required(r->pool, r, script, module, NULL)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
