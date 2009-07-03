@@ -5461,13 +5461,22 @@ static void wsgi_python_init(apr_pool_t *p)
             wchar_t *s = NULL;
             int len = strlen(wsgi_server_config->python_home)+1;
 
+            ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                         "mod_wsgi (pid=%d): Python home %s.", getpid(),
+                         wsgi_server_config->python_home);
+
             s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
             mbstowcs(s, wsgi_server_config->python_home, len);
             Py_SetPythonHome(s);
         }
 #else
-        if (wsgi_server_config->python_home)
+        if (wsgi_server_config->python_home) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                         "mod_wsgi (pid=%d): Python home %s.", getpid(),
+                         wsgi_server_config->python_home);
+
             Py_SetPythonHome((char *)wsgi_server_config->python_home);
+        }
 #endif
 
         /* Initialise Python. */
