@@ -5996,7 +5996,9 @@ static int wsgi_execute_script(request_rec *r)
     /*
      * If script reloading is enabled and the module for it has
      * previously been loaded, see if it has been modified since
-     * the last time it was accessed.
+     * the last time it was accessed. For a handler script also
+     * see if a reloader is defined and if so check that to see
+     * if it wants a reload to be performed for the target file.
      */
 
     if (module && config->script_reloading) {
