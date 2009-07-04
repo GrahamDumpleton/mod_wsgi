@@ -1643,7 +1643,7 @@ static int Log_set_softspace(LogObject *self, PyObject *value)
 
     new = PyInt_AsLong(value);
     if (new == -1 && PyErr_Occurred())
-            return -1;
+        return -1;
 
     self->softspace = new;
 
@@ -5905,7 +5905,8 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
     return 0;
 }
 
-static int wsgi_check_reloader(PyObject *module, const char *reloader,
+static int wsgi_check_reloader(request_rec *r, const char *script,
+                               PyObject *module, const char *reloader,
                                const char *filename)
 {
     PyObject *dict = NULL;
@@ -5924,13 +5925,20 @@ static int wsgi_check_reloader(PyObject *module, const char *reloader,
         Py_DECREF(args);
         Py_DECREF(object);
 
-        if (result == Py_True) {
+        if (result && PyObject_IsTrue(result)) {
             Py_DECREF(result);
 
             return 1;
         }
 
-        Py_DECREF(result);
+        if (PyErr_Occurred()) {
+            LogObject *log;
+            log = newLogObject(r, APLOG_ERR, NULL);
+            wsgi_log_python_error(r, log, script);
+            Py_DECREF(log);
+        }
+
+        Py_XDECREF(result);
     }
 
     return 0;
@@ -6038,8 +6046,8 @@ static int wsgi_execute_script(request_rec *r)
 
     if (module && config->script_reloading) {
         if (wsgi_reload_required(r->pool, r, script, module) ||
-            (reloader && *reloader && wsgi_check_reloader(module,
-            reloader, r->filename))) {
+            (reloader && *reloader && wsgi_check_reloader(r, script,
+            module, reloader, r->filename))) {
             /*
              * Script file has changed. Discard reference to
              * loaded module and work out what action we are
