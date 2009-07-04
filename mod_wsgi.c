@@ -1244,6 +1244,7 @@ typedef struct {
         char *s;
         int l;
         int expired;
+        int softspace;
 } LogObject;
 
 static PyTypeObject Log_Type;
@@ -1262,6 +1263,7 @@ static LogObject *newLogObject(request_rec *r, int level, const char *target)
     self->s = NULL;
     self->l = 0;
     self->expired = 0;
+    self->softspace = 0;
 
     return self;
 }
@@ -1619,6 +1621,30 @@ static PyObject *Log_closed(LogObject *self, void *closure)
     return Py_False;
 }
 
+static PyObject *Log_get_softspace(LogObject *self, void *closure)
+{
+    return PyInt_FromLong(self->softspace);
+}
+
+static int Log_set_softspace(LogObject *self, PyObject *value)
+{
+    int new;
+
+    if (value == NULL) {
+        PyErr_SetString(PyExc_TypeError,
+                        "can't delete softspace attribute");
+        return -1;
+    }
+
+    new = PyInt_AsLong(value);
+    if (new == -1 && PyErr_Occurred())
+            return -1;
+
+    self->softspace = new;
+
+    return 0;
+}
+
 static PyMethodDef Log_methods[] = {
     { "close",      (PyCFunction)Log_close,      METH_VARARGS, 0 },
     { "flush",      (PyCFunction)Log_flush,      METH_VARARGS, 0 },
@@ -1629,6 +1655,7 @@ static PyMethodDef Log_methods[] = {
 
 static PyGetSetDef Log_getset[] = {
     { "closed", (getter)Log_closed, NULL, 0 },
+    { "softspace", (getter)Log_get_softspace, (setter)Log_set_softspace, 0 },
     { NULL },
 };
 
