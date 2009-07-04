@@ -5940,6 +5940,14 @@ static int wsgi_check_reloader(request_rec *r, const char *script,
 
         Py_XDECREF(result);
     }
+    else {
+        Py_BEGIN_ALLOW_THREADS
+        ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                      "mod_wsgi (pid=%d): Target WSGI script '%s' does "
+                      "not contain reloader '%s'.", getpid(), r->filename,
+                      reloader);
+        Py_END_ALLOW_THREADS
+    }
 
     return 0;
 }
