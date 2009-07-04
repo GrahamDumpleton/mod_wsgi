@@ -245,7 +245,7 @@ static char *apr_off_t_toa(apr_pool_t *p, apr_off_t n)
 /* Version and module information. */
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 2
-#define MOD_WSGI_MINORVERSION_NUMBER 5
+#define MOD_WSGI_MINORVERSION_NUMBER 6
 #define MOD_WSGI_VERSION_STRING "2.6-BRANCH"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
@@ -1011,6 +1011,9 @@ typedef struct {
         int level;
         char *s;
         int expired;
+#if PY_MAJOR_VERSION < 3
+        int softspace;
+#endif
 } LogObject;
 
 static PyTypeObject Log_Type;
@@ -1027,6 +1030,9 @@ static LogObject *newLogObject(request_rec *r, int level)
     self->level = APLOG_NOERRNO|level;
     self->s = NULL;
     self->expired = 0;
+#if PY_MAJOR_VERSION < 3
+    self->softspace = 0;
+#endif
 
     return self;
 }
@@ -1267,6 +1273,32 @@ static PyObject *Log_closed(LogObject *self, void *closure)
     return Py_False;
 }
 
+#if PY_MAJOR_VERSION < 3
+static PyObject *Log_get_softspace(LogObject *self, void *closure)
+{
+    return PyInt_FromLong(self->softspace);
+}
+
+static int Log_set_softspace(LogObject *self, PyObject *value)
+{
+    int new;
+
+    if (value == NULL) {
+        PyErr_SetString(PyExc_TypeError,
+                        "can't delete softspace attribute");
+        return -1;
+    }
+
+    new = PyInt_AsLong(value);
+    if (new == -1 && PyErr_Occurred())
+        return -1;
+
+    self->softspace = new;
+
+    return 0;
+}
+#endif
+
 static PyMethodDef Log_methods[] = {
     { "close",      (PyCFunction)Log_close,      METH_VARARGS, 0 },
     { "flush",      (PyCFunction)Log_flush,      METH_VARARGS, 0 },
@@ -1277,6 +1309,9 @@ static PyMethodDef Log_methods[] = {
 
 static PyGetSetDef Log_getset[] = {
     { "closed", (getter)Log_closed, NULL, 0 },
+#if PY_MAJOR_VERSION < 3
+    { "softspace", (getter)Log_get_softspace, (setter)Log_set_softspace, 0 },
+#endif
     { NULL },
 };
 
