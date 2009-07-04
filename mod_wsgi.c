@@ -1244,7 +1244,9 @@ typedef struct {
         char *s;
         int l;
         int expired;
+#if PY_MAJOR_VERSION < 3
         int softspace;
+#endif
 } LogObject;
 
 static PyTypeObject Log_Type;
@@ -1263,7 +1265,9 @@ static LogObject *newLogObject(request_rec *r, int level, const char *target)
     self->s = NULL;
     self->l = 0;
     self->expired = 0;
+#if PY_MAJOR_VERSION < 3
     self->softspace = 0;
+#endif
 
     return self;
 }
@@ -1621,6 +1625,7 @@ static PyObject *Log_closed(LogObject *self, void *closure)
     return Py_False;
 }
 
+#if PY_MAJOR_VERSION < 3
 static PyObject *Log_get_softspace(LogObject *self, void *closure)
 {
     return PyInt_FromLong(self->softspace);
@@ -1644,6 +1649,7 @@ static int Log_set_softspace(LogObject *self, PyObject *value)
 
     return 0;
 }
+#endif
 
 static PyMethodDef Log_methods[] = {
     { "close",      (PyCFunction)Log_close,      METH_VARARGS, 0 },
@@ -1655,7 +1661,9 @@ static PyMethodDef Log_methods[] = {
 
 static PyGetSetDef Log_getset[] = {
     { "closed", (getter)Log_closed, NULL, 0 },
+#if PY_MAJOR_VERSION < 3
     { "softspace", (getter)Log_get_softspace, (setter)Log_set_softspace, 0 },
+#endif
     { NULL },
 };
 
