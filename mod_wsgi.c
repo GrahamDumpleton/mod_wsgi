@@ -347,7 +347,6 @@ typedef struct {
     const char *application_group;
     const char *callable_object;
     const char *pass_authorization;
-    const char *reloader_object;
 } WSGIScriptFile;
 
 typedef struct {
@@ -761,7 +760,6 @@ typedef struct {
     apr_hash_t *handler_scripts;
 #endif
     const char *handler_script;
-    const char *reloader_object;
 } WSGIRequestConfig;
 
 static int wsgi_find_path_info(const char *uri, const char *path_info)
@@ -1120,8 +1118,6 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 #endif
 
     config->handler_script = "";
-
-    config->reloader_object = "";
 
     return config;
 }
@@ -5857,7 +5853,8 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
 }
 
 static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
-                                const char *filename, PyObject *module)
+                                const char *filename, PyObject *module,
+                                const char *resource)
 {
     PyObject *dict = NULL;
     PyObject *object = NULL;
@@ -5902,51 +5899,38 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
     else
         return 1;
 
-    return 0;
-}
+    if (resource) {
+        PyObject *dict = NULL;
+        PyObject *object = NULL;
 
-static int wsgi_check_reloader(request_rec *r, const char *script,
-                               PyObject *module, const char *reloader,
-                               const char *filename)
-{
-    PyObject *dict = NULL;
-    PyObject *object = NULL;
+        dict = PyModule_GetDict(module);
+        object = PyDict_GetItemString(dict, "reload_required");
 
-    dict = PyModule_GetDict(module);
-    object = PyDict_GetItemString(dict, reloader);
+        if (object) {
+            PyObject *args = NULL;
+            PyObject *result = NULL;
 
-    if (object) {
-        PyObject *args = NULL;
-        PyObject *result = NULL;
+            Py_INCREF(object);
+            args = Py_BuildValue("(s)", resource);
+            result = PyEval_CallObject(object, args);
+            Py_DECREF(args);
+            Py_DECREF(object);
 
-        Py_INCREF(object);
-        args = Py_BuildValue("(s)", filename);
-        result = PyEval_CallObject(object, args);
-        Py_DECREF(args);
-        Py_DECREF(object);
+            if (result && PyObject_IsTrue(result)) {
+                Py_DECREF(result);
 
-        if (result && PyObject_IsTrue(result)) {
-            Py_DECREF(result);
+                return 1;
+            }
 
-            return 1;
+            if (PyErr_Occurred()) {
+                LogObject *log;
+                log = newLogObject(r, APLOG_ERR, NULL);
+                wsgi_log_python_error(r, log, filename);
+                Py_DECREF(log);
+            }
+
+            Py_XDECREF(result);
         }
-
-        if (PyErr_Occurred()) {
-            LogObject *log;
-            log = newLogObject(r, APLOG_ERR, NULL);
-            wsgi_log_python_error(r, log, script);
-            Py_DECREF(log);
-        }
-
-        Py_XDECREF(result);
-    }
-    else {
-        Py_BEGIN_ALLOW_THREADS
-        ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
-                      "mod_wsgi (pid=%d): Target WSGI script '%s' does "
-                      "not contain reloader '%s'.", getpid(), r->filename,
-                      reloader);
-        Py_END_ALLOW_THREADS
     }
 
     return 0;
@@ -5986,7 +5970,6 @@ static int wsgi_execute_script(request_rec *r)
     PyObject *modules = NULL;
     PyObject *module = NULL;
     const char *script = NULL;
-    const char *reloader = NULL;
     const char *name = NULL;
     int exists = 0;
 
@@ -6014,10 +5997,8 @@ static int wsgi_execute_script(request_rec *r)
 
     /* Calculate the Python module name to be used for script. */
 
-    if (config->handler_script && *config->handler_script) {
+    if (config->handler_script && *config->handler_script)
         script = config->handler_script;
-        reloader = config->reloader_object;
-    }
     else
         script = r->filename;
 
@@ -6047,15 +6028,13 @@ static int wsgi_execute_script(request_rec *r)
     /*
      * If script reloading is enabled and the module for it has
      * previously been loaded, see if it has been modified since
-     * the last time it was accessed. For a handler script also
-     * see if a reloader is defined and if so check that to see
-     * if it wants a reload to be performed for the target file.
+     * the last time it was accessed. For a handler script will
+     * also see if it contains a custom function for determining
+     * if a reload should be performed.
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module) ||
-            (reloader && *reloader && wsgi_check_reloader(r, script,
-            module, reloader, r->filename))) {
+        if (wsgi_reload_required(r->pool, r, script, module, r->filename)) {
             /*
              * Script file has changed. Discard reference to
              * loaded module and work out what action we are
@@ -6509,7 +6488,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
                 if (module && wsgi_server_config->script_reloading) {
                     if (wsgi_reload_required(p, NULL, entry->handler_script,
-                                             module)) {
+                                             module, NULL)) {
                         /*
                          * Script file has changed. Only support module
                          * reloading for dispatch scripts. Remove the
@@ -6665,20 +6644,8 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
         }
 #endif
         else if (!strcmp(option, "callable-object")) {
-            /*
-	     * The 'callable-object' option is now deprecated.
-             * The option 'application-object' should be used
-	     * instead.
-             */
-
             if (!*value)
                 return "Invalid name for WSGI callable object.";
-
-            callable_object = value;
-        }
-        else if (!strcmp(option, "application-object")) {
-            if (!*value)
-                return "Invalid name for WSGI application object.";
 
             callable_object = value;
         }
@@ -7578,8 +7545,6 @@ static const char *wsgi_add_handler_script(cmd_parms *cmd, void *mconfig,
 
     object = newWSGIScriptFile(cmd->pool);
 
-    object->callable_object = "handler";
-
     object->handler_script = ap_getword_conf(cmd->pool, &args);
 
     if (!object->handler_script || !*object->handler_script)
@@ -7602,18 +7567,6 @@ static const char *wsgi_add_handler_script(cmd_parms *cmd, void *mconfig,
                 return "Invalid name for WSGI application group.";
 
             object->application_group = value;
-        }
-        else if (!strcmp(option, "handler-object")) {
-            if (!*value)
-                return "Invalid name for WSGI handler object.";
-
-            object->callable_object = value;
-        }
-        else if (!strcmp(option, "reloader-object")) {
-            if (!*value)
-                return "Invalid name for WSGI reloader object.";
-
-            object->reloader_object = value;
         }
         else if (!strcmp(option, "pass-authorization")) {
             if (!*value)
@@ -7933,8 +7886,6 @@ static void wsgi_build_environment(request_rec *r)
     apr_table_setn(r->subprocess_env, "mod_wsgi.request_handler", r->handler);
     apr_table_setn(r->subprocess_env, "mod_wsgi.handler_script",
                    config->handler_script);
-    apr_table_setn(r->subprocess_env, "mod_wsgi.reloader_object",
-                   config->reloader_object);
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.script_reloading",
                    apr_psprintf(r->pool, "%d", config->script_reloading));
@@ -8218,7 +8169,7 @@ static int wsgi_execute_dispatch(request_rec *r)
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module)) {
+        if (wsgi_reload_required(r->pool, r, script, module, NULL)) {
             /*
              * Script file has changed. Only support module
              * reloading for dispatch scripts. Remove the
@@ -8425,17 +8376,9 @@ static int wsgi_execute_dispatch(request_rec *r)
                 object = NULL;
             }
 
-            /*
-             * Now check application_object(). Have now
-             * deprecated callable_object(), but still check
-             * for it at present as fallback.
-             */
+            /* Now check callable_object(). */
 
             if (status == OK)
-                object = PyDict_GetItemString(module_dict,
-                                              "application_object");
-
-            if (status == OK && !object)
                 object = PyDict_GetItemString(module_dict, "callable_object");
 
             if (object) {
@@ -8686,15 +8629,12 @@ static int wsgi_hook_handler(request_rec *r)
 
         if (entry) {
             config->handler_script = entry->handler_script;
+            config->callable_object = "handle_request";
 
             if (value = entry->process_group)
                 config->process_group = wsgi_process_group(r, value);
             if (value = entry->application_group)
                 config->application_group = wsgi_application_group(r, value);
-            if (value = entry->callable_object)
-                config->callable_object = value;
-            if (value = entry->reloader_object)
-                config->reloader_object = value;
 
             if (value = entry->pass_authorization) {
                 if (!strcmp(value, "1"))
@@ -8943,15 +8883,7 @@ static const command_rec wsgi_commands[] =
 
     { "WSGIApplicationGroup", wsgi_set_application_group, NULL,
         ACCESS_CONF|RSRC_CONF, TAKE1, "Application interpreter group." },
-
-    /*
-     * The WSGICallableObject directive is now deprecated. The
-     * WSGIApplicationObject directive should be used instead.
-     */
-
     { "WSGICallableObject", wsgi_set_callable_object, NULL,
-        OR_FILEINFO, TAKE1, "Name of entry point in WSGI script file." },
-    { "WSGIApplicationObject", wsgi_set_callable_object, NULL,
         OR_FILEINFO, TAKE1, "Name of entry point in WSGI script file." },
 
     { "WSGIImportScript", wsgi_add_import_script, NULL,
@@ -12306,8 +12238,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     config->handler_script = apr_table_get(r->subprocess_env,
                                            "mod_wsgi.handler_script");
-    config->reloader_object = apr_table_get(r->subprocess_env,
-                                           "mod_wsgi.reloader_object");
 
     config->script_reloading = atoi(apr_table_get(r->subprocess_env,
                                                   "mod_wsgi.script_reloading"));
@@ -13005,7 +12935,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module)) {
+        if (wsgi_reload_required(r->pool, r, script, module, NULL)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -13219,7 +13149,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module)) {
+        if (wsgi_reload_required(r->pool, r, script, module, NULL)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -13460,7 +13390,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module)) {
+        if (wsgi_reload_required(r->pool, r, script, module, NULL)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -13736,7 +13666,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module)) {
+        if (wsgi_reload_required(r->pool, r, script, module, NULL)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -13985,7 +13915,7 @@ static int wsgi_hook_check_user_id(request_rec *r)
      */
 
     if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module)) {
+        if (wsgi_reload_required(r->pool, r, script, module, NULL)) {
             /*
              * Script file has changed. Only support module
              * reloading for authentication scripts. Remove the
@@ -14415,15 +14345,7 @@ static const command_rec wsgi_commands[] =
 
     AP_INIT_TAKE1("WSGIApplicationGroup", wsgi_set_application_group,
         NULL, ACCESS_CONF|RSRC_CONF, "Application interpreter group."),
-
-    /*
-     * The WSGICallableObject directive is now deprecated. The
-     * WSGIApplicationObject directive should be used instead.
-     */
-
     AP_INIT_TAKE1("WSGICallableObject", wsgi_set_callable_object,
-        NULL, OR_FILEINFO, "Name of entry point in WSGI script file."),
-    AP_INIT_TAKE1("WSGIApplicationObject", wsgi_set_callable_object,
         NULL, OR_FILEINFO, "Name of entry point in WSGI script file."),
 
     AP_INIT_RAW_ARGS("WSGIImportScript", wsgi_add_import_script,
