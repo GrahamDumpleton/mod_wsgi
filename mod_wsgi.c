@@ -387,6 +387,7 @@ typedef struct {
     int pass_authorization;
     int script_reloading;
     int error_override;
+    int chunked_request;
 
     apr_table_t *variable_encoding;
 
@@ -461,6 +462,7 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->pass_authorization = -1;
     object->script_reloading = -1;
     object->error_override = -1;
+    object->chunked_request = -1;
 
     object->variable_encoding = NULL;
 
@@ -546,6 +548,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->error_override = parent->error_override;
 
+    if (child->chunked_request != -1)
+        config->chunked_request = child->chunked_request;
+    else
+        config->chunked_request = parent->chunked_request;
+
     if (child->variable_encoding)
         config->variable_encoding = child->variable_encoding;
     else
@@ -580,6 +587,7 @@ typedef struct {
     int pass_authorization;
     int script_reloading;
     int error_override;
+    int chunked_request;
 
     apr_table_t *variable_encoding;
 
@@ -612,6 +620,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->pass_authorization = -1;
     object->script_reloading = -1;
     object->error_override = -1;
+    object->chunked_request = -1;
 
     object->access_script = NULL;
     object->auth_user_script = NULL;
@@ -688,6 +697,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->error_override = parent->error_override;
 
+    if (child->chunked_request != -1)
+        config->chunked_request = child->chunked_request;
+    else
+        config->chunked_request = parent->chunked_request;
+
     if (child->variable_encoding)
         config->variable_encoding = child->variable_encoding;
     else
@@ -747,6 +761,7 @@ typedef struct {
     int pass_authorization;
     int script_reloading;
     int error_override;
+    int chunked_request;
 
     apr_table_t *variable_encoding;
 
@@ -1082,8 +1097,19 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     config->error_override = dconfig->error_override;
 
-    if (config->error_override < 0)
+    if (config->error_override < 0) {
         config->error_override = sconfig->error_override;
+        if (config->error_override < 0)
+            config->error_override = 0;
+    }
+
+    config->chunked_request = dconfig->chunked_request;
+
+    if (config->chunked_request < 0) {
+        config->chunked_request = sconfig->chunked_request;
+        if (config->chunked_request < 0)
+            config->chunked_request = 0;
+    }
 
     config->variable_encoding = dconfig->variable_encoding;
 
@@ -7348,6 +7374,36 @@ static const char *wsgi_set_error_override(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_chunked_request(cmd_parms *cmd, void *mconfig,
+                                            const char *f)
+{
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+
+        if (strcasecmp(f, "Off") == 0)
+            dconfig->chunked_request = 0;
+        else if (strcasecmp(f, "On") == 0)
+            dconfig->chunked_request = 1;
+        else
+            return "WSGIChunkedRequest must be one of: Off | On";
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+
+        if (strcasecmp(f, "Off") == 0)
+            sconfig->chunked_request = 0;
+        else if (strcasecmp(f, "On") == 0)
+            sconfig->chunked_request = 1;
+        else
+            return "WSGIChunkedRequest must be one of: Off | On";
+    }
+
+    return NULL;
+}
+
 static const char *wsgi_set_variable_encoding(cmd_parms *cmd, void *mconfig,
                                               const char *n, const char *v)
 {
@@ -8678,7 +8734,10 @@ static int wsgi_hook_handler(request_rec *r)
      * an empty string.
      */
 
-    status = ap_setup_client_block(r, REQUEST_CHUNKED_DECHUNK);
+    if (config->chunked_request)
+        status = ap_setup_client_block(r, REQUEST_CHUNKED_DECHUNK);
+    else
+        status = ap_setup_client_block(r, REQUEST_CHUNKED_ERROR);
 
     if (status != OK)
         return status;
@@ -8895,6 +8954,8 @@ static const command_rec wsgi_commands[] =
         OR_FILEINFO, TAKE1, "Enable/Disable WSGI authorization." },
     { "WSGIScriptReloading", wsgi_set_script_reloading, NULL,
         OR_FILEINFO, TAKE1, "Enable/Disable script reloading mechanism." },
+    { "WSGIChunkedRequest", wsgi_set_chunked_request, NULL,
+        OR_FILEINFO, TAKE1, "Enable/Disable support for chunked request." },
 
 #if PY_MAJOR_VERSION >= 3
     { "WSGIVariableEncoding", wsgi_set_variable_encoding, NULL,
@@ -11694,7 +11755,7 @@ static int wsgi_execute_remote(request_rec *r)
      * page produced by the WSGI application.
      */
 
-    if (config->error_override == 1 && ap_is_HTTP_ERROR(r->status)) {
+    if (config->error_override && ap_is_HTTP_ERROR(r->status)) {
         status = r->status;
 
         r->status = HTTP_OK;
@@ -14361,6 +14422,8 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable script reloading mechanism."),
     AP_INIT_TAKE1("WSGIErrorOverride", wsgi_set_error_override,
         NULL, OR_FILEINFO, "Enable/Disable overriding of error pages."),
+    AP_INIT_TAKE1("WSGIChunkedRequest", wsgi_set_chunked_request,
+        NULL, OR_FILEINFO, "Enable/Disable support for chunked requests."),
 
 #if PY_MAJOR_VERSION >= 3
     AP_INIT_TAKE2("WSGIVariableEncoding", wsgi_set_variable_encoding,
