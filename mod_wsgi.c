@@ -283,7 +283,7 @@ static char *apr_off_t_toa(apr_pool_t *p, apr_off_t n)
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 3
 #define MOD_WSGI_MINORVERSION_NUMBER 0
-#define MOD_WSGI_VERSION_STRING "3.0c4"
+#define MOD_WSGI_VERSION_STRING "3.0c5-TRUNK"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -2705,6 +2705,8 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     PyObject *headers = NULL;
     PyObject *exc_info = NULL;
 
+    PyObject *item = NULL;
+
     char* value = NULL;
 
     if (!self->r) {
@@ -2712,10 +2714,37 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
         return NULL;
     }
 
-    if (!PyArg_ParseTuple(args, "sO|O:start_response",
-        &status, &headers, &exc_info)) {
+    if (!PyArg_ParseTuple(args, "OO|O:start_response",
+        &item, &headers, &exc_info)) {
         return NULL;
     }
+
+#if PY_MAJOR_VERSION >= 3
+    if (PyUnicode_Check(item)) {
+        PyObject *latin_item;
+        latin_item = PyUnicode_AsLatin1String(item);
+        if (!latin_item) {
+            PyErr_Format(PyExc_TypeError, "expected byte string object for "
+                         "status, value containing non 'latin-1' characters "
+                         "found");
+            Py_DECREF(item);
+            return NULL;
+        }
+
+        Py_DECREF(item);
+        item = latin_item;
+    }
+#endif
+
+    if (!PyString_Check(item)) {
+        PyErr_Format(PyExc_TypeError, "expected byte string object for "
+                     "status, value of type %.200s found",
+                     item->ob_type->tp_name);
+        Py_DECREF(item);
+        return NULL;
+    }
+
+    status = PyString_AsString(item);
 
     if (!PyList_Check(headers)) {
         PyErr_SetString(PyExc_TypeError, "response headers must be a list");
@@ -2890,7 +2919,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
             }
 #endif
             else {
-                PyErr_Format(PyExc_TypeError, "expected string object "
+                PyErr_Format(PyExc_TypeError, "expected byte string object "
                              "for header name, value of type %.200s "
                              "found", object1->ob_type->tp_name);
                 return 0;
@@ -2914,7 +2943,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
             }
 #endif
             else {
-                PyErr_Format(PyExc_TypeError, "expected string object "
+                PyErr_Format(PyExc_TypeError, "expected byte string object "
                              "for header value, value of type %.200s "
                              "found", object2->ob_type->tp_name);
                 return 0;
