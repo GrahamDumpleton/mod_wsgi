@@ -4753,8 +4753,6 @@ static InterpreterObject *newInterpreterObject(const char *name)
             Py_DECREF(old);
             Py_DECREF(new);
             Py_DECREF(tmp);
-
-            Py_DECREF(module);
         }
         else {
             if (!module) {
@@ -4773,6 +4771,8 @@ static InterpreterObject *newInterpreterObject(const char *name)
                 Py_END_ALLOW_THREADS
             }
         }
+
+        Py_XDECREF(module);
     }
 
     /*
@@ -5180,8 +5180,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     /* Finally done with 'threading' module. */
 
-    if (module)
-        Py_DECREF(module);
+    Py_XDECREF(module);
 
     /*
      * Invoke exit functions by calling sys.exitfunc() for
@@ -5193,6 +5192,8 @@ static void Interpreter_dealloc(InterpreterObject *self)
      * that simplified GIL state API usage sorted out, this
      * should be okay.
      */
+
+    module = NULL;
 
 #if PY_MAJOR_VERSION >= 3
     if (self->owner) {
@@ -5308,6 +5309,8 @@ static void Interpreter_dealloc(InterpreterObject *self)
         Py_XDECREF(res);
         Py_DECREF(exitfunc);
     }
+
+    Py_XDECREF(module);
 
     /* If we own it, we destroy it. */
 
@@ -5454,6 +5457,16 @@ static apr_status_t wsgi_python_term()
                  "mod_wsgi (pid=%d): Terminating Python.", getpid());
 
     PyGILState_Ensure();
+
+    /*
+     * Work around bug in Python 3.X whereby it will crash if
+     * atexit imported into sub interpreter, but never imported
+     * into main interpreter before calling Py_Finalize(). We
+     * perform an import of atexit module and it as side effect
+     * must be performing required initialisation.
+     */
+
+    PyImport_ImportModule("atexit");
 
     Py_Finalize();
 
