@@ -5453,6 +5453,8 @@ static apr_status_t wsgi_python_term()
     PyInterpreterState *interp = NULL;
     PyThreadState *tstate = NULL;
 
+    PyObject *module = NULL;
+
     ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                  "mod_wsgi (pid=%d): Terminating Python.", getpid());
 
@@ -5466,7 +5468,8 @@ static apr_status_t wsgi_python_term()
      * must be performing required initialisation.
      */
 
-    PyImport_ImportModule("atexit");
+    module = PyImport_ImportModule("atexit");
+    Py_XDECREF(module);
 
     Py_Finalize();
 
