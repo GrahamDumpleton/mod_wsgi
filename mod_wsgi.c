@@ -5590,6 +5590,16 @@ static void wsgi_python_init(apr_pool_t *p)
         }
 #endif
 
+	/*
+         * Work around bug in Python 3.1 where it will crash
+         * when used in non console application on Windows if
+         * stdin/stdout have been initialised and aren't null.
+         */
+
+#if defined(WIN32) && PY_MAJOR_VERSION >= 3
+        _wputenv(L"PYTHONIOENCODING=cp1252:backslashreplace");
+#endif
+
         /* Initialise Python. */
 
         ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
