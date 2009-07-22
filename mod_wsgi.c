@@ -2706,6 +2706,7 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     PyObject *exc_info = NULL;
 
     PyObject *item = NULL;
+    PyObject *latin_item = NULL;
 
     char* value = NULL;
 
@@ -2721,17 +2722,14 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 
 #if PY_MAJOR_VERSION >= 3
     if (PyUnicode_Check(item)) {
-        PyObject *latin_item;
         latin_item = PyUnicode_AsLatin1String(item);
         if (!latin_item) {
             PyErr_Format(PyExc_TypeError, "expected byte string object for "
                          "status, value containing non 'latin-1' characters "
                          "found");
-            Py_DECREF(item);
             return NULL;
         }
 
-        Py_DECREF(item);
         item = latin_item;
     }
 #endif
@@ -2740,7 +2738,7 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
         PyErr_Format(PyExc_TypeError, "expected byte string object for "
                      "status, value of type %.200s found",
                      item->ob_type->tp_name);
-        Py_DECREF(item);
+        Py_XDECREF(latin_item);
         return NULL;
     }
 
@@ -2748,6 +2746,7 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 
     if (!PyList_Check(headers)) {
         PyErr_SetString(PyExc_TypeError, "response headers must be a list");
+        Py_XDECREF(latin_item);
         return NULL;
     }
 
@@ -2757,8 +2756,11 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
             PyObject *value = NULL;
             PyObject *traceback = NULL;
 
-            if (!PyArg_ParseTuple(exc_info, "OOO", &type, &value, &traceback))
+            if (!PyArg_ParseTuple(exc_info, "OOO", &type,
+                                  &value, &traceback)) {
+                Py_XDECREF(latin_item);
                 return NULL;
+            }
 
             Py_INCREF(type);
             Py_INCREF(value);
@@ -2766,11 +2768,14 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 
             PyErr_Restore(type, value, traceback);
 
+            Py_XDECREF(latin_item);
+
             return NULL;
         }
     }
     else if (self->status_line && !self->headers) {
         PyErr_SetString(PyExc_RuntimeError, "headers have already been sent");
+        Py_XDECREF(latin_item);
         return NULL;
     }
 
@@ -2783,11 +2788,13 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 
     if (*value || errno == ERANGE) {
         PyErr_SetString(PyExc_TypeError, "status value is not an integer");
+        Py_XDECREF(latin_item);
         return NULL;
     }
 
     if (!*status) {
         PyErr_SetString(PyExc_ValueError, "status message was not supplied");
+        Py_XDECREF(latin_item);
         return NULL;
     }
 
@@ -2796,6 +2803,8 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     self->headers = headers;
 
     Py_INCREF(self->headers);
+
+    Py_XDECREF(latin_item);
 
     return PyObject_GetAttrString((PyObject *)self, "write");
 }
