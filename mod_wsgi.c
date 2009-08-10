@@ -1273,9 +1273,31 @@ typedef struct {
 
 static PyTypeObject Log_Type;
 
-static LogObject *newLogObject(request_rec *r, int level, const char *target)
+static PyObject *newLogObject(request_rec *r, int level, const char *target)
 {
     LogObject *self;
+
+#if PY_MAJOR_VERSION >= 3
+    PyObject *module = NULL;
+    PyObject *dict = NULL;
+    PyObject *object = NULL;
+    PyObject *args = NULL;
+    PyObject *result = NULL;
+
+    module = PyImport_ImportModule("io");
+
+    if (!module)
+        return NULL;
+
+    dict = PyModule_GetDict(module);
+    object = PyDict_GetItemString(dict, "TextIOWrapper");
+
+    if (!object) {
+        PyErr_SetString(PyExc_NameError,
+                        "name 'TextIOWrapper' is not defined");
+        return NULL;
+    }
+#endif
 
     self = PyObject_New(LogObject, &Log_Type);
     if (self == NULL)
@@ -1291,7 +1313,18 @@ static LogObject *newLogObject(request_rec *r, int level, const char *target)
     self->softspace = 0;
 #endif
 
-    return self;
+#if PY_MAJOR_VERSION >= 3
+    Py_INCREF(object);
+    args = Py_BuildValue("(Oss)", self, "utf-8", "replace");
+    Py_DECREF(self);
+    result = PyEval_CallObject(object, args);
+    Py_DECREF(args);
+    Py_DECREF(object);
+
+    return result;
+#else
+    return (PyObject *)self;
+#endif
 }
 
 #if 0
@@ -1437,20 +1470,6 @@ static void Log_dealloc(LogObject *self)
     PyObject_Del(self);
 }
 
-static PyObject *Log_close(LogObject *self, PyObject *args)
-{
-    if (self->expired) {
-        PyErr_SetString(PyExc_RuntimeError, "log object has expired");
-        return NULL;
-    }
-
-    if (!PyArg_ParseTuple(args, ":close"))
-        return NULL;
-
-    PyErr_SetString(PyExc_RuntimeError, "log object cannot be closed");
-    return NULL;
-}
-
 static PyObject *Log_flush(LogObject *self, PyObject *args)
 {
     if (self->expired) {
@@ -1468,6 +1487,25 @@ static PyObject *Log_flush(LogObject *self, PyObject *args)
         self->s = NULL;
         self->l = 0;
     }
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+static PyObject *Log_close(LogObject *self, PyObject *args)
+{
+    PyObject *result = NULL;
+
+    if (!PyArg_ParseTuple(args, ":close"))
+        return NULL;
+
+    if (!self->expired)
+        result = Log_flush(self, args);
+
+    Py_XDECREF(result);
+
+    self->r = NULL;
+    self->expired = 1;
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -1641,6 +1679,35 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
     return Py_None;
 }
 
+#if PY_MAJOR_VERSION >= 3
+static PyObject *Log_readable(LogObject *self, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ":readable"))
+        return NULL;
+
+    Py_INCREF(Py_False);
+    return Py_False;
+}
+
+static PyObject *Log_seekable(LogObject *self, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ":seekable"))
+        return NULL;
+
+    Py_INCREF(Py_False);
+    return Py_False;
+}
+
+static PyObject *Log_writable(LogObject *self, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ":writable"))
+        return NULL;
+
+    Py_INCREF(Py_True);
+    return Py_True;
+}
+#endif
+
 static PyObject *Log_closed(LogObject *self, void *closure)
 {
     Py_INCREF(Py_False);
@@ -1658,8 +1725,7 @@ static int Log_set_softspace(LogObject *self, PyObject *value)
     int new;
 
     if (value == NULL) {
-        PyErr_SetString(PyExc_TypeError,
-                        "can't delete softspace attribute");
+        PyErr_SetString(PyExc_TypeError, "can't delete softspace attribute");
         return -1;
     }
 
@@ -1671,13 +1737,30 @@ static int Log_set_softspace(LogObject *self, PyObject *value)
 
     return 0;
 }
+
+#else
+
+static PyObject *Log_get_encoding(LogObject *self, void *closure)
+{
+    return PyUnicode_FromString("utf-8");
+}
+
+static PyObject *Log_get_errors(LogObject *self, void *closure)
+{
+    return PyUnicode_FromString("replace");
+}
 #endif
 
 static PyMethodDef Log_methods[] = {
-    { "close",      (PyCFunction)Log_close,      METH_VARARGS, 0 },
     { "flush",      (PyCFunction)Log_flush,      METH_VARARGS, 0 },
+    { "close",      (PyCFunction)Log_close,      METH_VARARGS, 0 },
     { "write",      (PyCFunction)Log_write,      METH_VARARGS, 0 },
     { "writelines", (PyCFunction)Log_writelines, METH_VARARGS, 0 },
+#if PY_MAJOR_VERSION >= 3
+    { "readable",   (PyCFunction)Log_readable,   METH_VARARGS, 0 },
+    { "seekable",   (PyCFunction)Log_seekable,   METH_VARARGS, 0 },
+    { "writable",   (PyCFunction)Log_writable,   METH_VARARGS, 0 },
+#endif
     { NULL, NULL}
 };
 
@@ -1685,6 +1768,9 @@ static PyGetSetDef Log_getset[] = {
     { "closed", (getter)Log_closed, NULL, 0 },
 #if PY_MAJOR_VERSION < 3
     { "softspace", (getter)Log_get_softspace, (setter)Log_set_softspace, 0 },
+#else
+    { "encoding", (getter)Log_get_encoding, NULL, 0 },
+    { "errors", (getter)Log_get_errors, NULL, 0 },
 #endif
     { NULL },
 };
@@ -1733,7 +1819,7 @@ static PyTypeObject Log_Type = {
     0,                      /*tp_is_gc*/
 };
 
-static void wsgi_log_python_error(request_rec *r, LogObject *log,
+static void wsgi_log_python_error(request_rec *r, PyObject *log,
                                   const char *filename)
 {
     PyObject *m = NULL;
@@ -2633,7 +2719,7 @@ typedef struct {
 #endif
         WSGIRequestConfig *config;
         InputObject *input;
-        LogObject *log;
+        PyObject *log;
         int status;
         const char *status_line;
         PyObject *headers;
@@ -4223,7 +4309,7 @@ static PyObject *wsgi_signal_intercept(PyObject *self, PyObject *args)
             PyObject *args = NULL;
             PyObject *result = NULL;
             Py_INCREF(o);
-            log = (PyObject *)newLogObject(NULL, APLOG_WARNING, NULL);
+            log = newLogObject(NULL, APLOG_WARNING, NULL);
             args = Py_BuildValue("(OOO)", Py_None, Py_None, log);
             result = PyEval_CallObject(o, args);
             Py_XDECREF(result);
@@ -4362,7 +4448,7 @@ static InterpreterObject *newInterpreterObject(const char *name)
      * the 'pdb' module.
      */
 
-    object = (PyObject *)newLogObject(NULL, APLOG_ERR, "stderr");
+    object = newLogObject(NULL, APLOG_ERR, "stderr");
     PySys_SetObject("stderr", object);
     Py_DECREF(object);
 
@@ -4375,7 +4461,7 @@ static InterpreterObject *newInterpreterObject(const char *name)
             Py_DECREF(object);
         }
         else {
-            object = (PyObject *)newLogObject(NULL, APLOG_ERR, "stdout");
+            object = newLogObject(NULL, APLOG_ERR, "stdout");
             PySys_SetObject("stdout", object);
             Py_DECREF(object);
         }
@@ -5141,7 +5227,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
                         PyObject *log = NULL;
                         PyObject *args = NULL;
                         Py_INCREF(o);
-                        log = (PyObject *)newLogObject(NULL, APLOG_ERR, NULL);
+                        log = newLogObject(NULL, APLOG_ERR, NULL);
                         args = Py_BuildValue("(OOOOO)", type, value,
                                              traceback, Py_None, log);
                         result = PyEval_CallObject(o, args);
@@ -5274,7 +5360,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
                     PyObject *log = NULL;
                     PyObject *args = NULL;
                     Py_INCREF(o);
-                    log = (PyObject *)newLogObject(NULL, APLOG_ERR, NULL);
+                    log = newLogObject(NULL, APLOG_ERR, NULL);
                     args = Py_BuildValue("(OOOOO)", type, value,
                                          traceback, Py_None, log);
                     result = PyEval_CallObject(o, args);
@@ -5933,7 +6019,7 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         PyModule_AddObject(m, "__mtime__", object);
     }
     else {
-        LogObject *log;
+        PyObject *log;
 
         Py_BEGIN_ALLOW_THREADS
         if (r) {
@@ -6027,7 +6113,7 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
             }
 
             if (PyErr_Occurred()) {
-                LogObject *log;
+                PyObject *log;
                 log = newLogObject(r, APLOG_ERR, NULL);
                 wsgi_log_python_error(r, log, filename);
                 Py_DECREF(log);
@@ -6290,6 +6376,7 @@ static int wsgi_execute_script(request_rec *r)
             adapter = newAdapterObject(r);
 
             if (adapter) {
+                PyObject *method = NULL;
                 PyObject *args = NULL;
 
                 Py_INCREF(object);
@@ -6307,21 +6394,23 @@ static int wsgi_execute_script(request_rec *r)
                 adapter->r = NULL;
                 adapter->input->r = NULL;
 
-                /*
-                 * Flush any data held within error log object
-                 * and mark it as expired so that it can't be
-                 * used beyond life of the request. We hope that
-                 * this doesn't error, as it will overwrite any
-                 * error from application if it does.
-                 */
+                /* Close the log object so data is flushed. */
 
-                args = PyTuple_New(0);
-                object = Log_flush(adapter->log, args);
+                method = PyObject_GetAttrString(adapter->log, "close");
+
+                if (!method) {
+                    PyErr_Format(PyExc_AttributeError,
+                                 "'%s' object has no attribute 'close'",
+                                 adapter->log->ob_type->tp_name);
+                }
+                else {
+                    args = PyTuple_New(0);
+                    object = PyEval_CallObject(method, args);
+                    Py_DECREF(args);
+                }
+
                 Py_XDECREF(object);
-                Py_DECREF(args);
-
-                adapter->log->r = NULL;
-                adapter->log->expired = 1;
+                Py_XDECREF(method);
 
 #if defined(MOD_WSGI_WITH_BUCKETS)
                 adapter->bb = NULL;
@@ -6345,7 +6434,7 @@ static int wsgi_execute_script(request_rec *r)
     /* Log any details of exceptions if execution failed. */
 
     if (PyErr_Occurred()) {
-        LogObject *log;
+        PyObject *log;
         log = newLogObject(r, APLOG_ERR, NULL);
         wsgi_log_python_error(r, log, r->filename);
         Py_DECREF(log);
@@ -8066,7 +8155,7 @@ typedef struct {
         PyObject_HEAD
         request_rec *r;
         WSGIRequestConfig *config;
-        LogObject *log;
+        PyObject *log;
 } DispatchObject;
 
 static DispatchObject *newDispatchObject(request_rec *r,
@@ -8349,6 +8438,7 @@ static int wsgi_execute_dispatch(request_rec *r)
         if (adapter) {
             PyObject *vars = NULL;
             PyObject *args = NULL;
+            PyObject *method = NULL;
 
             vars = Dispatch_environ(adapter, group);
 
@@ -8599,28 +8689,32 @@ static int wsgi_execute_dispatch(request_rec *r)
 
             adapter->r = NULL;
 
-            /*
-             * Flush any data held within error log object
-             * and mark it as expired so that it can't be
-             * used beyond life of the request. We hope that
-             * this doesn't error, as it will overwrite any
-             * error from application if it does.
-             */
+            /* Close the log object so data is flushed. */
 
-            args = PyTuple_New(0);
-            object = Log_flush(adapter->log, args);
+            method = PyObject_GetAttrString(adapter->log, "close");
+
+            if (!method) {
+                PyErr_Format(PyExc_AttributeError,
+                             "'%s' object has no attribute 'close'",
+                             adapter->log->ob_type->tp_name);
+            }
+            else {
+                args = PyTuple_New(0);
+                object = PyEval_CallObject(method, args);
+                Py_DECREF(args);
+            }
+
             Py_XDECREF(object);
-            Py_DECREF(args);
+            Py_XDECREF(method);
 
-            adapter->log->r = NULL;
-            adapter->log->expired = 1;
+            /* No longer need adapter object. */
 
             Py_DECREF((PyObject *)adapter);
 
             /* Log any details of exceptions if execution failed. */
 
             if (PyErr_Occurred()) {
-                LogObject *log;
+                PyObject *log;
                 log = newLogObject(r, APLOG_ERR, NULL);
                 wsgi_log_python_error(r, log, script);
                 Py_DECREF(log);
@@ -12692,7 +12786,7 @@ typedef struct {
         PyObject_HEAD
         request_rec *r;
         WSGIRequestConfig *config;
-        LogObject *log;
+        PyObject *log;
 } AuthObject;
 
 static AuthObject *newAuthObject(request_rec *r, WSGIRequestConfig *config)
@@ -13119,6 +13213,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
             PyObject *vars = NULL;
             PyObject *args = NULL;
             PyObject *result = NULL;
+            PyObject *method = NULL;
 
             AuthObject *adapter = NULL;
 
@@ -13163,21 +13258,25 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
                 adapter->r = NULL;
 
-                /*
-                 * Flush any data held within error log object
-                 * and mark it as expired so that it can't be
-                 * used beyond life of the request. We hope that
-                 * this doesn't error, as it will overwrite any
-                 * error from application if it does.
-                 */
+                /* Close the log object so data is flushed. */
 
-                args = PyTuple_New(0);
-                object = Log_flush(adapter->log, args);
+                method = PyObject_GetAttrString(adapter->log, "close");
+
+                if (!method) {
+                    PyErr_Format(PyExc_AttributeError,
+                                 "'%s' object has no attribute 'close'",
+                                 adapter->log->ob_type->tp_name);
+                }
+                else {
+                    args = PyTuple_New(0);
+                    object = PyEval_CallObject(method, args);
+                    Py_DECREF(args);
+                }
+
                 Py_XDECREF(object);
-                Py_DECREF(args);
+                Py_XDECREF(method);
 
-                adapter->log->r = NULL;
-                adapter->log->expired = 1;
+                /* No longer need adapter object. */
 
                 Py_DECREF((PyObject *)adapter);
             }
@@ -13196,7 +13295,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
         /* Log any details of exceptions if execution failed. */
 
         if (PyErr_Occurred()) {
-            LogObject *log;
+            PyObject *log;
             log = newLogObject(r, APLOG_ERR, NULL);
             wsgi_log_python_error(r, log, script);
             Py_DECREF(log);
@@ -13333,6 +13432,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
             PyObject *vars = NULL;
             PyObject *args = NULL;
             PyObject *result = NULL;
+            PyObject *method = NULL;
 
             AuthObject *adapter = NULL;
 
@@ -13399,21 +13499,25 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
                 adapter->r = NULL;
 
-                /*
-                 * Flush any data held within error log object
-                 * and mark it as expired so that it can't be
-                 * used beyond life of the request. We hope that
-                 * this doesn't error, as it will overwrite any
-                 * error from application if it does.
-                 */
+                /* Close the log object so data is flushed. */
 
-                args = PyTuple_New(0);
-                object = Log_flush(adapter->log, args);
+                method = PyObject_GetAttrString(adapter->log, "close");
+
+                if (!method) {
+                    PyErr_Format(PyExc_AttributeError,
+                                 "'%s' object has no attribute 'close'",
+                                 adapter->log->ob_type->tp_name);
+                }
+                else {
+                    args = PyTuple_New(0);
+                    object = PyEval_CallObject(method, args);
+                    Py_DECREF(args);
+                }
+
                 Py_XDECREF(object);
-                Py_DECREF(args);
+                Py_XDECREF(method);
 
-                adapter->log->r = NULL;
-                adapter->log->expired = 1;
+                /* No longer need adapter object. */
 
                 Py_DECREF((PyObject *)adapter);
             }
@@ -13432,7 +13536,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
         /* Log any details of exceptions if execution failed. */
 
         if (PyErr_Occurred()) {
-            LogObject *log;
+            PyObject *log;
             log = newLogObject(r, APLOG_ERR, NULL);
             wsgi_log_python_error(r, log, script);
             Py_DECREF(log);
@@ -13574,6 +13678,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
             PyObject *vars = NULL;
             PyObject *args = NULL;
             PyObject *sequence = NULL;
+            PyObject *method = NULL;
 
             AuthObject *adapter = NULL;
 
@@ -13681,21 +13786,25 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
                 adapter->r = NULL;
 
-                /*
-                 * Flush any data held within error log object
-                 * and mark it as expired so that it can't be
-                 * used beyond life of the request. We hope that
-                 * this doesn't error, as it will overwrite any
-                 * error from application if it does.
-                 */
+                /* Close the log object so data is flushed. */
 
-                args = PyTuple_New(0);
-                object = Log_flush(adapter->log, args);
+                method = PyObject_GetAttrString(adapter->log, "close");
+
+                if (!method) {
+                    PyErr_Format(PyExc_AttributeError,
+                                 "'%s' object has no attribute 'close'",
+                                 adapter->log->ob_type->tp_name);
+                }
+                else {
+                    args = PyTuple_New(0);
+                    object = PyEval_CallObject(method, args);
+                    Py_DECREF(args);
+                }
+
                 Py_XDECREF(object);
-                Py_DECREF(args);
+                Py_XDECREF(method);
 
-                adapter->log->r = NULL;
-                adapter->log->expired = 1;
+                /* No longer need adapter object. */
 
                 Py_DECREF((PyObject *)adapter);
             }
@@ -13714,7 +13823,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
         /* Log any details of exceptions if execution failed. */
 
         if (PyErr_Occurred()) {
-            LogObject *log;
+            PyObject *log;
             log = newLogObject(r, APLOG_ERR, NULL);
             wsgi_log_python_error(r, log, script);
             Py_DECREF(log);
@@ -13850,6 +13959,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
             PyObject *vars = NULL;
             PyObject *args = NULL;
             PyObject *flag = NULL;
+            PyObject *method = NULL;
 
             AuthObject *adapter = NULL;
 
@@ -13896,21 +14006,25 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
                 adapter->r = NULL;
 
-                /*
-                 * Flush any data held within error log object
-                 * and mark it as expired so that it can't be
-                 * used beyond life of the request. We hope that
-                 * this doesn't error, as it will overwrite any
-                 * error from application if it does.
-                 */
+                /* Close the log object so data is flushed. */
 
-                args = PyTuple_New(0);
-                object = Log_flush(adapter->log, args);
+                method = PyObject_GetAttrString(adapter->log, "close");
+
+                if (!method) {
+                    PyErr_Format(PyExc_AttributeError,
+                                 "'%s' object has no attribute 'close'",
+                                 adapter->log->ob_type->tp_name);
+                }
+                else {
+                    args = PyTuple_New(0);
+                    object = PyEval_CallObject(method, args);
+                    Py_DECREF(args);
+                }
+
                 Py_XDECREF(object);
-                Py_DECREF(args);
+                Py_XDECREF(method);
 
-                adapter->log->r = NULL;
-                adapter->log->expired = 1;
+                /* No longer need adapter object. */
 
                 Py_DECREF((PyObject *)adapter);
             }
@@ -13929,7 +14043,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
         /* Log any details of exceptions if execution failed. */
 
         if (PyErr_Occurred()) {
-            LogObject *log;
+            PyObject *log;
             log = newLogObject(r, APLOG_ERR, NULL);
             wsgi_log_python_error(r, log, script);
             Py_DECREF(log);
@@ -14099,6 +14213,7 @@ static int wsgi_hook_check_user_id(request_rec *r)
             PyObject *vars = NULL;
             PyObject *args = NULL;
             PyObject *result = NULL;
+            PyObject *method = NULL;
 
             AuthObject *adapter = NULL;
 
@@ -14162,21 +14277,25 @@ static int wsgi_hook_check_user_id(request_rec *r)
 
                 adapter->r = NULL;
 
-                /*
-                 * Flush any data held within error log object
-                 * and mark it as expired so that it can't be
-                 * used beyond life of the request. We hope that
-                 * this doesn't error, as it will overwrite any
-                 * error from application if it does.
-                 */
+                /* Close the log object so data is flushed. */
 
-                args = PyTuple_New(0);
-                object = Log_flush(adapter->log, args);
+                method = PyObject_GetAttrString(adapter->log, "close");
+
+                if (!method) {
+                    PyErr_Format(PyExc_AttributeError,
+                                 "'%s' object has no attribute 'close'",
+                                 adapter->log->ob_type->tp_name);
+                }
+                else {
+                    args = PyTuple_New(0);
+                    object = PyEval_CallObject(method, args);
+                    Py_DECREF(args);
+                }
+
                 Py_XDECREF(object);
-                Py_DECREF(args);
+                Py_XDECREF(method);
 
-                adapter->log->r = NULL;
-                adapter->log->expired = 1;
+                /* No longer need adapter object. */
 
                 Py_DECREF((PyObject *)adapter);
             }
@@ -14195,7 +14314,7 @@ static int wsgi_hook_check_user_id(request_rec *r)
         /* Log any details of exceptions if execution failed. */
 
         if (PyErr_Occurred()) {
-            LogObject *log;
+            PyObject *log;
             log = newLogObject(r, APLOG_ERR, NULL);
             wsgi_log_python_error(r, log, script);
             Py_DECREF(log);
