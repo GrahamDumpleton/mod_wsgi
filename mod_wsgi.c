@@ -1315,7 +1315,8 @@ static PyObject *newLogObject(request_rec *r, int level, const char *target)
 
 #if PY_MAJOR_VERSION >= 3
     Py_INCREF(object);
-    args = Py_BuildValue("(Oss)", self, "utf-8", "replace");
+    args = Py_BuildValue("(OssOO)", self, "utf-8", "replace",
+                         Py_None, Py_True);
     Py_DECREF(self);
     result = PyEval_CallObject(object, args);
     Py_DECREF(args);
