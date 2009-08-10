@@ -5905,9 +5905,6 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
     PyObject *co = NULL;
     struct _node *n = NULL;
 
-    wchar_t *s = NULL;
-    int len;
-
     if (exists) {
         Py_BEGIN_ALLOW_THREADS
         if (r) {
@@ -5941,16 +5938,7 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         Py_END_ALLOW_THREADS
     }
 
-#ifdef WIN32
-    len = strlen(filename)+1;
-
-    s = (wchar_t *)apr_palloc(pool, len*sizeof(wchar_t));
-    mbstowcs(s, filename, len);
-
-    fp = _wfopen(s, "r");
-#else
     fp = fopen(filename, "r");
-#endif
 
     if (!fp) {
         Py_BEGIN_ALLOW_THREADS
