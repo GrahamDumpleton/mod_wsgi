@@ -5896,12 +5896,14 @@ static void wsgi_release_interpreter(InterpreterObject *handle)
  */
 
 #if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
+typedef apr_uint16_t apr_wchar_t;
+
 APR_DECLARE(apr_status_t) apr_conv_utf8_to_ucs2(const char *in,
                                                 apr_size_t *inbytes,
                                                 apr_wchar_t *out,
                                                 apr_size_t *outwords);
 
-static apr_status_t wsgi utf8_to_unicode_path(apr_wchar_t* retstr,
+static apr_status_t wsgi_utf8_to_unicode_path(apr_wchar_t* retstr,
                                               apr_size_t retlen, 
                                               const char* srcstr)
 {
