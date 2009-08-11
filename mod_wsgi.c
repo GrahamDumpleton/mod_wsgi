@@ -5979,6 +5979,10 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
     PyObject *co = NULL;
     struct _node *n = NULL;
 
+#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
+    apr_wchar_t wfilename[APR_PATH_MAX];
+#endif
+
     if (exists) {
         Py_BEGIN_ALLOW_THREADS
         if (r) {
@@ -6012,47 +6016,30 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         Py_END_ALLOW_THREADS
     }
 
-#ifdef WIN32
-#if APR_HAS_UNICODE_FS
-    IF_WIN_OS_IS_UNICODE {
-        apr_wchar_t wfilename[APR_PATH_MAX];
+#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
+    if (wsgi_utf8_to_unicode_path(wfilename, sizeof(wfilename) /
+				  sizeof(apr_wchar_t), filename)) {
 
-        if (rv = wsgi_utf8_to_unicode_path(wfilename, sizeof(wfilename) /
-                                           sizeof(apr_wchar_t), filename)) {
-
-            Py_BEGIN_ALLOW_THREADS
-            if (r) {
-                ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
-                              "mod_wsgi (pid=%d, process='%s', "
-                              "application='%s'): Failed to convert '%s' "
-                              "to UCS2 filename.", getpid(),
-                              process_group, application_group, filename);
-            }
-            else {
-                ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
-                             "mod_wsgi (pid=%d, process='%s', "
-                             "application='%s'): Failed to convert '%s' "
-                             "to UCS2 filename.", getpid(),
-                             process_group, application_group, filename);
-            }
-            Py_END_ALLOW_THREADS
-            PyErr_SetFromErrno(PyExc_IOError);
-            PyErr_SetString(PyExc_TypeError,
-                            "Process group must be "
-                            "a byte string, value "
-                            "containing non 'latin-1' "
-                            "characters found");
-            return NULL;
-        }
-
-        fp = _wfopen(wfilename, "r");
+	Py_BEGIN_ALLOW_THREADS
+	if (r) {
+	    ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+			  "mod_wsgi (pid=%d, process='%s', "
+			  "application='%s'): Failed to convert '%s' "
+			  "to UCS2 filename.", getpid(),
+			  process_group, application_group, filename);
+	}
+	else {
+	    ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+			 "mod_wsgi (pid=%d, process='%s', "
+			 "application='%s'): Failed to convert '%s' "
+			 "to UCS2 filename.", getpid(),
+			 process_group, application_group, filename);
+	}
+	Py_END_ALLOW_THREADS
+	return NULL;
     }
-#endif
-#if APR_HAS_ANSI_FS
-    ELSE_WIN_OS_IS_ANSI {
-        fp = fopen(filename, "r");
-    }
-#endif
+
+    fp = _wfopen(wfilename, "r");
 #else
     fp = fopen(filename, "r");
 #endif
