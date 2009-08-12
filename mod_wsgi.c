@@ -133,6 +133,12 @@ typedef regmatch_t ap_regmatch_t;
 #error Sorry, mod_wsgi requires at least Python 2.3.0.
 #endif
 
+#if !defined(MOD_WSGI_ENABLE_PY3K)
+#if PY_VERSION_HEX >= 0x03000000
+#error Sorry, there is no WSGI specification for Python 3.X as yet.
+#endif
+#endif
+
 #if !defined(WITH_THREAD)
 #error Sorry, mod_wsgi requires that Python supporting thread.
 #endif

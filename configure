@@ -1196,6 +1196,7 @@ Optional Features:
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
   --disable-embedded      disable mod_wsgi embedded mode
+  --enable-py3k           enable mod_wsgi Python 3.X support
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -1631,6 +1632,14 @@ else
 fi
 
 
+# Check whether --enable-py3k was given.
+if test "${enable_py3k+set}" = set; then
+  enableval=$enable_py3k; ENABLE_PY3K=$enableval
+else
+  ENABLE_PY3K=no
+fi
+
+
 
 # Check whether --with-apxs was given.
 if test "${with_apxs+set}" = set; then
@@ -1793,7 +1802,13 @@ else
 CPPFLAGS3=""
 fi
 
-CPPFLAGS="${CPPFLAGS} ${CPPFLAGS1} ${CPPFLAGS2} ${CPPFLAGS3}"
+if test "${ENABLE_PY3K}" = "yes"; then
+CPPFLAGS4="-DMOD_WSGI_ENABLE_PY3K"
+else
+CPPFLAGS4=""
+fi
+
+CPPFLAGS="${CPPFLAGS} ${CPPFLAGS1} ${CPPFLAGS2} ${CPPFLAGS3} ${CPPFLAGS4}"
 
 
 
