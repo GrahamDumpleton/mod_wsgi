@@ -6072,8 +6072,23 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
 
     fclose(fp);
 
-    if (!n)
+    if (!n) {
+        Py_BEGIN_ALLOW_THREADS
+        if (r) {
+            ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
+                          "Failed to parse WSGI script file '%s'.", getpid(),
+                          process_group, application_group, filename);
+        }
+        else {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
+                         "Failed to parse WSGI script file '%s'.", getpid(),
+                         process_group, application_group, filename);
+        }
+        Py_END_ALLOW_THREADS
         return NULL;
+    }
 
     co = (PyObject *)PyNode_Compile(n, filename);
     PyNode_Free(n);
