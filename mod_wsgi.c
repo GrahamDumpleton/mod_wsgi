@@ -1836,8 +1836,24 @@ static void wsgi_log_python_error(request_rec *r, PyObject *log,
     PyObject *value = NULL;
     PyObject *traceback = NULL;
 
+    PyObject *xlog = NULL;
+
     if (!PyErr_Occurred())
         return;
+
+    if (!log) {
+        PyErr_Fetch(&type, &value, &traceback);
+
+        xlog = newLogObject(r, APLOG_ERR, NULL);
+
+        log = xlog;
+
+        PyErr_Restore(type, value, traceback);
+
+        type = NULL;
+        value = NULL;
+        traceback = NULL;
+    }
 
     if (PyErr_ExceptionMatches(PyExc_SystemExit)) {
         Py_BEGIN_ALLOW_THREADS
@@ -1928,6 +1944,8 @@ static void wsgi_log_python_error(request_rec *r, PyObject *log,
     Py_XDECREF(result);
 
     Py_XDECREF(m);
+
+    Py_XDECREF(xlog);
 }
 
 typedef struct {
@@ -6131,8 +6149,6 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         PyModule_AddObject(m, "__mtime__", object);
     }
     else {
-        PyObject *log;
-
         Py_BEGIN_ALLOW_THREADS
         if (r) {
             ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
@@ -6146,9 +6162,7 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         }
         Py_END_ALLOW_THREADS
 
-        log = newLogObject(r, APLOG_ERR, NULL);
-        wsgi_log_python_error(r, log, filename);
-        Py_DECREF(log);
+        wsgi_log_python_error(r, NULL, filename);
     }
 
     return m;
@@ -6224,12 +6238,8 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
                 return 1;
             }
 
-            if (PyErr_Occurred()) {
-                PyObject *log;
-                log = newLogObject(r, APLOG_ERR, NULL);
-                wsgi_log_python_error(r, log, filename);
-                Py_DECREF(log);
-            }
+            if (PyErr_Occurred())
+                wsgi_log_python_error(r, NULL, filename);
 
             Py_XDECREF(result);
         }
@@ -6545,12 +6555,8 @@ static int wsgi_execute_script(request_rec *r)
 
     /* Log any details of exceptions if execution failed. */
 
-    if (PyErr_Occurred()) {
-        PyObject *log;
-        log = newLogObject(r, APLOG_ERR, NULL);
-        wsgi_log_python_error(r, log, r->filename);
-        Py_DECREF(log);
-    }
+    if (PyErr_Occurred())
+        wsgi_log_python_error(r, NULL, r->filename);
 
     /* Cleanup and release interpreter, */
 
@@ -8825,12 +8831,8 @@ static int wsgi_execute_dispatch(request_rec *r)
 
             /* Log any details of exceptions if execution failed. */
 
-            if (PyErr_Occurred()) {
-                PyObject *log;
-                log = newLogObject(r, APLOG_ERR, NULL);
-                wsgi_log_python_error(r, log, script);
-                Py_DECREF(log);
-            }
+            if (PyErr_Occurred())
+                wsgi_log_python_error(r, NULL, script);
 
             Py_DECREF(vars);
         }
@@ -13406,12 +13408,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
         /* Log any details of exceptions if execution failed. */
 
-        if (PyErr_Occurred()) {
-            PyObject *log;
-            log = newLogObject(r, APLOG_ERR, NULL);
-            wsgi_log_python_error(r, log, script);
-            Py_DECREF(log);
-        }
+        if (PyErr_Occurred())
+            wsgi_log_python_error(r, NULL, script);
     }
 
     /* Cleanup and release interpreter, */
@@ -13647,12 +13645,8 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
         /* Log any details of exceptions if execution failed. */
 
-        if (PyErr_Occurred()) {
-            PyObject *log;
-            log = newLogObject(r, APLOG_ERR, NULL);
-            wsgi_log_python_error(r, log, script);
-            Py_DECREF(log);
-        }
+        if (PyErr_Occurred())
+            wsgi_log_python_error(r, NULL, script);
     }
 
     /* Cleanup and release interpreter, */
@@ -13934,12 +13928,8 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
         /* Log any details of exceptions if execution failed. */
 
-        if (PyErr_Occurred()) {
-            PyObject *log;
-            log = newLogObject(r, APLOG_ERR, NULL);
-            wsgi_log_python_error(r, log, script);
-            Py_DECREF(log);
-        }
+        if (PyErr_Occurred())
+            wsgi_log_python_error(r, NULL, script);
     }
 
     /* Cleanup and release interpreter, */
@@ -14154,12 +14144,8 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
         /* Log any details of exceptions if execution failed. */
 
-        if (PyErr_Occurred()) {
-            PyObject *log;
-            log = newLogObject(r, APLOG_ERR, NULL);
-            wsgi_log_python_error(r, log, script);
-            Py_DECREF(log);
-        }
+        if (PyErr_Occurred())
+            wsgi_log_python_error(r, NULL, script);
     }
 
     /* Cleanup and release interpreter, */
@@ -14425,12 +14411,8 @@ static int wsgi_hook_check_user_id(request_rec *r)
 
         /* Log any details of exceptions if execution failed. */
 
-        if (PyErr_Occurred()) {
-            PyObject *log;
-            log = newLogObject(r, APLOG_ERR, NULL);
-            wsgi_log_python_error(r, log, script);
-            Py_DECREF(log);
-        }
+        if (PyErr_Occurred())
+            wsgi_log_python_error(r, NULL, script);
     }
 
     /* Cleanup and release interpreter, */
