@@ -3087,7 +3087,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
             if (PyTuple_Size(tuple) != 2) {
                 PyErr_Format(PyExc_ValueError, "tuple of length 2 "
                              "expected, length is %d",
-                             PyTuple_Size(tuple));
+                             (int)PyTuple_Size(tuple));
                 return 0;
             }
 
