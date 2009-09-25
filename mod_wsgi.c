@@ -12826,8 +12826,6 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     request_rec *r = self->r;
     server_rec *s = r->server;
     conn_rec *c = r->connection;
-    const char *host;
-    const char *banner;
     apr_port_t rport;
 
     const apr_array_header_t *hdrs_arr;
@@ -12849,7 +12847,8 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 
         if (!strcasecmp(hdrs[i].key, "Content-type")) {
 #if PY_MAJOR_VERSION >= 3
-            object = PyUnicode_FromString(hdrs[i].val);
+            object = PyUnicode_DecodeLatin1(hdrs[i].val,
+                                            strlen(hdrs[i].val), NULL);
 #else
             object = PyString_FromString(hdrs[i].val);
 #endif
@@ -12858,7 +12857,8 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
         }
         else if (!strcasecmp(hdrs[i].key, "Content-length")) {
 #if PY_MAJOR_VERSION >= 3
-            object = PyUnicode_FromString(hdrs[i].val);
+            object = PyUnicode_DecodeLatin1(hdrs[i].val,
+                                            strlen(hdrs[i].val), NULL);
 #else
             object = PyString_FromString(hdrs[i].val);
 #endif
@@ -12871,7 +12871,8 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
         }
         else {
 #if PY_MAJOR_VERSION >= 3
-            object = PyUnicode_FromString(hdrs[i].val);
+            object = PyUnicode_DecodeLatin1(hdrs[i].val,
+                                            strlen(hdrs[i].val), NULL);
 #else
             object = PyString_FromString(hdrs[i].val);
 #endif
@@ -12881,73 +12882,74 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
         }
     }
 
+    value = ap_psignature("", r);
 #if PY_MAJOR_VERSION >= 3
-    object = PyUnicode_FromString(ap_psignature("", r));
+    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(ap_psignature("", r));
+    object = PyString_FromString(value);
 #endif
     PyDict_SetItemString(vars, "SERVER_SIGNATURE", object);
     Py_DECREF(object);
 
 #if AP_MODULE_MAGIC_AT_LEAST(20060905,0)
-    banner = ap_get_server_banner();
+    value = ap_get_server_banner();
 #else
-    banner = ap_get_server_version();
+    value = ap_get_server_version();
 #endif
 #if PY_MAJOR_VERSION >= 3
-    object = PyUnicode_FromString(banner);
+    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(banner);
+    object = PyString_FromString(value);
 #endif
     PyDict_SetItemString(vars, "SERVER_SOFTWARE", object);
     Py_DECREF(object);
 
+    value = ap_escape_html(r->pool, ap_get_server_name(r));
 #if PY_MAJOR_VERSION >= 3
-    object = PyUnicode_FromString(ap_escape_html(r->pool,
-                                  ap_get_server_name(r)));
+    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(ap_escape_html(r->pool,
-                                 ap_get_server_name(r)));
+    object = PyString_FromString(value);
 #endif
     PyDict_SetItemString(vars, "SERVER_NAME", object);
     Py_DECREF(object);
 
     if (r->connection->local_ip) {
+        value = r->connection->local_ip;
 #if PY_MAJOR_VERSION >= 3
-        object = PyUnicode_FromString(r->connection->local_ip);
+        object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(r->connection->local_ip);
+        object = PyString_FromString(value);
 #endif
         PyDict_SetItemString(vars, "SERVER_ADDR", object);
         Py_DECREF(object);
     }
 
+    value = apr_psprintf(r->pool, "%u", ap_get_server_port(r));
 #if PY_MAJOR_VERSION >= 3
-    object = PyUnicode_FromString(apr_psprintf(r->pool, "%u",
-                                  ap_get_server_port(r)));
+    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(apr_psprintf(r->pool, "%u",
-                                 ap_get_server_port(r)));
+    object = PyString_FromString(value);
 #endif
     PyDict_SetItemString(vars, "SERVER_PORT", object);
     Py_DECREF(object);
 
-    host = ap_get_remote_host(c, r->per_dir_config, REMOTE_HOST, NULL);
-    if (host) {
+    value = ap_get_remote_host(c, r->per_dir_config, REMOTE_HOST, NULL);
+    if (value) {
 #if PY_MAJOR_VERSION >= 3
-        object = PyUnicode_FromString(host);
+        object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(host);
+        object = PyString_FromString(value);
 #endif
         PyDict_SetItemString(vars, "REMOTE_HOST", object);
         Py_DECREF(object);
     }
 
     if (c->remote_ip) {
+        value = c->remote_ip;
 #if PY_MAJOR_VERSION >= 3
-        object = PyUnicode_FromString(c->remote_ip);
+        object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(c->remote_ip);
+        object = PyString_FromString(value);
 #endif
         PyDict_SetItemString(vars, "REMOTE_ADDR", object);
         Py_DECREF(object);
@@ -12965,52 +12967,58 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     Py_DECREF(object);
 
     if (s->server_admin) {
+        value = s->server_admin;
 #if PY_MAJOR_VERSION >= 3
-        object = PyUnicode_FromString(s->server_admin);
+        object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(s->server_admin);
+        object = PyString_FromString(value);
 #endif
         PyDict_SetItemString(vars, "SERVER_ADMIN", object);
         Py_DECREF(object);
     }
 
     rport = c->remote_addr->port;
+    value = apr_itoa(r->pool, rport);
 #if PY_MAJOR_VERSION >= 3
-    object = PyUnicode_FromString(apr_itoa(r->pool, rport));
+    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(apr_itoa(r->pool, rport));
+    object = PyString_FromString(value);
 #endif
     PyDict_SetItemString(vars, "REMOTE_PORT", object);
     Py_DECREF(object);
 
+    value = r->protocol;
 #if PY_MAJOR_VERSION >= 3
-    object = PyUnicode_FromString(r->protocol);
+    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(r->protocol);
+    object = PyString_FromString(value);
 #endif
     PyDict_SetItemString(vars, "SERVER_PROTOCOL", object);
     Py_DECREF(object);
 
+    value = r->method;
 #if PY_MAJOR_VERSION >= 3
-    object = PyUnicode_FromString(r->method);
+    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(r->method);
+    object = PyString_FromString(value);
 #endif
     PyDict_SetItemString(vars, "REQUEST_METHOD", object);
     Py_DECREF(object);
 
+    value = r->args ? r->args : "";
 #if PY_MAJOR_VERSION >= 3
-    object = PyUnicode_FromString(r->args ? r->args : "");
+    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(r->args ? r->args : "");
+    object = PyString_FromString(value);
 #endif
     PyDict_SetItemString(vars, "QUERY_STRING", object);
     Py_DECREF(object);
 
+    value = wsgi_original_uri(r);
 #if PY_MAJOR_VERSION >= 3
-    object = PyUnicode_FromString(wsgi_original_uri(r));
+    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(wsgi_original_uri(r));
+    object = PyString_FromString(value);
 #endif
     PyDict_SetItemString(vars, "REQUEST_URI", object);
     Py_DECREF(object);
