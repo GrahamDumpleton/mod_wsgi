@@ -28,11 +28,6 @@ AC_ARG_ENABLE(embedded, AC_HELP_STRING([--disable-embedded],
             [ENABLE_EMBEDDED=$enableval],
 	    [ENABLE_EMBEDDED=yes])
 
-AC_ARG_ENABLE(py3k, AC_HELP_STRING([--enable-py3k],
-            [enable mod_wsgi Python 3.X support]),
-            [ENABLE_PY3K=$enableval],
-	    [ENABLE_PY3K=no])
-
 AC_ARG_WITH(apxs, AC_HELP_STRING([--with-apxs=NAME],
             [name of the apxs executable [[apxs]]]),
             [APXS="$with_apxs"])
@@ -97,13 +92,7 @@ else
 CPPFLAGS3=""
 fi
 
-if test "${ENABLE_PY3K}" = "yes"; then
-CPPFLAGS4="-DMOD_WSGI_ENABLE_PY3K"
-else
-CPPFLAGS4=""
-fi
-
-CPPFLAGS="${CPPFLAGS} ${CPPFLAGS1} ${CPPFLAGS2} ${CPPFLAGS3} ${CPPFLAGS4}"
+CPPFLAGS="${CPPFLAGS} ${CPPFLAGS1} ${CPPFLAGS2} ${CPPFLAGS3}"
 
 AC_SUBST(CPPFLAGS)
 
