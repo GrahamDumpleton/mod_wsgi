@@ -4768,7 +4768,10 @@ static InterpreterObject *newInterpreterObject(const char *name)
             if (object) {
 #if PY_MAJOR_VERSION >= 3
                 key = PyUnicode_FromString("PYTHON_EGG_CACHE");
-                value = PyUnicode_FromString(wsgi_python_eggs);
+                value = PyUnicode_Decode(wsgi_python_eggs,
+                                         strlen(wsgi_python_eggs),
+                                         Py_FileSystemDefaultEncoding,
+                                         "surrogateescape");
 #else
                 key = PyString_FromString("PYTHON_EGG_CACHE");
                 value = PyString_FromString(wsgi_python_eggs);
@@ -4843,7 +4846,9 @@ static InterpreterObject *newInterpreterObject(const char *name)
 
                 if (end) {
 #if PY_MAJOR_VERSION >= 3
-                    item = PyUnicode_FromStringAndSize(start, end-start);
+                    item = PyUnicode_Decode(start, end-start,
+                                            Py_FileSystemDefaultEncoding,
+                                            "surrogateescape");
 #else
                     item = PyString_FromStringAndSize(start, end-start);
 #endif
@@ -4877,7 +4882,9 @@ static InterpreterObject *newInterpreterObject(const char *name)
 
                     while (result && end) {
 #if PY_MAJOR_VERSION >= 3
-                        item = PyUnicode_FromStringAndSize(start, end-start);
+                        item = PyUnicode_Decode(start, end-start,
+                                                Py_FileSystemDefaultEncoding,
+                                                "surrogateescape");
 #else
                         item = PyString_FromStringAndSize(start, end-start);
 #endif
