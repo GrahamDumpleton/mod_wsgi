@@ -8279,7 +8279,7 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
     Py_DECREF(object);
 
 #if PY_MAJOR_VERSION >= 3
-    object = PyUnicode_FromString(group);
+    object = PyUnicode_DecodeLatin1(group, strlen(group), NULL);
 #else
     object = PyString_FromString(group);
 #endif
@@ -13032,7 +13032,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     Py_DECREF(object);
 
 #if PY_MAJOR_VERSION >= 3
-    object = PyUnicode_FromString(group);
+    object = PyUnicode_DecodeLatin1(group, strlen(group), NULL);
 #else
     object = PyString_FromString(group);
 #endif
