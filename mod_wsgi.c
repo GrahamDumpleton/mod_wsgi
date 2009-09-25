@@ -3495,6 +3495,8 @@ static PyObject *Adapter_environ(AdapterObject *self)
         }
     }
 
+    PyDict_DelItemString(vars, "PATH");
+
     /* Now setup all the WSGI specific environment values. */
 
     object = Py_BuildValue("(ii)", 1, 1);
