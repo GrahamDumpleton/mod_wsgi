@@ -3497,7 +3497,7 @@ static PyObject *Adapter_environ(AdapterObject *self)
 
     /* Now setup all the WSGI specific environment values. */
 
-    object = Py_BuildValue("(ii)", 1, 0);
+    object = Py_BuildValue("(ii)", 1, 1);
     PyDict_SetItemString(vars, "wsgi.version", object);
     Py_DECREF(object);
 
