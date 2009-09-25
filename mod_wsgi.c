@@ -472,8 +472,6 @@ typedef struct {
     int error_override;
     int chunked_request;
 
-    apr_table_t *variable_encoding;
-
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
     apr_hash_t *handler_scripts;
 #endif
@@ -546,8 +544,6 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->script_reloading = -1;
     object->error_override = -1;
     object->chunked_request = -1;
-
-    object->variable_encoding = NULL;
 
     return object;
 }
@@ -636,11 +632,6 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->chunked_request = parent->chunked_request;
 
-    if (child->variable_encoding)
-        config->variable_encoding = child->variable_encoding;
-    else
-        config->variable_encoding = parent->variable_encoding;
-
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
     if (!child->handler_scripts)
         config->handler_scripts = parent->handler_scripts;
@@ -671,8 +662,6 @@ typedef struct {
     int script_reloading;
     int error_override;
     int chunked_request;
-
-    apr_table_t *variable_encoding;
 
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
@@ -785,11 +774,6 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->chunked_request = parent->chunked_request;
 
-    if (child->variable_encoding)
-        config->variable_encoding = child->variable_encoding;
-    else
-        config->variable_encoding = parent->variable_encoding;
-
     if (child->access_script)
         config->access_script = child->access_script;
     else
@@ -845,8 +829,6 @@ typedef struct {
     int script_reloading;
     int error_override;
     int chunked_request;
-
-    apr_table_t *variable_encoding;
 
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
@@ -1193,11 +1175,6 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         if (config->chunked_request < 0)
             config->chunked_request = 0;
     }
-
-    config->variable_encoding = dconfig->variable_encoding;
-
-    if (!config->variable_encoding)
-        config->variable_encoding = sconfig->variable_encoding;
 
     config->access_script = dconfig->access_script;
 
@@ -3493,49 +3470,15 @@ static PyObject *Adapter_environ(AdapterObject *self)
         if (elts[i].key) {
             if (elts[i].val) {
 #if PY_MAJOR_VERSION >= 3
-                if (self->config->variable_encoding &&
-                    strstr(elts[i].key, "mod_wsgi.") != elts[i].key) {
-                    const char *value;
-
-                    value = apr_table_get(self->config->variable_encoding,
-                                          elts[i].key);
-
-                    if (!value)
-                        value = apr_table_get(self->config->variable_encoding,
-                                              "*");
-
-                    if (value) {
-                        if (!strcmp(value, "-")) {
-                            object = PyBytes_FromString(elts[i].val);
-                        }
-                        else {
-                            object = PyUnicode_Decode(elts[i].val,
-                                                      strlen(elts[i].val),
-                                                      value, "replace");
-
-                            if (!object) {
-                                /*
-                                 * An invalid encoding name was supplied
-                                 * or the value could not be decoded using
-                                 * the supplied encoding name. Generate an
-                                 * error and fallback to passing the value
-                                 * as latin-1.
-                                 */
-
-                                wsgi_log_python_error(self->r, self->log,
-                                                      self->r->filename);
-
-                                object = PyUnicode_DecodeLatin1(elts[i].val,
-                                                        strlen(elts[i].val),
-                                                        NULL);
-                            }
-                        }
-                    }
-                    else {
-                        object = PyUnicode_DecodeLatin1(elts[i].val,
-                                                        strlen(elts[i].val),
-                                                        NULL);
-                    }
+                if (!strcmp(elts[i].val, "DOCUMENT_ROOT")) {
+                    object = PyUnicode_Decode(elts[i].val, strlen(elts[i].val),
+                                             Py_FileSystemDefaultEncoding,
+                                             "surrogateescape");
+                }
+                else if (!strcmp(elts[i].val, "SCRIPT_FILENAME")) {
+                    object = PyUnicode_Decode(elts[i].val, strlen(elts[i].val),
+                                             Py_FileSystemDefaultEncoding,
+                                             "surrogateescape");
                 }
                 else {
                     object = PyUnicode_DecodeLatin1(elts[i].val,
@@ -7721,32 +7664,6 @@ static const char *wsgi_set_chunked_request(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_variable_encoding(cmd_parms *cmd, void *mconfig,
-                                              const char *n, const char *v)
-{
-    if (cmd->path) {
-        WSGIDirectoryConfig *dconfig = NULL;
-        dconfig = (WSGIDirectoryConfig *)mconfig;
-
-        if (!dconfig->variable_encoding)
-            dconfig->variable_encoding = apr_table_make(cmd->pool, 2);
-
-        apr_table_setn(dconfig->variable_encoding, n, v);
-    }
-    else {
-        WSGIServerConfig *sconfig = NULL;
-        sconfig = ap_get_module_config(cmd->server->module_config,
-                                       &wsgi_module);
-
-        if (!sconfig->variable_encoding)
-            sconfig->variable_encoding = apr_table_make(cmd->pool, 2);
-
-        apr_table_setn(sconfig->variable_encoding, n, v);
-    }
-
-    return NULL;
-}
-
 static const char *wsgi_set_access_script(cmd_parms *cmd, void *mconfig,
                                           const char *args)
 {
@@ -8272,33 +8189,6 @@ static void wsgi_build_environment(request_rec *r)
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.input_chunked",
                    apr_psprintf(r->pool, "%d", !!r->read_chunked));
-
-    if (config->variable_encoding) {
-        const apr_array_header_t *head = NULL;
-        const apr_table_entry_t *elts = NULL;
-
-        int i = 0;
-
-        head = apr_table_elts(config->variable_encoding);
-        elts = (apr_table_entry_t *)head->elts;
-
-        for (i = 0; i < head->nelts; ++i) {
-            if (elts[i].key) {
-                if (elts[i].val) {
-                    if (!strcmp(elts[i].key, "*")) {
-                        apr_table_setn(r->subprocess_env,
-                                       "mod_wsgi.variable_encoding",
-                                       elts[i].val);
-                    }
-                    else {
-                        apr_table_setn(r->subprocess_env, apr_pstrcat(r->pool,
-                                       "mod_wsgi.variable_encoding.", 
-                                       elts[i].key, NULL), elts[i].val);
-                    }
-                }
-            }
-        }
-    }
 }
 
 typedef struct {
@@ -9274,11 +9164,6 @@ static const command_rec wsgi_commands[] =
         OR_FILEINFO, TAKE1, "Enable/Disable script reloading mechanism." },
     { "WSGIChunkedRequest", wsgi_set_chunked_request, NULL,
         OR_FILEINFO, TAKE1, "Enable/Disable support for chunked request." },
-
-#if PY_MAJOR_VERSION >= 3
-    { "WSGIVariableEncoding", wsgi_set_variable_encoding, NULL,
-        OR_FILEINFO, TAKE2, "Encoding to be used for WSGI environment." },
-#endif
 
     { NULL }
 };
@@ -12621,32 +12506,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     config->script_reloading = atoi(apr_table_get(r->subprocess_env,
                                                   "mod_wsgi.script_reloading"));
 
-    /* Setup table for mapping encoding of variables. */
-
-#if PY_MAJOR_VERSION >= 3
-    head = apr_table_elts(r->subprocess_env);
-    elts = (apr_table_entry_t *)head->elts;
-
-    for (i = 0; i < head->nelts; ++i) {
-        if (elts[i].key) {
-            if (elts[i].val) {
-                if (!strcmp(elts[i].key, "mod_wsgi.variable_encoding")) {
-                    if (!config->variable_encoding)
-                        config->variable_encoding = apr_table_make(r->pool, 2);
-                    apr_table_setn(config->variable_encoding, "*", elts[i].val);
-                }
-                else if (strstr(elts[i].key,
-                         "mod_wsgi.variable_encoding.") == elts[i].key) {
-                    if (!config->variable_encoding)
-                        config->variable_encoding = apr_table_make(r->pool, 2);
-                    apr_table_setn(config->variable_encoding,
-                                   elts[i].key+27, elts[i].val);
-                }
-            }
-        }
-    }
-#endif
-
     /*
      * Define how input data is to be processed. This
      * was already done in the Apache child process and
@@ -12974,6 +12833,8 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     const apr_array_header_t *hdrs_arr;
     const apr_table_entry_t *hdrs;
 
+    const char *value = NULL;
+
     int i;
 
     vars = PyDict_New();
@@ -13093,7 +12954,10 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     }
 
 #if PY_MAJOR_VERSION >= 3
-    object = PyUnicode_FromString(ap_document_root(r));
+    value = ap_document_root(r);
+    object = PyUnicode_Decode(value, strlen(value),
+                             Py_FileSystemDefaultEncoding,
+                             "surrogateescape");
 #else
     object = PyString_FromString(ap_document_root(r));
 #endif
@@ -14745,11 +14609,6 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable overriding of error pages."),
     AP_INIT_TAKE1("WSGIChunkedRequest", wsgi_set_chunked_request,
         NULL, OR_FILEINFO, "Enable/Disable support for chunked requests."),
-
-#if PY_MAJOR_VERSION >= 3
-    AP_INIT_TAKE2("WSGIVariableEncoding", wsgi_set_variable_encoding,
-        NULL, OR_FILEINFO, "Encoding to be used for WSGI environment."),
-#endif
 
 #if defined(MOD_WSGI_WITH_AAA_HANDLERS)
     AP_INIT_RAW_ARGS("WSGIAccessScript", wsgi_set_access_script,
