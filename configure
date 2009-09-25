@@ -1195,6 +1195,7 @@ if test -n "$ac_init_help"; then
 Optional Features:
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
+  --disable-framework     disable mod_wsgi framework link
   --disable-embedded      disable mod_wsgi embedded mode
   --enable-py3k           enable mod_wsgi Python 3.X support
 
@@ -1624,6 +1625,14 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 
 
+# Check whether --enable-framework was given.
+if test "${enable_framework+set}" = set; then
+  enableval=$enable_framework; ENABLE_FRAMEWORK=$enableval
+else
+  ENABLE_FRAMEWORK=yes
+fi
+
+
 # Check whether --enable-embedded was given.
 if test "${enable_embedded+set}" = set; then
   enableval=$enable_embedded; ENABLE_EMBEDDED=$enableval
@@ -1829,7 +1838,8 @@ PYTHONFRAMEWORK=`${PYTHON} -c 'from sys import stdout; \
     from distutils import sysconfig; \
     stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORK"))'`
 
-if test "${PYTHONFRAMEWORKDIR}" = "no-framework"; then
+if test "${PYTHONFRAMEWORKDIR}" = "no-framework" -o \
+        "${ENABLE_FRAMEWORK}" != "yes"; then
     LDFLAGS1="-L${PYTHONLIBDIR}"
     LDFLAGS2="-L${PYTHONCFGDIR}"
 
@@ -1841,33 +1851,18 @@ if test "${PYTHONFRAMEWORKDIR}" = "no-framework"; then
         from distutils import sysconfig; \
         stdout.write(sysconfig.get_config_var("SYSLIBS"))'`
 else
-    if test "${PYTHON_VERSION}" != "2.3" && \
-            test "${PYTHON_VERSION}" != "2.4" && \
-            test "${PYTHON_VERSION}" != "2.5" && \
-            test -f "${PYTHONCFGDIR}/libpython${PYTHON_VERSION}.a"; then
-        LDFLAGS2="-L${PYTHONCFGDIR}"
+    LDFLAGS1="-Wl,-F${PYTHONFRAMEWORKPREFIX} -framework ${PYTHONFRAMEWORK}"
 
-        LDLIBS1="-lpython${PYTHON_VERSION}"
-        LDLIBS2=`${PYTHON} -c 'from sys import stdout; \
-            from distutils import sysconfig; \
-            stdout.write(sysconfig.get_config_var("LIBS"))'`
-        LDLIBS3=`${PYTHON} -c 'from sys import stdout; \
-            from distutils import sysconfig; \
-            stdout.write(sysconfig.get_config_var("SYSLIBS"))'`
-    else
-        LDFLAGS1="-Wl,-F${PYTHONFRAMEWORKPREFIX} -framework ${PYTHONFRAMEWORK}"
+    VERSION="${PYTHON_VERSION}"
+    STRING="${PYTHONFRAMEWORKDIR}/Versions/${VERSION}/${PYTHONFRAMEWORK}"
+    LDFLAGS2=`${PYTHON} -c "from sys import stdout; \
+        from distutils import sysconfig; \
+        stdout.write(sysconfig.get_config_var(
+        \"LINKFORSHARED\").replace(\"${STRING}\", ''))"`
 
-        VERSION="${PYTHON_VERSION}"
-        STRING="${PYTHONFRAMEWORKDIR}/Versions/${VERSION}/${PYTHONFRAMEWORK}"
-        LDFLAGS2=`${PYTHON} -c "from sys import stdout; \
-            from distutils import sysconfig; \
-            stdout.write(sysconfig.get_config_var(
-            \"LINKFORSHARED\").replace(\"${STRING}\", ''))"`
-
-        LDLIBS1=`${PYTHON} -c 'from sys import stdout; \
-            from distutils import sysconfig; \
-            stdout.write(sysconfig.get_config_var("LIBS"))'`
-    fi
+    LDLIBS1=`${PYTHON} -c 'from sys import stdout; \
+        from distutils import sysconfig; \
+        stdout.write(sysconfig.get_config_var("LIBS"))'`
 fi
 
 CFLAGS=""
