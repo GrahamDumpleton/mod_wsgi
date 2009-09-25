@@ -130,13 +130,17 @@ typedef regmatch_t ap_regmatch_t;
 #include "osdefs.h"
 
 #if !defined(PY_VERSION_HEX) || PY_VERSION_HEX <= 0x02030000
-#error Sorry, mod_wsgi requires at least Python 2.3.0.
+#error Sorry, mod_wsgi requires at least Python 2.3.0 for Python 2.X.
 #endif
 
 #if !defined(MOD_WSGI_ENABLE_PY3K)
 #if PY_VERSION_HEX >= 0x03000000
 #error Sorry, there is no WSGI specification for Python 3.X as yet.
 #endif
+#endif
+
+#if PY_VERSION_HEX >= 0x03000000 && PY_VERSION_HEX < 0x03010000
+#error Sorry, mod_wsgi requires at least Python 3.1.0 for Python 3.X.
 #endif
 
 #if !defined(WITH_THREAD)
@@ -4634,7 +4638,10 @@ static InterpreterObject *newInterpreterObject(const char *name)
                 if (getenv("USER")) {
 #if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("USER");
-                    value = PyUnicode_DecodeFSDefault(pwent->pw_name);
+                    value = PyUnicode_Decode(pwent->pw_name,
+                                             strlen(pwent->pw_name),
+                                             Py_FileSystemDefaultEncoding,
+                                             "surrogateescape");
 #else
                     key = PyString_FromString("USER");
                     value = PyString_FromString(pwent->pw_name);
@@ -4649,7 +4656,10 @@ static InterpreterObject *newInterpreterObject(const char *name)
                 if (getenv("USERNAME")) {
 #if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("USERNAME");
-                    value = PyUnicode_DecodeFSDefault(pwent->pw_name);
+                    value = PyUnicode_Decode(pwent->pw_name,
+                                             strlen(pwent->pw_name),
+                                             Py_FileSystemDefaultEncoding,
+                                             "surrogateescape");
 #else
                     key = PyString_FromString("USERNAME");
                     value = PyString_FromString(pwent->pw_name);
@@ -4664,7 +4674,10 @@ static InterpreterObject *newInterpreterObject(const char *name)
                 if (getenv("LOGNAME")) {
 #if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("LOGNAME");
-                    value = PyUnicode_DecodeFSDefault(pwent->pw_name);
+                    value = PyUnicode_Decode(pwent->pw_name,
+                                             strlen(pwent->pw_name),
+                                             Py_FileSystemDefaultEncoding,
+                                             "surrogateescape");
 #else
                     key = PyString_FromString("LOGNAME");
                     value = PyString_FromString(pwent->pw_name);
@@ -4711,7 +4724,9 @@ static InterpreterObject *newInterpreterObject(const char *name)
                 pwent = getpwuid(geteuid());
 #if PY_MAJOR_VERSION >= 3
                 key = PyUnicode_FromString("HOME");
-                value = PyUnicode_DecodeFSDefault(pwent->pw_dir);
+                value = PyUnicode_Decode(pwent->pw_dir, strlen(pwent->pw_dir),
+                                         Py_FileSystemDefaultEncoding,
+                                         "surrogateescape");
 #else
                 key = PyString_FromString("HOME");
                 value = PyString_FromString(pwent->pw_dir);
