@@ -5576,11 +5576,11 @@ static PyTypeObject Interpreter_Type = {
  * Python fixups after Apache is forked and child process has
  * run.
  *
- * Note that by default we defer initialisation of Python until
- * after the fork of processes when using Python 3.X as Python
- * 3.X by design doesn't clean up properly when it is destroyed
- * causing significant memory leaks into Apache parent process
- * on an Apache restart. Some Python 2.X versions also have real
+ * Note that by default we now defer initialisation of Python
+ * until after the fork of processes as Python 3.X by design
+ * doesn't clean up properly when it is destroyed causing
+ * significant memory leaks into Apache parent process on an
+ * Apache restart. Some Python 2.X versions also have real
  * memory leaks but not near as much. The result of deferring
  * initialisation is that can't benefit from copy on write
  * semantics for loaded data across a fork. Each process will
@@ -5596,11 +5596,7 @@ static int wsgi_python_required = 0;
 static int wsgi_python_required = -1;
 #endif
 
-#if PY_MAJOR_VERSION >= 3
 static int wsgi_python_after_fork = 1;
-#else
-static int wsgi_python_after_fork = 0;
-#endif
 
 static void wsgi_python_version(void)
 {
