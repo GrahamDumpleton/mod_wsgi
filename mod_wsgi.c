@@ -5932,8 +5932,24 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
         PyEval_AcquireThread(tstate);
     }
-    else
+    else {
         PyGILState_Ensure();
+
+        /*
+	 * When simplified GIL state API is used, the thread
+	 * local data only persists for the extent of the top
+	 * level matching ensure/release calls. We want to
+         * extend lifetime of the thread local data beyond
+         * that, retaining it for all requests within the one
+         * thread for the life of the process. To do that we
+         * need to artificially increment the reference count
+         * for the associated thread state object.
+         */
+
+        tstate = PyThreadState_Get();
+        if (tstate && tstate->gilstate_counter == 1)
+            tstate->gilstate_counter++;
+    }
 
     return handle;
 }
