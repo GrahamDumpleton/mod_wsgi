@@ -3168,29 +3168,6 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
             }
         }
 
-        /*
-         * If content length not set and dealing with iterable
-         * response from application, see if response is a
-         * sequence consisting of only one item and if so use
-         * the current length of data being output as the
-         * content length to use, given that there cannot be
-         * any further data.
-         */
-
-        if (self->sequence && PySequence_Check(self->sequence)) {
-            if (PySequence_Size(self->sequence) == 1) {
-                if (!self->content_length_set) {
-                    ap_set_content_length(r, length);
-
-                    self->content_length_set = 1;
-                    self->content_length = length;
-                }
-            }
-
-            if (PyErr_Occurred())
-                PyErr_Clear();
-        }
-
         /* Need to force output of headers when using Apache 1.3. */
 
         Py_BEGIN_ALLOW_THREADS
