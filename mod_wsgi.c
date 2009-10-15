@@ -360,7 +360,7 @@ static apr_status_t wsgi_utf8_to_unicode_path(apr_wchar_t* retstr,
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 3
 #define MOD_WSGI_MINORVERSION_NUMBER 0
-#define MOD_WSGI_VERSION_STRING "3.0c5"
+#define MOD_WSGI_VERSION_STRING "3.0c6-TRUNK"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -11713,6 +11713,9 @@ static int wsgi_execute_remote(request_rec *r)
     apr_os_pipe_put_ex(&tmpsock, &daemon->fd, 1, r->pool);
     apr_pool_cleanup_kill(r->pool, daemon, wsgi_close_socket);
 
+    apr_file_pipe_timeout_get(tmpsock, &timeout);
+    apr_file_pipe_timeout_set(tmpsock, r->server->timeout);
+
     /* Setup bucket brigade for reading response from daemon. */
 
     bbin = apr_brigade_create(r->pool, r->connection->bucket_alloc);
@@ -11805,6 +11808,9 @@ static int wsgi_execute_remote(request_rec *r)
             apr_os_pipe_put_ex(&tmpsock, &daemon->fd, 1, r->pool);
             apr_pool_cleanup_kill(r->pool, daemon, wsgi_close_socket);
 
+            apr_file_pipe_timeout_get(tmpsock, &timeout);
+            apr_file_pipe_timeout_set(tmpsock, r->server->timeout);
+
             apr_brigade_destroy(bbin);
 
             bbin = apr_brigade_create(r->pool, r->connection->bucket_alloc);
@@ -11830,9 +11836,6 @@ static int wsgi_execute_remote(request_rec *r)
     child_stopped_reading = 0;
 
     bbout = apr_brigade_create(r->pool, r->connection->bucket_alloc);
-
-    apr_file_pipe_timeout_get(tmpsock, &timeout);
-    apr_file_pipe_timeout_set(tmpsock, r->server->timeout);
 
     do {
         apr_bucket *bucket;
