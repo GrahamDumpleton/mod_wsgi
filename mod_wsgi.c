@@ -1213,11 +1213,17 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 #include "scoreboard.h"
 #include "mpm_common.h"
 #include "apr_proc_mutex.h"
+#include "apr_thread_cond.h"
+#include "apr_atomic.h"
 #include "http_connection.h"
 #include "apr_buckets.h"
 #include "apr_poll.h"
 #include "apr_signal.h"
 #include "http_vhost.h"
+
+#if APR_MAJOR_VERSION < 1
+#define apr_atomic_cas32 apr_atomic_cas
+#endif
 
 #if APR_HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
@@ -1241,6 +1247,11 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 #ifndef WSGI_CONNECT_ATTEMPTS
 #define WSGI_CONNECT_ATTEMPTS 15
 #endif
+
+#define WSGI_STACK_HEAD  0xffff
+#define WSGI_STACK_LAST  0xffff
+#define WSGI_STACK_TERMINATED 0x10000
+#define WSGI_STACK_NO_LISTENER 0x20000
 
 typedef struct {
     server_rec *server;
@@ -1285,10 +1296,21 @@ typedef struct {
 } WSGIDaemonProcess;
 
 typedef struct {
+    int id;
     WSGIDaemonProcess *process;
     apr_thread_t *thread;
     int running;
 } WSGIDaemonThread;
+
+typedef struct {
+    int next;
+    apr_thread_cond_t *condition;
+    apr_thread_mutex_t *mutex;
+} WSGIThreadWakeup;
+
+typedef struct {
+    apr_uint32_t state;
+} WSGIThreadStack;
 
 typedef struct {
     const char *name;
@@ -1302,9 +1324,13 @@ static apr_hash_t *wsgi_daemon_listeners = NULL;
 
 static WSGIDaemonProcess *wsgi_daemon_process = NULL;
 
-static apr_thread_mutex_t* wsgi_daemon_lock = NULL;
+static apr_thread_mutex_t *wsgi_daemon_lock = NULL;
 
 static int volatile wsgi_request_count = 0;
+
+static WSGIThreadWakeup **wsgi_worker_states = NULL;
+
+static WSGIThreadStack *wsgi_worker_stack = NULL;
 
 #endif
 
@@ -9316,7 +9342,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                 return "Invalid thread count for WSGI daemon process.";
 
             threads = atoi(value);
-            if (threads < 1)
+            if (threads < 1 || threads >= WSGI_STACK_LAST-1)
                 return "Invalid thread count for WSGI daemon process.";
         }
         else if (!strcmp(option, "umask")) {
@@ -10041,6 +10067,103 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
     ap_lingering_close(c);
 }
 
+static apr_status_t wsgi_worker_acquire(int id)
+{
+    WSGIThreadStack *stack = wsgi_worker_stack;
+    WSGIThreadWakeup *wakeup = wsgi_worker_states[id];
+
+    while (1) {
+        apr_uint32_t state = stack->state;
+        if (state & (WSGI_STACK_TERMINATED | WSGI_STACK_NO_LISTENER)) {
+            if (state & WSGI_STACK_TERMINATED) {
+                return APR_EINVAL;
+            }
+            if (apr_atomic_cas32(&(stack->state), WSGI_STACK_LAST, state) !=
+                state) {
+                continue;
+            }
+            else {
+                return APR_SUCCESS;
+            }
+        }
+        wakeup->next = state;
+        if (apr_atomic_cas32(&(stack->state), (unsigned)id, state) != state) {
+            continue;
+        }
+        else {
+            return apr_thread_cond_wait(wakeup->condition, wakeup->mutex);
+        }
+    }
+}
+
+static apr_status_t wsgi_worker_release()
+{
+    WSGIThreadStack *stack = wsgi_worker_stack;
+
+    while (1) {
+        apr_uint32_t state = stack->state;
+        unsigned int first = state & WSGI_STACK_HEAD;
+        if (first == WSGI_STACK_LAST) {
+            if (apr_atomic_cas32(&(stack->state),
+                                 state | WSGI_STACK_NO_LISTENER,
+                                 state) != state) {
+                continue;
+            }
+            else {
+                return APR_SUCCESS;
+            }
+        }
+        else {
+            WSGIThreadWakeup *wakeup = wsgi_worker_states[first];
+            if (apr_atomic_cas32(&(stack->state),
+                                 (state ^ first) | wakeup->next,
+                                 state) != state) {
+                continue;
+            }
+            else {
+                /*
+		 * Acquire and release the idle worker's mutex
+		 * to ensure that it's actually waiting on its
+		 * condition variable
+                 */
+
+                apr_status_t rv;
+                if ((rv = apr_thread_mutex_lock(wakeup->mutex)) !=
+                    APR_SUCCESS) {
+                    return rv;
+                }
+                if ((rv = apr_thread_mutex_unlock(wakeup->mutex)) !=
+                    APR_SUCCESS) {
+                    return rv;
+                }
+
+                return apr_thread_cond_signal(wakeup->condition);
+            }
+        }
+    }
+}
+
+static apr_status_t wsgi_worker_shutdown()
+{
+    int i;
+    apr_status_t rv;
+    WSGIThreadStack *stack = wsgi_worker_stack;
+
+    while (1) {
+        apr_uint32_t state = stack->state;
+        if (apr_atomic_cas32(&(stack->state), state | WSGI_STACK_TERMINATED,
+                           state) == state) {
+            break;
+        }
+    }
+    for (i = 0; i < wsgi_daemon_process->group->threads; i++) {
+        if ((rv = wsgi_worker_release()) != APR_SUCCESS) {
+            return rv;
+        }
+    }
+    return APR_SUCCESS;
+}
+
 static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 {
     apr_status_t status;
@@ -10074,7 +10197,11 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
          * GIL contention.
          */
 
+#if 0
         apr_thread_mutex_lock(wsgi_daemon_lock);
+#endif
+
+        wsgi_worker_acquire(thread->id);
 
         if (wsgi_daemon_shutdown)
             break;
@@ -10134,7 +10261,11 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             if (wsgi_daemon_shutdown) {
                 apr_proc_mutex_unlock(group->mutex);
 
+#if 0
                 apr_thread_mutex_unlock(wsgi_daemon_lock);
+#endif
+
+                wsgi_worker_release();
 
                 break;
             }
@@ -10181,7 +10312,11 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             if (group->mutex)
                 apr_proc_mutex_unlock(group->mutex);
 
+#if 0
             apr_thread_mutex_unlock(wsgi_daemon_lock);
+#endif
+
+            wsgi_worker_release();
 
             apr_pool_destroy(ptrans);
 
@@ -10192,7 +10327,11 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             if (group->mutex)
                 apr_proc_mutex_unlock(group->mutex);
 
+#if 0
             apr_thread_mutex_unlock(wsgi_daemon_lock);
+#endif
+
+            wsgi_worker_release();
 
             apr_pool_destroy(ptrans);
 
@@ -10208,7 +10347,12 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             rv = apr_proc_mutex_unlock(group->mutex);
             if (rv != APR_SUCCESS) {
                 if (!wsgi_daemon_shutdown) {
+#if 0
                     apr_thread_mutex_unlock(wsgi_daemon_lock);
+#endif
+
+                    wsgi_worker_release();
+
                     ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(rv),
                                  wsgi_server, "mod_wsgi (pid=%d): "
                                  "Couldn't release accept mutex '%s'.",
@@ -10221,7 +10365,11 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             }
         }
 
+#if 0
         apr_thread_mutex_unlock(wsgi_daemon_lock);
+#endif
+
+        wsgi_worker_release();
 
         if (status != APR_SUCCESS && APR_STATUS_IS_EINTR(status)) {
             apr_pool_destroy(ptrans);
@@ -10481,6 +10629,15 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                                daemon, p);
     }
 
+    /* Initialise worker stack and associated wakeup state. */
+
+    wsgi_worker_stack = (WSGIThreadStack *)apr_palloc(p,
+            sizeof(WSGIThreadStack));
+    wsgi_worker_stack->state = WSGI_STACK_NO_LISTENER | WSGI_STACK_LAST;
+
+    wsgi_worker_states = (WSGIThreadWakeup **)apr_palloc(p,
+            daemon->group->threads*sizeof(WSGIThreadWakeup *));
+
     /* Start the required number of threads. */
 
     threads = (WSGIDaemonThread *)apr_pcalloc(p, daemon->group->threads
@@ -10494,12 +10651,60 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     }
 
     for (i=0; i<daemon->group->threads; i++) {
+        WSGIThreadWakeup *wakeup = NULL;
+
         if (wsgi_server_config->verbose_debugging) {
             ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
                          "mod_wsgi (pid=%d): Starting thread %d in daemon "
                          "process '%s'.", getpid(), i+1, daemon->group->name);
         }
 
+        /* Create the wakeup state for this thread. */
+
+        wakeup = (WSGIThreadWakeup *)apr_palloc(p, sizeof(WSGIThreadWakeup));
+
+        rv = apr_thread_cond_create(&wakeup->condition, p);
+
+        if (rv != APR_SUCCESS) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(rv), wsgi_server,
+                         "mod_wsgi (pid=%d): Couldn't create worker "
+                         "thread %d state condition variable in daemon "
+                         "process '%s'.", getpid(), i, daemon->group->name);
+
+            /*
+             * Try to force an exit of the process if fail
+             * to create the worker threads.
+             */
+
+            kill(getpid(), SIGTERM);
+            sleep(5);
+        }
+
+        rv = apr_thread_mutex_create(&wakeup->mutex,
+                                     APR_THREAD_MUTEX_DEFAULT, p);
+
+        if (rv != APR_SUCCESS) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(rv), wsgi_server,
+                         "mod_wsgi (pid=%d): Couldn't create worker "
+                         "thread %d state mutex variable in daemon "
+                         "process '%s'.", getpid(), i, daemon->group->name);
+
+            /*
+             * Try to force an exit of the process if fail
+             * to create the worker threads.
+             */
+
+            kill(getpid(), SIGTERM);
+            sleep(5);
+        }
+
+        apr_thread_mutex_lock(wakeup->mutex);
+
+        wsgi_worker_states[i] = wakeup;
+
+        /* Now create the actual thread. */
+
+        threads[i].id = i;
         threads[i].process = daemon;
         threads[i].running = 0;
 
@@ -10566,6 +10771,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
      * before the daemon process and so the response gets
      * cut off or lost.
      */
+
+    wsgi_worker_shutdown();
 
     for (i=0; i<daemon->group->threads; i++) {
         if (threads[i].thread && threads[i].running) {
