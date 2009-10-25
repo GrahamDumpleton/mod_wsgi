@@ -1293,6 +1293,10 @@ typedef struct {
     int instance;
     apr_proc_t process;
     apr_socket_t *listener;
+    long threads_requests_total;
+    int threads_active;
+    int threads_active_maximum;
+    apr_time_t threads_time_total;
 } WSGIDaemonProcess;
 
 typedef struct {
@@ -1303,6 +1307,10 @@ typedef struct {
     int next;
     apr_thread_cond_t *condition;
     apr_thread_mutex_t *mutex;
+    long requests_total;
+    apr_time_t requests_time_total;
+    apr_time_t requests_time_minimum;
+    apr_time_t requests_time_maximum;
 } WSGIDaemonThread;
 
 typedef struct {
@@ -1328,6 +1336,111 @@ static int volatile wsgi_request_count = 0;
 static WSGIDaemonThread *wsgi_worker_threads = NULL;
 
 static WSGIThreadStack *wsgi_worker_stack = NULL;
+
+static PyObject *wsgi_thread_statistics(PyObject *self, PyObject *args)
+{
+    PyObject *summary = NULL;
+    PyObject *threads = NULL;
+    PyObject *detail = NULL;
+    PyObject *object = NULL;
+
+    int i = 0;
+
+    if (!PyArg_ParseTuple(args, ":thread_statistics"))
+        return NULL;
+
+    summary = PyDict_New();
+
+    apr_thread_mutex_lock(wsgi_daemon_lock);
+
+    object = Py_BuildValue("i", wsgi_daemon_process->threads_requests_total);
+    PyDict_SetItemString(summary, "threads_requests_total", object);
+    Py_DECREF(object);
+
+    object = Py_BuildValue("i", wsgi_daemon_process->threads_active);
+    PyDict_SetItemString(summary, "threads_active", object);
+    Py_DECREF(object);
+
+    object = Py_BuildValue("i", wsgi_daemon_process->threads_active_maximum);
+    PyDict_SetItemString(summary, "threads_active_maximum", object);
+    Py_DECREF(object);
+
+    object = Py_BuildValue("d", (double)wsgi_daemon_process->threads_time_total / APR_USEC_PER_SEC);
+    PyDict_SetItemString(summary, "threads_time_total", object);
+    Py_DECREF(object);
+
+    if (wsgi_daemon_process->threads_requests_total) {
+        object = Py_BuildValue("d", (double)wsgi_daemon_process->threads_time_total / wsgi_daemon_process->threads_requests_total / APR_USEC_PER_SEC);
+        PyDict_SetItemString(summary, "threads_time_average", object);
+        Py_DECREF(object);
+    }
+    else {
+        object = Py_BuildValue("d", 0.0);
+        PyDict_SetItemString(summary, "threads_time_average", object);
+        Py_DECREF(object);
+    }
+
+    threads = PyList_New(i);
+
+    PyDict_SetItemString(summary, "threads", threads);
+
+    for (i=0; i<wsgi_daemon_process->group->threads; i++) {
+        WSGIDaemonThread *thread = &wsgi_worker_threads[i];
+
+        detail = PyDict_New();
+
+        object = Py_BuildValue("i", i);
+        PyDict_SetItemString(detail, "id", object);
+        Py_DECREF(object);
+
+        if (thread->running)
+            PyDict_SetItemString(detail, "running", Py_True);
+        else
+            PyDict_SetItemString(detail, "running", Py_False);
+
+        object = Py_BuildValue("l", thread->requests_total);
+        PyDict_SetItemString(detail, "requests_total", object);
+        Py_DECREF(object);
+
+        object = Py_BuildValue("d", (double)thread->requests_time_total / APR_USEC_PER_SEC);
+        PyDict_SetItemString(detail, "requests_time_total", object);
+        Py_DECREF(object);
+
+        if (thread->requests_time_total) {
+            object = Py_BuildValue("d", (double)thread->requests_time_total / thread->requests_total / APR_USEC_PER_SEC);
+            PyDict_SetItemString(detail, "requests_time_average", object);
+            Py_DECREF(object);
+        }
+        else {
+            object = Py_BuildValue("d", 0.0);
+            PyDict_SetItemString(detail, "requests_time_average", object);
+            Py_DECREF(object);
+        }
+
+        object = Py_BuildValue("d", (double)thread->requests_time_minimum / APR_USEC_PER_SEC);
+        PyDict_SetItemString(detail, "requests_time_minimum", object);
+        Py_DECREF(object);
+
+        object = Py_BuildValue("d", (double)thread->requests_time_maximum / APR_USEC_PER_SEC);
+        PyDict_SetItemString(detail, "requests_time_maximum", object);
+        Py_DECREF(object);
+
+        PyList_Append(threads, detail);
+
+        Py_DECREF(detail);
+    }
+
+    Py_DECREF(threads);
+
+    apr_thread_mutex_unlock(wsgi_daemon_lock);
+
+    return summary;
+}
+
+static PyMethodDef wsgi_statistics_method[] = {
+    { "thread_statistics", (PyCFunction)wsgi_thread_statistics, METH_VARARGS, 0 },
+    { NULL, NULL }
+};
 
 #endif
 
@@ -4977,6 +5090,13 @@ static InterpreterObject *newInterpreterObject(const char *name)
     PyModule_AddObject(module, "version", Py_BuildValue("(ii)",
                        MOD_WSGI_MAJORVERSION_NUMBER,
                        MOD_WSGI_MINORVERSION_NUMBER));
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_daemon_pool) {
+        PyModule_AddObject(module, "thread_statistics", PyCFunction_New(
+                           &wsgi_statistics_method[0], NULL));
+    }
+#endif
 
     /*
      * Add information about process group and application
@@ -10183,6 +10303,9 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
     while (!wsgi_daemon_shutdown) {
         apr_status_t rv;
 
+        apr_time_t start;
+        apr_time_t duration;
+
         /*
          * Only allow one thread in this process to attempt to
          * acquire the global process lock as the global process
@@ -10199,6 +10322,19 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 #endif
 
         wsgi_worker_acquire(thread->id);
+
+        /* XXX */
+
+        apr_thread_mutex_lock(wsgi_daemon_lock);
+
+        daemon->threads_active++;
+
+        if (daemon->threads_active > daemon->threads_active_maximum)
+            daemon->threads_active_maximum = daemon->threads_active;
+
+        apr_thread_mutex_unlock(wsgi_daemon_lock);
+
+        /* XXX */
 
         if (wsgi_daemon_shutdown)
             break;
@@ -10377,10 +10513,46 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
         /* Process the request proxied from the child process. */
 
+        /* XXX */
+
+        start = apr_time_now();
+
+        apr_thread_mutex_lock(wsgi_daemon_lock);
+
+        daemon->threads_requests_total++;
+        thread->requests_total++;
+
+        apr_thread_mutex_unlock(wsgi_daemon_lock);
+
+        /* XXX */
+
         bucket_alloc = apr_bucket_alloc_create(ptrans);
         wsgi_process_socket(ptrans, socket, bucket_alloc, daemon);
 
         /* Cleanup ready for next request. */
+
+        /* XXX */
+
+        duration = apr_time_now() - start;
+
+        apr_thread_mutex_lock(wsgi_daemon_lock);
+
+        daemon->threads_active--;
+
+        thread->requests_time_total += duration;
+        daemon->threads_time_total += duration;
+
+        if (thread->requests_time_minimum == 0 ||
+            duration < thread->requests_time_minimum) {
+            thread->requests_time_minimum = duration;
+        }
+
+        if (duration > thread->requests_time_maximum)
+            thread->requests_time_maximum = duration;
+
+        apr_thread_mutex_unlock(wsgi_daemon_lock);
+
+        /* XXX */
 
         apr_pool_destroy(ptrans);
 
