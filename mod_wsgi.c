@@ -1354,6 +1354,10 @@ static PyObject *wsgi_usage_statistics(PyObject *self, PyObject *args)
 
     apr_thread_mutex_lock(wsgi_daemon_lock);
 
+    object = Py_BuildValue("s", wsgi_daemon_process->group->name);
+    PyDict_SetItemString(summary, "process_group", object);
+    Py_DECREF(object);
+
     object = Py_BuildValue("i", wsgi_daemon_process->group->processes);
     PyDict_SetItemString(summary, "processes", object);
     Py_DECREF(object);
