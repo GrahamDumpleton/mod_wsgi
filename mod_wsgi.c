@@ -1293,6 +1293,7 @@ typedef struct {
     int instance;
     apr_proc_t process;
     apr_socket_t *listener;
+    apr_time_t created_time;
     long threads_requests_total;
     int threads_active;
     int threads_active_maximum;
@@ -1337,7 +1338,7 @@ static WSGIDaemonThread *wsgi_worker_threads = NULL;
 
 static WSGIThreadStack *wsgi_worker_stack = NULL;
 
-static PyObject *wsgi_thread_statistics(PyObject *self, PyObject *args)
+static PyObject *wsgi_usage_statistics(PyObject *self, PyObject *args)
 {
     PyObject *summary = NULL;
     PyObject *threads = NULL;
@@ -1346,12 +1347,24 @@ static PyObject *wsgi_thread_statistics(PyObject *self, PyObject *args)
 
     int i = 0;
 
-    if (!PyArg_ParseTuple(args, ":thread_statistics"))
+    if (!PyArg_ParseTuple(args, ":usage_statistics"))
         return NULL;
 
     summary = PyDict_New();
 
     apr_thread_mutex_lock(wsgi_daemon_lock);
+
+    object = Py_BuildValue("i", getpid());
+    PyDict_SetItemString(summary, "process_id", object);
+    Py_DECREF(object);
+
+    object = Py_BuildValue("d", (double)wsgi_daemon_process->created_time / APR_USEC_PER_SEC);
+    PyDict_SetItemString(summary, "process_created_time", object);
+    Py_DECREF(object);
+
+    object = Py_BuildValue("d", (double)apr_time_now() / APR_USEC_PER_SEC);
+    PyDict_SetItemString(summary, "threads_sample_time", object);
+    Py_DECREF(object);
 
     object = Py_BuildValue("i", wsgi_daemon_process->threads_requests_total);
     PyDict_SetItemString(summary, "threads_requests_total", object);
@@ -1438,7 +1451,7 @@ static PyObject *wsgi_thread_statistics(PyObject *self, PyObject *args)
 }
 
 static PyMethodDef wsgi_statistics_method[] = {
-    { "thread_statistics", (PyCFunction)wsgi_thread_statistics, METH_VARARGS, 0 },
+    { "usage_statistics", (PyCFunction)wsgi_usage_statistics, METH_VARARGS, 0 },
     { NULL, NULL }
 };
 
@@ -5093,7 +5106,7 @@ static InterpreterObject *newInterpreterObject(const char *name)
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_pool) {
-        PyModule_AddObject(module, "thread_statistics", PyCFunction_New(
+        PyModule_AddObject(module, "usage_statistics", PyCFunction_New(
                            &wsgi_statistics_method[0], NULL));
     }
 #endif
@@ -10802,6 +10815,10 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     wsgi_worker_stack = (WSGIThreadStack *)apr_palloc(p,
             sizeof(WSGIThreadStack));
     wsgi_worker_stack->state = WSGI_STACK_NO_LISTENER | WSGI_STACK_LAST;
+
+    /* Record when start handling requests. */
+
+    daemon->created_time = apr_time_now();
 
     /* Start the required number of threads. */
 
