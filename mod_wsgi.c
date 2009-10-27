@@ -1354,6 +1354,14 @@ static PyObject *wsgi_usage_statistics(PyObject *self, PyObject *args)
 
     apr_thread_mutex_lock(wsgi_daemon_lock);
 
+    object = Py_BuildValue("i", wsgi_daemon_process->group->processes);
+    PyDict_SetItemString(summary, "processes", object);
+    Py_DECREF(object);
+
+    object = Py_BuildValue("i", wsgi_daemon_process->group->threads);
+    PyDict_SetItemString(summary, "threads", object);
+    Py_DECREF(object);
+
     object = Py_BuildValue("i", getpid());
     PyDict_SetItemString(summary, "process_id", object);
     Py_DECREF(object);
@@ -1395,7 +1403,7 @@ static PyObject *wsgi_usage_statistics(PyObject *self, PyObject *args)
 
     threads = PyList_New(i);
 
-    PyDict_SetItemString(summary, "threads", threads);
+    PyDict_SetItemString(summary, "threads_details", threads);
 
     for (i=0; i<wsgi_daemon_process->group->threads; i++) {
         WSGIDaemonThread *thread = &wsgi_worker_threads[i];
