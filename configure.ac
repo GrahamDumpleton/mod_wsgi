@@ -140,16 +140,17 @@ else
         stdout.write(sysconfig.get_config_var("LIBS"))'`
 fi
 
-CFLAGS=""
+CFLAGS1=""
 if test -x /usr/bin/lipo; then
     LDFLAGS3=""
     ARCHITECTURES=`/usr/bin/lipo -info $HTTPD | sed -e 's/.*://'`
     for ARCH in $ARCHITECTURES; do
-        CFLAGS="${CFLAGS} -Wc,'-arch ${ARCH}'" 
+        CFLAGS1="${CFLAGS1} -Wc,'-arch ${ARCH}'" 
         LDFLAGS3="${LDFLAGS3} -arch ${ARCH}" 
     done
 fi
 
+CFLAGS="${CFLAGS} ${CFLAGS1}"
 LDFLAGS="${LDFLAGS} ${LDFLAGS1} ${LDFLAGS2} ${LDFLAGS3}"
 LDLIBS="${LDLIBS} ${LDLIBS1} ${LDLIBS2} ${LDLIBS3}"
 
