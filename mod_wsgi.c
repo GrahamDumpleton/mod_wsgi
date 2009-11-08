@@ -120,6 +120,10 @@ typedef regmatch_t ap_regmatch_t;
 #endif
 #endif
 
+#if !AP_MODULE_MAGIC_AT_LEAST(20081201,0)
+#define ap_unixd_config unixd_config
+#endif
+
 #ifndef WIN32
 #include <pwd.h>
 #endif
@@ -9426,10 +9430,10 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
      * Apache configuration.
      */
 
-    uid = unixd_config.user_id;
-    user = unixd_config.user_name;
+    uid = ap_unixd_config.user_id;
+    user = ap_unixd_config.user_name;
 
-    gid = unixd_config.group_id;
+    gid = ap_unixd_config.group_id;
 
     /* Now parse options for directive. */
 
@@ -10118,7 +10122,7 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
     }
 
     if (!geteuid()) {
-        if (chown(process->socket, unixd_config.user_id, -1) < 0) {
+        if (chown(process->socket, ap_unixd_config.user_id, -1) < 0) {
             ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
                          "mod_wsgi (pid=%d): Couldn't change owner of unix "
                          "domain socket '%s'.", getpid(),
@@ -11400,12 +11404,22 @@ static int wsgi_start_daemons(apr_pool_t *p)
     WSGIProcessGroup *entry = NULL;
     WSGIDaemonProcess *process = NULL;
 
+    int mpm_generation = 0;
+
     int i, j;
 
     /* Do we need to create any daemon processes. */
 
     if (!wsgi_daemon_list)
         return OK;
+
+    /* What server generation is this. */
+
+#if defined(AP_MPMQ_GENERATION)
+    ap_mpm_query(AP_MPMQ_GENERATION, &mpm_generation);
+#else
+    mpm_generation = ap_my_generation;
+#endif
 
     /*
      * Cache references to root server and pool as will need
@@ -11442,8 +11456,8 @@ static int wsgi_start_daemons(apr_pool_t *p)
          */
 
         if (entry->uid == ap_uname2id(DEFAULT_USER)) {
-            entry->uid = unixd_config.user_id;
-            entry->user = unixd_config.user_name;
+            entry->uid = ap_unixd_config.user_id;
+            entry->user = ap_unixd_config.user_name;
 
             ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
                          "mod_wsgi (pid=%d): Reset default user for "
@@ -11452,7 +11466,7 @@ static int wsgi_start_daemons(apr_pool_t *p)
         }
 
         if (entry->gid == ap_gname2id(DEFAULT_GROUP)) {
-            entry->gid = unixd_config.group_id;
+            entry->gid = ap_unixd_config.group_id;
 
             ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
                          "mod_wsgi (pid=%d): Reset default group for "
@@ -11467,7 +11481,7 @@ static int wsgi_start_daemons(apr_pool_t *p)
 
         entry->socket = apr_psprintf(p, "%s.%d.%d.%d.sock",
                                      wsgi_server_config->socket_prefix,
-                                     getpid(), ap_my_generation, entry->id);
+                                     getpid(), mpm_generation, entry->id);
 
         apr_hash_set(wsgi_daemon_index, entry->name, APR_HASH_KEY_STRING,
                      entry);
@@ -11495,7 +11509,7 @@ static int wsgi_start_daemons(apr_pool_t *p)
         if (entry->processes > 1) {
             entry->mutex_path = apr_psprintf(p, "%s.%d.%d.%d.lock",
                                              wsgi_server_config->socket_prefix,
-                                             getpid(), ap_my_generation,
+                                             getpid(), mpm_generation,
                                              entry->id);
 
             status = apr_proc_mutex_create(&entry->mutex, entry->mutex_path,
