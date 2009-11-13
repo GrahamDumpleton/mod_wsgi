@@ -1297,11 +1297,6 @@ typedef struct {
     int instance;
     apr_proc_t process;
     apr_socket_t *listener;
-    apr_time_t created_time;
-    long threads_requests_total;
-    int threads_active;
-    int threads_active_maximum;
-    apr_time_t threads_time_total;
 } WSGIDaemonProcess;
 
 typedef struct {
@@ -1312,10 +1307,6 @@ typedef struct {
     int next;
     apr_thread_cond_t *condition;
     apr_thread_mutex_t *mutex;
-    long requests_total;
-    apr_time_t requests_time_total;
-    apr_time_t requests_time_minimum;
-    apr_time_t requests_time_maximum;
 } WSGIDaemonThread;
 
 typedef struct {
@@ -1334,142 +1325,11 @@ static apr_hash_t *wsgi_daemon_listeners = NULL;
 
 static WSGIDaemonProcess *wsgi_daemon_process = NULL;
 
-static apr_thread_mutex_t *wsgi_daemon_lock = NULL;
-
 static int volatile wsgi_request_count = 0;
 
 static WSGIDaemonThread *wsgi_worker_threads = NULL;
 
 static WSGIThreadStack *wsgi_worker_stack = NULL;
-
-static PyObject *wsgi_usage_statistics(PyObject *self, PyObject *args)
-{
-    PyObject *summary = NULL;
-    PyObject *threads = NULL;
-    PyObject *detail = NULL;
-    PyObject *object = NULL;
-
-    int i = 0;
-
-    if (!PyArg_ParseTuple(args, ":usage_statistics"))
-        return NULL;
-
-    summary = PyDict_New();
-
-    apr_thread_mutex_lock(wsgi_daemon_lock);
-
-    object = Py_BuildValue("s", wsgi_daemon_process->group->name);
-    PyDict_SetItemString(summary, "process_group", object);
-    Py_DECREF(object);
-
-    object = Py_BuildValue("i", wsgi_daemon_process->group->processes);
-    PyDict_SetItemString(summary, "processes", object);
-    Py_DECREF(object);
-
-    object = Py_BuildValue("i", wsgi_daemon_process->group->threads);
-    PyDict_SetItemString(summary, "threads", object);
-    Py_DECREF(object);
-
-    object = Py_BuildValue("i", getpid());
-    PyDict_SetItemString(summary, "process_id", object);
-    Py_DECREF(object);
-
-    object = Py_BuildValue("d", (double)wsgi_daemon_process->created_time / APR_USEC_PER_SEC);
-    PyDict_SetItemString(summary, "process_created_time", object);
-    Py_DECREF(object);
-
-    object = Py_BuildValue("d", (double)apr_time_now() / APR_USEC_PER_SEC);
-    PyDict_SetItemString(summary, "threads_sample_time", object);
-    Py_DECREF(object);
-
-    object = Py_BuildValue("i", wsgi_daemon_process->threads_requests_total);
-    PyDict_SetItemString(summary, "threads_requests_total", object);
-    Py_DECREF(object);
-
-    object = Py_BuildValue("i", wsgi_daemon_process->threads_active);
-    PyDict_SetItemString(summary, "threads_active", object);
-    Py_DECREF(object);
-
-    object = Py_BuildValue("i", wsgi_daemon_process->threads_active_maximum);
-    PyDict_SetItemString(summary, "threads_active_maximum", object);
-    Py_DECREF(object);
-
-    object = Py_BuildValue("d", (double)wsgi_daemon_process->threads_time_total / APR_USEC_PER_SEC);
-    PyDict_SetItemString(summary, "threads_time_total", object);
-    Py_DECREF(object);
-
-    if (wsgi_daemon_process->threads_requests_total) {
-        object = Py_BuildValue("d", (double)wsgi_daemon_process->threads_time_total / wsgi_daemon_process->threads_requests_total / APR_USEC_PER_SEC);
-        PyDict_SetItemString(summary, "threads_time_average", object);
-        Py_DECREF(object);
-    }
-    else {
-        object = Py_BuildValue("d", 0.0);
-        PyDict_SetItemString(summary, "threads_time_average", object);
-        Py_DECREF(object);
-    }
-
-    threads = PyList_New(i);
-
-    PyDict_SetItemString(summary, "threads_details", threads);
-
-    for (i=0; i<wsgi_daemon_process->group->threads; i++) {
-        WSGIDaemonThread *thread = &wsgi_worker_threads[i];
-
-        detail = PyDict_New();
-
-        object = Py_BuildValue("i", i);
-        PyDict_SetItemString(detail, "id", object);
-        Py_DECREF(object);
-
-        if (thread->running)
-            PyDict_SetItemString(detail, "running", Py_True);
-        else
-            PyDict_SetItemString(detail, "running", Py_False);
-
-        object = Py_BuildValue("l", thread->requests_total);
-        PyDict_SetItemString(detail, "requests_total", object);
-        Py_DECREF(object);
-
-        object = Py_BuildValue("d", (double)thread->requests_time_total / APR_USEC_PER_SEC);
-        PyDict_SetItemString(detail, "requests_time_total", object);
-        Py_DECREF(object);
-
-        if (thread->requests_time_total) {
-            object = Py_BuildValue("d", (double)thread->requests_time_total / thread->requests_total / APR_USEC_PER_SEC);
-            PyDict_SetItemString(detail, "requests_time_average", object);
-            Py_DECREF(object);
-        }
-        else {
-            object = Py_BuildValue("d", 0.0);
-            PyDict_SetItemString(detail, "requests_time_average", object);
-            Py_DECREF(object);
-        }
-
-        object = Py_BuildValue("d", (double)thread->requests_time_minimum / APR_USEC_PER_SEC);
-        PyDict_SetItemString(detail, "requests_time_minimum", object);
-        Py_DECREF(object);
-
-        object = Py_BuildValue("d", (double)thread->requests_time_maximum / APR_USEC_PER_SEC);
-        PyDict_SetItemString(detail, "requests_time_maximum", object);
-        Py_DECREF(object);
-
-        PyList_Append(threads, detail);
-
-        Py_DECREF(detail);
-    }
-
-    Py_DECREF(threads);
-
-    apr_thread_mutex_unlock(wsgi_daemon_lock);
-
-    return summary;
-}
-
-static PyMethodDef wsgi_statistics_method[] = {
-    { "usage_statistics", (PyCFunction)wsgi_usage_statistics, METH_VARARGS, 0 },
-    { NULL, NULL }
-};
 
 #endif
 
@@ -5119,13 +4979,6 @@ static InterpreterObject *newInterpreterObject(const char *name)
     PyModule_AddObject(module, "version", Py_BuildValue("(ii)",
                        MOD_WSGI_MAJORVERSION_NUMBER,
                        MOD_WSGI_MINORVERSION_NUMBER));
-
-#if defined(MOD_WSGI_WITH_DAEMONS)
-    if (wsgi_daemon_pool) {
-        PyModule_AddObject(module, "usage_statistics", PyCFunction_New(
-                           &wsgi_statistics_method[0], NULL));
-    }
-#endif
 
     /*
      * Add information about process group and application
@@ -10346,24 +10199,7 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
          * GIL contention.
          */
 
-#if 0
-        apr_thread_mutex_lock(wsgi_daemon_lock);
-#endif
-
         wsgi_worker_acquire(thread->id);
-
-        /* XXX */
-
-        apr_thread_mutex_lock(wsgi_daemon_lock);
-
-        daemon->threads_active++;
-
-        if (daemon->threads_active > daemon->threads_active_maximum)
-            daemon->threads_active_maximum = daemon->threads_active;
-
-        apr_thread_mutex_unlock(wsgi_daemon_lock);
-
-        /* XXX */
 
         if (wsgi_daemon_shutdown)
             break;
@@ -10423,10 +10259,6 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             if (wsgi_daemon_shutdown) {
                 apr_proc_mutex_unlock(group->mutex);
 
-#if 0
-                apr_thread_mutex_unlock(wsgi_daemon_lock);
-#endif
-
                 wsgi_worker_release();
 
                 break;
@@ -10474,10 +10306,6 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             if (group->mutex)
                 apr_proc_mutex_unlock(group->mutex);
 
-#if 0
-            apr_thread_mutex_unlock(wsgi_daemon_lock);
-#endif
-
             wsgi_worker_release();
 
             apr_pool_destroy(ptrans);
@@ -10488,10 +10316,6 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
         if (rv != APR_SUCCESS && APR_STATUS_IS_EINTR(rv)) {
             if (group->mutex)
                 apr_proc_mutex_unlock(group->mutex);
-
-#if 0
-            apr_thread_mutex_unlock(wsgi_daemon_lock);
-#endif
 
             wsgi_worker_release();
 
@@ -10509,10 +10333,6 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             rv = apr_proc_mutex_unlock(group->mutex);
             if (rv != APR_SUCCESS) {
                 if (!wsgi_daemon_shutdown) {
-#if 0
-                    apr_thread_mutex_unlock(wsgi_daemon_lock);
-#endif
-
                     wsgi_worker_release();
 
                     ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(rv),
@@ -10527,10 +10347,6 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             }
         }
 
-#if 0
-        apr_thread_mutex_unlock(wsgi_daemon_lock);
-#endif
-
         wsgi_worker_release();
 
         if (status != APR_SUCCESS && APR_STATUS_IS_EINTR(status)) {
@@ -10542,46 +10358,10 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
         /* Process the request proxied from the child process. */
 
-        /* XXX */
-
-        start = apr_time_now();
-
-        apr_thread_mutex_lock(wsgi_daemon_lock);
-
-        daemon->threads_requests_total++;
-        thread->requests_total++;
-
-        apr_thread_mutex_unlock(wsgi_daemon_lock);
-
-        /* XXX */
-
         bucket_alloc = apr_bucket_alloc_create(ptrans);
         wsgi_process_socket(ptrans, socket, bucket_alloc, daemon);
 
         /* Cleanup ready for next request. */
-
-        /* XXX */
-
-        duration = apr_time_now() - start;
-
-        apr_thread_mutex_lock(wsgi_daemon_lock);
-
-        daemon->threads_active--;
-
-        thread->requests_time_total += duration;
-        daemon->threads_time_total += duration;
-
-        if (thread->requests_time_minimum == 0 ||
-            duration < thread->requests_time_minimum) {
-            thread->requests_time_minimum = duration;
-        }
-
-        if (duration > thread->requests_time_maximum)
-            thread->requests_time_maximum = duration;
-
-        apr_thread_mutex_unlock(wsgi_daemon_lock);
-
-        /* XXX */
 
         apr_pool_destroy(ptrans);
 
@@ -10831,10 +10611,6 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     wsgi_worker_stack = (WSGIThreadStack *)apr_palloc(p,
             sizeof(WSGIThreadStack));
     wsgi_worker_stack->state = WSGI_STACK_NO_LISTENER | WSGI_STACK_LAST;
-
-    /* Record when start handling requests. */
-
-    daemon->created_time = apr_time_now();
 
     /* Start the required number of threads. */
 
@@ -11367,9 +11143,6 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          */
 
         apr_os_sock_put(&daemon->listener, &daemon->group->listener_fd, p);
-
-        apr_thread_mutex_create(&wsgi_daemon_lock,
-                                APR_THREAD_MUTEX_UNNESTED, p);
 
         /* Run the main routine for the daemon process. */
 
