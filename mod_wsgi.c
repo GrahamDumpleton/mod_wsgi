@@ -33,6 +33,10 @@
 
 #include "httpd.h"
 
+#if !defined(HTTPD_ROOT)
+#error Sorry, Apache developer package does not appear to be installed.
+#endif
+
 #if !defined(AP_SERVER_MAJORVERSION_NUMBER)
 #if AP_MODULE_MAGIC_AT_LEAST(20010224,0)
 #define AP_SERVER_MAJORVERSION_NUMBER 2
@@ -129,11 +133,12 @@ typedef regmatch_t ap_regmatch_t;
 #endif
 
 #include "Python.h"
-#include "compile.h"
-#include "node.h"
-#include "osdefs.h"
 
-#if !defined(PY_VERSION_HEX) || PY_VERSION_HEX <= 0x02030000
+#if !defined(PY_VERSION_HEX)
+#error Sorry, Python developer package does not appear to be installed.
+#endif
+
+#if PY_VERSION_HEX <= 0x02030000
 #error Sorry, mod_wsgi requires at least Python 2.3.0 for Python 2.X.
 #endif
 
@@ -144,6 +149,10 @@ typedef regmatch_t ap_regmatch_t;
 #if !defined(WITH_THREAD)
 #error Sorry, mod_wsgi requires that Python supporting thread.
 #endif
+
+#include "compile.h"
+#include "node.h"
+#include "osdefs.h"
 
 #ifndef PyVarObject_HEAD_INIT
 #define PyVarObject_HEAD_INIT(type, size)       \
