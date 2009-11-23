@@ -141,16 +141,22 @@ else
 fi
 
 CFLAGS1=""
+for arg in ${CFLAGS}
+do
+    CFLAGS1="${CFLAGS1} -Wc,$arg"
+done
+
+CFLAGS2=""
 if test -x /usr/bin/lipo; then
     LDFLAGS3=""
     ARCHITECTURES=`/usr/bin/lipo -info $HTTPD | sed -e 's/.*://'`
     for ARCH in $ARCHITECTURES; do
-        CFLAGS1="${CFLAGS1} -Wc,'-arch ${ARCH}'" 
-        LDFLAGS3="${LDFLAGS3} -arch ${ARCH}" 
+        CFLAGS2="${CFLAGS2} -Wc,'-arch ${ARCH}'"
+        LDFLAGS3="${LDFLAGS3} -arch ${ARCH}"
     done
 fi
 
-CFLAGS="${CFLAGS} ${CFLAGS1}"
+CFLAGS="${CFLAGS1} ${CFLAGS2}"
 LDFLAGS="${LDFLAGS} ${LDFLAGS1} ${LDFLAGS2} ${LDFLAGS3}"
 LDLIBS="${LDLIBS} ${LDLIBS1} ${LDLIBS2} ${LDLIBS3}"
 
