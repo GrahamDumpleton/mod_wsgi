@@ -6556,7 +6556,7 @@ static int wsgi_execute_script(request_rec *r)
             ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                           "mod_wsgi (pid=%d): Target WSGI script '%s' does "
                           "not contain WSGI application '%s'.",
-                          getpid(), r->filename, config->callable_object);
+                          getpid(), script, config->callable_object);
             Py_END_ALLOW_THREADS
 
             status = HTTP_NOT_FOUND;
