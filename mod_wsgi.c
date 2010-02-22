@@ -11087,30 +11087,42 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             /*
              * Iterate over all servers and close any error
-             * logs different to that for virtual host.
+             * logs different to that for virtual host. Note that
+             * if errors are being redirected to syslog, then
+             * the server error log reference will actually be
+             * a null pointer, so need to ensure that check for
+             * that and don't attempt to close it in that case.
              */
 
             server = wsgi_server;
 
             while (server != NULL) {
-                if (server->error_log != daemon->group->server->error_log)
+                if (server->error_log &&
+                    server->error_log != daemon->group->server->error_log) {
                     apr_file_close(server->error_log);
+                }
 
                 server = server->next;
             }
 
             /*
-             * Reassociate stderr output with error log from the
-             * virtual host the daemon is associated with. Close
-             * the virtual host error log and point it at stderr
-             * log instead. Do the latter so don't get two
-             * references to same open file. Just in case
-             * anything still accesses error log of main server,
-             * map main server error log to that of the virtual
-             * host.
+            * Reassociate stderr output with error log from the
+            * virtual host the daemon is associated with. Close
+            * the virtual host error log and point it at stderr
+            * log instead. Do the latter so don't get two
+            * references to same open file. Just in case
+            * anything still accesses error log of main server,
+            * map main server error log to that of the virtual
+            * host. Note that cant do this if errors are being
+            * redirected to syslog, as indicated by virtual
+            * host error log being a null pointer. In that case
+            * just leave everything as it was. Also can't remap
+            * the error log for main server if it was being
+            * redirected to syslog but virtual host wasn't.
              */
 
-            if (daemon->group->server->error_log != wsgi_server->error_log) {
+            if (daemon->group->server->error_log  &&
+                daemon->group->server->error_log != wsgi_server->error_log) {
                 apr_file_open_stderr(&errfile, wsgi_server->process->pool);
                 apr_file_dup2(errfile, daemon->group->server->error_log,
                               wsgi_server->process->pool);
@@ -11118,7 +11130,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
                 apr_file_close(daemon->group->server->error_log);
                 daemon->group->server->error_log = errfile;
 
-                wsgi_server->error_log = daemon->group->server->error_log;
+                if (wsgi_server->error_log)
+                    wsgi_server->error_log = daemon->group->server->error_log;
             }
         }
 
