@@ -4389,7 +4389,7 @@ static PyMethodDef wsgi_signal_method[] = {
 static const char *wsgi_python_path = NULL;
 static const char *wsgi_python_eggs = NULL;
 
-#if defined(APR_HAS_THREADS)
+#if APR_HAS_THREADS
 static int wsgi_thread_count = 0;
 static apr_threadkey_t *wsgi_thread_key;
 #endif
@@ -4399,7 +4399,7 @@ typedef struct {
     char *name;
     PyInterpreterState *interp;
     int owner;
-#if defined(APR_HAS_THREADS)
+#if APR_HAS_THREADS
     apr_hash_t *tstate_table;
 #else
     PyThreadState *tstate;
@@ -5091,7 +5091,7 @@ static InterpreterObject *newInterpreterObject(const char *name)
      */
 
     if (self->owner) {
-#if defined(APR_HAS_THREADS)
+#if APR_HAS_THREADS
         int thread_id = 0;
         int *thread_handle = NULL;
 
@@ -5146,7 +5146,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
     PyEval_ReleaseLock();
 
     if (*self->name) {
-#if defined(APR_HAS_THREADS)
+#if APR_HAS_THREADS
         int thread_id = 0;
         int *thread_handle = NULL;
 
