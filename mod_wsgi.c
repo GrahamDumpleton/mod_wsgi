@@ -9625,7 +9625,11 @@ static const char *wsgi_set_accept_mutex(cmd_parms *cmd, void *mconfig,
 
     sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
 
+#if !defined(AP_ACCEPT_MUTEX_TYPE)
     sconfig->lock_mechanism = ap_accept_lock_mech;
+#else
+    sconfig->lock_mechanism = APR_LOCK_DEFAULT;
+#endif
 
     if (!strcasecmp(arg, "default")) {
         sconfig->lock_mechanism = APR_LOCK_DEFAULT;
