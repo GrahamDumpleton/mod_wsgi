@@ -10487,6 +10487,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
 {
     WSGIDaemonProcess *daemon = data;
 
+    int restart = 0;
+
     if (wsgi_server_config->verbose_debugging) {
         ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
                      "mod_wsgi (pid=%d): Enable monitor thread in "
@@ -10506,8 +10508,6 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
         apr_time_t deadlock_time;
         apr_time_t inactivity_time;
 
-        int restart = 0;
-
         apr_interval_time_t period = 0;
 
         now = apr_time_now();
@@ -10517,37 +10517,44 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
         inactivity_time = wsgi_inactivity_shutdown_time;
         apr_thread_mutex_unlock(wsgi_shutdown_lock);
 
-        if (wsgi_deadlock_timeout && deadlock_time) {
-            if (deadlock_time <= now) {
-                ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                             "mod_wsgi (pid=%d): Daemon process deadlock "
-                             "timer expired, stopping process '%s'.",
-                             getpid(), daemon->group->name);
+        if (!restart && wsgi_deadlock_timeout) {
+            if (deadlock_time) {
+                if (deadlock_time <= now) {
+                    ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                                 "mod_wsgi (pid=%d): Daemon process deadlock "
+                                 "timer expired, stopping process '%s'.",
+                                 getpid(), daemon->group->name);
 
-                restart = 1;
-
-                period = wsgi_deadlock_timeout;
+                    restart = 1;
+                }
+                else {
+                    period = deadlock_time - now;
+                }
             }
             else {
-                period = deadlock_time - now;
+                period = wsgi_deadlock_timeout;
             }
         }
 
-        if (!restart && wsgi_inactivity_timeout && inactivity_time) {
-            if (inactivity_time <= now) {
-                ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
-                             "mod_wsgi (pid=%d): Daemon process inactivity "
-                             "timer expired, stopping process '%s'.",
-                             getpid(), daemon->group->name);
+        if (!restart && wsgi_inactivity_timeout) {
+            if (inactivity_time) {
+                if (inactivity_time <= now) {
+                    ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
+                                 "mod_wsgi (pid=%d): Daemon process "
+                                 "inactivity timer expired, stopping "
+                                 "process '%s'.", getpid(),
+                                 daemon->group->name);
 
-                restart = 1;
-
-                if (!period || (wsgi_inactivity_timeout < period))
-                    period = wsgi_inactivity_timeout;
+                    restart = 1;
+                }
+                else {
+                    if (!period || ((inactivity_time - now) < period))
+                        period = inactivity_time - now;
+                }
             }
             else {
-                if (!period || ((inactivity_time - now) < period))
-                    period = inactivity_time - now;
+                if (!period || (wsgi_inactivity_timeout < period))
+                    period = wsgi_inactivity_timeout;
             }
         }
 
@@ -10556,7 +10563,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
             kill(getpid(), SIGINT);
         }
 
-        if (period <= 0)
+        if (restart || period <= 0)
             period = apr_time_from_sec(1.0);
 
         apr_sleep(period);
