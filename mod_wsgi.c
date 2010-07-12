@@ -10469,7 +10469,7 @@ static void *wsgi_deadlock_thread(apr_thread_t *thd, void *data)
     apr_thread_mutex_unlock(wsgi_shutdown_lock);
 
     while (1) {
-        apr_sleep(apr_time_from_sec(1.0));
+        apr_sleep(apr_time_from_sec(1));
 
         PyEval_AcquireLock();
         PyEval_ReleaseLock();
@@ -10564,7 +10564,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
         }
 
         if (restart || period <= 0)
-            period = apr_time_from_sec(1.0);
+            period = apr_time_from_sec(1);
 
         apr_sleep(period);
     }
@@ -11453,7 +11453,7 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
     struct sockaddr_un addr;
 
     int retries = 0;
-    apr_interval_time_t timer = apr_time_from_sec(0.1);
+    apr_interval_time_t timer = 0;
 
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
@@ -11480,11 +11480,19 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
 
                 close(daemon->fd);
 
-                /* Increase wait time up to maximum of 2 seconds. */
+                /*
+		 * Progressively increase time we wait between
+		 * connection attempts. Start at 0.1 second and
+                 * double each time but apply ceiling at 2.0
+                 * seconds.
+                 */
+
+                if (!timer)
+                    timer = apr_time_make(0, 100000);
 
                 apr_sleep(timer);
-                if (timer < apr_time_from_sec(2))
-                    timer *= 2;
+
+                timer = (2 * timer) % apr_time_make(2, 0);
             }
             else {
                 ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(errno), r,
