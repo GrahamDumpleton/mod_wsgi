@@ -3031,22 +3031,22 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
 
     if (self->headers) {
         /*
-	 * Apache prior to Apache 2.2.8 has a bug in it
-	 * whereby it doesn't force '100 Continue'
-	 * response before responding with headers if no
-	 * read. So, force a zero length read before
-	 * sending the headers if haven't yet attempted
-	 * to read anything. This will ensure that if no
-	 * request content has been read that any '100
-	 * Continue' response will be flushed and sent
-	 * back to the client if client was expecting
-	 * one. Only want to do this for 2xx and 3xx
-	 * status values. Note that even though Apple
-	 * supplied version of Apache on MacOS X Leopard
-	 * is newer than version 2.2.8, the header file
-	 * has never been patched when they make updates
-	 * and so anything compiled against it thinks it
-	 * is older.
+         * Apache prior to Apache 2.2.8 has a bug in it
+         * whereby it doesn't force '100 Continue'
+         * response before responding with headers if no
+         * read. So, force a zero length read before
+         * sending the headers if haven't yet attempted
+         * to read anything. This will ensure that if no
+         * request content has been read that any '100
+         * Continue' response will be flushed and sent
+         * back to the client if client was expecting
+         * one. Only want to do this for 2xx and 3xx
+         * status values. Note that even though Apple
+         * supplied version of Apache on MacOS X Leopard
+         * is newer than version 2.2.8, the header file
+         * has never been patched when they make updates
+         * and so anything compiled against it thinks it
+         * is older.
          */
 
 #if (AP_SERVER_MAJORVERSION_NUMBER == 1) || \
@@ -5768,7 +5768,7 @@ static void wsgi_python_init(apr_pool_t *p)
         }
 #endif
 
-	/*
+        /*
          * Work around bug in Python 3.1 where it will crash
          * when used in non console application on Windows if
          * stdin/stdout have been initialised and aren't null.
@@ -5944,9 +5944,9 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
         PyGILState_Ensure();
 
         /*
-	 * When simplified GIL state API is used, the thread
-	 * local data only persists for the extent of the top
-	 * level matching ensure/release calls. We want to
+         * When simplified GIL state API is used, the thread
+         * local data only persists for the extent of the top
+         * level matching ensure/release calls. We want to
          * extend lifetime of the thread local data beyond
          * that, retaining it for all requests within the one
          * thread for the life of the process. To do that we
@@ -6052,25 +6052,25 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
 
 #if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
     if (wsgi_utf8_to_unicode_path(wfilename, sizeof(wfilename) /
-				  sizeof(apr_wchar_t), filename)) {
+                                  sizeof(apr_wchar_t), filename)) {
 
-	Py_BEGIN_ALLOW_THREADS
-	if (r) {
-	    ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
-			  "mod_wsgi (pid=%d, process='%s', "
-			  "application='%s'): Failed to convert '%s' "
-			  "to UCS2 filename.", getpid(),
-			  process_group, application_group, filename);
-	}
-	else {
-	    ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
-			 "mod_wsgi (pid=%d, process='%s', "
-			 "application='%s'): Failed to convert '%s' "
-			 "to UCS2 filename.", getpid(),
-			 process_group, application_group, filename);
-	}
-	Py_END_ALLOW_THREADS
-	return NULL;
+        Py_BEGIN_ALLOW_THREADS
+        if (r) {
+            ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
+                          "mod_wsgi (pid=%d, process='%s', "
+                          "application='%s'): Failed to convert '%s' "
+                          "to UCS2 filename.", getpid(),
+                          process_group, application_group, filename);
+        }
+        else {
+            ap_log_error(APLOG_MARK, WSGI_LOG_ERR(0), wsgi_server,
+                         "mod_wsgi (pid=%d, process='%s', "
+                         "application='%s'): Failed to convert '%s' "
+                         "to UCS2 filename.", getpid(),
+                         process_group, application_group, filename);
+        }
+        Py_END_ALLOW_THREADS
+        return NULL;
     }
 
     fp = _wfopen(wfilename, "r");
@@ -10157,7 +10157,7 @@ static apr_status_t wsgi_worker_release()
             }
             else {
                 /*
-		 * Flag that thread should be woken up and then
+                 * Flag that thread should be woken up and then
                  * signal it via the condition variable.
                  */
 
@@ -11110,32 +11110,44 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             }
 
             /*
-            * Reassociate stderr output with error log from the
-            * virtual host the daemon is associated with. Close
-            * the virtual host error log and point it at stderr
-            * log instead. Do the latter so don't get two
-            * references to same open file. Just in case
-            * anything still accesses error log of main server,
-            * map main server error log to that of the virtual
-            * host. Note that cant do this if errors are being
-            * redirected to syslog, as indicated by virtual
-            * host error log being a null pointer. In that case
-            * just leave everything as it was. Also can't remap
-            * the error log for main server if it was being
-            * redirected to syslog but virtual host wasn't.
+             * Reassociate stderr output with error log from the
+             * virtual host the daemon is associated with. Close
+             * the virtual host error log and point it at stderr
+             * log instead. Do the latter so don't get two
+             * references to same open file. Just in case
+             * anything still accesses error log of main server,
+             * map main server error log to that of the virtual
+             * host. Note that cant do this if errors are being
+             * redirected to syslog, as indicated by virtual
+             * host error log being a null pointer. In that case
+             * just leave everything as it was. Also can't remap
+             * the error log for main server if it was being
+             * redirected to syslog but virtual host wasn't.
              */
 
             if (daemon->group->server->error_log  &&
                 daemon->group->server->error_log != wsgi_server->error_log) {
+
+                apr_file_t *oldfile = NULL;
+
                 apr_file_open_stderr(&errfile, wsgi_server->process->pool);
                 apr_file_dup2(errfile, daemon->group->server->error_log,
                               wsgi_server->process->pool);
 
-                apr_file_close(daemon->group->server->error_log);
-                daemon->group->server->error_log = errfile;
+                oldfile = daemon->group->server->error_log;
+
+                server = wsgi_server;
+
+                while (server != NULL) {
+                    if (server->error_log == oldfile)
+                        server->error_log = errfile;
+                    server = server->next;
+                }
+
+                apr_file_close(oldfile);
 
                 if (wsgi_server->error_log)
-                    wsgi_server->error_log = daemon->group->server->error_log;
+                    wsgi_server->error_log = errfile;
             }
         }
 
