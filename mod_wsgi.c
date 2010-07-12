@@ -1601,6 +1601,17 @@ static PyObject *Log_close(LogObject *self, PyObject *args)
     return Py_None;
 }
 
+static PyObject *Log_isatty(LogObject *self, PyObject *args)
+{
+    PyObject *result = NULL;
+
+    if (!PyArg_ParseTuple(args, ":isatty"))
+        return NULL;
+
+    Py_INCREF(Py_False);
+    return Py_False;
+}
+
 static void Log_queue(LogObject *self, const char *msg, int len)
 {
     const char *p = NULL;
@@ -1844,6 +1855,7 @@ static PyObject *Log_get_errors(LogObject *self, void *closure)
 static PyMethodDef Log_methods[] = {
     { "flush",      (PyCFunction)Log_flush,      METH_VARARGS, 0 },
     { "close",      (PyCFunction)Log_close,      METH_VARARGS, 0 },
+    { "isatty",     (PyCFunction)Log_isatty,     METH_VARARGS, 0 },
     { "write",      (PyCFunction)Log_write,      METH_VARARGS, 0 },
     { "writelines", (PyCFunction)Log_writelines, METH_VARARGS, 0 },
 #if PY_MAJOR_VERSION >= 3
