@@ -9988,8 +9988,28 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
         return -1;
     }
 
+    /*
+     * Set the ownership of the UNIX listener socket. This would
+     * normally be the Apache user that the Apache server child
+     * processes run as, as they are the only processes that
+     * would connect to the sockets. In the case of ITK MPM,
+     * having them owned by Apache user is useless as at the
+     * time the request is to be proxied, the Apache server
+     * child process will have uid corresponding to the user
+     * whose request they are handling. For ITK, thus set the
+     * ownership to be the same as the daemon processes. This is
+     * still restrictive, in that can only connect to daemon
+     * process group running under same user, but most of the
+     * time that is what you would want anyway when using ITK
+     * MPM.
+     */
+
     if (!geteuid()) {
+#if defined(MPM_ITK)
+        if (chown(process->socket, process->uid, -1) < 0) {
+#else
         if (chown(process->socket, ap_unixd_config.user_id, -1) < 0) {
+#endif
             ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
                          "mod_wsgi (pid=%d): Couldn't change owner of unix "
                          "domain socket '%s'.", getpid(),
