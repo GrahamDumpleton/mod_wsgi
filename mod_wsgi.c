@@ -11221,10 +11221,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             if (wsgi_server_config->verbose_debugging) {
                 ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
                              "mod_wsgi (pid=%d): Process '%s' logging to "
-                             "'%s' with log level %d.", getpid(),
-                             daemon->group->name,
-                             daemon->group->server->server_hostname,
-                             daemon->group->server->loglevel);
+                             "'%s'.", getpid(), daemon->group->name,
+                             daemon->group->server->server_hostname);
             }
 
             wsgi_server = daemon->group->server;
@@ -11233,9 +11231,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             if (wsgi_server_config->verbose_debugging) {
                 ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
                              "mod_wsgi (pid=%d): Process '%s' forced to log "
-                             "to '%s' with log level %d.", getpid(),
-                             daemon->group->name, wsgi_server->server_hostname,
-                             wsgi_server->loglevel);
+                             "to '%s'.", getpid(), daemon->group->name,
+                             wsgi_server->server_hostname);
             }
         }
 
@@ -14674,7 +14671,7 @@ static authz_status wsgi_check_authorization(request_rec *r,
 
     if (apr_table_elts(grpstatus)->nelts == 0) {
         ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r, "mod_wsgi (pid=%d): "
-                      "Authorization of user '%s' to access '%s' failed. ",
+                      "Authorization of user '%s' to access '%s' failed. "
                       "User is not a member of any groups.", getpid(),
                       r->user, r->uri);
         return AUTHZ_DENIED;
