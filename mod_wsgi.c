@@ -1,7 +1,7 @@
 /* vim: set sw=4 expandtab : */
 
 /*
- * Copyright 2007-2009 GRAHAM DUMPLETON
+ * Copyright 2007-2010 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -373,7 +373,7 @@ static apr_status_t wsgi_utf8_to_unicode_path(apr_wchar_t* retstr,
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 3
 #define MOD_WSGI_MINORVERSION_NUMBER 3
-#define MOD_WSGI_VERSION_STRING "3.3-BRANCH"
+#define MOD_WSGI_VERSION_STRING "3.3"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
