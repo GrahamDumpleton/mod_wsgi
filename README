@@ -2,7 +2,7 @@
 Welcome to MOD_WSGI
 ===================
 
-Copyright 2007-2009 GRAHAM DUMPLETON
+Copyright 2007-2010 GRAHAM DUMPLETON
 
 The mod_wsgi adapter is an Apache module that provides a WSGI compliant
 interface for hosting Python based web applications within Apache. The
@@ -42,6 +42,28 @@ mod_wsgi works on that platform.
 
 The source code in this package is made available under the terms of the
 Apache Licence, Version 2.0. See the "LICENCE" file for more information.
+
+
+Donations
+=========
+
+A significant amount of time and effort has gone into producing this
+software, the associated documentation on the web site and in providing
+support to users. So, although you are free to download it and do with it
+as you wish, it is not free from cost.
+
+If you are using mod_wsgi, please consider making a donation. By giving a
+donation you help to ensure that mod_wsgi will continue to be developed and
+the documentation further improved.
+
+For details on how you can contribute back to mod_wsgi, see:
+
+  http://code.google.com/p/modwsgi/wiki/HowToContributeBack
+
+If you are philosophically against the idea of contributing back to Open
+Source projects in a monetary way and find it obnoxious that any Open
+Source project would solicit donations, then it is suggested that you use
+one of the alternatives to mod_wsgi such as CGI.
 
 
 Documentation
