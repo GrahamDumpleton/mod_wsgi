@@ -372,8 +372,8 @@ static apr_status_t wsgi_utf8_to_unicode_path(apr_wchar_t* retstr,
 /* Version and module information. */
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 3
-#define MOD_WSGI_MINORVERSION_NUMBER 3
-#define MOD_WSGI_VERSION_STRING "3.3"
+#define MOD_WSGI_MINORVERSION_NUMBER 4
+#define MOD_WSGI_VERSION_STRING "3.4-BRANCH"
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
 module MODULE_VAR_EXPORT wsgi_module;
@@ -3982,6 +3982,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
 {
     PyObject *item = NULL;
+    PyObject *latin_item = NULL;
     const char *data = NULL;
     int length = 0;
 
@@ -3995,12 +3996,10 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
 
 #if PY_MAJOR_VERSION >= 3
     if (PyUnicode_Check(item)) {
-        PyObject *latin_item;
         latin_item = PyUnicode_AsLatin1String(item);
         if (!latin_item) {
             PyErr_Format(PyExc_TypeError, "byte string value expected, "
                          "value containing non 'latin-1' characters found");
-            Py_DECREF(item);
             return NULL;
         }
 
@@ -4012,15 +4011,19 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
     if (!PyString_Check(item)) {
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
                      "of type %.200s found", item->ob_type->tp_name);
-        Py_DECREF(item);
+        Py_XDECREF(latin_item);
         return NULL;
     }
 
     data = PyString_AsString(item);
     length = PyString_Size(item);
 
-    if (!Adapter_output(self, data, length, 1))
+    if (!Adapter_output(self, data, length, 1)) {
+        Py_XDECREF(latin_item);
         return NULL;
+    }
+
+    Py_XDECREF(latin_item);
 
     Py_INCREF(Py_None);
     return Py_None;
