@@ -1,0 +1,11 @@
+syntax: glob
+
+Makefile
+Makefile.in
+autom4te.cache
+config.log
+config.status
+.libs
+*.la
+*.lo
+*.slo
