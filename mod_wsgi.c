@@ -386,6 +386,10 @@ module AP_MODULE_DECLARE_DATA wsgi_module;
 #define WSGI_RELOAD_MODULE 0
 #define WSGI_RELOAD_PROCESS 1
 
+/* Python interpreter state. */
+
+static PyThreadState *wsgi_main_tstate = NULL;
+
 /* Base server object. */
 
 static server_rec *wsgi_server = NULL;
@@ -3598,7 +3602,11 @@ static PyObject *Adapter_environ(AdapterObject *self)
      */
 
     if (!wsgi_daemon_pool && self->config->pass_apache_request) {
+#if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 2
+        object = PyCapsule_New(self->r, 0, 0);
+#else
         object = PyCObject_FromVoidPtr(self->r, 0);
+#endif
         PyDict_SetItemString(vars, "apache.request_rec", object);
         Py_DECREF(object);
     }
@@ -5150,15 +5158,22 @@ static void Interpreter_dealloc(InterpreterObject *self)
     PyObject *exitfunc = NULL;
     PyObject *module = NULL;
 
+    PyThreadState *tstate_enter = NULL;
+
     /*
-     * We should always enter here with the Python GIL held, but
-     * there will be no active thread state. Note that it should
-     * be safe to always assume that the simplified GIL state
-     * API lock was originally unlocked as always calling in
-     * from an Apache thread outside of Python.
+     * We should always enter here with the Python GIL
+     * held and an active thread state. This should only
+     * now occur when shutting down interpreter and not
+     * when releasing interpreter as don't support
+     * recyling of interpreters within the process. Thus
+     * the thread state should be that for the main
+     * Python interpreter. Where dealing with a named
+     * sub interpreter, we need to change the thread
+     * state to that which was originally used to create
+     * that sub interpreter before doing anything.
      */
 
-    PyEval_ReleaseLock();
+    tstate_enter = PyThreadState_Get();
 
     if (*self->name) {
 #if APR_HAS_THREADS
@@ -5197,10 +5212,13 @@ static void Interpreter_dealloc(InterpreterObject *self)
         tstate = self->tstate;
 #endif
 
-        PyEval_AcquireThread(tstate);
+        /*
+	 * Swap to interpreter thread state that was used when
+	 * the sub interpreter was created.
+         */
+
+        PyThreadState_Swap(tstate);
     }
-    else
-        PyGILState_Ensure();
 
     if (self->owner) {
         Py_BEGIN_ALLOW_THREADS
@@ -5495,20 +5513,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     /* If we own it, we destroy it. */
 
-    if (!self->owner) {
-        if (*self->name) {
-            tstate = PyThreadState_Get();
-
-            PyThreadState_Clear(tstate);
-            PyEval_ReleaseThread(tstate);
-            PyThreadState_Delete(tstate);
-        }
-        else
-            PyGILState_Release(PyGILState_UNLOCKED);
-
-        PyEval_AcquireLock();
-    }
-    else {
+    if (self->owner) {
         /*
          * We need to destroy all the thread state objects
          * associated with the interpreter. If there are
@@ -5542,6 +5547,8 @@ static void Interpreter_dealloc(InterpreterObject *self)
         /* Can now destroy the interpreter. */
 
         Py_EndInterpreter(tstate);
+
+        PyThreadState_Swap(tstate_enter);
     }
 
     free(self->name);
@@ -5650,7 +5657,14 @@ static apr_status_t wsgi_python_term()
     ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                  "mod_wsgi (pid=%d): Terminating Python.", getpid());
 
-    PyGILState_Ensure();
+    /*
+     * We should be executing in the main thread again at this
+     * point but without the GIL, so simply restore the original
+     * thread state for that thread that we remembered when we
+     * initialised the interpreter.
+     */
+
+    PyEval_AcquireThread(wsgi_main_tstate);
 
     /*
      * Work around bug in Python 3.X whereby it will crash if
@@ -5825,15 +5839,24 @@ static void wsgi_python_init(apr_pool_t *p)
         /* Initialise threading. */
 
         PyEval_InitThreads();
-        PyThreadState_Swap(NULL);
-        PyEval_ReleaseLock();
+
+        /*
+	 * We now want to release the GIL. Before we do that
+	 * though we remember what the current thread state is.
+	 * We will use that later to restore the main thread
+	 * state when we want to cleanup interpreters on
+	 * shutdown.
+         */
+
+        wsgi_main_tstate = PyThreadState_Get();
+        PyEval_ReleaseThread(wsgi_main_tstate);
 
         wsgi_python_initialized = 1;
 
-    /*
-     * Register cleanups to be performed on parent restart
-     * or shutdown. This will destroy Python itself.
-     */
+        /*
+         * Register cleanups to be performed on parent restart
+         * or shutdown. This will destroy Python itself.
+         */
 
 #if AP_SERVER_MAJORVERSION_NUMBER < 2
         ap_register_cleanup(p, NULL, wsgi_python_parent_cleanup,
@@ -5882,7 +5905,11 @@ static InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
     /*
      * This function should never be called when the
-     * Python GIL is held, so need to acquire it.
+     * Python GIL is held, so need to acquire it. Even
+     * though we may need to work with a sub
+     * interpreter, we need to acquire GIL against main
+     * interpreter first to work with interpreter
+     * dictionary.
      */
 
     state = PyGILState_Ensure();
@@ -6001,6 +6028,8 @@ static void wsgi_release_interpreter(InterpreterObject *handle)
 {
     PyThreadState *tstate = NULL;
 
+    PyGILState_STATE state;
+
     /*
      * Need to release and destroy the thread state that
      * was created against the interpreter. This will
@@ -6026,11 +6055,11 @@ static void wsgi_release_interpreter(InterpreterObject *handle)
      * in its destruction if its the last reference.
      */
 
-    PyEval_AcquireLock();
+    state = PyGILState_Ensure();
 
     Py_DECREF(handle);
 
-    PyEval_ReleaseLock();
+    PyGILState_Release(state);
 }
 
 /*
@@ -6633,7 +6662,14 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     apr_thread_mutex_lock(wsgi_interp_lock);
 #endif
 
-    PyEval_AcquireLock();
+    /*
+     * We should be executing in the main thread again at this
+     * point but without the GIL, so simply restore the original
+     * thread state for that thread that we remembered when we
+     * initialised the interpreter.
+     */
+
+    PyEval_AcquireThread(wsgi_main_tstate);
 
     /*
      * Extract a handle to the main Python interpreter from
@@ -6671,7 +6707,13 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
 
     Py_DECREF(interp);
 
-    PyEval_ReleaseLock();
+    /*
+     * The code which performs actual shutdown of the main
+     * interpreter expects to be called without the GIL, so
+     * we release it here again.
+     */
+
+    PyEval_ReleaseThread(wsgi_main_tstate);
 
     /*
      * Destroy Python itself including the main interpreter.
@@ -8372,7 +8414,11 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
      */
 
     if (!wsgi_daemon_pool && self->config->pass_apache_request) {
+#if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 2
+        object = PyCapsule_New(self->r, 0, 0);
+#else
         object = PyCObject_FromVoidPtr(self->r, 0);
+#endif
         PyDict_SetItemString(vars, "apache.request_rec", object);
         Py_DECREF(object);
     }
@@ -10512,6 +10558,8 @@ static void *wsgi_deadlock_thread(apr_thread_t *thd, void *data)
 {
     WSGIDaemonProcess *daemon = data;
 
+    PyGILState_STATE gilstate;
+
     if (wsgi_server_config->verbose_debugging) {
         ap_log_error(APLOG_MARK, WSGI_LOG_DEBUG(0), wsgi_server,
                      "mod_wsgi (pid=%d): Enable deadlock thread in "
@@ -10526,8 +10574,8 @@ static void *wsgi_deadlock_thread(apr_thread_t *thd, void *data)
     while (1) {
         apr_sleep(apr_time_from_sec(1));
 
-        PyEval_AcquireLock();
-        PyEval_ReleaseLock();
+        gilstate = PyGILState_Ensure();
+        PyGILState_Release(gilstate);
 
         apr_thread_mutex_lock(wsgi_shutdown_lock);
         wsgi_deadlock_shutdown_time = apr_time_now();
@@ -11104,6 +11152,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         if (wsgi_python_after_fork)
             wsgi_python_init(p);
 
+#if PY_MAJOR_VERSION < 3
         /*
          * If mod_python is also being loaded and thus it was
          * responsible for initialising Python it can leave in
@@ -11113,7 +11162,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          * initialisation but in daemon process we skip the
          * mod_python child initialisation so the active thread
          * state still exists. Thus need to do a bit of a fiddle
-         * to ensure there is no active thread state.
+         * to ensure there is no active thread state. Don't need
+         * to worry about this with Python 3.X as mod_python
+         * only supports Python 2.X.
          */
 
         if (!wsgi_python_initialized) {
@@ -11129,6 +11180,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             PyEval_ReleaseLock();
         }
+#endif
 
         /*
          * If the daemon is associated with a virtual host then
@@ -13375,7 +13427,11 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
      */
 
     if (!wsgi_daemon_pool && self->config->pass_apache_request) {
+#if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 2
+        object = PyCapsule_New(self->r, 0, 0);
+#else
         object = PyCObject_FromVoidPtr(self->r, 0);
+#endif
         PyDict_SetItemString(vars, "apache.request_rec", object);
         Py_DECREF(object);
     }
