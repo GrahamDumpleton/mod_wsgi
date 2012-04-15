@@ -1,7 +1,7 @@
 /* vim: set sw=4 expandtab : */
 
 /*
- * Copyright 2007-2011 GRAHAM DUMPLETON
+ * Copyright 2007-2012 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1288,6 +1288,7 @@ typedef struct {
     int umask;
     const char *root;
     const char *home;
+    const char *python_home;
     const char *python_path;
     const char *python_eggs;
     int stack_size;
@@ -5736,6 +5737,8 @@ static apr_status_t wsgi_python_parent_cleanup(void *data)
 
 static void wsgi_python_init(apr_pool_t *p)
 {
+    const char *python_home = 0;
+
 #if defined(DARWIN) && (AP_SERVER_MAJORVERSION_NUMBER < 2)
     static int initialized = 0;
 #else
@@ -5792,31 +5795,36 @@ static void wsgi_python_init(apr_pool_t *p)
 
         /* Check for Python HOME being overridden. */
 
+        python_home = wsgi_server_config->python_home;
+
+        if (wsgi_daemon_process && wsgi_daemon_process->group->python_home)
+            python_home = wsgi_daemon_process->group->python_home;
+
 #if PY_MAJOR_VERSION >= 3
-        if (wsgi_server_config->python_home) {
+        if (python_home) {
             wchar_t *s = NULL;
-            int len = strlen(wsgi_server_config->python_home)+1;
+            int len = strlen(python_home)+1;
 
             ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                          "mod_wsgi (pid=%d): Python home %s.", getpid(),
-                         wsgi_server_config->python_home);
+                         python_home);
 
             s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
 
 #if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
-            wsgi_utf8_to_unicode_path(s, len, wsgi_server_config->python_home);
+            wsgi_utf8_to_unicode_path(s, len, python_home);
 #else
-            mbstowcs(s, wsgi_server_config->python_home, len);
+            mbstowcs(s, python_home, len);
 #endif
             Py_SetPythonHome(s);
         }
 #else
-        if (wsgi_server_config->python_home) {
+        if (python_home) {
             ap_log_error(APLOG_MARK, WSGI_LOG_INFO(0), wsgi_server,
                          "mod_wsgi (pid=%d): Python home %s.", getpid(),
-                         wsgi_server_config->python_home);
+                         python_home);
 
-            Py_SetPythonHome((char *)wsgi_server_config->python_home);
+            Py_SetPythonHome((char *)python_home);
         }
 #endif
 
@@ -9340,6 +9348,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     const char *root = NULL;
     const char *home = NULL;
+    const char *python_home = NULL;
     const char *python_path = NULL;
     const char *python_eggs = NULL;
 
@@ -9462,6 +9471,9 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                 return "Invalid home directory for WSGI daemon process.";
 
             home = value;
+        }
+        else if (!strcmp(option, "python-home")) {
+            python_home = value;
         }
         else if (!strcmp(option, "python-path")) {
             python_path = value;
@@ -9631,6 +9643,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->root = root;
     entry->home = home;
 
+    entry->python_home = python_home;
     entry->python_path = python_path;
     entry->python_eggs = python_eggs;
 
@@ -11159,6 +11172,17 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         apr_pool_create(&wsgi_daemon_pool, p);
 
         /*
+         * Retain a reference to daemon process details. Do
+         * this here as when doing lazy initialisation of
+         * the interpreter we want to know if in a daemon
+         * process so can pick any daemon process specific
+         * home directory for Python installation.
+         */
+
+        wsgi_daemon_group = daemon->group->name;
+        wsgi_daemon_process = daemon;
+
+        /*
          * Initialise Python if required to be done in the child
          * process. Note that it will not be initialised if
          * mod_python loaded and it has already been done.
@@ -11305,11 +11329,6 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
                              wsgi_server->server_hostname);
             }
         }
-
-        /* Retain a reference to daemon process details. */
-
-        wsgi_daemon_group = daemon->group->name;
-        wsgi_daemon_process = daemon;
 
         /*
          * Setup Python in the child daemon process. Note that
