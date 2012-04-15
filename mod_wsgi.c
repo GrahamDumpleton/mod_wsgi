@@ -11116,7 +11116,17 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          * available to code in daemon processes.
          */
 
+        /*
+         * XXX If this is closed, under Apache 2.4 then daemon
+         * mode processes will crash. Not much choice but to
+         * leave it open. Daemon mode really needs to be
+         * rewritten not to use normal Apache request object and
+         * output bucket chain to avoid potential for problems.
+         */
+
+#if 0
         ap_cleanup_scoreboard(0);
+#endif
 
         /*
          * Wipe out random value used in magic token so that not
