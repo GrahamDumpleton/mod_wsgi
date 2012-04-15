@@ -1778,8 +1778,14 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
 
     while ((item = PyIter_Next(iterator))) {
         PyObject *result = NULL;
+        PyObject *args = NULL;
 
-        result = Log_write(self, item);
+        args = PyTuple_Pack(1, item);
+
+        result = Log_write(self, args);
+
+        Py_DECREF(args);
+        Py_DECREF(item);
 
         if (!result) {
             Py_DECREF(iterator);
