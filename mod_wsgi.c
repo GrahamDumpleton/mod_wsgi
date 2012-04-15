@@ -1317,6 +1317,8 @@ typedef struct {
     const char *script_group;
     int cpu_time_limit;
     int cpu_priority;
+    rlim_t memory_limit;
+    rlim_t virtual_memory_limit;
     const char *socket;
     int listener_fd;
     const char* mutex_path;
@@ -9447,6 +9449,9 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int cpu_time_limit = 0;
     int cpu_priority = 0;
 
+    apr_int64_t memory_limit = 0;
+    apr_int64_t virtual_memory_limit = 0;
+
     uid_t uid;
     uid_t gid;
 
@@ -9689,6 +9694,22 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
             cpu_priority = atoi(value);
         }
+        else if (!strcmp(option, "memory-limit")) {
+            if (!*value)
+                return "Invalid memory limit for WSGI daemon process.";
+
+            memory_limit = apr_atoi64(value);
+            if (memory_limit < 0)
+                return "Invalid memory limit for WSGI daemon process.";
+        }
+        else if (!strcmp(option, "virtual-memory-limit")) {
+            if (!*value)
+                return "Invalid virtual memory limit for WSGI daemon process.";
+
+            virtual_memory_limit = apr_atoi64(value);
+            if (virtual_memory_limit < 0)
+                return "Invalid virtual memory limit for WSGI daemon process.";
+        }
         else
             return "Invalid option to WSGI daemon process definition.";
     }
@@ -9788,6 +9809,9 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     entry->cpu_time_limit = cpu_time_limit;
     entry->cpu_priority = cpu_priority;
+
+    entry->memory_limit = memory_limit;
+    entry->virtual_memory_limit = virtual_memory_limit;
 
     entry->listener_fd = -1;
 
@@ -11288,17 +11312,78 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (daemon->group->cpu_time_limit > 0) {
             struct rlimit limit;
+            int result = -1;
 
             limit.rlim_cur = daemon->group->cpu_time_limit;
 
             limit.rlim_max = daemon->group->cpu_time_limit + 1;
             limit.rlim_max += daemon->group->shutdown_timeout;
 
-            if (setrlimit(RLIMIT_CPU, &limit) == -1) {
+#if defined(RLIMIT_CPU)
+            result = setrlimit(RLIMIT_CPU, &limit);
+#endif
+
+            if (result == -1) {
                 ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(0), wsgi_server,
                              "mod_wsgi (pid=%d): Couldn't set CPU time "
                              "limit of %d seconds for process '%s'.", getpid(),
                              daemon->group->cpu_time_limit,
+                             daemon->group->name);
+            }
+        }
+
+        /*
+	 * Set limits on amount of date segment memory that can
+	 * be used. Although this is done, some platforms
+	 * doesn't actually support it.
+         */
+
+        if (daemon->group->memory_limit > 0) {
+            struct rlimit limit;
+            int result = -1;
+
+            limit.rlim_cur = daemon->group->memory_limit;
+
+            limit.rlim_max = daemon->group->memory_limit;
+
+#if defined(RLIMIT_DATA)
+            result = setrlimit(RLIMIT_DATA, &limit);
+#endif
+
+            if (result == -1) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Couldn't set memory time "
+                             "limit of %ld for process '%s'.", getpid(),
+                             (long)daemon->group->memory_limit,
+                             daemon->group->name);
+            }
+        }
+
+        /*
+         * Set limits on amount of virtual memory that can be used.
+         * Although this is done, some platforms doesn't actually
+         * support it.
+         */
+
+        if (daemon->group->virtual_memory_limit > 0) {
+            struct rlimit limit;
+            int result = -1;
+
+            limit.rlim_cur = daemon->group->virtual_memory_limit;
+
+            limit.rlim_max = daemon->group->virtual_memory_limit;
+
+#if defined(RLIMIT_AS)
+            result = setrlimit(RLIMIT_AS, &limit);
+#elif defined(RLIMIT_VMEM)
+            result = setrlimit(RLIMIT_VMEM, &limit);
+#endif
+
+            if (result == -1) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_CRIT(0), wsgi_server,
+                             "mod_wsgi (pid=%d): Couldn't set virtual memory "
+                             "time limit of %ld for process '%s'.", getpid(),
+                             (long)daemon->group->virtual_memory_limit,
                              daemon->group->name);
             }
         }
