@@ -461,6 +461,9 @@ typedef struct {
     int python_optimize;
     int py3k_warning_flag;
 
+    const char *lang;
+    const char *locale;
+
     const char *python_home;
     const char *python_path;
     const char *python_eggs;
@@ -529,6 +532,9 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 
     object->py3k_warning_flag = -1;
     object->python_optimize = -1;
+
+    object->lang = NULL;
+    object->locale = NULL;
 
     object->python_home = NULL;
     object->python_path = NULL;
@@ -1258,6 +1264,7 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 #include <sys/sem.h>
 #endif
 
+#include <locale.h>
 #include <sys/un.h>
 
 #ifndef WSGI_LISTEN_BACKLOG
@@ -1288,6 +1295,8 @@ typedef struct {
     int umask;
     const char *root;
     const char *home;
+    const char *lang;
+    const char *locale;
     const char *python_home;
     const char *python_path;
     const char *python_eggs;
@@ -9348,6 +9357,10 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     const char *root = NULL;
     const char *home = NULL;
+
+    const char *lang = NULL;
+    const char *locale = NULL;
+
     const char *python_home = NULL;
     const char *python_path = NULL;
     const char *python_eggs = NULL;
@@ -9471,6 +9484,12 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                 return "Invalid home directory for WSGI daemon process.";
 
             home = value;
+        }
+        else if (!strcmp(option, "lang")) {
+            lang = value;
+        }
+        else if (!strcmp(option, "locale")) {
+            locale = value;
         }
         else if (!strcmp(option, "python-home")) {
             python_home = value;
@@ -9642,6 +9661,9 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->umask = umask;
     entry->root = root;
     entry->home = home;
+
+    entry->lang = lang;
+    entry->locale = locale;
 
     entry->python_home = python_home;
     entry->python_path = python_path;
@@ -11181,6 +11203,23 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         wsgi_daemon_group = daemon->group->name;
         wsgi_daemon_process = daemon;
+
+        /* Set lang/locale if specified for daemon process. */
+
+        if (daemon->group->lang) {
+            char *envvar = apr_pstrcat(p, "LANG=", daemon->group->lang, NULL);
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Setting lang to %s.",
+                         getpid(), daemon->group->lang);
+            putenv(envvar);
+        }
+
+        if (daemon->group->locale) {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Setting locale to %s.",
+                         getpid(), daemon->group->locale);
+            setlocale(LC_ALL, daemon->group->locale);
+        }
 
         /*
          * Initialise Python if required to be done in the child
