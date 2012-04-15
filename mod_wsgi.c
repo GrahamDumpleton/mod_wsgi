@@ -10755,22 +10755,9 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     apr_int32_t poll_count = 0;
 
     /*
-     * Create pipe by which signal handler can notify the main
-     * thread that signal has arrived indicating that process
-     * needs to shutdown.
+     * Setup poll object for listening for shutdown notice from
+     * signal handler.
      */
-
-    rv = apr_file_pipe_create(&wsgi_signal_pipe_in, &wsgi_signal_pipe_out, p);
-
-    if (rv != APR_SUCCESS) {
-        ap_log_error(APLOG_MARK, WSGI_LOG_EMERG(rv), wsgi_server,
-                     "mod_wsgi (pid=%d): Couldn't initialise signal "
-                     "pipe in daemon process '%s'.", getpid(),
-                     daemon->group->name);
-        sleep(20);
-
-        return;
-    }
 
     poll_fd.desc_type = APR_POLL_FILE;
     poll_fd.reqevents = APR_POLLIN;
@@ -11174,8 +11161,24 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         /*
          * Register signal handler to receive shutdown signal
-         * from Apache parent process.
+         * from Apache parent process. We need to first create
+         * pipe by which signal handler can notify the main
+         * thread that signal has arrived indicating that
+         * process needs to shutdown.
          */
+
+        status = apr_file_pipe_create(&wsgi_signal_pipe_in,
+                                      &wsgi_signal_pipe_out, p);
+
+        if (status != APR_SUCCESS) {
+            ap_log_error(APLOG_MARK, WSGI_LOG_EMERG(status), wsgi_server,
+                         "mod_wsgi (pid=%d): Couldn't initialise signal "
+                         "pipe in daemon process '%s'.", getpid(),
+                         daemon->group->name);
+            sleep(20);
+
+            exit(-1);
+        }
 
         wsgi_daemon_shutdown = 0;
 
