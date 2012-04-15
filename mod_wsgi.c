@@ -12417,6 +12417,31 @@ static int wsgi_execute_remote(request_rec *r)
     }
 
     /*
+     * If multiple WWW-Authenticate headers they would
+     * have been merged and although this is allowed by
+     * HTTP specifications, some HTTP clients don't
+     * like that, so split them into separate headers
+     * again.
+     */
+
+    if (apr_table_get(r->err_headers_out, "WWW-Authenticate")) {
+        const char* value = NULL;
+        const char* item = NULL;
+
+        value = apr_table_get(r->err_headers_out, "WWW-Authenticate");
+
+        apr_table_unset(r->err_headers_out, "WWW-Authenticate");
+
+        while (*value) {
+            item = ap_getword(r->pool, &value, ',');
+            while (*item && apr_isspace(*item))
+                item++;
+            if (*item)
+                apr_table_add(r->err_headers_out, "WWW-Authenticate", item);
+        }
+    }
+
+    /*
      * Allow the web server to override any error
      * page produced by the WSGI application.
      */
