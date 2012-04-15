@@ -10194,7 +10194,7 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
         apr_socket_close(sock);
         return;
     }
-    apr_sockaddr_ip_get(&c->client_ip, c->client_addr);
+    c->client_ip = "unknown";
 #else
     if ((rv = apr_socket_addr_get(&c->remote_addr, APR_REMOTE, sock))
         != APR_SUCCESS) {
@@ -10204,7 +10204,7 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
         apr_socket_close(sock);
         return;
     }
-    apr_sockaddr_ip_get(&c->remote_ip, c->remote_addr);
+    c->remote_ip = "unknown";
 #endif
 
     c->base_server = daemon->group->server;
@@ -12893,6 +12893,11 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 #else
     r->connection->remote_ip = (char *)apr_table_get(r->subprocess_env,
                                                      "REMOTE_ADDR");
+#endif
+
+#if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
+    r->useragent_addr = c->client_addr;
+    r->useragent_ip = c->client_ip;
 #endif
 
     key = apr_psprintf(p, "%s|%s",
