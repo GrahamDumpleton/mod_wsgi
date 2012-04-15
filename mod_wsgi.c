@@ -1291,6 +1291,9 @@ typedef struct {
     uid_t uid;
     const char *group;
     gid_t gid;
+    const char *groups_list;
+    int groups_count;
+    gid_t *groups;
     int processes;
     int multiprocess;
     int threads;
@@ -9447,6 +9450,10 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     uid_t uid;
     uid_t gid;
 
+    const char *groups_list = NULL;
+    int groups_count = 0;
+    gid_t *groups = NULL;
+
     const char *option = NULL;
     const char *value = NULL;
 
@@ -9503,6 +9510,9 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
             group = value;
             gid = ap_gname2id(group);
+        }
+        else if (!strcmp(option, "supplementary-groups")) {
+            groups_list = value;
         }
         else if (!strcmp(option, "processes")) {
             if (!*value)
@@ -9686,6 +9696,33 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     if (script_user && script_group)
         return "Only one of script-user and script-group allowed.";
 
+    if (groups_list) {
+        const char *group_name = NULL;
+        int groups_maximum = NGROUPS_MAX;
+        const char *items = NULL;
+
+#ifdef _SC_NGROUPS_MAX
+        groups_maximum = sysconf(_SC_NGROUPS_MAX);
+        if (groups_maximum < 0)
+            groups_maximum = NGROUPS_MAX;
+#endif
+        groups = (gid_t *)apr_pcalloc(cmd->pool,
+                                      groups_maximum*sizeof(groups[0]));
+
+        groups[groups_count++] = gid;
+
+        items = groups_list;
+        group_name = ap_getword(cmd->pool, &items, ',');
+
+        while (group_name && *group_name) {
+            if (groups_count > groups_maximum)
+                return "Too many supplementary groups WSGI daemon process";
+
+            groups[groups_count++] = ap_gname2id(group_name);
+            group_name = ap_getword(cmd->pool, &items, ',');
+        }
+    }
+
     if (!wsgi_daemon_list) {
         wsgi_daemon_list = apr_array_make(cmd->pool, 20,
                                           sizeof(WSGIProcessGroup));
@@ -9715,6 +9752,10 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     entry->uid = uid;
     entry->gid = gid;
+
+    entry->groups_list = groups_list;
+    entry->groups_count = groups_count;
+    entry->groups = groups;
 
     entry->processes = processes;
     entry->multiprocess = multiprocess;
@@ -10077,7 +10118,17 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
                      getpid(), (unsigned)daemon->group->gid);
     }
     else {
-        if (initgroups(daemon->group->user, daemon->group->gid) == -1) {
+        if (daemon->group->groups) {
+            if (setgroups(daemon->group->groups_count,
+                          daemon->group->groups) == -1) {
+                ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno),
+                             wsgi_server, "mod_wsgi (pid=%d): Unable "
+                             "to set supplementary groups for uname=%s "
+                             "of '%s'.", getpid(), daemon->group->user,
+                             daemon->group->groups_list);
+            }
+        }
+        else if (initgroups(daemon->group->user, daemon->group->gid) == -1) {
             ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno),
                          wsgi_server, "mod_wsgi (pid=%d): Unable "
                          "to set groups for uname=%s and gid=%u.", getpid(),
