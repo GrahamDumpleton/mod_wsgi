@@ -4600,6 +4600,17 @@ static InterpreterObject *newInterpreterObject(const char *name)
     }
 
     /*
+     * Force loading of codecs into interpreter. This has to be
+     * done as not otherwise done in sub interpreters and if not
+     * done, code running in sub interpreters can fail on some
+     * platforms if a unicode string is added in sys.path and an
+     * import then done.
+     */
+
+    item = PyCodec_Encoder("ascii");
+    Py_XDECREF(item);
+
+    /*
      * If running in daemon process, override as appropriate
      * the USER, USERNAME or LOGNAME environment  variables
      * so that they match the user that the process is running
