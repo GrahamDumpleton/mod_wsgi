@@ -6486,7 +6486,7 @@ static int wsgi_execute_script(request_rec *r)
                 wsgi_release_interpreter(interp);
 
                 r->status = HTTP_INTERNAL_SERVER_ERROR;
-                r->status_line = "0 Rejected";
+                r->status_line = "200 Rejected";
 
                 wsgi_daemon_shutdown++;
                 kill(getpid(), SIGINT);
@@ -6537,7 +6537,7 @@ static int wsgi_execute_script(request_rec *r)
         apr_bucket_brigade *bb;
         apr_bucket *b;
 
-        const char *data = "Status: 0 Continue\r\n\r\n";
+        const char *data = "Status: 200 Continue\r\n\r\n";
         int length = strlen(data);
 
         filters = r->output_filters;
@@ -12207,19 +12207,23 @@ static int wsgi_execute_remote(request_rec *r)
             if ((status = ap_scan_script_header_err_brigade(r, bbin, NULL)))
                 return HTTP_INTERNAL_SERVER_ERROR;
 
-            /* Status must be zero for our special headers. */
+            /*
+             * Status must be 200 for our special headers. Ideally
+             * we would use 0 as did in the past but Apache 2.4
+             * complains if use 0 as not a valid status value.
+             */
 
-            if (r->status != 0) {
+            if (r->status != 200) {
                 ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                              "mod_wsgi (pid=%d): Unexpected status from "
                              "WSGI daemon process '%d'.", getpid(), r->status);
                 return HTTP_INTERNAL_SERVER_ERROR;
             }
 
-            if (!strcmp(r->status_line, "0 Continue"))
+            if (!strcmp(r->status_line, "200 Continue"))
                 break;
 
-            if (strcmp(r->status_line, "0 Rejected")) {
+            if (strcmp(r->status_line, "200 Rejected")) {
                 ap_log_rerror(APLOG_MARK, WSGI_LOG_ERR(0), r,
                              "mod_wsgi (pid=%d): Unexpected status from "
                              "WSGI daemon process '%d'.", getpid(), r->status);
@@ -13025,7 +13029,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (wsgi_execute_script(r) != OK) {
         r->status = HTTP_INTERNAL_SERVER_ERROR;
-        r->status_line = "0 Error";
+        r->status_line = "200 Error";
     }
 
     /*
