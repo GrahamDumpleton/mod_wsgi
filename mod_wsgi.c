@@ -497,6 +497,8 @@ typedef struct {
     int error_override;
     int chunked_request;
 
+    int enable_sendfile;
+
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
     apr_hash_t *handler_scripts;
 #endif
@@ -573,6 +575,8 @@ static WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->script_reloading = -1;
     object->error_override = -1;
     object->chunked_request = -1;
+
+    object->enable_sendfile = -1;
 
     return object;
 }
@@ -661,6 +665,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->chunked_request = parent->chunked_request;
 
+    if (child->enable_sendfile != -1)
+        config->enable_sendfile = child->enable_sendfile;
+    else
+        config->enable_sendfile = parent->enable_sendfile;
+
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
     if (!child->handler_scripts)
         config->handler_scripts = parent->handler_scripts;
@@ -692,6 +701,8 @@ typedef struct {
     int error_override;
     int chunked_request;
 
+    int enable_sendfile;
+
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
     WSGIScriptFile *auth_group_script;
@@ -722,6 +733,8 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->script_reloading = -1;
     object->error_override = -1;
     object->chunked_request = -1;
+
+    object->enable_sendfile = -1;
 
     object->access_script = NULL;
     object->auth_user_script = NULL;
@@ -803,6 +816,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->chunked_request = parent->chunked_request;
 
+    if (child->enable_sendfile != -1)
+        config->enable_sendfile = child->enable_sendfile;
+    else
+        config->enable_sendfile = parent->enable_sendfile;
+
     if (child->access_script)
         config->access_script = child->access_script;
     else
@@ -858,6 +876,8 @@ typedef struct {
     int script_reloading;
     int error_override;
     int chunked_request;
+
+    int enable_sendfile;
 
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
@@ -1203,6 +1223,14 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         config->chunked_request = sconfig->chunked_request;
         if (config->chunked_request < 0)
             config->chunked_request = 0;
+    }
+
+    config->enable_sendfile = dconfig->enable_sendfile;
+
+    if (config->enable_sendfile < 0) {
+        config->enable_sendfile = sconfig->enable_sendfile;
+        if (config->enable_sendfile < 0)
+            config->enable_sendfile = 0;
     }
 
     config->access_script = dconfig->access_script;
@@ -3744,7 +3772,7 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
      * cannot enable that feature.
      */
 
-    if (!wsgi_daemon_pool)
+    if (self->config->enable_sendfile)
         apr_os_file_put(&tmpfile, &fd, APR_SENDFILE_ENABLED, self->r->pool);
     else
         apr_os_file_put(&tmpfile, &fd, 0, self->r->pool);
@@ -7959,6 +7987,36 @@ static const char *wsgi_set_chunked_request(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_enable_sendfile(cmd_parms *cmd, void *mconfig,
+                                            const char *f)
+{
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+
+        if (strcasecmp(f, "Off") == 0)
+            dconfig->enable_sendfile = 0;
+        else if (strcasecmp(f, "On") == 0)
+            dconfig->enable_sendfile = 1;
+        else
+            return "WSGIEnableSendfile must be one of: Off | On";
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+
+        if (strcasecmp(f, "Off") == 0)
+            sconfig->enable_sendfile = 0;
+        else if (strcasecmp(f, "On") == 0)
+            sconfig->enable_sendfile = 1;
+        else
+            return "WSGIEnableSendfile must be one of: Off | On";
+    }
+
+    return NULL;
+}
+
 static const char *wsgi_set_access_script(cmd_parms *cmd, void *mconfig,
                                           const char *args)
 {
@@ -8506,6 +8564,9 @@ static void wsgi_build_environment(request_rec *r)
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.input_chunked",
                    apr_psprintf(r->pool, "%d", !!r->read_chunked));
+
+    apr_table_setn(r->subprocess_env, "mod_wsgi.enable_sendfile",
+                   apr_psprintf(r->pool, "%d", config->enable_sendfile));
 }
 
 typedef struct {
@@ -13435,6 +13496,13 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     config->script_reloading = atoi(apr_table_get(r->subprocess_env,
                                                   "mod_wsgi.script_reloading"));
 
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.enable_sendfile");
+
+    if (item && !strcasecmp(item, "1"))
+        config->enable_sendfile = 1;
+    else
+        config->enable_sendfile = 0;
+
     /*
      * Define how input data is to be processed. This
      * was already done in the Apache child process and
@@ -15707,6 +15775,13 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable overriding of error pages."),
     AP_INIT_TAKE1("WSGIChunkedRequest", wsgi_set_chunked_request,
         NULL, OR_FILEINFO, "Enable/Disable support for chunked requests."),
+
+#ifndef WIN32
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    AP_INIT_TAKE1("WSGIEnableSendfile", wsgi_set_enable_sendfile,
+        NULL, OR_FILEINFO, "Enable/Disable support for kernel sendfile."),
+#endif
+#endif
 
 #if defined(MOD_WSGI_WITH_AAA_HANDLERS)
     AP_INIT_RAW_ARGS("WSGIAccessScript", wsgi_set_access_script,
