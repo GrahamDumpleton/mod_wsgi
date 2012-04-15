@@ -96,6 +96,13 @@ typedef int apr_lockmech_e;
 #include "http_config.h"
 #include "ap_listen.h"
 #include "apr_version.h"
+
+#include "apr_optional.h"
+
+APR_DECLARE_OPTIONAL_FN(int, ssl_is_https, (conn_rec *));
+APR_DECLARE_OPTIONAL_FN(char *, ssl_var_lookup, (apr_pool_t *,
+      server_rec *, conn_rec *, request_rec *, char *));
+
 #endif
 
 #include "ap_config.h"
@@ -3485,7 +3492,6 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
 #endif
 
 #if AP_SERVER_MAJORVERSION_NUMBER >= 2
-APR_DECLARE_OPTIONAL_FN(int, ssl_is_https, (conn_rec *));
 static APR_OPTIONAL_FN_TYPE(ssl_is_https) *wsgi_is_https = NULL;
 #endif
 
@@ -3648,6 +3654,25 @@ static PyObject *Adapter_environ(AdapterObject *self)
         PyDict_SetItemString(vars, "apache.request_rec", object);
         Py_DECREF(object);
     }
+
+    /*
+     * Extensions for accessing SSL certificate information from
+     * mod_ssl when in use.
+     */
+
+#if 0
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    if (!wsgi_daemon_pool) {
+        object = PyObject_GetAttrString((PyObject *)self, "ssl_is_https");
+        PyDict_SetItemString(vars, "mod_ssl.is_https", object);
+        Py_DECREF(object);
+
+        object = PyObject_GetAttrString((PyObject *)self, "ssl_var_lookup");
+        PyDict_SetItemString(vars, "mod_ssl.var_lookup", object);
+        Py_DECREF(object);
+    }
+#endif
+#endif
 
     return vars;
 }
@@ -4095,10 +4120,105 @@ static PyObject *Adapter_file_wrapper(AdapterObject *self, PyObject *args)
     return newStreamObject(self, filelike, blksize);
 }
 
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+
+static PyObject *Adapter_ssl_is_https(AdapterObject *self, PyObject *args)
+{
+    APR_OPTIONAL_FN_TYPE(ssl_is_https) *ssl_is_https = 0;
+
+    if (!self->r) {
+        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        return NULL;
+    }
+
+    if (!PyArg_ParseTuple(args, ":ssl_is_https"))
+        return NULL;
+
+    ssl_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
+
+    if (ssl_is_https == 0)
+      return Py_BuildValue("i", 0);
+
+    return Py_BuildValue("i", ssl_is_https(self->r->connection));
+}
+
+static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
+{
+    APR_OPTIONAL_FN_TYPE(ssl_var_lookup) *ssl_var_lookup = 0;
+
+    PyObject *item = NULL;
+
+    char *name = 0;
+    char *value = 0;
+
+    if (!self->r) {
+        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        return NULL;
+    }
+
+    if (!PyArg_ParseTuple(args, "O:ssl_var_lookup", &item))
+        return NULL;
+
+#if PY_MAJOR_VERSION >= 3
+    if (PyUnicode_Check(item)) {
+        PyObject *latin_item;
+        latin_item = PyUnicode_AsLatin1String(item);
+        if (!latin_item) {
+            PyErr_Format(PyExc_TypeError, "byte string value expected, "
+                         "value containing non 'latin-1' characters found");
+            Py_DECREF(item);
+            return NULL;
+        }
+
+        Py_DECREF(item);
+        item = latin_item;
+    }
+#endif
+
+    if (!PyString_Check(item)) {
+        PyErr_Format(PyExc_TypeError, "byte string value expected, value "
+                     "of type %.200s found", item->ob_type->tp_name);
+        Py_DECREF(item);
+        return NULL;
+    }
+
+    name = PyString_AsString(item);
+
+    ssl_var_lookup = APR_RETRIEVE_OPTIONAL_FN(ssl_var_lookup);
+
+    if (ssl_var_lookup == 0)
+    {
+        Py_XINCREF(Py_None);
+
+        return Py_None;
+    }
+
+    value = ssl_var_lookup(self->r->pool, self->r->server,
+                           self->r->connection, self->r, name);
+
+    if (!value) {
+        Py_XINCREF(Py_None);
+
+        return Py_None;
+    }
+
+#if PY_MAJOR_VERSION >= 3
+    return PyUnicode_DecodeLatin1(value, strlen(value), NULL);
+#else
+    return PyString_FromString(value);
+#endif
+}
+
+#endif
+
 static PyMethodDef Adapter_methods[] = {
     { "start_response", (PyCFunction)Adapter_start_response, METH_VARARGS, 0 },
     { "write",          (PyCFunction)Adapter_write, METH_VARARGS, 0 },
     { "file_wrapper",   (PyCFunction)Adapter_file_wrapper, METH_VARARGS, 0 },
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    { "ssl_is_https",   (PyCFunction)Adapter_ssl_is_https, METH_VARARGS, 0 },
+    { "ssl_var_lookup", (PyCFunction)Adapter_ssl_var_lookup, METH_VARARGS, 0 },
+#endif
     { NULL, NULL}
 };
 
@@ -8508,8 +8628,124 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
         Py_DECREF(object);
     }
 
+    /*
+     * Extensions for accessing SSL certificate information from
+     * mod_ssl when in use.
+     */
+
+#if 0
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    object = PyObject_GetAttrString((PyObject *)self, "ssl_is_https");
+    PyDict_SetItemString(vars, "mod_ssl.is_https", object);
+    Py_DECREF(object);
+
+    object = PyObject_GetAttrString((PyObject *)self, "ssl_var_lookup");
+    PyDict_SetItemString(vars, "mod_ssl.var_lookup", object);
+    Py_DECREF(object);
+#endif
+#endif
+
     return vars;
 }
+
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+
+static PyObject *Dispatch_ssl_is_https(DispatchObject *self, PyObject *args)
+{
+    APR_OPTIONAL_FN_TYPE(ssl_is_https) *ssl_is_https = 0;
+
+    if (!self->r) {
+        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        return NULL;
+    }
+
+    if (!PyArg_ParseTuple(args, ":ssl_is_https"))
+        return NULL;
+
+    ssl_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
+
+    if (ssl_is_https == 0)
+      return Py_BuildValue("i", 0);
+
+    return Py_BuildValue("i", ssl_is_https(self->r->connection));
+}
+
+static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
+{
+    APR_OPTIONAL_FN_TYPE(ssl_var_lookup) *ssl_var_lookup = 0;
+
+    PyObject *item = NULL;
+
+    char *name = 0;
+    char *value = 0;
+
+    if (!self->r) {
+        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        return NULL;
+    }
+
+    if (!PyArg_ParseTuple(args, "O:ssl_var_lookup", &item))
+        return NULL;
+
+#if PY_MAJOR_VERSION >= 3
+    if (PyUnicode_Check(item)) {
+        PyObject *latin_item;
+        latin_item = PyUnicode_AsLatin1String(item);
+        if (!latin_item) {
+            PyErr_Format(PyExc_TypeError, "byte string value expected, "
+                         "value containing non 'latin-1' characters found");
+            Py_DECREF(item);
+            return NULL;
+        }
+
+        Py_DECREF(item);
+        item = latin_item;
+    }
+#endif
+
+    if (!PyString_Check(item)) {
+        PyErr_Format(PyExc_TypeError, "byte string value expected, value "
+                     "of type %.200s found", item->ob_type->tp_name);
+        Py_DECREF(item);
+        return NULL;
+    }
+
+    name = PyString_AsString(item);
+
+    ssl_var_lookup = APR_RETRIEVE_OPTIONAL_FN(ssl_var_lookup);
+
+    if (ssl_var_lookup == 0)
+    {
+        Py_XINCREF(Py_None);
+
+        return Py_None;
+    }
+
+    value = ssl_var_lookup(self->r->pool, self->r->server,
+                           self->r->connection, self->r, name);
+
+    if (!value) {
+        Py_XINCREF(Py_None);
+
+        return Py_None;
+    }
+
+#if PY_MAJOR_VERSION >= 3
+    return PyUnicode_DecodeLatin1(value, strlen(value), NULL);
+#else
+    return PyString_FromString(value);
+#endif
+}
+
+#endif
+
+static PyMethodDef Dispatch_methods[] = {
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    { "ssl_is_https",   (PyCFunction)Dispatch_ssl_is_https, METH_VARARGS, 0 },
+    { "ssl_var_lookup", (PyCFunction)Dispatch_ssl_var_lookup, METH_VARARGS, 0 },
+#endif
+    { NULL, NULL}
+};
 
 static PyTypeObject Dispatch_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -8540,7 +8776,7 @@ static PyTypeObject Dispatch_Type = {
     0,                      /*tp_weaklistoffset*/
     0,                      /*tp_iter*/
     0,                      /*tp_iternext*/
-    0,                      /*tp_methods*/
+    Dispatch_methods,       /*tp_methods*/
     0,                      /*tp_members*/
     0,                      /*tp_getset*/
     0,                      /*tp_base*/
@@ -13784,8 +14020,122 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
         Py_DECREF(object);
     }
 
+    /*
+     * Extensions for accessing SSL certificate information from
+     * mod_ssl when in use.
+     */
+
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    object = PyObject_GetAttrString((PyObject *)self, "ssl_is_https");
+    PyDict_SetItemString(vars, "mod_ssl.is_https", object);
+    Py_DECREF(object);
+
+    object = PyObject_GetAttrString((PyObject *)self, "ssl_var_lookup");
+    PyDict_SetItemString(vars, "mod_ssl.var_lookup", object);
+    Py_DECREF(object);
+#endif
+
     return vars;
 }
+
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+
+static PyObject *Auth_ssl_is_https(AuthObject *self, PyObject *args)
+{
+    APR_OPTIONAL_FN_TYPE(ssl_is_https) *ssl_is_https = 0;
+
+    if (!self->r) {
+        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        return NULL;
+    }
+
+    if (!PyArg_ParseTuple(args, ":ssl_is_https"))
+        return NULL;
+
+    ssl_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
+
+    if (ssl_is_https == 0)
+      return Py_BuildValue("i", 0);
+
+    return Py_BuildValue("i", ssl_is_https(self->r->connection));
+}
+
+static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
+{
+    APR_OPTIONAL_FN_TYPE(ssl_var_lookup) *ssl_var_lookup = 0;
+
+    PyObject *item = NULL;
+
+    char *name = 0;
+    char *value = 0;
+
+    if (!self->r) {
+        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        return NULL;
+    }
+
+    if (!PyArg_ParseTuple(args, "O:ssl_var_lookup", &item))
+        return NULL;
+
+#if PY_MAJOR_VERSION >= 3
+    if (PyUnicode_Check(item)) {
+        PyObject *latin_item;
+        latin_item = PyUnicode_AsLatin1String(item);
+        if (!latin_item) {
+            PyErr_Format(PyExc_TypeError, "byte string value expected, "
+                         "value containing non 'latin-1' characters found");
+            Py_DECREF(item);
+            return NULL;
+        }
+
+        Py_DECREF(item);
+        item = latin_item;
+    }
+#endif
+
+    if (!PyString_Check(item)) {
+        PyErr_Format(PyExc_TypeError, "byte string value expected, value "
+                     "of type %.200s found", item->ob_type->tp_name);
+        Py_DECREF(item);
+        return NULL;
+    }
+
+    name = PyString_AsString(item);
+
+    ssl_var_lookup = APR_RETRIEVE_OPTIONAL_FN(ssl_var_lookup);
+
+    if (ssl_var_lookup == 0)
+    {
+        Py_XINCREF(Py_None);
+
+        return Py_None;
+    }
+
+    value = ssl_var_lookup(self->r->pool, self->r->server,
+                           self->r->connection, self->r, name);
+
+    if (!value) {
+        Py_XINCREF(Py_None);
+
+        return Py_None;
+    }
+
+#if PY_MAJOR_VERSION >= 3
+    return PyUnicode_DecodeLatin1(value, strlen(value), NULL);
+#else
+    return PyString_FromString(value);
+#endif
+}
+
+#endif
+
+static PyMethodDef Auth_methods[] = {
+#if AP_SERVER_MAJORVERSION_NUMBER >= 2
+    { "ssl_is_https",   (PyCFunction)Auth_ssl_is_https, METH_VARARGS, 0 },
+    { "ssl_var_lookup", (PyCFunction)Auth_ssl_var_lookup, METH_VARARGS, 0 },
+#endif
+    { NULL, NULL}
+};
 
 static PyTypeObject Auth_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -13816,7 +14166,7 @@ static PyTypeObject Auth_Type = {
     0,                      /*tp_weaklistoffset*/
     0,                      /*tp_iter*/
     0,                      /*tp_iternext*/
-    0,                      /*tp_methods*/
+    Auth_methods,           /*tp_methods*/
     0,                      /*tp_members*/
     0,                      /*tp_getset*/
     0,                      /*tp_base*/
