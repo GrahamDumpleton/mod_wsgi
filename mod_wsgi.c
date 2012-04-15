@@ -5216,8 +5216,8 @@ static void Interpreter_dealloc(InterpreterObject *self)
 #endif
 
         /*
-	 * Swap to interpreter thread state that was used when
-	 * the sub interpreter was created.
+         * Swap to interpreter thread state that was used when
+         * the sub interpreter was created.
          */
 
         PyThreadState_Swap(tstate);
@@ -5844,11 +5844,11 @@ static void wsgi_python_init(apr_pool_t *p)
         PyEval_InitThreads();
 
         /*
-	 * We now want to release the GIL. Before we do that
-	 * though we remember what the current thread state is.
-	 * We will use that later to restore the main thread
-	 * state when we want to cleanup interpreters on
-	 * shutdown.
+         * We now want to release the GIL. Before we do that
+         * though we remember what the current thread state is.
+         * We will use that later to restore the main thread
+         * state when we want to cleanup interpreters on
+         * shutdown.
          */
 
         wsgi_main_tstate = PyThreadState_Get();
@@ -11600,8 +11600,8 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
                 close(daemon->fd);
 
                 /*
-		 * Progressively increase time we wait between
-		 * connection attempts. Start at 0.1 second and
+                 * Progressively increase time we wait between
+                 * connection attempts. Start at 0.1 second and
                  * double each time but apply ceiling at 2.0
                  * seconds.
                  */
