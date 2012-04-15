@@ -3589,6 +3589,18 @@ static PyObject *Adapter_environ(AdapterObject *self)
     }
 
     /*
+     * We remove the HTTPS variable because WSGI compliant
+     * applications shouldn't rely on it. Instead they should
+     * use wsgi.url_scheme. We do this even if SetEnv was
+     * used to set HTTPS from Apache configuration. That is
+     * we convert it into the correct variable and remove the
+     * original.
+     */
+
+    if (scheme)
+        PyDict_DelItemString(vars, "HTTPS");
+
+    /*
      * Setup log object for WSGI errors. Don't decrement
      * reference to log object as keep reference to it.
      */
