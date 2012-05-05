@@ -5997,8 +5997,10 @@ static void wsgi_python_init(apr_pool_t *p)
 
         python_home = wsgi_server_config->python_home;
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
         if (wsgi_daemon_process && wsgi_daemon_process->group->python_home)
             python_home = wsgi_daemon_process->group->python_home;
+#endif
 
 #if PY_MAJOR_VERSION >= 3
         if (python_home) {
