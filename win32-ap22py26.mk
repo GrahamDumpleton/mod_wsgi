@@ -34,7 +34,7 @@ LDLIBS = \
 
 mod_wsgi.so : mod_wsgi.c
 	cl $(CPPFLAGS) $(CFLAGS) $? /LD $(LDFLAGS) $(LDLIBS) /OUT:$@
-        mt -manifest $@.manifest -outputresource:$@;2
+	mt -manifest $@.manifest -outputresource:$@;2
 
 clean :
 	del *.obj *.so *.so.manifest *.lib *.exp
