@@ -6036,7 +6036,7 @@ static void wsgi_python_init(apr_pool_t *p)
          * stdin/stdout have been initialised and aren't null.
          */
 
-#if defined(WIN32) && PY_MAJOR_VERSION >= 3
+#if defined(WIN32) && PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION < 3
         _wputenv(L"PYTHONIOENCODING=cp1252:backslashreplace");
 #endif
 
