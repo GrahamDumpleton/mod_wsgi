@@ -3252,7 +3252,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
                 if (*self->config->process_group)
                     r->content_type = apr_pstrdup(r->pool, value);
                 else
-                    ap_set_content_type(r, value);
+                    ap_set_content_type(r, apr_pstrdup(r->pool, value));
 #endif
             }
             else if (!strcasecmp(name, "Content-Length")) {
