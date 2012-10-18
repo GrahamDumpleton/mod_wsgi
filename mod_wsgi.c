@@ -12873,8 +12873,10 @@ static int wsgi_execute_remote(request_rec *r)
      * here for status but Apache 2.4 prohibits it now.
      */
 
-    if (r->status == 200 && !strcmp(r->status_line, "200 Error"))
+    if (r->status == 200 && !strcmp(r->status_line, "200 Error")) {
+        r->status_line = NULL;
         return HTTP_INTERNAL_SERVER_ERROR;
+    }
 
     /*
      * Look for 'Location' header and if an internal
