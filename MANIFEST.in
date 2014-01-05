@@ -1,0 +1,10 @@
+include configure.ac
+include configure
+include LICENCE
+include Makefile.in
+include README
+include src/server/*.h
+include src/server/*.c
+exclude src/server/apxs_config.py
+include tests/*
+include win32/*

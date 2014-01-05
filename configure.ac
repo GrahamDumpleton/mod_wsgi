@@ -1,6 +1,6 @@
 dnl  vim: set sw=4 expandtab :
 dnl
-dnl  Copyright 2007-2009 GRAHAM DUMPLETON
+dnl  Copyright 2007-2014 GRAHAM DUMPLETON
 dnl 
 dnl  Licensed under the Apache License, Version 2.0 (the "License");
 dnl  you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ dnl  limitations under the License.
 
 dnl Process this file with autoconf to produce a configure script.
 
-AC_INIT(mod_wsgi.c)
+AC_INIT(src/server/mod_wsgi.c)
 
 AC_ARG_ENABLE(framework, AC_HELP_STRING([--disable-framework],
             [disable mod_wsgi framework link]),
@@ -38,6 +38,8 @@ if test -z "${APXS}"; then
 fi
 
 AC_SUBST(APXS)
+
+AC_CHECK_FUNCS(prctl)
 
 AC_MSG_CHECKING(Apache version)
 HTTPD="`${APXS} -q SBINDIR`/`${APXS} -q TARGET`"
@@ -75,7 +77,15 @@ AC_SUBST(PYTHON)
 
 PYTHON_VERSION=`${PYTHON} -c 'from sys import stdout; \
     from distutils import sysconfig; \
-    stdout.write((sysconfig.get_config_var("VERSION")))'`
+    stdout.write(sysconfig.get_config_var("VERSION"))'`
+
+PYTHON_LDVERSION=`${PYTHON} -c 'from sys import stdout; \
+    from distutils import sysconfig; \
+    stdout.write(sysconfig.get_config_var("LDVERSION") or "")'`
+
+if test x"${PYTHON_LDVERSION}" = x""; then
+    PYTHON_LDVERSION=${PYTHON_VERSION}
+fi
 
 CPPFLAGS1=`${PYTHON} -c 'from sys import stdout; \
     from distutils import sysconfig; \
@@ -113,12 +123,28 @@ PYTHONFRAMEWORK=`${PYTHON} -c 'from sys import stdout; \
     from distutils import sysconfig; \
     stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORK"))'`
 
+if test "${PYTHON_LDVERSION}" != "${PYTHON_VERSION}"; then
+    PYTHONCFGDIR="${PYTHONCFGDIR}-${PYTHON_LDVERSION}"
+fi
+
 if test "${PYTHONFRAMEWORKDIR}" = "no-framework" -o \
         "${ENABLE_FRAMEWORK}" != "yes"; then
     LDFLAGS1="-L${PYTHONLIBDIR}"
     LDFLAGS2="-L${PYTHONCFGDIR}"
 
-    LDLIBS1="-lpython${PYTHON_VERSION}"
+    LDLIBS1="-lpython${PYTHON_LDVERSION}"
+
+    # MacOS X seems to be broken and doesn't use ABIFLAGS suffix
+    # so add a check to try and work out what we need to do.
+
+    if test -f "${PYTHONLIBDIR}/libpython${PYTHON_VERSION}.a"; then
+        LDLIBS1="-lpython${PYTHON_VERSION}"
+    fi
+
+    if test -f "${PYTHONCFGDIR}/libpython${PYTHON_VERSION}.a"; then
+        LDLIBS1="-lpython${PYTHON_VERSION}"
+    fi
+
     LDLIBS2=`${PYTHON} -c 'from sys import stdout; \
         from distutils import sysconfig; \
         stdout.write(sysconfig.get_config_var("LIBS"))'`
@@ -168,8 +194,5 @@ LIBEXECDIR="`${APXS} -q LIBEXECDIR`"
 AC_SUBST(LIBEXECDIR)
 
 HTTPD_MAJOR_VERSION=`echo ${HTTPD_VERSION} | sed -e 's/\..*//'`
-
-rm -f Makefile.in
-ln -s posix-ap${HTTPD_MAJOR_VERSION}X.mk.in Makefile.in
 
 AC_OUTPUT(Makefile)

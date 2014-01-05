@@ -32,8 +32,10 @@ LDLIBS = \
  libapr-1.lib \
  libaprutil-1.lib
 
-mod_wsgi.so : mod_wsgi.c
-	cl $(CPPFLAGS) $(CFLAGS) $? /LD $(LDFLAGS) $(LDLIBS) /OUT:$@
+SRCFILES = mod_wsgi.c wsgi_apache.c wsgi_convert.c wsgi_validate.c
+
+mod_wsgi.so : $(SRCFILES)
+	cl $(CPPFLAGS) $(CFLAGS) $(SRCFILES) /LD $(LDFLAGS) $(LDLIBS) /OUT:$@
 	mt -manifest $@.manifest -outputresource:$@;2
 
 clean :
