@@ -58,7 +58,7 @@ the documentation further improved.
 
 For details on how you can contribute back to mod_wsgi, see:
 
-  http://code.google.com/p/modwsgi/wiki/HowToContributeBack
+    http://code.google.com/p/modwsgi/wiki/HowToContributeBack
 
 If you are philosophically against the idea of contributing back to Open
 Source projects in a monetary way and find it obnoxious that any Open
@@ -111,7 +111,7 @@ information:
 Installation (UNIX)
 ===================
 
-To setup the package ready for building run the "configure" script.
+To setup the package ready for building run the "configure" script::
 
     ./configure
 
@@ -134,7 +134,7 @@ do not mix things up and install "apache-dev" by mistake, which is the
 If these programs are not in a standard location, they cannot be found in
 your PATH, or you wish to use alternate versions to those found, the
 "--with-apxs" and "--with-python" options can be used in conjunction with the
-"configure" script.
+"configure" script::
 
     ./configure --with-apxs=/usr/local/apache/bin/apxs \
       --with-python=/usr/local/bin/python
@@ -170,7 +170,7 @@ Also note that the Apache module will be bound to the specific major/minor
 version of Python being used. If you ever upgrade to a newer version of
 Python, you will need to rebuild the mod_wsgi module.
 
-Once the package has been configured, it can be built by running:
+Once the package has been configured, it can be built by running::
 
     make
 
@@ -179,7 +179,7 @@ Apache module itself. There are no separate Python code files as everything
 is done within C code compiled into the Apache module.
 
 To install the Apache module into the standard location for Apache modules
-as dictated by Apache for your installation, run:
+as dictated by Apache for your installation, run::
 
     make install
 
@@ -194,12 +194,12 @@ The compiled Apache module can be found in the ".libs" subdirectory and is
 again called "mod_wsgi.so". The name of the file should be kept the same
 when copied into its appropriate location.
 
-To cleanup after installation, run:
+To cleanup after installation, run::
 
     make clean
 
 If you need to build the module for a different version of Apache, you
-should run:
+should run::
 
     make distclean
 
@@ -221,7 +221,7 @@ distribution has organised the Apache configuration files. You may
 therefore need to check with any documentation for your operating system to
 see in what way the procedure may need to be modified.
 
-In the simplest case, all that is required is to add a line of the form:
+In the simplest case, all that is required is to add a line of the form::
 
     LoadModule wsgi_module modules/mod_wsgi.so
 
@@ -239,20 +239,20 @@ up. If you still need to use mod_python at the same time, you will need
 to use a version of mod_wsgi prior to mod_wsgi 4.0.
 
 Having adding the required directives you should perform a restart of
-Apache to check everything is okay.
+Apache to check everything is okay::
 
     apachectl restart
 
 If you see any sort of problem, or if you are upgrading from an older
 version of mod_wsgi, it is recommended you actually stop/start Apache
-instead.
+instead::
 
     apachectl stop
     apachectl start
 
 Note that on some Linux systems using 'apachectl' may not work properly.
 On these systems, if you have problems using 'apachectl' ensure instead
-you use the init.d script for Apache instead.
+you use the init.d script for Apache instead::
 
     /etc/init.d/httpd stop
     /etc/init.d/httpd start
@@ -267,7 +267,7 @@ system to determine the correct way to stop/start the Apache service. This
 is because they often use a wrapper around 'apachectl', or replace it, with
 a script which performs additional actions.
 
-If all is okay, you should see a line of the form:
+If all is okay, you should see a line of the form::
 
     Apache/2.2.2 (Unix) mod_wsgi/4.0 Python/2.6.1 configured
 
@@ -279,7 +279,7 @@ creation, script loading and reloading etc, but it logs with log level of
 such information will not be displayed in the Apache error log file. If you
 are new to mod_wsgi or need to debug issues with its use, it is recommended
 to change the Apache LogLevel directive to 'info' so that the information
-is displayed. For example:
+is displayed. For example::
 
   LogLevel info
 
@@ -305,13 +305,13 @@ neither can it be used within a ".htaccess" files.
 
 The first way of using the WSGIScriptAlias directive to indicate the WSGI
 application to be used, is to associate a WSGI application against a specific
-URL prefix.
+URL prefix::
 
     WSGIScriptAlias /myapp /usr/local/wsgi/scripts/myapp.wsgi
 
 The last option to the directive in this case must be a full pathname to
 the actual code file containing the WSGI application. The WSGI application
-contained within the code file should be called "application". For example:
+contained within the code file should be called "application". For example::
 
     def application(environ, start_response):
         status = '200 OK'
@@ -330,7 +330,7 @@ controls can still be applied to indicate who can actually access the WSGI
 application. Because these access controls will apply, if the WSGI
 application is located outside of any directories already known to Apache,
 it will be necessary to tell Apache that files within that directory can be
-used. To do this the Directory directive must be used.
+used. To do this the Directory directive must be used::
 
     <Directory /usr/local/wsgi/scripts>
     Order allow,deny
@@ -338,7 +338,7 @@ used. To do this the Directory directive must be used.
     </Directory>
 
 The second way of using the WSGIScriptAlias directive is to use it to map
-to a directory containing any number of WSGI applications.
+to a directory containing any number of WSGI applications::
 
     WSGIScriptAlias /wsgi/ /usr/local/wsgi/scripts/
 
@@ -359,7 +359,7 @@ directory can safely coexist and run together within the same Python sub
 interpreter, you can specify that all applications within a certain context
 should be placed in the same application group. This is indicated by using
 the WSGIApplicationGroup directive. The argument to the directive can be
-any unique name of your choosing.
+any unique name of your choosing::
 
     <Directory /usr/local/wsgi/scripts>
     WSGIApplicationGroup admin-scripts
