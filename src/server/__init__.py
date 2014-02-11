@@ -1,4 +1,5 @@
 from __future__ import print_function, division
+    if not os.path.exists(MOD_WSGI_SO):
 
 import os
 import sys
@@ -20,20 +21,25 @@ except ImportError:
 
 from . import apxs_config
 
-python_version = '%s%s' % sys.version_info[:2]
+_py_version = '%s%s' % sys.version_info[:2]
+_py_soabi = ''
+_py_soext = '.so'
 
 try:
+    import imp
     import sysconfig
-    MOD_WSGI_SO = 'mod_wsgi-py%s%s' % (python_version,
-            sysconfig.get_config_var('SO'))
-    MOD_WSGI_SO = os.path.join(os.path.dirname(__file__), MOD_WSGI_SO)
 
-    if not os.path.exists(MOD_WSGI_SO):
-        MOD_WSGI_SO = 'mod_wsgi-py%s.so' % python_version
-        MOD_WSGI_SO = os.path.join(os.path.dirname(__file__), MOD_WSGI_SO)
+    _py_soabi = sysconfig.get_config_var('SOABI')
+    _py_soext = sysconfig.get_config_var('SO')
 
 except ImportError:
-    MOD_WSGI_SO = 'mod_wsgi-py%s.so' % python_version
+    pass
+
+MOD_WSGI_SO = 'mod_wsgi-py%s%s' % (_py_version, _py_soext)
+MOD_WSGI_SO = os.path.join(os.path.dirname(__file__), MOD_WSGI_SO)
+
+if not os.path.exists(MOD_WSGI_SO) and _py_soabi:
+    MOD_WSGI_SO = 'mod_wsgi-py%s.%s%s' % (_py_version, _py_soabi, _py_soext)
     MOD_WSGI_SO = os.path.join(os.path.dirname(__file__), MOD_WSGI_SO)
 
 def where():
