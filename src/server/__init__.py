@@ -1,5 +1,4 @@
 from __future__ import print_function, division
-    if not os.path.exists(MOD_WSGI_SO):
 
 import os
 import sys
