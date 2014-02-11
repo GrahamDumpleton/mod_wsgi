@@ -655,11 +655,11 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     /*
      * If running in daemon mode and a home directory was set then
-     * insert empty an empty string at the start of the Python module
-     * search path so the current working directory will be searched.
-     * This makes things similar to when using the Python interpreter
-     * on the command line. If the current working directory changes
-     * then where it looks follows, so doesn't always look in home.
+     * insert an empty string at the start of the Python module search
+     * path so the current working directory will be searched. This
+     * makes things similar to when using the Python interpreter on the
+     * command line. If the current working directory changes then where
+     * it looks follows, so doesn't always look in home.
      */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
@@ -671,7 +671,11 @@ InterpreterObject *newInterpreterObject(const char *name)
         if (module && path) {
             PyObject *empty;
 
+#if PY_MAJOR_VERSION >= 3
+            empty = PyUnicode_DecodeLatin1("");
+#else
             empty = PyString_FromString("");
+#endif
             PyList_Insert(path, 0, empty);
             Py_DECREF(empty);
         }
