@@ -79,7 +79,12 @@ ServerSignature Off
 User ${WSGI_RUN_USER}
 Group ${WSGI_RUN_GROUP}
 
+<IfDefine WSGI_LISTENER_HOST>
 Listen %(host)s:%(port)s
+</IfDefine>
+<IfDefine !WSGI_LISTENER_HOST>
+Listen %(port)s
+</IfDefine>
 
 <IfVersion < 2.4>
 LockFile '%(server_root)s/accept.lock'
@@ -597,7 +602,7 @@ def generate_control_scripts(options):
             print(APACHE_ENVVARS_FILE.lstrip() % options, file=fp)
 
 option_list = (
-    optparse.make_option('--host', default='localhost', metavar='IP-ADDRESS'),
+    optparse.make_option('--host', default=None, metavar='IP-ADDRESS'),
     optparse.make_option('--port', default=8000, type='int', metavar='NUMBER'),
 
     optparse.make_option('--processes', type='int', metavar='NUMBER'),
@@ -675,6 +680,12 @@ def _cmd_setup_server(args, options):
     options['mod_wsgi_so'] = where()
 
     options['working_directory'] = options['working_directory'] or os.getcwd()
+
+    if not options['host']:
+        options['listener_host'] = None
+        options['host'] = 'localhost'
+    else:
+        options['listener_host'] = options['host']
 
     options['process_name'] = '(wsgi:%s:%s:%s)' % (options['host'],
             options['port'], os.getuid())
@@ -824,6 +835,8 @@ def _cmd_setup_server(args, options):
         options['httpd_arguments_list'].append('-DWSGI_KEEP_ALIVE')
     if options['multiprocess']:
         options['httpd_arguments_list'].append('-DWSGI_MULTIPROCESS')
+    if options['listener_host']:
+        options['httpd_arguments_list'].append('-DWSGI_LISTENER_HOST')
 
     options['httpd_arguments'] = '-f %s %s' % (options['httpd_conf'],
             ' '.join(options['httpd_arguments_list']))
