@@ -672,7 +672,7 @@ InterpreterObject *newInterpreterObject(const char *name)
             PyObject *empty;
 
 #if PY_MAJOR_VERSION >= 3
-            empty = PyUnicode_DecodeLatin1("");
+            empty = PyUnicode_DecodeLatin1("", strlen(""), NULL);
 #else
             empty = PyString_FromString("");
 #endif
