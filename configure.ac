@@ -1,6 +1,6 @@
 dnl  vim: set sw=4 expandtab :
 dnl
-dnl  Copyright 2007-2009 GRAHAM DUMPLETON
+dnl  Copyright 2007-2014 GRAHAM DUMPLETON
 dnl 
 dnl  Licensed under the Apache License, Version 2.0 (the "License");
 dnl  you may not use this file except in compliance with the License.
@@ -35,6 +35,22 @@ AC_ARG_WITH(apxs, AC_HELP_STRING([--with-apxs=NAME],
 if test -z "${APXS}"; then
     AC_PATH_PROGS(APXS, apxs2 apxs, [apxs],
                    [$PATH:/usr/local/apache/bin:/usr/sbin])
+fi
+
+XCODE_PREFIX="/Applications/Xcode.app/Contents/Developer/Toolchains/"
+XCODE_CC="${XCODE_PREFIX}XcodeDefault.xctoolchain/usr/bin/cc"
+
+if test -x "${APXS}"; then
+    APXS_CC=`${APXS} -q CC`
+    APXS_LIBTOOL=`${APXS} -q LIBTOOL | sed -e "s/ .*$//"`
+    if [[[ ${APXS_CC} = ${XCODE_PREFIX}* ]]]; then
+        cat "${APXS_LIBTOOL}" | sed -e \
+            "s/OSX10.[[89]].xctoolchain/XcodeDefault.xctoolchain/" > ./libtool
+        cat "${APXS}" | sed -e "s%get_vars(\"CC\")%\"${XCODE_CC}\"%" \
+            -e 's%^my $libtool = .*;%my $libtool = \"./libtool\";%' > ./apxs
+        chmod +x ./apxs ./libtool
+        APXS=./apxs
+    fi
 fi
 
 AC_SUBST(APXS)
