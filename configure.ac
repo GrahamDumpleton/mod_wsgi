@@ -37,6 +37,22 @@ if test -z "${APXS}"; then
                    [$PATH:/usr/local/apache/bin:/usr/sbin])
 fi
 
+XCODE_PREFIX="/Applications/Xcode.app/Contents/Developer/Toolchains/"
+XCODE_CC="${XCODE_PREFIX}XcodeDefault.xctoolchain/usr/bin/cc"
+
+if test -x "${APXS}"; then
+    APXS_CC=`${APXS} -q CC`
+    APXS_LIBTOOL=`${APXS} -q LIBTOOL | sed -e "s/ .*$//"`
+    if [[[ ${APXS_CC} = ${XCODE_PREFIX}* ]]]; then
+        cat "${APXS_LIBTOOL}" | sed -e \
+            "s/OSX10.[[89]].xctoolchain/XcodeDefault.xctoolchain/" > ./libtool
+        cat "${APXS}" | sed -e "s%get_vars(\"CC\")%\"${XCODE_CC}\"%" \
+            -e 's%^my $libtool = .*;%my $libtool = \"./libtool\";%' > ./apxs
+        chmod +x ./apxs ./libtool
+        APXS=./apxs
+    fi
+fi
+
 AC_SUBST(APXS)
 
 AC_CHECK_FUNCS(prctl)

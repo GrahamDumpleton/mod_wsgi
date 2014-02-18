@@ -3,6 +3,7 @@ autom4te.cache
 config.log
 config.status
 .libs
+*.o
 *.la
 *.lo
 *.loT
@@ -18,3 +19,5 @@ lib
 .Python
 *.pyc
 .tox
+apxs
+libtool
