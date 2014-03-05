@@ -130,7 +130,7 @@ extension = Extension(extension_name, source_files,
         extra_link_args=EXTRA_LINK_ARGS)
 
 setup(name = 'mod_wsgi',
-    version = '5.0.0-beta',
+    version = '4.1.0-beta',
     description = 'Installer for Apache/mod_wsgi.',
     author = 'Graham Dumpleton',
     author_email = 'Graham.Dumpleton@gmail.com',
