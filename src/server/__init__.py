@@ -72,8 +72,11 @@ LoadModule version_module '%(modules_directory)s/mod_version.so'
 
 ServerName %(host)s
 ServerRoot '%(server_root)s'
-DefaultRuntimeDir '%(server_root)s'
 PidFile '%(pid_file)s'
+
+<IfVersion >= 2.4>
+DefaultRuntimeDir '%(server_root)s'
+</IfVersion>
 
 ServerSignature Off
 
