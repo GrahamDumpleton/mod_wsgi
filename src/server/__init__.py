@@ -72,6 +72,7 @@ LoadModule version_module '%(modules_directory)s/mod_version.so'
 
 ServerName %(host)s
 ServerRoot '%(server_root)s'
+DefaultRuntimeDir '%(server_root)s'
 PidFile '%(pid_file)s'
 
 ServerSignature Off
@@ -91,7 +92,7 @@ LockFile '%(server_root)s/accept.lock'
 </IfVersion>
 
 <IfVersion >= 2.4>
-LoadModule mpm_event_module '%(modules_directory)s/mod_mpm_event.so'
+#LoadModule mpm_event_module '%(modules_directory)s/mod_mpm_event.so'
 LoadModule access_compat_module '%(modules_directory)s/mod_access_compat.so'
 LoadModule unixd_module '%(modules_directory)s/mod_unixd.so'
 LoadModule authn_core_module '%(modules_directory)s/mod_authn_core.so'
