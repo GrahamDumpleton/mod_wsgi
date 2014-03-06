@@ -86,6 +86,10 @@ APR_DECLARE_OPTIONAL_FN(char *, ssl_var_lookup, (apr_pool_t *,
 #include "util_script.h"
 #include "util_md5.h"
 
+#ifdef APLOG_USE_MODULE
+APLOG_USE_MODULE(wsgi);
+#endif
+
 #ifndef APR_FPROT_GWRITE
 #define APR_FPROT_GWRITE APR_GWRITE
 #endif
