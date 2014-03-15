@@ -2918,7 +2918,8 @@ else
     LDFLAGS2=`${PYTHON} -c "from sys import stdout; \
         from distutils import sysconfig; \
         stdout.write(sysconfig.get_config_var(
-        \"LINKFORSHARED\").replace(\"${STRING}\", ''))"`
+        \"LINKFORSHARED\").replace(\"${STRING}\", ''))" | \
+        sed -e 's/-Wl,-stack_size,[0-9]*//'`
 
     LDLIBS1=`${PYTHON} -c 'from sys import stdout; \
         from distutils import sysconfig; \
