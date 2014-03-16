@@ -623,66 +623,143 @@ def generate_control_scripts(options):
             print(APACHE_ENVVARS_FILE.lstrip() % options, file=fp)
 
 option_list = (
-    optparse.make_option('--host', default=None, metavar='IP-ADDRESS'),
-    optparse.make_option('--port', default=8000, type='int', metavar='NUMBER'),
+    optparse.make_option('--host', default=None, metavar='IP-ADDRESS',
+            help='The specific host (IP address) interface on which '
+            'requests are to be accepted. Defaults to listening on '
+            'all host interfaces.'),
+    optparse.make_option('--port', default=8000, type='int',
+            metavar='NUMBER', help='The specific port to bind to and '
+            'on which requests are to be accepted. Defaults to port 8000.'),
 
-    optparse.make_option('--processes', type='int', metavar='NUMBER'),
-    optparse.make_option('--threads', type='int', default=5, metavar='NUMBER'),
+    optparse.make_option('--processes', type='int', metavar='NUMBER',
+            help='The number of worker processes (instances of the WSGI '
+            'application) to be started up and which will handle requests '
+            'concurrently. Defaults to a single process.'),
+    optparse.make_option('--threads', type='int', default=5, metavar='NUMBER',
+            help='The number of threads in the request thread pool of '
+            'each process for handling requests. Defaults to 5 in each '
+            'process.'),
 
     optparse.make_option('--callable-object', default='application',
-            metavar='NAME'),
+            metavar='NAME', help='The name of the entry point for the WSGI '
+            'application within the WSGI script file. Defaults to '
+            'the name \'application\'.'),
 
     optparse.make_option('--limit-request-body', type='int', default=10485760,
-            metavar='NUMBER'),
+            metavar='NUMBER', help='The maximum number of bytes which are '
+            'allowed in a request body. Defaults to 10485760 (10MB).'),
     optparse.make_option('--maximum-requests', type='int', default=0,
-            metavar='NUMBER'),
+            metavar='NUMBER', help='The number of requests after which '
+            'any one worker process will be restarted and the WSGI '
+            'application reloaded. Defaults to 0, indicating that the '
+            'worker process should never be restarted based on the number '
+            'of requests received.'),
     optparse.make_option('--reload-on-changes', action='store_true',
-            default=False),
+            default=False, help='Flag indicating whether worker processes '
+            'should be automatically restarted when any Python code file '
+            'loaded by the WSGI application has been modified. Defaults to '
+            'being disabled. When reloading on any code changes is disabled, '
+            'the worker processes will still though be reloaded if the '
+            'WSGI script file itself is modified.'),
 
-    optparse.make_option('--user', default=default_run_user(), metavar='NAME'),
-    optparse.make_option('--group', default=default_run_group(),  metavar='NAME'),
+    optparse.make_option('--user', default=default_run_user(), metavar='NAME',
+            help='When being run by the root user, the user that the WSGI '
+            'application should be run as.'),
+    optparse.make_option('--group', default=default_run_group(),
+            metavar='NAME', help='When being run by the root user, the group '
+            'that the WSGI application should be run as.'),
 
-    optparse.make_option('--document-root', metavar='DIRECTORY-PATH'),
+    optparse.make_option('--document-root', metavar='DIRECTORY-PATH',
+            help='The directory which should be used as the document root '
+            'and which contains any static files.'),
 
     optparse.make_option('--url-alias', action='append', nargs=2,
-            dest='url_aliases', metavar='URL-PATH FILE-PATH|DIRECTORY-PATH'),
+            dest='url_aliases', metavar='URL-PATH FILE-PATH|DIRECTORY-PATH',
+            help='Map a single static file or a directory of static files '
+            'to a sub URL.'),
     optparse.make_option('--error-document', action='append', nargs=2,
-            dest='error_documents', metavar='STATUS URL-PATH'),
+            dest='error_documents', metavar='STATUS URL-PATH', help='Map '
+            'a specific sub URL as the handler for HTTP errors generated '
+            'by the web server.'),
 
     optparse.make_option('--keep-alive-timeout', type='int', default=0,
-            metavar='SECONDS'),
+            metavar='SECONDS', help='The number of seconds which a client '
+            'connection will be kept alive to allow subsequent requests '
+            'to be made over the same connection. Defaults to 0, indicating '
+            'that keep alive connections are disabled.'),
 
-    optparse.make_option('--server-status', action='store_true', default=False),
+    optparse.make_option('--server-status', action='store_true',
+            default=False, help='Flag indicating whether web server status '
+            'will be available at the /server-status sub URL. Defaults to '
+            'being disabled'),
     optparse.make_option('--include-file', action='append',
-            dest='include_files', metavar='FILE-PATH'),
+            dest='include_files', metavar='FILE-PATH', help='Specify the '
+            'path to an additional web server configuration file to be '
+            'included at the end of the generated web server configuration '
+            'file.'),
 
-    optparse.make_option('--envvars-script', metavar='FILE-PATH'),
-    optparse.make_option('--lang', default='en_US.UTF-8', metavar='NAME'),
-    optparse.make_option('--locale', default='en_US.UTF-8', metavar='NAME'),
+    optparse.make_option('--envvars-script', metavar='FILE-PATH',
+            help='Specify an alternate script file for user defined web '
+            'server environment variables. Defaults to using the '
+            '\'envvars\' stored under the server root directory.'),
+    optparse.make_option('--lang', default='en_US.UTF-8', metavar='NAME',
+            help='Specify the default language locale as normally defined '
+            'by the LANG environment variable. Defaults to \'en_US.UTF-8\'.'),
+    optparse.make_option('--locale', default='en_US.UTF-8', metavar='NAME',
+            help='Specify the default natural language formatting style '
+            'as normally defined by the LC_ALL environment variable. '
+            'Defaults to \'en_US.UTF-8\'.'),
 
-    optparse.make_option('--working-directory', metavar='DIRECTORY-PATH'),
+    optparse.make_option('--working-directory', metavar='DIRECTORY-PATH',
+            help='Specify the directory which should be used as the '
+            'current working directory of the WSGI application. This '
+            'directory will be searched when importing Python modules '
+            'so long as the WSGI application doesn\'t subsequently '
+            'change the current working directory. Defaults to the '
+            'directory this script is run from.'),
 
-    # XXX What is the --daemonize option for?
-    optparse.make_option('--daemonize', action='store_true', default=False),
-    optparse.make_option('--pid-file', metavar='FILE-PATH'),
+    optparse.make_option('--pid-file', metavar='FILE-PATH',
+            help='Specify an alternate file to be used to store the '
+            'process ID for the root process of the web server.'),
 
-    optparse.make_option('--server-root', metavar='DIRECTORY-PATH'),
-    optparse.make_option('--log-directory', metavar='DIRECTORY-PATH'),
-    optparse.make_option('--log-level', default='info', metavar='NAME'),
-    optparse.make_option('--access-log', action='store_true', default=False),
-    optparse.make_option('--startup-log', action='store_true', default=False),
+    optparse.make_option('--server-root', metavar='DIRECTORY-PATH',
+            help='Specify an alternate directory for where the generated '
+            'web server configuration, startup files and logs will be '
+            'stored. Defaults to a sub directory of /tmp.'),
+    optparse.make_option('--log-directory', metavar='DIRECTORY-PATH',
+            help='Specify an alternate directory for where the log files '
+            'will be stored. Defaults to the server root directory.'),
+    optparse.make_option('--log-level', default='info', metavar='NAME',
+            help='Specify the log level for logging. Defaults to \'info\'.'),
+    optparse.make_option('--access-log', action='store_true', default=False,
+            help='Flag indicating whether the web server access log '
+            'should be enabled. Defaults to being disabled.'),
+    optparse.make_option('--startup-log', action='store_true', default=False,
+            help='Flag indicating whether the web server startup log should '
+            'be enabled. Defaults to being disabled.'),
 
-    optparse.make_option('--python-eggs', metavar='DIRECTORY-PATH'),
+    optparse.make_option('--python-eggs', metavar='DIRECTORY-PATH',
+            help='Specify an alternate directory which should be used for '
+            'unpacking of Python eggs. Defaults to a sub directory of '
+            'the server root directory.'),
 
     optparse.make_option('--httpd-executable', default=apxs_config.HTTPD,
-            metavar='FILE-PATH'),
+            metavar='FILE-PATH', help='Override the path to the Apache web '
+            'server executable.'),
     optparse.make_option('--modules-directory', default=apxs_config.LIBEXECDIR,
-            metavar='DIRECTORY-PATH'),
+            metavar='DIRECTORY-PATH', help='Override the path to the Apache '
+            'web server modules directory.'),
     optparse.make_option('--mime-types', default=find_mimetypes(),
-            metavar='FILE-PATH'),
+            metavar='FILE-PATH', help='Override the path to the mime types '
+            'file used by the web server.'),
 
-    optparse.make_option('--with-newrelic', action='store_true', default=False),
-    optparse.make_option('--with-wdb', action='store_true', default=False),
+    optparse.make_option('--with-newrelic', action='store_true',
+            default=False, help='Flag indicating whether New Relic '
+            'performance monitoring should be enabled for the WSGI '
+            'application.'),
+    optparse.make_option('--with-wdb', action='store_true', default=False,
+            help='Flag indicating whether the wdb interactive debugger '
+            'should be enabled for the WSGI application.'),
 )
 
 def cmd_setup_server(params, usage=None):
