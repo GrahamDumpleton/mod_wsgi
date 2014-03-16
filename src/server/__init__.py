@@ -95,7 +95,24 @@ LockFile '%(server_root)s/accept.lock'
 </IfVersion>
 
 <IfVersion >= 2.4>
-#LoadModule mpm_event_module '%(modules_directory)s/mod_mpm_event.so'
+<IfModule !mpm_event_module>
+<IfModule !mpm_worker_module>
+<IfModule !mpm_prefork_module>
+<IfDefine WSGI_MPM_EVENT_MODULE>
+LoadModule mpm_event_module '%(modules_directory)s/mod_mpm_event.so'
+</IfDefine>
+<IfDefine WSGI_MPM_WORKER_MODULE>
+LoadModule mpm_worker_module '%(modules_directory)s/mod_mpm_worker.so'
+</IfDefine>
+<IfDefine WSGI_MPM_PREFORK_MODULE>
+LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
+</IfDefine>
+</IfModule>
+</IfModule>
+</IfModule>
+</IfVersion>
+
+<IfVersion >= 2.4>
 LoadModule access_compat_module '%(modules_directory)s/mod_access_compat.so'
 LoadModule unixd_module '%(modules_directory)s/mod_unixd.so'
 LoadModule authn_core_module '%(modules_directory)s/mod_authn_core.so'
@@ -680,6 +697,17 @@ def cmd_setup_server(params, usage=None):
 
     return _cmd_setup_server(args, vars(options))
 
+def _mpm_module_defines(modules_directory):
+    result = []
+    workers = ['event', 'worker', 'prefork']
+    for name in workers:
+        print('TEST ', os.path.exists(os.path.join(modules_directory,
+                            'mod_mpm_%s.so' % name)))
+        if os.path.exists(os.path.join(modules_directory,
+                'mod_mpm_%s.so' % name)):
+            result.append('-DWSGI_MPM_%s_MODULE' % name.upper())
+    return result
+
 def _cmd_setup_server(args, options):
     options['mod_wsgi_so'] = where()
 
@@ -841,6 +869,9 @@ def _cmd_setup_server(args, options):
         options['httpd_arguments_list'].append('-DWSGI_MULTIPROCESS')
     if options['listener_host']:
         options['httpd_arguments_list'].append('-DWSGI_LISTENER_HOST')
+
+    options['httpd_arguments_list'].extend(
+            _mpm_module_defines(options['modules_directory']))
 
     options['httpd_arguments'] = '-f %s %s' % (options['httpd_conf'],
             ' '.join(options['httpd_arguments_list']))
