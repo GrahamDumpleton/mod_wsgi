@@ -3666,6 +3666,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
     PyType_Ready(&Adapter_Type);
     PyType_Ready(&Restricted_Type);
     PyType_Ready(&Interpreter_Type);
+    PyType_Ready(&ShutdownInterpreter_Type);
     PyType_Ready(&Dispatch_Type);
     PyType_Ready(&Auth_Type);
 

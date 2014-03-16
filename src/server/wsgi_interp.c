@@ -102,6 +102,200 @@ int wsgi_thread_count = 0;
 apr_threadkey_t *wsgi_thread_key;
 #endif
 
+static void ShutdownInterpreter_dealloc(ShutdownInterpreterObject *self)
+{
+    Py_DECREF(self->wrapped);
+}
+
+static ShutdownInterpreterObject *newShutdownInterpreterObject(
+        PyObject *wrapped)
+{
+    ShutdownInterpreterObject *self = NULL;
+
+    self = PyObject_New(ShutdownInterpreterObject, &ShutdownInterpreter_Type);
+    if (self == NULL)
+        return NULL;
+
+    Py_INCREF(wrapped);
+    self->wrapped = wrapped;
+
+    return self;
+}
+
+static PyObject *ShutdownInterpreter_call(
+        ShutdownInterpreterObject *self, PyObject *args, PyObject *kwds)
+{
+    PyObject *result = NULL;
+
+    result = PyObject_Call(self->wrapped, args, kwds);
+
+    if (result) {
+        PyObject *module = NULL;
+        PyObject *exitfunc = NULL;
+
+#if PY_MAJOR_VERSION >= 3
+        module = PyImport_ImportModule("atexit");
+
+        if (module) {
+            PyObject *dict = NULL;
+
+            dict = PyModule_GetDict(module);
+            exitfunc = PyDict_GetItemString(dict, "_run_exitfuncs");
+        }
+        else
+            PyErr_Clear();
+#else
+        exitfunc = PySys_GetObject("exitfunc");
+#endif
+
+        if (exitfunc) {
+            PyObject *res = NULL;
+            Py_INCREF(exitfunc);
+            PySys_SetObject("exitfunc", (PyObject *)NULL);
+            res = PyEval_CallObject(exitfunc, (PyObject *)NULL);
+
+            if (res == NULL) {
+                PyObject *m = NULL;
+                PyObject *result = NULL;
+
+                PyObject *type = NULL;
+                PyObject *value = NULL;
+                PyObject *traceback = NULL;
+
+                if (PyErr_ExceptionMatches(PyExc_SystemExit)) {
+                    Py_BEGIN_ALLOW_THREADS
+                    ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+                                 "mod_wsgi (pid=%d): SystemExit exception "
+                                 "raised by exit functions ignored.", getpid());
+                    Py_END_ALLOW_THREADS
+                }
+                else {
+                    Py_BEGIN_ALLOW_THREADS
+                    ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+                                 "mod_wsgi (pid=%d): Exception occurred within "
+                                 "exit functions.", getpid());
+                    Py_END_ALLOW_THREADS
+                }
+
+                PyErr_Fetch(&type, &value, &traceback);
+                PyErr_NormalizeException(&type, &value, &traceback);
+
+                if (!value) {
+                    value = Py_None;
+                    Py_INCREF(value);
+                }
+
+                if (!traceback) {
+                    traceback = Py_None;
+                    Py_INCREF(traceback);
+                }
+
+                m = PyImport_ImportModule("traceback");
+
+                if (m) {
+                    PyObject *d = NULL;
+                    PyObject *o = NULL;
+                    d = PyModule_GetDict(m);
+                    o = PyDict_GetItemString(d, "print_exception");
+                    if (o) {
+                        PyObject *log = NULL;
+                        PyObject *args = NULL;
+                        Py_INCREF(o);
+                        log = newLogObject(NULL, APLOG_ERR, NULL);
+                        args = Py_BuildValue("(OOOOO)", type, value,
+                                             traceback, Py_None, log);
+                        result = PyEval_CallObject(o, args);
+                        Py_DECREF(args);
+                        Py_DECREF(log);
+                        Py_DECREF(o);
+                    }
+                }
+
+                if (!result) {
+                    /*
+                     * If can't output exception and traceback then
+                     * use PyErr_Print to dump out details of the
+                     * exception. For SystemExit though if we do
+                     * that the process will actually be terminated
+                     * so can only clear the exception information
+                     * and keep going.
+                     */
+
+                    PyErr_Restore(type, value, traceback);
+
+                    if (!PyErr_ExceptionMatches(PyExc_SystemExit)) {
+                        PyErr_Print();
+                        PyErr_Clear();
+                    }
+                    else {
+                        PyErr_Clear();
+                    }
+                }
+                else {
+                    Py_XDECREF(type);
+                    Py_XDECREF(value);
+                    Py_XDECREF(traceback);
+                }
+
+                Py_XDECREF(result);
+
+                Py_XDECREF(m);
+            }
+
+            Py_XDECREF(res);
+            Py_DECREF(exitfunc);
+        }
+
+        Py_XDECREF(module);
+    }
+
+    return result;
+}
+
+PyTypeObject ShutdownInterpreter_Type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "mod_wsgi.ShutdownInterpreter",  /*tp_name*/
+    sizeof(ShutdownInterpreterObject), /*tp_basicsize*/
+    0,                      /*tp_itemsize*/
+    /* methods */
+    (destructor)ShutdownInterpreter_dealloc, /*tp_dealloc*/
+    0,                      /*tp_print*/
+    0,                      /*tp_getattr*/
+    0,                      /*tp_setattr*/
+    0,                      /*tp_compare*/
+    0,                      /*tp_repr*/
+    0,                      /*tp_as_number*/
+    0,                      /*tp_as_sequence*/
+    0,                      /*tp_as_mapping*/
+    0,                      /*tp_hash*/
+    (ternaryfunc)ShutdownInterpreter_call, /*tp_call*/
+    0,                      /*tp_str*/
+    0,                      /*tp_getattro*/
+    0,                      /*tp_setattro*/
+    0,                      /*tp_as_buffer*/
+    Py_TPFLAGS_DEFAULT,     /*tp_flags*/
+    0,                      /*tp_doc*/
+    0,                      /*tp_traverse*/
+    0,                      /*tp_clear*/
+    0,                      /*tp_richcompare*/
+    0,                      /*tp_weaklistoffset*/
+    0,                      /*tp_iter*/
+    0,                      /*tp_iternext*/
+    0,                      /*tp_methods*/
+    0,                      /*tp_members*/
+    0,                      /*tp_getset*/
+    0,                      /*tp_base*/
+    0,                      /*tp_dict*/
+    0,                      /*tp_descr_get*/
+    0,                      /*tp_descr_set*/
+    0,                      /*tp_dictoffset*/
+    0,                      /*tp_init*/
+    0,                      /*tp_alloc*/
+    0,                      /*tp_new*/
+    0,                      /*tp_free*/
+    0,                      /*tp_is_gc*/
+};
+
 PyTypeObject Interpreter_Type;
 
 InterpreterObject *newInterpreterObject(const char *name)
@@ -158,6 +352,8 @@ InterpreterObject *newInterpreterObject(const char *name)
         self->owner = 0;
     }
     else {
+        PyObject *module = NULL;
+
         /*
          * Remember active thread state so can restore
          * it. This is actually the thread state
@@ -191,6 +387,36 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         self->interp = tstate->interp;
         self->owner = 1;
+
+        /*
+         * We need to replace threading._shutdown() with our own
+         * function which will also call atexit callbacks after
+         * threads are shutdown to cope with fact that Python
+         * itself doesn't call the atexit callbacks in sub
+         * interpreters.
+         */
+
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 4)
+        module = PyImport_ImportModule("threading");
+
+        if (module) {
+            PyObject *dict = NULL;
+            PyObject *func = NULL;
+
+            dict = PyModule_GetDict(module);
+            func = PyDict_GetItemString(dict, "_shutdown");
+
+            if (func) {
+                PyObject *wrapper = NULL;
+
+                wrapper = newShutdownInterpreterObject(func);
+                PyDict_SetItemString(dict, "_shutdown", wrapper);
+                Py_DECREF(wrapper);
+            }
+        }
+
+        Py_XDECREF(module);
+#endif
     }
 
     /*
@@ -1153,6 +1379,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
      * behaviour for those versions.
      */
 
+#if PY_MAJOR_VERSION < 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION < 4)
     if (module) {
         PyObject *dict = NULL;
         PyObject *func = NULL;
@@ -1381,6 +1608,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
     }
 
     Py_XDECREF(module);
+#endif
 
     /* If we own it, we destroy it. */
 
