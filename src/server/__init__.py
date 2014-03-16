@@ -695,7 +695,7 @@ def _cmd_setup_server(args, options):
             options['port'], os.getuid())
 
     if not options['server_root']:
-        options['server_root'] = '/tmp/apache-%s:%s:%s' % (options['host'],
+        options['server_root'] = '/tmp/mod_wsgi-%s:%s:%s' % (options['host'],
                 options['port'], os.getuid())
 
     try:

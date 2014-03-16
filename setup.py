@@ -139,5 +139,5 @@ setup(name = 'mod_wsgi',
         'mod_wsgi.server.management.commands'],
     package_dir = {'mod_wsgi': 'src'},
     ext_modules = [extension],
-    entry_points = { 'console_scripts': ['wsgi-admin = mod_wsgi.server:main'],},
+    entry_points = { 'console_scripts': ['mod_wsgi-admin = mod_wsgi.server:main'],},
 )
