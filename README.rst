@@ -10,14 +10,17 @@ adapter is written completely in C code against the Apache C runtime and
 for hosting WSGI applications within Apache has a lower overhead than using
 existing WSGI adapters for mod_python or CGI.
 
-The package can be compiled for and used with either Apache 2.0 or 2.2.
-Apache 1.3 is no longer supported with more recent versions of mod_wsgi. If
-you are still using Apache 1.3 you will need to use a version of mod_wsgi
-from prior to mod_wsgi 4.0.
+The package can be compiled for and used with either Apache 2.0, 2.2 or 2.4.
+Apache 1.3 is no longer supported with more recent versions of mod_wsgi.
+If you are still using Apache 1.3 you will need to use a version of
+mod_wsgi from prior to mod_wsgi 4.0. It is also generally recommended
+that Apache 2.0 not be used either due to its age. Especially with older
+Apache versions, always ensure that you are using as recent a patch
+revision as possible.
 
-Note that 'daemon' mode of mod_wsgi is only available if Apache 2.0 or 2.2
-is being used on a UNIX platform and where the Apache run time library
-has been compiled with support for multithreading. Generally multithreading
+Note that 'daemon' mode of mod_wsgi is only available if Apache 2.X is
+being used on a UNIX platform and where the Apache run time library has
+been compiled with support for multithreading. Generally multithreading
 support is standard except for on some BSD variants.
 
 Whatever version of Python is used, it must also have been compiled with
