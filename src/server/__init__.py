@@ -701,8 +701,6 @@ def _mpm_module_defines(modules_directory):
     result = []
     workers = ['event', 'worker', 'prefork']
     for name in workers:
-        print('TEST ', os.path.exists(os.path.join(modules_directory,
-                            'mod_mpm_%s.so' % name)))
         if os.path.exists(os.path.join(modules_directory,
                 'mod_mpm_%s.so' % name)):
             result.append('-DWSGI_MPM_%s_MODULE' % name.upper())
