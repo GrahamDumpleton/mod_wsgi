@@ -895,8 +895,8 @@ def _cmd_setup_server(args, options):
 
     return options
 
-def cmd_run_server(params):
-    usage = '%prog run-server script [options]'
+def cmd_start_server(params):
+    usage = '%prog start-server script [options]'
 
     options = cmd_setup_server(params, usage)
 
@@ -904,11 +904,11 @@ def cmd_run_server(params):
     name = executable.ljust(len(options['process_name']))
     os.execl(executable, name, 'start', '-DNO_DETACH')
 
-def cmd_install_so(params):
+def cmd_install_module(params):
     formatter = optparse.IndentedHelpFormatter()
     formatter.set_long_opt_delimiter(' ')
 
-    usage = '%prog install-so [options]'
+    usage = '%prog install-module [options]'
     parser = optparse.OptionParser(usage=usage, formatter=formatter)
 
     parser.add_option('--modules-directory', metavar='DIRECTORY',
@@ -926,11 +926,11 @@ def cmd_install_so(params):
 
     print('LoadModule wsgi_module %s' % target)
 
-def cmd_so_location(params):
+def cmd_module_location(params):
     formatter = optparse.IndentedHelpFormatter()
     formatter.set_long_opt_delimiter(' ')
 
-    usage = '%prog so_location'
+    usage = '%prog module-location'
     parser = optparse.OptionParser(usage=usage, formatter=formatter)
 
     (options, args) = parser.parse_args(params)
@@ -944,10 +944,10 @@ main_usage="""
 %prog command [params]
 
 Commands:
-    install-so
-    so-location
-    run-server
+    install-module
+    module-location
     setup-server
+    start-server
 """
 
 def main():
@@ -962,14 +962,14 @@ def main():
 
     args = [os.path.expandvars(arg) for arg in args]
 
-    if command == 'install-so':
-        cmd_install_so(args)
-    elif command in ('run-server', 'serve'):
-        cmd_run_server(args)
+    if command == 'install-module':
+        cmd_install_module(args)
+    elif command == 'module-location':
+        cmd_module_location(args)
     elif command == 'setup-server':
         cmd_setup_server(args)
-    elif command == 'so-location':
-        cmd_so_location(args)
+    elif command == 'start-server':
+        cmd_start_server(args)
     else:
         parser.error('Invalid command was specified.')
 
