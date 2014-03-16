@@ -8256,6 +8256,7 @@ static const char *wsgi_add_handler_script(cmd_parms *cmd, void *mconfig,
 
     return NULL;
 }
+#endif
 
 static const char *wsgi_set_dont_write_bytecode(cmd_parms *cmd, void *mconfig,
                                                 const char *f)
@@ -8278,7 +8279,6 @@ static const char *wsgi_set_dont_write_bytecode(cmd_parms *cmd, void *mconfig,
 
     return NULL;
 }
-#endif
 
 /* Handler for the translate name phase. */
 
