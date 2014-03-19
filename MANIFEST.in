@@ -8,3 +8,9 @@ include src/server/*.c
 exclude src/server/apxs_config.py
 include tests/*
 include win32/*
+include docs/_build/html/*
+include docs/_build/html/_static/*
+include docs/_build/html/_static/css/*
+include docs/_build/html/_static/font/*
+include docs/_build/html/_static/js/*
+include docs/_build/html/_sources/*

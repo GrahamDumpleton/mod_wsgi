@@ -4,6 +4,7 @@ import os
 import sys
 import fnmatch
 import subprocess
+import re
 
 from setuptools import setup
 from distutils.core import Extension
@@ -129,15 +130,36 @@ extension = Extension(extension_name, source_files,
         include_dirs=INCLUDE_DIRS, extra_compile_args=EXTRA_COMPILE_FLAGS,
         extra_link_args=EXTRA_LINK_ARGS)
 
+def _documentation():
+    result = []
+    prefix = 'docs/_build/html'
+    for root, dirs, files in os.walk(prefix, topdown=False):
+        for name in files:
+            if root == prefix:
+                result.append(os.path.join(root[len(prefix):], name))
+            else:
+                result.append(os.path.join(root[len(prefix)+1:], name))
+    return result
+
+print(_documentation())
+
+def _version():
+    path = 'src/server/wsgi_version.h'
+    pattern = r'#define MOD_WSGI_VERSION_STRING "(?P<version>[^"]*)"'
+    with open(path, 'r') as fp:
+        match = re.search(pattern, fp.read(), flags=re.MULTILINE)
+    return match.group('version')
+
 setup(name = 'mod_wsgi',
-    version = '4.1.0-beta',
+    version = _version(),
     description = 'Installer for Apache/mod_wsgi.',
     author = 'Graham Dumpleton',
     author_email = 'Graham.Dumpleton@gmail.com',
     license = 'Apache',
     packages = ['mod_wsgi', 'mod_wsgi.server', 'mod_wsgi.server.management',
-        'mod_wsgi.server.management.commands'],
-    package_dir = {'mod_wsgi': 'src'},
+        'mod_wsgi.server.management.commands', 'mod_wsgi.docs'],
+    package_dir = {'mod_wsgi': 'src', 'mod_wsgi.docs': 'docs/_build/html'},
+    package_data = {'mod_wsgi.docs': _documentation()},
     ext_modules = [extension],
     entry_points = { 'console_scripts': ['mod_wsgi-admin = mod_wsgi.server:main'],},
 )

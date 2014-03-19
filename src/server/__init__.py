@@ -123,6 +123,7 @@ LoadModule authz_host_module '%(modules_directory)s/mod_authz_host.so'
 LoadModule mime_module '%(modules_directory)s/mod_mime.so'
 LoadModule rewrite_module '%(modules_directory)s/mod_rewrite.so'
 LoadModule alias_module '%(modules_directory)s/mod_alias.so'
+LoadModule dir_module '%(modules_directory)s/mod_dir.so'
 LoadModule wsgi_module '%(mod_wsgi_so)s'
 
 <IfDefine WSGI_SERVER_STATUS>
@@ -270,6 +271,16 @@ Alias '%(mount_point)s' '%(directory)s/%(filename)s'
 </Directory>
 """
 
+APACHE_ALIAS_DOCUMENTATION = """
+Alias /.wsgi/docs '%(documentation_directory)s'
+
+<Directory '%(documentation_directory)s'>
+    DirectoryIndex index.html
+    Order allow,deny
+    Allow from all
+</Directory>
+"""
+
 APACHE_ERROR_DOCUMENT_CONFIG = """
 ErrorDocument '%(status)s' '%(document)s'
 """
@@ -307,6 +318,9 @@ def generate_apache_config(options):
                     print(APACHE_ALIAS_FILENAME_CONFIG % dict(
                             mount_point=mount_point, directory=directory,
                             filename=filename), file=fp)
+
+        if options['enable_docs']:
+            print(APACHE_ALIAS_DOCUMENTATION % options, file=fp)
 
         if options['error_documents']:
             for status, document in options['error_documents']:
@@ -522,9 +536,12 @@ if %(reload_on_changes)s:
 WSGI_DEFAULT_SCRIPT = """
 def application(environ, start_response):
     status = '200 OK'
-    output = b'Hello World!'
+    output = b'<html><body>' \
+            '<h1>It Works</h1>' \
+            '<p><a href="/.wsgi/docs/">Documentation</a></p>' \
+            '</body></html>'
 
-    response_headers = [('Content-type', 'text/plain'),
+    response_headers = [('Content-type', 'text/html'),
                         ('Content-Length', str(len(output)))]
     start_response(status, response_headers)
 
@@ -537,9 +554,8 @@ def generate_wsgi_handler_script(options):
         print(WSGI_HANDLER_SCRIPT % options, file=fp)
 
     path = os.path.join(options['server_root'], 'default.wsgi')
-    if not os.path.exists(path):
-        with open(path, 'w') as fp:
-            print(WSGI_DEFAULT_SCRIPT % options, file=fp)
+    with open(path, 'w') as fp:
+        print(WSGI_DEFAULT_SCRIPT % options, file=fp)
 
 WDB_SERVER_SCRIPT = """
 from wdb_server import server
@@ -760,6 +776,10 @@ option_list = (
     optparse.make_option('--with-wdb', action='store_true', default=False,
             help='Flag indicating whether the wdb interactive debugger '
             'should be enabled for the WSGI application.'),
+
+    optparse.make_option('--enable-docs', action='store_true', default=False,
+            help='Flag indicating whether the mod_wsgi documentation should '
+            'be made available at the /.wsgi/docs sub URL.'),
 )
 
 def cmd_setup_server(params, usage=None):
@@ -809,8 +829,12 @@ def _cmd_setup_server(args, options):
     if not args:
         options['script'] = os.path.join(options['server_root'],
                 'default.wsgi')
+        options['enable_docs'] = True
     else:
         options['script'] = os.path.abspath(args[0])
+
+    options['documentation_directory'] = os.path.join(os.path.dirname(
+            os.path.dirname(__file__)), 'docs')
 
     options['script_directory'] = os.path.dirname(options['script'])
     options['script_filename'] = os.path.basename(options['script'])
@@ -968,7 +992,7 @@ def _cmd_setup_server(args, options):
 
     if options['access_log']:
         print('Access Log      :', os.path.join(options['log_directory'],
-                'access_log'))
+    'access_log'))
 
     return options
 

@@ -21,3 +21,4 @@ lib
 .tox
 apxs
 libtool
+docs/_build
