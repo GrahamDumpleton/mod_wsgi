@@ -272,10 +272,16 @@ Alias '%(mount_point)s' '%(directory)s/%(filename)s'
 """
 
 APACHE_ALIAS_DOCUMENTATION = """
-Alias /.wsgi/docs '%(documentation_directory)s'
+Alias /__wsgi__/docs '%(documentation_directory)s'
+Alias /__wsgi__/images '%(images_directory)s'
 
 <Directory '%(documentation_directory)s'>
     DirectoryIndex index.html
+    Order allow,deny
+    Allow from all
+</Directory>
+
+<Directory '%(images_directory)s'>
     Order allow,deny
     Allow from all
 </Directory>
@@ -319,8 +325,7 @@ def generate_apache_config(options):
                             mount_point=mount_point, directory=directory,
                             filename=filename), file=fp)
 
-        if options['enable_docs']:
-            print(APACHE_ALIAS_DOCUMENTATION % options, file=fp)
+        print(APACHE_ALIAS_DOCUMENTATION % options, file=fp)
 
         if options['error_documents']:
             for status, document in options['error_documents']:
@@ -534,12 +539,17 @@ if %(reload_on_changes)s:
 """
 
 WSGI_DEFAULT_SCRIPT = """
+CONTENT = b'''
+<html><body>
+<h1>It Works</h1>
+<p><img src="/__wsgi__/images/snake-whiskey.jpg"></p>
+<p><a href="/__wsgi__/docs/">Documentation</a></p>
+</body></html>
+'''
+
 def application(environ, start_response):
     status = '200 OK'
-    output = b'<html><body>' \
-            '<h1>It Works</h1>' \
-            '<p><a href="/.wsgi/docs/">Documentation</a></p>' \
-            '</body></html>'
+    output = CONTENT
 
     response_headers = [('Content-type', 'text/html'),
                         ('Content-Length', str(len(output)))]
@@ -779,7 +789,7 @@ option_list = (
 
     optparse.make_option('--enable-docs', action='store_true', default=False,
             help='Flag indicating whether the mod_wsgi documentation should '
-            'be made available at the /.wsgi/docs sub URL.'),
+            'be made available at the /__wsgi__/docs sub URL.'),
 )
 
 def cmd_setup_server(params, usage=None):
@@ -835,6 +845,8 @@ def _cmd_setup_server(args, options):
 
     options['documentation_directory'] = os.path.join(os.path.dirname(
             os.path.dirname(__file__)), 'docs')
+    options['images_directory'] = os.path.join(os.path.dirname(
+            os.path.dirname(__file__)), 'images')
 
     options['script_directory'] = os.path.dirname(options['script'])
     options['script_filename'] = os.path.basename(options['script'])

@@ -141,8 +141,6 @@ def _documentation():
                 result.append(os.path.join(root[len(prefix)+1:], name))
     return result
 
-print(_documentation())
-
 def _version():
     path = 'src/server/wsgi_version.h'
     pattern = r'#define MOD_WSGI_VERSION_STRING "(?P<version>[^"]*)"'
@@ -157,9 +155,12 @@ setup(name = 'mod_wsgi',
     author_email = 'Graham.Dumpleton@gmail.com',
     license = 'Apache',
     packages = ['mod_wsgi', 'mod_wsgi.server', 'mod_wsgi.server.management',
-        'mod_wsgi.server.management.commands', 'mod_wsgi.docs'],
-    package_dir = {'mod_wsgi': 'src', 'mod_wsgi.docs': 'docs/_build/html'},
-    package_data = {'mod_wsgi.docs': _documentation()},
+        'mod_wsgi.server.management.commands', 'mod_wsgi.docs',
+        'mod_wsgi.images'],
+    package_dir = {'mod_wsgi': 'src', 'mod_wsgi.docs': 'docs/_build/html',
+        'mod_wsgi.images': 'images'},
+    package_data = {'mod_wsgi.docs': _documentation(),
+        'mod_wsgi.images': ['snake-whiskey.jpg']},
     ext_modules = [extension],
     entry_points = { 'console_scripts': ['mod_wsgi-admin = mod_wsgi.server:main'],},
 )
