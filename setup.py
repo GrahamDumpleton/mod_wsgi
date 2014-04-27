@@ -162,5 +162,6 @@ setup(name = 'mod_wsgi',
     package_data = {'mod_wsgi.docs': _documentation(),
         'mod_wsgi.images': ['snake-whiskey.jpg']},
     ext_modules = [extension],
-    entry_points = { 'console_scripts': ['mod_wsgi-admin = mod_wsgi.server:main'],},
+    entry_points = { 'console_scripts':
+        ['mod_wsgi-express = mod_wsgi.server:main'],},
 )
