@@ -540,11 +540,36 @@ if %(reload_on_changes)s:
 
 WSGI_DEFAULT_SCRIPT = """
 CONTENT = b'''
-<html><body>
-<h1>It Works</h1>
-<p><img src="/__wsgi__/images/snake-whiskey.jpg"></p>
-<p><a href="/__wsgi__/docs/">Documentation</a></p>
-</body></html>
+<html>
+<head>
+<title>My web site runs on Malt Whiskey</title>
+</head>
+<body style="margin-top: 100px;">
+<table align="center"; style="width: 850px;" border="0" cellpadding="30">
+<tbody>
+<tr>
+<td>
+<img style="width: 275px; height: 445px;"
+  src="/__wsgi__/images/snake-whiskey.jpg">
+</td>
+<td style="text-align: center;">
+<span style="font-family: Arial,Helvetica,sans-serif;
+  font-weight: bold; font-size: 70px;">
+My web site<br>runs on<br>Malt Whiskey<br>
+<br>
+</span>
+<span style="font-family: Arial,Helvetica,sans-serif;
+  font-weight: bold;">
+For further information on configuring mod_wsgi express
+version, see the
+<a href="/__wsgi__/docs/">documentation</a>.
+</span>
+</td>
+</tr>
+</tbody>
+</table>
+</body>
+</html>
 '''
 
 def application(environ, start_response):
