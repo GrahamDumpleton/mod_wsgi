@@ -10601,7 +10601,7 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
      */
 
     if (!geteuid()) {
-#if defined(MPM_ITK)
+#if defined(MPM_ITK) || defined(ITK_MPM)
         if (chown(process->socket, process->uid, -1) < 0) {
 #else
         if (chown(process->socket, ap_unixd_config.user_id, -1) < 0) {
