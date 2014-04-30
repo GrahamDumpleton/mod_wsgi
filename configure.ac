@@ -18,10 +18,10 @@ dnl Process this file with autoconf to produce a configure script.
 
 AC_INIT(mod_wsgi.c)
 
-AC_ARG_ENABLE(framework, AC_HELP_STRING([--disable-framework],
-            [disable mod_wsgi framework link]),
+AC_ARG_ENABLE(framework, AC_HELP_STRING([--enable-framework],
+            [enable mod_wsgi framework link]),
             [ENABLE_FRAMEWORK=$enableval],
-	    [ENABLE_FRAMEWORK=yes])
+	    [ENABLE_FRAMEWORK=false])
 
 AC_ARG_ENABLE(embedded, AC_HELP_STRING([--disable-embedded],
             [disable mod_wsgi embedded mode]),

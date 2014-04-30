@@ -1256,7 +1256,7 @@ Optional Features:
   --disable-option-checking  ignore unrecognized --enable/--with options
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
-  --disable-framework     disable mod_wsgi framework link
+  --enable-framework      enable mod_wsgi framework link
   --disable-embedded      disable mod_wsgi embedded mode
 
 Optional Packages:
@@ -1861,7 +1861,7 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 if test "${enable_framework+set}" = set; then :
   enableval=$enable_framework; ENABLE_FRAMEWORK=$enableval
 else
-  ENABLE_FRAMEWORK=yes
+  ENABLE_FRAMEWORK=false
 fi
 
 
