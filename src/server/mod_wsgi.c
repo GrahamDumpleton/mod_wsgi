@@ -7110,7 +7110,7 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
     /* Setup the daemon process real and effective user. */
 
     if (setuid(daemon->group->uid) == -1) {
-        ap_log_error(APLOG_MARK, errno, wsgi_server,
+        ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                      "mod_wsgi (pid=%d): Unable to change to uid=%ld.",
                      getpid(), (long)daemon->group->uid);
     }
