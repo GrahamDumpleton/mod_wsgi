@@ -133,6 +133,11 @@ static PyObject *ShutdownInterpreter_call(
         PyObject *module = NULL;
         PyObject *exitfunc = NULL;
 
+        PyThreadState *tstate = PyThreadState_Get();
+
+        PyThreadState *tstate_save = tstate;
+        PyThreadState *tstate_next = NULL;
+
 #if PY_MAJOR_VERSION >= 3
         module = PyImport_ImportModule("atexit");
 
@@ -247,6 +252,25 @@ static PyObject *ShutdownInterpreter_call(
         }
 
         Py_XDECREF(module);
+
+        /* Delete remaining thread states. */
+
+        PyThreadState_Swap(NULL);
+
+        tstate = tstate->interp->tstate_head;
+        while (tstate) {
+            tstate_next = tstate->next;
+            if (tstate != tstate_save) {
+                PyThreadState_Swap(tstate);
+                PyThreadState_Clear(tstate);
+                PyThreadState_Swap(NULL);
+                PyThreadState_Delete(tstate);
+            }
+            tstate = tstate_next;
+        }
+        tstate = tstate_save;
+
+        PyThreadState_Swap(tstate);
     }
 
     return result;
@@ -1622,6 +1646,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
          * trying to shutdown the process.
          */
 
+#if PY_MAJOR_VERSION < 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION < 4)
         PyThreadState *tstate_save = tstate;
         PyThreadState *tstate_next = NULL;
 
@@ -1642,8 +1667,15 @@ static void Interpreter_dealloc(InterpreterObject *self)
         tstate = tstate_save;
 
         PyThreadState_Swap(tstate);
+#endif
 
         /* Can now destroy the interpreter. */
+
+        Py_BEGIN_ALLOW_THREADS
+        ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): End interpreter '%s'.",
+                     getpid(), self->name);
+        Py_END_ALLOW_THREADS
 
         Py_EndInterpreter(tstate);
 
