@@ -932,7 +932,7 @@ def _cmd_setup_server(args, options):
     if options['with_wdb']:
         generate_wdb_server_script(options)
 
-    options['prefork_max_clients'] = int(1.25 * options['processes'] *
+    options['prefork_max_clients'] = int(1.5 * options['processes'] *
             options['threads'])
     options['prefork_server_limit'] = options['prefork_max_clients']
     options['prefork_start_servers'] = max(1, int(0.1 *
@@ -941,7 +941,7 @@ def _cmd_setup_server(args, options):
     options['prefork_max_spare_servers'] = max(1, int(0.4 *
             options['prefork_max_clients']))
 
-    options['worker_max_clients'] = int(1.25*options['processes']*
+    options['worker_max_clients'] = int(1.5*options['processes']*
             options['threads'])
     options['worker_threads_per_child'] = int(min(
             options['worker_max_clients'], 25))
