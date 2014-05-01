@@ -560,9 +560,8 @@ My web site<br>runs on<br>Malt Whiskey<br>
 </span>
 <span style="font-family: Arial,Helvetica,sans-serif;
   font-weight: bold;">
-For further information on configuring mod_wsgi express
-version, see the
-<a href="/__wsgi__/docs/">documentation</a>.
+For further information on configuring mod_wsgi,<br>
+see the <a href="%(documentation_url)s">documentation</a>.
 </span>
 </td>
 </tr>
@@ -872,6 +871,12 @@ def _cmd_setup_server(args, options):
             os.path.dirname(__file__)), 'docs')
     options['images_directory'] = os.path.join(os.path.dirname(
             os.path.dirname(__file__)), 'images')
+
+    if os.path.exists(os.path.join(options['documentation_directory'],
+            'index.html')):
+        options['documentation_url'] = '/__wsgi__/docs/'
+    else:
+        options['documentation_url'] = 'http://www.modwsgi.org/'
 
     options['script_directory'] = os.path.dirname(options['script'])
     options['script_filename'] = os.path.basename(options['script'])
