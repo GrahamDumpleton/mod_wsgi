@@ -2,7 +2,7 @@ include configure.ac
 include configure
 include LICENCE
 include Makefile.in
-include README
+include README.rst
 include src/server/*.h
 include src/server/*.c
 exclude src/server/apxs_config.py
