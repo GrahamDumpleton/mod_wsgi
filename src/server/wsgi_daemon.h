@@ -98,7 +98,7 @@ typedef struct {
     int processes;
     int multiprocess;
     int threads;
-    int umask;
+    long umask;
     const char *root;
     const char *home;
     const char *lang;

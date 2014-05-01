@@ -397,10 +397,10 @@ typedef struct {
     const char *handler_script;
 } WSGIRequestConfig;
 
-static int wsgi_find_path_info(const char *uri, const char *path_info)
+static long wsgi_find_path_info(const char *uri, const char *path_info)
 {
-    int lu = strlen(uri);
-    int lp = strlen(path_info);
+    long lu = strlen(uri);
+    long lp = strlen(path_info);
 
     while (lu-- && lp-- && uri[lu] == path_info[lp]) {
         if (path_info[lp] == '/') {
@@ -421,7 +421,7 @@ static int wsgi_find_path_info(const char *uri, const char *path_info)
 static const char *wsgi_script_name(request_rec *r)
 {
     char *script_name = NULL;
-    int path_info_start = 0;
+    long path_info_start = 0;
 
     if (!r->path_info || !*r->path_info) {
         script_name = apr_pstrdup(r->pool, r->uri);
@@ -462,7 +462,7 @@ static const char *wsgi_process_group(request_rec *r, const char *s)
             return "";
 
         if (strstr(name, "{ENV:") == name) {
-            int len = 0;
+            long len = 0;
 
             name = name + 5;
             len = strlen(name);
@@ -575,7 +575,7 @@ static const char *wsgi_application_group(request_rec *r, const char *s)
             return "";
 
         if (strstr(name, "{ENV:") == name) {
-            int len = 0;
+            long len = 0;
 
             name = name + 5;
             len = strlen(name);
@@ -621,7 +621,7 @@ static const char *wsgi_callable_object(request_rec *r, const char *s)
         return "application";
 
     if (strstr(name, "{ENV:") == name) {
-        int len = 0;
+        long len = 0;
 
         name = name + 5;
         len = strlen(name);
@@ -1435,7 +1435,7 @@ static PyObject *Input_readlines(InputObject *self, PyObject *args)
     }
 
     while (1) {
-        int n;
+        long n;
 
         if (!(line = Input_readline(self, rlargs))) {
             Py_DECREF(result);
@@ -1690,7 +1690,7 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 
     self->status_line = apr_pstrdup(self->r->pool, PyString_AsString(
                                     status_line_as_bytes));
-    self->status = strtol(self->status_line, NULL, 10);
+    self->status = (int)strtol(self->status_line, NULL, 10);
 
     Py_XDECREF(self->headers);
     self->headers = headers_as_bytes;
@@ -1705,8 +1705,9 @@ finally:
     return result;
 }
 
-static int Adapter_output(AdapterObject *self, const char *data, int length,
-                          PyObject *string_object, int exception_when_aborted)
+static int Adapter_output(AdapterObject *self, const char *data,
+                          apr_off_t length, PyObject *string_object,
+                          int exception_when_aborted)
 {
     int i = 0;
     apr_status_t rv;
@@ -1874,7 +1875,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
      */
 
     if (length) {
-        int output_length = length;
+        apr_off_t output_length = length;
 
         if (self->content_length_set) {
             if (self->output_length < self->content_length) {
@@ -1933,7 +1934,7 @@ static int Adapter_output(AdapterObject *self, const char *data, int length,
         }
         else {
 #endif
-            b = apr_bucket_transient_create(data, length,
+            b = apr_bucket_transient_create(data, (apr_size_t)length,
                                             r->connection->bucket_alloc);
 #if 0
         }
@@ -2468,7 +2469,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     PyObject *wrapper = NULL;
 
     const char *msg = NULL;
-    int length = 0;
+    long length = 0;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_idle_timeout || wsgi_busy_timeout) {
@@ -2649,7 +2650,7 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
     PyObject *item = NULL;
     PyObject *latin_item = NULL;
     const char *data = NULL;
-    int length = 0;
+    long length = 0;
 
     /* XXX The use of latin_item here looks very broken. */
 
@@ -3416,7 +3417,7 @@ static int wsgi_execute_script(request_rec *r)
         apr_bucket *b;
 
         const char *data = "Status: 200 Continue\r\n\r\n";
-        int length = strlen(data);
+        long length = strlen(data);
 
         filters = r->output_filters;
         while (filters && filters->frec->ftype != AP_FTYPE_NETWORK) {
@@ -5027,7 +5028,7 @@ static const char *wsgi_set_newrelic_environment(
 
 /* Handler for the translate name phase. */
 
-static int wsgi_alias_matches(const char *uri, const char *alias_fakename)
+static long wsgi_alias_matches(const char *uri, const char *alias_fakename)
 {
     /* Code for this function from Apache mod_alias module. */
 
@@ -5096,7 +5097,7 @@ static int wsgi_hook_intercept(request_rec *r)
     entries = (WSGIAliasEntry *)aliases->elts;
 
     for (i = 0; i < aliases->nelts; ++i) {
-        int l = 0;
+        long l = 0;
 
         entry = &entries[i];
 
@@ -6255,7 +6256,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int processes = 1;
     int multiprocess = 0;
     int threads = 15;
-    int umask = -1;
+    long umask = -1;
 
     const char *root = NULL;
     const char *home = NULL;
@@ -6600,7 +6601,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     if (groups_list) {
         const char *group_name = NULL;
-        int groups_maximum = NGROUPS_MAX;
+        long groups_maximum = NGROUPS_MAX;
         const char *items = NULL;
 
 #ifdef _SC_NGROUPS_MAX
@@ -6972,8 +6973,8 @@ static void wsgi_setup_daemon_name(WSGIDaemonProcess *daemon, apr_pool_t *p)
     const char *display_name = NULL;
 
 #if !(defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__))
-    int slen = 0;
-    int dlen = 0;
+    long slen = 0;
+    long dlen = 0;
 
     char *argv0 = NULL;
 #endif
@@ -9218,7 +9219,7 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
 
 static apr_status_t wsgi_socket_send(int fd, const void *buf, size_t buf_size)
 {
-    int rc;
+    long rc;
 
     do {
         rc = write(fd, buf, buf_size);
@@ -10741,8 +10742,6 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
 
 static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 {
-    int rv;
-
 #if defined(MOD_WSGI_WITH_DAEMONS) 
     WSGIProcessGroup *entries = NULL;
     WSGIProcessGroup *entry = NULL;

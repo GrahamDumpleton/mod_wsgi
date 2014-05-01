@@ -102,6 +102,7 @@ int wsgi_thread_count = 0;
 apr_threadkey_t *wsgi_thread_key;
 #endif
 
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 4)
 static void ShutdownInterpreter_dealloc(ShutdownInterpreterObject *self)
 {
     Py_DECREF(self->wrapped);
@@ -319,6 +320,7 @@ PyTypeObject ShutdownInterpreter_Type = {
     0,                      /*tp_free*/
     0,                      /*tp_is_gc*/
 };
+#endif
 
 PyTypeObject Interpreter_Type;
 
@@ -376,8 +378,6 @@ InterpreterObject *newInterpreterObject(const char *name)
         self->owner = 0;
     }
     else {
-        PyObject *module = NULL;
-
         /*
          * Remember active thread state so can restore
          * it. This is actually the thread state
@@ -869,7 +869,7 @@ InterpreterObject *newInterpreterObject(const char *name)
             for (i=0; i<PyList_Size(tmp); i++) {
                 item = PyList_GetItem(tmp, i);
                 if (!PySequence_Contains(old, item)) {
-                    int index = PySequence_Index(path, item);
+                    long index = PySequence_Index(path, item);
                     PyList_Append(new, item);
                     if (index != -1)
                         PySequence_DelItem(path, index); 

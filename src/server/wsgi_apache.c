@@ -24,6 +24,16 @@
 
 /* ------------------------------------------------------------------------- */
 
+/*
+ * This is to shut up ranlib when run on empty object files as it confuses
+ * users sometimes who then think it is an error and something is wrong.
+ */
+
+
+int wsgi_apache_dummy = 1;
+
+/* ------------------------------------------------------------------------- */
+
 #if defined(MOD_WSGI_WITH_DAEMONS)
 
 #if !AP_MODULE_MAGIC_AT_LEAST(20051115,0)

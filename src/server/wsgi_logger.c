@@ -30,10 +30,10 @@ typedef struct {
         request_rec *r;
         int level;
         char *s;
-        int l;
+        long l;
         int expired;
 #if PY_MAJOR_VERSION < 3
-        int softspace;
+        long softspace;
 #endif
 } LogObject;
 
@@ -178,7 +178,7 @@ static void Log_file(LogObject *self, const char *s, int l)
 }
 #endif
 
-static void Log_call(LogObject *self, const char *s, int l)
+static void Log_call(LogObject *self, const char *s, long l)
 {
     /*
      * The length of the string to be logged is ignored
@@ -285,8 +285,8 @@ static void Log_queue(LogObject *self, const char *msg, int len)
         if (self->s) {
             /* Need to join with buffered value. */
 
-            int m = 0;
-            int n = 0;
+            long m = 0;
+            long n = 0;
             char *s = NULL;
 
             m = self->l;
@@ -306,7 +306,7 @@ static void Log_queue(LogObject *self, const char *msg, int len)
             free(s);
         }
         else {
-            int n = 0;
+            long n = 0;
             char *s = NULL;
 
             n = q-p+1;
@@ -338,8 +338,8 @@ static void Log_queue(LogObject *self, const char *msg, int len)
         if (self->s) {
             /* Need to join with buffered value. */
 
-            int m = 0;
-            int n = 0;
+            long m = 0;
+            long n = 0;
 
             m = self->l;
             n = m+e-p+1;
@@ -350,7 +350,7 @@ static void Log_queue(LogObject *self, const char *msg, int len)
             self->l = n-1;
         }
         else {
-            int n = 0;
+            long n = 0;
 
             n = e-p+1;
 
@@ -465,7 +465,7 @@ static PyObject *Log_get_softspace(LogObject *self, void *closure)
 
 static int Log_set_softspace(LogObject *self, PyObject *value)
 {
-    int new;
+    long new;
 
     if (value == NULL) {
         PyErr_SetString(PyExc_TypeError, "can't delete softspace attribute");

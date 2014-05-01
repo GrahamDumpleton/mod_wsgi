@@ -82,7 +82,7 @@ PyObject *wsgi_convert_headers_to_bytes(PyObject *headers)
     PyObject *result = NULL;
 
     int i;
-    int size;
+    long size;
 
     if (!PyList_Check(headers)) {
         PyErr_Format(PyExc_TypeError, "expected list object for headers, "
