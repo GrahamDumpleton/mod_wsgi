@@ -409,7 +409,7 @@ InterpreterObject *newInterpreterObject(const char *name)
             if (func) {
                 PyObject *wrapper = NULL;
 
-                wrapper = newShutdownInterpreterObject(func);
+                wrapper = (PyObject *)newShutdownInterpreterObject(func);
                 PyDict_SetItemString(dict, "_shutdown", wrapper);
                 Py_DECREF(wrapper);
             }
