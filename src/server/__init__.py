@@ -690,6 +690,12 @@ option_list = (
             'each process for handling requests. Defaults to 5 in each '
             'process.'),
 
+    optparse.make_option('--max-clients', type='int', default=None,
+            metavar='NUMBER', help='The maximum number of simultaneous '
+            'client connections that will be accepted. This will default '
+            'to being 1.25 times the total number of threads in the '
+            'request thread pools across all process handling requests.'),
+
     optparse.make_option('--callable-object', default='application',
             metavar='NAME', help='The name of the entry point for the WSGI '
             'application within the WSGI script file. Defaults to '
@@ -937,22 +943,30 @@ def _cmd_setup_server(args, options):
     if options['with_wdb']:
         generate_wdb_server_script(options)
 
-    options['prefork_max_clients'] = int(1.5 * options['processes'] *
-            options['threads'])
-    options['prefork_server_limit'] = options['prefork_max_clients']
-    options['prefork_start_servers'] = max(1, int(0.1 *
-            options['prefork_max_clients']))
-    options['prefork_min_spare_servers'] = options['prefork_start_servers']
-    options['prefork_max_spare_servers'] = max(1, int(0.4 *
-            options['prefork_max_clients']))
+    max_clients = options['processes'] * options['threads']
 
-    options['worker_max_clients'] = int(1.5*options['processes']*
-            options['threads'])
-    options['worker_threads_per_child'] = int(min(
-            options['worker_max_clients'], 25))
+    if options['max_clients'] is not None:
+        max_clients = max(options['max_clients'], max_clients)
+    else:
+        max_clients = int(1.25 * max_clients)
+
+    options['prefork_max_clients'] = max_clients
+    options['prefork_server_limit'] = max_clients
+    options['prefork_start_servers'] = max(1, int(0.1 * max_clients))
+    options['prefork_min_spare_servers'] = options['prefork_start_servers']
+    options['prefork_max_spare_servers'] = max(1, int(0.4 * max_clients))
+
+    options['worker_max_clients'] = max_clients
+
+    if max_clients > 25:
+        options['worker_threads_per_child'] = int(max_clients /
+                (int(max_clients / 25) + 1))
+    else:
+        options['worker_threads_per_child'] = max_clients
+
     options['worker_thread_limit'] = options['worker_threads_per_child']
 
-    count = options['worker_max_clients']/options['worker_threads_per_child']
+    count = max_clients / options['worker_threads_per_child']
     options['worker_server_limit'] = int(math.floor(count))
     if options['worker_server_limit'] != count:
         options['worker_server_limit'] += 1
