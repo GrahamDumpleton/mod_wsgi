@@ -2517,6 +2517,10 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     if (wrapper)
         object = wrapper;
 
+    apr_table_setn(self->r->subprocess_env, "mod_wsgi.script_start",
+                   apr_psprintf(self->r->pool, "%" APR_TIME_T_FMT,
+                   apr_time_now()));
+
     vars = Adapter_environ(self);
 
     start = PyObject_GetAttrString((PyObject *)self, "start_response");
@@ -5316,7 +5320,7 @@ static void wsgi_build_environment(request_rec *r)
     apr_table_setn(r->subprocess_env, "mod_wsgi.enable_sendfile",
                    apr_psprintf(r->pool, "%d", config->enable_sendfile));
 
-    apr_table_setn(r->subprocess_env, "mod_wsgi.queue_start",
+    apr_table_setn(r->subprocess_env, "mod_wsgi.request_start",
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT, r->request_time));
 }
 
@@ -9639,6 +9643,9 @@ static int wsgi_execute_remote(request_rec *r)
     apr_table_setn(r->subprocess_env, "mod_wsgi.magic", hash);
 
     /* Create connection to the daemon process. */
+
+    apr_table_setn(r->subprocess_env, "mod_wsgi.queue_start",
+                   apr_psprintf(r->pool, "%" APR_TIME_T_FMT, apr_time_now()));
 
     daemon = (WSGIDaemonSocket *)apr_pcalloc(r->pool,
                                              sizeof(WSGIDaemonSocket));
