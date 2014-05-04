@@ -395,6 +395,10 @@ typedef struct {
 
     apr_hash_t *handler_scripts;
     const char *handler_script;
+
+    int daemon_connects;
+    int daemon_restarts;
+
 } WSGIRequestConfig;
 
 static long wsgi_find_path_info(const char *uri, const char *path_info)
@@ -764,6 +768,9 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
     }
 
     config->handler_script = "";
+
+    config->daemon_connects = 0;
+    config->daemon_restarts = 0;
 
     return config;
 }
@@ -9157,10 +9164,17 @@ static apr_status_t wsgi_close_socket(void *data)
 
 static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
 {
+    WSGIRequestConfig *config = NULL;
+
     struct sockaddr_un addr;
 
     int retries = 0;
     apr_interval_time_t timer = 0;
+
+    /* Grab request configuration. */
+
+    config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
+                                                       &wsgi_module);
 
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
@@ -9168,6 +9182,8 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
 
     while (1) {
         retries++;
+
+        config->daemon_connects++;
 
         if ((daemon->fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
@@ -9289,6 +9305,11 @@ static apr_status_t wsgi_send_request(request_rec *r,
     const apr_array_header_t *env_arr;
     const apr_table_entry_t *elts;
     int i, j;
+
+    apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_connects",
+                   apr_psprintf(r->pool, "%d", config->daemon_connects));
+    apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_restarts",
+                   apr_psprintf(r->pool, "%d", config->daemon_restarts));
 
     /* Send subprocess environment from request object. */
 
@@ -9762,6 +9783,8 @@ static int wsgi_execute_remote(request_rec *r)
             }
 
             retries++;
+
+            config->daemon_restarts++;
 
             ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
                          "mod_wsgi (pid=%d): Connect after WSGI daemon "
@@ -10593,6 +10616,10 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      * back to a 500 error so that normal error document
      * processing occurs.
      */
+
+    apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_start",
+                   apr_psprintf(r->pool, "%" APR_TIME_T_FMT,
+                   apr_time_now()));
 
     r->status = HTTP_OK;
 
