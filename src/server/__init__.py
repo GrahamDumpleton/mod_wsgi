@@ -167,6 +167,7 @@ WSGICallableObject '%(callable_object)s'
 WSGIPassAuthorization On
 
 <IfDefine WSGI_SERVER_STATUS>
+ExtendedStatus On
 <Location /server-status>
     SetHandler server-status
     Order deny,allow
