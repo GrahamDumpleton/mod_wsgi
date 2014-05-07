@@ -48,6 +48,7 @@
 #include "http_connection.h"
 #include "apr_poll.h"
 #include "apr_signal.h"
+#include "apr_support.h"
 #include "http_vhost.h"
 
 #if APR_MAJOR_VERSION < 1
@@ -124,7 +125,7 @@ typedef struct {
     int cpu_priority;
     rlim_t memory_limit;
     rlim_t virtual_memory_limit;
-    const char *socket;
+    const char *socket_path;
     int listener_fd;
     const char* mutex_path;
     apr_proc_mutex_t* mutex;
@@ -156,8 +157,8 @@ typedef struct {
 
 typedef struct {
     const char *name;
-    const char *socket;
-    int fd;
+    const char *socket_path;
+    apr_socket_t *socket;
 } WSGIDaemonSocket;
 
 extern int wsgi_daemon_count;

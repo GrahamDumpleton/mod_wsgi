@@ -7160,7 +7160,7 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
                  "mod_wsgi (pid=%d): Socket for '%s' is '%s'.",
-                 getpid(), process->name, process->socket);
+                 getpid(), process->name, process->socket_path);
 
     if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
         ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
@@ -7192,7 +7192,7 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    apr_cpystrn(addr.sun_path, process->socket, sizeof(addr.sun_path));
+    apr_cpystrn(addr.sun_path, process->socket_path, sizeof(addr.sun_path));
 
     omask = umask(0077);
     rc = bind(sockfd, (struct sockaddr *)&addr, sizeof(addr));
@@ -7200,9 +7200,9 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
     if (rc < 0 && errno == EADDRINUSE) {
         ap_log_error(APLOG_MARK, APLOG_WARNING, errno, wsgi_server,
                      "mod_wsgi (pid=%d): Removing stale unix domain "
-                     "socket '%s'.", getpid(), process->socket);
+                     "socket '%s'.", getpid(), process->socket_path);
 
-        unlink(process->socket);
+        unlink(process->socket_path);
 
         rc = bind(sockfd, (struct sockaddr *)&addr, sizeof(addr));
     }
@@ -7212,13 +7212,13 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
     if (rc < 0) {
         ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                      "mod_wsgi (pid=%d): Couldn't bind unix domain "
-                     "socket '%s'.", getpid(), process->socket);
+                     "socket '%s'.", getpid(), process->socket_path);
         return -1;
     }
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
                  "mod_wsgi (pid=%d): Listen backlog for socket '%s' is '%d'.",
-                 getpid(), process->socket, process->listen_backlog);
+                 getpid(), process->socket_path, process->listen_backlog);
 
     if (listen(sockfd, process->listen_backlog) < 0) {
         ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
@@ -7245,14 +7245,14 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
     if (!geteuid()) {
 #if defined(MPM_ITK) || defined(ITK_MPM)
-        if (chown(process->socket, process->uid, -1) < 0) {
+        if (chown(process->socket_path, process->uid, -1) < 0) {
 #else
-        if (chown(process->socket, ap_unixd_config.user_id, -1) < 0) {
+        if (chown(process->socket_path, ap_unixd_config.user_id, -1) < 0) {
 #endif
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                          "mod_wsgi (pid=%d): Couldn't change owner of unix "
                          "domain socket '%s'.", getpid(),
-                         process->socket);
+                         process->socket_path);
             return -1;
         }
     }
@@ -7556,7 +7556,7 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                                  wsgi_server, "mod_wsgi (pid=%d): "
                                  "Couldn't acquire accept mutex '%s'. "
                                  "Shutting down daemon process.",
-                                 getpid(), group->socket);
+                                 getpid(), group->socket_path);
 
                     wsgi_daemon_shutdown++;
                     kill(getpid(), SIGTERM);
@@ -7608,7 +7608,7 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                          wsgi_server, "mod_wsgi (pid=%d): "
                          "Unable to poll daemon socket for '%s'. "
                          "Shutting down daemon process.",
-                         getpid(), group->socket);
+                         getpid(), group->socket_path);
 
             wsgi_daemon_shutdown++;
             kill(getpid(), SIGTERM);
@@ -7653,7 +7653,7 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                     ap_log_error(APLOG_MARK, APLOG_CRIT, rv,
                                  wsgi_server, "mod_wsgi (pid=%d): "
                                  "Couldn't release accept mutex '%s'.",
-                                 getpid(), group->socket);
+                                 getpid(), group->socket_path);
 
                     apr_pool_destroy(ptrans);
                     thread->running = 0;
@@ -8404,14 +8404,14 @@ static apr_status_t wsgi_cleanup_process(void *data)
             ap_log_error(APLOG_MARK, APLOG_ERR, errno,
                          wsgi_server, "mod_wsgi (pid=%d): "
                          "Couldn't close unix domain socket '%s'.",
-                         getpid(), group->socket);
+                         getpid(), group->socket_path);
         }
 
-        if (unlink(group->socket) < 0 && errno != ENOENT) {
+        if (unlink(group->socket_path) < 0 && errno != ENOENT) {
             ap_log_error(APLOG_MARK, APLOG_ERR, errno,
                          wsgi_server, "mod_wsgi (pid=%d): "
                          "Couldn't unlink unix domain socket '%s'.",
-                         getpid(), group->socket);
+                         getpid(), group->socket_path);
         }
     }
 
@@ -9037,7 +9037,7 @@ static int wsgi_start_daemons(apr_pool_t *p)
          * create the socket.
          */
 
-        entry->socket = apr_psprintf(p, "%s.%d.%d.%d.sock",
+        entry->socket_path = apr_psprintf(p, "%s.%d.%d.%d.sock",
                                      wsgi_server_config->socket_prefix,
                                      getpid(), mpm_generation, entry->id);
 
@@ -9153,18 +9153,53 @@ static int wsgi_start_daemons(apr_pool_t *p)
     return OK;
 }
 
-static apr_status_t wsgi_close_socket(void *data)
+static apr_status_t wsgi_socket_connect_un(apr_socket_t *sock,
+                                           struct sockaddr_un *sa)
 {
-    WSGIDaemonSocket *daemon = NULL;
+    apr_status_t rv;
+    apr_os_sock_t rawsock;
+    apr_interval_time_t t;
 
-    daemon = (WSGIDaemonSocket *)data;
+    rv = apr_os_sock_get(&rawsock, sock);
+    if (rv != APR_SUCCESS) {
+        return rv;
+    }
 
-    return close(daemon->fd);
+    rv = apr_socket_timeout_get(sock, &t);
+    if (rv != APR_SUCCESS) {
+        return rv;
+    }
+
+    do {
+        rv = connect(rawsock, (struct sockaddr*)sa,
+                               sizeof(*sa) + strlen(sa->sun_path));
+    } while (rv == -1 && errno == EINTR);
+
+    if ((rv == -1) && (errno == EINPROGRESS || errno == EALREADY)
+        && (t > 0)) {
+#if APR_MAJOR_VERSION < 2
+        rv = apr_wait_for_io_or_timeout(NULL, sock, 0);
+#else
+        rv = apr_socket_wait(sock, APR_WAIT_WRITE);
+#endif
+
+        if (rv != APR_SUCCESS) {
+            return rv;
+        }
+    }
+
+    if (rv == -1 && errno != EISCONN) {
+        return errno;
+    }
+
+    return APR_SUCCESS;
 }
 
 static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
 {
     WSGIRequestConfig *config = NULL;
+
+    apr_status_t rv;
 
     struct sockaddr_un addr;
 
@@ -9178,30 +9213,46 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
 
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    apr_cpystrn(addr.sun_path, daemon->socket, sizeof addr.sun_path);
+    apr_cpystrn(addr.sun_path, daemon->socket_path, sizeof addr.sun_path);
 
     while (1) {
         retries++;
 
         config->daemon_connects++;
 
-        if ((daemon->fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
+        rv = apr_socket_create(&daemon->socket, AF_UNIX, SOCK_STREAM,
+                               0, r->pool);
+        
+        if (rv != APR_SUCCESS) {
+            ap_log_rerror(APLOG_MARK, APLOG_WARNING, rv, r,
                          "mod_wsgi (pid=%d): Unable to create socket to "
                          "connect to WSGI daemon process.", getpid());
 
             return HTTP_INTERNAL_SERVER_ERROR;
         }
 
-        if (connect(daemon->fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-            if (errno == ECONNREFUSED && retries < WSGI_CONNECT_ATTEMPTS) {
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
+        /*
+         * Apply timeout before issuing the socket connection in
+         * case this hangs for some reason. Would have to be an extreme
+         * event for a UNIX socket connect to hang, but have had some
+         * unexplained situations which look exactly like that.
+         */
+
+        apr_socket_timeout_set(daemon->socket, r->server->timeout);
+
+        rv = wsgi_socket_connect_un(daemon->socket, &addr);
+
+        if (rv != APR_SUCCESS) {
+            if (APR_STATUS_IS_ECONNREFUSED(rv) &&
+                retries < WSGI_CONNECT_ATTEMPTS) {
+
+                ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
                              "mod_wsgi (pid=%d): Connection attempt #%d to "
                              "WSGI daemon process '%s' on '%s' failed, "
                              "sleeping before retrying again.", getpid(),
-                             retries, daemon->name, daemon->socket);
+                             retries, daemon->name, daemon->socket_path);
 
-                close(daemon->fd);
+                apr_socket_close(daemon->socket);
 
                 /*
                  * Progressively increase time we wait between
@@ -9218,43 +9269,47 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
                 timer = (2 * timer) % apr_time_make(2, 0);
             }
             else {
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
+                ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
                              "mod_wsgi (pid=%d): Unable to connect to "
                              "WSGI daemon process '%s' on '%s' after "
                              "multiple attempts.", getpid(), daemon->name,
-                             daemon->socket);
+                             daemon->socket_path);
 
-                close(daemon->fd);
+                apr_socket_close(daemon->socket);
 
                 return HTTP_SERVICE_UNAVAILABLE;
             }
         }
-        else {
-            apr_pool_cleanup_register(r->pool, daemon, wsgi_close_socket,
-                                      apr_pool_cleanup_null);
-
+        else
             break;
-        }
     }
 
     return OK;
 }
 
-static apr_status_t wsgi_socket_send(int fd, const void *buf, size_t buf_size)
+static apr_status_t wsgi_socket_send(apr_socket_t *sock, const char *buf,
+                                     size_t buf_size)
 {
-    long rc;
+    apr_status_t rv;
+    apr_size_t len;
 
-    do {
-        rc = write(fd, buf, buf_size);
-    } while (rc < 0 && errno == EINTR);
-    if (rc < 0) {
-        return errno;
+    while (buf_size > 0)
+    {
+        len = buf_size;
+
+        rv = apr_socket_send(sock, buf, &len);
+
+        if (rv != APR_SUCCESS)
+            return rv;
+
+        buf_size -= len;
     }
 
     return APR_SUCCESS;
 }
 
-static apr_status_t wsgi_send_strings(apr_pool_t *p, int fd, const char **s)
+static apr_status_t wsgi_send_strings(apr_pool_t *p, apr_socket_t *sock,
+                                      const char **s)
 {
     apr_status_t rv;
 
@@ -9289,7 +9344,7 @@ static apr_status_t wsgi_send_strings(apr_pool_t *p, int fd, const char **s)
 
     total += sizeof(total);
 
-    if ((rv = wsgi_socket_send(fd, buffer, total)) != APR_SUCCESS)
+    if ((rv = wsgi_socket_send(sock, buffer, total)) != APR_SUCCESS)
         return rv;
 
     return APR_SUCCESS;
@@ -9329,7 +9384,7 @@ static apr_status_t wsgi_send_request(request_rec *r,
 
     vars[j] = NULL;
 
-    rv = wsgi_send_strings(r->pool, daemon->fd, (const char **)vars);
+    rv = wsgi_send_strings(r->pool, daemon->socket, (const char **)vars);
 
     if (rv != APR_SUCCESS)
         return rv;
@@ -9370,10 +9425,8 @@ static int wsgi_execute_remote(request_rec *r)
     int status;
     apr_status_t rv;
 
-    apr_interval_time_t timeout;
     int seen_eos;
     int child_stopped_reading;
-    apr_file_t *tmpsock;
     apr_bucket_brigade *bbout;
     apr_bucket_brigade *bbin;
     apr_bucket *b;
@@ -9657,7 +9710,8 @@ static int wsgi_execute_remote(request_rec *r)
      */
 
     key = apr_psprintf(r->pool, "%ld|%s|%s|%s", group->random,
-                       group->socket, r->filename, config->handler_script);
+                       group->socket_path, r->filename,
+                       config->handler_script);
     hash = ap_md5(r->pool, (const unsigned char *)key);
     memset(key, '\0', strlen(key));
 
@@ -9672,7 +9726,7 @@ static int wsgi_execute_remote(request_rec *r)
                                              sizeof(WSGIDaemonSocket));
 
     daemon->name = config->process_group;
-    daemon->socket = group->socket;
+    daemon->socket_path = group->socket_path;
 
     if ((status = wsgi_connect_daemon(r, daemon)) != OK)
         return status;
@@ -9690,30 +9744,15 @@ static int wsgi_execute_remote(request_rec *r)
         ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
                      "mod_wsgi (pid=%d): Unable to send request details "
                      "to WSGI daemon process '%s' on '%s'.", getpid(),
-                     daemon->name, daemon->socket);
+                     daemon->name, daemon->socket_path);
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    /*
-     * Wrap the socket in an APR file object so that socket can
-     * be more easily written to and so that pipe bucket can be
-     * created later for reading from it. Note the file object is
-     * initialised such that it will close socket when no longer
-     * required so can kill off registration done at higher
-     * level to close socket.
-     */
-
-    apr_os_pipe_put_ex(&tmpsock, &daemon->fd, 1, r->pool);
-    apr_pool_cleanup_kill(r->pool, daemon, wsgi_close_socket);
-
-    apr_file_pipe_timeout_get(tmpsock, &timeout);
-    apr_file_pipe_timeout_set(tmpsock, r->server->timeout);
-
     /* Setup bucket brigade for reading response from daemon. */
 
     bbin = apr_brigade_create(r->pool, r->connection->bucket_alloc);
-    b = apr_bucket_pipe_create(tmpsock, r->connection->bucket_alloc);
+    b = apr_bucket_socket_create(daemon->socket, r->connection->bucket_alloc);
     APR_BRIGADE_INSERT_TAIL(bbin, b);
     b = apr_bucket_eos_create(r->connection->bucket_alloc);
     APR_BRIGADE_INSERT_TAIL(bbin, b);
@@ -9770,7 +9809,7 @@ static int wsgi_execute_remote(request_rec *r)
 
             /* Need to close previous socket connection first. */
 
-            apr_file_close(tmpsock);
+            apr_socket_close(daemon->socket);
 
             /* Has maximum number of attempts been reached. */
 
@@ -9800,21 +9839,16 @@ static int wsgi_execute_remote(request_rec *r)
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
                              "mod_wsgi (pid=%d): Unable to send request "
                              "details to WSGI daemon process '%s' on '%s'.",
-                             getpid(), daemon->name, daemon->socket);
+                             getpid(), daemon->name, daemon->socket_path);
 
                 return HTTP_INTERNAL_SERVER_ERROR;
             }
 
-            apr_os_pipe_put_ex(&tmpsock, &daemon->fd, 1, r->pool);
-            apr_pool_cleanup_kill(r->pool, daemon, wsgi_close_socket);
-
-            apr_file_pipe_timeout_get(tmpsock, &timeout);
-            apr_file_pipe_timeout_set(tmpsock, r->server->timeout);
-
             apr_brigade_destroy(bbin);
 
             bbin = apr_brigade_create(r->pool, r->connection->bucket_alloc);
-            b = apr_bucket_pipe_create(tmpsock, r->connection->bucket_alloc);
+            b = apr_bucket_socket_create(daemon->socket,
+                                       r->connection->bucket_alloc);
             APR_BRIGADE_INSERT_TAIL(bbin, b);
             b = apr_bucket_eos_create(r->connection->bucket_alloc);
             APR_BRIGADE_INSERT_TAIL(bbin, b);
@@ -9880,7 +9914,8 @@ static int wsgi_execute_remote(request_rec *r)
              * much time elapses with no progress or an error
              * occurs.
              */
-            rv = apr_file_write_full(tmpsock, data, len, NULL);
+
+            rv = wsgi_socket_send(daemon->socket, data, len);
 
             if (rv != APR_SUCCESS) {
                 /* Daemon stopped reading, discard remainder. */
@@ -9891,14 +9926,12 @@ static int wsgi_execute_remote(request_rec *r)
     }
     while (!seen_eos);
 
-    apr_file_pipe_timeout_set(tmpsock, timeout);
-
     /*
      * Close socket for writing so that daemon detects end of
      * request content.
      */
 
-    shutdown(daemon->fd, 1);
+    apr_socket_shutdown(daemon->socket, APR_SHUTDOWN_WRITE);
 
     /* Scan the CGI script like headers from daemon. */
 
@@ -10365,7 +10398,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     key = apr_psprintf(r->pool, "%ld|%s|%s|%s",
                        wsgi_daemon_process->group->random,
-                       wsgi_daemon_process->group->socket, filename, script);
+                       wsgi_daemon_process->group->socket_path,
+                       filename, script);
     hash = ap_md5(r->pool, (const unsigned char *)key);
     memset(key, '\0', strlen(key));
 
