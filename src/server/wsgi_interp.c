@@ -1006,6 +1006,13 @@ InterpreterObject *newInterpreterObject(const char *name)
                        PyString_FromString(name));
 #endif
 
+    /*
+     * Add information about number of processes and threads
+     * available to the WSGI application to the 'mod_wsgi' module.
+     * When running in embedded mode, this will be the same as
+     * what the 'apache' module records for Apache itself.
+     */
+
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process) {
         object = PyLong_FromLong(wsgi_daemon_process->group->processes);
@@ -1061,6 +1068,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     PyModule_AddObject(module, "thread_utilization", PyCFunction_New(
                        &wsgi_get_utilization_method[0], NULL));
+
+    /* Done with the 'mod_wsgi' module. */
 
     Py_DECREF(module);
 
@@ -1125,6 +1134,41 @@ InterpreterObject *newInterpreterObject(const char *name)
     PyModule_AddObject(module, "version", Py_BuildValue("(ii)",
                        AP_SERVER_MAJORVERSION_NUMBER,
                        AP_SERVER_MINORVERSION_NUMBER));
+
+    /*
+     * Add information about the Apache MPM configuration and
+     * the number of processes and threads available.
+     */
+
+#if PY_MAJOR_VERSION >= 3
+    PyModule_AddObject(module, "mpm_name", PyUnicode_DecodeLatin1(MPM_NAME,
+                       strlen(MPM_NAME), NULL));
+#else
+    PyModule_AddObject(module, "mpm_name", PyString_FromString(MPM_NAME));
+#endif
+
+    ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
+    if (is_threaded != AP_MPMQ_NOT_SUPPORTED) {
+        ap_mpm_query(AP_MPMQ_MAX_THREADS, &max_threads);
+    }
+    ap_mpm_query(AP_MPMQ_IS_FORKED, &is_forked);
+    if (is_forked != AP_MPMQ_NOT_SUPPORTED) {
+        ap_mpm_query(AP_MPMQ_MAX_DAEMON_USED, &max_processes);
+        if (max_processes == -1) {
+            ap_mpm_query(AP_MPMQ_MAX_DAEMONS, &max_processes);
+        }
+    }
+
+    max_threads = (max_threads <= 0) ? 1 : max_threads;
+    max_processes = (max_processes <= 0) ? 1 : max_processes;
+
+    object = PyLong_FromLong(max_processes);
+    PyModule_AddObject(module, "maximum_processes", object);
+
+    object = PyLong_FromLong(max_threads);
+    PyModule_AddObject(module, "threads_per_process", object);
+
+    /* Done with the 'apache' module. */
 
     Py_DECREF(module);
 
