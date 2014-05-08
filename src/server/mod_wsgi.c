@@ -9806,7 +9806,6 @@ static int wsgi_execute_remote(request_rec *r)
          */
 
         while (retries < maximum) {
-
             /* Scan the CGI script like headers from daemon. */
 
             if ((status = ap_scan_script_header_err_brigade(r, bbin, NULL)))
@@ -9822,18 +9821,29 @@ static int wsgi_execute_remote(request_rec *r)
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                              "mod_wsgi (pid=%d): Unexpected status from "
                              "WSGI daemon process '%d'.", getpid(), r->status);
+
+                r->status_line = NULL;
+
                 return HTTP_INTERNAL_SERVER_ERROR;
             }
 
-            if (!strcmp(r->status_line, "200 Continue"))
+            if (!strcmp(r->status_line, "200 Continue")) {
+                r->status_line = NULL;
+
                 break;
+            }
 
             if (strcmp(r->status_line, "200 Rejected")) {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                              "mod_wsgi (pid=%d): Unexpected status from "
                              "WSGI daemon process '%d'.", getpid(), r->status);
+
+                r->status_line = NULL;
+
                 return HTTP_INTERNAL_SERVER_ERROR;
             }
+
+            r->status_line = NULL;
 
             /* Need to close previous socket connection first. */
 
@@ -9977,6 +9987,7 @@ static int wsgi_execute_remote(request_rec *r)
 
     if (r->status == 200 && !strcmp(r->status_line, "200 Error")) {
         r->status_line = NULL;
+
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
