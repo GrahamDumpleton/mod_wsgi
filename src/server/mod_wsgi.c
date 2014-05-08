@@ -6290,6 +6290,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int inactivity_timeout = 0;
     int blocked_timeout = 0;
     int graceful_timeout = 0;
+    int socket_timeout = 0;
 
     int listen_backlog = WSGI_LISTEN_BACKLOG;
 
@@ -6501,6 +6502,14 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (graceful_timeout < 0)
                 return "Invalid graceful timeout for WSGI daemon process.";
         }
+        else if (!strcmp(option, "socket-timeout")) {
+            if (!*value)
+                return "Invalid socket timeout for WSGI daemon process.";
+
+            socket_timeout = atoi(value);
+            if (socket_timeout < 0)
+                return "Invalid socket timeout for WSGI daemon process.";
+        }
         else if (!strcmp(option, "listen-backlog")) {
             if (!*value)
                 return "Invalid listen backlog for WSGI daemon process.";
@@ -6700,6 +6709,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->inactivity_timeout = apr_time_from_sec(inactivity_timeout);
     entry->blocked_timeout = apr_time_from_sec(blocked_timeout);
     entry->graceful_timeout = apr_time_from_sec(graceful_timeout);
+    entry->socket_timeout = apr_time_from_sec(socket_timeout);
 
     entry->listen_backlog = listen_backlog;
 
@@ -7334,7 +7344,11 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
 
     net = apr_palloc(c->pool, sizeof(core_net_rec));
 
-    rv = apr_socket_timeout_set(sock, c->base_server->timeout);
+    if (daemon->group->socket_timeout)
+        rv = apr_socket_timeout_set(sock, daemon->group->socket_timeout);
+    else
+        rv = apr_socket_timeout_set(sock, c->base_server->timeout);
+
     if (rv != APR_SUCCESS) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG, rv, wsgi_server,
                       "mod_wsgi (pid=%d): Failed call "
@@ -9238,7 +9252,10 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
          * unexplained situations which look exactly like that.
          */
 
-        apr_socket_timeout_set(daemon->socket, r->server->timeout);
+        if (daemon->socket_timeout)
+            apr_socket_timeout_set(daemon->socket, daemon->socket_timeout);
+        else
+            apr_socket_timeout_set(daemon->socket, r->server->timeout);
 
         rv = wsgi_socket_connect_un(daemon->socket, &addr);
 
@@ -9737,6 +9754,7 @@ static int wsgi_execute_remote(request_rec *r)
 
     daemon->name = config->process_group;
     daemon->socket_path = group->socket_path;
+    daemon->socket_timeout = group->socket_timeout;
 
     if ((status = wsgi_connect_daemon(r, daemon)) != OK)
         return status;

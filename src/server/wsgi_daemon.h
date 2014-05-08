@@ -115,6 +115,7 @@ typedef struct {
     apr_time_t inactivity_timeout;
     apr_time_t blocked_timeout;
     apr_time_t graceful_timeout;
+    apr_time_t socket_timeout;
     int listen_backlog;
     const char *display_name;
     int send_buffer_size;
@@ -158,6 +159,7 @@ typedef struct {
 typedef struct {
     const char *name;
     const char *socket_path;
+    apr_time_t socket_timeout;
     apr_socket_t *socket;
 } WSGIDaemonSocket;
 
