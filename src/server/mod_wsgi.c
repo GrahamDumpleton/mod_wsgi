@@ -9268,12 +9268,22 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
 
                 timer = (2 * timer) % apr_time_make(2, 0);
             }
-            else {
+            else if (retries >= WSGI_CONNECT_ATTEMPTS) {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
                              "mod_wsgi (pid=%d): Unable to connect to "
                              "WSGI daemon process '%s' on '%s' after "
                              "multiple attempts.", getpid(), daemon->name,
                              daemon->socket_path);
+
+                apr_socket_close(daemon->socket);
+
+                return HTTP_SERVICE_UNAVAILABLE;
+            }
+            else {
+                ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
+                             "mod_wsgi (pid=%d): Unable to connect to "
+                             "WSGI daemon process '%s' on '%s'.",
+                             getpid(), daemon->name, daemon->socket_path);
 
                 apr_socket_close(daemon->socket);
 
