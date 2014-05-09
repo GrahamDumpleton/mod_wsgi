@@ -662,7 +662,7 @@ APACHE_ENVVARS_FILE = """
 """
 
 def generate_control_scripts(options):
-    path = os.path.join(options['server_root'], 'wsgi-server')
+    path = os.path.join(options['server_root'], 'server-admin')
     with open(path, 'w') as fp:
         print(WSGI_CONTROL_SCRIPT.lstrip() % options, file=fp)
 
