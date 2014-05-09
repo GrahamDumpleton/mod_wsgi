@@ -109,11 +109,10 @@ typedef struct {
     const char *python_eggs;
     int stack_size;
     int maximum_requests;
-    int blocked_requests;
     int shutdown_timeout;
     apr_time_t deadlock_timeout;
     apr_time_t inactivity_timeout;
-    apr_time_t blocked_timeout;
+    apr_time_t request_timeout;
     apr_time_t graceful_timeout;
     apr_time_t socket_timeout;
     int listen_backlog;
@@ -150,6 +149,7 @@ typedef struct {
     int wakeup;
     apr_thread_cond_t *condition;
     apr_thread_mutex_t *mutex;
+    apr_time_t request;
 } WSGIDaemonThread;
 
 typedef struct {
