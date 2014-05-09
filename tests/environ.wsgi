@@ -8,6 +8,9 @@ try:
 except ImportError:
     from io import StringIO
 
+import mod_wsgi
+import apache
+
 def application(environ, start_response):
     headers = []
     headers.append(('Content-Type', 'text/plain'))
@@ -19,6 +22,25 @@ def application(environ, start_response):
     print('PID: %s' % os.getpid(), file=output)
     print('UID: %s' % os.getuid(), file=output)
     print('GID: %s' % os.getgid(), file=output)
+    print(file=output)
+
+    print('mod_wsgi.process_group: %s' % mod_wsgi.process_group,
+            file=output)
+    print('mod_wsgi.application_group: %s' % mod_wsgi.application_group,
+            file=output)
+    print(file=output)
+
+    print('mod_wsgi.maximum_processes: %s' % mod_wsgi.maximum_processes,
+            file=output)
+    print('mod_wsgi.threads_per_process: %s' % mod_wsgi.threads_per_process,
+            file=output)
+    print(file=output)
+
+    print('apache.mpm_name: %s' % apache.mpm_name, file=output)
+    print('apache.maximum_processes: %s' % apache.maximum_processes,
+            file=output)
+    print('apache.threads_per_process: %s' % apache.threads_per_process,
+            file=output)
     print(file=output)
 
     print('PATH: %s' % sys.path, file=output)
