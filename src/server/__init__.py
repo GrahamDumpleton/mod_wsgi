@@ -594,9 +594,13 @@ def generate_wsgi_handler_script(options):
 
 WDB_SERVER_SCRIPT = """
 from wdb_server import server
+try:
+    from wdb_server.sockets import handle_connection
+except ImportError:
+    from wdb_server.streams import handle_connection
+
 from tornado.ioloop import IOLoop
 from tornado.options import options
-from wdb_server.sockets import handle_connection
 from tornado.netutil import bind_sockets, add_accept_handler
 from threading import Thread
 
