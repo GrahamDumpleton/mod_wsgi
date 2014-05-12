@@ -75,10 +75,6 @@
 #define WSGI_LISTEN_BACKLOG 100
 #endif
 
-#ifndef WSGI_CONNECT_ATTEMPTS
-#define WSGI_CONNECT_ATTEMPTS 15
-#endif
-
 #define WSGI_STACK_HEAD  0xffff
 #define WSGI_STACK_LAST  0xffff
 #define WSGI_STACK_TERMINATED 0x10000
@@ -114,6 +110,7 @@ typedef struct {
     apr_time_t inactivity_timeout;
     apr_time_t request_timeout;
     apr_time_t graceful_timeout;
+    apr_time_t connect_timeout;
     apr_time_t socket_timeout;
     int listen_backlog;
     const char *display_name;
@@ -159,6 +156,7 @@ typedef struct {
 typedef struct {
     const char *name;
     const char *socket_path;
+    apr_time_t connect_timeout;
     apr_time_t socket_timeout;
     apr_socket_t *socket;
 } WSGIDaemonSocket;

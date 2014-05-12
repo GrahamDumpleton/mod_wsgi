@@ -397,7 +397,6 @@ typedef struct {
 
     int daemon_connects;
     int daemon_restarts;
-
 } WSGIRequestConfig;
 
 static long wsgi_find_path_info(const char *uri, const char *path_info)
@@ -6273,6 +6272,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int inactivity_timeout = 0;
     int request_timeout = 0;
     int graceful_timeout = 0;
+    int connect_timeout = 15;
     int socket_timeout = 0;
 
     int listen_backlog = WSGI_LISTEN_BACKLOG;
@@ -6477,6 +6477,14 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (graceful_timeout < 0)
                 return "Invalid graceful timeout for WSGI daemon process.";
         }
+        else if (!strcmp(option, "connect-timeout")) {
+            if (!*value)
+                return "Invalid connect timeout for WSGI daemon process.";
+
+            connect_timeout = atoi(value);
+            if (connect_timeout < 0)
+                return "Invalid connect timeout for WSGI daemon process.";
+        }
         else if (!strcmp(option, "socket-timeout")) {
             if (!*value)
                 return "Invalid socket timeout for WSGI daemon process.";
@@ -6680,6 +6688,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->inactivity_timeout = apr_time_from_sec(inactivity_timeout);
     entry->request_timeout = apr_time_from_sec(request_timeout);
     entry->graceful_timeout = apr_time_from_sec(graceful_timeout);
+    entry->connect_timeout = apr_time_from_sec(connect_timeout);
     entry->socket_timeout = apr_time_from_sec(socket_timeout);
 
     entry->listen_backlog = listen_backlog;
@@ -9189,6 +9198,9 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
 
     int retries = 0;
     apr_interval_time_t timer = 0;
+    apr_interval_time_t total_time = 0;
+
+    apr_time_t start_time = 0;
 
     /* Grab request configuration. */
 
@@ -9198,6 +9210,8 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     apr_cpystrn(addr.sun_path, daemon->socket_path, sizeof addr.sun_path);
+
+    start_time = apr_time_now();
 
     while (1) {
         retries++;
@@ -9230,41 +9244,46 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
         rv = wsgi_socket_connect_un(daemon->socket, &addr);
 
         if (rv != APR_SUCCESS) {
-            if (APR_STATUS_IS_ECONNREFUSED(rv) &&
-                retries < WSGI_CONNECT_ATTEMPTS) {
+            if (APR_STATUS_IS_ECONNREFUSED(rv)) {
+                if ((apr_time_now()-start_time) < daemon->connect_timeout) {
+                    if (wsgi_server_config->verbose_debugging) {
+                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, rv, r,
+                                     "mod_wsgi (pid=%d): Connection attempt "
+                                     "#%d to WSGI daemon process '%s' on "
+                                     "'%s' failed, sleeping before retrying "
+                                     "again.", getpid(), retries,
+                                     daemon->name, daemon->socket_path);
+                    }
 
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                             "mod_wsgi (pid=%d): Connection attempt #%d to "
-                             "WSGI daemon process '%s' on '%s' failed, "
-                             "sleeping before retrying again.", getpid(),
-                             retries, daemon->name, daemon->socket_path);
+                    apr_socket_close(daemon->socket);
 
-                apr_socket_close(daemon->socket);
+                    /*
+                     * Progressively increase time we wait between
+                     * connection attempts. Start at 0.125 second, but
+                     * back off to 1 second interval after 2 seconds.
+                     */
 
-                /*
-                 * Progressively increase time we wait between
-                 * connection attempts. Start at 0.125 second and
-                 * double each time but apply ceiling at 4.0
-                 * seconds.
-                 */
+                    if (total_time < apr_time_make(2, 0))
+                        timer = apr_time_make(0, 125000);
+                    else
+                        timer = apr_time_make(1, 0);
 
-                if (!timer)
-                    timer = apr_time_make(0, 125000);
+                    apr_sleep(timer);
 
-                apr_sleep(timer);
+                    total_time += timer;
+                }
+                else {
+                    ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
+                                 "mod_wsgi (pid=%d): Unable to connect to "
+                                 "WSGI daemon process '%s' on '%s' after "
+                                 "multiple attempts as listener backlog "
+                                 "limit was exceeded.", getpid(),
+                                 daemon->name, daemon->socket_path);
 
-                timer = (2 * timer) % apr_time_make(2, 0);
-            }
-            else if (retries >= WSGI_CONNECT_ATTEMPTS) {
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                             "mod_wsgi (pid=%d): Unable to connect to "
-                             "WSGI daemon process '%s' on '%s' after "
-                             "multiple attempts.", getpid(), daemon->name,
-                             daemon->socket_path);
+                    apr_socket_close(daemon->socket);
 
-                apr_socket_close(daemon->socket);
-
-                return HTTP_SERVICE_UNAVAILABLE;
+                    return HTTP_SERVICE_UNAVAILABLE;
+                }
             }
             else {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
@@ -9724,6 +9743,7 @@ static int wsgi_execute_remote(request_rec *r)
 
     daemon->name = config->process_group;
     daemon->socket_path = group->socket_path;
+    daemon->connect_timeout = group->connect_timeout;
     daemon->socket_timeout = group->socket_timeout;
 
     if ((status = wsgi_connect_daemon(r, daemon)) != OK)
