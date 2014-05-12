@@ -1058,7 +1058,7 @@ def cmd_start_server(params):
 
     options = cmd_setup_server(params, usage)
 
-    executable = os.path.join(options['server_root'], 'wsgi-server')
+    executable = os.path.join(options['server_root'], 'server-admin')
     name = executable.ljust(len(options['process_name']))
     os.execl(executable, name, 'start', '-DNO_DETACH')
 
