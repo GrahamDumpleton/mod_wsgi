@@ -112,6 +112,7 @@ typedef struct {
     apr_time_t graceful_timeout;
     apr_time_t connect_timeout;
     apr_time_t socket_timeout;
+    apr_time_t queue_timeout;
     int listen_backlog;
     const char *display_name;
     int send_buffer_size;

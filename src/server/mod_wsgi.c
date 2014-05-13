@@ -6274,6 +6274,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int graceful_timeout = 0;
     int connect_timeout = 15;
     int socket_timeout = 0;
+    int queue_timeout = 0;
 
     int listen_backlog = WSGI_LISTEN_BACKLOG;
 
@@ -6493,6 +6494,14 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (socket_timeout < 0)
                 return "Invalid socket timeout for WSGI daemon process.";
         }
+        else if (!strcmp(option, "queue-timeout")) {
+            if (!*value)
+                return "Invalid queue timeout for WSGI daemon process.";
+
+            queue_timeout = atoi(value);
+            if (queue_timeout < 0)
+                return "Invalid queue timeout for WSGI daemon process.";
+        }
         else if (!strcmp(option, "listen-backlog")) {
             if (!*value)
                 return "Invalid listen backlog for WSGI daemon process.";
@@ -6690,6 +6699,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->graceful_timeout = apr_time_from_sec(graceful_timeout);
     entry->connect_timeout = apr_time_from_sec(connect_timeout);
     entry->socket_timeout = apr_time_from_sec(socket_timeout);
+    entry->queue_timeout = apr_time_from_sec(queue_timeout);
 
     entry->listen_backlog = listen_backlog;
 
@@ -9823,6 +9833,12 @@ static int wsgi_execute_remote(request_rec *r)
                 break;
             }
 
+            if (!strcmp(r->status_line, "200 Timeout")) {
+                r->status_line = NULL;
+
+                return HTTP_SERVICE_UNAVAILABLE;
+            }
+
             if (strcmp(r->status_line, "200 Rejected")) {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                              "mod_wsgi (pid=%d): Unexpected status from "
@@ -10273,6 +10289,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     const char *item;
 
+    int queue_timeout_occurred = 0;
+
     /* Don't do anything if not in daemon process. */
 
     if (!wsgi_daemon_pool)
@@ -10361,6 +10379,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     r->read_body = REQUEST_NO_BODY;
 
     r->status = HTTP_OK;
+    r->status_line = NULL;
     r->the_request = NULL;
 
     r->used_path_info = AP_REQ_DEFAULT_PATH_INFO;
@@ -10665,6 +10684,36 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
         r->read_chunked = 1;
     }
 
+    /* Check for queue timeout. */
+
+    r->status = HTTP_OK;
+
+    if (wsgi_daemon_process->group->queue_timeout) {
+        item = apr_table_get(r->subprocess_env, "mod_wsgi.request_start");
+
+        if (item) {
+            apr_time_t request_time = 0;
+            apr_time_t queue_time = 0;
+
+            errno = 0;
+            request_time = apr_strtoi64(item, (char **)&item, 10);
+
+            if (!*item && errno != ERANGE) {
+                queue_time = apr_time_now() - request_time;
+                if (queue_time > wsgi_daemon_process->group->queue_timeout) {
+                    queue_timeout_occurred = 1;
+
+                    r->status_line = "200 Timeout";
+
+                    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                                 "mod_wsgi (pid=%d): Queue timeout expired "
+                                 "for WSGI daemon process '%s'.", getpid(),
+                                 wsgi_daemon_process->group->name);
+                }
+            }
+        }
+    }
+
     /*
      * Execute the actual target WSGI application. In
      * normal cases OK should always be returned. If
@@ -10680,15 +10729,15 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      * processing occurs.
      */
 
-    apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_start",
-                   apr_psprintf(r->pool, "%" APR_TIME_T_FMT,
-                   apr_time_now()));
+    if (!queue_timeout_occurred) {
+        apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_start",
+                       apr_psprintf(r->pool, "%" APR_TIME_T_FMT,
+                       apr_time_now()));
 
-    r->status = HTTP_OK;
-
-    if (wsgi_execute_script(r) != OK) {
-        r->status = HTTP_INTERNAL_SERVER_ERROR;
-        r->status_line = "200 Error";
+        if (wsgi_execute_script(r) != OK) {
+            r->status = HTTP_INTERNAL_SERVER_ERROR;
+            r->status_line = "200 Error";
+        }
     }
 
     /*
