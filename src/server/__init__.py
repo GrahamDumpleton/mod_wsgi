@@ -138,7 +138,8 @@ TypesConfig '%(mime_types)s'
 
 HostnameLookups Off
 MaxMemFree 64
-Timeout 60
+Timeout %(socket_timeout)s
+ListenBacklog %(server_backlog)s
 
 LimitRequestBody %(limit_request_body)s
 
@@ -152,16 +153,43 @@ WSGIPythonHome '%(python_home)s'
 WSGIRestrictEmbedded On
 WSGISocketPrefix %(server_root)s/wsgi
 <IfDefine WSGI_MULTIPROCESS>
-WSGIDaemonProcess %(host)s:%(port)s display-name='%(process_name)s' \\
-   home='%(working_directory)s' processes=%(processes)s threads=%(threads)s \\
-   maximum-requests=%(maximum_requests)s python-eggs='%(python_eggs)s' \\
-   lang='%(lang)s' locale='%(locale)s'
+WSGIDaemonProcess %(host)s:%(port)s \\
+   display-name='%(process_name)s' \\
+   home='%(working_directory)s' \\
+   processes=%(processes)s \\
+   threads=%(threads)s \\
+   maximum-requests=%(maximum_requests)s \\
+   python-eggs='%(python_eggs)s' \\
+   lang='%(lang)s' \\
+   locale='%(locale)s' \\
+   listen-backlog=%(worker_backlog)s \\
+   queue-timeout=%(queue_timeout)s \\
+   socket-timeout=%(socket_timeout)s \\
+   connect-timeout=%(connect_timeout)s \\
+   request-timeout=%(request_timeout)s \\
+   inactivity-timeout=%(inactivity_timeout)s \\
+   deadlock-timeout=%(deadlock_timeout)s \\
+   graceful-timeout=%(graceful_timeout)s \\
+   shutdown-timeout=%(shutdown_timeout)s
 </IfDefine>
 <IfDefine !WSGI_MULTIPROCESS>
-WSGIDaemonProcess %(host)s:%(port)s display-name='%(process_name)s' \\
-   home='%(working_directory)s' threads=%(threads)s \\
-   maximum-requests=%(maximum_requests)s python-eggs='%(python_eggs)s' \\
-   lang='%(lang)s' locale='%(locale)s'
+WSGIDaemonProcess %(host)s:%(port)s \\
+   display-name='%(process_name)s' \\
+   home='%(working_directory)s' \\
+   threads=%(threads)s \\
+   maximum-requests=%(maximum_requests)s \\
+   python-eggs='%(python_eggs)s' \\
+   lang='%(lang)s' \\
+   locale='%(locale)s' \\
+   listen-backlog=%(worker_backlog)s \\
+   queue-timeout=%(queue_timeout)s \\
+   socket-timeout=%(socket_timeout)s \\
+   connect-timeout=%(connect_timeout)s \\
+   request-timeout=%(request_timeout)s \\
+   inactivity-timeout=%(inactivity_timeout)s \\
+   deadlock-timeout=%(deadlock_timeout)s \\
+   graceful-timeout=%(graceful_timeout)s \\
+   shutdown-timeout=%(shutdown_timeout)s
 </IfDefine>
 WSGICallableObject '%(callable_object)s'
 WSGIPassAuthorization On
@@ -701,20 +729,80 @@ option_list = (
             'to being 1.25 times the total number of threads in the '
             'request thread pools across all process handling requests.'),
 
-    optparse.make_option('--callable-object', default='application',
-            metavar='NAME', help='The name of the entry point for the WSGI '
-            'application within the WSGI script file. Defaults to '
-            'the name \'application\'.'),
-
     optparse.make_option('--limit-request-body', type='int', default=10485760,
             metavar='NUMBER', help='The maximum number of bytes which are '
             'allowed in a request body. Defaults to 10485760 (10MB).'),
+
     optparse.make_option('--maximum-requests', type='int', default=0,
             metavar='NUMBER', help='The number of requests after which '
             'any one worker process will be restarted and the WSGI '
             'application reloaded. Defaults to 0, indicating that the '
             'worker process should never be restarted based on the number '
             'of requests received.'),
+
+    optparse.make_option('--shutdown-timeout', type='int', default=5,
+            metavar='SECONDS', help='Maximum number of seconds allowed '
+            'to pass when waiting for a worker process to shutdown as a '
+            'result of the maximum number of requests or inactivity timeout '
+            'being reached, or when a user initiated SIGINT signal is sent '
+            'to a worker process. When this timeout has been reached the '
+            'worker process will be forced to exit even if there are '
+            'still active requests or it is still running Python exit '
+            'functions. Defaults to 5 seconds.'),
+
+    optparse.make_option('--graceful-timeout', type='int', default=15,
+            metavar='SECONDS', help='Grace period for requests to complete '
+            'normally, without accepting new requests, when worker processes '
+            'are being shutdown and restarted due to maximum requests being '
+            'reached or due to graceful restart signal. Defaults to 15 '
+            'seconds.'),
+
+    optparse.make_option('--deadlock-timeout', type='int', default=60,
+            metavar='SECONDS', help='Maximum number of seconds allowed '
+            'to pass before the worker process is forcibly shutdown and '
+            'restarted after a potential deadlock on the Python GIL has '
+            'been detected. Defaults to 60 seconds.'),
+
+    optparse.make_option('--inactivity-timeout', type='int', default=0,
+            metavar='SECONDS', help='Maximum number of seconds allowed '
+            'to pass before the worker process is shutdown and restarted '
+            'when the worker process has entered an idle state and is no '
+            'longer receiving new requests. Not enabled by default.'),
+
+    optparse.make_option('--request-timeout', type='int', default=60,
+            metavar='SECONDS', help='Maximum number of seconds allowed '
+            'to pass before the worker process is forcibly shutdown and '
+            'restarted when a request does not complete in the expected '
+            'time. In a multi threaded worker, the request time is '
+            'calculated as an average across all request threads. Defaults '
+            'to 60 seconds.'),
+
+    optparse.make_option('--connect-timeout', type='int', default=15,
+            metavar='SECONDS', help='Maximum number of seconds allowed '
+            'to pass before giving up on attempting to get a connection '
+            'to the worker process from the Apache child process which '
+            'accepted the request. This comes into play when the worker '
+            'listener backlog limit is exceeded. Defaults to 15 seconds.'),
+
+    optparse.make_option('--socket-timeout', type='int', default=60,
+            metavar='SECONDS', help='Maximum number of seconds allowed '
+            'to pass before timing out on a read or write operation on '
+            'a socket and aborting the request. Defaults to 60 seconds.'),
+
+    optparse.make_option('--queue-timeout', type='int', default=30,
+            metavar='SECONDS', help='Maximum number of seconds allowed '
+            'for a request to be accepted by a worker process to be '
+            'handled, taken from the time when the Apache child process '
+            'originally accepted the request. Defaults to 30 seconds.'),
+
+    optparse.make_option('--server-backlog', type='int', default=500,
+            metavar='NUMBER', help='Depth of server socket listener '
+            'backlog for Apache child processes. Defaults to 500.'),
+
+    optparse.make_option('--worker-backlog', type='int', default=100,
+            metavar='NUMBER', help='Depth of server socket listener '
+            'backlog for worker processes. Defaults to 100.'),
+
     optparse.make_option('--reload-on-changes', action='store_true',
             default=False, help='Flag indicating whether worker processes '
             'should be automatically restarted when any Python code file '
@@ -729,6 +817,11 @@ option_list = (
     optparse.make_option('--group', default=default_run_group(),
             metavar='NAME', help='When being run by the root user, the group '
             'that the WSGI application should be run as.'),
+
+    optparse.make_option('--callable-object', default='application',
+            metavar='NAME', help='The name of the entry point for the WSGI '
+            'application within the WSGI script file. Defaults to '
+            'the name \'application\'.'),
 
     optparse.make_option('--document-root', metavar='DIRECTORY-PATH',
             help='The directory which should be used as the document root '
