@@ -42,6 +42,9 @@ clean :
 
 distclean : clean
 	-rm -f Makefile Makefile.in
+	-rm -f apxs libtool
+	-rm -rf .Python bin lib include
+	-rm -rf .tox
 
 realclean : distclean
 	-rm -f configure

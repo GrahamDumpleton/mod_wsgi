@@ -1,11 +1,13 @@
-syntax: glob
-
 Makefile
 Makefile.in
 autom4te.cache
 config.log
 config.status
 .libs
+*.o
 *.la
 *.lo
+*.loT
 *.slo
+apxs
+libtool
