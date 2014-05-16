@@ -2,7 +2,7 @@
 Welcome to MOD_WSGI
 ===================
 
-Copyright 2007-2010 GRAHAM DUMPLETON
+Copyright 2007-2014 GRAHAM DUMPLETON
 
 The mod_wsgi adapter is an Apache module that provides a WSGI compliant
 interface for hosting Python based web applications within Apache. The
