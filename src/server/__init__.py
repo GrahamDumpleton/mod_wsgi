@@ -274,6 +274,10 @@ DocumentRoot '%(document_root)s'
     Allow from all
 </Directory>
 
+<IfDefine WSGI_ERROR_OVERRIDE>
+WSGIErrorOverride On
+</IfDefine>
+
 WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
 WSGIImportScript '%(server_root)s/handler.wsgi' \\
@@ -835,6 +839,9 @@ option_list = (
             dest='error_documents', metavar='STATUS URL-PATH', help='Map '
             'a specific sub URL as the handler for HTTP errors generated '
             'by the web server.'),
+    optparse.make_option('--error-override', action='store_true',
+            default=False, help='Flag indicating whether Apache error '
+            'documents will override application error responses.'),
 
     optparse.make_option('--keep-alive-timeout', type='int', default=0,
             metavar='SECONDS', help='The number of seconds which a client '
@@ -1122,6 +1129,8 @@ def _cmd_setup_server(args, options):
         options['httpd_arguments_list'].append('-DWSGI_MULTIPROCESS')
     if options['listener_host']:
         options['httpd_arguments_list'].append('-DWSGI_LISTENER_HOST')
+    if options['error_override']:
+        options['httpd_arguments_list'].append('-DWSGI_ERROR_OVERRIDE')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory']))
