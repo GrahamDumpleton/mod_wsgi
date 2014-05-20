@@ -1,22 +1,36 @@
-.. mod_wsgi documentation master file, created by
-   sphinx-quickstart on Mon Mar 17 14:27:37 2014.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+.. image:: dead-parrot.jpg
+   :width: 250 px
+   :align: right
 
-Welcome to mod_wsgi's documentation!
-====================================
+mod_wsgi
+========
 
-Contents:
+The mod_wsgi package implements a simple to use Apache module which can
+host any Python application which supports the Python WSGI_ interface.
+
+.. _WSGI: http://www.python.org/dev/peps/pep-0333/
+
+Status
+======
+
+No mod_wsgi is not dead, it's just been resting.
+
+Expect renewed development on mod_wsgi during 2014.
+
+Completely revised documentation will progressively be incorporated here.
+In the mean time keep referring to the older documentation at:
+
+    http://www.modwsgi.org/
+
+If you need help in using mod_wsgi, then use the mod_wsgi mailing list to
+ask your questions:
+
+    http://groups.google.com/group/modwsgi
+
+Contents
+========
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
-
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
-
+   release-notes/index
