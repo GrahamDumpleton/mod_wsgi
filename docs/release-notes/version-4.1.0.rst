@@ -49,6 +49,9 @@ in this case was::
 The 'ascii' encoding is now forcibly loaded when initialising sub interpreters
 to get Python to initialise codecs.
 
+3. Fixed reference counting bug under Python 3 in SSL var_lookup() function
+which can be used from an auth handler to look up SSL variables.
+
 Features Removed
 ----------------
 
