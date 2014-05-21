@@ -23,6 +23,14 @@ though all changes from later releases in the 3.X branch. Thus also see:
 * :doc:`version-3.4`
 * :doc:`version-3.5`
 
+Known Issues
+------------
+
+1. The makefiles for building mod_wsgi on Windows are currently broken and
+need updating. As most new changes relate to mod_wsgi daemon mode, which is
+not supported under Windows, you should keep using the last available
+binary for version 3.X on Windows instead.
+
 Bugs Fixed
 ----------
 
@@ -96,6 +104,13 @@ removed from the set of variables passed through to the WSGI environment.
 WSGI PEP 3333 specification. It was originally set to 1.1 on expectation
 that revised specification would use 1.1 but that didn't come to be.
 
+4. The ``inactivity-timeout`` option to ``WSGIDaemonProcess`` now only
+results in the daemon process being restarted after the idle timeout period
+where there are no active requests. Previously it would also interrupt a
+long running request. See the new ``request-timeout`` option for a way of
+interrupting long running, potentially blocked requests and restarting
+the process.
+
 New Features
 ------------
 
@@ -157,3 +172,137 @@ Note that this doesn't prevent existing byte code files on disk being used
 in preference to the corresponding Python code files. Thus you should first
 remove ``.pyc`` files from web application directories if relying on this
 option to ensure that ``.py`` file is always used.
+
+8. Add ``request-timeout`` option to ``WSGIDaemonProcess`` to allow a
+separate timeout to be applied on how long a request is allowed to run for
+before the daemon process is automatically restarted to interrupt the
+request.
+
+This is to counter the possibility that a request may become blocked on
+some backend service, thereby using up available requests threads and
+preventing other requests to be handled.
+
+In the case of a single threaded process, then the timeout will happen at
+the specified time duration from the start of the request being handled.
+
+Applying such a timeout in the case of a multithreaded process is more
+problematic as doing a restart when a single requests exceeds the timeout
+could unduly interfere with with requests which just commenced.
+
+In the case of a multi threaded process, what is instead done is to take
+the total of the current running time of all requests and divide that by
+the number of threads handling requests in that process. When this average
+time exceeds the time specified, then the process will be restarted.
+
+This strategy for a multithreaded process means that individual requests
+can actually run longer than the specified timeout and a restart will only
+be performed when the overall capacity of the processes appears to be
+getting consumed by a number of concurrent long running requests, or when
+a specific requests has been blocked for an excessively long time.
+
+The intent of this is to allow the process to still keep handling requests
+and only perform a restart when the available capacity of the process to
+handle more requests looks to be potentially on the decline.
+
+9. Add ``connect-timeout`` option to ``WSGIDaemonProcess`` to allow a
+timeout to be specified on how long the Apache child worker processes should
+wait on being able to obtain a connection to the mod_wsgi daemon process.
+
+As UNIX domain sockets are used, connections should always succeed, however
+there have been some incidences seen which could only be explained by the
+operating system hanging on the initial connect call without being added to
+the daemon process socket listener queue. As such the timeout has been
+added. The timeout defaults to 15 seconds.
+
+This timeout also now dictates how long the Apache child worker process
+will attempt to get a connection to the daemon process when the connection
+is refused due to the daemon socket listener queue being full. Previously
+how long connection attempts were tried was based on an internal retry
+count rather than a configurable timeout.
+
+10. Add ``socket-timeout`` option to ``WSGIDaemonProcess`` to allow the
+timeout on indvidual read/writes on the socket connection between the
+Apache child worker and the daemon process to be specified separately to
+the Apache ``Timeout`` directive.
+
+If this option is not specified, it will default to the value of the Apache
+``Timeout`` directive.
+
+11. Add ``queue-timeout`` option to ``WSGIDaemonProcess`` to allow a
+request to be aborted if it never got handed off to a mod_wsgi daemon
+process within the specified time. When this occurs a '503 Service
+Unavailable' response will be returned.
+
+This is to allow one to control what to do when backlogging of requests
+occurs. If the daemon process is overloaded and getting behind, then it is
+more than likely that a user will have given up on the request anyway if
+they have to wait too long. This option allows you to specify that a
+request that was queued up waiting for too long is discarded, allowing any
+transient backlog to be quickly discarded and not simply cause the daemon
+process to become even more backlogged.
+
+12. Add ``listen-backlog`` option to ``WSGIDaemonProcess`` to allow the
+daemon process socket listener backlog size to be specified. By default
+this limit is 100, although this is actually a hint, as different operating
+systems can have different limits on the maximum value or otherwise treat
+it in special ways.
+
+13. Add ``WSGIPythonHashSeed`` directive to allow Python behaviour related
+to initial hash seed to be overridden when the interpreter supports it.
+
+This is equivalent to setting the ``PYTHONHASHSEED`` environment variable
+and should be set to either ``random`` or a number in the range in range
+``[0; 4294967295]``.
+
+14. Implemented a new streamlined way of installing mod_wsgi as a Python
+package using a setup.py file or from PyPi. This includes a
+``mod_wsgi-express`` script that can then be used to start up
+Apache/mod_wsgi with an auto generated configuration on port 8000.
+
+This makes it easy to run up Apache for development without interfering
+with the main Apache on the system and without having to worry about
+configuring Apache. Command line options can be used to override behaviour.
+
+Once the ``mod_wsgi`` package has been installed into your Python
+installation, you can run::
+
+    mod_wsgi-express start-server
+
+Then open your browser on the listed URL. This will verify that everything
+is working. Enter CTRL-C to exit the server and shut it down.
+
+You can now point it at a specific WSGI application script file::
+
+    mod_wsgi-express start-server wsgi.py
+
+For options run::
+
+    mod_wsgi-express start-server --help
+
+If you already have another web server running on port 8000, you can
+override the port to be used using the ``--port`` option::
+
+    mod_wsgi-express start-server wsgi.py --port 8001
+
+15. Implemented a Django application plugin to add a ``runmodwsgi`` command
+to the Django management command script. This allows the automatic run up
+of the new mod_wsgi express script, with it hosting the Django web site the
+plugin was added to.
+
+To enable, once the ``mod_wsgi`` package has been installed into your
+Python installation, add ``mod_wsgi.server`` to the ``INSTALLED_APPS``
+setting in your Django settings file.
+
+After having run the ``collectstatic`` Django management command, you
+can then run::
+
+    python manage.py runmodwsgi
+
+For options run::
+
+    python manage.py runmodwsgi --help
+
+To enable automatic code reloading in a development setting, use the
+option::
+
+    python manage.py runmodwsgi --reload-on-changes
