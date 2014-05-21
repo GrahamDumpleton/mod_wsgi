@@ -10756,6 +10756,19 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
         ap_log_error(APLOG_MARK, WSGI_LOG_ALERT(errno), wsgi_server,
                      "mod_wsgi (pid=%d): Unable to change to uid=%ld.",
                      getpid(), (long)daemon->group->uid);
+
+        /*
+         * On true UNIX systems this should always succeed at
+         * this point. With certain Linux kernel versions though
+         * we can get back EAGAIN where the target user had
+         * reached their process limit. In that case will be left
+         * running as wrong user. Just exit on all failures to be
+         * safe. Don't die immediately to avoid a fork bomb.
+         */
+
+        sleep(20);
+
+        exit(-1);
     }
 
     /*
