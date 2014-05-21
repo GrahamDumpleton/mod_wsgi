@@ -6,6 +6,61 @@ Version 3.4 of mod_wsgi can be obtained from:
 
   http://modwsgi.googlecode.com/files/mod_wsgi-3.4.tar.gz
 
+Security Issues
+---------------
+
+1. Information disclosure via Content-Type response header. (CVE-2014-0242)
+
+The issue was identified and fixed in version 3.4 (August 2012) of mod_wsgi
+and is listed below at item 7 under 'Bugs Fixed'.
+
+  Response Content-Type header could be corrupted when being sent in
+  multithreaded configuration and embedded mode being used. Problem thus
+  affected Windows and worker MPM on UNIX.
+
+At the time it was believed to be relatively benign, only ever having been
+seen with one specific web application (Trac - http://trac.edgewall.org),
+with the corrupted value always appearing to be replaced with a small set
+of known values which themselves did not raise concerns.
+
+A new example of this problem was identified May 2014 which opens this
+issue up as being able to cause arbitrary corruption of the web server HTTP
+response Content-Type value, resulting in possible exposure of data from
+the hosted web application to a HTTP client.
+
+The new example also opens the possibility that the issue can occur with
+any Apache MPM and not just multithreaded MPMs as previously identified.
+Albeit that it still requires some form of background application threads
+to be in use, when a single threaded Apache MPM is being used.
+
+In either case, it is still however restricted to the case where embedded
+mode of mod_wsgi is being used.
+
+The specific scenario which can trigger the issue is where the value for
+the Content-Type response header is dynamically generated, and where the
+stack frame where the calculation was done went out of use between the time
+that the WSGI start_response() function was called and the first non empty
+byte string was yielded from the WSGI application for the response,
+resulting in the Python object being destroyed and memory returned to the
+free list.
+
+At the same time, it would have been necessary for a parallel request
+thread or an application background thread to execute during that window of
+time and perform sufficient object allocations so as to reuse the memory
+previously used by the value of the Content-Type response header.
+
+Example code which can be used to trigger the specific scenario can be
+found at:
+
+  https://gist.github.com/GrahamDumpleton/14b31ebe18166a89b090
+
+That example code also provides a workaround if you find yourself affected
+by the issue but cannot upgrade straight away. It consists of the
+@intern_content_type decorator/wrapper. This can be applied to the WSGI
+application entry point and will use a cache to store the value of the
+Content-Type response header to ensure it is persistent for the life of the
+request.
+
 Bugs Fixed
 ----------
 
