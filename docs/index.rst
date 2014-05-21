@@ -22,6 +22,9 @@ In the mean time keep referring to the older documentation at:
 
     http://www.modwsgi.org/
 
+Due to security issues in versions of mod_wsgi up to and including
+version 3.4, it is recommended that version 3.5 or later be used.
+
 If you need help in using mod_wsgi, then use the mod_wsgi mailing list to
 ask your questions:
 

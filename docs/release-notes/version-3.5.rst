@@ -2,14 +2,43 @@
 Version 3.5
 ===========
 
-The working version of mod_wsgi 3.5 can currently be obtained by checking
-it out from the source code repository.
+Version 3.5 of mod_wsgi can be obtained from:
 
-  https://github.com/GrahamDumpleton/mod_wsgi/tree/develop
+  https://github.com/GrahamDumpleton/mod_wsgi/archive/3.5.tar.gz
 
-Alternatively, it can be downloaded as a tar.gz file from:
+Security Issues
+---------------
 
-  https://github.com/GrahamDumpleton/mod_wsgi/archive/develop.tar.gz
+1. Local privilege escalation when using daemon mode. (CVE-2014-0240)
+
+The issue is believed to affect Linux systems running kernel versions >=
+2.6.0 and < 3.1.0.
+
+The issue affects all versions of mod_wsgi up to and including version 3.4.
+
+The source of the issue derives from mod_wsgi not correctly handling Linux
+specific error codes from setuid(), which differ to what would be expected
+to be returned by UNIX systems conforming to the Open Group UNIX
+specification for setuid().
+
+  * http://man7.org/linux/man-pages/man2/setuid.2.html
+  * http://pubs.opengroup.org/onlinepubs/009695399/functions/setuid.html
+
+This difference in behaviour between Linux and the UNIX specification was
+believed to have been removed in version 3.1.0 of the Linux kernel.
+
+ * https://groups.google.com/forum/?fromgroups=#!topic/linux.kernel/u6cKf4D1D-k
+
+The issue would allow a user, where Apache is initially being started as
+the root user and where running code under mod_wsgi daemon mode as an
+unprivileged user, to manipulate the number of processes run by that user
+to affect the outcome of setuid() when daemon mode processes are forked and
+so gain escalated privileges for the users code.
+
+Due to the nature of the issue, if you provide a service or allow untrusted
+users to run Python web applications you do not control the code for, and
+do so using daemon mode of mod_wsgi, you should update mod_wsgi as soon as
+possible.
 
 Bugs Fixed
 ----------
