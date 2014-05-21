@@ -72,7 +72,7 @@ browser at::
 to verify the installation worked properly. To stop Apache, use CTRL-C.
 
 For a simple WSGI application contained in a WSGI script file called
-'wsgi.py', in the current directory, you can now run::
+``wsgi.py``, in the current directory, you can now run::
 
     mod_wsgi-express start-server wsgi.py
 
@@ -81,7 +81,7 @@ and will not interfere with any existing instance of Apache you may have
 running on port 80.
 
 If you already have another web server running on port 8000, you can
-override the port to be used using the '--port' option::
+override the port to be used using the ``--port`` option::
 
     mod_wsgi-express start-server wsgi.py --port 8001
 
