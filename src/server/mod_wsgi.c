@@ -2702,6 +2702,7 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
     APR_OPTIONAL_FN_TYPE(ssl_var_lookup) *ssl_var_lookup = 0;
 
     PyObject *item = NULL;
+    PyObject *latin_item = NULL;
 
     char *name = 0;
     char *value = 0;
@@ -2716,16 +2717,14 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
 
 #if PY_MAJOR_VERSION >= 3
     if (PyUnicode_Check(item)) {
-        PyObject *latin_item;
         latin_item = PyUnicode_AsLatin1String(item);
         if (!latin_item) {
             PyErr_Format(PyExc_TypeError, "byte string value expected, "
                          "value containing non 'latin-1' characters found");
-            Py_DECREF(item);
+
             return NULL;
         }
 
-        Py_DECREF(item);
         item = latin_item;
     }
 #endif
@@ -2733,7 +2732,9 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
     if (!PyString_Check(item)) {
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
                      "of type %.200s found", item->ob_type->tp_name);
-        Py_DECREF(item);
+
+        Py_XDECREF(latin_item);
+
         return NULL;
     }
 
@@ -2743,7 +2744,9 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
 
     if (ssl_var_lookup == 0)
     {
-        Py_XINCREF(Py_None);
+        Py_XDECREF(latin_item);
+
+        Py_INCREF(Py_None);
 
         return Py_None;
     }
@@ -2751,8 +2754,10 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
     value = ssl_var_lookup(self->r->pool, self->r->server,
                            self->r->connection, self->r, name);
 
+    Py_XDECREF(latin_item);
+
     if (!value) {
-        Py_XINCREF(Py_None);
+        Py_INCREF(Py_None);
 
         return Py_None;
     }
@@ -11412,6 +11417,7 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
     APR_OPTIONAL_FN_TYPE(ssl_var_lookup) *ssl_var_lookup = 0;
 
     PyObject *item = NULL;
+    PyObject *latin_item = NULL;
 
     char *name = 0;
     char *value = 0;
@@ -11426,16 +11432,14 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
 
 #if PY_MAJOR_VERSION >= 3
     if (PyUnicode_Check(item)) {
-        PyObject *latin_item;
         latin_item = PyUnicode_AsLatin1String(item);
         if (!latin_item) {
             PyErr_Format(PyExc_TypeError, "byte string value expected, "
                          "value containing non 'latin-1' characters found");
-            Py_DECREF(item);
+
             return NULL;
         }
 
-        Py_DECREF(item);
         item = latin_item;
     }
 #endif
@@ -11443,7 +11447,9 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
     if (!PyString_Check(item)) {
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
                      "of type %.200s found", item->ob_type->tp_name);
-        Py_DECREF(item);
+
+        Py_XDECREF(latin_item);
+
         return NULL;
     }
 
@@ -11453,7 +11459,9 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
 
     if (ssl_var_lookup == 0)
     {
-        Py_XINCREF(Py_None);
+        Py_XDECREF(latin_item);
+
+        Py_INCREF(Py_None);
 
         return Py_None;
     }
@@ -11461,8 +11469,10 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
     value = ssl_var_lookup(self->r->pool, self->r->server,
                            self->r->connection, self->r, name);
 
+    Py_XDECREF(latin_item);
+
     if (!value) {
-        Py_XINCREF(Py_None);
+        Py_INCREF(Py_None);
 
         return Py_None;
     }
