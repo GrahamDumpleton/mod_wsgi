@@ -9854,7 +9854,7 @@ static int wsgi_execute_remote(request_rec *r)
             if (!strcmp(r->status_line, "200 Timeout")) {
                 r->status_line = NULL;
 
-                return HTTP_SERVICE_UNAVAILABLE;
+                return HTTP_GATEWAY_TIME_OUT;
             }
 
             if (strcmp(r->status_line, "200 Rejected")) {
