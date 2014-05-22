@@ -49,8 +49,21 @@ in this case was::
 The 'ascii' encoding is now forcibly loaded when initialising sub interpreters
 to get Python to initialise codecs.
 
-3. Fixed reference counting bug under Python 3 in SSL var_lookup() function
-which can be used from an auth handler to look up SSL variables.
+3. Fixed reference counting bug under Python 3 in SSL ``var_lookup()``
+function which can be used from an auth handler to look up SSL variables.
+
+4. The ``WWW-Authenticate`` headers returned from a WSGI application when
+run under daemon mode are now always preserved as is.
+
+Because of previously using an internal routine of Apache, way back in time
+the values of multiple ``WWW-Authenticate`` headers would be merged when
+there was more than one. This would cause an issue with some browsers.
+
+A workaround was subsequently implemented above the Apache routine to break
+apart the merged header to create separate ones again, however, if the
+value of a header validly had a ',' in it, this would cause the header
+value to be broken apart where it wasn't meant to. This could issues with
+some type of ``WWW-Authenticate`` headers.
 
 Features Removed
 ----------------
