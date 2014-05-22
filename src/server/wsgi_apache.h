@@ -70,6 +70,7 @@
 #include "ap_listen.h"
 #include "apr_version.h"
 #include "apr_buckets.h"
+#include "apr_date.h"
 
 #include "apr_optional.h"
 

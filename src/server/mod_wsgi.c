@@ -9457,6 +9457,302 @@ static void wsgi_discard_output(apr_bucket_brigade *bb)
     }
 }
 
+static int wsgi_copy_header(void *v, const char *key, const char *val)
+{
+    apr_table_addn(v, key, val);
+    return 1;
+}
+
+#define HTTP_UNSET (-HTTP_OK)
+
+static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
+                             int (*getsfunc) (char *, int, void *),
+                             void *getsfunc_data)
+{
+    char x[MAX_STRING_LEN];
+    char *w, *l;
+    size_t p;
+
+    int cgi_status = HTTP_UNSET;
+
+    apr_table_t *merge;
+    apr_table_t *cookie_table;
+    apr_table_t *authen_table;
+
+    WSGIRequestConfig *config = NULL;
+
+    config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
+                                                       &wsgi_module);
+
+    /*
+     * Default to internal fixed size buffer for reading headers if one
+     * is not supplied explicitly with the call.
+     */
+
+    if (buffer)
+        *buffer = '\0';
+
+    w = buffer ? buffer : x;
+    buflen = buffer ? buflen : MAX_STRING_LEN;
+
+    /* Temporary place to hold headers as we read them. */
+
+    merge = apr_table_make(r->pool, 10);
+
+    /*
+     * The HTTP specification says that it is legal to merge duplicate
+     * headers into one. Some browsers don't like certain headers being
+     * merged however. These headers are Set-Cookie and WWW-Authenticate.
+     * We will therefore keep these separate and merge them back in
+     * independently at the end. Before we start though, we need to make
+     * sure we save away any instances of these headers which may already
+     * be listed in the request structure for some reason.
+     */
+
+    cookie_table = apr_table_make(r->pool, 2);
+    apr_table_do(wsgi_copy_header, cookie_table, r->err_headers_out,
+                 "Set-Cookie", NULL);
+
+    authen_table = apr_table_make(r->pool, 2);
+    apr_table_do(wsgi_copy_header, authen_table, r->err_headers_out,
+                 "WWW-Authenticate", NULL);
+
+    while (1) {
+        int rv = (*getsfunc) (w, buflen - 1, getsfunc_data);
+
+        if (rv == 0) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Premature end "
+                                  "of script headers being read from daemon "
+                                  "process '%s'", config->process_group),
+                                  r->filename);
+
+            return HTTP_INTERNAL_SERVER_ERROR;
+        }
+        else if (rv == -1) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Timeout when "
+                                  "reading script headers from daemon "
+                                  "process '%s'", config->process_group),
+                                  r->filename);
+
+            return HTTP_GATEWAY_TIME_OUT;
+        }
+
+        /*
+         * Delete any trailing (CR?)LF. Indeed, the host's '\n':
+         * '\012' for UNIX; '\015' for MacOS; '\025' for OS/390.
+         */
+
+        p = strlen(w);
+
+        if (p > 0 && w[p - 1] == '\n') {
+            if (p > 1 && w[p - 2] == CR) {
+                w[p - 2] = '\0';
+            }
+            else {
+                w[p - 1] = '\0';
+            }
+        }
+
+        /*
+         * If we've finished reading the headers, check to make sure
+         * any HTTP/1.1 conditions are met. If so, we're done; normal
+         * processing will handle the script's output. If not, just
+         * return the error.
+         */
+
+        if (w[0] == '\0') {
+            int cond_status = OK;
+
+           /*
+            * This fails because it gets confused when a CGI Status
+            * header overrides ap_meets_conditions.
+            *
+            * We can fix that by dropping ap_meets_conditions when
+            * Status has been set.  Since this is the only place
+            * cgi_status gets used, let's test it explicitly.
+            *
+            * The alternative would be to ignore CGI Status when
+            * ap_meets_conditions returns anything interesting. That
+            * would be safer wrt HTTP, but would break CGI.
+            */
+
+            if ((cgi_status == HTTP_UNSET) && (r->method_number == M_GET)) {
+                cond_status = ap_meets_conditions(r);
+            }
+
+            /*
+             * Merge the headers received back into the request
+             * structure. There should only be one per header with
+             * values combined for these.
+             */
+
+            apr_table_overlap(r->err_headers_out, merge,
+                              APR_OVERLAP_TABLES_MERGE);
+
+            /*
+             * No add in the special headers which we can't merge
+             * because it gives certain browsers problems.
+             */
+
+            if (!apr_is_empty_table(cookie_table)) {
+                apr_table_unset(r->err_headers_out, "Set-Cookie");
+                r->err_headers_out = apr_table_overlay(r->pool,
+                    r->err_headers_out, cookie_table);
+            }
+
+            if (!apr_is_empty_table(authen_table)) {
+                apr_table_unset(r->err_headers_out, "WWW-Authenticate");
+                r->err_headers_out = apr_table_overlay(r->pool,
+                    r->err_headers_out, authen_table);
+            }
+
+            return cond_status;
+        }
+
+        /* If we see a bogus header don't ignore it. Shout and scream. */
+
+        if (!(l = strchr(w, ':'))) {
+            char malformed[32];
+
+            strncpy(malformed, w, sizeof(malformed)-1);
+            malformed[sizeof(malformed)-1] = '\0';
+
+            if (!buffer) {
+                /* Soak up all the script output. */
+
+                while ((*getsfunc)(w, buflen - 1, getsfunc_data) > 0) {
+                    continue;
+                }
+            }
+
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Malformed "
+                                  "header '%s' found when reading script "
+                                  "headers from daemon process '%s'",
+                                  malformed, config->process_group),
+                                  r->filename);
+
+            return HTTP_INTERNAL_SERVER_ERROR;
+        }
+
+        /* Strip leading white space from header value. */
+
+        *l++ = '\0';
+        while (*l && apr_isspace(*l)) {
+            ++l;
+        }
+
+        if (!strcasecmp(w, "Content-type")) {
+            char *tmp;
+
+            /* Nuke trailing whitespace. */
+
+            char *endp = l + strlen(l) - 1;
+            while (endp > l && apr_isspace(*endp)) {
+                *endp-- = '\0';
+            }
+
+            tmp = apr_pstrdup(r->pool, l);
+            ap_content_type_tolower(tmp);
+            ap_set_content_type(r, tmp);
+        }
+        else if (!strcasecmp(w, "Status")) {
+            /*
+             * If the script returned a specific status, that's what
+             * we'll use, otherwise we assume 200 OK.
+             */
+
+            r->status = cgi_status = atoi(l);
+            r->status_line = apr_pstrdup(r->pool, l);
+        }
+        else if (!strcasecmp(w, "Location")) {
+            apr_table_set(r->headers_out, w, l);
+        }
+        else if (!strcasecmp(w, "Content-Length")) {
+            apr_table_set(r->headers_out, w, l);
+        }
+        else if (!strcasecmp(w, "Content-Range")) {
+            apr_table_set(r->headers_out, w, l);
+        }
+        else if (!strcasecmp(w, "Transfer-Encoding")) {
+            apr_table_set(r->headers_out, w, l);
+        }
+        else if (!strcasecmp(w, "Last-Modified")) {
+            /*
+             * If the script gave us a Last-Modified header, we can't just
+             * pass it on blindly because of restrictions on future values.
+             */
+
+            ap_update_mtime(r, apr_date_parse_http(l));
+            ap_set_last_modified(r);
+        }
+        else if (!strcasecmp(w, "Set-Cookie")) {
+            apr_table_add(cookie_table, w, l);
+        }
+        else if (!strcasecmp(w, "WWW-Authenticate")) {
+            apr_table_add(authen_table, w, l);
+        }
+        else {
+            apr_table_add(merge, w, l);
+        }
+    }
+
+    return OK;
+}
+
+static int wsgi_getsfunc_brigade(char *buf, int len, void *arg)
+{
+    apr_bucket_brigade *bb = (apr_bucket_brigade *)arg;
+    const char *dst_end = buf + len - 1;
+    char *dst = buf;
+    apr_bucket *e = APR_BRIGADE_FIRST(bb);
+    apr_status_t rv;
+    int done = 0;
+
+    while ((dst < dst_end) && !done && e != APR_BRIGADE_SENTINEL(bb)
+           && !APR_BUCKET_IS_EOS(e)) {
+        const char *bucket_data;
+        apr_size_t bucket_data_len;
+        const char *src;
+        const char *src_end;
+        apr_bucket * next;
+
+        rv = apr_bucket_read(e, &bucket_data, &bucket_data_len,
+                             APR_BLOCK_READ);
+        if (rv != APR_SUCCESS || (bucket_data_len == 0)) {
+            *dst = '\0';
+            return APR_STATUS_IS_TIMEUP(rv) ? -1 : 0;
+        }
+        src = bucket_data;
+        src_end = bucket_data + bucket_data_len;
+        while ((src < src_end) && (dst < dst_end) && !done) {
+            if (*src == '\n') {
+                done = 1;
+            }
+            else if (*src != '\r') {
+                *dst++ = *src;
+            }
+            src++;
+        }
+
+        if (src < src_end) {
+            apr_bucket_split(e, src - bucket_data);
+        }
+        next = APR_BUCKET_NEXT(e);
+        APR_BUCKET_REMOVE(e);
+        apr_bucket_destroy(e);
+        e = next;
+    }
+    *dst = 0;
+    return done;
+}
+
+static int wsgi_scan_headers_brigade(request_rec *r,
+                                     apr_bucket_brigade *bb,
+                                     char *buffer, int buflen)
+{
+    return wsgi_scan_headers(r, buffer, buflen, wsgi_getsfunc_brigade, bb);
+}
+
 static int wsgi_execute_remote(request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
@@ -9826,8 +10122,10 @@ static int wsgi_execute_remote(request_rec *r)
         while (retries < maximum) {
             /* Scan the CGI script like headers from daemon. */
 
-            if ((status = ap_scan_script_header_err_brigade(r, bbin, NULL)))
-                return HTTP_INTERNAL_SERVER_ERROR;
+            status = wsgi_scan_headers_brigade(r, bbin, NULL, 0);
+
+            if (status != OK)
+                return status;
 
             /*
              * Status must be 200 for our special headers. Ideally
@@ -9838,7 +10136,8 @@ static int wsgi_execute_remote(request_rec *r)
             if (r->status != 200) {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                              "mod_wsgi (pid=%d): Unexpected status from "
-                             "WSGI daemon process '%d'.", getpid(), r->status);
+                             "WSGI daemon process '%d'.", getpid(),
+                             r->status);
 
                 r->status_line = NULL;
 
@@ -9997,8 +10296,10 @@ static int wsgi_execute_remote(request_rec *r)
 
     /* Scan the CGI script like headers from daemon. */
 
-    if ((status = ap_scan_script_header_err_brigade(r, bbin, NULL)))
-        return HTTP_INTERNAL_SERVER_ERROR;
+    status = wsgi_scan_headers_brigade(r, bbin, NULL, 0);
+
+    if (status != OK)
+        return status;
 
     /*
      * Look for the special case of status being 200 but the
@@ -10053,31 +10354,6 @@ static int wsgi_execute_remote(request_rec *r)
         ap_internal_redirect_handler(location, r);
 
         return OK;
-    }
-
-    /*
-     * If multiple WWW-Authenticate headers they would
-     * have been merged and although this is allowed by
-     * HTTP specifications, some HTTP clients don't
-     * like that, so split them into separate headers
-     * again.
-     */
-
-    if (apr_table_get(r->err_headers_out, "WWW-Authenticate")) {
-        const char* value = NULL;
-        const char* item = NULL;
-
-        value = apr_table_get(r->err_headers_out, "WWW-Authenticate");
-
-        apr_table_unset(r->err_headers_out, "WWW-Authenticate");
-
-        while (*value) {
-            item = ap_getword(r->pool, &value, ',');
-            while (*item && apr_isspace(*item))
-                item++;
-            if (*item)
-                apr_table_add(r->err_headers_out, "WWW-Authenticate", item);
-        }
     }
 
     /*
