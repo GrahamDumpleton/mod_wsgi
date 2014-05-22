@@ -162,7 +162,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    python-eggs='%(python_eggs)s' \\
    lang='%(lang)s' \\
    locale='%(locale)s' \\
-   listen-backlog=%(worker_backlog)s \\
+   listen-backlog=%(daemon_backlog)s \\
    queue-timeout=%(queue_timeout)s \\
    socket-timeout=%(socket_timeout)s \\
    connect-timeout=%(connect_timeout)s \\
@@ -181,7 +181,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    python-eggs='%(python_eggs)s' \\
    lang='%(lang)s' \\
    locale='%(locale)s' \\
-   listen-backlog=%(worker_backlog)s \\
+   listen-backlog=%(daemon_backlog)s \\
    queue-timeout=%(queue_timeout)s \\
    socket-timeout=%(socket_timeout)s \\
    connect-timeout=%(connect_timeout)s \\
@@ -803,9 +803,9 @@ option_list = (
             metavar='NUMBER', help='Depth of server socket listener '
             'backlog for Apache child processes. Defaults to 500.'),
 
-    optparse.make_option('--worker-backlog', type='int', default=100,
+    optparse.make_option('--daemon-backlog', type='int', default=100,
             metavar='NUMBER', help='Depth of server socket listener '
-            'backlog for worker processes. Defaults to 100.'),
+            'backlog for daemon processes. Defaults to 100.'),
 
     optparse.make_option('--reload-on-changes', action='store_true',
             default=False, help='Flag indicating whether worker processes '
