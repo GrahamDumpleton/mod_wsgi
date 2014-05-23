@@ -6287,6 +6287,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     int send_buffer_size = 0;
     int recv_buffer_size = 0;
+    int header_buffer_size = 0;
 
     const char *script_user = NULL;
     const char *script_group = NULL;
@@ -6538,6 +6539,16 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                        "or 0 for system default.";
             }
         }
+        else if (!strcmp(option, "header-buffer-size")) {
+            if (!*value)
+                return "Invalid header buffer size for WSGI daemon process.";
+
+            header_buffer_size = atoi(value);
+            if (header_buffer_size < 8192 && header_buffer_size != 0) {
+                return "Header buffer size must be >= 8192 bytes, "
+                       "or 0 for default.";
+            }
+        }
         else if (!strcmp(option, "script-user")) {
             uid_t script_uid;
 
@@ -6712,6 +6723,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     entry->send_buffer_size = send_buffer_size;
     entry->recv_buffer_size = recv_buffer_size;
+    entry->header_buffer_size = header_buffer_size;
 
     entry->script_user = script_user;
     entry->script_group = script_group;
@@ -9469,7 +9481,7 @@ static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
                              int (*getsfunc) (char *, int, void *),
                              void *getsfunc_data)
 {
-    char x[MAX_STRING_LEN];
+    char x[32768];
     char *w, *l;
     size_t p;
 
@@ -9493,7 +9505,7 @@ static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
         *buffer = '\0';
 
     w = buffer ? buffer : x;
-    buflen = buffer ? buflen : MAX_STRING_LEN;
+    buflen = buffer ? buflen : sizeof(x);
 
     /* Temporary place to hold headers as we read them. */
 
@@ -9521,10 +9533,11 @@ static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
         int rv = (*getsfunc) (w, buflen - 1, getsfunc_data);
 
         if (rv == 0) {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Premature end "
-                                  "of script headers being read from daemon "
-                                  "process '%s'", config->process_group),
-                                  r->filename);
+            wsgi_log_script_error(r, apr_psprintf(r->pool, "Truncated or "
+                                  "oversized response headers received from "
+                                  "daemon process '%s'",
+                                  config->process_group), r->filename);
+
             r->status_line = NULL;
 
             return HTTP_INTERNAL_SERVER_ERROR;
@@ -9747,7 +9760,7 @@ static int wsgi_getsfunc_brigade(char *buf, int len, void *arg)
         apr_bucket_destroy(e);
         e = next;
     }
-    *dst = 0;
+    *dst = '\0';
     return done;
 }
 
@@ -9777,6 +9790,9 @@ static int wsgi_execute_remote(request_rec *r)
     apr_bucket *b;
 
     const char *location = NULL;
+
+    char *header_buffer = NULL;
+    int header_buflen = 0;
 
     /* Grab request configuration. */
 
@@ -10104,6 +10120,13 @@ static int wsgi_execute_remote(request_rec *r)
     b = apr_bucket_eos_create(r->connection->bucket_alloc);
     APR_BRIGADE_INSERT_TAIL(bbin, b);
 
+    /* Create alternate buffer for reading in response header values. */
+
+    if (group->header_buffer_size != 0) {
+        header_buflen = group->header_buffer_size;
+        header_buffer = apr_pcalloc(r->pool, header_buflen);
+    }
+
     /*
      * If process reload mechanism enabled, then we need to look
      * for marker indicating it is okay to transfer content, or
@@ -10127,7 +10150,8 @@ static int wsgi_execute_remote(request_rec *r)
         while (retries < maximum) {
             /* Scan the CGI script like headers from daemon. */
 
-            status = wsgi_scan_headers_brigade(r, bbin, NULL, 0);
+            status = wsgi_scan_headers_brigade(r, bbin, header_buffer,
+                                               header_buflen);
 
             if (status != OK)
                 return status;
@@ -10301,7 +10325,8 @@ static int wsgi_execute_remote(request_rec *r)
 
     /* Scan the CGI script like headers from daemon. */
 
-    status = wsgi_scan_headers_brigade(r, bbin, NULL, 0);
+    status = wsgi_scan_headers_brigade(r, bbin, header_buffer,
+                                       header_buflen);
 
     if (status != OK)
         return status;

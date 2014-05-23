@@ -117,6 +117,7 @@ typedef struct {
     const char *display_name;
     int send_buffer_size;
     int recv_buffer_size;
+    int header_buffer_size;
     const char *script_user;
     const char *script_group;
     int cpu_time_limit;
