@@ -322,3 +322,9 @@ To enable automatic code reloading in a development setting, use the
 option::
 
     python manage.py runmodwsgi --reload-on-changes
+
+16. The maximum size that a response header/value can be that is returned
+from a WSGI application under daemon mode can now be configured. The
+default size has also now been increased from 8192 bytes to 32768 bytes.
+The name of the option to ``WSGIDaemonProcess`` to set the buffer size used
+is ``header-buffer-size``.
