@@ -9525,14 +9525,17 @@ static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
                                   "of script headers being read from daemon "
                                   "process '%s'", config->process_group),
                                   r->filename);
+            r->status_line = NULL;
 
             return HTTP_INTERNAL_SERVER_ERROR;
         }
         else if (rv == -1) {
             wsgi_log_script_error(r, apr_psprintf(r->pool, "Timeout when "
-                                  "reading script headers from daemon "
+                                  "reading response headers from daemon "
                                   "process '%s'", config->process_group),
                                   r->filename);
+
+            r->status_line = NULL;
 
             return HTTP_GATEWAY_TIME_OUT;
         }
@@ -9630,6 +9633,8 @@ static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
                                   "headers from daemon process '%s'",
                                   malformed, config->process_group),
                                   r->filename);
+
+            r->status_line = NULL;
 
             return HTTP_INTERNAL_SERVER_ERROR;
         }
