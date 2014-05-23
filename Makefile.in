@@ -1,4 +1,4 @@
-#  Copyright 2007 GRAHAM DUMPLETON
+#  Copyright 2007-2011 GRAHAM DUMPLETON
 # 
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -23,25 +23,35 @@ CFLAGS = @CFLAGS@
 LDFLAGS = @LDFLAGS@
 LDLIBS = @LDLIBS@
 
-all : mod_wsgi.la
+SRCFILES = src/server/mod_wsgi.c src/server/wsgi_*.c
 
-mod_wsgi.la : mod_wsgi.c
-	$(APXS) -c $(CPPFLAGS) $(CFLAGS) mod_wsgi.c $(LDFLAGS) $(LDLIBS)
+all : src/server/mod_wsgi.la
+
+src/server/mod_wsgi.la : $(SRCFILES)
+	$(APXS) -c $(CPPFLAGS) $(CFLAGS) $(SRCFILES) $(LDFLAGS) $(LDLIBS)
 
 $(DESTDIR)$(LIBEXECDIR) :
 	mkdir -p $@
 
 install : all $(DESTDIR)$(LIBEXECDIR)
-	$(APXS) -i -S LIBEXECDIR=$(DESTDIR)$(LIBEXECDIR) -n 'mod_wsgi' mod_wsgi.la
+	$(APXS) -i -S LIBEXECDIR=$(DESTDIR)$(LIBEXECDIR) -n 'mod_wsgi' src/server/mod_wsgi.la
 
 clean :
-	-rm -rf .libs
-	-rm -f mod_wsgi.o mod_wsgi.la mod_wsgi.lo mod_wsgi.slo mod_wsgi.loT
-	-rm -f config.log config.status
+	-rm -rf src/server/.libs
+	-rm -f src/server/*.o
+	-rm -f src/server/*.la
+	-rm -f src/server/*.lo
+	-rm -f src/server/*.slo
+	-rm -f src/server/*.loT
+	-rm -f config.log
+	-rm -f config.status
 	-rm -rf autom4te.cache
+	-rm -rf mod_wsgi.egg-info
+	-rm -rf build
+	-rm -rf dist
 
 distclean : clean
-	-rm -f Makefile Makefile.in
+	-rm -f Makefile
 	-rm -f apxs libtool
 	-rm -rf .Python bin lib include
 	-rm -rf .tox
