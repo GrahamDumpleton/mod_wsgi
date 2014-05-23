@@ -170,7 +170,10 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    inactivity-timeout=%(inactivity_timeout)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
-   shutdown-timeout=%(shutdown_timeout)s
+   shutdown-timeout=%(shutdown_timeout)s \\
+   send-buffer-size=%(send_buffer_size)s \\
+   receive-buffer-size=%(receive_buffer_size)s \\
+   header-buffer-size=%(header_buffer_size)s
 </IfDefine>
 <IfDefine !WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
@@ -189,7 +192,10 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    inactivity-timeout=%(inactivity_timeout)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
-   shutdown-timeout=%(shutdown_timeout)s
+   shutdown-timeout=%(shutdown_timeout)s \\
+   send-buffer-size=%(send_buffer_size)s \\
+   receive-buffer-size=%(receive_buffer_size)s \\
+   header-buffer-size=%(header_buffer_size)s
 </IfDefine>
 WSGICallableObject '%(callable_object)s'
 WSGIPassAuthorization On
@@ -806,6 +812,19 @@ option_list = (
     optparse.make_option('--daemon-backlog', type='int', default=100,
             metavar='NUMBER', help='Depth of server socket listener '
             'backlog for daemon processes. Defaults to 100.'),
+
+    optparse.make_option('--send-buffer-size', type='int', default=0,
+            metavar='NUMBER', help='Size of socket buffer for sending '
+            'data to daemon processes. Defaults to 0, indicating '
+            'the system default socket buffer size is used.'),
+    optparse.make_option('--receive-buffer-size', type='int', default=0,
+            metavar='NUMBER', help='Size of socket buffer for receiving '
+            'data from daemon processes. Defaults to 0, indicating '
+            'the system default socket buffer size is used.'),
+    optparse.make_option('--header-buffer-size', type='int', default=0,
+            metavar='NUMBER', help='Size of buffer used for reading '
+            'response headers from daemon processes. Defaults to 0, '
+            'indicating internal default of 32768 bytes is used.'),
 
     optparse.make_option('--reload-on-changes', action='store_true',
             default=False, help='Flag indicating whether worker processes '
