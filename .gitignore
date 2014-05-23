@@ -1,5 +1,4 @@
 Makefile
-Makefile.in
 autom4te.cache
 config.log
 config.status
@@ -9,5 +8,17 @@ config.status
 *.lo
 *.loT
 *.slo
+build
+dist
+apxs_config.py
+*.egg-info
+*.swp
+bin
+include
+lib
+.Python
+*.pyc
+.tox
 apxs
 libtool
+docs/_build

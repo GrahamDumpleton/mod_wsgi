@@ -16,7 +16,7 @@ dnl  limitations under the License.
 
 dnl Process this file with autoconf to produce a configure script.
 
-AC_INIT(mod_wsgi.c)
+AC_INIT(src/server/mod_wsgi.c)
 
 AC_ARG_ENABLE(framework, AC_HELP_STRING([--enable-framework],
             [enable mod_wsgi framework link]),
@@ -211,8 +211,5 @@ LIBEXECDIR="`${APXS} -q LIBEXECDIR`"
 AC_SUBST(LIBEXECDIR)
 
 HTTPD_MAJOR_VERSION=`echo ${HTTPD_VERSION} | sed -e 's/\..*//'`
-
-rm -f Makefile.in
-ln -s posix-ap${HTTPD_MAJOR_VERSION}X.mk.in Makefile.in
 
 AC_OUTPUT(Makefile)

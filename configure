@@ -581,7 +581,7 @@ PACKAGE_STRING=
 PACKAGE_BUGREPORT=
 PACKAGE_URL=
 
-ac_unique_file="mod_wsgi.c"
+ac_unique_file="src/server/mod_wsgi.c"
 ac_subst_vars='LTLIBOBJS
 LIBOBJS
 LIBEXECDIR
@@ -2954,9 +2954,6 @@ LIBEXECDIR="`${APXS} -q LIBEXECDIR`"
 
 
 HTTPD_MAJOR_VERSION=`echo ${HTTPD_VERSION} | sed -e 's/\..*//'`
-
-rm -f Makefile.in
-ln -s posix-ap${HTTPD_MAJOR_VERSION}X.mk.in Makefile.in
 
 ac_config_files="$ac_config_files Makefile"
 
