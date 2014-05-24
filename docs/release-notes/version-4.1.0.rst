@@ -34,7 +34,7 @@ initialised to signal that it should be shutdown, the process could crash
 rather than shutdown properly due to not registering the signal pipe
 prior to registering signal handler.
 
-2. Python doesn't initialise codes in sub interpreters automatically which
+2. Python doesn't initialise codecs in sub interpreters automatically which
 in some cases could cause code running in WSGI script to fail due to lack
 of encoding for Unicode strings when converting them. The error message
 in this case was::
@@ -121,6 +121,21 @@ where there are no active requests. Previously it would also interrupt a
 long running request. See the new ``request-timeout`` option for a way of
 interrupting long running, potentially blocked requests and restarting
 the process.
+
+5. If the ``home`` option is used with ``WSGIDaemonProcess``, in addition
+to that directory being made the current working directory for the process,
+an empty string will be added to the start of the Python module search
+path. This causes Python to look in the current working directory for
+Python modules when they are being imported.
+
+This behaviour brings things into line with what happens when running the
+Python interpreter from the command line. You must though be using the
+``home`` option for this to come into play.
+
+Do not that if your application then changes the working directory, it
+will start looking in the new current working directory and not that which
+is specified by the ``home`` option. This again mirrors what the normal
+Python command line interpreter does.
 
 New Features
 ------------

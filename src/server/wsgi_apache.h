@@ -98,6 +98,10 @@ APLOG_USE_MODULE(wsgi);
 #define APR_FPROT_WWRITE APR_WWRITE
 #endif
 
+#ifndef MPM_NAME
+#define MPM_NAME ap_show_mpm()
+#endif
+
 #if !AP_MODULE_MAGIC_AT_LEAST(20050127,0)
 /* Debian backported ap_regex_t to Apache 2.0 and
  * thus made official version checking break. */
