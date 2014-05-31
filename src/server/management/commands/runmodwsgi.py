@@ -46,6 +46,6 @@ class Command(BaseCommand):
 
         options = mod_wsgi.server._cmd_setup_server(args, options)
 
-        executable = os.path.join(options['server_root'], 'wsgi-server')
+        executable = os.path.join(options['server_root'], 'apachectl')
         name = executable.ljust(len(options['process_name']))
         os.execl(executable, name, 'start', '-DNO_DETACH')
