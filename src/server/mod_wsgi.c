@@ -7846,8 +7846,10 @@ static void *wsgi_deadlock_thread(apr_thread_t *thd, void *data)
     while (1) {
         apr_sleep(apr_time_from_sec(1));
 
-        gilstate = PyGILState_Ensure();
-        PyGILState_Release(gilstate);
+        if (!wsgi_daemon_shutdown) {
+            gilstate = PyGILState_Ensure();
+            PyGILState_Release(gilstate);
+        }
 
         apr_thread_mutex_lock(wsgi_monitor_lock);
         wsgi_deadlock_shutdown_time = apr_time_now();
