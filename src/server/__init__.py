@@ -704,7 +704,7 @@ APACHE_ENVVARS_FILE = """
 """
 
 def generate_control_scripts(options):
-    path = os.path.join(options['server_root'], 'server-admin')
+    path = os.path.join(options['server_root'], 'apachectl')
     with open(path, 'w') as fp:
         print(WSGI_CONTROL_SCRIPT.lstrip() % options, file=fp)
 
@@ -1183,7 +1183,7 @@ def cmd_start_server(params):
 
     options = cmd_setup_server(params, usage)
 
-    executable = os.path.join(options['server_root'], 'server-admin')
+    executable = os.path.join(options['server_root'], 'apachectl')
     name = executable.ljust(len(options['process_name']))
     os.execl(executable, name, 'start', '-DNO_DETACH')
 

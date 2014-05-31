@@ -7846,8 +7846,10 @@ static void *wsgi_deadlock_thread(apr_thread_t *thd, void *data)
     while (1) {
         apr_sleep(apr_time_from_sec(1));
 
-        gilstate = PyGILState_Ensure();
-        PyGILState_Release(gilstate);
+        if (!wsgi_daemon_shutdown) {
+            gilstate = PyGILState_Ensure();
+            PyGILState_Release(gilstate);
+        }
 
         apr_thread_mutex_lock(wsgi_monitor_lock);
         wsgi_deadlock_shutdown_time = apr_time_now();
@@ -9204,8 +9206,7 @@ static apr_status_t wsgi_socket_connect_un(apr_socket_t *sock,
     }
 
     do {
-        rv = connect(rawsock, (struct sockaddr*)sa,
-                               sizeof(*sa) + strlen(sa->sun_path));
+        rv = connect(rawsock, (struct sockaddr*)sa, sizeof(*sa));
     } while (rv == -1 && errno == EINTR);
 
     if ((rv == -1) && (errno == EINPROGRESS || errno == EALREADY)
@@ -9249,7 +9250,7 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
 
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    apr_cpystrn(addr.sun_path, daemon->socket_path, sizeof addr.sun_path);
+    apr_cpystrn(addr.sun_path, daemon->socket_path, sizeof(addr.sun_path));
 
     start_time = apr_time_now();
 
