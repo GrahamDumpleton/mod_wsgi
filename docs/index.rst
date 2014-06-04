@@ -2,6 +2,12 @@
    :width: 250 px
    :align: right
 
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   release-notes/index
+
 mod_wsgi
 ========
 
@@ -29,11 +35,3 @@ If you need help in using mod_wsgi, then use the mod_wsgi mailing list to
 ask your questions:
 
     http://groups.google.com/group/modwsgi
-
-Contents
-========
-
-.. toctree::
-   :maxdepth: 1
-
-   release-notes/index

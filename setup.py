@@ -88,7 +88,7 @@ with open(os.path.join(os.path.dirname(__file__),
 # Work out location of Python library and how to link it.
 
 PYTHON_VERSION = get_python_config('VERSION')
-PYTHON_LDVERSION = get_python_config('LDVERSION') or ''
+PYTHON_LDVERSION = get_python_config('LDVERSION') or PYTHON_VERSION
 
 PYTHON_LIBDIR = get_python_config('LIBDIR')
 PYTHON_CFGDIR =  get_python_lib(plat_specific=1, standard_lib=1) + '/config'
