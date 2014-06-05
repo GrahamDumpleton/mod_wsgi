@@ -45,8 +45,16 @@ def application(environ, start_response):
             file=output)
     print('apache.threads_per_process: %s' % apache.threads_per_process,
             file=output)
-    print('apache.server_status: %s' % apache.server_status(),
+    print('apache.scoreboard: %s' % apache.scoreboard(),
             file=output)
+    print(file=output)
+
+    scoreboard = apache.scoreboard()
+
+    for process in scoreboard['processes']:
+       for worker in process['workers']:
+           print(worker['status'], file=output, end='')
+    print(file=output)
     print(file=output)
 
     print('PATH: %s' % sys.path, file=output)

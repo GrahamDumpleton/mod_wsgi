@@ -101,134 +101,274 @@ PyMethodDef wsgi_process_status_method[] = {
 
 /* ------------------------------------------------------------------------- */
 
-static PyObject *wsgi_apache_server_status(void)
+WSGI_STATIC_INTERNED_STRING(server_limit);
+WSGI_STATIC_INTERNED_STRING(thread_limit);
+WSGI_STATIC_INTERNED_STRING(running_generation);
+WSGI_STATIC_INTERNED_STRING(restart_time);
+WSGI_STATIC_INTERNED_STRING(current_time);
+WSGI_STATIC_INTERNED_STRING(running_time);
+WSGI_STATIC_INTERNED_STRING(process_num);
+WSGI_STATIC_INTERNED_STRING(pid);
+WSGI_STATIC_INTERNED_STRING(generation);
+WSGI_STATIC_INTERNED_STRING(quiescing);
+WSGI_STATIC_INTERNED_STRING(workers);
+WSGI_STATIC_INTERNED_STRING(thread_num);
+WSGI_STATIC_INTERNED_STRING(status);
+WSGI_STATIC_INTERNED_STRING(access_count);
+WSGI_STATIC_INTERNED_STRING(bytes_served);
+WSGI_STATIC_INTERNED_STRING(start_time);
+WSGI_STATIC_INTERNED_STRING(stop_time);
+WSGI_STATIC_INTERNED_STRING(last_used);
+WSGI_STATIC_INTERNED_STRING(client);
+WSGI_STATIC_INTERNED_STRING(request);
+WSGI_STATIC_INTERNED_STRING(vhost);
+WSGI_STATIC_INTERNED_STRING(processes);
+
+static PyObject *wsgi_status_flags[SERVER_NUM_STATUS];
+
+#define WSGI_CREATE_STATUS_FLAG(name, val) \
+    wsgi_status_flags[name] = wsgi_PyString_InternFromString(val)
+
+static PyObject *wsgi_apache_scoreboard(void)
 {
-    PyObject *result = NULL;
+    PyObject *scoreboard_dict = NULL;
+
+    PyObject *process_list = NULL;
 
     PyObject *object = NULL;
 
-    apr_time_t now_time;
-    apr_interval_time_t up_time;
+    apr_time_t current_time;
+    apr_interval_time_t running_time;
 
-    ap_generation_t mpm_generation;
-
-    int j, i, res;
-    int ready;
-    int busy;
-    unsigned long count;
-    unsigned long lres;
-    apr_off_t bytes;
-    apr_off_t bcount, kbcount;
+    global_score *gs_record;
     worker_score *ws_record;
     process_score *ps_record;
 
-    int server_limit = 0;
-    int thread_limit = 0;
+    int j, i;
 
-    /* Scoreboard is not available in inetd mode. Give up now. */
+    static int init_static = 0;
 
-    if (!ap_exists_scoreboard_image())
-        return PyDict_New();
+    /* Initialise interned strings the first time. */
 
-    ap_mpm_query(AP_MPMQ_HARD_LIMIT_THREADS, &thread_limit);
-    ap_mpm_query(AP_MPMQ_HARD_LIMIT_DAEMONS, &server_limit);
+    if (!init_static) {
+        WSGI_CREATE_INTERNED_STRING_ID(server_limit);
+        WSGI_CREATE_INTERNED_STRING_ID(thread_limit);
+        WSGI_CREATE_INTERNED_STRING_ID(running_generation);
+        WSGI_CREATE_INTERNED_STRING_ID(restart_time);
+        WSGI_CREATE_INTERNED_STRING_ID(current_time);
+        WSGI_CREATE_INTERNED_STRING_ID(running_time);
+        WSGI_CREATE_INTERNED_STRING_ID(process_num);
+        WSGI_CREATE_INTERNED_STRING_ID(pid);
+        WSGI_CREATE_INTERNED_STRING_ID(generation);
+        WSGI_CREATE_INTERNED_STRING_ID(quiescing);
+        WSGI_CREATE_INTERNED_STRING_ID(workers);
+        WSGI_CREATE_INTERNED_STRING_ID(thread_num);
+        WSGI_CREATE_INTERNED_STRING_ID(status);
+        WSGI_CREATE_INTERNED_STRING_ID(access_count);
+        WSGI_CREATE_INTERNED_STRING_ID(bytes_served);
+        WSGI_CREATE_INTERNED_STRING_ID(start_time);
+        WSGI_CREATE_INTERNED_STRING_ID(stop_time);
+        WSGI_CREATE_INTERNED_STRING_ID(last_used);
+        WSGI_CREATE_INTERNED_STRING_ID(client);
+        WSGI_CREATE_INTERNED_STRING_ID(request);
+        WSGI_CREATE_INTERNED_STRING_ID(vhost);
+        WSGI_CREATE_INTERNED_STRING_ID(processes);
 
-    now_time = apr_time_now();
-    up_time = (apr_uint32_t)apr_time_sec(
-            now_time - ap_scoreboard_image->global->restart_time);
+        WSGI_CREATE_STATUS_FLAG(SERVER_DEAD, "."); 
+        WSGI_CREATE_STATUS_FLAG(SERVER_READY, "_");
+        WSGI_CREATE_STATUS_FLAG(SERVER_STARTING, "S");
+        WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_READ, "R");
+        WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_WRITE, "W");
+        WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_KEEPALIVE, "K");
+        WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_LOG, "L");
+        WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_DNS, "D");
+        WSGI_CREATE_STATUS_FLAG(SERVER_CLOSING, "C");
+        WSGI_CREATE_STATUS_FLAG(SERVER_GRACEFUL, "G");
+        WSGI_CREATE_STATUS_FLAG(SERVER_IDLE_KILL, "I");
 
-#if defined(AP_MPMQ_GENERATION)
-    ap_mpm_query(AP_MPMQ_GENERATION, &mpm_generation);
-#else
-    mpm_generation = ap_my_generation;
-#endif
+        init_static = 1;
+    }
 
-    ready = 0;
-    busy = 0;
-    count = 0;
-    bcount = 0;
-    kbcount = 0;
+    /* Scoreboard needs to exist. */
 
-    for (i = 0; i < server_limit; ++i) {
+    if (!ap_exists_scoreboard_image()) {
+        Py_INCREF(Py_None);
+
+        return Py_None;
+    }
+
+    gs_record = ap_get_scoreboard_global();
+
+    if (!gs_record) {
+        Py_INCREF(Py_None);
+
+        return Py_None;
+    }
+
+    /* Return everything in a dictionary. Start with global. */
+
+    scoreboard_dict = PyDict_New();
+
+    object = wsgi_PyInt_FromLong(gs_record->server_limit);
+    PyDict_SetItem(scoreboard_dict,
+            WSGI_INTERNED_STRING(server_limit), object);
+    Py_DECREF(object);
+
+    object = wsgi_PyInt_FromLong(gs_record->thread_limit);
+    PyDict_SetItem(scoreboard_dict,
+            WSGI_INTERNED_STRING(thread_limit), object);
+    Py_DECREF(object);
+
+    object = wsgi_PyInt_FromLong(gs_record->running_generation);
+    PyDict_SetItem(scoreboard_dict,
+            WSGI_INTERNED_STRING(running_generation), object);
+    Py_DECREF(object);
+
+    object = PyFloat_FromDouble(apr_time_sec((
+            double)gs_record->restart_time));
+    PyDict_SetItem(scoreboard_dict,
+            WSGI_INTERNED_STRING(restart_time), object);
+    Py_DECREF(object);
+
+    current_time = apr_time_now();
+
+    object = PyFloat_FromDouble(apr_time_sec((double)current_time));
+    PyDict_SetItem(scoreboard_dict,
+            WSGI_INTERNED_STRING(current_time), object);
+    Py_DECREF(object);
+
+    running_time = (apr_uint32_t)apr_time_sec((double)
+            current_time - ap_scoreboard_image->global->restart_time);
+
+    object = wsgi_PyInt_FromLongLong(running_time);
+    PyDict_SetItem(scoreboard_dict,
+            WSGI_INTERNED_STRING(running_time), object);
+    Py_DECREF(object);
+
+    /* Now add in the processes/workers. */
+
+    process_list = PyList_New(0);
+
+    for (i = 0; i < gs_record->server_limit; ++i) {
+        PyObject *process_dict = NULL;
+        PyObject *worker_list = NULL;
+
         ps_record = ap_get_scoreboard_process(i);
-        for (j = 0; j < thread_limit; ++j) {
-            int indx = (i * thread_limit) + j;
+
+        process_dict = PyDict_New();
+        PyList_Append(process_list, process_dict);
+
+        object = wsgi_PyInt_FromLong(i);
+        PyDict_SetItem(process_dict,
+                WSGI_INTERNED_STRING(process_num), object);
+        Py_DECREF(object);
+
+        object = wsgi_PyInt_FromLong(ps_record->pid);
+        PyDict_SetItem(process_dict,
+                WSGI_INTERNED_STRING(pid), object);
+        Py_DECREF(object);
+
+        object = wsgi_PyInt_FromLong(ps_record->generation);
+        PyDict_SetItem(process_dict,
+                WSGI_INTERNED_STRING(generation), object);
+        Py_DECREF(object);
+
+        object = PyBool_FromLong(ps_record->quiescing);
+        PyDict_SetItem(process_dict,
+                WSGI_INTERNED_STRING(quiescing), object);
+        Py_DECREF(object);
+
+        worker_list = PyList_New(0);
+        PyDict_SetItem(process_dict,
+                WSGI_INTERNED_STRING(workers), worker_list);
+
+        for (j = 0; j < gs_record->thread_limit; ++j) {
+            PyObject *worker_dict = NULL;
 
 #if AP_MODULE_MAGIC_AT_LEAST(20071023,0)
             ws_record = ap_get_scoreboard_worker_from_indexes(i, j);
 #else
             ws_record = ap_get_scoreboard_worker(i, j);
 #endif
-            res = ws_record->status;
 
-            if (!ps_record->quiescing
-                && ps_record->pid) {
-                if (res == SERVER_READY) {
-                    if (ps_record->generation == mpm_generation)
-                        ready++;
-                }
-                else if (res != SERVER_DEAD &&
-                         res != SERVER_STARTING &&
-                         res != SERVER_IDLE_KILL) {
-                    busy++;
-                }
-            }
+            worker_dict = PyDict_New();
 
-            lres = ws_record->access_count;
-            bytes = ws_record->bytes_served;
+            PyList_Append(worker_list, worker_dict);
 
-            if (lres != 0 || (res != SERVER_READY && res != SERVER_DEAD)) {
-                count += lres;
-                bcount += bytes;
+            object = wsgi_PyInt_FromLong(ws_record->thread_num);
+            PyDict_SetItem(worker_dict,
+                    WSGI_INTERNED_STRING(thread_num), object);
+            Py_DECREF(object);
 
-                if (bcount >= 1024) {
-                    kbcount += (bcount >> 10);
-                    bcount = bcount & 0x3ff;
-                }
-            }
+            object = wsgi_PyInt_FromLong(ws_record->generation);
+            PyDict_SetItem(worker_dict,
+                    WSGI_INTERNED_STRING(generation), object);
+            Py_DECREF(object);
+
+            object = wsgi_status_flags[ws_record->status];
+            PyDict_SetItem(worker_dict,
+                    WSGI_INTERNED_STRING(status), object);
+
+            object = wsgi_PyInt_FromLong(ws_record->access_count);
+            PyDict_SetItem(worker_dict,
+                    WSGI_INTERNED_STRING(access_count), object);
+            Py_DECREF(object);
+
+            object = wsgi_PyInt_FromUnsignedLongLong(ws_record->bytes_served);
+            PyDict_SetItem(worker_dict,
+                    WSGI_INTERNED_STRING(bytes_served), object);
+            Py_DECREF(object);
+
+            object = PyFloat_FromDouble(apr_time_sec(
+                    (double)ws_record->start_time));
+            PyDict_SetItem(worker_dict,
+                    WSGI_INTERNED_STRING(start_time), object);
+            Py_DECREF(object);
+
+            object = PyFloat_FromDouble(apr_time_sec(
+                    (double)ws_record->stop_time));
+            PyDict_SetItem(worker_dict,
+                    WSGI_INTERNED_STRING(stop_time), object);
+            Py_DECREF(object);
+
+            object = wsgi_PyInt_FromLongLong(ws_record->last_used);
+            PyDict_SetItem(worker_dict,
+                    WSGI_INTERNED_STRING(last_used), object);
+            Py_DECREF(object);
+
+            object = wsgi_PyString_FromString(ws_record->client);
+            PyDict_SetItem(worker_dict,
+                    WSGI_INTERNED_STRING(client), object);
+            Py_DECREF(object);
+
+            object = wsgi_PyString_FromString(ws_record->request);
+            PyDict_SetItem(worker_dict,
+                    WSGI_INTERNED_STRING(request), object);
+            Py_DECREF(object);
+
+            object = wsgi_PyString_FromString(ws_record->vhost);
+            PyDict_SetItem(worker_dict,
+                    WSGI_INTERNED_STRING(vhost), object);
+            Py_DECREF(object);
+
+            Py_DECREF(worker_dict);
         }
+
+        Py_DECREF(worker_list);
+        Py_DECREF(process_dict);
     }
 
-    /*
-     * Generate the dictionary for the server status from the
-     * calculated values.
-     */
+    PyDict_SetItem(scoreboard_dict,
+            WSGI_INTERNED_STRING(processes), process_list);
+    Py_DECREF(process_list);
 
-    result = PyDict_New();
-
-    object = PyInt_FromLong(now_time);
-    PyDict_SetItemString(result, "time", object);
-    Py_DECREF(object);
-
-    object = PyInt_FromLong(up_time);
-    PyDict_SetItemString(result, "uptime", object);
-    Py_DECREF(object);
-
-    object = PyInt_FromLong(mpm_generation);
-    PyDict_SetItemString(result, "generation", object);
-    Py_DECREF(object);
-
-    object = PyInt_FromLong(count);
-    PyDict_SetItemString(result, "total_accesses", object);
-    Py_DECREF(object);
-
-    object = PyInt_FromLong(kbcount);
-    PyDict_SetItemString(result, "total_kbytes", object);
-    Py_DECREF(object);
-
-    object = PyInt_FromLong(busy);
-    PyDict_SetItemString(result, "busy_workers", object);
-    Py_DECREF(object);
-
-    object = PyInt_FromLong(ready);
-    PyDict_SetItemString(result, "idle_workers", object);
-    Py_DECREF(object);
-
-    return result;
+    return scoreboard_dict;
 }
 
-PyMethodDef wsgi_apache_server_status_method[] = {
-    { "server_status",      (PyCFunction)wsgi_apache_server_status,
+/* ------------------------------------------------------------------------- */
+
+PyMethodDef wsgi_apache_scoreboard_method[] = {
+    { "scoreboard",         (PyCFunction)wsgi_apache_scoreboard,
                             METH_NOARGS, 0 },
     { NULL },
 };

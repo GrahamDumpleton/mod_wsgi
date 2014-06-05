@@ -37,6 +37,7 @@ extern double wsgi_start_request(void);
 extern double wsgi_end_request(void);
 
 extern PyMethodDef wsgi_apache_server_status_method[];
+extern PyMethodDef wsgi_apache_scoreboard_method[];
 
 /* ------------------------------------------------------------------------- */
 

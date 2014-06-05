@@ -9212,7 +9212,8 @@ static apr_status_t wsgi_socket_connect_un(apr_socket_t *sock,
 
     do {
         rv = connect(rawsock, (struct sockaddr*)sa,
-                               sizeof(*sa) + strlen(sa->sun_path));
+                     APR_OFFSETOF(struct sockaddr_un, sun_path)
+                     + strlen(sa->sun_path) + 1);
     } while (rv == -1 && errno == EINTR);
 
     if ((rv == -1) && (errno == EINPROGRESS || errno == EALREADY)

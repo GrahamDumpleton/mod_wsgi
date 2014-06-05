@@ -108,6 +108,82 @@
 
 /* ------------------------------------------------------------------------- */
 
+#if PY_MAJOR_VERSION >= 3
+#define wsgi_PyString_InternFromString(str) \
+    PyUnicode_InternFromString(str)
+#else
+#define wsgi_PyString_InternFromString(str) \
+    PyString_InternFromString(str)
+#endif
+
+#if PY_MAJOR_VERSION >= 3
+#define wsgi_PyString_FromString(str) \
+    PyUnicode_DecodeLatin1(str, strlen(str), NULL)
+#else
+#define wsgi_PyString_FromString(str) \
+    PyString_FromString(str)
+#endif
+
+#ifdef HAVE_LONG_LONG
+#define wsgi_PyInt_FromLongLong(val) \
+     PyLong_FromLongLong(val)
+#else
+#if PY_MAJOR_VERSION >= 3
+#define wsgi_PyInt_FromLongLong(val) \
+    PyLong_FromLong(val)
+#else
+#define wsgi_PyInt_FromLongLong(val) \
+    PyInt_FromLong(val)
+#endif
+#endif
+
+#ifdef HAVE_LONG_LONG
+#define wsgi_PyInt_FromUnsignedLongLong(val) \
+     PyLong_FromUnsignedLongLong(val)
+#else
+#if PY_MAJOR_VERSION >= 3
+#define wsgi_PyInt_FromUnsignedLongLong(val) \
+    PyLong_FromLong(val)
+#else
+#define wsgi_PyInt_FromUnsignedLongLong(val) \
+    PyInt_FromLong(val)
+#endif
+#endif
+
+#if PY_MAJOR_VERSION >= 3
+#define wsgi_PyInt_FromLong(val) \
+    PyLong_FromLong(val)
+#else
+#define wsgi_PyInt_FromLong(val) \
+    PyInt_FromLong(val)
+#endif
+
+#if PY_MAJOR_VERSION >= 3
+#define wsgi_PyInt_FromUnsignedLong(val) \
+    PyLong_FromUnsignedLong(val)
+#else
+#define wsgi_PyInt_FromUnsignedLong(val) \
+    PyInt_FromUnsignedLong(val)
+#endif
+
+/* ------------------------------------------------------------------------- */
+
+#define WSGI_STATIC_INTERNED_STRING(name) \
+    static PyObject *wsgi_id_##name
+
+#define WSGI_CREATE_INTERNED_STRING(name, val) \
+    if (wsgi_id_##name) ; else wsgi_id_##name = \
+    wsgi_PyString_InternFromString(val)
+
+#define WSGI_CREATE_INTERNED_STRING_ID(name) \
+    if (wsgi_id_##name) ; else wsgi_id_##name = \
+    wsgi_PyString_InternFromString(#name)
+
+#define WSGI_INTERNED_STRING(name) \
+    wsgi_id_##name
+
+/* ------------------------------------------------------------------------- */
+
 #endif
 
 /* vi: set sw=4 expandtab : */

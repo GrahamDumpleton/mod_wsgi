@@ -1187,8 +1187,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 #endif
     PyModule_AddObject(module, "build_date", object);
 
-    PyModule_AddObject(module, "server_status", PyCFunction_New(
-                       &wsgi_apache_server_status_method[0], NULL));
+    PyModule_AddObject(module, "scoreboard", PyCFunction_New(
+                       &wsgi_apache_scoreboard_method[0], NULL));
 
     /* Done with the 'apache' module. */
 
