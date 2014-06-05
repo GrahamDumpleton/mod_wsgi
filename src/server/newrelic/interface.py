@@ -4,8 +4,12 @@ import socket
 import os
 import types
 import json
-import httplib
 import logging
+
+try:
+    import http.client as httplib
+except ImportError:
+    import httplib
 
 _logger = logging.getLogger(__name__)
 

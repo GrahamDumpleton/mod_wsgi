@@ -78,9 +78,6 @@ class Samples(object):
     def __iter__(self):
         return iter(self.samples.items())
 
-    def __nonzero__(self):
-        return bool(self.samples)
-
     def sample_name(self, name):
         return 'Component/' + name
 
@@ -334,7 +331,7 @@ class Sampler(object):
             # to merge the data from the current reporting period
             # with that for the previous period.
 
-            if retained:
+            if retained.samples:
                 start = retained_start
                 retained.merge_samples(metrics)
                 metrics = retained
@@ -549,7 +546,6 @@ class Sampler(object):
                 self.report_queue.put(harvest_data)
 
                 harvest_start = harvest_end
-                metrics = Samples()
                 end += 60.0
 
                 _harvest_data = {}
