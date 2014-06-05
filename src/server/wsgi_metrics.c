@@ -331,7 +331,8 @@ static PyObject *wsgi_apache_scoreboard(void)
                     WSGI_INTERNED_STRING(stop_time), object);
             Py_DECREF(object);
 
-            object = wsgi_PyInt_FromLongLong(ws_record->last_used);
+            object = PyFloat_FromDouble(apr_time_sec(
+                    (double)ws_record->last_used));
             PyDict_SetItem(worker_dict,
                     WSGI_INTERNED_STRING(last_used), object);
             Py_DECREF(object);
