@@ -71,6 +71,7 @@
 #include "apr_version.h"
 #include "apr_buckets.h"
 #include "apr_date.h"
+#include "mpm_common.h"
 
 #include "apr_optional.h"
 
