@@ -9188,6 +9188,13 @@ static int wsgi_start_daemons(apr_pool_t *p)
     return OK;
 }
 
+static apr_pool_t *wsgi_pconf_pool = NULL;
+
+static int wsgi_deferred_start_daemons(apr_pool_t *p, ap_scoreboard_e sb_type)
+{
+    return wsgi_start_daemons(wsgi_pconf_pool);
+}
+
 static apr_status_t wsgi_socket_connect_un(apr_socket_t *sock,
                                            struct sockaddr_un *sa)
 {
@@ -9206,7 +9213,9 @@ static apr_status_t wsgi_socket_connect_un(apr_socket_t *sock,
     }
 
     do {
-        rv = connect(rawsock, (struct sockaddr*)sa, sizeof(*sa));
+        rv = connect(rawsock, (struct sockaddr*)sa,
+                     APR_OFFSETOF(struct sockaddr_un, sun_path)
+                     + strlen(sa->sun_path) + 1);
     } while (rv == -1 && errno == EINTR);
 
     if ((rv == -1) && (errno == EINPROGRESS || errno == EALREADY)
@@ -11205,10 +11214,39 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
     if (!wsgi_python_after_fork)
         wsgi_python_init(pconf);
 
-    /* Startup separate named daemon processes. */
+    /*
+     * Startup separate named daemon processes. This is
+     * a bit tricky as we only want to do this after the
+     * scoreboard has been created. On the initial server
+     * startup though, this hook function is called prior
+     * to the MPM being run, which means the scoreboard
+     * hasn't been created yet. In that case we need to
+     * defer process creation until after that, which we
+     * can only do by hooking into the pre_mpm hook after
+     * scoreboard creation has been done. On a server
+     * restart, the scoreboard will be preserved, so we
+     * can do it here, which is just as well as the pre_mpm
+     * hook isn't run on a restart.
+     */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    status = wsgi_start_daemons(pconf);
+    if (!ap_scoreboard_image) {
+        /*
+         * Need to remember the pool we were given here as
+         * the pre_mpm hook functions get given a different
+         * pool which isn't the one we want and if we use
+         * that then Apache will crash when it is being
+         * shutdown. So our pre_mpm hook will use the pool
+         * we have remembered here.
+         */
+
+        wsgi_pconf_pool = pconf;
+
+        ap_hook_pre_mpm(wsgi_deferred_start_daemons, NULL, NULL,
+                        APR_HOOK_REALLY_LAST);
+    }
+    else
+        status = wsgi_start_daemons(pconf);
 #endif
 
     return status;

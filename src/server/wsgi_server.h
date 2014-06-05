@@ -1,5 +1,5 @@
-#ifndef WSGI_SERVER
-#define WSGI_SERVER
+#ifndef WSGI_SERVER_H
+#define WSGI_SERVER_H
 
 /* ------------------------------------------------------------------------- */
 

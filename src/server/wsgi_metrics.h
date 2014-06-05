@@ -31,10 +31,13 @@ extern int wsgi_dump_stack_traces;
 
 extern apr_thread_mutex_t* wsgi_monitor_lock;
 
-extern PyMethodDef wsgi_get_utilization_method[];
+extern PyMethodDef wsgi_process_status_method[];
 
 extern double wsgi_start_request(void);
 extern double wsgi_end_request(void);
+
+extern PyMethodDef wsgi_apache_server_status_method[];
+extern PyMethodDef wsgi_apache_scoreboard_method[];
 
 /* ------------------------------------------------------------------------- */
 

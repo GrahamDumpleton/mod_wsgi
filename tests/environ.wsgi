@@ -34,13 +34,27 @@ def application(environ, start_response):
             file=output)
     print('mod_wsgi.threads_per_process: %s' % mod_wsgi.threads_per_process,
             file=output)
+    print('mod_wsgi.process_status: %s' % mod_wsgi.process_status(),
+            file=output)
     print(file=output)
 
+    print('apache.description: %s' % apache.description, file=output)
+    print('apache.build_date: %s' % apache.build_date, file=output)
     print('apache.mpm_name: %s' % apache.mpm_name, file=output)
     print('apache.maximum_processes: %s' % apache.maximum_processes,
             file=output)
     print('apache.threads_per_process: %s' % apache.threads_per_process,
             file=output)
+    print('apache.scoreboard: %s' % apache.scoreboard(),
+            file=output)
+    print(file=output)
+
+    scoreboard = apache.scoreboard()
+
+    for process in scoreboard['processes']:
+       for worker in process['workers']:
+           print(worker['status'], file=output, end='')
+    print(file=output)
     print(file=output)
 
     print('PATH: %s' % sys.path, file=output)
