@@ -1068,8 +1068,8 @@ InterpreterObject *newInterpreterObject(const char *name)
     PyModule_AddObject(module, "threads_per_process", object);
 #endif
 
-    PyModule_AddObject(module, "process_status", PyCFunction_New(
-                       &wsgi_process_status_method[0], NULL));
+    PyModule_AddObject(module, "server_metrics", PyCFunction_New(
+                       &wsgi_process_server_metrics_method[0], NULL));
 
     /* Done with the 'mod_wsgi' module. */
 
@@ -1187,8 +1187,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 #endif
     PyModule_AddObject(module, "build_date", object);
 
-    PyModule_AddObject(module, "scoreboard", PyCFunction_New(
-                       &wsgi_apache_scoreboard_method[0], NULL));
+    PyModule_AddObject(module, "server_metrics", PyCFunction_New(
+                       &wsgi_apache_server_metrics_method[0], NULL));
 
     /* Done with the 'apache' module. */
 

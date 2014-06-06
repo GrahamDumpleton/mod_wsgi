@@ -122,6 +122,8 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 
     object->enable_sendfile = -1;
 
+    object->server_metrics = -1;
+
     object->newrelic_config_file = NULL;
     object->newrelic_environment = NULL;
 

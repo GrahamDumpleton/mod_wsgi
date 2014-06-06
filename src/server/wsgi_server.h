@@ -107,6 +107,8 @@ typedef struct {
 
     apr_hash_t *handler_scripts;
 
+    int server_metrics;
+
     const char *newrelic_config_file;
     const char *newrelic_environment;
 } WSGIServerConfig;

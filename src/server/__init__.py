@@ -173,7 +173,8 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
-   header-buffer-size=%(header_buffer_size)s
+   header-buffer-size=%(header_buffer_size)s \\
+   server-metrics=%(daemon_server_metrics_flag)s
 </IfDefine>
 <IfDefine !WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
@@ -195,7 +196,8 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
-   header-buffer-size=%(header_buffer_size)s
+   header-buffer-size=%(header_buffer_size)s \\
+   server-metrics=%(daemon_server_metrics_flag)s
 </IfDefine>
 WSGICallableObject '%(callable_object)s'
 WSGIPassAuthorization On
@@ -338,7 +340,7 @@ Include '%(filename)s'
 """
 
 APACHE_TOOLS_CONFIG = """
-WSGIDaemonProcess express display-name=%%{GROUP} threads=1
+WSGIDaemonProcess express display-name=%%{GROUP} threads=1 server-metrics=On
 """
 
 APACHE_METRICS_CONFIG = """
@@ -923,12 +925,9 @@ option_list = (
             'that keep alive connections are disabled.'),
 
     optparse.make_option('--server-metrics', action='store_true',
-            default=False, help='Flag indicating whether extended web server '
-            'status will be available within the WSGI application. Defaults '
-            'to being disabled meaning that only the state of each worker '
-            'will be available. Will be automatically enabled as a side '
-            'effect of enabling server status URL or New Relic server level '
-            'monitoring.'),
+            default=False, help='Flag indicating whether internal server '
+            'metrics will be available within the WSGI application. '
+            'Defaults to being disabled.'),
     optparse.make_option('--server-status', action='store_true',
             default=False, help='Flag indicating whether web server status '
             'will be available at the /server-status sub URL. Defaults to '
@@ -1132,6 +1131,11 @@ def _cmd_setup_server(args, options):
     options['python_home'] = sys.prefix
 
     options['keep_alive'] = options['keep_alive_timeout'] != 0
+
+    if options['server_metrics']:
+        options['daemon_server_metrics_flag'] = 'On'
+    else:
+        options['daemon_server_metrics_flag'] = 'Off'
 
     if options['with_newrelic']:
         options['with_newrelic_agent'] = True

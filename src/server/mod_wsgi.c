@@ -4996,6 +4996,28 @@ static const char *wsgi_add_handler_script(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_server_metrics(cmd_parms *cmd, void *mconfig,
+                                           const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (strcasecmp(f, "Off") == 0)
+        sconfig->server_metrics = 0;
+    else if (strcasecmp(f, "On") == 0)
+        sconfig->server_metrics = 1;
+    else
+        return "WSGIServerMetrics must be one of: Off | On";
+
+    return NULL;
+}
+
 static const char *wsgi_set_newrelic_config_file(
         cmd_parms *cmd, void *mconfig, const char *f)
 {
@@ -6305,6 +6327,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int groups_count = 0;
     gid_t *groups = NULL;
 
+    int server_metrics = 0;
+
     const char *newrelic_config_file = NULL;
     const char *newrelic_environment = NULL;
 
@@ -6617,6 +6641,17 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (virtual_memory_limit < 0)
                 return "Invalid virtual memory limit for WSGI daemon process.";
         }
+        else if (!strcmp(option, "server-metrics")) {
+            if (!*value)
+                return "Invalid server metrics flag for WSGI daemon process.";
+
+            if (strcasecmp(value, "Off") == 0)
+                server_metrics = 0;
+            else if (strcasecmp(value, "On") == 0)
+                server_metrics = 1;
+            else
+                return "Invalid server metrics flag for WSGI daemon process.";
+        }
         else if (!strcmp(option, "newrelic-config-file")) {
             newrelic_config_file = value;
         }
@@ -6733,6 +6768,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     entry->memory_limit = memory_limit;
     entry->virtual_memory_limit = virtual_memory_limit;
+
+    entry->server_metrics = server_metrics;
 
     entry->newrelic_config_file = newrelic_config_file;
     entry->newrelic_environment = newrelic_environment;
@@ -13424,6 +13461,9 @@ static const command_rec wsgi_commands[] =
 
     AP_INIT_RAW_ARGS("WSGIHandlerScript", wsgi_add_handler_script,
         NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI handler script file."),
+
+    AP_INIT_TAKE1("WSGIServerMetrics", wsgi_set_server_metrics,
+        NULL, RSRC_CONF, "Enabled/Disable access to server metrics."),
 
     AP_INIT_TAKE1("WSGINewRelicConfigFile", wsgi_set_newrelic_config_file,
         NULL, RSRC_CONF, "New Relic monitoring agent configuration file."),

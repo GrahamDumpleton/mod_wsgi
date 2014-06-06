@@ -128,6 +128,7 @@ typedef struct {
     int listener_fd;
     const char* mutex_path;
     apr_proc_mutex_t* mutex;
+    int server_metrics;
     const char *newrelic_config_file;
     const char *newrelic_environment;
 } WSGIProcessGroup;

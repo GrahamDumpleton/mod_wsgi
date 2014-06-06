@@ -34,7 +34,7 @@ def application(environ, start_response):
             file=output)
     print('mod_wsgi.threads_per_process: %s' % mod_wsgi.threads_per_process,
             file=output)
-    print('mod_wsgi.process_status: %s' % mod_wsgi.process_status(),
+    print('mod_wsgi.server_metrics: %s' % mod_wsgi.server_metrics(),
             file=output)
     print(file=output)
 
@@ -45,17 +45,18 @@ def application(environ, start_response):
             file=output)
     print('apache.threads_per_process: %s' % apache.threads_per_process,
             file=output)
-    print('apache.scoreboard: %s' % apache.scoreboard(),
+    print('apache.server_metrics: %s' % apache.server_metrics(),
             file=output)
     print(file=output)
 
-    scoreboard = apache.scoreboard()
+    scoreboard = apache.server_metrics()
 
-    for process in scoreboard['processes']:
-       for worker in process['workers']:
-           print(worker['status'], file=output, end='')
-    print(file=output)
-    print(file=output)
+    if scoreboard:
+        for process in scoreboard['processes']:
+           for worker in process['workers']:
+               print(worker['status'], file=output, end='')
+        print(file=output)
+        print(file=output)
 
     print('PATH: %s' % sys.path, file=output)
     print(file=output)

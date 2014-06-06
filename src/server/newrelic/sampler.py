@@ -372,7 +372,7 @@ class Sampler(object):
 
         active_processes = 0
 
-        scoreboard = apache.scoreboard()
+        scoreboard = apache.server_metrics()
 
         if sample_start is None:
             sample_start = scoreboard['current_time']

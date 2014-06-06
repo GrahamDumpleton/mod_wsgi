@@ -21,6 +21,8 @@
 #include "wsgi_metrics.h"
 
 #include "wsgi_apache.h"
+#include "wsgi_daemon.h"
+#include "wsgi_server.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -78,11 +80,26 @@ double wsgi_end_request(void)
     return wsgi_utilization_time(-1);
 }
 
-static PyObject *wsgi_process_status(void)
+static PyObject *wsgi_process_server_metrics(void)
 {
     PyObject *result = NULL;
 
     PyObject *object = NULL;
+
+    if (!wsgi_daemon_pool) {
+        if (!wsgi_server_config->server_metrics) {
+            Py_INCREF(Py_None);
+
+            return Py_None;
+        }
+    }
+    else {
+        if (!wsgi_daemon_process->group->server_metrics) {
+            Py_INCREF(Py_None);
+
+            return Py_None;
+        }
+    }
 
     result = PyDict_New();
 
@@ -93,8 +110,8 @@ static PyObject *wsgi_process_status(void)
     return result;
 }
 
-PyMethodDef wsgi_process_status_method[] = {
-    { "process_status", (PyCFunction)wsgi_process_status,
+PyMethodDef wsgi_process_server_metrics_method[] = {
+    { "server_metrics",     (PyCFunction)wsgi_process_server_metrics,
                             METH_NOARGS, 0 },
     { NULL },
 };
@@ -129,7 +146,7 @@ static PyObject *wsgi_status_flags[SERVER_NUM_STATUS];
 #define WSGI_CREATE_STATUS_FLAG(name, val) \
     wsgi_status_flags[name] = wsgi_PyString_InternFromString(val)
 
-static PyObject *wsgi_apache_scoreboard(void)
+static PyObject *wsgi_apache_server_metrics(void)
 {
     PyObject *scoreboard_dict = NULL;
 
@@ -189,12 +206,27 @@ static PyObject *wsgi_apache_scoreboard(void)
         init_static = 1;
     }
 
-    /* Scoreboard needs to exist. */
+    /* Scoreboard needs to exist and server metrics enabled. */
 
     if (!ap_exists_scoreboard_image()) {
         Py_INCREF(Py_None);
 
         return Py_None;
+    }
+
+    if (!wsgi_daemon_pool) {
+        if (!wsgi_server_config->server_metrics) {
+            Py_INCREF(Py_None);
+
+            return Py_None;
+        }
+    }
+    else {
+        if (!wsgi_daemon_process->group->server_metrics) {
+            Py_INCREF(Py_None);
+
+            return Py_None;
+        }
     }
 
     gs_record = ap_get_scoreboard_global();
@@ -368,8 +400,8 @@ static PyObject *wsgi_apache_scoreboard(void)
 
 /* ------------------------------------------------------------------------- */
 
-PyMethodDef wsgi_apache_scoreboard_method[] = {
-    { "scoreboard",         (PyCFunction)wsgi_apache_scoreboard,
+PyMethodDef wsgi_apache_server_metrics_method[] = {
+    { "server_metrics",     (PyCFunction)wsgi_apache_server_metrics,
                             METH_NOARGS, 0 },
     { NULL },
 };

@@ -23,7 +23,7 @@ LOG_FORMAT = '%(asctime)s (%(process)d/%(threadName)s) ' \
               '%(name)s %(levelname)s - %(message)s'
 
 def start(name):
-    if apache.scoreboard() is None:
+    if apache.server_metrics() is None:
         return
 
     config_object = RawConfigParser()
