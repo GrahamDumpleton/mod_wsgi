@@ -80,7 +80,7 @@ double wsgi_end_request(void)
     return wsgi_utilization_time(-1);
 }
 
-static PyObject *wsgi_process_server_metrics(void)
+static PyObject *wsgi_process_metrics(void)
 {
     PyObject *result = NULL;
 
@@ -104,14 +104,14 @@ static PyObject *wsgi_process_server_metrics(void)
     result = PyDict_New();
 
     object = PyFloat_FromDouble(wsgi_utilization_time(0));
-    PyDict_SetItemString(result, "thread_utilization", object);
+    PyDict_SetItemString(result, "utilization", object);
     Py_DECREF(object);
 
     return result;
 }
 
-PyMethodDef wsgi_process_server_metrics_method[] = {
-    { "server_metrics",     (PyCFunction)wsgi_process_server_metrics,
+PyMethodDef wsgi_process_metrics_method[] = {
+    { "process_metrics",    (PyCFunction)wsgi_process_metrics,
                             METH_NOARGS, 0 },
     { NULL },
 };
@@ -146,7 +146,7 @@ static PyObject *wsgi_status_flags[SERVER_NUM_STATUS];
 #define WSGI_CREATE_STATUS_FLAG(name, val) \
     wsgi_status_flags[name] = wsgi_PyString_InternFromString(val)
 
-static PyObject *wsgi_apache_server_metrics(void)
+static PyObject *wsgi_server_metrics(void)
 {
     PyObject *scoreboard_dict = NULL;
 
@@ -400,8 +400,8 @@ static PyObject *wsgi_apache_server_metrics(void)
 
 /* ------------------------------------------------------------------------- */
 
-PyMethodDef wsgi_apache_server_metrics_method[] = {
-    { "server_metrics",     (PyCFunction)wsgi_apache_server_metrics,
+PyMethodDef wsgi_server_metrics_method[] = {
+    { "server_metrics",     (PyCFunction)wsgi_server_metrics,
                             METH_NOARGS, 0 },
     { NULL },
 };

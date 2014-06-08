@@ -651,9 +651,23 @@ def generate_wsgi_handler_script(options):
         print(WSGI_DEFAULT_SCRIPT % options, file=fp)
 
 SERVER_METRICS_SCRIPT = """
-from mod_wsgi.server.newrelic.main import start
+import logging
 
-start('%(host)s:%(port)s')
+logging.basicConfig(level=logging.INFO,
+    format='%%(name)s (pid=%%(process)d, level=%%(levelname)s): %%(message)s')
+
+_logger = logging.getLogger(__name__)
+
+try:
+    from mod_wsgi.metrics.newrelic import Agent
+
+    agent = Agent()
+    agent.start()
+
+except ImportError:
+    _logger.fatal('The module mod_wsgi.metrics.newrelic is not available. '
+            'The New Relic platform plugin has been disabled. Install the '
+            '"mod_wsgi-metrics" package.')
 """
 
 def generate_server_metrics_script(options):

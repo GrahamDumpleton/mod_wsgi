@@ -1070,7 +1070,10 @@ InterpreterObject *newInterpreterObject(const char *name)
 #endif
 
     PyModule_AddObject(module, "server_metrics", PyCFunction_New(
-                       &wsgi_process_server_metrics_method[0], NULL));
+                       &wsgi_server_metrics_method[0], NULL));
+
+    PyModule_AddObject(module, "process_metrics", PyCFunction_New(
+                       &wsgi_process_metrics_method[0], NULL));
 
     /* Done with the 'mod_wsgi' module. */
 
@@ -1188,9 +1191,6 @@ InterpreterObject *newInterpreterObject(const char *name)
     object = PyString_FromString(str);
 #endif
     PyModule_AddObject(module, "build_date", object);
-
-    PyModule_AddObject(module, "server_metrics", PyCFunction_New(
-                       &wsgi_apache_server_metrics_method[0], NULL));
 
     /* Done with the 'apache' module. */
 
