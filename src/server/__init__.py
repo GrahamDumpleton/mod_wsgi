@@ -345,12 +345,12 @@ WSGIDaemonProcess express display-name=%%{GROUP} threads=1 server-metrics=On
 
 APACHE_METRICS_CONFIG = """
 WSGIImportScript '%(server_root)s/server-metrics.py' \\
-    process-group=express application-group=%%{GLOBAL}
+    process-group=express application-group=server-metrics
 """
 
 APACHE_WDB_CONFIG = """
 WSGIImportScript '%(server_root)s/wdb-server.py' \\
-    process-group=express application-group=%%{GLOBAL}
+    process-group=express application-group=wdb-server
 """
 
 def generate_apache_config(options):
