@@ -981,9 +981,10 @@ InterpreterObject *newInterpreterObject(const char *name)
      * 'mod_wsgi' module.
      */
 
-    PyModule_AddObject(module, "version", Py_BuildValue("(ii)",
+    PyModule_AddObject(module, "version", Py_BuildValue("(iii)",
                        MOD_WSGI_MAJORVERSION_NUMBER,
-                       MOD_WSGI_MINORVERSION_NUMBER));
+                       MOD_WSGI_MINORVERSION_NUMBER,
+                       MOD_WSGI_MICROVERSION_NUMBER));
 
     /* Add type object for file wrapper. */
 
@@ -1133,9 +1134,10 @@ InterpreterObject *newInterpreterObject(const char *name)
      * module.
      */
 
-    PyModule_AddObject(module, "version", Py_BuildValue("(ii)",
+    PyModule_AddObject(module, "version", Py_BuildValue("(iii)",
                        AP_SERVER_MAJORVERSION_NUMBER,
-                       AP_SERVER_MINORVERSION_NUMBER));
+                       AP_SERVER_MINORVERSION_NUMBER,
+                       AP_SERVER_PATCHLEVEL_NUMBER));
 
     /*
      * Add information about the Apache MPM configuration and

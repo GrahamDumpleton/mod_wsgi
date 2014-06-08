@@ -2195,7 +2195,13 @@ static PyObject *Adapter_environ(AdapterObject *self)
 
     PyDict_SetItemString(vars, "wsgi.file_wrapper", (PyObject *)&Stream_Type);
 
-    /* Add mod_wsgi version information. */
+    /* Add Apache and mod_wsgi version information. */
+
+    object = Py_BuildValue("(iii)", AP_SERVER_MAJORVERSION_NUMBER,
+                           AP_SERVER_MINORVERSION_NUMBER,
+                           AP_SERVER_PATCHLEVEL_NUMBER);
+    PyDict_SetItemString(vars, "apache.version", object);
+    Py_DECREF(object);
 
     object = Py_BuildValue("(iii)", MOD_WSGI_MAJORVERSION_NUMBER,
                            MOD_WSGI_MINORVERSION_NUMBER,
@@ -11713,6 +11719,18 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
         PyDict_SetItemString(vars, "PATH_INFO", object);
         Py_DECREF(object);
     }
+
+    object = Py_BuildValue("(iii)", AP_SERVER_MAJORVERSION_NUMBER,
+                           AP_SERVER_MINORVERSION_NUMBER,
+                           AP_SERVER_PATCHLEVEL_NUMBER);
+    PyDict_SetItemString(vars, "apache.version", object);
+    Py_DECREF(object);
+
+    object = Py_BuildValue("(iii)", MOD_WSGI_MAJORVERSION_NUMBER,
+                           MOD_WSGI_MINORVERSION_NUMBER,
+                           MOD_WSGI_MICROVERSION_NUMBER);
+    PyDict_SetItemString(vars, "mod_wsgi.version", object);
+    Py_DECREF(object);
 
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_FromString("");
