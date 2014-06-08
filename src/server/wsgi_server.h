@@ -1,5 +1,5 @@
-#ifndef WSGI_SERVER
-#define WSGI_SERVER
+#ifndef WSGI_SERVER_H
+#define WSGI_SERVER_H
 
 /* ------------------------------------------------------------------------- */
 
@@ -106,6 +106,8 @@ typedef struct {
     int enable_sendfile;
 
     apr_hash_t *handler_scripts;
+
+    int server_metrics;
 
     const char *newrelic_config_file;
     const char *newrelic_environment;

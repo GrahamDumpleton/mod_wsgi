@@ -87,6 +87,8 @@ APR_DECLARE_OPTIONAL_FN(char *, ssl_var_lookup, (apr_pool_t *,
 #include "http_request.h"
 #include "util_script.h"
 #include "util_md5.h"
+#include "mpm_common.h"
+#include "scoreboard.h"
 
 #ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(wsgi);

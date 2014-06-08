@@ -1,4 +1,4 @@
-from __future__ import print_function, division
+from __future__ import print_function, division, absolute_import
 
 import os
 import sys
@@ -126,7 +126,7 @@ LoadModule alias_module '%(modules_directory)s/mod_alias.so'
 LoadModule dir_module '%(modules_directory)s/mod_dir.so'
 LoadModule wsgi_module '%(mod_wsgi_so)s'
 
-<IfDefine WSGI_SERVER_STATUS>
+<IfDefine WSGI_SERVER_METRICS>
 LoadModule status_module '%(modules_directory)s/mod_status.so'
 </IfDefine>
 
@@ -173,7 +173,8 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
-   header-buffer-size=%(header_buffer_size)s
+   header-buffer-size=%(header_buffer_size)s \\
+   server-metrics=%(daemon_server_metrics_flag)s
 </IfDefine>
 <IfDefine !WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
@@ -195,13 +196,17 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
-   header-buffer-size=%(header_buffer_size)s
+   header-buffer-size=%(header_buffer_size)s \\
+   server-metrics=%(daemon_server_metrics_flag)s
 </IfDefine>
 WSGICallableObject '%(callable_object)s'
 WSGIPassAuthorization On
 
-<IfDefine WSGI_SERVER_STATUS>
+<IfDefine WSGI_SERVER_METRICS>
 ExtendedStatus On
+</IfDefine>
+
+<IfDefine WSGI_SERVER_STATUS>
 <Location /server-status>
     SetHandler server-status
     Order deny,allow
@@ -334,10 +339,18 @@ APACHE_INCLUDE_CONFIG = """
 Include '%(filename)s'
 """
 
+APACHE_TOOLS_CONFIG = """
+WSGIDaemonProcess express display-name=%%{GROUP} threads=1 server-metrics=On
+"""
+
+APACHE_METRICS_CONFIG = """
+WSGIImportScript '%(server_root)s/server-metrics.py' \\
+    process-group=express application-group=server-metrics
+"""
+
 APACHE_WDB_CONFIG = """
-WSGIDaemonProcess wdb-server display-name=%%{GROUP} threads=1
 WSGIImportScript '%(server_root)s/wdb-server.py' \\
-    process-group=wdb-server application-group=%%{GLOBAL}
+    process-group=express application-group=wdb-server
 """
 
 def generate_apache_config(options):
@@ -376,6 +389,12 @@ def generate_apache_config(options):
                 filename = os.path.abspath(filename)
                 print(APACHE_INCLUDE_CONFIG % dict(filename=filename),
                         file=fp)
+
+        if options['with_newrelic_platform'] or options['with_wdb']:
+            print(APACHE_TOOLS_CONFIG % options, file=fp)
+
+        if options['with_newrelic_platform']:
+            print(APACHE_METRICS_CONFIG % options, file=fp)
 
         if options['with_wdb']:
             print(APACHE_WDB_CONFIG % options, file=fp)
@@ -419,7 +438,7 @@ def _modified(path):
 
         if mtime != _times[path]:
             return True
-    except:
+    except Exception:
         # If any exception occured, likely that file has been
         # been removed just before stat(), so force a restart.
 
@@ -430,7 +449,7 @@ def _modified(path):
 def _monitor():
     global _files
 
-    while 1:
+    while True:
         # Check modification times on all files in sys.modules.
 
         for module in list(sys.modules.values()):
@@ -455,7 +474,8 @@ def _monitor():
 
         try:
             return _queue.get(timeout=_interval)
-        except:
+
+        except queue.Empty:
             pass
 
 _thread = threading.Thread(target=_monitor)
@@ -464,7 +484,7 @@ _thread.setDaemon(True)
 def _exiting():
     try:
         _queue.put(True)
-    except:
+    except Exception:
         pass
     _thread.join()
 
@@ -507,7 +527,7 @@ class ApplicationHandler(object):
 
         try:
             self.mtime = os.path.getmtime(script)
-        except:
+        except Exception:
             self.mtime = None
 
         if with_newrelic:
@@ -539,7 +559,7 @@ class ApplicationHandler(object):
     def reload_required(self, environ):
         try:
             mtime = os.path.getmtime(self.script)
-        except:
+        except Exception:
             mtime = None
 
         return mtime != self.mtime
@@ -564,7 +584,7 @@ import mod_wsgi.server
 
 script = '%(script)s'
 callable_object = '%(callable_object)s'
-with_newrelic = %(with_newrelic)s
+with_newrelic = %(with_newrelic_agent)s
 with_wdb = %(with_wdb)s
 
 handler = mod_wsgi.server.ApplicationHandler(script, callable_object,
@@ -629,6 +649,31 @@ def generate_wsgi_handler_script(options):
     path = os.path.join(options['server_root'], 'default.wsgi')
     with open(path, 'w') as fp:
         print(WSGI_DEFAULT_SCRIPT % options, file=fp)
+
+SERVER_METRICS_SCRIPT = """
+import logging
+
+logging.basicConfig(level=logging.INFO,
+    format='%%(name)s (pid=%%(process)d, level=%%(levelname)s): %%(message)s')
+
+_logger = logging.getLogger(__name__)
+
+try:
+    from mod_wsgi.metrics.newrelic import Agent
+
+    agent = Agent()
+    agent.start()
+
+except ImportError:
+    _logger.fatal('The module mod_wsgi.metrics.newrelic is not available. '
+            'The New Relic platform plugin has been disabled. Install the '
+            '"mod_wsgi-metrics" package.')
+"""
+
+def generate_server_metrics_script(options):
+    path = os.path.join(options['server_root'], 'server-metrics.py')
+    with open(path, 'w') as fp:
+        print(SERVER_METRICS_SCRIPT % options, file=fp)
 
 WDB_SERVER_SCRIPT = """
 from wdb_server import server
@@ -715,6 +760,12 @@ def generate_control_scripts(options):
         if options['envvars_script']:
             print(APACHE_ENVVARS_FILE.lstrip() % options, file=fp)
 
+def check_percentage(option, opt_str, value, parser):
+    if value is not None and value < 0 or value > 1:
+        raise optparse.OptionValueError('%s option value needs to be within '
+                'the range 0 to 1.' % opt_str)
+    setattr(parser.values, option.dest, value)
+
 option_list = (
     optparse.make_option('--host', default=None, metavar='IP-ADDRESS',
             help='The specific host (IP address) interface on which '
@@ -736,8 +787,27 @@ option_list = (
     optparse.make_option('--max-clients', type='int', default=None,
             metavar='NUMBER', help='The maximum number of simultaneous '
             'client connections that will be accepted. This will default '
-            'to being 1.25 times the total number of threads in the '
+            'to being 1.5 times the total number of threads in the '
             'request thread pools across all process handling requests.'),
+
+    optparse.make_option('--initial-workers', type='float', default=None,
+            metavar='NUMBER', action='callback', callback=check_percentage,
+            help='The initial number of workers to create on startup '
+            'expressed as a percentage of the maximum number of clients. '
+            'The value provided should be between 0 and 1. The default is '
+            'dependent on the type of MPM being used.'),
+    optparse.make_option('--minimum-spare-workers', type='float',
+            default=None, metavar='NUMBER', action='callback',
+            callback=check_percentage, help='The minimum number of spare '
+            'workers to maintain expressed as a percentage of the maximum '
+            'number of clients. The value provided should be between 0 and '
+            '1. The default is dependent on the type of MPM being used.'),
+    optparse.make_option('--maximum-spare-workers', type='float',
+            default=None, metavar='NUMBER', action='callback',
+            callback=check_percentage, help='The maximum number of spare '
+            'workers to maintain expressed as a percentage of the maximum '
+            'number of clients. The value provided should be between 0 and '
+            '1. The default is dependent on the type of MPM being used.'),
 
     optparse.make_option('--limit-request-body', type='int', default=10485760,
             metavar='NUMBER', help='The maximum number of bytes which are '
@@ -868,10 +938,15 @@ option_list = (
             'to be made over the same connection. Defaults to 0, indicating '
             'that keep alive connections are disabled.'),
 
+    optparse.make_option('--server-metrics', action='store_true',
+            default=False, help='Flag indicating whether internal server '
+            'metrics will be available within the WSGI application. '
+            'Defaults to being disabled.'),
     optparse.make_option('--server-status', action='store_true',
             default=False, help='Flag indicating whether web server status '
             'will be available at the /server-status sub URL. Defaults to '
-            'being disabled'),
+            'being disabled.'),
+
     optparse.make_option('--include-file', action='append',
             dest='include_files', metavar='FILE-PATH', help='Specify the '
             'path to an additional web server configuration file to be '
@@ -934,9 +1009,18 @@ option_list = (
             'file used by the web server.'),
 
     optparse.make_option('--with-newrelic', action='store_true',
-            default=False, help='Flag indicating whether New Relic '
-            'performance monitoring should be enabled for the WSGI '
-            'application.'),
+            default=False, help='Flag indicating whether all New Relic '
+            'performance monitoring features should be enabled.'),
+
+    optparse.make_option('--with-newrelic-agent', action='store_true',
+            default=False, help='Flag indicating whether the New Relic '
+            'Python agent should be enabled for reporting application server '
+            'metrics.'),
+    optparse.make_option('--with-newrelic-platform', action='store_true',
+            default=False, help='Flag indicating whether the New Relic '
+            'platform plugin should be enabled for reporting server level '
+            'metrics.'),
+
     optparse.make_option('--with-wdb', action='store_true', default=False,
             help='Flag indicating whether the wdb interactive debugger '
             'should be enabled for the WSGI application.'),
@@ -1062,7 +1146,22 @@ def _cmd_setup_server(args, options):
 
     options['keep_alive'] = options['keep_alive_timeout'] != 0
 
+    if options['server_metrics']:
+        options['daemon_server_metrics_flag'] = 'On'
+    else:
+        options['daemon_server_metrics_flag'] = 'Off'
+
+    if options['with_newrelic']:
+        options['with_newrelic_agent'] = True
+        options['with_newrelic_platform'] = True
+
+    if options['with_newrelic_platform']:
+        options['server_metrics'] = True
+
     generate_wsgi_handler_script(options)
+
+    if options['with_newrelic_platform']:
+        generate_server_metrics_script(options)
 
     if options['with_wdb']:
         generate_wdb_server_script(options)
@@ -1072,13 +1171,50 @@ def _cmd_setup_server(args, options):
     if options['max_clients'] is not None:
         max_clients = max(options['max_clients'], max_clients)
     else:
-        max_clients = int(1.25 * max_clients)
+        max_clients = int(1.5 * max_clients)
+
+    initial_workers = options['initial_workers']
+    min_spare_workers = options['minimum_spare_workers']
+    max_spare_workers = options['maximum_spare_workers']
+
+    if initial_workers is None:
+        prefork_initial_workers = 0.02
+    else:
+        prefork_initial_workers = initial_workers
+
+    if min_spare_workers is None:
+        prefork_min_spare_workers = prefork_initial_workers
+    else:
+        prefork_min_spare_workers = min_spare_workers
+
+    if max_spare_workers is None:
+        prefork_max_spare_workers = 0.05
+    else:
+        prefork_max_spare_workers = max_spare_workers
 
     options['prefork_max_clients'] = max_clients
     options['prefork_server_limit'] = max_clients
-    options['prefork_start_servers'] = max(1, int(0.1 * max_clients))
-    options['prefork_min_spare_servers'] = options['prefork_start_servers']
-    options['prefork_max_spare_servers'] = max(1, int(0.4 * max_clients))
+    options['prefork_start_servers'] = max(1, int(
+            prefork_initial_workers * max_clients))
+    options['prefork_min_spare_servers'] = max(1, int(
+            prefork_min_spare_workers * max_clients))
+    options['prefork_max_spare_servers'] = max(1, int(
+            prefork_max_spare_workers * max_clients))
+
+    if initial_workers is None:
+        worker_initial_workers = 0.2
+    else:
+        worker_initial_workers = initial_workers
+
+    if min_spare_workers is None:
+        worker_min_spare_workers = worker_initial_workers
+    else:
+        worker_min_spare_workers = min_spare_workers
+
+    if max_spare_workers is None:
+        worker_max_spare_workers = 0.6
+    else:
+        worker_max_spare_workers = max_spare_workers
 
     options['worker_max_clients'] = max_clients
 
@@ -1098,15 +1234,15 @@ def _cmd_setup_server(args, options):
     options['worker_max_clients'] = (options['worker_server_limit'] *
             options['worker_threads_per_child'])
 
-    options['worker_start_servers'] = max(1, int(0.1 *
-            options['worker_server_limit']))
+    options['worker_start_servers'] = max(1,
+            int(worker_initial_workers * options['worker_server_limit']))
     options['worker_min_spare_threads'] = max(
             options['worker_threads_per_child'],
-            int(0.2 * options['worker_server_limit']) *
+            int(worker_min_spare_workers * options['worker_server_limit']) *
             options['worker_threads_per_child'])
     options['worker_max_spare_threads'] = max(
             options['worker_threads_per_child'],
-            int(0.4 * options['worker_server_limit']) *
+            int(worker_max_spare_workers * options['worker_server_limit']) *
             options['worker_threads_per_child'])
 
     options['httpd_conf'] = os.path.join(options['server_root'], 'httpd.conf')
@@ -1138,7 +1274,10 @@ def _cmd_setup_server(args, options):
         options['url'] = 'http://%s:%s/' % (options['host'],
             options['port'])
 
+    if options['server_metrics']:
+        options['httpd_arguments_list'].append('-DWSGI_SERVER_METRICS')
     if options['server_status']:
+        options['httpd_arguments_list'].append('-DWSGI_SERVER_METRICS')
         options['httpd_arguments_list'].append('-DWSGI_SERVER_STATUS')
     if options['access_log']:
         options['httpd_arguments_list'].append('-DWSGI_ACCESS_LOG')

@@ -339,6 +339,8 @@ InterpreterObject *newInterpreterObject(const char *name)
     int is_threaded = 0;
     int is_forked = 0;
 
+    const char *str = NULL;
+
     /* Create handle for interpreter and local data. */
 
     self = PyObject_New(InterpreterObject, &Interpreter_Type);
@@ -979,9 +981,10 @@ InterpreterObject *newInterpreterObject(const char *name)
      * 'mod_wsgi' module.
      */
 
-    PyModule_AddObject(module, "version", Py_BuildValue("(ii)",
+    PyModule_AddObject(module, "version", Py_BuildValue("(iii)",
                        MOD_WSGI_MAJORVERSION_NUMBER,
-                       MOD_WSGI_MINORVERSION_NUMBER));
+                       MOD_WSGI_MINORVERSION_NUMBER,
+                       MOD_WSGI_MICROVERSION_NUMBER));
 
     /* Add type object for file wrapper. */
 
@@ -1066,8 +1069,11 @@ InterpreterObject *newInterpreterObject(const char *name)
     PyModule_AddObject(module, "threads_per_process", object);
 #endif
 
-    PyModule_AddObject(module, "thread_utilization", PyCFunction_New(
-                       &wsgi_get_utilization_method[0], NULL));
+    PyModule_AddObject(module, "server_metrics", PyCFunction_New(
+                       &wsgi_server_metrics_method[0], NULL));
+
+    PyModule_AddObject(module, "process_metrics", PyCFunction_New(
+                       &wsgi_process_metrics_method[0], NULL));
 
     /* Done with the 'mod_wsgi' module. */
 
@@ -1131,21 +1137,15 @@ InterpreterObject *newInterpreterObject(const char *name)
      * module.
      */
 
-    PyModule_AddObject(module, "version", Py_BuildValue("(ii)",
+    PyModule_AddObject(module, "version", Py_BuildValue("(iii)",
                        AP_SERVER_MAJORVERSION_NUMBER,
-                       AP_SERVER_MINORVERSION_NUMBER));
+                       AP_SERVER_MINORVERSION_NUMBER,
+                       AP_SERVER_PATCHLEVEL_NUMBER));
 
     /*
      * Add information about the Apache MPM configuration and
      * the number of processes and threads available.
      */
-
-#if PY_MAJOR_VERSION >= 3
-    PyModule_AddObject(module, "mpm_name", PyUnicode_DecodeLatin1(MPM_NAME,
-                       strlen(MPM_NAME), NULL));
-#else
-    PyModule_AddObject(module, "mpm_name", PyString_FromString(MPM_NAME));
-#endif
 
     ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
     if (is_threaded != AP_MPMQ_NOT_SUPPORTED) {
@@ -1167,6 +1167,30 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     object = PyLong_FromLong(max_threads);
     PyModule_AddObject(module, "threads_per_process", object);
+
+    str = ap_get_server_description();
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_DecodeLatin1(str, strlen(str), NULL);
+#else
+    object = PyString_FromString(str);
+#endif
+    PyModule_AddObject(module, "description", object);
+
+    str = MPM_NAME;
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_DecodeLatin1(str, strlen(str), NULL);
+#else
+    object = PyString_FromString(str);
+#endif
+    PyModule_AddObject(module, "mpm_name", object);
+
+    str = ap_get_server_built();
+#if PY_MAJOR_VERSION >= 3
+    object = PyUnicode_DecodeLatin1(str, strlen(str), NULL);
+#else
+    object = PyString_FromString(str);
+#endif
+    PyModule_AddObject(module, "build_date", object);
 
     /* Done with the 'apache' module. */
 

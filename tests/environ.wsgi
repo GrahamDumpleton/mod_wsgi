@@ -24,6 +24,10 @@ def application(environ, start_response):
     print('GID: %s' % os.getgid(), file=output)
     print(file=output)
 
+    print('apache.version: %r' % (apache.version,), file=output)
+    print('mod_wsgi.version: %r' % (mod_wsgi.version,), file=output)
+    print(file=output)
+
     print('mod_wsgi.process_group: %s' % mod_wsgi.process_group,
             file=output)
     print('mod_wsgi.application_group: %s' % mod_wsgi.application_group,
@@ -34,8 +38,23 @@ def application(environ, start_response):
             file=output)
     print('mod_wsgi.threads_per_process: %s' % mod_wsgi.threads_per_process,
             file=output)
+    print('mod_wsgi.process_metrics: %s' % mod_wsgi.process_metrics(),
+            file=output)
+    print('mod_wsgi.server_metrics: %s' % mod_wsgi.server_metrics(),
+            file=output)
     print(file=output)
 
+    metrics = mod_wsgi.server_metrics()
+
+    if metrics:
+        for process in metrics['processes']:
+           for worker in process['workers']:
+               print(worker['status'], file=output, end='')
+        print(file=output)
+        print(file=output)
+
+    print('apache.description: %s' % apache.description, file=output)
+    print('apache.build_date: %s' % apache.build_date, file=output)
     print('apache.mpm_name: %s' % apache.mpm_name, file=output)
     print('apache.maximum_processes: %s' % apache.maximum_processes,
             file=output)

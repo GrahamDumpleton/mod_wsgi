@@ -2195,7 +2195,13 @@ static PyObject *Adapter_environ(AdapterObject *self)
 
     PyDict_SetItemString(vars, "wsgi.file_wrapper", (PyObject *)&Stream_Type);
 
-    /* Add mod_wsgi version information. */
+    /* Add Apache and mod_wsgi version information. */
+
+    object = Py_BuildValue("(iii)", AP_SERVER_MAJORVERSION_NUMBER,
+                           AP_SERVER_MINORVERSION_NUMBER,
+                           AP_SERVER_PATCHLEVEL_NUMBER);
+    PyDict_SetItemString(vars, "apache.version", object);
+    Py_DECREF(object);
 
     object = Py_BuildValue("(iii)", MOD_WSGI_MAJORVERSION_NUMBER,
                            MOD_WSGI_MINORVERSION_NUMBER,
@@ -4996,6 +5002,28 @@ static const char *wsgi_add_handler_script(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_server_metrics(cmd_parms *cmd, void *mconfig,
+                                           const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (strcasecmp(f, "Off") == 0)
+        sconfig->server_metrics = 0;
+    else if (strcasecmp(f, "On") == 0)
+        sconfig->server_metrics = 1;
+    else
+        return "WSGIServerMetrics must be one of: Off | On";
+
+    return NULL;
+}
+
 static const char *wsgi_set_newrelic_config_file(
         cmd_parms *cmd, void *mconfig, const char *f)
 {
@@ -6305,6 +6333,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int groups_count = 0;
     gid_t *groups = NULL;
 
+    int server_metrics = 0;
+
     const char *newrelic_config_file = NULL;
     const char *newrelic_environment = NULL;
 
@@ -6617,6 +6647,17 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (virtual_memory_limit < 0)
                 return "Invalid virtual memory limit for WSGI daemon process.";
         }
+        else if (!strcmp(option, "server-metrics")) {
+            if (!*value)
+                return "Invalid server metrics flag for WSGI daemon process.";
+
+            if (strcasecmp(value, "Off") == 0)
+                server_metrics = 0;
+            else if (strcasecmp(value, "On") == 0)
+                server_metrics = 1;
+            else
+                return "Invalid server metrics flag for WSGI daemon process.";
+        }
         else if (!strcmp(option, "newrelic-config-file")) {
             newrelic_config_file = value;
         }
@@ -6733,6 +6774,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     entry->memory_limit = memory_limit;
     entry->virtual_memory_limit = virtual_memory_limit;
+
+    entry->server_metrics = server_metrics;
 
     entry->newrelic_config_file = newrelic_config_file;
     entry->newrelic_environment = newrelic_environment;
@@ -9188,6 +9231,13 @@ static int wsgi_start_daemons(apr_pool_t *p)
     return OK;
 }
 
+static apr_pool_t *wsgi_pconf_pool = NULL;
+
+static int wsgi_deferred_start_daemons(apr_pool_t *p, ap_scoreboard_e sb_type)
+{
+    return wsgi_start_daemons(wsgi_pconf_pool);
+}
+
 static apr_status_t wsgi_socket_connect_un(apr_socket_t *sock,
                                            struct sockaddr_un *sa)
 {
@@ -9206,7 +9256,9 @@ static apr_status_t wsgi_socket_connect_un(apr_socket_t *sock,
     }
 
     do {
-        rv = connect(rawsock, (struct sockaddr*)sa, sizeof(*sa));
+        rv = connect(rawsock, (struct sockaddr*)sa,
+                     APR_OFFSETOF(struct sockaddr_un, sun_path)
+                     + strlen(sa->sun_path) + 1);
     } while (rv == -1 && errno == EINTR);
 
     if ((rv == -1) && (errno == EINPROGRESS || errno == EALREADY)
@@ -11205,10 +11257,39 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
     if (!wsgi_python_after_fork)
         wsgi_python_init(pconf);
 
-    /* Startup separate named daemon processes. */
+    /*
+     * Startup separate named daemon processes. This is
+     * a bit tricky as we only want to do this after the
+     * scoreboard has been created. On the initial server
+     * startup though, this hook function is called prior
+     * to the MPM being run, which means the scoreboard
+     * hasn't been created yet. In that case we need to
+     * defer process creation until after that, which we
+     * can only do by hooking into the pre_mpm hook after
+     * scoreboard creation has been done. On a server
+     * restart, the scoreboard will be preserved, so we
+     * can do it here, which is just as well as the pre_mpm
+     * hook isn't run on a restart.
+     */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    status = wsgi_start_daemons(pconf);
+    if (!ap_scoreboard_image) {
+        /*
+         * Need to remember the pool we were given here as
+         * the pre_mpm hook functions get given a different
+         * pool which isn't the one we want and if we use
+         * that then Apache will crash when it is being
+         * shutdown. So our pre_mpm hook will use the pool
+         * we have remembered here.
+         */
+
+        wsgi_pconf_pool = pconf;
+
+        ap_hook_pre_mpm(wsgi_deferred_start_daemons, NULL, NULL,
+                        APR_HOOK_REALLY_LAST);
+    }
+    else
+        status = wsgi_start_daemons(pconf);
 #endif
 
     return status;
@@ -11638,6 +11719,18 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
         PyDict_SetItemString(vars, "PATH_INFO", object);
         Py_DECREF(object);
     }
+
+    object = Py_BuildValue("(iii)", AP_SERVER_MAJORVERSION_NUMBER,
+                           AP_SERVER_MINORVERSION_NUMBER,
+                           AP_SERVER_PATCHLEVEL_NUMBER);
+    PyDict_SetItemString(vars, "apache.version", object);
+    Py_DECREF(object);
+
+    object = Py_BuildValue("(iii)", MOD_WSGI_MAJORVERSION_NUMBER,
+                           MOD_WSGI_MINORVERSION_NUMBER,
+                           MOD_WSGI_MICROVERSION_NUMBER);
+    PyDict_SetItemString(vars, "mod_wsgi.version", object);
+    Py_DECREF(object);
 
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_FromString("");
@@ -13386,6 +13479,9 @@ static const command_rec wsgi_commands[] =
 
     AP_INIT_RAW_ARGS("WSGIHandlerScript", wsgi_add_handler_script,
         NULL, ACCESS_CONF|RSRC_CONF, "Location of WSGI handler script file."),
+
+    AP_INIT_TAKE1("WSGIServerMetrics", wsgi_set_server_metrics,
+        NULL, RSRC_CONF, "Enabled/Disable access to server metrics."),
 
     AP_INIT_TAKE1("WSGINewRelicConfigFile", wsgi_set_newrelic_config_file,
         NULL, RSRC_CONF, "New Relic monitoring agent configuration file."),
