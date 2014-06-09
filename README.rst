@@ -176,7 +176,7 @@ user account you have created for running the Python web application::
         --user www-data --group www-data
 
 This approach to running ``mod_wsgi-express`` will be fine so long as you
-are using a process supoervisor which expects the started process to remain
+are using a process supervisor which expects the started process to remain
 in the foreground and not daemonize.
 
 If however you are directly integrating into the system init scripts where
@@ -192,10 +192,10 @@ In this case, instead of simply using the ``start-server`` command to
         --server-root=/etc/mod_wsgi-express-80
 
 In running this command, it will not actually startup Apache. All it will do
-is created the set of configuration files and startup script to be run.
+is create the set of configuration files and startup script to be run.
 
 So that these are not created in the default location of a directory under
-``/tmp``, you should use the ``-server-root`` option to specify where they
+``/tmp``, you should use the ``--server-root`` option to specify where they
 should be placed.
 
 Having created the configuration and startup script, to start the Apache
