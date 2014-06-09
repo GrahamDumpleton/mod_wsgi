@@ -129,6 +129,103 @@ For a complete list of options you can run::
 Further information on using the mod_wsgi express version see the main
 mod_wsgi documentation.
 
+Non standard Apache installations
+---------------------------------
+
+Many Linux distributions have a tendency to screw around with the standard
+Apache Software Foundation layout for installation of Apache. This can
+include renaming the Apache ``httpd`` executable to something else, and in
+addition to potentially renaming it, replacing the original binary with a
+shell script which performs additional actions which can only be performed
+as the ``root`` user.
+
+In the case of the ``httpd`` executable simply being renamed, the
+executable will obviously not be found and mod_wsgi express will fail to
+start at all.
+
+In this case you should work out what the ``httpd`` executable was renamed
+to and use the ``--httpd-executable`` option to specify its real location.
+
+For example, if ``httpd`` was renamed to ``apache2``, you might need to use::
+
+    mod_wsgi-express start-server wsgi.py --httpd-executable=/usr/sbin/apache2
+
+In the case of the ``httpd`` executable being replaced with a shell script
+which performs additional actions before then executing the original
+``httpd`` executable, and the shell script is failing in some way, you will
+need to use the location of the original ``httpd`` executable the shell
+script is in turn executing.
+
+Running mod_wsgi express as root
+--------------------------------
+
+The primary intention of mod_wsgi express is to make it easier for users
+to run up Apache on non privileged ports, especially during the development
+of a Python web application. If you want to be able to run Apache using
+mod_wsgi express on a privileged port such as the standard port 80 used by
+HTTP servers, then you will need to run ``mod_wsgi-express`` as root. In
+doing this, you will need to perform additional steps.
+
+The first thing you must do is supply the ``--user`` and ``--group``
+options to say what user and group your Python web application should run
+as. Most Linux distrbutions will pre define a special user for Apache to
+run as, so you can use that. Alternatively you can use any other special
+user account you have created for running the Python web application::
+
+    mod_wsgi-express start-server wsgi.py --port=80 \
+        --user www-data --group www-data
+
+This approach to running ``mod_wsgi-express`` will be fine so long as you
+are using a process supoervisor which expects the started process to remain
+in the foreground and not daemonize.
+
+If however you are directly integrating into the system init scripts where
+separate start and stop commands are expected, with the executing process
+expected to be daemonized, then a different process is required to setup
+mod_wsgi express.
+
+In this case, instead of simply using the ``start-server`` command to
+``mod_wsgi-express`` you should use ``setup-server``::
+
+    mod_wsgi-express start-server wsgi.py --port=80 \
+        --user www-data --group www-data \
+        --server-root=/etc/mod_wsgi-express-80
+
+In running this command, it will not actually startup Apache. All it will do
+is created the set of configuration files and startup script to be run.
+
+So that these are not created in the default location of a directory under
+``/tmp``, you should use the ``-server-root`` option to specify where they
+should be placed.
+
+Having created the configuration and startup script, to start the Apache
+instance you can now run::
+
+    /etc/mod_wsgi-express-80/apachectl start
+
+To subsequently stop the Apache instance you can run::
+
+    /etc/mod_wsgi-express-80/apachectl stop
+
+You can also restart the Apache instance as necessary using::
+
+    /etc/mod_wsgi-express-80/apachectl restart
+
+Using this approach, the original options you supplied to ``setup-server``
+will effectively be cached with the resulting configuration used each time.
+If you need to update the set of options, run ``setup-server`` again with
+the new set of options.
+
+Note that even taking all these steps, it is possible that running up
+Apache as ``root`` using mod_wsgi express may fail on systems where SELinux
+extensions are enabled. This is because the SELinux profile may not match
+what is being expected for the way that Apache is being started, or
+alternatively, the locations that Apache has been specified as being
+allowed to access, don't match where the directory specified using the
+``--server-root`` directory was placed. You may therefore need to configure
+SELinux or move the directory used with ``--server-root`` to an allowed
+location.
+
 Using mod_wsgi express with Django
 ----------------------------------
 
