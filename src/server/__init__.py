@@ -68,7 +68,9 @@ def find_mimetypes():
         return name
 
 APACHE_GENERAL_CONFIG = """
+<IfModule !version_module>
 LoadModule version_module '%(modules_directory)s/mod_version.so'
+</IfModule>
 
 ServerName %(host)s
 ServerRoot '%(server_root)s'
@@ -113,21 +115,42 @@ LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
 </IfVersion>
 
 <IfVersion >= 2.4>
+<IfModule !access_compat_module>
 LoadModule access_compat_module '%(modules_directory)s/mod_access_compat.so'
+</IfModule>
+<IfModule !unixd_module>
 LoadModule unixd_module '%(modules_directory)s/mod_unixd.so'
+</IfModule>
+<IfModule !authn_core_module>
 LoadModule authn_core_module '%(modules_directory)s/mod_authn_core.so'
+</IfModule>
+<IfModule !authz_core_module>
 LoadModule authz_core_module '%(modules_directory)s/mod_authz_core.so'
+</IfModule>
 </IfVersion>
 
+<IfModule !authz_host_module>
 LoadModule authz_host_module '%(modules_directory)s/mod_authz_host.so'
+</IfModule>
+<IfModule !mime_module>
 LoadModule mime_module '%(modules_directory)s/mod_mime.so'
+</IfModule>
+<IfModule !rewrite_module>
 LoadModule rewrite_module '%(modules_directory)s/mod_rewrite.so'
+</IfModule>
+<IfModule !alias_module>
 LoadModule alias_module '%(modules_directory)s/mod_alias.so'
+</IfModule>
+<IfModule !dir_module>
 LoadModule dir_module '%(modules_directory)s/mod_dir.so'
+</IfModule>
+
 LoadModule wsgi_module '%(mod_wsgi_so)s'
 
 <IfDefine WSGI_SERVER_METRICS>
+<IfModule !status_module>
 LoadModule status_module '%(modules_directory)s/mod_status.so'
+</IfModule>
 </IfDefine>
 
 <IfVersion < 2.4>
@@ -227,7 +250,9 @@ ErrorLog '%(error_log)s'
 LogLevel %(log_level)s
 
 <IfDefine WSGI_ACCESS_LOG>
+<IfModule !log_config_module>
 LoadModule log_config_module %(modules_directory)s/mod_log_config.so
+</IfModule>
 LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b" common
 CustomLog "%(log_directory)s/access_log" common
 </IfDefine>
