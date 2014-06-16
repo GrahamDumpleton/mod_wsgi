@@ -1062,17 +1062,17 @@ option_list = (
             'be made available at the /__wsgi__/docs sub URL.'),
 )
 
-def cmd_setup_server(params, usage=None):
+def cmd_setup_server(params):
     formatter = optparse.IndentedHelpFormatter()
     formatter.set_long_opt_delimiter(' ')
 
-    usage = usage or '%prog setup-server script [options]'
+    usage = '%prog setup-server script [options]'
     parser = optparse.OptionParser(usage=usage, option_list=option_list,
             formatter=formatter)
 
     (options, args) = parser.parse_args(params)
 
-    return _cmd_setup_server('setup-server', args, vars(options))
+    _cmd_setup_server('setup-server', args, vars(options))
 
 def _mpm_module_defines(modules_directory):
     result = []
@@ -1358,12 +1358,19 @@ def _cmd_setup_server(command, args, options):
     return options
 
 def cmd_start_server(params):
+    formatter = optparse.IndentedHelpFormatter()
+    formatter.set_long_opt_delimiter(' ')
+
     usage = '%prog start-server script [options]'
+    parser = optparse.OptionParser(usage=usage, option_list=option_list,
+            formatter=formatter)
 
-    options = _cmd_setup_server('start-server', params, usage)
+    (options, args) = parser.parse_args(params)
 
-    executable = os.path.join(options['server_root'], 'apachectl')
-    name = executable.ljust(len(options['process_name']))
+    config = _cmd_setup_server('start-server', args, vars(options))
+
+    executable = os.path.join(config['server_root'], 'apachectl')
+    name = executable.ljust(len(config['process_name']))
     os.execl(executable, name, 'start', '-DNO_DETACH')
 
 def cmd_install_module(params):
