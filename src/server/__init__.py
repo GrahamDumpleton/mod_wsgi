@@ -402,7 +402,8 @@ def generate_apache_config(options):
                             mount_point=mount_point, directory=directory,
                             filename=filename), file=fp)
 
-        print(APACHE_ALIAS_DOCUMENTATION % options, file=fp)
+        if options['enable_docs']:
+            print(APACHE_ALIAS_DOCUMENTATION % options, file=fp)
 
         if options['error_documents']:
             for status, document in options['error_documents']:
