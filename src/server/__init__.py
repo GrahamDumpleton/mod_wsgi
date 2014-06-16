@@ -1072,7 +1072,7 @@ def cmd_setup_server(params, usage=None):
 
     (options, args) = parser.parse_args(params)
 
-    return _cmd_setup_server(args, vars(options))
+    return _cmd_setup_server('setup-server', args, vars(options))
 
 def _mpm_module_defines(modules_directory):
     result = []
@@ -1083,7 +1083,7 @@ def _mpm_module_defines(modules_directory):
             result.append('-DWSGI_MPM_%s_MODULE' % name.upper())
     return result
 
-def _cmd_setup_server(args, options):
+def _cmd_setup_server(command, args, options):
     options['mod_wsgi_so'] = where()
 
     options['working_directory'] = options['working_directory'] or os.getcwd()
@@ -1333,26 +1333,34 @@ def _cmd_setup_server(args, options):
     generate_apache_config(options)
     generate_control_scripts(options)
 
-    print('Server URL      :', options['url'])
+    print('Server URL        :', options['url'])
 
     if options['server_status']:
-        print('Server Status   :', '%sserver-status' % options['url'])
+        print('Server Status     :', '%sserver-status' % options['url'])
 
-    print('Server Root     :', options['server_root'])
-    print('Server Conf     :', options['httpd_conf'])
+    print('Server Root       :', options['server_root'])
+    print('Server Conf       :', options['httpd_conf'])
 
-    print('Error Log       :', options['error_log'])
+    print('Error Log File    :', options['error_log'])
 
     if options['access_log']:
-        print('Access Log      :', os.path.join(options['log_directory'],
-    'access_log'))
+        print('Access Log File   :', os.path.join(options['log_directory'],
+                'access_log'))
+
+    if options['envvars_script']:
+        print('Environ Variables :', options['envvars_script'])
+
+    if command == 'setup-server':
+        if not options['envvars_script']:
+            print('Environ Variables :', options['server_root'] + '/envvars')
+        print('Control Script    :', options['server_root'] + '/apachectl')
 
     return options
 
 def cmd_start_server(params):
     usage = '%prog start-server script [options]'
 
-    options = cmd_setup_server(params, usage)
+    options = _cmd_setup_server('start-server', params, usage)
 
     executable = os.path.join(options['server_root'], 'apachectl')
     name = executable.ljust(len(options['process_name']))
