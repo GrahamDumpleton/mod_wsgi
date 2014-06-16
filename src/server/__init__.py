@@ -782,9 +782,15 @@ def generate_control_scripts(options):
     os.chmod(path, 0o755)
 
     path = os.path.join(options['server_root'], 'envvars')
-    with open(path, 'w') as fp:
-        if options['envvars_script']:
-            print(APACHE_ENVVARS_FILE.lstrip() % options, file=fp)
+
+    if options['envvars_script']:
+        with open(path, 'w') as fp:
+            if options['envvars_script']:
+                print(APACHE_ENVVARS_FILE.lstrip() % options, file=fp)
+
+    elif not os.path.isfile(path):
+        with open(path, 'w') as fp:
+            pass
 
 def check_percentage(option, opt_str, value, parser):
     if value is not None and value < 0 or value > 1:
