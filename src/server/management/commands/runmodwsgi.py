@@ -44,7 +44,8 @@ class Command(BaseCommand):
 
         options['url_aliases'] = url_aliases
 
-        options = mod_wsgi.server._cmd_setup_server(args, options)
+        options = mod_wsgi.server._cmd_setup_server(
+                'start-server', args, options)
 
         executable = os.path.join(options['server_root'], 'apachectl')
         name = executable.ljust(len(options['process_name']))
