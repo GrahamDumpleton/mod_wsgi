@@ -7087,7 +7087,7 @@ static void wsgi_setup_daemon_name(WSGIDaemonProcess *daemon, apr_pool_t *p)
 #endif
 }
 
-static void wsgi_setup_access(WSGIDaemonProcess *daemon)
+static int wsgi_setup_access(WSGIDaemonProcess *daemon)
 {
     /* Setup the umask for the effective user. */
 
@@ -7101,6 +7101,8 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                          "mod_wsgi (pid=%d): Unable to change root "
                          "directory to '%s'.", getpid(), daemon->group->root);
+
+            return -1;
         }
     }
 
@@ -7111,6 +7113,8 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                          "mod_wsgi (pid=%d): Unable to change working "
                          "directory to '%s'.", getpid(), daemon->group->home);
+
+            return -1;
         }
     }
     else if (geteuid()) {
@@ -7123,12 +7127,16 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
                 ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                              "mod_wsgi (pid=%d): Unable to change working "
                              "directory to '%s'.", getpid(), pwent->pw_dir);
+
+            return -1;
             }
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                          "mod_wsgi (pid=%d): Unable to determine home "
                          "directory for uid=%ld.", getpid(), (long)geteuid());
+
+            return -1;
         }
     }
     else {
@@ -7141,6 +7149,8 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
                 ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                              "mod_wsgi (pid=%d): Unable to change working "
                              "directory to '%s'.", getpid(), pwent->pw_dir);
+
+                return -1;
             }
         }
         else {
@@ -7148,13 +7158,15 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
                          "mod_wsgi (pid=%d): Unable to determine home "
                          "directory for uid=%ld.", getpid(),
                          (long)daemon->group->uid);
+
+            return -1;
         }
     }
 
     /* Don't bother switch user/group if not root. */
 
     if (geteuid())
-        return;
+        return 0;
 
     /* Setup the daemon process real and effective group. */
 
@@ -7162,6 +7174,8 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
         ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                      "mod_wsgi (pid=%d): Unable to set group id to gid=%u.",
                      getpid(), (unsigned)daemon->group->gid);
+
+        return -1;
     }
     else {
         if (daemon->group->groups) {
@@ -7172,6 +7186,8 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
                              "to set supplementary groups for uname=%s "
                              "of '%s'.", getpid(), daemon->group->user,
                              daemon->group->groups_list);
+
+                return -1;
             }
         }
         else if (initgroups(daemon->group->user, daemon->group->gid) == -1) {
@@ -7179,6 +7195,8 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
                          wsgi_server, "mod_wsgi (pid=%d): Unable "
                          "to set groups for uname=%s and gid=%u.", getpid(),
                          daemon->group->user, (unsigned)daemon->group->gid);
+
+            return -1;
         }
     }
 
@@ -7196,7 +7214,18 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
          * reached their process limit. In that case will be left
          * running as wrong user. Just exit on all failures to be
          * safe. Don't die immediately to avoid a fork bomb.
+         *
+         * We could just return -1 here and let the caller do the
+         * sleep() and exit() but this failure is critical enough
+         * that we still do it here so it is obvious that the issue
+         * is being addressed.
          */
+
+        ap_log_error(APLOG_MARK, APLOG_ALERT, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Failure to configure the "
+                     "daemon process correctly and process left in "
+                     "unspecified state. Restarting daemon process "
+                     "after delay.", getpid());
 
         sleep(20);
 
@@ -7219,6 +7248,8 @@ static void wsgi_setup_access(WSGIDaemonProcess *daemon)
         }
     }
 #endif
+
+    return 0;
 }
 
 static int wsgi_setup_socket(WSGIProcessGroup *process)
@@ -8561,7 +8592,24 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         /* Setup daemon process user/group/umask etc. */
 
-        wsgi_setup_access(daemon);
+        if (wsgi_setup_access(daemon) == -1) {
+            /*
+             * If we get any failure from setting up the appropriate
+             * permissions or working directory for the daemon process
+             * then we exit the process. Don't die immediately to avoid
+             * a fork bomb.
+             */
+
+            ap_log_error(APLOG_MARK, APLOG_ALERT, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Failure to configure the "
+                         "daemon process correctly and process left in "
+                         "unspecified state. Restarting daemon process "
+                         "after delay.", getpid());
+
+            sleep(20);
+
+            exit(-1);
+        }
 
         /* Reinitialise accept mutex in daemon process. */
 
