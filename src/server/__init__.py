@@ -1060,6 +1060,14 @@ option_list = (
     optparse.make_option('--enable-docs', action='store_true', default=False,
             help='Flag indicating whether the mod_wsgi documentation should '
             'be made available at the /__wsgi__/docs sub URL.'),
+
+    optparse.make_option('--setup-only', action='store_true', default=False,
+            help='Flag indicating that after the configuration files have '
+            'been setup, that the command should then exit and not go on '
+            'to actually run up the Apache server. This is to allow for '
+            'the generation of the configuration with Apache then later '
+            'being started separately using the generated \'apachectl\' '
+            'script.'),
 )
 
 def cmd_setup_server(params):
@@ -1350,7 +1358,7 @@ def _cmd_setup_server(command, args, options):
     if options['envvars_script']:
         print('Environ Variables :', options['envvars_script'])
 
-    if command == 'setup-server':
+    if command == 'setup-server' or options['setup_only']:
         if not options['envvars_script']:
             print('Environ Variables :', options['server_root'] + '/envvars')
         print('Control Script    :', options['server_root'] + '/apachectl')
@@ -1368,6 +1376,9 @@ def cmd_start_server(params):
     (options, args) = parser.parse_args(params)
 
     config = _cmd_setup_server('start-server', args, vars(options))
+
+    if config['setup_only']:
+        return
 
     executable = os.path.join(config['server_root'], 'apachectl')
     name = executable.ljust(len(config['process_name']))

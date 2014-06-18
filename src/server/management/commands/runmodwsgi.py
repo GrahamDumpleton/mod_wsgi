@@ -8,7 +8,7 @@ import mod_wsgi.server
 
 class Command(BaseCommand):
     option_list = BaseCommand.option_list + mod_wsgi.server.option_list
-    args = '[options]'
+    args = ''
     help = 'Starts Apache/mod_wsgi web server.'
 
     def handle(self, *args, **options):
@@ -46,6 +46,9 @@ class Command(BaseCommand):
 
         options = mod_wsgi.server._cmd_setup_server(
                 'start-server', args, options)
+
+        if options['setup_only']:
+            return
 
         executable = os.path.join(options['server_root'], 'apachectl')
         name = executable.ljust(len(options['process_name']))
