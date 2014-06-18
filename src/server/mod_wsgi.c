@@ -6690,7 +6690,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
         group_name = ap_getword(cmd->pool, &items, ',');
 
         while (group_name && *group_name) {
-            if (groups_count > groups_maximum)
+            if (groups_count >= groups_maximum)
                 return "Too many supplementary groups WSGI daemon process";
 
             groups[groups_count++] = ap_gname2id(group_name);
