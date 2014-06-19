@@ -24,6 +24,7 @@ def application(environ, start_response):
     print('GID: %s' % os.getgid(), file=output)
     print(file=output)
 
+    print('python.version: %r' % (sys.version,), file=output)
     print('apache.version: %r' % (apache.version,), file=output)
     print('mod_wsgi.version: %r' % (mod_wsgi.version,), file=output)
     print(file=output)
