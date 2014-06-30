@@ -1,6 +1,6 @@
 include configure.ac
 include configure
-include LICENCE
+include LICENSE
 include Makefile.in
 include README.rst
 include src/server/*.h
