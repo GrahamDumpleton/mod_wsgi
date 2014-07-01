@@ -1089,6 +1089,7 @@ def _mpm_module_defines(modules_directory):
         if os.path.exists(os.path.join(modules_directory,
                 'mod_mpm_%s.so' % name)):
             result.append('-DWSGI_MPM_%s_MODULE' % name.upper())
+            break
     return result
 
 def _cmd_setup_server(command, args, options):
