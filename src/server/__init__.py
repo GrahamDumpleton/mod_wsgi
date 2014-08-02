@@ -299,7 +299,7 @@ DocumentRoot '%(document_root)s'
 </Files>
 </Directory>
 
-<Directory '%(document_root)s'>
+<Directory '%(document_root)s%(mount_point)s'>
     RewriteEngine On
     RewriteCond %%{REQUEST_FILENAME} !-f
 <IfDefine WSGI_SERVER_STATUS>
@@ -535,10 +535,12 @@ def start_reloader(interval=1.0):
 
 class ApplicationHandler(object):
 
-    def __init__(self, script, callable_object='application',
+    def __init__(self, script, callable_object='application', mount_point='/',
             with_newrelic=False, with_wdb=False):
+
         self.script = script
         self.callable_object = callable_object
+        self.mount_point = mount_point
 
         self.module = imp.new_module('__wsgi__')
         self.module.__file__ = script
@@ -600,6 +602,11 @@ class ApplicationHandler(object):
         environ['SCRIPT_NAME'] = ''
         environ['PATH_INFO'] = script_name + path_info
 
+        if self.mount_point != '/':
+            if environ['PATH_INFO'].startswith(self.mount_point):
+                environ['SCRIPT_NAME'] = self.mount_point
+                environ['PATH_INFO'] = environ['PATH_INFO'][len(self.mount_point):]
+
         return self.application(environ, start_response)
 
     def __call__(self, environ, start_response):
@@ -610,11 +617,12 @@ import mod_wsgi.server
 
 script = '%(script)s'
 callable_object = '%(callable_object)s'
+mount_point = '%(mount_point)s'
 with_newrelic = %(with_newrelic_agent)s
 with_wdb = %(with_wdb)s
 
 handler = mod_wsgi.server.ApplicationHandler(script, callable_object,
-        with_newrelic=with_newrelic, with_wdb=with_wdb)
+        mount_point, with_newrelic=with_newrelic, with_wdb=with_wdb)
 
 reload_required = handler.reload_required
 handle_request = handler.handle_request
@@ -952,6 +960,11 @@ option_list = (
             help='The directory which should be used as the document root '
             'and which contains any static files.'),
 
+    optparse.make_option('--mount-point', metavar='URL-PATH', default='/',
+            help='The URL path at which the WSGI application will be '
+            'mounted. Defaults to being mounted at the root URL of the '
+            'site.'),
+
     optparse.make_option('--url-alias', action='append', nargs=2,
             dest='url_aliases', metavar='URL-PATH FILE-PATH|DIRECTORY-PATH',
             help='Map a single static file or a directory of static files '
@@ -1147,6 +1160,20 @@ def _cmd_setup_server(command, args, options):
         os.mkdir(options['document_root'])
     except Exception:
         pass
+
+    if not options['mount_point'].startswith('/'):
+        options['mount_point'] = os.path.normpath('/' + options['mount_point'])
+
+    if options['mount_point'] != '/':
+        parts = options['mount_point'].rstrip('/').split('/')[1:]
+        subdir = options['document_root']
+        try:
+            for part in parts:
+                subdir = os.path.join(subdir, part)
+                if not os.path.exists(subdir):
+                    os.mkdir(subdir)
+        except Exception:
+            raise
 
     if not os.path.isabs(options['document_root']):
         options['document_root'] = os.path.abspath(options['document_root'])
