@@ -1168,7 +1168,11 @@ InterpreterObject *newInterpreterObject(const char *name)
     object = PyLong_FromLong(max_threads);
     PyModule_AddObject(module, "threads_per_process", object);
 
+#if AP_MODULE_MAGIC_AT_LEAST(20051115,4)
     str = ap_get_server_description();
+#else
+    str = ap_get_server_version();
+#endif
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(str, strlen(str), NULL);
 #else
