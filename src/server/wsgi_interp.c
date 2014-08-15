@@ -1348,10 +1348,13 @@ InterpreterObject *newInterpreterObject(const char *name)
 static void Interpreter_dealloc(InterpreterObject *self)
 {
     PyThreadState *tstate = NULL;
-    PyObject *exitfunc = NULL;
     PyObject *module = NULL;
 
     PyThreadState *tstate_enter = NULL;
+
+#if PY_MAJOR_VERSION < 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION < 4)
+    PyObject *exitfunc = NULL;
+#endif
 
     /*
      * We should always enter here with the Python GIL
