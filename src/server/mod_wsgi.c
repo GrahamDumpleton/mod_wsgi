@@ -8091,6 +8091,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
     return NULL;
 }
 
+#if (PY_MAJOR_VERSION >= 3) || (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 5)
 static void wsgi_log_stack_traces(void)
 {
     PyGILState_STATE state;
@@ -8203,6 +8204,7 @@ static void wsgi_log_stack_traces(void)
 
     PyGILState_Release(state);
 }
+#endif
 
 static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 {
@@ -8470,8 +8472,10 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
      * which are running as a debugging aid.
      */
 
+#if (PY_MAJOR_VERSION >= 3) || (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 5)
     if (wsgi_dump_stack_traces)
         wsgi_log_stack_traces();
+#endif
 
     /*
      * Attempt a graceful shutdown by waiting for any
