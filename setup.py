@@ -122,6 +122,14 @@ LD_RUN_PATH = LD_RUN_PATH.lstrip(':')
 
 os.environ['LD_RUN_PATH'] = LD_RUN_PATH
 
+# If using Python 3.4, then minimum MacOS X version you can use is 10.8.
+# We have to force this with the compiler otherwise Python 3.4 sets it
+# to 10.6 which screws up Apache APR % formats for apr_time_t, which
+# breaks daemon mode queue time.
+
+if sys.version_info >= (3, 4):
+    os.environ['MACOSX_DEPLOYMENT_TARGET'] = '10.8'
+
 # Now add the definitions to build everything.
 
 extension_name = 'mod_wsgi.server.mod_wsgi-py%s%s' % sys.version_info[:2]
