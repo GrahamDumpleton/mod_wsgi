@@ -14,13 +14,6 @@ need updating. As most new changes relate to mod_wsgi daemon mode, which is
 not supported under Windows, you should keep using the last available
 binary for version 3.X on Windows instead.
 
-New Features
-------------
-
-1. Added a ``--mount-point`` option to ``mod_wsgi-express`` to allow a WSGI
-application to be mounted at a sub URL rather than the root of the site
-when using mod_wsgi express.
-
 Bugs Fixed
 ----------
 
