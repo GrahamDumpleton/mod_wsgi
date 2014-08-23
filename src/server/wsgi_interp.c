@@ -1989,7 +1989,16 @@ void wsgi_python_init(apr_pool_t *p)
             }
         }
 
-        /* Check for Python HOME being overridden. */
+#if defined(WIN32)
+        /*
+         * Check for Python HOME being overridden. This is only being
+         * used on Windows for now. For UNIX systems we actually do
+         * a fiddle and work out where the Python executable would be
+         * and set its location instead. This is to get around some
+         * brokeness in pyvenv in Python 3.X. We don't know if that
+         * workaround works for Windows yet, but since not supporting
+         * Windows for mod_wsgi 4.X as yet, doesn't matter.
+         */
 
         python_home = wsgi_server_config->python_home;
 
@@ -2024,6 +2033,59 @@ void wsgi_python_init(apr_pool_t *p)
 
             Py_SetPythonHome((char *)python_home);
         }
+#endif
+#else
+        /*
+         * Check for Python HOME being overridden. What we are actually
+         * going to do though is work out where the Python executable
+         * would be that the designated installation and set the
+         * location for where it is. This avoids bugs in pyvenv support
+         * for embedded systems.
+         */
+
+        python_home = wsgi_server_config->python_home;
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+        if (wsgi_daemon_process && wsgi_daemon_process->group->python_home)
+            python_home = wsgi_daemon_process->group->python_home;
+#endif
+
+#if PY_MAJOR_VERSION >= 3
+        if (python_home) {
+            const char *python_exe = 0;
+            wchar_t *s = NULL;
+            int len = 0;
+
+            python_exe = apr_pstrcat(p, python_home, "/bin/python", NULL);
+
+            len = strlen(python_exe)+1;
+
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Python home %s.", getpid(),
+                         python_home);
+
+            s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
+
+#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
+            wsgi_utf8_to_unicode_path(s, len, python_exe);
+#else
+            mbstowcs(s, python_exe, len);
+#endif
+            Py_SetProgramName(s);
+        }
+#else
+        if (python_home) {
+            const char *python_exe = 0;
+
+            python_exe = apr_pstrcat(p, python_home, "/bin/python", NULL);
+
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Python home %s.", getpid(),
+                         python_home);
+
+            Py_SetProgramName((char *)python_exe);
+        }
+#endif
 #endif
 
         /*
