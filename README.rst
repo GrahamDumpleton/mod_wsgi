@@ -187,7 +187,7 @@ mod_wsgi express.
 In this case, instead of simply using the ``start-server`` command to
 ``mod_wsgi-express`` you should use ``setup-server``::
 
-    mod_wsgi-express start-server wsgi.py --port=80 \
+    mod_wsgi-express setup-server wsgi.py --port=80 \
         --user www-data --group www-data \
         --server-root=/etc/mod_wsgi-express-80
 
@@ -264,6 +264,16 @@ option.
 
     python manage.py runmodwsgi --reload-on-changes
 
+If wanting to have Apache started as root in order to listen on port 80,
+instead of using ``mod_wsgi-express setup-server`` as described above,
+use the ``--setup-only`` option to the ``runmodwsgi`` management command.
+
+::
+
+    python manage.py runmodwsgi --setup-only --port=80 \
+        --user www-data --group www-data \
+        --server-root=/etc/mod_wsgi-express-80
+    
 Using mod_wsgi express with New Relic
 -------------------------------------
 
