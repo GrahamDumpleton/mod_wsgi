@@ -173,6 +173,8 @@ LimitRequestBody %(limit_request_body)s
 </Directory>
 
 WSGIPythonHome '%(python_home)s'
+
+<IfDefine !ONE_PROCESS>
 WSGIRestrictEmbedded On
 WSGISocketPrefix %(server_root)s/wsgi
 <IfDefine WSGI_MULTIPROCESS>
@@ -222,8 +224,14 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    header-buffer-size=%(header_buffer_size)s \\
    server-metrics=%(daemon_server_metrics_flag)s
 </IfDefine>
+</IfDefine>
+
 WSGICallableObject '%(callable_object)s'
 WSGIPassAuthorization On
+
+<IfDefine ONE_PROCESS>
+WSGIRestrictStdin Off
+</IfDefine>
 
 <IfDefine WSGI_SERVER_METRICS>
 ExtendedStatus On
@@ -258,15 +266,25 @@ CustomLog "%(log_directory)s/access_log" common
 </IfDefine>
 
 <IfModule mpm_prefork_module>
+<IfDefine !ONE_PROCESS>
 ServerLimit %(prefork_server_limit)s
 StartServers %(prefork_start_servers)s
 MaxClients %(prefork_max_clients)s
 MinSpareServers %(prefork_min_spare_servers)s
 MaxSpareServers %(prefork_max_spare_servers)s
+</IfDefine>
+<IfDefine ONE_PROCESS>
+ServerLimit 1
+StartServers 1
+MaxClients 1
+MinSpareServers 1
+MaxSpareServers 1
+</IfDefine>
 MaxRequestsPerChild 0
 </IfModule>
 
 <IfModule mpm_worker_module>
+<IfDefine !ONE_PROCESS>
 ServerLimit %(worker_server_limit)s
 ThreadLimit %(worker_thread_limit)s
 StartServers %(worker_start_servers)s
@@ -274,11 +292,22 @@ MaxClients %(worker_max_clients)s
 MinSpareThreads %(worker_min_spare_threads)s
 MaxSpareThreads %(worker_max_spare_threads)s
 ThreadsPerChild %(worker_threads_per_child)s
+</IfDefine>
+<IfDefine ONE_PROCESS>
+ServerLimit 1
+ThreadLimit 1
+StartServers 1 
+MaxClients 1
+MinSpareThreads 1
+MaxSpareThreads 1
+ThreadsPerChild 1
+</IfDefine>
 MaxRequestsPerChild 0
 ThreadStackSize 262144
 </IfModule>
 
 <IfModule mpm_event_module>
+<IfDefine !ONE_PROCESS>
 ServerLimit %(worker_server_limit)s
 ThreadLimit %(worker_thread_limit)s
 StartServers %(worker_start_servers)s
@@ -286,6 +315,16 @@ MaxClients %(worker_max_clients)s
 MinSpareThreads %(worker_min_spare_threads)s
 MaxSpareThreads %(worker_max_spare_threads)s
 ThreadsPerChild %(worker_threads_per_child)s
+</IfDefine>
+<IfDefine ONE_PROCESS>
+ServerLimit 1
+ThreadLimit 1
+StartServers 1
+MaxClients 1
+MinSpareThreads 1
+MaxSpareThreads 1
+ThreadsPerChild 1
+</IfDefine>
 MaxRequestsPerChild 0
 ThreadStackSize 262144
 </IfModule>
@@ -314,10 +353,19 @@ DocumentRoot '%(document_root)s'
 WSGIErrorOverride On
 </IfDefine>
 
+<IfDefine !ONE_PROCESS>
 WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
 WSGIImportScript '%(server_root)s/handler.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
+</IfDefine>
+
+<IfDefine ONE_PROCESS>
+WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
+    process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
+WSGIImportScript '%(server_root)s/handler.wsgi' \\
+    process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
+</IfDefine>
 """
 
 APACHE_ALIAS_DIRECTORY_CONFIG = """
@@ -1074,6 +1122,14 @@ option_list = (
             help='Flag indicating whether the mod_wsgi documentation should '
             'be made available at the /__wsgi__/docs sub URL.'),
 
+    optparse.make_option('--debug-mode', action='store_true', default=False,
+            help='Flag indicating whether to run in single process mode '
+            'to allow the running of an interactive Python debugger. This '
+            'will override all options related to processes, threads and '
+            'communication with workers. Both stdin and stdout will be '
+            'attached to the console to allow interaction with the Python '
+            'debugger.'),
+
     optparse.make_option('--setup-only', action='store_true', default=False,
             help='Flag indicating that after the configuration files have '
             'been setup, that the command should then exit and not go on '
@@ -1341,6 +1397,9 @@ def _cmd_setup_server(command, args, options):
     else:
         options['url'] = 'http://%s:%s/' % (options['host'],
             options['port'])
+
+    if options['debug_mode']:
+        options['httpd_arguments_list'].append('-DONE_PROCESS')
 
     if options['server_metrics']:
         options['httpd_arguments_list'].append('-DWSGI_SERVER_METRICS')
