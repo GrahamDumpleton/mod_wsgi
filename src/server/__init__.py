@@ -584,7 +584,7 @@ def start_reloader(interval=1.0):
 class ApplicationHandler(object):
 
     def __init__(self, script, callable_object='application', mount_point='/',
-            with_newrelic=False, with_wdb=False):
+            with_newrelic=False, with_wdb=False, debug_mode=False):
 
         self.script = script
         self.callable_object = callable_object
@@ -612,6 +612,8 @@ class ApplicationHandler(object):
         if with_wdb:
             self.setup_wdb()
 
+        self.debug_mode = debug_mode
+
     def setup_newrelic(self):
         import newrelic.agent
 
@@ -633,6 +635,9 @@ class ApplicationHandler(object):
         self.application = WdbMiddleware(self.application)
 
     def reload_required(self, environ):
+        if self.debug_mode:
+            return False
+
         try:
             mtime = os.path.getmtime(self.script)
         except Exception:
@@ -668,14 +673,17 @@ callable_object = '%(callable_object)s'
 mount_point = '%(mount_point)s'
 with_newrelic = %(with_newrelic_agent)s
 with_wdb = %(with_wdb)s
+reload_on_changes = %(reload_on_changes)s
+debug_mode = %(debug_mode)s
 
 handler = mod_wsgi.server.ApplicationHandler(script, callable_object,
-        mount_point, with_newrelic=with_newrelic, with_wdb=with_wdb)
+        mount_point, with_newrelic=with_newrelic, with_wdb=with_wdb,
+        debug_mode=debug_mode)
 
 reload_required = handler.reload_required
 handle_request = handler.handle_request
 
-if %(reload_on_changes)s:
+if reload_on_changes and not debug_mode:
     mod_wsgi.server.start_reloader()
 """
 
@@ -1126,9 +1134,9 @@ option_list = (
             help='Flag indicating whether to run in single process mode '
             'to allow the running of an interactive Python debugger. This '
             'will override all options related to processes, threads and '
-            'communication with workers. Both stdin and stdout will be '
-            'attached to the console to allow interaction with the Python '
-            'debugger.'),
+            'communication with workers. All forms of source code reloading '
+            'will also be disabled. Both stdin and stdout will be attached '
+            'to the console to allow interaction with the Python debugger.'),
 
     optparse.make_option('--setup-only', action='store_true', default=False,
             help='Flag indicating that after the configuration files have '
