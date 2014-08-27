@@ -12134,10 +12134,31 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                     else if (result == Py_False) {
                         status = AUTH_DENIED;
                     }
+#if PY_MAJOR_VERSION >= 3
+                    else if (PyUnicode_Check(result)) {
+                        PyObject *str = NULL;
+
+                        str = PyUnicode_AsUTF8String(result);
+
+                        if (str) {
+                            adapter->r->user = apr_pstrdup(adapter->r->pool,
+                                    PyString_AsString(str));
+
+                            status = AUTH_GRANTED;
+                        }
+                    }
+#else
+                    else if (PyString_Check(result)) {
+                        adapter->r->user = apr_pstrdup(adapter->r->pool,
+                                PyString_AsString(result));
+
+                        status = AUTH_GRANTED;
+                    }
+#endif
                     else {
                         PyErr_SetString(PyExc_TypeError, "Basic auth "
                                         "provider must return True, False "
-                                        "or None");
+                                        "None or user name as string");
                     }
 
                     Py_DECREF(result);
