@@ -583,26 +583,34 @@ def start_reloader(interval=1.0):
 
 class ApplicationHandler(object):
 
-    def __init__(self, script, callable_object='application', mount_point='/',
+    def __init__(self, entry_point, application_type='script',
+            callable_object='application', mount_point='/',
             with_newrelic=False, with_wdb=False, debug_mode=False):
 
-        self.script = script
+        self.entry_point = entry_point
+        self.application_type = application_type
         self.callable_object = callable_object
         self.mount_point = mount_point
 
-        self.module = imp.new_module('__wsgi__')
-        self.module.__file__ = script
+        if application_type == 'module':
+            __import__(entry_point)
+            self.module = sys.modules[entry_point]
 
-        with open(script, 'r') as fp:
-            code = compile(fp.read(), script, 'exec', dont_inherit=True)
-            exec(code, self.module.__dict__)
+        else:
+            self.module = imp.new_module('__wsgi__')
+            self.module.__file__ = entry_point
+
+            with open(entry_point, 'r') as fp:
+                code = compile(fp.read(), entry_point, 'exec',
+                        dont_inherit=True)
+                exec(code, self.module.__dict__)
+
+            sys.modules['__wsgi__'] = self.module
 
         self.application = getattr(self.module, callable_object)
 
-        sys.modules['__wsgi__'] = self.module
-
         try:
-            self.mtime = os.path.getmtime(script)
+            self.mtime = os.path.getmtime(self.module.__file__)
         except Exception:
             self.mtime = None
 
@@ -639,7 +647,7 @@ class ApplicationHandler(object):
             return False
 
         try:
-            mtime = os.path.getmtime(self.script)
+            mtime = os.path.getmtime(self.module.__file__)
         except Exception:
             mtime = None
 
@@ -668,7 +676,8 @@ class ApplicationHandler(object):
 WSGI_HANDLER_SCRIPT = """
 import mod_wsgi.server
 
-script = '%(script)s'
+entry_point = '%(entry_point)s'
+application_type = '%(application_type)s'
 callable_object = '%(callable_object)s'
 mount_point = '%(mount_point)s'
 with_newrelic = %(with_newrelic_agent)s
@@ -676,9 +685,10 @@ with_wdb = %(with_wdb)s
 reload_on_changes = %(reload_on_changes)s
 debug_mode = %(debug_mode)s
 
-handler = mod_wsgi.server.ApplicationHandler(script, callable_object,
-        mount_point, with_newrelic=with_newrelic, with_wdb=with_wdb,
-        debug_mode=debug_mode)
+handler = mod_wsgi.server.ApplicationHandler(entry_point,
+        application_type=application_type, callable_object=callable_object,
+        mount_point=mount_point, with_newrelic=with_newrelic,
+        with_wdb=with_wdb, debug_mode=debug_mode)
 
 reload_required = handler.reload_required
 handle_request = handler.handle_request
@@ -863,6 +873,15 @@ def check_percentage(option, opt_str, value, parser):
     setattr(parser.values, option.dest, value)
 
 option_list = (
+    optparse.make_option('--application-type', default='script',
+            metavar='TYPE', help='The type of WSGI application entry point '
+            'that was provided. Defaults to \'script\', indicating the '
+            'traditional mod_wsgi style WSGI script file specified by a '
+            'filesystem path. Alternatively one can supply \'module\', '
+            'indicating that the provided entry point is a Python module '
+            'which should be imported using the standard Python import '
+            'mechanism.'),
+
     optparse.make_option('--host', default=None, metavar='IP-ADDRESS',
             help='The specific host (IP address) interface on which '
             'requests are to be accepted. Defaults to listening on '
@@ -1193,11 +1212,14 @@ def _cmd_setup_server(command, args, options):
         pass
 
     if not args:
-        options['script'] = os.path.join(options['server_root'],
+        options['entry_point'] = os.path.join(options['server_root'],
                 'default.wsgi')
+        options['application_type'] = 'script'
         options['enable_docs'] = True
+    elif options['application_type'] == 'script':
+        options['entry_point'] = os.path.abspath(args[0])
     else:
-        options['script'] = os.path.abspath(args[0])
+        options['entry_point'] = args[0]
 
     options['documentation_directory'] = os.path.join(os.path.dirname(
             os.path.dirname(__file__)), 'docs')
@@ -1210,8 +1232,8 @@ def _cmd_setup_server(command, args, options):
     else:
         options['documentation_url'] = 'http://www.modwsgi.org/'
 
-    options['script_directory'] = os.path.dirname(options['script'])
-    options['script_filename'] = os.path.basename(options['script'])
+    # options['script_directory'] = os.path.dirname(options['script'])
+    # options['script_filename'] = os.path.basename(options['script'])
 
     if not os.path.isabs(options['server_root']):
         options['server_root'] = os.path.abspath(options['server_root'])
