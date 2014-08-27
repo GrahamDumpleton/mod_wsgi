@@ -595,6 +595,16 @@ class ApplicationHandler(object):
         if application_type == 'module':
             __import__(entry_point)
             self.module = sys.modules[entry_point]
+            self.application = getattr(self.module, callable_object)
+            self.target = self.module.__file__
+            parts = os.path.splitext(self.target)[-1]
+            if parts[-1].lower() in ('.pyc', '.pyd', '.pyd'):
+                self.target = parts[0] + '.py'
+
+        elif application_type == 'paste':
+            from paste.deploy import loadapp
+            self.application = loadapp('config:%s' % entry_point)
+            self.target = entry_point
 
         else:
             self.module = imp.new_module('__wsgi__')
@@ -606,11 +616,11 @@ class ApplicationHandler(object):
                 exec(code, self.module.__dict__)
 
             sys.modules['__wsgi__'] = self.module
-
-        self.application = getattr(self.module, callable_object)
+            self.application = getattr(self.module, callable_object)
+            self.target = entry_point
 
         try:
-            self.mtime = os.path.getmtime(self.module.__file__)
+            self.mtime = os.path.getmtime(self.target)
         except Exception:
             self.mtime = None
 
@@ -647,7 +657,7 @@ class ApplicationHandler(object):
             return False
 
         try:
-            mtime = os.path.getmtime(self.module.__file__)
+            mtime = os.path.getmtime(self.target)
         except Exception:
             mtime = None
 
@@ -880,7 +890,8 @@ option_list = (
             'filesystem path. Alternatively one can supply \'module\', '
             'indicating that the provided entry point is a Python module '
             'which should be imported using the standard Python import '
-            'mechanism.'),
+            'mechanism, or \'paste\' indicating that the provided entry '
+            'point is a Paste deployment configuration file.'),
 
     optparse.make_option('--host', default=None, metavar='IP-ADDRESS',
             help='The specific host (IP address) interface on which '
@@ -1216,7 +1227,7 @@ def _cmd_setup_server(command, args, options):
                 'default.wsgi')
         options['application_type'] = 'script'
         options['enable_docs'] = True
-    elif options['application_type'] == 'script':
+    elif options['application_type'] in ('script', 'paste'):
         options['entry_point'] = os.path.abspath(args[0])
     else:
         options['entry_point'] = args[0]
@@ -1231,9 +1242,6 @@ def _cmd_setup_server(command, args, options):
         options['documentation_url'] = '/__wsgi__/docs/'
     else:
         options['documentation_url'] = 'http://www.modwsgi.org/'
-
-    # options['script_directory'] = os.path.dirname(options['script'])
-    # options['script_filename'] = os.path.basename(options['script'])
 
     if not os.path.isabs(options['server_root']):
         options['server_root'] = os.path.abspath(options['server_root'])
