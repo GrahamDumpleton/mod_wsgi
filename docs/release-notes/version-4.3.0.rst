@@ -17,12 +17,13 @@ binary for version 3.X on Windows instead.
 New Features
 ------------
 
-1. The value of the ``REMOTE_USER`` variable for an authenticated user can
-now be overridden from an authentication handler specified using the
-``WSGIAuthUserScript``. To override the name used to identify the user,
-instead of returning ``True`` when indicating that the user is allowed,
-return the name to be used for that user as a string. That value will then
-be passed through in ``REMOTE_USER`` in place of any original value::
+1. The value of the ``REMOTE_USER`` variable for an authenticated user
+when user ``Basic`` authentication can now be overridden from an
+authentication handler specified using the ``WSGIAuthUserScript``. To
+override the name used to identify the user, instead of returning ``True``
+when indicating that the user is allowed, return the name to be used for
+that user as a string. That value will then be passed through in
+``REMOTE_USER`` in place of any original value::
 
     def check_password(environ, user, password):
         if user == 'spy':
