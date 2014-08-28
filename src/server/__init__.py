@@ -145,6 +145,18 @@ LoadModule alias_module '%(modules_directory)s/mod_alias.so'
 LoadModule dir_module '%(modules_directory)s/mod_dir.so'
 </IfModule>
 
+<IfDefine WSGI_AUTH_USER>
+<IfModule !auth_basic_module>
+LoadModule auth_basic_module '%(modules_directory)s/mod_auth_basic.so'
+</IfModule>
+<IfModule !auth_digest_module>
+LoadModule auth_digest_module '%(modules_directory)s/mod_auth_digest.so'
+</IfModule>
+<IfModule !authz_user_module>
+LoadModule authz_user_module '%(modules_directory)s/mod_authz_user.so'
+</IfModule>
+</IfDefine>
+
 LoadModule wsgi_module '%(mod_wsgi_so)s'
 
 <IfDefine WSGI_SERVER_METRICS>
@@ -351,6 +363,16 @@ DocumentRoot '%(document_root)s'
 
 <IfDefine WSGI_ERROR_OVERRIDE>
 WSGIErrorOverride On
+</IfDefine>
+
+<IfDefine WSGI_AUTH_USER>
+<Location />
+    AuthType %(auth_type)s
+    AuthName '%(host)s:%(port)s'
+    Auth%(auth_type)sProvider wsgi
+    WSGIAuthUserScript '%(auth_user_script)s'
+    Require valid-user
+</Location>
 </IfDefine>
 
 <IfDefine !ONE_PROCESS>
@@ -1078,6 +1100,15 @@ option_list = (
             'will be available at the /server-status sub URL. Defaults to '
             'being disabled.'),
 
+    optparse.make_option('--auth-user-script', metavar='SCRIPT-PATH',
+            default=None, help='Specify an Python script file which '
+            'contains a check_password() function for authenticating '
+            'user access.'),
+    optparse.make_option('--auth-type', metavar='TYPE',
+            default='Basic', help='Specify the type of authentication '
+            'scheme used when authenticating users. Defaults to using '
+            '\'Basic\'. Alternate schemes available are \'Digest\'.'),
+
     optparse.make_option('--include-file', action='append',
             dest='include_files', metavar='FILE-PATH', help='Specify the '
             'path to an additional web server configuration file to be '
@@ -1231,6 +1262,10 @@ def _cmd_setup_server(command, args, options):
         options['entry_point'] = os.path.abspath(args[0])
     else:
         options['entry_point'] = args[0]
+
+    if options['auth_user_script']:
+        options['auth_user_script'] = os.path.abspath(
+                options['auth_user_script'])
 
     options['documentation_directory'] = os.path.join(os.path.dirname(
             os.path.dirname(__file__)), 'docs')
@@ -1454,6 +1489,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_LISTENER_HOST')
     if options['error_override']:
         options['httpd_arguments_list'].append('-DWSGI_ERROR_OVERRIDE')
+    if options['auth_user_script']:
+        options['httpd_arguments_list'].append('-DWSGI_AUTH_USER')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory']))

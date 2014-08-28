@@ -65,3 +65,10 @@ application entry point returned used as the WSGI application.
 Note that the code file for the WSGI script file, Python module, or Paste
 deployment configuration file, if modified, will all result in the WSGI
 application being automatically reloaded on the next web request.
+
+4. Added the ``--auth-user-script`` and ``--auth-type`` options to
+``mod_wsgi-express`` to enable the hosted site to implement user
+authentication using either HTTP ``Basic`` or ``Digest`` authentication
+mechanisms. The ``check_password()`` or ``get_realm_hash()`` functions
+should follow the same form as if using the ``WSGIAuthUserScript`` direct
+with mod_wsgi when using manual configuration.
