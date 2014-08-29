@@ -13250,6 +13250,11 @@ static authz_status wsgi_check_authorization(request_rec *r,
     const char *t, *w;
     int status;
 
+#if AP_MODULE_MAGIC_AT_LEAST(20100714,0)
+    if (!r->user)
+        return AUTHZ_DENIED_NO_USER;
+#endif
+
     config = wsgi_create_req_config(r->pool, r);
 
     if (!config->auth_group_script) {

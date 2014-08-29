@@ -14,6 +14,15 @@ need updating. As most new changes relate to mod_wsgi daemon mode, which is
 not supported under Windows, you should keep using the last available
 binary for version 3.X on Windows instead.
 
+Bugs Fixed
+----------
+
+1. Performing authorization using the ``WSGIAuthGroupScript`` was not
+working correctly on Apache 2.4 due to changes in how auth providers
+and authentication/authorization works. The result could be that a user
+could gain access to a resource even though they were not in the
+required group.
+
 New Features
 ------------
 
