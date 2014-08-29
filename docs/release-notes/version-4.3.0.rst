@@ -81,3 +81,15 @@ authentication using either HTTP ``Basic`` or ``Digest`` authentication
 mechanisms. The ``check_password()`` or ``get_realm_hash()`` functions
 should follow the same form as if using the ``WSGIAuthUserScript`` direct
 with mod_wsgi when using manual configuration.
+
+5. Added the ``--auth-group-script`` and ``--auth-group`` options to
+``mod_wsgi-express`` to enable group authorization to be performed using a
+group authorization script, in conjunction with a user authentication
+script. The ``groups_for_user()`` function should follow the same form as
+if using the ``WSGIAuthGroupScript`` direct with mod_wsgi when using manual
+configuration.
+
+By default any users must be a member of the ``wsgi`` group. The name of
+this group though can be overridden using the ``--auth-group`` option.
+It is recommended that this be overridden rather than changing your own
+application to use the ``wsgi`` group.

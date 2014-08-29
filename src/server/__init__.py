@@ -371,7 +371,23 @@ WSGIErrorOverride On
     AuthName '%(host)s:%(port)s'
     Auth%(auth_type)sProvider wsgi
     WSGIAuthUserScript '%(auth_user_script)s'
+<IfDefine WSGI_AUTH_GROUP>
+    WSGIAuthGroupScript '%(auth_group_script)s'
+</IfDefine>
+<IfVersion < 2.4>
     Require valid-user
+<IfDefine WSGI_AUTH_GROUP>
+    Require wsgi-group '%(auth_group)s'
+</IfDefine>
+</IfVersion>
+<IfVersion >= 2.4>
+    <RequireAll>
+    Require valid-user
+<IfDefine WSGI_AUTH_GROUP>
+    Require wsgi-group '%(auth_group)s'
+</IfDefine>
+    </RequireAll>
+</IfVersion>
 </Location>
 </IfDefine>
 
@@ -1101,13 +1117,23 @@ option_list = (
             'being disabled.'),
 
     optparse.make_option('--auth-user-script', metavar='SCRIPT-PATH',
-            default=None, help='Specify an Python script file which '
-            'contains a check_password() function for authenticating '
-            'user access.'),
+            default=None, help='Specify a Python script file for '
+            'performing user authentication.'),
     optparse.make_option('--auth-type', metavar='TYPE',
             default='Basic', help='Specify the type of authentication '
             'scheme used when authenticating users. Defaults to using '
             '\'Basic\'. Alternate schemes available are \'Digest\'.'),
+
+    optparse.make_option('--auth-group-script', metavar='SCRIPT-PATH',
+            default=None, help='Specify a Python script file for '
+            'performing group based authorization in conjunction with '
+            'a user authentication script.'),
+    optparse.make_option('--auth-group', metavar='SCRIPT-PATH',
+            default='wsgi', help='Specify the group which users should '
+            'be a member of when using a group based authorization script. '
+            'Defaults to \'wsgi\' as a place holder but should be '
+            'overridden to be the actual group you use rather than '
+            'making your group name match the default.'),
 
     optparse.make_option('--include-file', action='append',
             dest='include_files', metavar='FILE-PATH', help='Specify the '
@@ -1266,6 +1292,10 @@ def _cmd_setup_server(command, args, options):
     if options['auth_user_script']:
         options['auth_user_script'] = os.path.abspath(
                 options['auth_user_script'])
+
+    if options['auth_group_script']:
+        options['auth_group_script'] = os.path.abspath(
+                options['auth_group_script'])
 
     options['documentation_directory'] = os.path.join(os.path.dirname(
             os.path.dirname(__file__)), 'docs')
@@ -1491,6 +1521,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_ERROR_OVERRIDE')
     if options['auth_user_script']:
         options['httpd_arguments_list'].append('-DWSGI_AUTH_USER')
+    if options['auth_group_script']:
+        options['httpd_arguments_list'].append('-DWSGI_AUTH_GROUP')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory']))
