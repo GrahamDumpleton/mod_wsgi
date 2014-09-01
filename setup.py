@@ -125,10 +125,18 @@ os.environ['LD_RUN_PATH'] = LD_RUN_PATH
 # If using Python 3.4, then minimum MacOS X version you can use is 10.8.
 # We have to force this with the compiler otherwise Python 3.4 sets it
 # to 10.6 which screws up Apache APR % formats for apr_time_t, which
-# breaks daemon mode queue time.
+# breaks daemon mode queue time. May have to consider doing this for
+# older versions of Python as well since logically also possible there.
 
 if sys.version_info >= (3, 4):
-    os.environ['MACOSX_DEPLOYMENT_TARGET'] = '10.8'
+    target = os.environ.get('MACOSX_DEPLOYMENT_TARGET')
+    if target is None:
+        os.environ['MACOSX_DEPLOYMENT_TARGET'] = '10.8'
+    elif target:
+        assert tuple(map(int, target.split('.'))) >= (10, 8), \
+                'Minimum of 10.8 for MACOSX_DEPLOYMENT_TARGET'
+    else:
+        del os.environ['MACOSX_DEPLOYMENT_TARGET']
 
 # Now add the definitions to build everything.
 
