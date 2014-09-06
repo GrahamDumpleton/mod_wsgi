@@ -157,12 +157,14 @@ LoadModule authz_user_module '%(modules_directory)s/mod_authz_user.so'
 </IfModule>
 </IfDefine>
 
+<IfModule mpm_prefork_module>
 <IfDefine WSGI_WITH_PHP5>
 <IfModule !php5_module>
 Loadmodule php5_module '%(modules_directory)s/libphp5.so'
 </IfModule>
 AddHandler application/x-httpd-php .php
 </IfDefine>
+</IfModule>
 
 LoadModule wsgi_module '%(mod_wsgi_so)s'
 
