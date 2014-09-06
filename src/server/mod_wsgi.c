@@ -5203,6 +5203,8 @@ static void wsgi_log_script_error(request_rec *r, const char *e, const char *n)
     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "%s", message);
 }
 
+static void wsgi_drop_invalid_headers(request_rec *r);
+
 static void wsgi_build_environment(request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
@@ -5218,7 +5220,21 @@ static void wsgi_build_environment(request_rec *r)
     config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
                                                        &wsgi_module);
 
-    /* Populate environment with standard CGI variables. */
+    /*
+     * Populate environment with standard CGI variables. Before
+     * we do this though, we ensure that we delete any headers
+     * which use invalid characters. This is necessary to ensure
+     * that someone doesn't try and take advantage of header
+     * spoofing. This can come about where characters other than
+     * alphanumerics or '-' are used as the conversion of non
+     * alphanumerics to '_' means one can get collisions. This
+     * is technically only an issue with Apache 2.2 as Apache
+     * 2.4 addresses the problem and drops them anyway. Still go
+     * through and drop them even for Apache 2.4 as not sure
+     * which version of Apache 2.4 introduces the change.
+     */
+
+    wsgi_drop_invalid_headers(r);
 
     ap_add_cgi_vars(r);
     ap_add_common_vars(r);
@@ -11421,6 +11437,71 @@ static char *wsgi_original_uri(request_rec *r)
     return apr_pstrmemdup(r->pool, first, last - first);
 }
 
+static int wsgi_http_invalid_header(const char *w)
+{
+    char c;
+
+    while ((c = *w++) != 0) {
+        if (!apr_isalnum(c) && c != '-')
+            return 1;
+    }
+
+    return 0;
+}
+
+static void wsgi_drop_invalid_headers(request_rec *r)
+{
+    /*
+     * Apache 2.2 when converting headers for CGI variables, doesn't
+     * ignore headers with invalid names. That is, any which use any
+     * characters besides alphanumerics and the '-' character. This
+     * opens us up to header spoofing whereby something can inject
+     * multiple headers which differ by using non alphanumeric
+     * characters in the same position, which would then encode to same
+     * value. Since not easy to cleanup after the fact, as a workaround,
+     * is easier to simply remove the invalid headers. This will make
+     * things end up being the same as Apache 2.4. Doing this could
+     * annoy some users of Apache 2.2 who were using invalid headers,
+     * but things will break for them under Apache 2.4 anyway.
+     */
+
+    apr_array_header_t *to_delete = NULL;
+
+    const apr_array_header_t *hdrs_arr;
+    const apr_table_entry_t *hdrs;
+
+    int i;
+
+    hdrs_arr = apr_table_elts(r->headers_in);
+    hdrs = (const apr_table_entry_t *) hdrs_arr->elts;
+
+    for (i = 0; i < hdrs_arr->nelts; ++i) {
+        if (!hdrs[i].key) {
+            continue;
+        }
+
+        if (wsgi_http_invalid_header(hdrs[i].key)) {
+            char **new;
+
+            if (!to_delete)
+                to_delete = apr_array_make(r->pool, 1, sizeof(char *));
+
+            new = (char **)apr_array_push(to_delete);
+            *new = hdrs[i].key;
+        }
+    }
+
+    if (to_delete) {
+        char *key;
+
+        for (i = 0; i < to_delete->nelts; i++) {
+            key = ((char **)to_delete->elts)[i];
+
+            apr_table_unset(r->headers_in, key);
+        }
+    }
+}
+
 static char *wsgi_http2env(apr_pool_t *a, const char *w)
 {
     char *res = (char *)apr_palloc(a, sizeof("HTTP_") + strlen(w));
@@ -11434,12 +11515,14 @@ static char *wsgi_http2env(apr_pool_t *a, const char *w)
     *cp++ = '_';
 
     while ((c = *w++) != 0) {
-        if (!apr_isalnum(c)) {
-            *cp++ = '_';
-        }
-        else {
+        if (apr_isalnum(c)) {
             *cp++ = apr_toupper(c);
         }
+        else if (c == '-') {
+            *cp++ = '_';
+        }
+        else
+            return NULL;
     }
     *cp = 0;
 
@@ -11529,15 +11612,22 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
             continue;
         }
         else {
+            if (hdrs[i].val) {
+                char *header = wsgi_http2env(r->pool, hdrs[i].key);
+
+                if (header) {
 #if PY_MAJOR_VERSION >= 3
-            object = PyUnicode_DecodeLatin1(hdrs[i].val,
-                                            strlen(hdrs[i].val), NULL);
+                    object = PyUnicode_DecodeLatin1(hdrs[i].val,
+                                                    strlen(hdrs[i].val), NULL);
 #else
-            object = PyString_FromString(hdrs[i].val);
+                    object = PyString_FromString(hdrs[i].val);
 #endif
-            PyDict_SetItemString(vars, wsgi_http2env(r->pool, hdrs[i].key),
-                                 object);
-            Py_DECREF(object);
+
+                    PyDict_SetItemString(vars, header, object);
+
+                    Py_DECREF(object);
+                }
+            }
         }
     }
 
