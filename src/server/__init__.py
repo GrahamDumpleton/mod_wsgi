@@ -351,8 +351,14 @@ DocumentRoot '%(document_root)s'
 </Directory>
 
 <Directory '%(document_root)s%(mount_point)s'>
+<IfDefine WSGI_DIRECTORY_INDEX>
+    DirectoryIndex %(directory_index)s
+</IfDefine>
     RewriteEngine On
     RewriteCond %%{REQUEST_FILENAME} !-f
+<IfDefine WSGI_DIRECTORY_INDEX>
+    RewriteCond %%{REQUEST_FILENAME} !-d
+</IfDefine>
 <IfDefine WSGI_SERVER_STATUS>
     RewriteCond %%{REQUEST_URI} !/server-status
 </IfDefine>
@@ -1083,6 +1089,11 @@ option_list = (
     optparse.make_option('--document-root', metavar='DIRECTORY-PATH',
             help='The directory which should be used as the document root '
             'and which contains any static files.'),
+    optparse.make_option('--directory-index', metavar='FILE-NAME',
+            help='The name of a directory index resource to be found in the '
+            'document root directory. Requests mapping to the directory '
+            'will be mapped to this resource rather than being passed '
+            'through to the WSGI application.'),
 
     optparse.make_option('--mount-point', metavar='URL-PATH', default='/',
             help='The URL path at which the WSGI application will be '
@@ -1509,6 +1520,8 @@ def _cmd_setup_server(command, args, options):
     if options['server_status']:
         options['httpd_arguments_list'].append('-DWSGI_SERVER_METRICS')
         options['httpd_arguments_list'].append('-DWSGI_SERVER_STATUS')
+    if options['directory_index']:
+        options['httpd_arguments_list'].append('-DWSGI_DIRECTORY_INDEX')
     if options['access_log']:
         options['httpd_arguments_list'].append('-DWSGI_ACCESS_LOG')
     if options['keep_alive'] != 0:
