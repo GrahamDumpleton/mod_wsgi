@@ -29,6 +29,10 @@ would be searched. This was fine so long as the current working directory
 wasn't changed, but if it was, it would no longer look in the home
 directory. Need to use the actual home directory instead.
 
+3. Fixed Django management command integration so would work for versions
+of Django prior to 1.6 where ``BASE_DIR`` didn't exist in Django settings
+module.
+
 New Features
 ------------
 
