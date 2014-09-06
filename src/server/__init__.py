@@ -871,6 +871,8 @@ def generate_wdb_server_script(options):
 WSGI_CONTROL_SCRIPT = """
 #!/bin/sh
 
+# %(sys_argv)s
+
 HTTPD="%(httpd_executable)s %(httpd_arguments)s"
 
 WSGI_RUN_USER="${WSGI_RUN_USER:-%(user)s}"
@@ -1286,6 +1288,8 @@ def _mpm_module_defines(modules_directory):
     return result
 
 def _cmd_setup_server(command, args, options):
+    options['sys_argv'] = repr(sys.argv)
+
     options['mod_wsgi_so'] = where()
 
     options['working_directory'] = options['working_directory'] or os.getcwd()
