@@ -13,7 +13,7 @@ import apache
 
 def application(environ, start_response):
     headers = []
-    headers.append(('Content-Type', 'text/plain'))
+    headers.append(('Content-Type', 'text/plain; charset="UTF-8"'))
     write = start_response('200 OK', headers)
 
     input = environ['wsgi.input']
