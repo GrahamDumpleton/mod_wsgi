@@ -93,3 +93,7 @@ By default any users must be a member of the ``wsgi`` group. The name of
 this group though can be overridden using the ``--auth-group`` option.
 It is recommended that this be overridden rather than changing your own
 application to use the ``wsgi`` group.
+
+6. Added the ``--directory-index`` option to enable a index resource to
+be added to the document root directory which would take precedence over
+the WSGI application for the root page for the site.
