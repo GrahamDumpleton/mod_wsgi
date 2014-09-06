@@ -157,6 +157,13 @@ LoadModule authz_user_module '%(modules_directory)s/mod_authz_user.so'
 </IfModule>
 </IfDefine>
 
+<IfDefine WSGI_WITH_PHP5>
+<IfModule !php5_module>
+Loadmodule php5_module '%(modules_directory)s/libphp5.so'
+</IfModule>
+AddHandler application/x-httpd-php .php
+</IfDefine>
+
 LoadModule wsgi_module '%(mod_wsgi_so)s'
 
 <IfDefine WSGI_SERVER_METRICS>
@@ -1224,6 +1231,9 @@ option_list = (
             help='Flag indicating whether the wdb interactive debugger '
             'should be enabled for the WSGI application.'),
 
+    optparse.make_option('--with-php5', action='store_true', default=False,
+            help='Flag indicating whether PHP 5 support should be enabled.'),
+
     optparse.make_option('--enable-docs', action='store_true', default=False,
             help='Flag indicating whether the mod_wsgi documentation should '
             'be made available at the /__wsgi__/docs sub URL.'),
@@ -1536,6 +1546,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_AUTH_USER')
     if options['auth_group_script']:
         options['httpd_arguments_list'].append('-DWSGI_AUTH_GROUP')
+    if options['with_php5']:
+        options['httpd_arguments_list'].append('-DWSGI_WITH_PHP5')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory']))
