@@ -97,16 +97,30 @@ LockFile '%(server_root)s/accept.lock'
 </IfVersion>
 
 <IfVersion >= 2.4>
+<IfDefine WSGI_WITH_PHP5>
 <IfModule !mpm_event_module>
 <IfModule !mpm_worker_module>
 <IfModule !mpm_prefork_module>
-<IfDefine WSGI_MPM_EVENT_MODULE>
+<IfDefine WSGI_MPM_EXISTS_PREFORK_MODULE>
+LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
+</IfDefine>
+</IfModule>
+</IfModule>
+</IfModule>
+</IfDefine>
+</IfVersion>
+
+<IfVersion >= 2.4>
+<IfModule !mpm_event_module>
+<IfModule !mpm_worker_module>
+<IfModule !mpm_prefork_module>
+<IfDefine WSGI_MPM_ENABLE_EVENT_MODULE>
 LoadModule mpm_event_module '%(modules_directory)s/mod_mpm_event.so'
 </IfDefine>
-<IfDefine WSGI_MPM_WORKER_MODULE>
+<IfDefine WSGI_MPM_ENABLE_WORKER_MODULE>
 LoadModule mpm_worker_module '%(modules_directory)s/mod_mpm_worker.so'
 </IfDefine>
-<IfDefine WSGI_MPM_PREFORK_MODULE>
+<IfDefine WSGI_MPM_ENABLE_PREFORK_MODULE>
 LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
 </IfDefine>
 </IfModule>
@@ -1280,11 +1294,14 @@ def cmd_setup_server(params):
 def _mpm_module_defines(modules_directory):
     result = []
     workers = ['event', 'worker', 'prefork']
+    found = False
     for name in workers:
         if os.path.exists(os.path.join(modules_directory,
                 'mod_mpm_%s.so' % name)):
-            result.append('-DWSGI_MPM_%s_MODULE' % name.upper())
-            break
+            if not found:
+                result.append('-DWSGI_MPM_ENABLE_%s_MODULE' % name.upper())
+                found = True
+            result.append('-DWSGI_MPM_EXISTS_%s_MODULE' % name.upper())
     return result
 
 def _cmd_setup_server(command, args, options):
