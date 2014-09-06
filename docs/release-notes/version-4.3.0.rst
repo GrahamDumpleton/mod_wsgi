@@ -23,6 +23,12 @@ and authentication/authorization works. The result could be that a user
 could gain access to a resource even though they were not in the
 required group.
 
+2. When ``home`` option was used with ``WSGIDaemonProcess`` directive an
+empty string was added to ``sys.path``. This meant current working directory
+would be searched. This was fine so long as the current working directory
+wasn't changed, but if it was, it would no longer look in the home
+directory. Need to use the actual home directory instead.
+
 New Features
 ------------
 
