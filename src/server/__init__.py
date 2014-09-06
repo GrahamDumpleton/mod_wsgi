@@ -879,6 +879,12 @@ WSGI_RUN_GROUP="${WSGI_RUN_GROUP:-%(group)s}"
 export WSGI_RUN_USER
 export WSGI_RUN_GROUP
 
+LANG='%(lang)s'
+LC_ALL='%(locale)s'
+
+export LANG
+export LOCALE
+
 ACMD="$1"
 ARGV="$@"
 
