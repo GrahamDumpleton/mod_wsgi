@@ -289,7 +289,13 @@ KeepAliveTimeout %(keep_alive_timeout)s
 KeepAlive Off
 </IfDefine>
 
+<IfDefine WSGI_ROTATE_LOGS>
+ErrorLog "|%(rotatelogs_executable)s \\
+    %(error_log)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM"
+</IfDefine>
+<IfDefine !WSGI_ROTATE_LOGS>
 ErrorLog '%(error_log)s'
+</IfDefine>
 LogLevel %(log_level)s
 
 <IfDefine WSGI_ACCESS_LOG>
@@ -297,7 +303,13 @@ LogLevel %(log_level)s
 LoadModule log_config_module %(modules_directory)s/mod_log_config.so
 </IfModule>
 LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b" common
+<IfDefine WSGI_ROTATE_LOGS>
+CustomLog "|%(rotatelogs_executable)s \\
+    %(log_directory)s/access_log.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM" common
+</IfDefine>
+<IfDefine !WSGI_ROTATE_LOGS>
 CustomLog "%(log_directory)s/access_log" common
+</IfDefine>
 </IfDefine>
 
 <IfModule mpm_prefork_module>
@@ -1254,6 +1266,16 @@ option_list = (
             help='Flag indicating whether the web server startup log should '
             'be enabled. Defaults to being disabled.'),
 
+    optparse.make_option('--rotate-logs', action='store_true', default=False,
+            help='Flag indicating whether log rotation should be performed.'),
+    optparse.make_option('--max-log-size', default=5, type='int',
+            metavar='MB', help='The maximum size in MB the log file should '
+            'be allowed to reach before log file rotation is performed.'),
+
+    optparse.make_option('--rotatelogs-executable',
+            default=apxs_config.ROTATELOGS, metavar='FILE-PATH',
+            help='Override the path to the rotatelogs executable.'),
+
     optparse.make_option('--python-eggs', metavar='DIRECTORY-PATH',
             help='Specify an alternate directory which should be used for '
             'unpacking of Python eggs. Defaults to a sub directory of '
@@ -1606,6 +1628,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_DIRECTORY_INDEX')
     if options['access_log']:
         options['httpd_arguments_list'].append('-DWSGI_ACCESS_LOG')
+    if options['rotate_logs']:
+        options['httpd_arguments_list'].append('-DWSGI_ROTATE_LOGS')
     if options['keep_alive'] != 0:
         options['httpd_arguments_list'].append('-DWSGI_KEEP_ALIVE')
     if options['multiprocess']:

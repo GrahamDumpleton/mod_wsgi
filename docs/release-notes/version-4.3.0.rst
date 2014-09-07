@@ -158,3 +158,10 @@ option can also be specified, multiple times if need be, to setup alternate
 names for the web site on which web requests should also be accepted.
 Wildcard aliases may be used in the name if wishing to match multiple
 sub domains in one go.
+
+9. Added the ``--rotate-logs`` option to ``mod_wsgi-express`` to enable log
+file rotation. By default the error log and access log, if enabled, will be
+rotated when they reach 5MB in size. To change the size at which the log
+files will be rotated, use the ``--max-log-size`` option. If the
+``rotatelogs`` command is not being found properly, its location can be
+specified using the ``--rotatelogs-executable`` option.
