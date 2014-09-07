@@ -134,10 +134,11 @@ this group though can be overridden using the ``--auth-group`` option.
 It is recommended that this be overridden rather than changing your own
 application to use the ``wsgi`` group.
 
-6. Added the ``--directory-index`` option to enable a index resource to
-be added to the document root directory which would take precedence over
-the WSGI application for the root page for the site.
+6. Added the ``--directory-index`` option to ``mod_wsgi-express`` to enable
+a index resource to be added to the document root directory which would
+take precedence over the WSGI application for the root page for the site.
 
-7. Added the ``--with-php5`` option to enable the concurrent hosting of
-a PHP web application in conjunction with the WSGI application. Due to the
-limitations of PHP, this is currently only supported if using prefork MPM.
+7. Added the ``--with-php5`` option to ``mod_wsgi-express`` to enable the
+concurrent hosting of a PHP web application in conjunction with the WSGI
+application. Due to the limitations of PHP, this is currently only
+supported if using prefork MPM.
