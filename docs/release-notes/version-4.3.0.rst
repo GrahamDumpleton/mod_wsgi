@@ -142,3 +142,19 @@ take precedence over the WSGI application for the root page for the site.
 concurrent hosting of a PHP web application in conjunction with the WSGI
 application. Due to the limitations of PHP, this is currently only
 supported if using prefork MPM.
+
+8. Added the ``--server-name`` option to ``mod_wsgi-express``. When this is
+used and set to the host name for the web site, a virtual host will be
+created to ensure that the server only accepts web requests for that host
+name.
+
+If the host name starts with ``www.`` then web requests will also be
+accepted against the parent domain, that is the host name without the
+``www.``, but those requests will be automatically redirected to the
+specified host name on the same port as that used for the original request.
+
+When the ``--server-name`` option is being used, the ``--server-alias``
+option can also be specified, multiple times if need be, to setup alternate
+names for the web site on which web requests should also be accepted.
+Wildcard aliases may be used in the name if wishing to match multiple
+sub domains in one go.
