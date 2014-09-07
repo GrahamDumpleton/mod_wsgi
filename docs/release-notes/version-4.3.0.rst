@@ -23,15 +23,45 @@ and authentication/authorization works. The result could be that a user
 could gain access to a resource even though they were not in the
 required group.
 
-2. When ``home`` option was used with ``WSGIDaemonProcess`` directive an
+2. Under Apache 2.4, when creating the ``environ`` dictionary for
+passing into access/authentication/authorisation handlers, the behvaiour
+of Apache 2.4 as it pertained to the WSGI application, whereby it
+blocked the passing of any HTTP headers with a name which did not contain
+just alphanumerics or '-', was not being mirrored. This created the
+possibility of HTTP header spoofing in certain circumstances. Such headers
+are now being ignored.
+
+3. When ``home`` option was used with ``WSGIDaemonProcess`` directive an
 empty string was added to ``sys.path``. This meant current working directory
 would be searched. This was fine so long as the current working directory
 wasn't changed, but if it was, it would no longer look in the home
 directory. Need to use the actual home directory instead.
 
-3. Fixed Django management command integration so would work for versions
+4. Fixed Django management command integration so would work for versions
 of Django prior to 1.6 where ``BASE_DIR`` didn't exist in Django settings
 module.
+
+Features Changed
+----------------
+
+1. In Apache 2.4, any headers with a name which does not include only
+alphanumerics or '-' are blocked from being passed into a WSGI application
+when the CGI like WSGI ``environ`` dictionary is created. This is a
+mechanism to prevent header spoofing when there are multiple headers where
+the only difference is the use of non alphanumerics in a specific character
+position.
+
+This protection mechanism from Apache 2.4 is now being restrospectively
+applied even when Apache 2.2 is being used and even though Apache itself
+doesn't do it. This may technically result in headers that were previously
+being passed, no longer being passed. The change is also technically
+against what the HTTP RFC says is allowed for HTTP header names, but such
+blocking would occur in Apache 2.4 anyway due to changes in Apache. It is
+also understood that other web servers such as nginx also perform the same
+type of blocking. Reliance on HTTP headers which use characters other
+than alphanumerics and '-' is therefore dubious as many servers will now
+discard them when needing to be passed into a system which requires the
+headers to be passed as CGI like variables such as is the case for WSGI.
 
 New Features
 ------------
