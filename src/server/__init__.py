@@ -364,6 +364,29 @@ MaxRequestsPerChild 0
 ThreadStackSize 262144
 </IfModule>
 
+<IfDefine WSGI_VIRTUAL_HOST>
+<IfVersion < 2.4>
+NameVirtualHost *:%(port)s
+</IfVersion>
+<VirtualHost _default_:%(port)s>
+<Location />
+Deny from all
+</Location>
+</VirtualHost>
+<VirtualHost *:%(port)s>
+ServerName %(server_name)s
+<IfDefine WSGI_SERVER_ALIAS>
+ServerAlias %(server_aliases)s
+</IfDefine>
+</VirtualHost>
+<IfDefine WSGI_REDIRECT_WWW>
+<VirtualHost *:%(port)s>
+ServerName %(parent_domain)s
+Redirect permanent / http://%(server_name)s:%(port)s/
+</VirtualHost>
+</IfDefine>
+</IfDefine>
+
 DocumentRoot '%(document_root)s'
 
 <Directory '%(server_root)s'>
@@ -976,6 +999,14 @@ option_list = (
             metavar='NUMBER', help='The specific port to bind to and '
             'on which requests are to be accepted. Defaults to port 8000.'),
 
+    optparse.make_option('--server-name', default=None, metavar='HOSTNAME',
+            help='The primary host name of the web server. If this name '
+            'starts with \'www.\' then an automatic redirection from the '
+            'parent domain name to the \'www.\' server name will created.'),
+    optparse.make_option('--server-alias', action='append',
+            dest='server_aliases', metavar='HOSTNAME', help='A secondary '
+            'host name for the web server. May include wilcard patterns.'),
+
     optparse.make_option('--processes', type='int', metavar='NUMBER',
             help='The number of worker processes (instances of the WSGI '
             'application) to be started up and which will handle requests '
@@ -1553,6 +1584,18 @@ def _cmd_setup_server(command, args, options):
 
     if options['debug_mode']:
         options['httpd_arguments_list'].append('-DONE_PROCESS')
+
+    options['parent_domain'] = 'unspecified'
+
+    if options['server_name']:
+        options['httpd_arguments_list'].append('-DWSGI_VIRTUAL_HOST')
+        if options['server_name'].lower().startswith('www.'):
+            options['httpd_arguments_list'].append('-DWSGI_REDIRECT_WWW')
+            options['parent_domain'] = options['server_name'][4:]
+
+    if options['server_aliases']:
+        options['httpd_arguments_list'].append('-DWSGI_SERVER_ALIAS')
+        options['server_aliases'] = ' '.join(options['server_aliases'])
 
     if options['server_metrics']:
         options['httpd_arguments_list'].append('-DWSGI_SERVER_METRICS')
