@@ -165,3 +165,12 @@ rotated when they reach 5MB in size. To change the size at which the log
 files will be rotated, use the ``--max-log-size`` option. If the
 ``rotatelogs`` command is not being found properly, its location can be
 specified using the ``--rotatelogs-executable`` option.
+
+10. Added the ``--ssl-port`` and ``--ssl-certificate`` options to
+``mod_wsgi-express``. When both are set, with the latter being the stub
+path for the SSL certificate ``.crt`` and ``.key`` file, then HTTPS
+requests will be handled over the designated SSL port.
+
+When ``--https-only`` is supplied, any requests made over HTTP to the non
+SSL port will be automatically redirected so as to use a HTTPS connection
+over the SSL connection.

@@ -312,6 +312,12 @@ CustomLog "%(log_directory)s/access_log" common
 </IfDefine>
 </IfDefine>
 
+<IfDefine WSGI_WITH_SSL>
+<IfModule !ssl_module>
+LoadModule ssl_module %(modules_directory)s/mod_ssl.so
+</IfModule>
+</IfDefine>
+
 <IfModule mpm_prefork_module>
 <IfDefine !ONE_PROCESS>
 ServerLimit %(prefork_server_limit)s
@@ -385,6 +391,7 @@ NameVirtualHost *:%(port)s
 Deny from all
 </Location>
 </VirtualHost>
+<IfDefine !WSGI_HTTPS_ONLY>
 <VirtualHost *:%(port)s>
 ServerName %(server_name)s
 <IfDefine WSGI_SERVER_ALIAS>
@@ -396,6 +403,65 @@ ServerAlias %(server_aliases)s
 ServerName %(parent_domain)s
 Redirect permanent / http://%(server_name)s:%(port)s/
 </VirtualHost>
+</IfDefine>
+</IfDefine>
+<IfDefine WSGI_HTTPS_ONLY>
+<VirtualHost *:%(port)s>
+ServerName %(server_name)s
+<IfDefine WSGI_SERVER_ALIAS>
+ServerAlias %(server_aliases)s
+RewriteEngine On
+RewriteCond %%{HTTPS} off
+RewriteRule (.*) https://%%{HTTP_HOST}%%{REQUEST_URI}
+</IfDefine>
+</VirtualHost>
+<IfDefine WSGI_REDIRECT_WWW>
+<VirtualHost *:%(port)s>
+ServerName %(parent_domain)s
+RewriteEngine On
+RewriteCond %%{HTTPS} off
+RewriteRule (.*) https://%%{HTTP_HOST}%%{REQUEST_URI}
+</VirtualHost>
+</IfDefine>
+</IfDefine>
+
+<IfDefine WSGI_VIRTUAL_HOST>
+<IfDefine WSGI_WITH_SSL>
+<IfDefine WSGI_LISTENER_HOST>
+Listen %(host)s:%(ssl_port)s
+</IfDefine>
+<IfDefine !WSGI_LISTENER_HOST>
+Listen %(ssl_port)s
+</IfDefine>
+<IfVersion < 2.4>
+NameVirtualHost *:%(ssl_port)s
+</IfVersion>
+<VirtualHost _default_:%(ssl_port)s>
+<Location />
+Deny from all
+</Location>
+SSLEngine On
+SSLCertificateFile %(ssl_certificate)s.crt
+SSLCertificateKeyFile %(ssl_certificate)s.key
+</VirtualHost>
+<VirtualHost *:%(ssl_port)s>
+ServerName %(server_name)s
+<IfDefine WSGI_SERVER_ALIAS>
+ServerAlias %(server_aliases)s
+</IfDefine>
+SSLEngine On
+SSLCertificateFile %(ssl_certificate)s.crt
+SSLCertificateKeyFile %(ssl_certificate)s.key
+</VirtualHost>
+<IfDefine WSGI_REDIRECT_WWW>
+<VirtualHost *:%(ssl_port)s>
+ServerName %(parent_domain)s
+Redirect permanent / https://%(server_name)s:%(ssl_port)s/
+SSLEngine On
+SSLCertificateFile %(ssl_certificate)s.crt
+SSLCertificateKeyFile %(ssl_certificate)s.key
+</VirtualHost>
+</IfDefine>
 </IfDefine>
 </IfDefine>
 
@@ -1011,6 +1077,21 @@ option_list = (
             metavar='NUMBER', help='The specific port to bind to and '
             'on which requests are to be accepted. Defaults to port 8000.'),
 
+    optparse.make_option('--ssl-port', type='int', metavar='NUMBER',
+            help='The specific port to bind to and on which requests are '
+            'to be accepted for SSL connections.'),
+    optparse.make_option('--ssl-certificate', default=None,
+            metavar='FILE-PATH', help='Specify the path to the SSL '
+            'certificate files. It is expected that the files have \'.crt\' '
+            'and \'.key\' extensions. This option should refer to the '
+            'common part of the names for both files which appears before '
+            'the extension.'),
+    optparse.make_option('--https-only', action='store_true',
+            default=False, help='Flag indicating whether any requests '
+	    'made using a HTTP request over the non SSL connection should '
+	    'be redirected automatically to use a HTTPS request over the '
+	    'SSL connection.'),
+
     optparse.make_option('--server-name', default=None, metavar='HOSTNAME',
             help='The primary host name of the web server. If this name '
             'starts with \'www.\' then an automatic redirection from the '
@@ -1382,6 +1463,10 @@ def _cmd_setup_server(command, args, options):
     except Exception:
         pass
 
+    if options['ssl_certificate']:
+        options['ssl_certificate'] = os.path.abspath(
+                options['ssl_certificate'])
+
     if not args:
         options['entry_point'] = os.path.join(options['server_root'],
                 'default.wsgi')
@@ -1598,11 +1683,22 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append(
                 options['startup_log_filename'])
 
-    if options['port'] == 80:
-        options['url'] = 'http://%s/' % options['host']
+    if options['server_name']:
+        host = options['server_name']
     else:
-        options['url'] = 'http://%s:%s/' % (options['host'],
-            options['port'])
+        host = options['host']
+
+    if options['port'] == 80:
+        options['url'] = 'http://%s/' % host
+    else:
+        options['url'] = 'http://%s:%s/' % (host, options['port'])
+
+    if options['ssl_port'] == 443:
+        options['ssl_url'] = 'https://%s/' % host
+    elif options['ssl_port'] is not None:
+        options['ssl_url'] = 'https://%s:%s/' % (host, options['ssl_port'])
+    else:
+        options['ssl_url'] = None
 
     if options['debug_mode']:
         options['httpd_arguments_list'].append('-DONE_PROCESS')
@@ -1614,6 +1710,11 @@ def _cmd_setup_server(command, args, options):
         if options['server_name'].lower().startswith('www.'):
             options['httpd_arguments_list'].append('-DWSGI_REDIRECT_WWW')
             options['parent_domain'] = options['server_name'][4:]
+
+    if options['ssl_port'] and options['ssl_certificate']:
+        options['httpd_arguments_list'].append('-DWSGI_WITH_SSL')
+    if options['https_only']:
+        options['httpd_arguments_list'].append('-DWSGI_HTTPS_ONLY')
 
     if options['server_aliases']:
         options['httpd_arguments_list'].append('-DWSGI_SERVER_ALIAS')
@@ -1657,6 +1758,9 @@ def _cmd_setup_server(command, args, options):
     generate_control_scripts(options)
 
     print('Server URL        :', options['url'])
+
+    if options['ssl_url']:
+        print('Server URL (SSL)  :', options['ssl_url'])
 
     if options['server_status']:
         print('Server Status     :', '%sserver-status' % options['url'])
