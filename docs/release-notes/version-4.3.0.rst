@@ -174,3 +174,7 @@ requests will be handled over the designated SSL port.
 When ``--https-only`` is supplied, any requests made over HTTP to the non
 SSL port will be automatically redirected so as to use a HTTPS connection
 over the SSL connection.
+
+11. Added the ``--setenv`` option to ``mod_wsgi-express`` to enable request
+specific key/value pairs to be added to the WSGI environ dictionary. The
+values are restricted to string values.
