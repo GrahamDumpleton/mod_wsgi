@@ -383,6 +383,7 @@ ThreadStackSize 262144
 </IfModule>
 
 <IfDefine WSGI_VIRTUAL_HOST>
+
 <IfVersion < 2.4>
 NameVirtualHost *:%(port)s
 </IfVersion>
@@ -405,6 +406,7 @@ Redirect permanent / http://%(server_name)s:%(port)s/
 </VirtualHost>
 </IfDefine>
 </IfDefine>
+
 <IfDefine WSGI_HTTPS_ONLY>
 <VirtualHost *:%(port)s>
 ServerName %(server_name)s
@@ -425,7 +427,10 @@ RewriteRule (.*) https://%%{HTTP_HOST}%%{REQUEST_URI}
 </IfDefine>
 </IfDefine>
 
+</IfDefine>
+
 <IfDefine WSGI_VIRTUAL_HOST>
+
 <IfDefine WSGI_WITH_SSL>
 <IfDefine WSGI_LISTENER_HOST>
 Listen %(host)s:%(ssl_port)s
@@ -463,6 +468,7 @@ SSLCertificateKeyFile %(ssl_certificate)s.key
 </VirtualHost>
 </IfDefine>
 </IfDefine>
+
 </IfDefine>
 
 DocumentRoot '%(document_root)s'
