@@ -159,6 +159,10 @@ names for the web site on which web requests should also be accepted.
 Wildcard aliases may be used in the name if wishing to match multiple
 sub domains in one go.
 
+If for some reason you do still need to be able to access the server via
+``localhost`` when a virtual host for a set server name is being used, you
+can supply the ``--allow-localhost`` option.
+
 9. Added the ``--rotate-logs`` option to ``mod_wsgi-express`` to enable log
 file rotation. By default the error log and access log, if enabled, will be
 rotated when they reach 5MB in size. To change the size at which the log
@@ -174,6 +178,9 @@ requests will be handled over the designated SSL port.
 When ``--https-only`` is supplied, any requests made over HTTP to the non
 SSL port will be automatically redirected so as to use a HTTPS connection
 over the SSL connection.
+
+Note that if using the ``--allow-localhost`` option, redirection from a
+HTTP to HTTPS connection will not occur when access via ``localhost``.
 
 11. Added the ``--setenv`` option to ``mod_wsgi-express`` to enable request
 specific key/value pairs to be added to the WSGI environ dictionary. The

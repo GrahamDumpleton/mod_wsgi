@@ -392,7 +392,11 @@ NameVirtualHost *:%(port)s
 </IfVersion>
 <VirtualHost _default_:%(port)s>
 <Location />
+Order deny,allow
 Deny from all
+<IfDefine WSGI_ALLOW_LOCALHOST>
+Allow from localhost
+</IfDefine>
 </Location>
 </VirtualHost>
 <IfDefine !WSGI_HTTPS_ONLY>
@@ -446,7 +450,11 @@ NameVirtualHost *:%(ssl_port)s
 </IfVersion>
 <VirtualHost _default_:%(ssl_port)s>
 <Location />
+Order deny,allow
 Deny from all
+<IfDefine WSGI_ALLOW_LOCALHOST>
+Allow from localhost
+</IfDefine>
 </Location>
 SSLEngine On
 SSLCertificateFile %(ssl_certificate)s.crt
@@ -1117,6 +1125,10 @@ option_list = (
     optparse.make_option('--server-alias', action='append',
             dest='server_aliases', metavar='HOSTNAME', help='A secondary '
             'host name for the web server. May include wilcard patterns.'),
+    optparse.make_option('--allow-localhost', action='store_true',
+            default=False, help='Flag indicating whether access via '
+            'localhost should still be allowed when a server name has been '
+            'specified and a name based virtual host has been configured.'),
 
     optparse.make_option('--processes', type='int', metavar='NUMBER',
             help='The number of worker processes (instances of the WSGI '
@@ -1741,6 +1753,9 @@ def _cmd_setup_server(command, args, options):
     if options['server_aliases']:
         options['httpd_arguments_list'].append('-DWSGI_SERVER_ALIAS')
         options['server_aliases'] = ' '.join(options['server_aliases'])
+
+    if options['allow_localhost']:
+        options['httpd_arguments_list'].append('-DWSGI_ALLOW_LOCALHOST')
 
     if options['server_metrics']:
         options['httpd_arguments_list'].append('-DWSGI_SERVER_METRICS')
