@@ -102,6 +102,7 @@ typedef struct {
     int script_reloading;
     int error_override;
     int chunked_request;
+    int map_head_to_get;
 
     int enable_sendfile;
 

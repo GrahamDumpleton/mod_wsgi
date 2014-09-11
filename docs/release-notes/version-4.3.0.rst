@@ -185,3 +185,20 @@ HTTP to HTTPS connection will not occur when access via ``localhost``.
 11. Added the ``--setenv`` option to ``mod_wsgi-express`` to enable request
 specific key/value pairs to be added to the WSGI environ dictionary. The
 values are restricted to string values.
+
+12. Added the ``WSGIMapHEADToGET`` directive for overriding the previous
+behaviour of automatically mapping any ``HEAD`` request to a ``GET`` request
+when an Apache output filter was registered that may want to see the complete
+response in order to generate correct response headers.
+
+The directive can be set to be either ``Auto`` (the default), ``On`` which
+will always map a ``HEAD`` to ``GET`` even if no output filters detected and
+``Off`` to always preserve the original request method type.
+
+The original behaviour was to avoid problems with users trying to optimise
+for ``HEAD`` requests and then breaking caching mechanisms because the
+response headers for a ``HEAD`` request for a resource didn't match a ``GET``
+request against the same resource as required by HTTP.
+
+If using mod_wsgi-express, the ``--map-head-to-get`` option can be used with
+the same values.

@@ -266,6 +266,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
 
 WSGICallableObject '%(callable_object)s'
 WSGIPassAuthorization On
+WSGIMapHEADToGET %(map_head_to_get)s
 
 <IfDefine ONE_PROCESS>
 WSGIRestrictStdin Off
@@ -1270,6 +1271,14 @@ option_list = (
             metavar='NAME', help='The name of the entry point for the WSGI '
             'application within the WSGI script file. Defaults to '
             'the name \'application\'.'),
+
+    optparse.make_option('--map-head-to-get', default='Auto',
+            metavar='OFF|ON|AUTO', help='Flag indicating whether HEAD '
+            'requests should be mapped to a GET request. By default a HEAD '
+            'request will be automatically mapped to a GET request when an '
+            'Apache output filter is detected that may want to see the '
+            'entire response in order to set up response headers correctly '
+            'for a HEAD request. This can be disable by setting to \'Off\'.'),
 
     optparse.make_option('--document-root', metavar='DIRECTORY-PATH',
             help='The directory which should be used as the document root '

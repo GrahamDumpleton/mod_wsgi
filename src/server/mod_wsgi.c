@@ -178,6 +178,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->chunked_request = parent->chunked_request;
 
+    if (child->map_head_to_get != -1)
+        config->map_head_to_get = child->map_head_to_get;
+    else
+        config->map_head_to_get = parent->map_head_to_get;
+
     if (child->enable_sendfile != -1)
         config->enable_sendfile = child->enable_sendfile;
     else
@@ -211,6 +216,7 @@ typedef struct {
     int script_reloading;
     int error_override;
     int chunked_request;
+    int map_head_to_get;
 
     int enable_sendfile;
 
@@ -242,6 +248,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->script_reloading = -1;
     object->error_override = -1;
     object->chunked_request = -1;
+    object->map_head_to_get = -1;
 
     object->enable_sendfile = -1;
 
@@ -325,6 +332,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->chunked_request = parent->chunked_request;
 
+    if (child->map_head_to_get != -1)
+        config->map_head_to_get = child->map_head_to_get;
+    else
+        config->map_head_to_get = parent->map_head_to_get;
+
     if (child->enable_sendfile != -1)
         config->enable_sendfile = child->enable_sendfile;
     else
@@ -383,6 +395,7 @@ typedef struct {
     int script_reloading;
     int error_override;
     int chunked_request;
+    int map_head_to_get;
 
     int enable_sendfile;
 
@@ -730,6 +743,14 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         config->chunked_request = sconfig->chunked_request;
         if (config->chunked_request < 0)
             config->chunked_request = 0;
+    }
+
+    config->map_head_to_get = dconfig->map_head_to_get;
+
+    if (config->map_head_to_get < 0) {
+        config->map_head_to_get = sconfig->map_head_to_get;
+        if (config->map_head_to_get < 0)
+            config->map_head_to_get = 2;
     }
 
     config->enable_sendfile = dconfig->enable_sendfile;
@@ -4739,6 +4760,40 @@ static const char *wsgi_set_chunked_request(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_map_head_to_get(cmd_parms *cmd, void *mconfig,
+                                            const char *f)
+{
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+
+        if (strcasecmp(f, "Off") == 0)
+            dconfig->map_head_to_get = 0;
+        else if (strcasecmp(f, "On") == 0)
+            dconfig->map_head_to_get = 1;
+        else if (strcasecmp(f, "Auto") == 0)
+            dconfig->map_head_to_get = 2;
+        else
+            return "WSGIMapHEADToGET must be one of: Off | On | Auto";
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+
+        if (strcasecmp(f, "Off") == 0)
+            sconfig->map_head_to_get = 0;
+        else if (strcasecmp(f, "On") == 0)
+            sconfig->map_head_to_get = 1;
+        else if (strcasecmp(f, "Auto") == 0)
+            sconfig->map_head_to_get = 2;
+        else
+            return "WSGIMapHEADToGET must be one of: Off | On | Auto";
+    }
+
+    return NULL;
+}
+
 static const char *wsgi_set_enable_sendfile(cmd_parms *cmd, void *mconfig,
                                             const char *f)
 {
@@ -5253,11 +5308,24 @@ static void wsgi_build_environment(request_rec *r)
      * content is generated. If using Apache 2.X we can skip
      * doing this if we know there is no output filter that
      * might change the content and/or headers.
+     *
+     * The default behaviour here of changing it if an output
+     * filter is detected can be overridden using the directive
+     * WSGIMapHEADToGet. The default value is 'Auto'. If set to
+     * 'On' then it remapped regardless of whether an output
+     * filter is present. If 'Off' then it will be left alone
+     * and the original value used.
      */
 
-    if (r->method_number == M_GET && r->header_only &&
-        r->output_filters->frec->ftype < AP_FTYPE_PROTOCOL)
-        apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
+    if (config->map_head_to_get == 2) {
+        if (r->method_number == M_GET && r->header_only &&
+            r->output_filters->frec->ftype < AP_FTYPE_PROTOCOL)
+            apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
+    }
+    else if (config->map_head_to_get == 1) {
+        if (r->method_number == M_GET)
+            apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
+    }
 
     /* Determine whether connection uses HTTPS protocol. */
 
@@ -13626,6 +13694,8 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable overriding of error pages."),
     AP_INIT_TAKE1("WSGIChunkedRequest", wsgi_set_chunked_request,
         NULL, OR_FILEINFO, "Enable/Disable support for chunked requests."),
+    AP_INIT_TAKE1("WSGIMapHEADToGET", wsgi_set_map_head_to_get,
+        NULL, OR_FILEINFO, "Enable/Disable mapping of HEAD to GET."),
 
 #ifndef WIN32
     AP_INIT_TAKE1("WSGIEnableSendfile", wsgi_set_enable_sendfile,
