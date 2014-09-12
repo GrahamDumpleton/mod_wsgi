@@ -202,3 +202,7 @@ request against the same resource as required by HTTP.
 
 If using mod_wsgi-express, the ``--map-head-to-get`` option can be used with
 the same values.
+
+12. Added the ``--compress-responses`` option to ``mod_wsgi-express`` to
+enable compression of common text based responses such as plain text, HTML,
+XML, CSS and Javascript.

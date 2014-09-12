@@ -162,6 +162,12 @@ LoadModule dir_module '%(modules_directory)s/mod_dir.so'
 LoadModule env_module '%(modules_directory)s/mod_env.so'
 </IfModule>
 
+<IfDefine WSGI_COMPRESS_RESPONSES>
+<IfModule !deflate_module>
+LoadModule deflate_module '%(modules_directory)s/mod_deflate.so'
+</IfModule>
+</IfDefine>
+
 <IfDefine WSGI_AUTH_USER>
 <IfModule !auth_basic_module>
 LoadModule auth_basic_module '%(modules_directory)s/mod_auth_basic.so'
@@ -291,6 +297,16 @@ KeepAliveTimeout %(keep_alive_timeout)s
 </IfDefine>
 <IfDefine !WSGI_KEEP_ALIVE>
 KeepAlive Off
+</IfDefine>
+
+<IfDefine WSGI_COMPRESS_RESPONSES>
+AddOutputFilterByType DEFLATE text/plain
+AddOutputFilterByType DEFLATE text/html
+AddOutputFilterByType DEFLATE text/xml
+AddOutputFilterByType DEFLATE text/css
+AddOutputFilterByType DEFLATE text/javascript
+AddOutputFilterByType DEFLATE application/xhtml+xml
+AddOutputFilterByType DEFLATE application/javascript
 </IfDefine>
 
 <IfDefine WSGI_ROTATE_LOGS>
@@ -1312,6 +1328,11 @@ option_list = (
             'to be made over the same connection. Defaults to 0, indicating '
             'that keep alive connections are disabled.'),
 
+    optparse.make_option('--compress-responses', action='store_true',
+            default=False, help='Flag indicating whether responses for '
+            'common text based responses, such as plain text, HTML, XML, '
+            'CSS and Javascript should be compressed.'),
+
     optparse.make_option('--server-metrics', action='store_true',
             default=False, help='Flag indicating whether internal server '
             'metrics will be available within the WSGI application. '
@@ -1779,6 +1800,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_ROTATE_LOGS')
     if options['keep_alive'] != 0:
         options['httpd_arguments_list'].append('-DWSGI_KEEP_ALIVE')
+    if options['compress_responses'] != 0:
+        options['httpd_arguments_list'].append('-DWSGI_COMPRESS_RESPONSES')
     if options['multiprocess']:
         options['httpd_arguments_list'].append('-DWSGI_MULTIPROCESS')
     if options['listener_host']:
