@@ -611,7 +611,11 @@ ErrorDocument '%(status)s' '%(document)s'
 """
 
 APACHE_SETENV_CONFIG = """
-SetEnv '%(key)s' '%(value)s'
+SetEnv '%(name)s' '%(value)s'
+"""
+
+APACHE_PASSENV_CONFIG = """
+PassEnv '%(name)s'
 """
 
 APACHE_INCLUDE_CONFIG = """
@@ -664,10 +668,14 @@ def generate_apache_config(options):
                 print(APACHE_ERROR_DOCUMENT_CONFIG % dict(status=status,
                         document=document.replace("'", "\\'")), file=fp)
 
-        if options['environ_variables']:
-            for key, value in options['environ_variables']:
-                print(APACHE_SETENV_CONFIG % dict(key=key, value=value),
+        if options['setenv_variables']:
+            for name, value in options['setenv_variables']:
+                print(APACHE_SETENV_CONFIG % dict(name=name, value=value),
                         file=fp)
+
+        if options['passenv_variables']:
+            for name in options['passenv_variables']:
+                print(APACHE_PASSENV_CONFIG % dict(name=name), file=fp)
 
         if options['include_files']:
             for filename in options['include_files']:
@@ -1378,10 +1386,16 @@ option_list = (
             help='Specify the default natural language formatting style '
             'as normally defined by the LC_ALL environment variable. '
             'Defaults to \'en_US.UTF-8\'.'),
+
     optparse.make_option('--setenv', action='append', nargs=2,
-            dest='environ_variables', metavar='KEY VALUE', help='Specify '
-            'a key/value pair to be added to the per request WSGI environ '
+            dest='setenv_variables', metavar='KEY VALUE', help='Specify '
+            'a name/value pairs to be added to the per request WSGI environ '
             'dictionary'),
+    optparse.make_option('--passenv', action='append',
+            dest='passenv_variables', metavar='KEY', help='Specify the '
+            'names of any process level environment variables which should '
+            'be passed as a name/value pair in the per request WSGI '
+            'environ dictionary.'),
 
     optparse.make_option('--working-directory', metavar='DIRECTORY-PATH',
             help='Specify the directory which should be used as the '

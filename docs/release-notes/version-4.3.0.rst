@@ -183,8 +183,12 @@ Note that if using the ``--allow-localhost`` option, redirection from a
 HTTP to HTTPS connection will not occur when access via ``localhost``.
 
 11. Added the ``--setenv`` option to ``mod_wsgi-express`` to enable request
-specific key/value pairs to be added to the WSGI environ dictionary. The
+specific name/value pairs to be added to the WSGI environ dictionary. The
 values are restricted to string values.
+
+Also added a companion ``--passenv`` option to ``mod_wsgi-express`` to
+indicate the names of normal process environment variables which should
+be added to the per request WSGI environ dictionary.
 
 12. Added the ``WSGIMapHEADToGET`` directive for overriding the previous
 behaviour of automatically mapping any ``HEAD`` request to a ``GET`` request
