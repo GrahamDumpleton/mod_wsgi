@@ -6991,6 +6991,17 @@ static void wsgi_signal_handler(int signum)
     }
 }
 
+static void wsgi_exit_daemon_process(int status)
+{
+    if (wsgi_server && wsgi_daemon_group) {
+        ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Exiting process '%s'.", getpid(),
+                     wsgi_daemon_group);
+    }
+
+    exit(status);
+}
+
 static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon);
 
 static void wsgi_manage_process(int reason, void *data, apr_wait_t status)
@@ -7313,7 +7324,7 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
 
         sleep(20);
 
-        exit(-1);
+        wsgi_exit_daemon_process(-1);
     }
 
     /*
@@ -7979,7 +7990,7 @@ static void *wsgi_reaper_thread(apr_thread_t *thd, void *data)
                  "mod_wsgi (pid=%d): Aborting process '%s'.",
                  getpid(), daemon->group->name);
 
-    exit(-1);
+    wsgi_exit_daemon_process(-1);
 
     return NULL;
 }
@@ -8696,7 +8707,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             sleep(20);
 
-            exit(-1);
+            wsgi_exit_daemon_process(-1);
         }
 
         /* Reinitialise accept mutex in daemon process. */
@@ -8715,7 +8726,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
                 sleep(20);
 
-                exit(-1);
+                wsgi_exit_daemon_process(-1);
             }
         }
 
@@ -8824,7 +8835,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             sleep(20);
 
-            exit(-1);
+            wsgi_exit_daemon_process(-1);
         }
 
         wsgi_daemon_shutdown = 0;
@@ -9160,7 +9171,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         /* Exit the daemon process when being shutdown. */
 
-        exit(-1);
+        wsgi_exit_daemon_process(0);
     }
 
     apr_pool_note_subprocess(p, &daemon->process, APR_KILL_AFTER_TIMEOUT);
