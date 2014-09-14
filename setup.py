@@ -75,9 +75,17 @@ elif os.path.exists(os.path.join(BINDIR, PROGNAME)):
 else:
     HTTPD = PROGNAME
 
+if os.path.exists(os.path.join(SBINDIR, 'rotatelogs')):
+    ROTATELOGS = os.path.join(SBINDIR, 'rotatelogs')
+elif os.path.exists(os.path.join(BINDIR, 'rotatelogs')):
+    ROTATELOGS = os.path.join(BINDIR, 'rotatelogs')
+else:
+    ROTATELOGS = 'rotatelogs'
+
 with open(os.path.join(os.path.dirname(__file__),
         'src/server/apxs_config.py'), 'w') as fp:
     print('HTTPD = "%s"' % HTTPD, file=fp)
+    print('ROTATELOGS = "%s"' % ROTATELOGS, file=fp)
     print('BINDIR = "%s"' % BINDIR, file=fp)
     print('SBINDIR = "%s"' % SBINDIR, file=fp)
     print('PROGNAME = "%s"' % PROGNAME, file=fp)
