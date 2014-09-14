@@ -178,6 +178,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->chunked_request = parent->chunked_request;
 
+    if (child->map_head_to_get != -1)
+        config->map_head_to_get = child->map_head_to_get;
+    else
+        config->map_head_to_get = parent->map_head_to_get;
+
     if (child->enable_sendfile != -1)
         config->enable_sendfile = child->enable_sendfile;
     else
@@ -211,6 +216,7 @@ typedef struct {
     int script_reloading;
     int error_override;
     int chunked_request;
+    int map_head_to_get;
 
     int enable_sendfile;
 
@@ -242,6 +248,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->script_reloading = -1;
     object->error_override = -1;
     object->chunked_request = -1;
+    object->map_head_to_get = -1;
 
     object->enable_sendfile = -1;
 
@@ -325,6 +332,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->chunked_request = parent->chunked_request;
 
+    if (child->map_head_to_get != -1)
+        config->map_head_to_get = child->map_head_to_get;
+    else
+        config->map_head_to_get = parent->map_head_to_get;
+
     if (child->enable_sendfile != -1)
         config->enable_sendfile = child->enable_sendfile;
     else
@@ -383,6 +395,7 @@ typedef struct {
     int script_reloading;
     int error_override;
     int chunked_request;
+    int map_head_to_get;
 
     int enable_sendfile;
 
@@ -730,6 +743,14 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         config->chunked_request = sconfig->chunked_request;
         if (config->chunked_request < 0)
             config->chunked_request = 0;
+    }
+
+    config->map_head_to_get = dconfig->map_head_to_get;
+
+    if (config->map_head_to_get < 0) {
+        config->map_head_to_get = sconfig->map_head_to_get;
+        if (config->map_head_to_get < 0)
+            config->map_head_to_get = 2;
     }
 
     config->enable_sendfile = dconfig->enable_sendfile;
@@ -4739,6 +4760,40 @@ static const char *wsgi_set_chunked_request(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_map_head_to_get(cmd_parms *cmd, void *mconfig,
+                                            const char *f)
+{
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+
+        if (strcasecmp(f, "Off") == 0)
+            dconfig->map_head_to_get = 0;
+        else if (strcasecmp(f, "On") == 0)
+            dconfig->map_head_to_get = 1;
+        else if (strcasecmp(f, "Auto") == 0)
+            dconfig->map_head_to_get = 2;
+        else
+            return "WSGIMapHEADToGET must be one of: Off | On | Auto";
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+
+        if (strcasecmp(f, "Off") == 0)
+            sconfig->map_head_to_get = 0;
+        else if (strcasecmp(f, "On") == 0)
+            sconfig->map_head_to_get = 1;
+        else if (strcasecmp(f, "Auto") == 0)
+            sconfig->map_head_to_get = 2;
+        else
+            return "WSGIMapHEADToGET must be one of: Off | On | Auto";
+    }
+
+    return NULL;
+}
+
 static const char *wsgi_set_enable_sendfile(cmd_parms *cmd, void *mconfig,
                                             const char *f)
 {
@@ -5203,6 +5258,8 @@ static void wsgi_log_script_error(request_rec *r, const char *e, const char *n)
     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "%s", message);
 }
 
+static void wsgi_drop_invalid_headers(request_rec *r);
+
 static void wsgi_build_environment(request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
@@ -5218,7 +5275,21 @@ static void wsgi_build_environment(request_rec *r)
     config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
                                                        &wsgi_module);
 
-    /* Populate environment with standard CGI variables. */
+    /*
+     * Populate environment with standard CGI variables. Before
+     * we do this though, we ensure that we delete any headers
+     * which use invalid characters. This is necessary to ensure
+     * that someone doesn't try and take advantage of header
+     * spoofing. This can come about where characters other than
+     * alphanumerics or '-' are used as the conversion of non
+     * alphanumerics to '_' means one can get collisions. This
+     * is technically only an issue with Apache 2.2 as Apache
+     * 2.4 addresses the problem and drops them anyway. Still go
+     * through and drop them even for Apache 2.4 as not sure
+     * which version of Apache 2.4 introduces the change.
+     */
+
+    wsgi_drop_invalid_headers(r);
 
     ap_add_cgi_vars(r);
     ap_add_common_vars(r);
@@ -5237,11 +5308,24 @@ static void wsgi_build_environment(request_rec *r)
      * content is generated. If using Apache 2.X we can skip
      * doing this if we know there is no output filter that
      * might change the content and/or headers.
+     *
+     * The default behaviour here of changing it if an output
+     * filter is detected can be overridden using the directive
+     * WSGIMapHEADToGet. The default value is 'Auto'. If set to
+     * 'On' then it remapped regardless of whether an output
+     * filter is present. If 'Off' then it will be left alone
+     * and the original value used.
      */
 
-    if (r->method_number == M_GET && r->header_only &&
-        r->output_filters->frec->ftype < AP_FTYPE_PROTOCOL)
-        apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
+    if (config->map_head_to_get == 2) {
+        if (r->method_number == M_GET && r->header_only &&
+            r->output_filters->frec->ftype < AP_FTYPE_PROTOCOL)
+            apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
+    }
+    else if (config->map_head_to_get == 1) {
+        if (r->method_number == M_GET)
+            apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
+    }
 
     /* Determine whether connection uses HTTPS protocol. */
 
@@ -6907,6 +6991,17 @@ static void wsgi_signal_handler(int signum)
     }
 }
 
+static void wsgi_exit_daemon_process(int status)
+{
+    if (wsgi_server && wsgi_daemon_group) {
+        ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Exiting process '%s'.", getpid(),
+                     wsgi_daemon_group);
+    }
+
+    exit(status);
+}
+
 static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon);
 
 static void wsgi_manage_process(int reason, void *data, apr_wait_t status)
@@ -7229,7 +7324,7 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
 
         sleep(20);
 
-        exit(-1);
+        wsgi_exit_daemon_process(-1);
     }
 
     /*
@@ -7895,7 +7990,7 @@ static void *wsgi_reaper_thread(apr_thread_t *thd, void *data)
                  "mod_wsgi (pid=%d): Aborting process '%s'.",
                  getpid(), daemon->group->name);
 
-    exit(-1);
+    wsgi_exit_daemon_process(-1);
 
     return NULL;
 }
@@ -8612,7 +8707,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             sleep(20);
 
-            exit(-1);
+            wsgi_exit_daemon_process(-1);
         }
 
         /* Reinitialise accept mutex in daemon process. */
@@ -8631,7 +8726,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
                 sleep(20);
 
-                exit(-1);
+                wsgi_exit_daemon_process(-1);
             }
         }
 
@@ -8740,7 +8835,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             sleep(20);
 
-            exit(-1);
+            wsgi_exit_daemon_process(-1);
         }
 
         wsgi_daemon_shutdown = 0;
@@ -9076,7 +9171,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         /* Exit the daemon process when being shutdown. */
 
-        exit(-1);
+        wsgi_exit_daemon_process(0);
     }
 
     apr_pool_note_subprocess(p, &daemon->process, APR_KILL_AFTER_TIMEOUT);
@@ -11421,6 +11516,71 @@ static char *wsgi_original_uri(request_rec *r)
     return apr_pstrmemdup(r->pool, first, last - first);
 }
 
+static int wsgi_http_invalid_header(const char *w)
+{
+    char c;
+
+    while ((c = *w++) != 0) {
+        if (!apr_isalnum(c) && c != '-')
+            return 1;
+    }
+
+    return 0;
+}
+
+static void wsgi_drop_invalid_headers(request_rec *r)
+{
+    /*
+     * Apache 2.2 when converting headers for CGI variables, doesn't
+     * ignore headers with invalid names. That is, any which use any
+     * characters besides alphanumerics and the '-' character. This
+     * opens us up to header spoofing whereby something can inject
+     * multiple headers which differ by using non alphanumeric
+     * characters in the same position, which would then encode to same
+     * value. Since not easy to cleanup after the fact, as a workaround,
+     * is easier to simply remove the invalid headers. This will make
+     * things end up being the same as Apache 2.4. Doing this could
+     * annoy some users of Apache 2.2 who were using invalid headers,
+     * but things will break for them under Apache 2.4 anyway.
+     */
+
+    apr_array_header_t *to_delete = NULL;
+
+    const apr_array_header_t *hdrs_arr;
+    const apr_table_entry_t *hdrs;
+
+    int i;
+
+    hdrs_arr = apr_table_elts(r->headers_in);
+    hdrs = (const apr_table_entry_t *) hdrs_arr->elts;
+
+    for (i = 0; i < hdrs_arr->nelts; ++i) {
+        if (!hdrs[i].key) {
+            continue;
+        }
+
+        if (wsgi_http_invalid_header(hdrs[i].key)) {
+            char **new;
+
+            if (!to_delete)
+                to_delete = apr_array_make(r->pool, 1, sizeof(char *));
+
+            new = (char **)apr_array_push(to_delete);
+            *new = hdrs[i].key;
+        }
+    }
+
+    if (to_delete) {
+        char *key;
+
+        for (i = 0; i < to_delete->nelts; i++) {
+            key = ((char **)to_delete->elts)[i];
+
+            apr_table_unset(r->headers_in, key);
+        }
+    }
+}
+
 static char *wsgi_http2env(apr_pool_t *a, const char *w)
 {
     char *res = (char *)apr_palloc(a, sizeof("HTTP_") + strlen(w));
@@ -11434,12 +11594,14 @@ static char *wsgi_http2env(apr_pool_t *a, const char *w)
     *cp++ = '_';
 
     while ((c = *w++) != 0) {
-        if (!apr_isalnum(c)) {
-            *cp++ = '_';
-        }
-        else {
+        if (apr_isalnum(c)) {
             *cp++ = apr_toupper(c);
         }
+        else if (c == '-') {
+            *cp++ = '_';
+        }
+        else
+            return NULL;
     }
     *cp = 0;
 
@@ -11529,15 +11691,22 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
             continue;
         }
         else {
+            if (hdrs[i].val) {
+                char *header = wsgi_http2env(r->pool, hdrs[i].key);
+
+                if (header) {
 #if PY_MAJOR_VERSION >= 3
-            object = PyUnicode_DecodeLatin1(hdrs[i].val,
-                                            strlen(hdrs[i].val), NULL);
+                    object = PyUnicode_DecodeLatin1(hdrs[i].val,
+                                                    strlen(hdrs[i].val), NULL);
 #else
-            object = PyString_FromString(hdrs[i].val);
+                    object = PyString_FromString(hdrs[i].val);
 #endif
-            PyDict_SetItemString(vars, wsgi_http2env(r->pool, hdrs[i].key),
-                                 object);
-            Py_DECREF(object);
+
+                    PyDict_SetItemString(vars, header, object);
+
+                    Py_DECREF(object);
+                }
+            }
         }
     }
 
@@ -12134,10 +12303,31 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                     else if (result == Py_False) {
                         status = AUTH_DENIED;
                     }
+#if PY_MAJOR_VERSION >= 3
+                    else if (PyUnicode_Check(result)) {
+                        PyObject *str = NULL;
+
+                        str = PyUnicode_AsUTF8String(result);
+
+                        if (str) {
+                            adapter->r->user = apr_pstrdup(adapter->r->pool,
+                                    PyString_AsString(str));
+
+                            status = AUTH_GRANTED;
+                        }
+                    }
+#else
+                    else if (PyString_Check(result)) {
+                        adapter->r->user = apr_pstrdup(adapter->r->pool,
+                                PyString_AsString(result));
+
+                        status = AUTH_GRANTED;
+                    }
+#endif
                     else {
                         PyErr_SetString(PyExc_TypeError, "Basic auth "
                                         "provider must return True, False "
-                                        "or None");
+                                        "None or user name as string");
                     }
 
                     Py_DECREF(result);
@@ -13229,6 +13419,11 @@ static authz_status wsgi_check_authorization(request_rec *r,
     const char *t, *w;
     int status;
 
+#if AP_MODULE_MAGIC_AT_LEAST(20100714,0)
+    if (!r->user)
+        return AUTHZ_DENIED_NO_USER;
+#endif
+
     config = wsgi_create_req_config(r->pool, r);
 
     if (!config->auth_group_script) {
@@ -13311,7 +13506,11 @@ static int wsgi_hook_auth_checker(request_rec *r)
         t = reqs[x].requirement;
         w = ap_getword_white(r->pool, &t);
 
+#if AP_MODULE_MAGIC_AT_LEAST(20100714,0)
+        if (!strcasecmp(w, "wsgi-group")) {
+#else
         if (!strcasecmp(w, "group") || !strcasecmp(w, "wsgi-group")) {
+#endif
             required_group = 1;
 
             if (!grpstatus) {
@@ -13510,6 +13709,8 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable overriding of error pages."),
     AP_INIT_TAKE1("WSGIChunkedRequest", wsgi_set_chunked_request,
         NULL, OR_FILEINFO, "Enable/Disable support for chunked requests."),
+    AP_INIT_TAKE1("WSGIMapHEADToGET", wsgi_set_map_head_to_get,
+        NULL, OR_FILEINFO, "Enable/Disable mapping of HEAD to GET."),
 
 #ifndef WIN32
     AP_INIT_TAKE1("WSGIEnableSendfile", wsgi_set_enable_sendfile,

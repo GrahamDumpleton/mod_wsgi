@@ -29,7 +29,16 @@ class Command(BaseCommand):
         args = [script_file]
         options['callable_object'] = callable_object
 
-        options['working_directory'] = settings.BASE_DIR
+        # If there is no BASE_DIR in Django settings, assume that
+        # the current working directory is the parent directory of
+        # the directory the settings module is in.
+
+        if hasattr(settings, 'BASE_DIR'):
+            options['working_directory'] = settings.BASE_DIR
+        else:
+            settings_mod = sys.modules[os.environ['DJANGO_SETTINGS_MODULE']]
+            parent = os.path.dirname(os.path.dirname(settings_mod.__file__))
+            options['working_directory'] = parent
 
         url_aliases = options.setdefault('url_aliases') or []
 
