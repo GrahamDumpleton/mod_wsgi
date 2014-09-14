@@ -9,7 +9,6 @@ def check_password(environ, user, password):
             return 'protected'
         return False
     return None
-    return None
 
 import md5
 

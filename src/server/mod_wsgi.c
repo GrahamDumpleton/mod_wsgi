@@ -13495,7 +13495,11 @@ static int wsgi_hook_auth_checker(request_rec *r)
         t = reqs[x].requirement;
         w = ap_getword_white(r->pool, &t);
 
+#if AP_MODULE_MAGIC_AT_LEAST(20100714,0)
+        if (!strcasecmp(w, "wsgi-group")) {
+#else
         if (!strcasecmp(w, "group") || !strcasecmp(w, "wsgi-group")) {
+#endif
             required_group = 1;
 
             if (!grpstatus) {

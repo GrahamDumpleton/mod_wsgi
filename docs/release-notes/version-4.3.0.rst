@@ -63,6 +63,14 @@ than alphanumerics and '-' is therefore dubious as many servers will now
 discard them when needing to be passed into a system which requires the
 headers to be passed as CGI like variables such as is the case for WSGI.
 
+2. In Apache 2.4, only ``wsgi-group`` is allowed when using the ``Require``
+directive for group authorisation. In prior Apache versions ``group`` would
+also be accepted and matched by the ``wsgi`` auth provider. The inability
+to use ``group`` is due to a change in Apache itself and not mod_wsgi. To
+avoid any issues going forward though, the mod_wsgi code will now no longer
+check for ``group`` even if for some reason Apache still decides to pass
+the authorisation check off to mod_wsgi even when it shouldn't.
+
 New Features
 ------------
 
