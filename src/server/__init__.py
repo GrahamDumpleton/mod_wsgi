@@ -97,16 +97,30 @@ LockFile '%(server_root)s/accept.lock'
 </IfVersion>
 
 <IfVersion >= 2.4>
+<IfDefine WSGI_WITH_PHP5>
 <IfModule !mpm_event_module>
 <IfModule !mpm_worker_module>
 <IfModule !mpm_prefork_module>
-<IfDefine WSGI_MPM_EVENT_MODULE>
+<IfDefine WSGI_MPM_EXISTS_PREFORK_MODULE>
+LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
+</IfDefine>
+</IfModule>
+</IfModule>
+</IfModule>
+</IfDefine>
+</IfVersion>
+
+<IfVersion >= 2.4>
+<IfModule !mpm_event_module>
+<IfModule !mpm_worker_module>
+<IfModule !mpm_prefork_module>
+<IfDefine WSGI_MPM_ENABLE_EVENT_MODULE>
 LoadModule mpm_event_module '%(modules_directory)s/mod_mpm_event.so'
 </IfDefine>
-<IfDefine WSGI_MPM_WORKER_MODULE>
+<IfDefine WSGI_MPM_ENABLE_WORKER_MODULE>
 LoadModule mpm_worker_module '%(modules_directory)s/mod_mpm_worker.so'
 </IfDefine>
-<IfDefine WSGI_MPM_PREFORK_MODULE>
+<IfDefine WSGI_MPM_ENABLE_PREFORK_MODULE>
 LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
 </IfDefine>
 </IfModule>
@@ -144,6 +158,36 @@ LoadModule alias_module '%(modules_directory)s/mod_alias.so'
 <IfModule !dir_module>
 LoadModule dir_module '%(modules_directory)s/mod_dir.so'
 </IfModule>
+<IfModule !env_module>
+LoadModule env_module '%(modules_directory)s/mod_env.so'
+</IfModule>
+
+<IfDefine WSGI_COMPRESS_RESPONSES>
+<IfModule !deflate_module>
+LoadModule deflate_module '%(modules_directory)s/mod_deflate.so'
+</IfModule>
+</IfDefine>
+
+<IfDefine WSGI_AUTH_USER>
+<IfModule !auth_basic_module>
+LoadModule auth_basic_module '%(modules_directory)s/mod_auth_basic.so'
+</IfModule>
+<IfModule !auth_digest_module>
+LoadModule auth_digest_module '%(modules_directory)s/mod_auth_digest.so'
+</IfModule>
+<IfModule !authz_user_module>
+LoadModule authz_user_module '%(modules_directory)s/mod_authz_user.so'
+</IfModule>
+</IfDefine>
+
+<IfModule mpm_prefork_module>
+<IfDefine WSGI_WITH_PHP5>
+<IfModule !php5_module>
+Loadmodule php5_module '%(modules_directory)s/libphp5.so'
+</IfModule>
+AddHandler application/x-httpd-php .php
+</IfDefine>
+</IfModule>
 
 LoadModule wsgi_module '%(mod_wsgi_so)s'
 
@@ -173,6 +217,8 @@ LimitRequestBody %(limit_request_body)s
 </Directory>
 
 WSGIPythonHome '%(python_home)s'
+
+<IfDefine !ONE_PROCESS>
 WSGIRestrictEmbedded On
 WSGISocketPrefix %(server_root)s/wsgi
 <IfDefine WSGI_MULTIPROCESS>
@@ -222,8 +268,15 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    header-buffer-size=%(header_buffer_size)s \\
    server-metrics=%(daemon_server_metrics_flag)s
 </IfDefine>
+</IfDefine>
+
 WSGICallableObject '%(callable_object)s'
 WSGIPassAuthorization On
+WSGIMapHEADToGET %(map_head_to_get)s
+
+<IfDefine ONE_PROCESS>
+WSGIRestrictStdin Off
+</IfDefine>
 
 <IfDefine WSGI_SERVER_METRICS>
 ExtendedStatus On
@@ -246,7 +299,23 @@ KeepAliveTimeout %(keep_alive_timeout)s
 KeepAlive Off
 </IfDefine>
 
+<IfDefine WSGI_COMPRESS_RESPONSES>
+AddOutputFilterByType DEFLATE text/plain
+AddOutputFilterByType DEFLATE text/html
+AddOutputFilterByType DEFLATE text/xml
+AddOutputFilterByType DEFLATE text/css
+AddOutputFilterByType DEFLATE text/javascript
+AddOutputFilterByType DEFLATE application/xhtml+xml
+AddOutputFilterByType DEFLATE application/javascript
+</IfDefine>
+
+<IfDefine WSGI_ROTATE_LOGS>
+ErrorLog "|%(rotatelogs_executable)s \\
+    %(error_log)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM"
+</IfDefine>
+<IfDefine !WSGI_ROTATE_LOGS>
 ErrorLog '%(error_log)s'
+</IfDefine>
 LogLevel %(log_level)s
 
 <IfDefine WSGI_ACCESS_LOG>
@@ -254,19 +323,41 @@ LogLevel %(log_level)s
 LoadModule log_config_module %(modules_directory)s/mod_log_config.so
 </IfModule>
 LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b" common
+<IfDefine WSGI_ROTATE_LOGS>
+CustomLog "|%(rotatelogs_executable)s \\
+    %(log_directory)s/access_log.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM" common
+</IfDefine>
+<IfDefine !WSGI_ROTATE_LOGS>
 CustomLog "%(log_directory)s/access_log" common
+</IfDefine>
+</IfDefine>
+
+<IfDefine WSGI_WITH_SSL>
+<IfModule !ssl_module>
+LoadModule ssl_module %(modules_directory)s/mod_ssl.so
+</IfModule>
 </IfDefine>
 
 <IfModule mpm_prefork_module>
+<IfDefine !ONE_PROCESS>
 ServerLimit %(prefork_server_limit)s
 StartServers %(prefork_start_servers)s
 MaxClients %(prefork_max_clients)s
 MinSpareServers %(prefork_min_spare_servers)s
 MaxSpareServers %(prefork_max_spare_servers)s
+</IfDefine>
+<IfDefine ONE_PROCESS>
+ServerLimit 1
+StartServers 1
+MaxClients 1
+MinSpareServers 1
+MaxSpareServers 1
+</IfDefine>
 MaxRequestsPerChild 0
 </IfModule>
 
 <IfModule mpm_worker_module>
+<IfDefine !ONE_PROCESS>
 ServerLimit %(worker_server_limit)s
 ThreadLimit %(worker_thread_limit)s
 StartServers %(worker_start_servers)s
@@ -274,11 +365,22 @@ MaxClients %(worker_max_clients)s
 MinSpareThreads %(worker_min_spare_threads)s
 MaxSpareThreads %(worker_max_spare_threads)s
 ThreadsPerChild %(worker_threads_per_child)s
+</IfDefine>
+<IfDefine ONE_PROCESS>
+ServerLimit 1
+ThreadLimit 1
+StartServers 1 
+MaxClients 1
+MinSpareThreads 1
+MaxSpareThreads 1
+ThreadsPerChild 1
+</IfDefine>
 MaxRequestsPerChild 0
 ThreadStackSize 262144
 </IfModule>
 
 <IfModule mpm_event_module>
+<IfDefine !ONE_PROCESS>
 ServerLimit %(worker_server_limit)s
 ThreadLimit %(worker_thread_limit)s
 StartServers %(worker_start_servers)s
@@ -286,9 +388,116 @@ MaxClients %(worker_max_clients)s
 MinSpareThreads %(worker_min_spare_threads)s
 MaxSpareThreads %(worker_max_spare_threads)s
 ThreadsPerChild %(worker_threads_per_child)s
+</IfDefine>
+<IfDefine ONE_PROCESS>
+ServerLimit 1
+ThreadLimit 1
+StartServers 1
+MaxClients 1
+MinSpareThreads 1
+MaxSpareThreads 1
+ThreadsPerChild 1
+</IfDefine>
 MaxRequestsPerChild 0
 ThreadStackSize 262144
 </IfModule>
+
+<IfDefine WSGI_VIRTUAL_HOST>
+
+<IfVersion < 2.4>
+NameVirtualHost *:%(port)s
+</IfVersion>
+<VirtualHost _default_:%(port)s>
+<Location />
+Order deny,allow
+Deny from all
+<IfDefine WSGI_ALLOW_LOCALHOST>
+Allow from localhost
+</IfDefine>
+</Location>
+</VirtualHost>
+<IfDefine !WSGI_HTTPS_ONLY>
+<VirtualHost *:%(port)s>
+ServerName %(server_name)s
+<IfDefine WSGI_SERVER_ALIAS>
+ServerAlias %(server_aliases)s
+</IfDefine>
+</VirtualHost>
+<IfDefine WSGI_REDIRECT_WWW>
+<VirtualHost *:%(port)s>
+ServerName %(parent_domain)s
+Redirect permanent / http://%(server_name)s:%(port)s/
+</VirtualHost>
+</IfDefine>
+</IfDefine>
+
+<IfDefine WSGI_HTTPS_ONLY>
+<VirtualHost *:%(port)s>
+ServerName %(server_name)s
+<IfDefine WSGI_SERVER_ALIAS>
+ServerAlias %(server_aliases)s
+RewriteEngine On
+RewriteCond %%{HTTPS} off
+RewriteRule (.*) https://%%{HTTP_HOST}%%{REQUEST_URI}
+</IfDefine>
+</VirtualHost>
+<IfDefine WSGI_REDIRECT_WWW>
+<VirtualHost *:%(port)s>
+ServerName %(parent_domain)s
+RewriteEngine On
+RewriteCond %%{HTTPS} off
+RewriteRule (.*) https://%%{HTTP_HOST}%%{REQUEST_URI}
+</VirtualHost>
+</IfDefine>
+</IfDefine>
+
+</IfDefine>
+
+<IfDefine WSGI_VIRTUAL_HOST>
+
+<IfDefine WSGI_WITH_SSL>
+<IfDefine WSGI_LISTENER_HOST>
+Listen %(host)s:%(ssl_port)s
+</IfDefine>
+<IfDefine !WSGI_LISTENER_HOST>
+Listen %(ssl_port)s
+</IfDefine>
+<IfVersion < 2.4>
+NameVirtualHost *:%(ssl_port)s
+</IfVersion>
+<VirtualHost _default_:%(ssl_port)s>
+<Location />
+Order deny,allow
+Deny from all
+<IfDefine WSGI_ALLOW_LOCALHOST>
+Allow from localhost
+</IfDefine>
+</Location>
+SSLEngine On
+SSLCertificateFile %(ssl_certificate)s.crt
+SSLCertificateKeyFile %(ssl_certificate)s.key
+</VirtualHost>
+<VirtualHost *:%(ssl_port)s>
+ServerName %(server_name)s
+<IfDefine WSGI_SERVER_ALIAS>
+ServerAlias %(server_aliases)s
+</IfDefine>
+SSLEngine On
+SSLCertificateFile %(ssl_certificate)s.crt
+SSLCertificateKeyFile %(ssl_certificate)s.key
+</VirtualHost>
+<IfDefine WSGI_REDIRECT_WWW>
+<VirtualHost *:%(ssl_port)s>
+ServerName %(parent_domain)s
+Redirect permanent / https://%(server_name)s:%(ssl_port)s/
+SSLEngine On
+SSLCertificateFile %(ssl_certificate)s.crt
+SSLCertificateKeyFile %(ssl_certificate)s.key
+</VirtualHost>
+</IfDefine>
+</IfDefine>
+
+</IfDefine>
 
 DocumentRoot '%(document_root)s'
 
@@ -300,8 +509,14 @@ DocumentRoot '%(document_root)s'
 </Directory>
 
 <Directory '%(document_root)s%(mount_point)s'>
+<IfDefine WSGI_DIRECTORY_INDEX>
+    DirectoryIndex %(directory_index)s
+</IfDefine>
     RewriteEngine On
     RewriteCond %%{REQUEST_FILENAME} !-f
+<IfDefine WSGI_DIRECTORY_INDEX>
+    RewriteCond %%{REQUEST_FILENAME} !-d
+</IfDefine>
 <IfDefine WSGI_SERVER_STATUS>
     RewriteCond %%{REQUEST_URI} !/server-status
 </IfDefine>
@@ -314,10 +529,45 @@ DocumentRoot '%(document_root)s'
 WSGIErrorOverride On
 </IfDefine>
 
+<IfDefine WSGI_AUTH_USER>
+<Location />
+    AuthType %(auth_type)s
+    AuthName '%(host)s:%(port)s'
+    Auth%(auth_type)sProvider wsgi
+    WSGIAuthUserScript '%(auth_user_script)s'
+<IfDefine WSGI_AUTH_GROUP>
+    WSGIAuthGroupScript '%(auth_group_script)s'
+</IfDefine>
+<IfVersion < 2.4>
+    Require valid-user
+<IfDefine WSGI_AUTH_GROUP>
+    Require wsgi-group '%(auth_group)s'
+</IfDefine>
+</IfVersion>
+<IfVersion >= 2.4>
+    <RequireAll>
+    Require valid-user
+<IfDefine WSGI_AUTH_GROUP>
+    Require wsgi-group '%(auth_group)s'
+</IfDefine>
+    </RequireAll>
+</IfVersion>
+</Location>
+</IfDefine>
+
+<IfDefine !ONE_PROCESS>
 WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
 WSGIImportScript '%(server_root)s/handler.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
+</IfDefine>
+
+<IfDefine ONE_PROCESS>
+WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
+    process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
+WSGIImportScript '%(server_root)s/handler.wsgi' \\
+    process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
+</IfDefine>
 """
 
 APACHE_ALIAS_DIRECTORY_CONFIG = """
@@ -358,6 +608,14 @@ Alias /__wsgi__/images '%(images_directory)s'
 
 APACHE_ERROR_DOCUMENT_CONFIG = """
 ErrorDocument '%(status)s' '%(document)s'
+"""
+
+APACHE_SETENV_CONFIG = """
+SetEnv '%(name)s' '%(value)s'
+"""
+
+APACHE_PASSENV_CONFIG = """
+PassEnv '%(name)s'
 """
 
 APACHE_INCLUDE_CONFIG = """
@@ -409,6 +667,15 @@ def generate_apache_config(options):
             for status, document in options['error_documents']:
                 print(APACHE_ERROR_DOCUMENT_CONFIG % dict(status=status,
                         document=document.replace("'", "\\'")), file=fp)
+
+        if options['setenv_variables']:
+            for name, value in options['setenv_variables']:
+                print(APACHE_SETENV_CONFIG % dict(name=name, value=value),
+                        file=fp)
+
+        if options['passenv_variables']:
+            for name in options['passenv_variables']:
+                print(APACHE_PASSENV_CONFIG % dict(name=name), file=fp)
 
         if options['include_files']:
             for filename in options['include_files']:
@@ -535,26 +802,44 @@ def start_reloader(interval=1.0):
 
 class ApplicationHandler(object):
 
-    def __init__(self, script, callable_object='application', mount_point='/',
-            with_newrelic=False, with_wdb=False):
+    def __init__(self, entry_point, application_type='script',
+            callable_object='application', mount_point='/',
+            with_newrelic=False, with_wdb=False, debug_mode=False):
 
-        self.script = script
+        self.entry_point = entry_point
+        self.application_type = application_type
         self.callable_object = callable_object
         self.mount_point = mount_point
 
-        self.module = imp.new_module('__wsgi__')
-        self.module.__file__ = script
+        if application_type == 'module':
+            __import__(entry_point)
+            self.module = sys.modules[entry_point]
+            self.application = getattr(self.module, callable_object)
+            self.target = self.module.__file__
+            parts = os.path.splitext(self.target)[-1]
+            if parts[-1].lower() in ('.pyc', '.pyd', '.pyd'):
+                self.target = parts[0] + '.py'
 
-        with open(script, 'r') as fp:
-            code = compile(fp.read(), script, 'exec', dont_inherit=True)
-            exec(code, self.module.__dict__)
+        elif application_type == 'paste':
+            from paste.deploy import loadapp
+            self.application = loadapp('config:%s' % entry_point)
+            self.target = entry_point
 
-        self.application = getattr(self.module, callable_object)
+        else:
+            self.module = imp.new_module('__wsgi__')
+            self.module.__file__ = entry_point
 
-        sys.modules['__wsgi__'] = self.module
+            with open(entry_point, 'r') as fp:
+                code = compile(fp.read(), entry_point, 'exec',
+                        dont_inherit=True)
+                exec(code, self.module.__dict__)
+
+            sys.modules['__wsgi__'] = self.module
+            self.application = getattr(self.module, callable_object)
+            self.target = entry_point
 
         try:
-            self.mtime = os.path.getmtime(script)
+            self.mtime = os.path.getmtime(self.target)
         except Exception:
             self.mtime = None
 
@@ -563,6 +848,8 @@ class ApplicationHandler(object):
 
         if with_wdb:
             self.setup_wdb()
+
+        self.debug_mode = debug_mode
 
     def setup_newrelic(self):
         import newrelic.agent
@@ -585,8 +872,11 @@ class ApplicationHandler(object):
         self.application = WdbMiddleware(self.application)
 
     def reload_required(self, environ):
+        if self.debug_mode:
+            return False
+
         try:
-            mtime = os.path.getmtime(self.script)
+            mtime = os.path.getmtime(self.target)
         except Exception:
             mtime = None
 
@@ -615,19 +905,24 @@ class ApplicationHandler(object):
 WSGI_HANDLER_SCRIPT = """
 import mod_wsgi.server
 
-script = '%(script)s'
+entry_point = '%(entry_point)s'
+application_type = '%(application_type)s'
 callable_object = '%(callable_object)s'
 mount_point = '%(mount_point)s'
 with_newrelic = %(with_newrelic_agent)s
 with_wdb = %(with_wdb)s
+reload_on_changes = %(reload_on_changes)s
+debug_mode = %(debug_mode)s
 
-handler = mod_wsgi.server.ApplicationHandler(script, callable_object,
-        mount_point, with_newrelic=with_newrelic, with_wdb=with_wdb)
+handler = mod_wsgi.server.ApplicationHandler(entry_point,
+        application_type=application_type, callable_object=callable_object,
+        mount_point=mount_point, with_newrelic=with_newrelic,
+        with_wdb=with_wdb, debug_mode=debug_mode)
 
 reload_required = handler.reload_required
 handle_request = handler.handle_request
 
-if %(reload_on_changes)s:
+if reload_on_changes and not debug_mode:
     mod_wsgi.server.start_reloader()
 """
 
@@ -742,6 +1037,8 @@ def generate_wdb_server_script(options):
 WSGI_CONTROL_SCRIPT = """
 #!/bin/sh
 
+# %(sys_argv)s
+
 HTTPD="%(httpd_executable)s %(httpd_arguments)s"
 
 WSGI_RUN_USER="${WSGI_RUN_USER:-%(user)s}"
@@ -749,6 +1046,12 @@ WSGI_RUN_GROUP="${WSGI_RUN_GROUP:-%(group)s}"
 
 export WSGI_RUN_USER
 export WSGI_RUN_GROUP
+
+LANG='%(lang)s'
+LC_ALL='%(locale)s'
+
+export LANG
+export LOCALE
 
 ACMD="$1"
 ARGV="$@"
@@ -807,6 +1110,16 @@ def check_percentage(option, opt_str, value, parser):
     setattr(parser.values, option.dest, value)
 
 option_list = (
+    optparse.make_option('--application-type', default='script',
+            metavar='TYPE', help='The type of WSGI application entry point '
+            'that was provided. Defaults to \'script\', indicating the '
+            'traditional mod_wsgi style WSGI script file specified by a '
+            'filesystem path. Alternatively one can supply \'module\', '
+            'indicating that the provided entry point is a Python module '
+            'which should be imported using the standard Python import '
+            'mechanism, or \'paste\' indicating that the provided entry '
+            'point is a Paste deployment configuration file.'),
+
     optparse.make_option('--host', default=None, metavar='IP-ADDRESS',
             help='The specific host (IP address) interface on which '
             'requests are to be accepted. Defaults to listening on '
@@ -814,6 +1127,33 @@ option_list = (
     optparse.make_option('--port', default=8000, type='int',
             metavar='NUMBER', help='The specific port to bind to and '
             'on which requests are to be accepted. Defaults to port 8000.'),
+
+    optparse.make_option('--ssl-port', type='int', metavar='NUMBER',
+            help='The specific port to bind to and on which requests are '
+            'to be accepted for SSL connections.'),
+    optparse.make_option('--ssl-certificate', default=None,
+            metavar='FILE-PATH', help='Specify the path to the SSL '
+            'certificate files. It is expected that the files have \'.crt\' '
+            'and \'.key\' extensions. This option should refer to the '
+            'common part of the names for both files which appears before '
+            'the extension.'),
+    optparse.make_option('--https-only', action='store_true',
+            default=False, help='Flag indicating whether any requests '
+	    'made using a HTTP request over the non SSL connection should '
+	    'be redirected automatically to use a HTTPS request over the '
+	    'SSL connection.'),
+
+    optparse.make_option('--server-name', default=None, metavar='HOSTNAME',
+            help='The primary host name of the web server. If this name '
+            'starts with \'www.\' then an automatic redirection from the '
+            'parent domain name to the \'www.\' server name will created.'),
+    optparse.make_option('--server-alias', action='append',
+            dest='server_aliases', metavar='HOSTNAME', help='A secondary '
+            'host name for the web server. May include wilcard patterns.'),
+    optparse.make_option('--allow-localhost', action='store_true',
+            default=False, help='Flag indicating whether access via '
+            'localhost should still be allowed when a server name has been '
+            'specified and a name based virtual host has been configured.'),
 
     optparse.make_option('--processes', type='int', metavar='NUMBER',
             help='The number of worker processes (instances of the WSGI '
@@ -956,9 +1296,22 @@ option_list = (
             'application within the WSGI script file. Defaults to '
             'the name \'application\'.'),
 
+    optparse.make_option('--map-head-to-get', default='Auto',
+            metavar='OFF|ON|AUTO', help='Flag indicating whether HEAD '
+            'requests should be mapped to a GET request. By default a HEAD '
+            'request will be automatically mapped to a GET request when an '
+            'Apache output filter is detected that may want to see the '
+            'entire response in order to set up response headers correctly '
+            'for a HEAD request. This can be disable by setting to \'Off\'.'),
+
     optparse.make_option('--document-root', metavar='DIRECTORY-PATH',
             help='The directory which should be used as the document root '
             'and which contains any static files.'),
+    optparse.make_option('--directory-index', metavar='FILE-NAME',
+            help='The name of a directory index resource to be found in the '
+            'document root directory. Requests mapping to the directory '
+            'will be mapped to this resource rather than being passed '
+            'through to the WSGI application.'),
 
     optparse.make_option('--mount-point', metavar='URL-PATH', default='/',
             help='The URL path at which the WSGI application will be '
@@ -983,6 +1336,11 @@ option_list = (
             'to be made over the same connection. Defaults to 0, indicating '
             'that keep alive connections are disabled.'),
 
+    optparse.make_option('--compress-responses', action='store_true',
+            default=False, help='Flag indicating whether responses for '
+            'common text based responses, such as plain text, HTML, XML, '
+            'CSS and Javascript should be compressed.'),
+
     optparse.make_option('--server-metrics', action='store_true',
             default=False, help='Flag indicating whether internal server '
             'metrics will be available within the WSGI application. '
@@ -991,6 +1349,25 @@ option_list = (
             default=False, help='Flag indicating whether web server status '
             'will be available at the /server-status sub URL. Defaults to '
             'being disabled.'),
+
+    optparse.make_option('--auth-user-script', metavar='SCRIPT-PATH',
+            default=None, help='Specify a Python script file for '
+            'performing user authentication.'),
+    optparse.make_option('--auth-type', metavar='TYPE',
+            default='Basic', help='Specify the type of authentication '
+            'scheme used when authenticating users. Defaults to using '
+            '\'Basic\'. Alternate schemes available are \'Digest\'.'),
+
+    optparse.make_option('--auth-group-script', metavar='SCRIPT-PATH',
+            default=None, help='Specify a Python script file for '
+            'performing group based authorization in conjunction with '
+            'a user authentication script.'),
+    optparse.make_option('--auth-group', metavar='SCRIPT-PATH',
+            default='wsgi', help='Specify the group which users should '
+            'be a member of when using a group based authorization script. '
+            'Defaults to \'wsgi\' as a place holder but should be '
+            'overridden to be the actual group you use rather than '
+            'making your group name match the default.'),
 
     optparse.make_option('--include-file', action='append',
             dest='include_files', metavar='FILE-PATH', help='Specify the '
@@ -1009,6 +1386,16 @@ option_list = (
             help='Specify the default natural language formatting style '
             'as normally defined by the LC_ALL environment variable. '
             'Defaults to \'en_US.UTF-8\'.'),
+
+    optparse.make_option('--setenv', action='append', nargs=2,
+            dest='setenv_variables', metavar='KEY VALUE', help='Specify '
+            'a name/value pairs to be added to the per request WSGI environ '
+            'dictionary'),
+    optparse.make_option('--passenv', action='append',
+            dest='passenv_variables', metavar='KEY', help='Specify the '
+            'names of any process level environment variables which should '
+            'be passed as a name/value pair in the per request WSGI '
+            'environ dictionary.'),
 
     optparse.make_option('--working-directory', metavar='DIRECTORY-PATH',
             help='Specify the directory which should be used as the '
@@ -1037,6 +1424,16 @@ option_list = (
     optparse.make_option('--startup-log', action='store_true', default=False,
             help='Flag indicating whether the web server startup log should '
             'be enabled. Defaults to being disabled.'),
+
+    optparse.make_option('--rotate-logs', action='store_true', default=False,
+            help='Flag indicating whether log rotation should be performed.'),
+    optparse.make_option('--max-log-size', default=5, type='int',
+            metavar='MB', help='The maximum size in MB the log file should '
+            'be allowed to reach before log file rotation is performed.'),
+
+    optparse.make_option('--rotatelogs-executable',
+            default=apxs_config.ROTATELOGS, metavar='FILE-PATH',
+            help='Override the path to the rotatelogs executable.'),
 
     optparse.make_option('--python-eggs', metavar='DIRECTORY-PATH',
             help='Specify an alternate directory which should be used for '
@@ -1070,9 +1467,20 @@ option_list = (
             help='Flag indicating whether the wdb interactive debugger '
             'should be enabled for the WSGI application.'),
 
+    optparse.make_option('--with-php5', action='store_true', default=False,
+            help='Flag indicating whether PHP 5 support should be enabled.'),
+
     optparse.make_option('--enable-docs', action='store_true', default=False,
             help='Flag indicating whether the mod_wsgi documentation should '
             'be made available at the /__wsgi__/docs sub URL.'),
+
+    optparse.make_option('--debug-mode', action='store_true', default=False,
+            help='Flag indicating whether to run in single process mode '
+            'to allow the running of an interactive Python debugger. This '
+            'will override all options related to processes, threads and '
+            'communication with workers. All forms of source code reloading '
+            'will also be disabled. Both stdin and stdout will be attached '
+            'to the console to allow interaction with the Python debugger.'),
 
     optparse.make_option('--setup-only', action='store_true', default=False,
             help='Flag indicating that after the configuration files have '
@@ -1098,14 +1506,19 @@ def cmd_setup_server(params):
 def _mpm_module_defines(modules_directory):
     result = []
     workers = ['event', 'worker', 'prefork']
+    found = False
     for name in workers:
         if os.path.exists(os.path.join(modules_directory,
                 'mod_mpm_%s.so' % name)):
-            result.append('-DWSGI_MPM_%s_MODULE' % name.upper())
-            break
+            if not found:
+                result.append('-DWSGI_MPM_ENABLE_%s_MODULE' % name.upper())
+                found = True
+            result.append('-DWSGI_MPM_EXISTS_%s_MODULE' % name.upper())
     return result
 
 def _cmd_setup_server(command, args, options):
+    options['sys_argv'] = repr(sys.argv)
+
     options['mod_wsgi_so'] = where()
 
     options['working_directory'] = options['working_directory'] or os.getcwd()
@@ -1128,12 +1541,27 @@ def _cmd_setup_server(command, args, options):
     except Exception:
         pass
 
+    if options['ssl_certificate']:
+        options['ssl_certificate'] = os.path.abspath(
+                options['ssl_certificate'])
+
     if not args:
-        options['script'] = os.path.join(options['server_root'],
+        options['entry_point'] = os.path.join(options['server_root'],
                 'default.wsgi')
+        options['application_type'] = 'script'
         options['enable_docs'] = True
+    elif options['application_type'] in ('script', 'paste'):
+        options['entry_point'] = os.path.abspath(args[0])
     else:
-        options['script'] = os.path.abspath(args[0])
+        options['entry_point'] = args[0]
+
+    if options['auth_user_script']:
+        options['auth_user_script'] = os.path.abspath(
+                options['auth_user_script'])
+
+    if options['auth_group_script']:
+        options['auth_group_script'] = os.path.abspath(
+                options['auth_group_script'])
 
     options['documentation_directory'] = os.path.join(os.path.dirname(
             os.path.dirname(__file__)), 'docs')
@@ -1145,9 +1573,6 @@ def _cmd_setup_server(command, args, options):
         options['documentation_url'] = '/__wsgi__/docs/'
     else:
         options['documentation_url'] = 'http://www.modwsgi.org/'
-
-    options['script_directory'] = os.path.dirname(options['script'])
-    options['script_filename'] = os.path.basename(options['script'])
 
     if not os.path.isabs(options['server_root']):
         options['server_root'] = os.path.abspath(options['server_root'])
@@ -1336,27 +1761,73 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append(
                 options['startup_log_filename'])
 
-    if options['port'] == 80:
-        options['url'] = 'http://%s/' % options['host']
+    if options['server_name']:
+        host = options['server_name']
     else:
-        options['url'] = 'http://%s:%s/' % (options['host'],
-            options['port'])
+        host = options['host']
+
+    if options['port'] == 80:
+        options['url'] = 'http://%s/' % host
+    else:
+        options['url'] = 'http://%s:%s/' % (host, options['port'])
+
+    if options['ssl_port'] == 443:
+        options['ssl_url'] = 'https://%s/' % host
+    elif options['ssl_port'] is not None:
+        options['ssl_url'] = 'https://%s:%s/' % (host, options['ssl_port'])
+    else:
+        options['ssl_url'] = None
+
+    if options['debug_mode']:
+        options['httpd_arguments_list'].append('-DONE_PROCESS')
+
+    options['parent_domain'] = 'unspecified'
+
+    if options['server_name']:
+        options['httpd_arguments_list'].append('-DWSGI_VIRTUAL_HOST')
+        if options['server_name'].lower().startswith('www.'):
+            options['httpd_arguments_list'].append('-DWSGI_REDIRECT_WWW')
+            options['parent_domain'] = options['server_name'][4:]
+
+    if options['ssl_port'] and options['ssl_certificate']:
+        options['httpd_arguments_list'].append('-DWSGI_WITH_SSL')
+    if options['https_only']:
+        options['httpd_arguments_list'].append('-DWSGI_HTTPS_ONLY')
+
+    if options['server_aliases']:
+        options['httpd_arguments_list'].append('-DWSGI_SERVER_ALIAS')
+        options['server_aliases'] = ' '.join(options['server_aliases'])
+
+    if options['allow_localhost']:
+        options['httpd_arguments_list'].append('-DWSGI_ALLOW_LOCALHOST')
 
     if options['server_metrics']:
         options['httpd_arguments_list'].append('-DWSGI_SERVER_METRICS')
     if options['server_status']:
         options['httpd_arguments_list'].append('-DWSGI_SERVER_METRICS')
         options['httpd_arguments_list'].append('-DWSGI_SERVER_STATUS')
+    if options['directory_index']:
+        options['httpd_arguments_list'].append('-DWSGI_DIRECTORY_INDEX')
     if options['access_log']:
         options['httpd_arguments_list'].append('-DWSGI_ACCESS_LOG')
+    if options['rotate_logs']:
+        options['httpd_arguments_list'].append('-DWSGI_ROTATE_LOGS')
     if options['keep_alive'] != 0:
         options['httpd_arguments_list'].append('-DWSGI_KEEP_ALIVE')
+    if options['compress_responses'] != 0:
+        options['httpd_arguments_list'].append('-DWSGI_COMPRESS_RESPONSES')
     if options['multiprocess']:
         options['httpd_arguments_list'].append('-DWSGI_MULTIPROCESS')
     if options['listener_host']:
         options['httpd_arguments_list'].append('-DWSGI_LISTENER_HOST')
     if options['error_override']:
         options['httpd_arguments_list'].append('-DWSGI_ERROR_OVERRIDE')
+    if options['auth_user_script']:
+        options['httpd_arguments_list'].append('-DWSGI_AUTH_USER')
+    if options['auth_group_script']:
+        options['httpd_arguments_list'].append('-DWSGI_AUTH_GROUP')
+    if options['with_php5']:
+        options['httpd_arguments_list'].append('-DWSGI_WITH_PHP5')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory']))
@@ -1370,6 +1841,9 @@ def _cmd_setup_server(command, args, options):
     generate_control_scripts(options)
 
     print('Server URL        :', options['url'])
+
+    if options['ssl_url']:
+        print('Server URL (SSL)  :', options['ssl_url'])
 
     if options['server_status']:
         print('Server Status     :', '%sserver-status' % options['url'])

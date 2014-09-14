@@ -75,9 +75,17 @@ elif os.path.exists(os.path.join(BINDIR, PROGNAME)):
 else:
     HTTPD = PROGNAME
 
+if os.path.exists(os.path.join(SBINDIR, 'rotatelogs')):
+    ROTATELOGS = os.path.join(SBINDIR, 'rotatelogs')
+elif os.path.exists(os.path.join(BINDIR, 'rotatelogs')):
+    ROTATELOGS = os.path.join(BINDIR, 'rotatelogs')
+else:
+    ROTATELOGS = 'rotatelogs'
+
 with open(os.path.join(os.path.dirname(__file__),
         'src/server/apxs_config.py'), 'w') as fp:
     print('HTTPD = "%s"' % HTTPD, file=fp)
+    print('ROTATELOGS = "%s"' % ROTATELOGS, file=fp)
     print('BINDIR = "%s"' % BINDIR, file=fp)
     print('SBINDIR = "%s"' % SBINDIR, file=fp)
     print('PROGNAME = "%s"' % PROGNAME, file=fp)
@@ -122,13 +130,24 @@ LD_RUN_PATH = LD_RUN_PATH.lstrip(':')
 
 os.environ['LD_RUN_PATH'] = LD_RUN_PATH
 
-# If using Python 3.4, then minimum MacOS X version you can use is 10.8.
-# We have to force this with the compiler otherwise Python 3.4 sets it
-# to 10.6 which screws up Apache APR % formats for apr_time_t, which
-# breaks daemon mode queue time.
+# On MacOS X, recent versions of Apple's Apache do not support compiling
+# Apache modules with a target older than 10.8. This is because it
+# screws up Apache APR % formats for apr_time_t, which breaks daemon
+# mode queue time. For the target to be 10.8 or newer for now if Python
+# installation supports older versions. This means that things will not
+# build for older MacOS X versions. Deal with these when they occur.
 
-if sys.version_info >= (3, 4):
-    os.environ['MACOSX_DEPLOYMENT_TARGET'] = '10.8'
+if sys.platform == 'darwin':
+    target = os.environ.get('MACOSX_DEPLOYMENT_TARGET')
+    if target is None:
+        target = get_python_config('MACOSX_DEPLOYMENT_TARGET')
+
+    if target:
+        target_version = tuple(map(int, target.split('.')))
+        #assert target_version >= (10, 8), \
+        #        'Minimum of 10.8 for MACOSX_DEPLOYMENT_TARGET'
+        if target_version < (10, 8):
+            os.environ['MACOSX_DEPLOYMENT_TARGET'] = '10.8'
 
 # Now add the definitions to build everything.
 

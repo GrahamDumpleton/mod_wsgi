@@ -13,7 +13,7 @@ import apache
 
 def application(environ, start_response):
     headers = []
-    headers.append(('Content-Type', 'text/plain'))
+    headers.append(('Content-Type', 'text/plain; charset="UTF-8"'))
     write = start_response('200 OK', headers)
 
     input = environ['wsgi.input']
@@ -24,6 +24,7 @@ def application(environ, start_response):
     print('GID: %s' % os.getgid(), file=output)
     print(file=output)
 
+    print('python.version: %r' % (sys.version,), file=output)
     print('apache.version: %r' % (apache.version,), file=output)
     print('mod_wsgi.version: %r' % (mod_wsgi.version,), file=output)
     print(file=output)

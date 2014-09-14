@@ -907,29 +907,30 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     /*
      * If running in daemon mode and a home directory was set then
-     * insert an empty string at the start of the Python module search
-     * path so the current working directory will be searched. This
-     * makes things similar to when using the Python interpreter on the
-     * command line. If the current working directory changes then where
-     * it looks follows, so doesn't always look in home.
+     * insert the home directory at the start of the Python module
+     * search path. This makes things similar to when using the Python
+     * interpreter on the command line with a script.
      */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process && wsgi_daemon_process->group->home) {
         PyObject *path = NULL;
+        const char *home = wsgi_daemon_process->group->home;
 
         path = PySys_GetObject("path");
 
         if (module && path) {
-            PyObject *empty;
+            PyObject *item;
 
 #if PY_MAJOR_VERSION >= 3
-            empty = PyUnicode_DecodeLatin1("", strlen(""), NULL);
+            item = PyUnicode_Decode(home, strlen(home),
+                                    Py_FileSystemDefaultEncoding,
+                                    "surrogateescape");
 #else
-            empty = PyString_FromString("");
+            item = PyString_FromString(home);
 #endif
-            PyList_Insert(path, 0, empty);
-            Py_DECREF(empty);
+            PyList_Insert(path, 0, item);
+            Py_DECREF(item);
         }
 
         Py_XDECREF(module);
