@@ -584,6 +584,7 @@ PACKAGE_URL=
 ac_unique_file="src/server/mod_wsgi.c"
 ac_subst_vars='LTLIBOBJS
 LIBOBJS
+DESTDIR
 LIBEXECDIR
 LDLIBS
 PYTHON
@@ -644,6 +645,7 @@ with_python
       ac_precious_vars='build_alias
 host_alias
 target_alias
+DESTDIR
 CC
 CFLAGS
 LDFLAGS
