@@ -1902,7 +1902,7 @@ def cmd_install_module(params):
         parser.error('Incorrect number of arguments.')
 
     target = os.path.abspath(os.path.join(options.modules_directory,
-            MOD_WSGI_SO))
+            os.path.basename(MOD_WSGI_SO)))
 
     shutil.copyfile(where(), target)
 
