@@ -1362,7 +1362,7 @@ option_list = (
             default=None, help='Specify a Python script file for '
             'performing group based authorization in conjunction with '
             'a user authentication script.'),
-    optparse.make_option('--auth-group', metavar='SCRIPT-PATH',
+    optparse.make_option('--auth-group', metavar='NAME',
             default='wsgi', help='Specify the group which users should '
             'be a member of when using a group based authorization script. '
             'Defaults to \'wsgi\' as a place holder but should be '
