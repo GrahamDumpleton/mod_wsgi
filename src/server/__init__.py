@@ -938,18 +938,19 @@ class ResourceHandler(object):
             sys.modules[module_name] = module
             self.resources[extension] = module
 
-    def resource_extension(self, environ):
-        return os.path.splitext(environ['SCRIPT_NAME'])[-1]
+    def resource_extension(self, resource):
+        return os.path.splitext(resource)[-1]
 
-    def reload_required(self, environ):
-        extension = self.resource_extension(environ)
-        function = getattr(self.resources[extension], 'reload_required')
+    def reload_required(self, resource):
+        extension = self.resource_extension(resource)
+        function = getattr(self.resources[extension], 'reload_required', None)
         if function is not None:
             return function(environ)
         return False
 
     def handle_request(self, environ, start_response):
-        extension = self.resource_extension(environ)
+        resource = environ['SCRIPT_NAME']
+        extension = self.resource_extension(resource)
         module = self.resources[extension]
         function = getattr(module, 'handle_request', None)
         if function is not None:
