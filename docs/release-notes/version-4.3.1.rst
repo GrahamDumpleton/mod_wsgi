@@ -20,3 +20,11 @@ Bugs Fixed
 1. The ``install-module`` sub command of ``mod_wsgi-express`` was incorrectly
 trying to install the mod_wsgi ``.so`` file onto itself rather than into
 the Apache modules directory.
+
+New Features
+------------
+
+1. Added the ``--add-handler`` option to ``mod_wsgi-express`` to allow a
+WSGI application script file to be provided which is to handle any requests
+against static resources in the document root directory matching a specific
+extension type.

@@ -12,6 +12,7 @@ import atexit
 import imp
 import pwd
 import grp
+import re
 
 try:
     import Queue as queue
@@ -618,6 +619,15 @@ APACHE_PASSENV_CONFIG = """
 PassEnv '%(name)s'
 """
 
+APACHE_HANDLERS_CONFIG = """
+WSGIHandlerScript wsgi-resource '%(server_root)s/resource.wsgi' \\
+    process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
+"""
+
+APACHE_EXTENSION_CONFIG = """
+AddHandler wsgi-resource %(extension)s
+"""
+
 APACHE_INCLUDE_CONFIG = """
 Include '%(filename)s'
 """
@@ -676,6 +686,13 @@ def generate_apache_config(options):
         if options['passenv_variables']:
             for name in options['passenv_variables']:
                 print(APACHE_PASSENV_CONFIG % dict(name=name), file=fp)
+
+        if options['handler_scripts']:
+            print(APACHE_HANDLERS_CONFIG % options, file=fp)
+
+            for extension, script in options['handler_scripts']:
+                print(APACHE_EXTENSION_CONFIG % dict(extension=extension),
+                        file=fp)
 
         if options['include_files']:
             for filename in options['include_files']:
@@ -902,6 +919,47 @@ class ApplicationHandler(object):
     def __call__(self, environ, start_response):
         return self.handle_request(environ, start_response)
 
+class ResourceHandler(object):
+
+    def __init__(self, resources):
+        self.resources = {}
+
+        for extension, script in resources:
+            extension_name = re.sub('[^\w]{1}', '_', extension)
+            module_name = '__wsgi_resource%s__' % extension_name
+            module = imp.new_module(module_name)
+            module.__file__ = script
+
+            with open(script, 'r') as fp:
+                code = compile(fp.read(), script, 'exec',
+                        dont_inherit=True)
+                exec(code, module.__dict__)
+
+            sys.modules[module_name] = module
+            self.resources[extension] = module
+
+    def resource_extension(self, environ):
+        return os.path.splitext(environ['SCRIPT_NAME'])[-1]
+
+    def reload_required(self, environ):
+        extension = self.resource_extension(environ)
+        function = getattr(self.resources[extension], 'reload_required')
+        if function is not None:
+            return function(environ)
+        return False
+
+    def handle_request(self, environ, start_response):
+        extension = self.resource_extension(environ)
+        module = self.resources[extension]
+        function = getattr(module, 'handle_request', None)
+        if function is not None:
+            return function(environ, start_response)
+        function = getattr(module, 'application')
+        return function(environ, start_response)
+
+    def __call__(self, environ, start_response):
+        return self.handle_request(environ, start_response)
+
 WSGI_HANDLER_SCRIPT = """
 import mod_wsgi.server
 
@@ -924,6 +982,17 @@ handle_request = handler.handle_request
 
 if reload_on_changes and not debug_mode:
     mod_wsgi.server.start_reloader()
+"""
+
+WSGI_RESOURCE_SCRIPT = """
+import mod_wsgi.server
+
+resources = %(resources)s
+
+handler = mod_wsgi.server.ResourceHandler(resources)
+
+reload_required = handler.reload_required
+handle_request = handler.handle_request
 """
 
 WSGI_DEFAULT_SCRIPT = """
@@ -974,6 +1043,11 @@ def generate_wsgi_handler_script(options):
     path = os.path.join(options['server_root'], 'handler.wsgi')
     with open(path, 'w') as fp:
         print(WSGI_HANDLER_SCRIPT % options, file=fp)
+
+    path = os.path.join(options['server_root'], 'resource.wsgi')
+    with open(path, 'w') as fp:
+        print(WSGI_RESOURCE_SCRIPT % dict(resources=repr(
+                options['handler_scripts'])), file=fp)
 
     path = os.path.join(options['server_root'], 'default.wsgi')
     with open(path, 'w') as fp:
@@ -1450,6 +1524,12 @@ option_list = (
             metavar='FILE-PATH', help='Override the path to the mime types '
             'file used by the web server.'),
 
+    optparse.make_option('--add-handler', action='append', nargs=2,
+            dest='handler_scripts', metavar='EXTENSION SCRIPT-PATH',
+            help='Specify a WSGI application to be used as a special '
+            'handler for any resources matched from the document root '
+            'directory with a specific extension type.'),
+
     optparse.make_option('--with-newrelic', action='store_true',
             default=False, help='Flag indicating whether all New Relic '
             'performance monitoring features should be enabled.'),
@@ -1643,6 +1723,14 @@ def _cmd_setup_server(command, args, options):
         options['daemon_server_metrics_flag'] = 'On'
     else:
         options['daemon_server_metrics_flag'] = 'Off'
+
+    if options['handler_scripts']:
+        handler_scripts = []
+        for extension, script in options['handler_scripts']:
+            if not os.path.isabs(script):
+                script = os.path.abspath(script)
+            handler_scripts.append((extension, script))
+        options['handler_scripts'] = handler_scripts
 
     if options['with_newrelic']:
         options['with_newrelic_agent'] = True
