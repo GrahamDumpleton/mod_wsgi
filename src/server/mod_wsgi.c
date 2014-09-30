@@ -29,6 +29,8 @@
 #include <pwd.h>
 #endif
 
+#define SESSION_EXPIRY "expiry"
+
 static PyTypeObject Auth_Type;
 #if AP_SERVER_MINORVERSION_NUMBER >= 2
 #define MOD_WSGI_WITH_AUTHN_PROVIDER 1
@@ -47,6 +49,8 @@ static PyTypeObject Auth_Type;
 #define AUTHN_PROVIDER_VERSION "0"
 #endif
 #endif
+
+#include "mod_session.h"
 
 /* Local project header files. */
 
@@ -223,6 +227,7 @@ typedef struct {
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
     WSGIScriptFile *auth_group_script;
+    WSGIScriptFile *session_script;
     int user_authoritative;
     int group_authoritative;
 
@@ -255,6 +260,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->access_script = NULL;
     object->auth_user_script = NULL;
     object->auth_group_script = NULL;
+    object->session_script = NULL;
     object->user_authoritative = -1;
     object->group_authoritative = -1;
 
@@ -357,6 +363,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->auth_group_script = parent->auth_group_script;
 
+    if (child->session_script)
+        config->session_script = child->session_script;
+    else
+        config->session_script = parent->session_script;
+
     if (child->user_authoritative != -1)
         config->user_authoritative = child->user_authoritative;
     else
@@ -402,6 +413,7 @@ typedef struct {
     WSGIScriptFile *access_script;
     WSGIScriptFile *auth_user_script;
     WSGIScriptFile *auth_group_script;
+    WSGIScriptFile *session_script;
     int user_authoritative;
     int group_authoritative;
 
@@ -766,6 +778,8 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
     config->auth_user_script = dconfig->auth_user_script;
 
     config->auth_group_script = dconfig->auth_group_script;
+
+    config->session_script = dconfig->session_script;
 
     config->user_authoritative = dconfig->user_authoritative;
 
@@ -4938,6 +4952,46 @@ static const char *wsgi_set_auth_group_script(cmd_parms *cmd, void *mconfig,
 
     dconfig = (WSGIDirectoryConfig *)mconfig;
     dconfig->auth_group_script = object;
+
+    wsgi_python_required = 1;
+
+    return NULL;
+}
+
+static const char *wsgi_set_session_script(cmd_parms *cmd, void *mconfig,
+                                           const char *args)
+{
+    WSGIDirectoryConfig *dconfig = NULL;
+    WSGIScriptFile *object = NULL;
+
+    const char *option = NULL;
+    const char *value = NULL;
+
+    object = newWSGIScriptFile(cmd->pool);
+
+    object->handler_script = ap_getword_conf(cmd->pool, &args);
+
+    if (!object->handler_script || !*object->handler_script)
+        return "Location of session script not supplied.";
+
+    while (*args) {
+        if (wsgi_parse_option(cmd->pool, &args, &option,
+                              &value) != APR_SUCCESS) {
+            return "Invalid option to WSGI session script definition.";
+        }
+
+        if (!strcmp(option, "application-group")) {
+            if (!*value)
+                return "Invalid name for WSGI application group.";
+
+            object->application_group = value;
+        }
+        else
+            return "Invalid option to WSGI session script definition.";
+    }
+
+    dconfig = (WSGIDirectoryConfig *)mconfig;
+    dconfig->session_script = object;
 
     wsgi_python_required = 1;
 
@@ -11876,6 +11930,17 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     PyDict_SetItemString(vars, "REQUEST_URI", object);
     Py_DECREF(object);
 
+    value = ap_auth_name(r);
+    if (value != NULL) {
+#if PY_MAJOR_VERSION >= 3
+        object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
+#else
+        object = PyString_FromString(value);
+#endif
+        PyDict_SetItemString(vars, "AUTH_NAME", object);
+        Py_DECREF(object);
+    }
+
     /*
      * XXX Apparently webdav does actually do modifications to
      * the uri and path_info attributes of request and they
@@ -13167,6 +13232,832 @@ static int wsgi_hook_access_checker(request_rec *r)
     return HTTP_FORBIDDEN;
 }
 
+int map_session_data(void * data, const char * key, const char * value)
+{
+    PyObject *session_data = (PyObject*) data;
+    int status = 0;
+
+    if (key && value ) {
+#if PY_MAJOR_VERSION >= 3
+        PyObject *pkey = PyBytes_FromString(key);
+        PyObject *pvalue = PyBytes_FromString(value);
+#else
+        PyObject *pkey = PyString_FromString(key);
+        PyObject *pvalue = PyString_FromString(value);
+#endif
+
+        if (pkey && pvalue) {
+            if (PyDict_SetItem(session_data, pkey, pvalue) == 0) {
+                status = 1;
+            }
+        }
+
+        Py_XDECREF(pkey);
+        Py_XDECREF(pvalue);
+    }
+
+    return status;
+}
+
+static int wsgi_load_module(request_rec * r, InterpreterObject *interp, int script_reloading,
+                            const char * script, const char * group, PyObject ** module)
+{
+    PyObject *modules = NULL;
+    char *name = NULL;
+    int exists = 0;
+
+    /* Calculate the Python module name to be used for script. */
+
+    name = wsgi_module_name(r->pool, script);
+
+    /*
+     * Use a lock around the check to see if the module is
+     * already loaded and the import of the module to prevent
+     * two request handlers trying to import the module at the
+     * same time.
+     */
+
+#if APR_HAS_THREADS
+    Py_BEGIN_ALLOW_THREADS
+    apr_thread_mutex_lock(wsgi_module_lock);
+    Py_END_ALLOW_THREADS
+#endif
+
+    modules = PyImport_GetModuleDict();
+    *module = PyDict_GetItemString(modules, name);
+
+    Py_XINCREF(*module);
+
+    if (*module)
+        exists = 1;
+
+    /*
+     * If script reloading is enabled and the module for it has
+     * previously been loaded, see if it has been modified since
+     * the last time it was accessed.
+     */
+
+    if (*module && script_reloading) {
+        if (wsgi_reload_required(r->pool, r, script, *module, NULL)) {
+            /*
+             * Script file has changed. Only support module
+             * reloading for authentication scripts. Remove the
+             * module from the modules dictionary before
+             * reloading it again. If code is executing within
+             * the module at the time, the callers reference
+             * count on the module should ensure it isn't
+             * actually destroyed until it is finished.
+             */
+
+            Py_DECREF(*module);
+            *module = NULL;
+
+            PyDict_DelItemString(modules, name);
+        }
+    }
+
+    if (!*module) {
+        *module = wsgi_load_source(r->pool, r, name, exists, script, "", group);
+    }
+
+    /* Safe now to release the module lock. */
+
+#if APR_HAS_THREADS
+    apr_thread_mutex_unlock(wsgi_module_lock);
+#endif
+
+    /* Check if the module was loaded successfully. */
+
+    if (!*module) {
+        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
+                      "mod_wsgi (pid=%d): Cannot load module '%s'.",
+                      getpid(), script);
+
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    return OK;
+}
+
+static apr_status_t session_wsgi_encode(request_rec * r, session_rec * z)
+{
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                  "mod_wsgi (pid=%d): Session encode for uri '%s'.",
+                  getpid(), r->uri);
+
+    int status = -1;
+
+    WSGIRequestConfig *config = wsgi_create_req_config(r->pool, r);
+    /* Check if we must handle session hooks */
+    if (!config->session_script)
+        return DECLINED;
+
+    /* Check if we have data to encode */
+    if (!z->expiry && apr_is_empty_table(z->entries)) {
+        return OK;
+    }
+
+    /* Call the encode_session method from the session script */
+
+    const char *script = config->session_script->handler_script;
+    const char *group = wsgi_server_group(r, config->session_script->application_group);
+
+    PyObject *module = NULL;
+
+    /*
+     * Acquire the desired python interpreter. Once this is done
+     * it is safe to start manipulating python objects.
+     */
+    InterpreterObject *interp = wsgi_acquire_interpreter(group);
+    if (!interp) {
+        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
+                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
+                      getpid(), group);
+
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    status = wsgi_load_module(r, interp, config->script_reloading, script, group, &module);
+    if (status == OK) {
+        /* Assume an internal server error unless everything okay. */
+        status = HTTP_INTERNAL_SERVER_ERROR;
+
+        PyObject *module_dict = NULL;
+        PyObject *object = NULL;
+
+        module_dict = PyModule_GetDict(module);
+        object = PyDict_GetItemString(module_dict, "encode_session");
+
+        if (object) {
+            PyObject *vars = NULL;
+            PyObject *args = NULL;
+            PyObject *result = NULL;
+            PyObject *method = NULL;
+
+            AuthObject *adapter = NULL;
+
+            adapter = newAuthObject(r, config);
+
+            if (adapter) {
+                vars = Auth_environ(adapter, group);
+
+                PyObject *session_data = PyDict_New();
+                if (!session_data) {
+                    ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
+                                  "mod_wsgi (pid=%d): Unable to create "
+                                  "session data dictionary.",
+                                  getpid());
+                }
+                else {
+                    /* Add session expiry info to the session data table */
+                    if (z->expiry) {
+                        char *expiry = apr_psprintf(z->pool, "%" APR_INT64_T_FMT, z->expiry);
+                        apr_table_setn(z->entries, SESSION_EXPIRY, expiry);
+                    }
+
+                    if (apr_table_do((int (*) (void *, const char *, const char *))
+                                     map_session_data, session_data, z->entries, NULL))
+                    {
+                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                                      "mod_wsgi (pid=%d): Calling method encode_session "
+                                      "from script '%s'.",
+                                      getpid(), script);
+
+                        Py_INCREF(object);
+                        args = Py_BuildValue("(OO)", vars, session_data);
+                        result = PyEval_CallObject(object, args);
+                        Py_DECREF(args);
+                        Py_DECREF(object);
+                        Py_DECREF(vars);
+                        Py_DECREF(session_data);
+
+                        if (result) {
+                            if (result == Py_None) {
+                                status = DECLINED;
+                            }
+                            else {
+                                const char *s;
+#if PY_MAJOR_VERSION >= 3
+                                s = PyBytes_AsString(result);
+#else
+                                s = PyString_AsString(result);
+#endif
+                                if (s == NULL) {
+                                    PyErr_SetString(PyExc_TypeError, "Session encode "
+                                                    "provider must return a string "
+                                                    "or None");
+                                }
+                                else {
+                                    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                                                  "mod_wsgi (pid=%d): Received encoded data: '%s'.",
+                                                  getpid(), s);
+
+                                    z->encoded = apr_pstrdup(r->pool, s);
+                                    status = OK;
+                                }
+                            }
+                            Py_DECREF(result);
+                        }
+                    }
+                    else {
+                        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
+                                      "mod_wsgi (pid=%d): Unable to map some session data.",
+                                      getpid());
+                    }
+                }
+
+                Py_XDECREF(session_data);
+
+                /*
+                 * Wipe out references to Apache request object
+                 * held by Python objects, so can detect when an
+                 * application holds on to the transient Python
+                 * objects beyond the life of the request and
+                 * thus raise an exception if they are used.
+                 */
+
+                adapter->r = NULL;
+
+                /* Close the log object so data is flushed. */
+
+                method = PyObject_GetAttrString(adapter->log, "close");
+
+                if (!method) {
+                    PyErr_Format(PyExc_AttributeError,
+                                 "'%s' object has no attribute 'close'",
+                                 adapter->log->ob_type->tp_name);
+                }
+                else {
+                    args = PyTuple_New(0);
+                    object = PyEval_CallObject(method, args);
+                    Py_DECREF(args);
+                }
+
+                Py_XDECREF(method);
+                Py_XDECREF(object);
+
+                /* No longer need adapter object. */
+
+                Py_DECREF((PyObject *)adapter);
+            }
+            else
+                Py_DECREF(object);
+        }
+        else {
+            Py_BEGIN_ALLOW_THREADS
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                          "mod_wsgi (pid=%d): Target WSGI user "
+                          "session script '%s' does not provide "
+                          "session encode provider.", getpid(), script);
+            Py_END_ALLOW_THREADS
+        }
+
+        /* Log any details of exceptions if execution failed. */
+
+        if (PyErr_Occurred())
+            wsgi_log_python_error(r, NULL, script);
+
+        /* Cleanup and release interpreter, */
+        Py_XDECREF(module);
+    }
+
+    wsgi_release_interpreter(interp);
+
+    return status;
+}
+
+static apr_status_t session_wsgi_save(request_rec * r, session_rec * z)
+{
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                  "mod_wsgi (pid=%d): Session save for uri '%s'.",
+                  getpid(), r->uri);
+
+    int status = -1;
+
+    WSGIRequestConfig *config = wsgi_create_req_config(r->pool, r);
+    /* Check if we must handle session hooks */
+    if (!config->session_script)
+        return DECLINED;
+
+    /* Call the save_session method from the session script */
+
+    const char *script = config->session_script->handler_script;
+    const char *group = wsgi_server_group(r, config->session_script->application_group);
+
+    PyObject *module = NULL;
+
+    /*
+     * Acquire the desired python interpreter. Once this is done
+     * it is safe to start manipulating python objects.
+     */
+    InterpreterObject *interp = wsgi_acquire_interpreter(group);
+    if (!interp) {
+        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
+                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
+                      getpid(), group);
+
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    status = wsgi_load_module(r, interp, config->script_reloading, script, group, &module);
+    if (status == OK) {
+        /* Assume an internal server error unless everything okay. */
+        status = HTTP_INTERNAL_SERVER_ERROR;
+
+        PyObject *module_dict = NULL;
+        PyObject *object = NULL;
+
+        module_dict = PyModule_GetDict(module);
+        object = PyDict_GetItemString(module_dict, "save_session");
+
+        if (object) {
+            PyObject *vars = NULL;
+            PyObject *args = NULL;
+            PyObject *result = NULL;
+            PyObject *method = NULL;
+
+            AuthObject *adapter = NULL;
+
+            adapter = newAuthObject(r, config);
+
+            if (adapter) {
+                vars = Auth_environ(adapter, group);
+
+                ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                              "mod_wsgi (pid=%d): Calling method save_session "
+                              "from script '%s'.",
+                              getpid(), script);
+
+                Py_INCREF(object);
+                args = Py_BuildValue("(Os)", vars, z->encoded);
+                result = PyEval_CallObject(object, args);
+                Py_DECREF(args);
+                Py_DECREF(object);
+                Py_DECREF(vars);
+
+                if (result) {
+                    if (result == Py_None) {
+                        status = DECLINED;
+                    }
+                    else if (result == Py_True) {
+                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                                      "mod_wsgi (pid=%d): Session saved successfully.",
+                                      getpid());
+
+                        status = OK;
+                    }
+                    else if (result == Py_False) {
+                        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                                      "mod_wsgi (pid=%d): Unable to save session.",
+                                      getpid());
+                    }
+                    else if (result != Py_False) {
+                        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                                      "mod_wsgi (pid=%d): Target WSGI session "
+                                      "save provider (%s) must return True, False or "
+                                      "None.", getpid(), script);
+                    }
+                    Py_DECREF(result);
+                }
+
+                /*
+                 * Wipe out references to Apache request object
+                 * held by Python objects, so can detect when an
+                 * application holds on to the transient Python
+                 * objects beyond the life of the request and
+                 * thus raise an exception if they are used.
+                 */
+
+                adapter->r = NULL;
+
+                /* Close the log object so data is flushed. */
+
+                method = PyObject_GetAttrString(adapter->log, "close");
+
+                if (!method) {
+                    PyErr_Format(PyExc_AttributeError,
+                                 "'%s' object has no attribute 'close'",
+                                 adapter->log->ob_type->tp_name);
+                }
+                else {
+                    args = PyTuple_New(0);
+                    object = PyEval_CallObject(method, args);
+                    Py_DECREF(args);
+                }
+
+                Py_XDECREF(method);
+                Py_XDECREF(object);
+
+                /* No longer need adapter object. */
+
+                Py_DECREF((PyObject *)adapter);
+            }
+            else
+                Py_DECREF(object);
+        }
+        else {
+            Py_BEGIN_ALLOW_THREADS
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                          "mod_wsgi (pid=%d): Target WSGI user "
+                          "session script '%s' does not provide "
+                          "session save provider.", getpid(), script);
+            Py_END_ALLOW_THREADS
+        }
+
+        /* Log any details of exceptions if execution failed. */
+
+        if (PyErr_Occurred())
+            wsgi_log_python_error(r, NULL, script);
+
+        /* Cleanup and release interpreter, */
+        Py_XDECREF(module);
+    }
+
+    wsgi_release_interpreter(interp);
+
+    return status;
+}
+
+static apr_status_t session_wsgi_load(request_rec * r, session_rec ** z)
+{
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                  "mod_wsgi (pid=%d): Session load for uri '%s'.",
+                  getpid(), r->uri);
+
+    int status = -1;
+
+    WSGIRequestConfig *config = wsgi_create_req_config(r->pool, r);
+    /* Check if we must handle session hooks */
+    if (!config->session_script)
+        return DECLINED;
+
+    /* Call the load_session method from the session script */
+
+    const char *script = config->session_script->handler_script;
+    const char *group = wsgi_server_group(r, config->session_script->application_group);
+
+    PyObject *module = NULL;
+
+    /*
+     * Acquire the desired python interpreter. Once this is done
+     * it is safe to start manipulating python objects.
+     */
+
+    InterpreterObject *interp = wsgi_acquire_interpreter(group);
+    if (!interp) {
+        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
+                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
+                      getpid(), group);
+
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    status = wsgi_load_module(r, interp, config->script_reloading, script, group, &module);
+    if (status == OK) {
+        /* Assume an internal server error unless everything okay. */
+        status = HTTP_INTERNAL_SERVER_ERROR;
+
+        PyObject *module_dict = NULL;
+        PyObject *object = NULL;
+
+        module_dict = PyModule_GetDict(module);
+        object = PyDict_GetItemString(module_dict, "load_session");
+
+        if (object) {
+            PyObject *vars = NULL;
+            PyObject *args = NULL;
+            PyObject *result = NULL;
+            PyObject *method = NULL;
+
+            AuthObject *adapter = NULL;
+
+            adapter = newAuthObject(r, config);
+
+            if (adapter) {
+                vars = Auth_environ(adapter, group);
+
+                ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                              "mod_wsgi (pid=%d): Calling method load_session (%s).",
+                              getpid(), script);
+
+                Py_INCREF(object);
+                args = Py_BuildValue("(O)", vars);
+                result = PyEval_CallObject(object, args);
+                Py_DECREF(args);
+                Py_DECREF(object);
+                Py_DECREF(vars);
+
+                if (result) {
+                    if (result == Py_None) {
+                        status = DECLINED;
+                    }
+                    else {
+                        const char *s;
+
+#if PY_MAJOR_VERSION >= 3
+                        s = PyBytes_AsString(result);
+#else
+                        s = PyString_AsString(result);
+#endif
+                        if (s == NULL) {
+                            PyErr_SetString(PyExc_TypeError, "Session load "
+                                            "provider must return a string "
+                                            "or None");
+                        }
+                        else {
+                            ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                                          "mod_wsgi (pid=%d): Received session data: '%s'.",
+                                          getpid(), s);
+
+                            session_rec *zz = NULL;
+
+                            request_rec *m = r;
+                            /* find the first redirect */
+                            while (m->prev) {
+                                m = m->prev;
+                            }
+                            /* find the main request */
+                            while (m->main) {
+                                m = m->main;
+                            }
+
+                            /* create a new session and return it */
+                            zz = (session_rec *) apr_pcalloc(m->pool, sizeof(session_rec));
+                            zz->pool = m->pool;
+                            zz->entries = apr_table_make(m->pool, 10);
+                            zz->encoded = apr_pstrdup(r->pool, s);
+                            *z = zz;
+
+                            status = OK;
+                        }
+                    }
+
+                    Py_DECREF(result);
+                }
+
+                /*
+                 * Wipe out references to Apache request object
+                 * held by Python objects, so can detect when an
+                 * application holds on to the transient Python
+                 * objects beyond the life of the request and
+                 * thus raise an exception if they are used.
+                 */
+
+                adapter->r = NULL;
+
+                /* Close the log object so data is flushed. */
+
+                method = PyObject_GetAttrString(adapter->log, "close");
+
+                if (!method) {
+                    PyErr_Format(PyExc_AttributeError,
+                                 "'%s' object has no attribute 'close'",
+                                 adapter->log->ob_type->tp_name);
+                }
+                else {
+                    args = PyTuple_New(0);
+                    object = PyEval_CallObject(method, args);
+                    Py_DECREF(args);
+                }
+
+                Py_XDECREF(object);
+                Py_XDECREF(method);
+
+                /* No longer need adapter object. */
+
+                Py_DECREF((PyObject *)adapter);
+            }
+            else
+                Py_DECREF(object);
+        }
+        else {
+            Py_BEGIN_ALLOW_THREADS
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                          "mod_wsgi (pid=%d): Target WSGI user "
+                          "session script '%s' does not provide "
+                          "session load provider.", getpid(), script);
+            Py_END_ALLOW_THREADS
+        }
+
+        /* Log any details of exceptions if execution failed. */
+
+        if (PyErr_Occurred())
+            wsgi_log_python_error(r, NULL, script);
+    }
+
+    /* Cleanup and release interpreter, */
+
+    Py_XDECREF(module);
+
+    wsgi_release_interpreter(interp);
+
+    return status;
+}
+
+static apr_status_t session_wsgi_decode(request_rec * r, session_rec * z)
+{
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                  "mod_wsgi (pid=%d): Decoding session for uri '%s'.",
+                  getpid(), r->uri);
+
+    /* Check if there is something to decode */
+    if (!z->encoded) {
+        return OK;
+    }
+
+    int status = -1;
+
+    WSGIRequestConfig *config = wsgi_create_req_config(r->pool, r);
+    if (!config->session_script)
+        return DECLINED;
+
+    const char *script = config->session_script->handler_script;
+    const char *group = wsgi_server_group(r, config->session_script->application_group);
+
+    PyObject *module = NULL;
+
+    /*
+     * Acquire the desired python interpreter. Once this is done
+     * it is safe to start manipulating python objects.
+     */
+    InterpreterObject *interp = wsgi_acquire_interpreter(group);
+    if (!interp) {
+        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
+                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
+                      getpid(), group);
+
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    status = wsgi_load_module(r, interp, config->script_reloading, script, group, &module);
+    if (status == OK) {
+        /* Assume an internal server error unless everything okay. */
+        status = HTTP_INTERNAL_SERVER_ERROR;
+
+        PyObject *module_dict = NULL;
+        PyObject *object = NULL;
+
+        module_dict = PyModule_GetDict(module);
+        object = PyDict_GetItemString(module_dict, "decode_session");
+
+        if (object) {
+            PyObject *vars = NULL;
+            PyObject *args = NULL;
+            PyObject *result = NULL;
+            PyObject *method = NULL;
+
+            AuthObject *adapter = NULL;
+
+            adapter = newAuthObject(r, config);
+
+            if (adapter) {
+                vars = Auth_environ(adapter, group);
+
+                ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                              "mod_wsgi (pid=%d): Calling method decode_session (%s).",
+                              getpid(), script);
+                Py_INCREF(object);
+                args = Py_BuildValue("(Os)", vars, z->encoded);
+                result = PyEval_CallObject(object, args);
+                Py_DECREF(args);
+                Py_DECREF(object);
+                Py_DECREF(vars);
+
+                if (result) {
+                    if (result == Py_None) {
+                        status = DECLINED;
+                    }
+                    else {
+                        if (!PyDict_Check(result)) {
+                            PyErr_SetString(PyExc_TypeError, "Session decode "
+                                            "provider must return a dict "
+                                            "or None");
+                        }
+                        else {
+                            ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                                          "mod_wsgi (pid=%d): Received decoded session data or uri '%s'.",
+                                          getpid(), r->uri);
+
+                            PyObject *pkey, *pval;
+                            Py_ssize_t ppos = 0;
+
+                            const char *key = NULL;
+                            const char *val = NULL;
+
+                            while (PyDict_Next(result, &ppos, &pkey, &pval)) {
+                                key = NULL;
+                                if (PyString_Check(pkey)) {
+#if PY_MAJOR_VERSION >= 3
+                                    key = PyBytes_AsString(pkey);
+#else
+                                    key = PyString_AsString(pkey);
+#endif
+                                }
+
+                                if (key == NULL) {
+                                    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                                                  "mod_wsgi (pid=%d): Dict keys must be string or int objects.",
+                                                  getpid());
+                                }
+                                else {
+                                    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                                                  "mod_wsgi (pid=%d): Received session key: %s.",
+                                                  getpid(), key);
+
+                                    if (pval == Py_None) {
+                                        apr_table_unset(z->entries, key);
+                                    }
+                                    else {
+                                        val = PyString_AsString(pval);
+                                        if (key == NULL) {
+                                            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                                                          "mod_wsgi (pid=%d): Dict values must be string objects.",
+                                                          getpid());
+                                        }
+                                        else {
+                                            ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                                                          "mod_wsgi (pid=%d): Session value for %s is '%s'.",
+                                                          getpid(), key, val);
+
+                                            char *akey = apr_pstrdup(r->pool, key);
+                                            char *aval = apr_pstrdup(r->pool, val);
+                                            if (!ap_unescape_urlencoded(akey) && !ap_unescape_urlencoded(aval)) {
+                                                if (!strcmp(SESSION_EXPIRY, akey))
+                                                    z->expiry = (apr_time_t) apr_atoi64(aval);
+                                                else
+                                                    apr_table_set(z->entries, akey, aval);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            z->encoded = NULL;
+                            status = OK;
+                        }
+                    }
+
+                    Py_DECREF(result);
+                }
+
+                /*
+                 * Wipe out references to Apache request object
+                 * held by Python objects, so can detect when an
+                 * application holds on to the transient Python
+                 * objects beyond the life of the request and
+                 * thus raise an exception if they are used.
+                 */
+
+                adapter->r = NULL;
+
+                /* Close the log object so data is flushed. */
+
+                method = PyObject_GetAttrString(adapter->log, "close");
+
+                if (!method) {
+                    PyErr_Format(PyExc_AttributeError,
+                                 "'%s' object has no attribute 'close'",
+                                 adapter->log->ob_type->tp_name);
+                }
+                else {
+                    args = PyTuple_New(0);
+                    object = PyEval_CallObject(method, args);
+                    Py_DECREF(args);
+                }
+
+                Py_XDECREF(object);
+                Py_XDECREF(method);
+
+                /* No longer need adapter object. */
+
+                Py_DECREF((PyObject *)adapter);
+            }
+            else
+                Py_DECREF(object);
+        }
+        else {
+            Py_BEGIN_ALLOW_THREADS
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                          "mod_wsgi (pid=%d): Target WSGI user "
+                          "session script '%s' does not provide "
+                          "session decode provider.", getpid(), script);
+            Py_END_ALLOW_THREADS
+        }
+
+        /* Log any details of exceptions if execution failed. */
+
+        if (PyErr_Occurred())
+            wsgi_log_python_error(r, NULL, script);
+    }
+
+    /* Cleanup and release interpreter, */
+
+    Py_XDECREF(module);
+
+    wsgi_release_interpreter(interp);
+
+    return status;
+}
+
 #if !defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
 static int wsgi_hook_check_user_id(request_rec *r)
 {
@@ -13624,6 +14515,11 @@ static void wsgi_register_hooks(apr_pool_t *p)
                          AUTHZ_PROVIDER_VERSION, &wsgi_authz_provider);
 #endif
     ap_hook_access_checker(wsgi_hook_access_checker, p7, n5, APR_HOOK_MIDDLE);
+
+    ap_hook_session_load(session_wsgi_load, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_session_save(session_wsgi_save, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_session_encode(session_wsgi_encode, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_session_decode(session_wsgi_decode, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
 static const command_rec wsgi_commands[] =
@@ -13723,6 +14619,8 @@ static const command_rec wsgi_commands[] =
         NULL, OR_AUTHCFG, "Location of WSGI user auth script file."),
     AP_INIT_RAW_ARGS("WSGIAuthGroupScript", wsgi_set_auth_group_script,
         NULL, OR_AUTHCFG, "Location of WSGI group auth script file."),
+    AP_INIT_RAW_ARGS("WSGISessionScript", wsgi_set_session_script,
+        NULL, OR_AUTHCFG, "Location of WSGI session script file."),
 #if !defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
     AP_INIT_TAKE1("WSGIUserAuthoritative", wsgi_set_user_authoritative,
         NULL, OR_AUTHCFG, "Enable/Disable as being authoritative on users."),
