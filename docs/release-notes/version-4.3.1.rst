@@ -21,6 +21,17 @@ Bugs Fixed
 trying to install the mod_wsgi ``.so`` file onto itself rather than into
 the Apache modules directory.
 
+2. The workaround for the broken MacOS X Apache build scripts as implemented
+by the ``configure`` script used when building using the traditional make
+command wasn't working correctly for MacOS X 10.10 (Yosemite).
+
+In fixing this issue, the ``configure`` script has been enhanced such that
+it is now no longer to have the whole of the Xcode package installed on
+MacOS X. Instead the minimum required now is the developer command line
+tools. If using Python and you wanted to be able to install Python packages
+which has a source code component you would have already likely installed
+the developer command line tools.
+
 New Features
 ------------
 
