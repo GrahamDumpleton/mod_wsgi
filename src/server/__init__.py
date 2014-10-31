@@ -244,6 +244,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
    header-buffer-size=%(header_buffer_size)s \\
+   proxy-buffer-size=%(proxy_buffer_size)s \\
    server-metrics=%(daemon_server_metrics_flag)s
 </IfDefine>
 <IfDefine !WSGI_MULTIPROCESS>
@@ -266,7 +267,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
-   header-buffer-size=%(header_buffer_size)s \\
+   proxy-buffer-size=%(proxy_buffer_size)s \\
    server-metrics=%(daemon_server_metrics_flag)s
 </IfDefine>
 </IfDefine>
@@ -1350,6 +1351,12 @@ option_list = (
             metavar='NUMBER', help='Size of buffer used for reading '
             'response headers from daemon processes. Defaults to 0, '
             'indicating internal default of 32768 bytes is used.'),
+    optparse.make_option('--proxy-buffer-size', type='int', default=0,
+            metavar='NUMBER', help='Maximum amount of response content '
+            'that will be allowed to be buffered in the Apache child '
+            'worker process when proxying the response from a daemon '
+            'process. Defaults to 0, indicating internal default of '
+            '65536 bytes is used.'),
 
     optparse.make_option('--reload-on-changes', action='store_true',
             default=False, help='Flag indicating whether worker processes '

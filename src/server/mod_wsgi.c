@@ -6400,6 +6400,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int send_buffer_size = 0;
     int recv_buffer_size = 0;
     int header_buffer_size = 0;
+    int proxy_buffer_size = 0;
 
     const char *script_user = NULL;
     const char *script_group = NULL;
@@ -6663,6 +6664,16 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                        "or 0 for default.";
             }
         }
+        else if (!strcmp(option, "proxy-buffer-size")) {
+            if (!*value)
+                return "Invalid proxy buffer size for WSGI daemon process.";
+
+            proxy_buffer_size = atoi(value);
+            if (proxy_buffer_size < 65536 && proxy_buffer_size != 0) {
+                return "Proxy buffer size must be >= 65536 bytes, "
+                       "or 0 for default.";
+            }
+        }
         else if (!strcmp(option, "script-user")) {
             uid_t script_uid;
 
@@ -6849,6 +6860,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->send_buffer_size = send_buffer_size;
     entry->recv_buffer_size = recv_buffer_size;
     entry->header_buffer_size = header_buffer_size;
+    entry->proxy_buffer_size = proxy_buffer_size;
 
     entry->script_user = script_user;
     entry->script_group = script_group;
@@ -9971,6 +9983,181 @@ static int wsgi_scan_headers_brigade(request_rec *r,
     return wsgi_scan_headers(r, buffer, buflen, wsgi_getsfunc_brigade, bb);
 }
 
+static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
+                                  apr_size_t buffer_size)
+{
+    apr_bucket *e;
+    apr_read_type_e mode = APR_NONBLOCK_READ;
+
+    apr_bucket_brigade *tmpbb;
+
+    const char *data = NULL;
+    apr_size_t length = 0;
+
+    apr_size_t bytes_transfered = 0;
+
+    if (buffer_size == 0)
+        buffer_size = 65536;
+
+    /*
+     * Transfer any response content. We want to avoid the
+     * problem where the core output filter has no flow control
+     * to deal with slow HTTP clients and can actually buffer up
+     * excessive amounts of response content in memory. A fix
+     * for this was only introduced in Apache 2.3.3, with
+     * possible further tweaks in Apache 2.4.1. To avoid issue of
+     * what version it was implemented in, just employ a
+     * strategy of forcing a flush every time we pass through
+     * more than a certain amount of data.
+     */
+
+    tmpbb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+
+    while ((e = APR_BRIGADE_FIRST(bb)) != APR_BRIGADE_SENTINEL(bb)) {
+        apr_status_t rv;
+
+        /* If we have reached end of stream, we need to pass it on */
+
+        if (APR_BUCKET_IS_EOS(e)) {
+            /*
+             * Probably do not need to force a flush as EOS should
+             * do that, but do it just in case when we potentially
+             * have pending data to be written out.
+             */
+
+            if (bytes_transfered != 0) {
+                APR_BRIGADE_INSERT_TAIL(tmpbb, apr_bucket_flush_create(
+                                        r->connection->bucket_alloc));
+            }
+
+            APR_BRIGADE_INSERT_TAIL(tmpbb, apr_bucket_eos_create(
+                                    r->connection->bucket_alloc));
+
+            rv = ap_pass_brigade(r->output_filters, tmpbb);
+
+            apr_brigade_cleanup(tmpbb);
+
+            if (rv != APR_SUCCESS) {
+                apr_brigade_destroy(bb);
+
+                return HTTP_INTERNAL_SERVER_ERROR;
+            }
+
+            break;
+        }
+
+        /*
+         * Force the reading in of next block of data to be
+         * transfered if necessary. If the bucket is a heap
+         * bucket, then it will be whatever data is in it. If it
+         * is a socket bucket, this will result in the bucket
+         * being converted to a heap bucket with some amount of
+         * data and the socket bucket added back in after it. Any
+         * non data buckets should be skipped and discarded. The
+         * result should always be that the first bucket is a
+         * heap bucket.
+         */
+
+        rv = apr_bucket_read(e, &data, &length, mode);
+
+        /*
+         * If we would have blocked if not in non blocking mode
+         * we send a flush bucket to ensure that all buffered
+         * data is sent out before we block waiting for more.
+         */
+
+        if (rv == APR_EAGAIN && mode == APR_NONBLOCK_READ) {
+            APR_BRIGADE_INSERT_TAIL(tmpbb, apr_bucket_flush_create(
+                                    r->connection->bucket_alloc));
+
+            rv = ap_pass_brigade(r->output_filters, tmpbb);
+
+            apr_brigade_cleanup(tmpbb);
+
+            if (rv != APR_SUCCESS) {
+                apr_brigade_destroy(bb);
+
+                return HTTP_INTERNAL_SERVER_ERROR;
+            }
+
+            bytes_transfered = 0;
+
+            /*
+             * Retry read from daemon using a blocking read. We do
+             * not delete the bucket as we want to operate on the
+             * same one as we would have blocked.
+             */
+
+            mode = APR_BLOCK_READ;
+
+            continue;
+
+        } else if (rv != APR_SUCCESS) {
+            apr_brigade_destroy(bb);
+
+            return HTTP_INTERNAL_SERVER_ERROR;
+        }
+
+        /*
+         * We had some data to transfer. Next time round we need to
+         * always be try a non-blocking read first.
+         */
+
+        mode = APR_NONBLOCK_READ;
+
+        /*
+         * Now we don't actually work with the data which was
+         * read direct and instead simply remove what should be a
+         * heap bucket from the start of the bucket brigade and
+         * then place in a new bucket brigade to be pushed out to
+         * the client. By passing down the bucket, it avoids the
+         * need to create a transient bucket holding a reference
+         * to the data from the first bucket.
+         */
+
+        APR_BUCKET_REMOVE(e);
+        APR_BRIGADE_INSERT_TAIL(tmpbb, e);
+
+        /*
+         * If we have reached the threshold, we want to flush the
+         * data so that we aren't buffering too much in memory
+         * and blowing out memory size.
+         */
+
+        bytes_transfered += length;
+
+        if (bytes_transfered > buffer_size) {
+            APR_BRIGADE_INSERT_TAIL(tmpbb, apr_bucket_flush_create(
+                                    r->connection->bucket_alloc));
+
+            bytes_transfered = 0;
+
+            /*
+             * Since we flushed the data out to the client, it is
+             * okay to go back and do a blocking read the next time.
+             */
+
+            mode = APR_BLOCK_READ;
+        }
+
+        /* Pass the heap bucket and any flush bucket on. */
+
+        rv = ap_pass_brigade(r->output_filters, tmpbb);
+
+        apr_brigade_cleanup(tmpbb);
+
+        if (rv != APR_SUCCESS) {
+            apr_brigade_destroy(bb);
+
+            return HTTP_INTERNAL_SERVER_ERROR;
+        }
+    }
+
+    apr_brigade_destroy(bb);
+
+    return OK;
+}
+
 static int wsgi_execute_remote(request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
@@ -10614,9 +10801,7 @@ static int wsgi_execute_remote(request_rec *r)
 
     /* Transfer any response content. */
 
-    ap_pass_brigade(r->output_filters, bbin);
-
-    return OK;
+    return wsgi_transfer_response(r, bbin, group->proxy_buffer_size);
 }
 
 static apr_status_t wsgi_socket_read(apr_socket_t *sock, void *vbuf,
