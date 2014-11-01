@@ -39,3 +39,18 @@ New Features
 WSGI application script file to be provided which is to handle any requests
 against static resources in the document root directory matching a specific
 extension type.
+
+2. Added a mechanism to limit the amount of response content that can
+buffered in the Apache child worker processes when proxying back the response
+from a request which had been handled in a mod_wsgi daemon process.
+
+This is to combat a lack of flow control within Apache 2.2 which can cause
+excessive amounts of memory usage as a result of such buffered content.
+This issue in Apache 2.2 was fixed in Apache 2.4, but the new mechanism is
+applied to both versions for consistency.
+
+The default maximum on the amount of buffered content is 65536 bytes. This
+can be increased by using the ``proxy-buffer-size`` option to the
+``WSGIDaemonProcess`` directive or the ``--proxy-buffer-size`` option to
+``mod_wsgi-express``. If using Apache 2.4, its own flow control mechanism
+may override the value in increasing the buffer size.
