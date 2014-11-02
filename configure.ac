@@ -39,15 +39,24 @@ fi
 
 XCODE_PREFIX="/Applications/Xcode.app/Contents/Developer/Toolchains/"
 XCODE_CC="${XCODE_PREFIX}XcodeDefault.xctoolchain/usr/bin/cc"
+XCODE_BIN_PATTERN="${XCODE_PREFIX}.*/usr/bin/"
 
 if test -x "${APXS}"; then
     APXS_CC=`${APXS} -q CC`
     APXS_LIBTOOL=`${APXS} -q LIBTOOL | sed -e "s/ .*$//"`
     if [[[ ${APXS_CC} = ${XCODE_PREFIX}* ]]]; then
-        cat "${APXS_LIBTOOL}" | sed -e \
-            "s/OSX10.[[89]].xctoolchain/XcodeDefault.xctoolchain/" > ./libtool
-        cat "${APXS}" | sed -e "s%get_vars(\"CC\")%\"${XCODE_CC}\"%" \
-            -e 's%^my $libtool = .*;%my $libtool = \"./libtool\";%' > ./apxs
+        if test ! -x ${XCODE_CC}; then
+            cat "${APXS_LIBTOOL}" | sed -e \
+                "s%${XCODE_BIN_PATTERN}%/usr/bin/%" > ./libtool
+            cat "${APXS}" | sed -e "s%get_vars(\"CC\")%\"/usr/bin/cc\"%" \
+                -e 's%^my $libtool = .*;%my $libtool = \"./libtool\";%' > ./apxs
+        else
+            cat "${APXS_LIBTOOL}" | sed -e \
+                "s%OSX10.[[0-9]][[0-9]]*.xctoolchain%XcodeDefault.xctoolchain%" > ./libtool
+            cat "${APXS}" | sed -e "s%get_vars(\"CC\")%\"${XCODE_CC}\"%" \
+                -e 's%^my $libtool = .*;%my $libtool = \"./libtool\";%' > ./apxs
+        fi
+
         chmod +x ./apxs ./libtool
         APXS=./apxs
     fi
@@ -206,6 +215,7 @@ LDLIBS="${LDLIBS} ${LDLIBS1} ${LDLIBS2} ${LDLIBS3}"
 AC_SUBST(CFLAGS)
 AC_SUBST(LDFLAGS)
 AC_SUBST(LDLIBS)
+AC_SUBST(DESTDIR)
 
 LIBEXECDIR="`${APXS} -q LIBEXECDIR`"
 AC_SUBST(LIBEXECDIR)
