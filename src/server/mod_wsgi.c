@@ -9496,7 +9496,16 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
         rv = wsgi_socket_connect_un(daemon->socket, &addr);
 
         if (rv != APR_SUCCESS) {
-            if (APR_STATUS_IS_ECONNREFUSED(rv)) {
+            /*
+             * We need to check for both connection refused and
+             * connection unavailable as Linux systems when
+             * connecting to a UNIX listener socket in non
+             * blocking mode, where the listener backlog is full
+             * will return the error EAGAIN rather than returning
+             * ECONNREFUSED as is supposedly dictated by POSIX.
+             */
+
+            if (APR_STATUS_IS_ECONNREFUSED(rv) || APR_STATUS_IS_EAGAIN(rv)) {
                 if ((apr_time_now()-start_time) < daemon->connect_timeout) {
                     if (wsgi_server_config->verbose_debugging) {
                         ap_log_rerror(APLOG_MARK, APLOG_DEBUG, rv, r,
