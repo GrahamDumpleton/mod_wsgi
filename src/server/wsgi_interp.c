@@ -2051,6 +2051,53 @@ void wsgi_python_init(apr_pool_t *p)
             python_home = wsgi_daemon_process->group->python_home;
 #endif
 
+        if (python_home) {
+            apr_status_t rv;
+            apr_finfo_t finfo; 
+
+            /*
+             * Is common to see people set the directory to an incorrect
+             * location, including to a location within an inaccessible
+             * user home directory, or to the 'python' executable itself.
+             * Try and validate that the location is accessible and is a
+             * directory.
+             */
+
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Python home %s.", getpid(),
+                         python_home);
+
+            rv = apr_stat(&finfo, python_home, APR_FINFO_NORM, p);
+
+            if (rv != APR_SUCCESS) {
+                ap_log_error(APLOG_MARK, APLOG_WARNING, rv, wsgi_server,
+                             "mod_wsgi (pid=%d): Unable to stat Python home "
+                             "%s. Python interpreter may not be able to be "
+                             "initialized correctly. Verify the supplied path "
+                             "and access permissions for whole of the path.",
+                             getpid(), python_home);
+            }
+            else {
+                if (finfo.filetype != APR_DIR) {
+                    ap_log_error(APLOG_MARK, APLOG_WARNING, rv, wsgi_server,
+                                 "mod_wsgi (pid=%d): Python home %s is not "
+                                 "a directory. Python interpreter may not "
+                                 "be able to be initialized correctly. "
+                                 "Verify the supplied path.", getpid(),
+                                 python_home);
+                }
+                else if (access(python_home, X_OK) == -1) {
+                    ap_log_error(APLOG_MARK, APLOG_WARNING, rv, wsgi_server,
+                                 "mod_wsgi (pid=%d): Python home %s is not "
+                                 "accessible. Python interpreter may not "
+                                 "be able to be initialized correctly. "
+                                 "Verify the supplied path and access "
+                                 "permissions on the directory.", getpid(),
+                                 python_home);
+                }
+            }
+        }
+
 #if PY_MAJOR_VERSION >= 3
         if (python_home) {
             const char *python_exe = 0;
@@ -2060,10 +2107,6 @@ void wsgi_python_init(apr_pool_t *p)
             python_exe = apr_pstrcat(p, python_home, "/bin/python", NULL);
 
             len = strlen(python_exe)+1;
-
-            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Python home %s.", getpid(),
-                         python_home);
 
             s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
 
@@ -2079,10 +2122,6 @@ void wsgi_python_init(apr_pool_t *p)
             const char *python_exe = 0;
 
             python_exe = apr_pstrcat(p, python_home, "/bin/python", NULL);
-
-            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Python home %s.", getpid(),
-                         python_home);
 
             Py_SetProgramName((char *)python_exe);
         }
