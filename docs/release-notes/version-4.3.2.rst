@@ -14,6 +14,15 @@ need updating. As most new changes relate to mod_wsgi daemon mode, which is
 not supported under Windows, you should keep using the last available
 binary for version 3.X on Windows instead.
 
+Bugs Fixed
+----------
+
+1. Linux behaviour when using ``connect()`` on a non blocking UNIX socket
+and the listener queue is full, is apparently not POSIX compliant and it
+returns ``EAGAIN`` instead of ``ECONNREFUSED``. The code handling errors
+from the ``connect()`` wasn't accomodating this non standard behaviour
+and so would fail immediately rather than retrying.
+
 New Features
 ------------
 
