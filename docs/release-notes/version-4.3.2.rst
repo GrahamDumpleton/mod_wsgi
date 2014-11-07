@@ -28,6 +28,14 @@ dropped privileges to target user. This is required where the specified
 working directory is on an NFS file system configured so as not to have
 root access priviliges.
 
+3. The workaround for getting pyvenv style virtual environments to work
+with Python 3.3+ would break brew Python 2.7 on MacOS X as brew Python
+appears to not work in embedded systems which use Py_SetProgramName()
+instead of using Py_SetPythonHome(). Now only use Py_SetProgramName() if
+detect it is actually a pyvenv style virtual environment. This even appears
+to be okay for brew Python 3.4 at least as it does still work with the
+Py_SetProgramName() call even if brew Python 2.7 doesn't.
+
 New Features
 ------------
 
