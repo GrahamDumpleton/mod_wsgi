@@ -23,6 +23,11 @@ returns ``EAGAIN`` instead of ``ECONNREFUSED``. The code handling errors
 from the ``connect()`` wasn't accomodating this non standard behaviour
 and so would fail immediately rather than retrying.
 
+2. Only change working directory for mod_wsgi daemon process after having
+dropped privileges to target user. This is required where the specified
+working directory is on an NFS file system configured so as not to have
+root access priviliges.
+
 New Features
 ------------
 
