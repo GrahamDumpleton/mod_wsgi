@@ -22,6 +22,7 @@ def application(environ, start_response):
     print('PID: %s' % os.getpid(), file=output)
     print('UID: %s' % os.getuid(), file=output)
     print('GID: %s' % os.getgid(), file=output)
+    print('CWD: %s' % os.getcwd(), file=output)
     print(file=output)
 
     print('python.version: %r' % (sys.version,), file=output)
