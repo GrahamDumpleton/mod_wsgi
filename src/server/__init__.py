@@ -1760,14 +1760,14 @@ def _cmd_setup_server(command, args, options):
     if options['max_clients'] is not None:
         max_clients = max(options['max_clients'], max_clients)
     else:
-        max_clients = int(1.5 * max_clients)
+        max_clients = 10 + max(10, int(1.5 * max_clients))
 
     initial_workers = options['initial_workers']
     min_spare_workers = options['minimum_spare_workers']
     max_spare_workers = options['maximum_spare_workers']
 
     if initial_workers is None:
-        prefork_initial_workers = 0.02
+        prefork_initial_workers = 0.05
     else:
         prefork_initial_workers = initial_workers
 
@@ -1777,7 +1777,7 @@ def _cmd_setup_server(command, args, options):
         prefork_min_spare_workers = min_spare_workers
 
     if max_spare_workers is None:
-        prefork_max_spare_workers = 0.05
+        prefork_max_spare_workers = 0.1
     else:
         prefork_max_spare_workers = max_spare_workers
 
@@ -1807,11 +1807,11 @@ def _cmd_setup_server(command, args, options):
 
     options['worker_max_clients'] = max_clients
 
-    if max_clients > 25:
+    if max_clients > 20:
         options['worker_threads_per_child'] = int(max_clients /
-                (int(max_clients / 25) + 1))
+                (int(max_clients / 20) + 1))
     else:
-        options['worker_threads_per_child'] = max_clients
+        options['worker_threads_per_child'] = 10
 
     options['worker_thread_limit'] = options['worker_threads_per_child']
 
