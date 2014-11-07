@@ -2509,7 +2509,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     if (wsgi_newrelic_config_file) {
         PyObject *module = NULL;
 
-        module = PyImport_ImportModule("newrelic.api.web_transaction");
+        module = PyImport_ImportModule("newrelic.agent");
 
         if (module) {
             PyObject *dict;
@@ -2523,6 +2523,12 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
                 wrapper = PyObject_CallFunctionObjArgs(
                         factory, object, Py_None, NULL);
+
+                if (!wrapper) {
+                    wsgi_log_python_error(self->r, self->log,
+                                          self->r->filename);
+                    PyErr_Clear();
+                }
 
                 Py_DECREF(factory);
             }
@@ -2863,8 +2869,6 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
     PyObject *co = NULL;
     struct _node *n = NULL;
 
-    PyObject *transaction = NULL;
-
 #if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
     apr_wchar_t wfilename[APR_PATH_MAX];
 #endif
@@ -2970,85 +2974,6 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         return NULL;
     }
 
-    if (wsgi_newrelic_config_file) {
-        PyObject *module = NULL;
-
-        PyObject *application = NULL;
-
-
-        module = PyImport_ImportModule("newrelic.api.application");
-
-        if (module) {
-            PyObject *dict = NULL;
-            PyObject *object = NULL;
-
-            dict = PyModule_GetDict(module);
-            object = PyDict_GetItemString(dict, "application");
-
-            Py_INCREF(object);
-            application = PyObject_CallFunctionObjArgs(object, NULL);
-            Py_DECREF(object);
-
-            Py_DECREF(module);
-            module = NULL;
-
-            if (!application)
-                PyErr_Clear();
-        }
-        else
-            PyErr_Clear();
-
-        if (application)
-            module = PyImport_ImportModule("newrelic.api.background_task");
-
-        if (module) {
-            PyObject *dict = NULL;
-            PyObject *object = NULL;
-
-            dict = PyModule_GetDict(module);
-            object = PyDict_GetItemString(dict, "BackgroundTask");
-
-            if (object) {
-                PyObject *args = NULL;
-
-                Py_INCREF(object);
-
-                args = Py_BuildValue("(Oss)", application, filename,
-                                     "Script/Import");
-                transaction = PyObject_Call(object, args, NULL);
-
-                if (!transaction)
-                    PyErr_WriteUnraisable(object);
-
-                Py_DECREF(args);
-                Py_DECREF(object);
-
-                if (transaction) {
-                    PyObject *result = NULL;
-
-                    object = PyObject_GetAttrString(
-                            transaction, "__enter__");
-                    args = PyTuple_Pack(0);
-                    result = PyObject_Call(object, args, NULL);
-
-                    if (!result)
-                        PyErr_WriteUnraisable(object);
-
-                    Py_XDECREF(result);
-                    Py_DECREF(object);
-                }
-            }
-
-            Py_DECREF(module);
-        }
-        else
-            PyErr_Print();
-
-        Py_XDECREF(application);
-    }
-    else
-        PyErr_Clear();
-
     co = (PyObject *)PyNode_Compile(n, filename);
     PyNode_Free(n);
 
@@ -3056,67 +2981,6 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         m = PyImport_ExecCodeModuleEx((char *)name, co, (char *)filename);
 
     Py_XDECREF(co);
-
-    if (wsgi_newrelic_config_file) {
-        if (transaction) {
-            PyObject *object;
-
-            object = PyObject_GetAttrString(transaction, "__exit__");
-
-            if (m) {
-                PyObject *args = NULL;
-                PyObject *result = NULL;
-
-                args = PyTuple_Pack(3, Py_None, Py_None, Py_None);
-                result = PyObject_Call(object, args, NULL);
-
-                if (!result)
-                    PyErr_WriteUnraisable(object);
-                else
-                    Py_DECREF(result);
-
-                Py_DECREF(args);
-            }
-            else {
-                PyObject *args = NULL;
-                PyObject *result = NULL;
-
-                PyObject *type = NULL;
-                PyObject *value = NULL;
-                PyObject *traceback = NULL;
-
-                PyErr_Fetch(&type, &value, &traceback);
-
-                if (!value) {
-                    value = Py_None;
-                    Py_INCREF(value);
-                }
-
-                if (!traceback) {
-                    traceback = Py_None;
-                    Py_INCREF(traceback);
-                }
-
-                PyErr_NormalizeException(&type, &value, &traceback);
-
-                args = PyTuple_Pack(3, type, value, traceback);
-                result = PyObject_Call(object, args, NULL);
-
-                if (!result)
-                    PyErr_WriteUnraisable(object);
-                else
-                    Py_DECREF(result);
-
-                Py_DECREF(args);
-
-                PyErr_Restore(type, value, traceback);
-            }
-
-            Py_DECREF(object);
-
-            Py_DECREF(transaction);
-        }
-    }
 
     if (m) {
         PyObject *object = NULL;
