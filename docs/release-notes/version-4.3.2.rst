@@ -54,3 +54,10 @@ Python interpreter doesn't actually log anything and will instead silently
 fallback to using any Python installation it finds by seaching for
 ``python`` on the users ``PATH``. This may not be the Python installation
 or virtual environment you intended be used.
+
+2. The Apache configuration snippet generated as an example when running
+the ``install-module`` sub command of ``mod_wsgi-express`` to install the
+``mod_wsgi.so`` into the Apache installation itself, will now output a
+``WSGIPythonHome`` directive for the Python installation or virtual
+environment the mod_wsgi module was compiled against so that the correct
+Python runtime will be used.

@@ -2003,6 +2003,7 @@ def cmd_install_module(params):
     shutil.copyfile(where(), target)
 
     print('LoadModule wsgi_module %s' % target)
+    print('WSGIPythonHome %s' % os.path.normpath(sys.prefix))
 
 def cmd_module_location(params):
     formatter = optparse.IndentedHelpFormatter()
