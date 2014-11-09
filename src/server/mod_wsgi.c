@@ -2509,7 +2509,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     if (wsgi_newrelic_config_file) {
         PyObject *module = NULL;
 
-        module = PyImport_ImportModule("newrelic.api.web_transaction");
+        module = PyImport_ImportModule("newrelic.agent");
 
         if (module) {
             PyObject *dict;
@@ -2523,6 +2523,12 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
                 wrapper = PyObject_CallFunctionObjArgs(
                         factory, object, Py_None, NULL);
+
+                if (!wrapper) {
+                    wsgi_log_python_error(self->r, self->log,
+                                          self->r->filename);
+                    PyErr_Clear();
+                }
 
                 Py_DECREF(factory);
             }
@@ -2863,8 +2869,6 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
     PyObject *co = NULL;
     struct _node *n = NULL;
 
-    PyObject *transaction = NULL;
-
 #if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
     apr_wchar_t wfilename[APR_PATH_MAX];
 #endif
@@ -2970,85 +2974,6 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         return NULL;
     }
 
-    if (wsgi_newrelic_config_file) {
-        PyObject *module = NULL;
-
-        PyObject *application = NULL;
-
-
-        module = PyImport_ImportModule("newrelic.api.application");
-
-        if (module) {
-            PyObject *dict = NULL;
-            PyObject *object = NULL;
-
-            dict = PyModule_GetDict(module);
-            object = PyDict_GetItemString(dict, "application");
-
-            Py_INCREF(object);
-            application = PyObject_CallFunctionObjArgs(object, NULL);
-            Py_DECREF(object);
-
-            Py_DECREF(module);
-            module = NULL;
-
-            if (!application)
-                PyErr_Clear();
-        }
-        else
-            PyErr_Clear();
-
-        if (application)
-            module = PyImport_ImportModule("newrelic.api.background_task");
-
-        if (module) {
-            PyObject *dict = NULL;
-            PyObject *object = NULL;
-
-            dict = PyModule_GetDict(module);
-            object = PyDict_GetItemString(dict, "BackgroundTask");
-
-            if (object) {
-                PyObject *args = NULL;
-
-                Py_INCREF(object);
-
-                args = Py_BuildValue("(Oss)", application, filename,
-                                     "Script/Import");
-                transaction = PyObject_Call(object, args, NULL);
-
-                if (!transaction)
-                    PyErr_WriteUnraisable(object);
-
-                Py_DECREF(args);
-                Py_DECREF(object);
-
-                if (transaction) {
-                    PyObject *result = NULL;
-
-                    object = PyObject_GetAttrString(
-                            transaction, "__enter__");
-                    args = PyTuple_Pack(0);
-                    result = PyObject_Call(object, args, NULL);
-
-                    if (!result)
-                        PyErr_WriteUnraisable(object);
-
-                    Py_XDECREF(result);
-                    Py_DECREF(object);
-                }
-            }
-
-            Py_DECREF(module);
-        }
-        else
-            PyErr_Print();
-
-        Py_XDECREF(application);
-    }
-    else
-        PyErr_Clear();
-
     co = (PyObject *)PyNode_Compile(n, filename);
     PyNode_Free(n);
 
@@ -3056,67 +2981,6 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         m = PyImport_ExecCodeModuleEx((char *)name, co, (char *)filename);
 
     Py_XDECREF(co);
-
-    if (wsgi_newrelic_config_file) {
-        if (transaction) {
-            PyObject *object;
-
-            object = PyObject_GetAttrString(transaction, "__exit__");
-
-            if (m) {
-                PyObject *args = NULL;
-                PyObject *result = NULL;
-
-                args = PyTuple_Pack(3, Py_None, Py_None, Py_None);
-                result = PyObject_Call(object, args, NULL);
-
-                if (!result)
-                    PyErr_WriteUnraisable(object);
-                else
-                    Py_DECREF(result);
-
-                Py_DECREF(args);
-            }
-            else {
-                PyObject *args = NULL;
-                PyObject *result = NULL;
-
-                PyObject *type = NULL;
-                PyObject *value = NULL;
-                PyObject *traceback = NULL;
-
-                PyErr_Fetch(&type, &value, &traceback);
-
-                if (!value) {
-                    value = Py_None;
-                    Py_INCREF(value);
-                }
-
-                if (!traceback) {
-                    traceback = Py_None;
-                    Py_INCREF(traceback);
-                }
-
-                PyErr_NormalizeException(&type, &value, &traceback);
-
-                args = PyTuple_Pack(3, type, value, traceback);
-                result = PyObject_Call(object, args, NULL);
-
-                if (!result)
-                    PyErr_WriteUnraisable(object);
-                else
-                    Py_DECREF(result);
-
-                Py_DECREF(args);
-
-                PyErr_Restore(type, value, traceback);
-            }
-
-            Py_DECREF(object);
-
-            Py_DECREF(transaction);
-        }
-    }
 
     if (m) {
         PyObject *object = NULL;
@@ -7196,11 +7060,6 @@ static void wsgi_setup_daemon_name(WSGIDaemonProcess *daemon, apr_pool_t *p)
 
 static int wsgi_setup_access(WSGIDaemonProcess *daemon)
 {
-    /* Setup the umask for the effective user. */
-
-    if (daemon->group->umask != -1)
-        umask(daemon->group->umask);
-
     /* Change to chroot environment. */
 
     if (daemon->group->root) {
@@ -7213,7 +7072,80 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
         }
     }
 
-    /* Setup the working directory.*/
+    /* We don't need to switch user/group if not root. */
+
+    if (geteuid() == 0) {
+        /* Setup the daemon process real and effective group. */
+
+        if (setgid(daemon->group->gid) == -1) {
+            ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
+                         "mod_wsgi (pid=%d): Unable to set group id "
+                         "to gid=%u.", getpid(),
+                         (unsigned)daemon->group->gid);
+
+            return -1;
+        }
+        else {
+            if (daemon->group->groups) {
+                if (setgroups(daemon->group->groups_count,
+                              daemon->group->groups) == -1) {
+                    ap_log_error(APLOG_MARK, APLOG_ALERT, errno,
+                                 wsgi_server, "mod_wsgi (pid=%d): Unable "
+                                 "to set supplementary groups for uname=%s "
+                                 "of '%s'.", getpid(), daemon->group->user,
+                                 daemon->group->groups_list);
+
+                    return -1;
+                }
+            }
+            else if (initgroups(daemon->group->user,
+                     daemon->group->gid) == -1) {
+                ap_log_error(APLOG_MARK, APLOG_ALERT, errno,
+                             wsgi_server, "mod_wsgi (pid=%d): Unable "
+                             "to set groups for uname=%s and gid=%u.",
+                             getpid(), daemon->group->user,
+                             (unsigned)daemon->group->gid);
+
+                return -1;
+            }
+        }
+
+        /* Setup the daemon process real and effective user. */
+
+        if (setuid(daemon->group->uid) == -1) {
+            ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
+                         "mod_wsgi (pid=%d): Unable to change to uid=%ld.",
+                         getpid(), (long)daemon->group->uid);
+
+            /*
+             * On true UNIX systems this should always succeed at
+             * this point. With certain Linux kernel versions though
+             * we can get back EAGAIN where the target user had
+             * reached their process limit. In that case will be left
+             * running as wrong user. Just exit on all failures to be
+             * safe. Don't die immediately to avoid a fork bomb.
+             *
+             * We could just return -1 here and let the caller do the
+             * sleep() and exit() but this failure is critical enough
+             * that we still do it here so it is obvious that the issue
+             * is being addressed.
+             */
+
+            ap_log_error(APLOG_MARK, APLOG_ALERT, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Failure to configure the "
+                         "daemon process correctly and process left in "
+                         "unspecified state. Restarting daemon process "
+                         "after delay.", getpid());
+
+            sleep(20);
+
+            wsgi_exit_daemon_process(-1);
+
+            return -1;
+        }
+    }
+
+    /* Setup the working directory for the process. */
 
     if (daemon->group->home) {
         if (chdir(daemon->group->home) == -1) {
@@ -7224,7 +7156,7 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
             return -1;
         }
     }
-    else if (geteuid()) {
+    else {
         struct passwd *pwent;
 
         pwent = getpwuid(geteuid());
@@ -7246,98 +7178,11 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
             return -1;
         }
     }
-    else {
-        struct passwd *pwent;
 
-        pwent = getpwuid(daemon->group->uid);
+    /* Setup the umask for the effective user. */
 
-        if (pwent) {
-            if (chdir(pwent->pw_dir) == -1) {
-                ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                             "mod_wsgi (pid=%d): Unable to change working "
-                             "directory to '%s'.", getpid(), pwent->pw_dir);
-
-                return -1;
-            }
-        }
-        else {
-            ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                         "mod_wsgi (pid=%d): Unable to determine home "
-                         "directory for uid=%ld.", getpid(),
-                         (long)daemon->group->uid);
-
-            return -1;
-        }
-    }
-
-    /* Don't bother switch user/group if not root. */
-
-    if (geteuid())
-        return 0;
-
-    /* Setup the daemon process real and effective group. */
-
-    if (setgid(daemon->group->gid) == -1) {
-        ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                     "mod_wsgi (pid=%d): Unable to set group id to gid=%u.",
-                     getpid(), (unsigned)daemon->group->gid);
-
-        return -1;
-    }
-    else {
-        if (daemon->group->groups) {
-            if (setgroups(daemon->group->groups_count,
-                          daemon->group->groups) == -1) {
-                ap_log_error(APLOG_MARK, APLOG_ALERT, errno,
-                             wsgi_server, "mod_wsgi (pid=%d): Unable "
-                             "to set supplementary groups for uname=%s "
-                             "of '%s'.", getpid(), daemon->group->user,
-                             daemon->group->groups_list);
-
-                return -1;
-            }
-        }
-        else if (initgroups(daemon->group->user, daemon->group->gid) == -1) {
-            ap_log_error(APLOG_MARK, APLOG_ALERT, errno,
-                         wsgi_server, "mod_wsgi (pid=%d): Unable "
-                         "to set groups for uname=%s and gid=%u.", getpid(),
-                         daemon->group->user, (unsigned)daemon->group->gid);
-
-            return -1;
-        }
-    }
-
-    /* Setup the daemon process real and effective user. */
-
-    if (setuid(daemon->group->uid) == -1) {
-        ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                     "mod_wsgi (pid=%d): Unable to change to uid=%ld.",
-                     getpid(), (long)daemon->group->uid);
-
-        /*
-         * On true UNIX systems this should always succeed at
-         * this point. With certain Linux kernel versions though
-         * we can get back EAGAIN where the target user had
-         * reached their process limit. In that case will be left
-         * running as wrong user. Just exit on all failures to be
-         * safe. Don't die immediately to avoid a fork bomb.
-         *
-         * We could just return -1 here and let the caller do the
-         * sleep() and exit() but this failure is critical enough
-         * that we still do it here so it is obvious that the issue
-         * is being addressed.
-         */
-
-        ap_log_error(APLOG_MARK, APLOG_ALERT, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Failure to configure the "
-                     "daemon process correctly and process left in "
-                     "unspecified state. Restarting daemon process "
-                     "after delay.", getpid());
-
-        sleep(20);
-
-        wsgi_exit_daemon_process(-1);
-    }
+    if (daemon->group->umask != -1)
+        umask(daemon->group->umask);
 
     /*
      * Linux prevents generation of core dumps after setuid()
@@ -7347,6 +7192,7 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
 
 #if defined(HAVE_PRCTL) && defined(PR_SET_DUMPABLE)
     /* This applies to Linux 2.4 and later. */
+
     if (ap_coredumpdir_configured) {
         if (prctl(PR_SET_DUMPABLE, 1)) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
@@ -9496,7 +9342,16 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
         rv = wsgi_socket_connect_un(daemon->socket, &addr);
 
         if (rv != APR_SUCCESS) {
-            if (APR_STATUS_IS_ECONNREFUSED(rv)) {
+            /*
+             * We need to check for both connection refused and
+             * connection unavailable as Linux systems when
+             * connecting to a UNIX listener socket in non
+             * blocking mode, where the listener backlog is full
+             * will return the error EAGAIN rather than returning
+             * ECONNREFUSED as is supposedly dictated by POSIX.
+             */
+
+            if (APR_STATUS_IS_ECONNREFUSED(rv) || APR_STATUS_IS_EAGAIN(rv)) {
                 if ((apr_time_now()-start_time) < daemon->connect_timeout) {
                     if (wsgi_server_config->verbose_debugging) {
                         ap_log_rerror(APLOG_MARK, APLOG_DEBUG, rv, r,

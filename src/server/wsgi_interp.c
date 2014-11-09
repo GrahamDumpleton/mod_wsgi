@@ -1935,6 +1935,8 @@ void wsgi_python_init(apr_pool_t *p)
 {
     const char *python_home = 0;
 
+    int is_pyvenv = 0;
+
     /* Perform initialisation if required. */
 
     if (!Py_IsInitialized()) {
@@ -2003,19 +2005,16 @@ void wsgi_python_init(apr_pool_t *p)
 
         python_home = wsgi_server_config->python_home;
 
-#if defined(MOD_WSGI_WITH_DAEMONS)
-        if (wsgi_daemon_process && wsgi_daemon_process->group->python_home)
-            python_home = wsgi_daemon_process->group->python_home;
-#endif
-
-#if PY_MAJOR_VERSION >= 3
         if (python_home) {
-            wchar_t *s = NULL;
-            int len = strlen(python_home)+1;
-
             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                          "mod_wsgi (pid=%d): Python home %s.", getpid(),
                          python_home);
+        }
+
+        if (python_home) {
+#if PY_MAJOR_VERSION >= 3
+            wchar_t *s = NULL;
+            int len = strlen(python_home)+1;
 
             s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
 
@@ -2025,23 +2024,21 @@ void wsgi_python_init(apr_pool_t *p)
             mbstowcs(s, python_home, len);
 #endif
             Py_SetPythonHome(s);
-        }
 #else
-        if (python_home) {
-            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Python home %s.", getpid(),
-                         python_home);
-
             Py_SetPythonHome((char *)python_home);
-        }
 #endif
+        }
+
 #else
         /*
-         * Check for Python HOME being overridden. What we are actually
-         * going to do though is work out where the Python executable
-         * would be that the designated installation and set the
-         * location for where it is. This avoids bugs in pyvenv support
-         * for embedded systems.
+         * Now for the UNIX version of the code to set the Python HOME.
+         * For this things are a mess. If using pyvenv with Python 3.3+
+         * then setting Python HOME doesn't work. For it we need to use
+         * Python executable location. Everything else seems to be cool
+         * with setting Python HOME. We therefore need to detect when we
+         * have a pyvenv by looking for the presence of pyvenv.cfg file.
+         * We can simply just set Python executable everywhere as that
+         * doesn't work with brew Python on MacOS X.
          */
 
         python_home = wsgi_server_config->python_home;
@@ -2051,43 +2048,99 @@ void wsgi_python_init(apr_pool_t *p)
             python_home = wsgi_daemon_process->group->python_home;
 #endif
 
-#if PY_MAJOR_VERSION >= 3
         if (python_home) {
+            apr_status_t rv;
+            apr_finfo_t finfo; 
+
+            char *pyvenv_cfg;
+
             const char *python_exe = 0;
+
+#if PY_MAJOR_VERSION >= 3
             wchar_t *s = NULL;
             int len = 0;
+#endif
 
-            python_exe = apr_pstrcat(p, python_home, "/bin/python", NULL);
-
-            len = strlen(python_exe)+1;
+            /*
+             * Is common to see people set the directory to an incorrect
+             * location, including to a location within an inaccessible
+             * user home directory, or to the 'python' executable itself.
+             * Try and validate that the location is accessible and is a
+             * directory.
+             */
 
             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                          "mod_wsgi (pid=%d): Python home %s.", getpid(),
                          python_home);
 
-            s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
+            rv = apr_stat(&finfo, python_home, APR_FINFO_NORM, p);
 
-#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
-            wsgi_utf8_to_unicode_path(s, len, python_exe);
+            if (rv != APR_SUCCESS) {
+                ap_log_error(APLOG_MARK, APLOG_WARNING, rv, wsgi_server,
+                             "mod_wsgi (pid=%d): Unable to stat Python home "
+                             "%s. Python interpreter may not be able to be "
+                             "initialized correctly. Verify the supplied path "
+                             "and access permissions for whole of the path.",
+                             getpid(), python_home);
+            }
+            else {
+                if (finfo.filetype != APR_DIR) {
+                    ap_log_error(APLOG_MARK, APLOG_WARNING, rv, wsgi_server,
+                                 "mod_wsgi (pid=%d): Python home %s is not "
+                                 "a directory. Python interpreter may not "
+                                 "be able to be initialized correctly. "
+                                 "Verify the supplied path.", getpid(),
+                                 python_home);
+                }
+                else if (access(python_home, X_OK) == -1) {
+                    ap_log_error(APLOG_MARK, APLOG_WARNING, rv, wsgi_server,
+                                 "mod_wsgi (pid=%d): Python home %s is not "
+                                 "accessible. Python interpreter may not "
+                                 "be able to be initialized correctly. "
+                                 "Verify the supplied path and access "
+                                 "permissions on the directory.", getpid(),
+                                 python_home);
+                }
+            }
+
+            /* Now detect whether have a pyvenv with Python 3.3+. */
+
+            pyvenv_cfg = apr_pstrcat(p, python_home, "/pyvenv.cfg", NULL);
+
+            if (access(pyvenv_cfg, R_OK) == 0)
+                is_pyvenv = 1;
+
+            if (is_pyvenv) {
+                /*
+                 * Embedded support for pyvenv is broken so need to
+                 * set Python executable location and cannot set the
+                 * Python HOME as is more desirable.
+                 */
+
+                python_exe = apr_pstrcat(p, python_home, "/bin/python", NULL);
+#if PY_MAJOR_VERSION >= 3
+                len = strlen(python_exe)+1;
+                s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
+                mbstowcs(s, python_exe, len);
+
+                Py_SetProgramName(s);
 #else
-            mbstowcs(s, python_exe, len);
+                Py_SetProgramName((char *)python_exe);
 #endif
-            Py_SetProgramName(s);
-        }
+            }
+            else {
+#if PY_MAJOR_VERSION >= 3
+                len = strlen(python_home)+1;
+                s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
+                mbstowcs(s, python_home, len);
+
+                Py_SetPythonHome(s);
 #else
-        if (python_home) {
-            const char *python_exe = 0;
-
-            python_exe = apr_pstrcat(p, python_home, "/bin/python", NULL);
-
-            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Python home %s.", getpid(),
-                         python_home);
-
-            Py_SetProgramName((char *)python_exe);
+                Py_SetPythonHome((char *)python_home);
+#endif
+            }
+#endif
         }
-#endif
-#endif
 
         /*
          * Set environment variable PYTHONHASHSEED. We need to
