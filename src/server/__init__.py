@@ -163,6 +163,12 @@ LoadModule dir_module '%(modules_directory)s/mod_dir.so'
 LoadModule env_module '%(modules_directory)s/mod_env.so'
 </IfModule>
 
+<IfVersion >= 2.2.15>
+<IfModule !reqtimeout_module>
+LoadModule reqtimeout_module '%(modules_directory)s/mod_reqtimeout.so'
+</IfModule>
+</IfVersion>
+
 <IfDefine WSGI_COMPRESS_RESPONSES>
 <IfModule !deflate_module>
 LoadModule deflate_module '%(modules_directory)s/mod_deflate.so'
@@ -208,6 +214,11 @@ HostnameLookups Off
 MaxMemFree 64
 Timeout %(socket_timeout)s
 ListenBacklog %(server_backlog)s
+
+
+<IfVersion >= 2.2.15>
+RequestReadTimeout %(request_read_timeout)s
+</IfVersion>
 
 LimitRequestBody %(limit_request_body)s
 
@@ -1325,11 +1336,55 @@ option_list = (
             'to pass before timing out on a read or write operation on '
             'a socket and aborting the request. Defaults to 60 seconds.'),
 
-    optparse.make_option('--queue-timeout', type='int', default=30,
+    optparse.make_option('--queue-timeout', type='int', default=45,
             metavar='SECONDS', help='Maximum number of seconds allowed '
             'for a request to be accepted by a worker process to be '
             'handled, taken from the time when the Apache child process '
             'originally accepted the request. Defaults to 30 seconds.'),
+
+    optparse.make_option('--header-timeout', type='int', default=15,
+            metavar='SECONDS', help='The number of seconds allowed for '
+            'receiving the request including the headers. This may be '
+            'dynamically increased if a minimum rate for reading the '
+            'request and headers is also specified, up to any limit '
+            'imposed by a maximum header timeout. Defaults to 15 seconds.'),
+
+    optparse.make_option('--header-max-timeout', type='int', default=30,
+            metavar='SECONDS', help='Maximum number of seconds allowed for '
+            'receiving the request including the headers. This is the hard '
+            'limit after taking into consideration and increases to the '
+            'basic timeout due to minimum rate for reading the request and '
+            'headers which may be specified. Defaults to 30 seconds.'),
+
+    optparse.make_option('--header-min-rate', type='int', default=500,
+            metavar='BYTES', help='The number of bytes required to be sent '
+            'as part of the request and headers to trigger a dynamic '
+            'increase in the timeout on receiving the request including '
+            'headers. Each time this number of bytes is received the timeout '
+            'will be increased by 1 second up to any maximum specified by '
+            'the maximum header timeout. Defaults to 500 bytes.'),
+
+    optparse.make_option('--body-timeout', type='int', default=15,
+            metavar='SECONDS', help='The number of seconds allowed for '
+            'receiving the request body. This may be dynamically increased '
+            'if a minimum rate for reading the request body is also '
+            'specified, up to any limit imposed by a maximum body timeout. '
+            'Defaults to 15 seconds.'),
+
+    optparse.make_option('--body-max-timeout', type='int', default=0,
+            metavar='SECONDS', help='Maximum number of seconds allowed for '
+            'receiving the request body. This is the hard limit after '
+            'taking into consideration and increases to the basic timeout '
+            'due to minimum rate for reading the request body which may be '
+            'specified. Defaults to 0 indicating there is no maximum.'),
+
+    optparse.make_option('--body-min-rate', type='int', default=500,
+            metavar='BYTES', help='The number of bytes required to be sent '
+            'as part of the request body to trigger a dynamic increase in '
+            'the timeout on receiving the request body. Each time this '
+            'number of bytes is received the timeout will be increased '
+            'by 1 second up to any maximum specified by the maximum body '
+            'timeout. Defaults to 500 bytes.'),
 
     optparse.make_option('--server-backlog', type='int', default=500,
             metavar='NUMBER', help='Depth of server socket listener '
@@ -1726,6 +1781,24 @@ def _cmd_setup_server(command, args, options):
     options['python_home'] = sys.prefix
 
     options['keep_alive'] = options['keep_alive_timeout'] != 0
+
+    request_read_timeout = ''
+
+    if options['header_timeout'] > 0:
+        request_read_timeout += 'header=%d' % options['header_timeout']
+        if options['header_max_timeout'] > 0:
+            request_read_timeout += '-%d' % options['header_max_timeout']
+        if options['header_min_rate'] > 0:
+            request_read_timeout += ',MinRate=%d' % options['header_min_rate']
+        
+    if options['body_timeout'] > 0:
+        request_read_timeout += ' body=%d' % options['body_timeout']
+        if options['body_max_timeout'] > 0:
+            request_read_timeout += '-%d' % options['body_max_timeout']
+        if options['body_min_rate'] > 0:
+            request_read_timeout += ',MinRate=%d' % options['body_min_rate']
+
+    options['request_read_timeout'] = request_read_timeout
 
     if options['server_metrics']:
         options['daemon_server_metrics_flag'] = 'On'

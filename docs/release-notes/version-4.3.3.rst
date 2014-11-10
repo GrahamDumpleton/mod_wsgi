@@ -13,3 +13,24 @@ Known Issues
 need updating. As most new changes relate to mod_wsgi daemon mode, which is
 not supported under Windows, you should keep using the last available
 binary for version 3.X on Windows instead.
+
+New Features
+------------
+
+1. Added new feature to ``mod_wsgi-express`` implementing timeouts on the
+reading of the request, including headers, and the request body. This
+feature uses the Apache module ``mod_reqtimeout`` to implement the feature.
+
+By default a read timeout on the initial request including headers of 15
+seconds is used. This can dynamically increase up to a maximum of 30
+seconds if the request data is received at a minimum required rate.
+
+By default a read timeout on the request body of 15 seconds is used. This
+can dynamically increase if the request data is received at a minimum
+required rate.
+
+The options to override the defaults are ``--header-timeout``,
+``--header-max-timeout``, ``--header-min-rate``, ``--body-timeout``,
+``--body-max-timeout`` and ``--body-min-rate``. For a more detailed
+explaination of this feature, consult the documentation for the Apache
+``mod_reqtimeout`` module.
