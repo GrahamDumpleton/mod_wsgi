@@ -2628,6 +2628,16 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                 self->result = OK;
 
             wsgi_log_python_error(self->r, self->log, self->r->filename);
+
+            /*
+             * If response content is being chunked and an error
+             * occurred, we need to prevent the sending of the EOS
+             * bucket so a client is able to detect that the the
+             * response was incomplete.
+             */
+
+            if (self->r->chunked)
+                self->r->eos_sent = 1;
         }
 
         if (PyObject_HasAttrString(self->sequence, "close")) {

@@ -14,6 +14,17 @@ need updating. As most new changes relate to mod_wsgi daemon mode, which is
 not supported under Windows, you should keep using the last available
 binary for version 3.X on Windows instead.
 
+Bugs Fixed
+----------
+
+1. When an exception occurs during the yielding of data from a generator
+returned from the WSGI application, and chunked transfer encoding was used
+on the response, then a '0' chunk would be errornously added at the end of
+the response content even though the response was likely incomplete. The
+result would be that clents wouldn't be able to properly detect that the
+response was truncated due to an error. This issue is now fixed for when
+embedded mode is being used. Fixing it for daemon mode is a bit trickier.
+
 New Features
 ------------
 
