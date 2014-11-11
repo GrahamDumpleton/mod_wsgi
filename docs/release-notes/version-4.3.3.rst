@@ -45,3 +45,47 @@ The options to override the defaults are ``--header-timeout``,
 ``--body-max-timeout`` and ``--body-min-rate``. For a more detailed
 explaination of this feature, consult the documentation for the Apache
 ``mod_reqtimeout`` module.
+
+2. Added a new ``%{HOST}`` label that can be used when specifying the
+application group (Python sub interpreter context) to run the WSGI
+application in, via the ``WSGIApplicationGroup`` directive, or the
+``application-group`` option to ``WSGIScriptAlias``.
+
+This new label will result in an application group being used with a name
+that corresponds to the name of the site as identified by the HTTP request
+``Host`` header. Where the accepting port number is other than 80 or 443,
+then the name of the application group will be suffixed with the port
+number separated by a colon.
+
+Note that extreme care must be exercised when using this new label to
+specify the application group. This is because the HTTP request ``Host``
+header is under the control of the user of the site.
+
+As such, it should only be used in conjunction with a configuration which
+adequately blocks access to anything but the expected hosts.
+
+For example, it would be dangerous to use this inside of a ``VirtualHost``
+where the ``ServerAlias`` directive is used with a wildcard. This is
+because a user could pick arbitrary host names matching the wildcard and so
+force a new sub interpreter context to be created each time and so blow out
+memory usage.
+
+Similarly, caution should be exercised with ``mod_vhost_alias``, with any
+configuration forbidding any host which doesn't specifically match some
+specified resource such as a directory.
+
+Finally, this should probably never be used when not using either
+``VirtualHost`` or ``mod_vhost_alias`` as in that case the server is likely
+going to accept any ``Host`` header value without exclusions.
+
+3. Allow ``%{RESOURCE}``, ``%{SERVER}`` and ``%{HOST}`` labels to be used
+with the ``WSGIProcessGroup`` directive, or the ``process-group`` option of
+the ``WSGIScriptAlias`` directive.
+
+For this to work, it is still necessary to have setup an appropriate
+mod_wsgi daemon process group using the ``WSGIDaemonProcess`` directive,
+with name that will match the expanded value for the respective labels.
+If there is no matching mod_wsgi daemon process group specified, then
+a generic HTTP 500 internal server error response would be returned and
+the reason, lack of matching mod_wsgi daemon process group, being logged in
+the Apache error log.

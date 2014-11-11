@@ -464,6 +464,10 @@ static const char *wsgi_process_group(request_rec *r, const char *s)
     const char *name = NULL;
     const char *value = NULL;
 
+    const char *h = NULL;
+    apr_port_t p = 0;
+    const char *n = NULL;
+
     if (!s)
         return "";
 
@@ -475,6 +479,45 @@ static const char *wsgi_process_group(request_rec *r, const char *s)
     if (*name) {
         if (!strcmp(name, "{GLOBAL}"))
             return "";
+
+        if (!strcmp(name, "{RESOURCE}")) {
+            h = r->server->server_hostname;
+            p = ap_get_server_port(r);
+            n = wsgi_script_name(r);
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u|%s", h, p, n);
+            else
+                return apr_psprintf(r->pool, "%s|%s", h, n);
+        }
+
+        if (!strcmp(name, "{SERVER}")) {
+            h = r->server->server_hostname;
+            p = ap_get_server_port(r);
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
+
+        if (!strcmp(name, "{HOST}")) {
+            h = r->hostname;
+            p = ap_get_server_port(r);
+
+            /*
+             * The Host header could be empty or absent for HTTP/1.0
+             * or older. In that case fallback to ServerName.
+             */
+
+            if (h == NULL || *h == 0)
+                h = r->server->server_hostname;
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
 
         if (strstr(name, "{ENV:") == name) {
             long len = 0;
@@ -522,6 +565,9 @@ static const char *wsgi_server_group(request_rec *r, const char *s)
     name = s + 1;
 
     if (*name) {
+        if (!strcmp(name, "{GLOBAL}"))
+            return "";
+
         if (!strcmp(name, "{SERVER}")) {
             h = r->server->server_hostname;
             p = ap_get_server_port(r);
@@ -532,8 +578,23 @@ static const char *wsgi_server_group(request_rec *r, const char *s)
                 return h;
         }
 
-        if (!strcmp(name, "{GLOBAL}"))
-            return "";
+        if (!strcmp(name, "{HOST}")) {
+            h = r->hostname;
+            p = ap_get_server_port(r);
+
+            /*
+             * The Host header could be empty or absent for HTTP/1.0
+             * or older. In that case fallback to ServerName.
+             */
+
+            if (h == NULL || *h == 0)
+                h = r->server->server_hostname;
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
     }
 
     return s;
@@ -565,6 +626,9 @@ static const char *wsgi_application_group(request_rec *r, const char *s)
     name = s + 1;
 
     if (*name) {
+        if (!strcmp(name, "{GLOBAL}"))
+            return "";
+
         if (!strcmp(name, "{RESOURCE}")) {
             h = r->server->server_hostname;
             p = ap_get_server_port(r);
@@ -586,8 +650,23 @@ static const char *wsgi_application_group(request_rec *r, const char *s)
                 return h;
         }
 
-        if (!strcmp(name, "{GLOBAL}"))
-            return "";
+        if (!strcmp(name, "{HOST}")) {
+            h = r->hostname;
+            p = ap_get_server_port(r);
+
+            /*
+             * The Host header could be empty or absent for HTTP/1.0
+             * or older. In that case fallback to ServerName.
+             */
+
+            if (h == NULL || *h == 0)
+                h = r->server->server_hostname;
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
 
         if (strstr(name, "{ENV:") == name) {
             long len = 0;
@@ -3896,7 +3975,11 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
         object->application_group = application_group;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-        if (*object->process_group) {
+        if (*object->process_group &&
+            strcmp(object->process_group, "%{RESOURCE}") != 0 &&
+            strcmp(object->process_group, "%{SERVER}") != 0 &&
+            strcmp(object->process_group, "%{HOST}") != 0) {
+
             WSGIProcessGroup *group = NULL;
             WSGIProcessGroup *entries = NULL;
             WSGIProcessGroup *entry = NULL;
