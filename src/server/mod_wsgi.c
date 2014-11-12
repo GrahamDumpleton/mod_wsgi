@@ -10144,7 +10144,8 @@ static int wsgi_execute_remote(request_rec *r)
                            config->process_group)) {
             wsgi_log_script_error(r, apr_psprintf(r->pool, "Daemon "
                                   "process called '%s' cannot be "
-                                  "accessed by this WSGI application",
+                                  "accessed by this WSGI application "
+                                  "as not a member of allowed groups",
                                   config->process_group), r->filename);
 
             return HTTP_INTERNAL_SERVER_ERROR;
