@@ -9682,7 +9682,7 @@ static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
      */
 
     cookie_table = apr_table_make(r->pool, 2);
-    apr_table_do(wsgi_copy_header, cookie_table, r->err_headers_out,
+    apr_table_do(wsgi_copy_header, cookie_table, r->headers_out,
                  "Set-Cookie", NULL);
 
     authen_table = apr_table_make(r->pool, 2);
@@ -9762,18 +9762,18 @@ static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
              * values combined for these.
              */
 
-            apr_table_overlap(r->err_headers_out, merge,
+            apr_table_overlap(r->headers_out, merge,
                               APR_OVERLAP_TABLES_MERGE);
 
             /*
-             * No add in the special headers which we can't merge
+             * Now add in the special headers which we can't merge
              * because it gives certain browsers problems.
              */
 
             if (!apr_is_empty_table(cookie_table)) {
-                apr_table_unset(r->err_headers_out, "Set-Cookie");
-                r->err_headers_out = apr_table_overlay(r->pool,
-                    r->err_headers_out, cookie_table);
+                apr_table_unset(r->headers_out, "Set-Cookie");
+                r->headers_out = apr_table_overlay(r->pool,
+                    r->headers_out, cookie_table);
             }
 
             if (!apr_is_empty_table(authen_table)) {

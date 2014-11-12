@@ -25,6 +25,25 @@ result would be that clents wouldn't be able to properly detect that the
 response was truncated due to an error. This issue is now fixed for when
 embedded mode is being used. Fixing it for daemon mode is a bit trickier.
 
+2. Response headers returned from the WSGI application running in daemon
+mode were being wrongly attached to the internal Apache data structure for
+``err_headers_out`` instead of ``headers_out``. This meant that the
+``Header`` directive of the ``mod_headers`` module, with its default
+condition of only checking ``onsuccess`` headers would not work as
+expected.
+
+In order to be able to check for or modify the response headers one would
+have had to use the ``Header`` directive with the ``always`` condition and
+if also working with an embedded WSGI application, also define a parallel
+``Header`` directive but with the ``onsuccess`` condition.
+
+For daemon mode, response headers will now be correctly associated with
+``headers_out`` and the ``onsuccess`` condition of the ``Header`` directive.
+The only exception to this in either embedded or daemon mode now is that
+of the ``WWW-Authenticate`` header, which remains associated with
+``err_headers_out`` so that the header will survive an internal redirect
+such as to an ``ErrorDocument``.
+
 New Features
 ------------
 
