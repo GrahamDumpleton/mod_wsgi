@@ -21,12 +21,21 @@ Status
 
 No mod_wsgi is not dead, it's just been resting.
 
-Expect renewed development on mod_wsgi during 2014.
+Renewed development on mod_wsgi began early 2014, with a considerable
+amount of new development work and fixes being performed. This included the
+ability to install mod_wsgi using 'pip', along with an admin command
+called ``mod_wsgi-express`` which provides a really simple way of starting
+up Apache/mod_wsgi with an automatically generated configuration.
 
 Completely revised documentation will progressively be incorporated here.
 In the mean time keep referring to the older documentation at:
 
     http://www.modwsgi.org/
+
+The new ``mod_wsgi-express`` feature is also documented in the PyPi
+entry for mod_wsgi at:
+
+   http://pypi.python.org/pypi/mod_wsgi 
 
 Due to security issues in versions of mod_wsgi up to and including
 version 3.4, it is recommended that version 3.5 or later be used.
