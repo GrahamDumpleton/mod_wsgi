@@ -44,6 +44,32 @@ of the ``WWW-Authenticate`` header, which remains associated with
 ``err_headers_out`` so that the header will survive an internal redirect
 such as to an ``ErrorDocument``.
 
+3. When optional support for chunked requests was enabled, it was only
+working properly for embedded mode. The feature now also works properly for
+daemon mode.
+
+The directive to enable support for chunked request content is
+``WSGIChunkedRequest``. The command line option when using mod_wsgi express
+is ``--chunked-request``.
+
+This is an optional feature, as the WSGI specification is arguably broken
+in not catering properly for mutating input filters or chunked request
+content. Support for chunked request content could be enabled by default,
+but then WSGI applications which don't simply read all available content
+and instead rely entirely on ``CONTENT_LENGTH``, would likely see a chunked
+request as having no content at all, as it would interpret the lack of
+the ``CONTENT_LENGTH`` as meaning the length of the content is zero.
+
+An attempt to get the WSGI specification ammended to be more sensible and
+allow what is a growing requirement to support chunked request content was
+ignored. Thus support is optional. You will need to enable this if you wish
+to rely on features of any WSGI framework that take the more sensible
+approach of ignoring ``CONTENT_LENGTH`` as a true indicator of content
+length. One such WSGI framework which provides some support for chunked
+request content is Flask/Werkzeug. Check its documentation or the code for
+Flask/Werkzeug to to see if any additional ``SetEnv`` directive may be
+required to enable the support in Flask/Werkzeug.
+
 New Features
 ------------
 
@@ -108,3 +134,9 @@ If there is no matching mod_wsgi daemon process group specified, then
 a generic HTTP 500 internal server error response would be returned and
 the reason, lack of matching mod_wsgi daemon process group, being logged in
 the Apache error log.
+
+4. Error messages and exceptions raised when there is a failure to read
+request content, or write back a response now provide the internal error
+indication from Apache as to why. For the ``IOError`` exceptions which are
+raised, that the exception originates within Apache/mod_wsgi is now flagged
+in the description associated with the exception.
