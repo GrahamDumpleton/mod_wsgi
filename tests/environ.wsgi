@@ -84,4 +84,9 @@ def application(environ, start_response):
 
     yield result
 
-    yield input.read(int(environ.get('CONTENT_LENGTH', '0')))
+    block_size = 8192
+
+    data = input.read(block_size)
+    while data:
+        yield data
+        data = input.read(block_size)

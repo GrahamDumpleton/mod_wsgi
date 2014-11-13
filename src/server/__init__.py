@@ -345,6 +345,10 @@ CustomLog "%(log_directory)s/access_log" common
 </IfDefine>
 </IfDefine>
 
+<IfDefine WSGI_CHUNKED_REQUEST>
+WSGIChunkedRequest On
+</IfDefine>
+
 <IfDefine WSGI_WITH_SSL>
 <IfModule !ssl_module>
 LoadModule ssl_module %(modules_directory)s/mod_ssl.so
@@ -1593,6 +1597,10 @@ option_list = (
             'handler for any resources matched from the document root '
             'directory with a specific extension type.'),
 
+    optparse.make_option('--chunked-request', action='store_true',
+            default=False, help='Flag indicating whether requests which '
+            'use chunked transfer encoding will be accepted.'),
+
     optparse.make_option('--with-newrelic', action='store_true',
             default=False, help='Flag indicating whether all New Relic '
             'performance monitoring features should be enabled.'),
@@ -1995,6 +2003,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_AUTH_USER')
     if options['auth_group_script']:
         options['httpd_arguments_list'].append('-DWSGI_AUTH_GROUP')
+    if options['chunked_request']:
+        options['httpd_arguments_list'].append('-DWSGI_CHUNKED_REQUEST')
     if options['with_php5']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PHP5')
 
