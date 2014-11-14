@@ -10856,6 +10856,9 @@ static int wsgi_execute_remote(request_rec *r)
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                          "mod_wsgi (pid=%d): %s.", getpid(), error_message);
 
+            if (APR_STATUS_IS_TIMEUP(rv))
+                return HTTP_REQUEST_TIME_OUT;
+
             return HTTP_INTERNAL_SERVER_ERROR;
         }
 
