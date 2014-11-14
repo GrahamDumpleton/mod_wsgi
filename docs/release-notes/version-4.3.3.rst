@@ -70,6 +70,21 @@ request content is Flask/Werkzeug. Check its documentation or the code for
 Flask/Werkzeug to to see if any additional ``SetEnv`` directive may be
 required to enable the support in Flask/Werkzeug.
 
+4. Fixed a potential request content data corruption issue when running a
+WSGI application in daemon mode. The bug in the code is quite obvious, yet
+unable to trigger it on older mod_wsgi versions. It was though triggering
+quite easily in the current release on MacOS X, prior to it being fixed,
+due to the changes made to support chunked request content for daemon
+processes.
+
+Suspect it is still a latent bug in older mod_wsgi versions, but the
+conditions under which it would trigger must have been harder to induce.
+The lack of reported problems may have been aided by virtue of Linux UNIX
+socket buffer size being quite large, in comparison to MacOS X, and so
+harder to create a condition where not all data could be written onto the
+UNIX socket in one call. Yet, when buffer sizes for the UNIX socket on
+MacOS X were increased, it was still possible to induce the bug.
+
 New Features
 ------------
 

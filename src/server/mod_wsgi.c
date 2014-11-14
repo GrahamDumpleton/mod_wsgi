@@ -9747,6 +9747,7 @@ static apr_status_t wsgi_socket_send(apr_socket_t *sock, const char *buf,
         if (rv != APR_SUCCESS)
             return rv;
 
+        buf += len;
         buf_size -= len;
     }
 
