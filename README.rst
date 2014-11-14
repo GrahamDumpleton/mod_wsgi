@@ -2,6 +2,16 @@
 MOD_WSGI
 ========
 
+Warning
+-------
+
+Please note that 'develop' HEAD is currently broken, having an issue with
+uploading request content. Do not use 'develop'. If wanting to track the
+github repository for some reason, track the stable 'master' branch.
+
+Overview
+--------
+
 The mod_wsgi package provides an Apache module that implements a WSGI
 compliant interface for hosting Python based web applications on top of the
 Apache web server.
