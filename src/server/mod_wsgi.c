@@ -9810,58 +9810,22 @@ static apr_status_t wsgi_socket_sendv(apr_socket_t *sock, struct iovec *vec,
     return APR_SUCCESS;
 }
 
-static apr_status_t wsgi_send_strings(apr_pool_t *p, apr_socket_t *sock,
-                                      const char **s)
-{
-    apr_status_t rv;
-
-    apr_size_t total = 0;
-
-    apr_size_t n;
-    apr_size_t i;
-    apr_size_t l;
-
-    char *buffer;
-    char *offset;
-
-    total += sizeof(n);
-
-    for (n = 0; s[n]; n++)
-        total += (strlen(s[n]) + 1);
-
-    buffer = apr_palloc(p, total + sizeof(total));
-    offset = buffer;
-
-    memcpy(offset, &total, sizeof(total));
-    offset += sizeof(total);
-
-    memcpy(offset, &n, sizeof(n));
-    offset += sizeof(n);
-
-    for (i = 0; i < n; i++) {
-        l = (strlen(s[i]) + 1);
-        memcpy(offset, s[i], l);
-        offset += l;
-    }
-
-    total += sizeof(total);
-
-    if ((rv = wsgi_socket_send(sock, buffer, total)) != APR_SUCCESS)
-        return rv;
-
-    return APR_SUCCESS;
-}
-
 static apr_status_t wsgi_send_request(request_rec *r,
                                       WSGIRequestConfig *config,
                                       WSGIDaemonSocket *daemon)
 {
     int rv;
 
-    char **vars;
     const apr_array_header_t *env_arr;
     const apr_table_entry_t *elts;
-    int i, j;
+    int i;
+
+    struct iovec *vec;
+    struct iovec *vec_start;
+    struct iovec *vec_next;
+
+    apr_size_t total = 0;
+    apr_size_t count = 0;
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_connects",
                    apr_psprintf(r->pool, "%d", config->daemon_connects));
@@ -9873,20 +9837,55 @@ static apr_status_t wsgi_send_request(request_rec *r,
     env_arr = apr_table_elts(r->subprocess_env);
     elts = (const apr_table_entry_t *)env_arr->elts;
 
-    vars = (char **)apr_palloc(r->pool,
-                               ((2*env_arr->nelts)+1)*sizeof(char *));
+    /*
+     * Sending total amount of data, followed by count of separate
+     * strings and then each null terminated string. The total is
+     * inclusive of the bytes used for the count of the strings.
+     */
 
-    for (i=0, j=0; i<env_arr->nelts; ++i) {
+    vec = (struct iovec *)apr_palloc(r->pool, (2+(2*env_arr->nelts))*
+                                     sizeof(struct iovec));
+
+    vec_start = &vec[2];
+    vec_next = vec_start;
+
+    for (i=0; i<env_arr->nelts; ++i) {
         if (!elts[i].key)
             continue;
 
-        vars[j++] = elts[i].key;
-        vars[j++] = elts[i].val ? elts[i].val : "";
+        vec_next->iov_base = (void*)elts[i].key;
+        vec_next->iov_len = strlen(elts[i].key) + 1;
+
+        total += vec_next->iov_len;
+
+        vec_next++;
+
+        if (elts[i].val) {
+            vec_next->iov_base = (void*)elts[i].val;
+            vec_next->iov_len = strlen(elts[i].val) + 1;
+        }
+        else
+        {
+            vec_next->iov_base = (void*)"";
+            vec_next->iov_len = 1;
+        }
+
+        total += vec_next->iov_len;
+
+        vec_next++;
     }
 
-    vars[j] = NULL;
+    count = vec_next - vec_start;
 
-    rv = wsgi_send_strings(r->pool, daemon->socket, (const char **)vars);
+    vec[1].iov_base = (void*)&count;
+    vec[1].iov_len = sizeof(count);
+
+    total += vec[1].iov_len;
+
+    vec[0].iov_base = (void*)&total;
+    vec[0].iov_len = sizeof(total);
+
+    rv = wsgi_socket_sendv(daemon->socket, vec, (int)(vec_next-vec));
 
     if (rv != APR_SUCCESS)
         return rv;
