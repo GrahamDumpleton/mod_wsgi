@@ -2,13 +2,6 @@
 MOD_WSGI
 ========
 
-Warning
--------
-
-Please note that 'develop' HEAD is currently broken, having an issue with
-uploading request content. Do not use 'develop'. If wanting to track the
-github repository for some reason, track the stable 'master' branch.
-
 Overview
 --------
 
