@@ -9754,6 +9754,62 @@ static apr_status_t wsgi_socket_send(apr_socket_t *sock, const char *buf,
     return APR_SUCCESS;
 }
 
+static apr_status_t wsgi_socket_sendv(apr_socket_t *sock, struct iovec *vec,
+                                      int nvec)
+{
+    apr_status_t rv;
+    apr_size_t written = 0;
+    apr_size_t to_write = 0;
+    int i, offset;
+
+    /* Calculate how much has to be sent. */
+
+    for (i = 0; i < nvec; i++) {
+        to_write += vec[i].iov_len;
+    }
+
+    /* Loop until all data has been sent. */
+
+    offset = 0;
+
+    while (to_write) {
+        apr_size_t n = 0;
+
+        rv = apr_socket_sendv(sock, vec+offset, nvec-offset, &n);
+
+        if (rv != APR_SUCCESS)
+            return rv;
+
+        if (n > 0) {
+            /* Bail out of all data has been sent. */
+
+            written += n;
+
+            if (written >= to_write)
+                break;
+
+            /*
+             * Not all data was sent, so ween need to try
+             * again with the remainder of the data. We
+             * first need to work out where to start from.
+             */
+
+            for (i = offset; i < nvec; ) {
+                if (n >= vec[i].iov_len) {
+                    offset++;
+                    n -= vec[i++].iov_len;
+                } else {
+                    vec[i].iov_len -= n;
+                    vec[i].iov_base = (char *) vec[i].iov_base + n;
+                    break;
+                }
+            }
+        }
+    }
+
+    return APR_SUCCESS;
+}
+
 static apr_status_t wsgi_send_strings(apr_pool_t *p, apr_socket_t *sock,
                                       const char **s)
 {
@@ -10873,6 +10929,8 @@ static int wsgi_execute_remote(request_rec *r)
             char chunk_hdr[20];
             apr_size_t hdr_len;
 
+            struct iovec vec[3];
+
             if (APR_BUCKET_IS_EOS(bucket)) {
                 /* Send closing frame for chunked content. */
 
@@ -10934,23 +10992,19 @@ static int wsgi_execute_remote(request_rec *r)
              * much time elapses with no progress or an error
              * occurs. Frame the data being sent with format used
              * for chunked transfer encoding.
-             *
-             * XXX This is currently inefficient and performance
-             * could be improved, possibly by using an output
-             * bucket brigade with apr_brigade_writev() and explicit
-             * flushing when required.
              */
 
             hdr_len = apr_snprintf(chunk_hdr, sizeof(chunk_hdr),
                     "%" APR_UINT64_T_HEX_FMT ASCII_CRLF, (apr_uint64_t)len);
 
-            rv = wsgi_socket_send(daemon->socket, chunk_hdr, hdr_len);
+            vec[0].iov_base = (void *)chunk_hdr;
+            vec[0].iov_len = hdr_len;
+            vec[1].iov_base = (void *)data;
+            vec[1].iov_len = len;
+            vec[2].iov_base = (void *)ASCII_CRLF;
+            vec[2].iov_len = 2;
 
-            if (rv == APR_SUCCESS)
-                rv = wsgi_socket_send(daemon->socket, data, len);
-
-            if (rv == APR_SUCCESS)
-                rv = wsgi_socket_send(daemon->socket, ASCII_CRLF, 2);
+            rv = wsgi_socket_sendv(daemon->socket, vec, 3);
 
             if (rv != APR_SUCCESS) {
                 char status_buffer[512];
