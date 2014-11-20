@@ -295,7 +295,7 @@ agent configuration file.
     NEW_RELIC_CONFIG_FILE=`pwd`/newrelic.ini
     export NEW_RELIC_CONFIG_FILE
 
-    mod_wsgi-express wsgi.py --with-newrelic
+    mod_wsgi-express start-server wsgi.py --with-newrelic
 
 When using this option, if you have also installed the ``mod_wsgi-metrics``
 Python package, then additional metrics about Apache and mod_wsgi will also
@@ -315,7 +315,7 @@ can use the ``--with-wdb`` option.
 
 ::
 
-    mod_wsgi-express wsgi.py --with-wdb
+    mod_wsgi-express start-server wsgi.py --with-wdb
 
 You do not need to start the wdb server yourself, it will be automatically
 started and managed for you.
