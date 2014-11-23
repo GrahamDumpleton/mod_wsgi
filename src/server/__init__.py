@@ -839,7 +839,7 @@ class ApplicationHandler(object):
 
     def __init__(self, entry_point, application_type='script',
             callable_object='application', mount_point='/',
-            with_newrelic=False, with_wdb=False, debug_mode=False):
+            with_newrelic_agent=False, with_wdb=False, debug_mode=False):
 
         self.entry_point = entry_point
         self.application_type = application_type
@@ -878,15 +878,15 @@ class ApplicationHandler(object):
         except Exception:
             self.mtime = None
 
-        if with_newrelic:
-            self.setup_newrelic()
+        if with_newrelic_agent:
+            self.setup_newrelic_agent()
 
         if with_wdb:
             self.setup_wdb()
 
         self.debug_mode = debug_mode
 
-    def setup_newrelic(self):
+    def setup_newrelic_agent(self):
         import newrelic.agent
 
         config_file = os.environ.get('NEW_RELIC_CONFIG_FILE')
@@ -980,20 +980,29 @@ class ResourceHandler(object):
         return self.handle_request(environ, start_response)
 
 WSGI_HANDLER_SCRIPT = """
+import os
 import mod_wsgi.server
 
 entry_point = '%(entry_point)s'
 application_type = '%(application_type)s'
 callable_object = '%(callable_object)s'
 mount_point = '%(mount_point)s'
-with_newrelic = %(with_newrelic_agent)s
+with_newrelic_agent = %(with_newrelic_agent)s
+newrelic_config_file = '%(newrelic_config_file)s'
+newrelic_environment = '%(newrelic_environment)s'
 with_wdb = %(with_wdb)s
 reload_on_changes = %(reload_on_changes)s
 debug_mode = %(debug_mode)s
 
+if with_newrelic_agent:
+    if newrelic_config_file:
+        os.environ['NEW_RELIC_CONFIG_FILE'] = newrelic_config_file
+    if newrelic_environment:
+        os.environ['NEW_RELIC_ENVIRONMENT'] = newrelic_environment
+
 handler = mod_wsgi.server.ApplicationHandler(entry_point,
         application_type=application_type, callable_object=callable_object,
-        mount_point=mount_point, with_newrelic=with_newrelic,
+        mount_point=mount_point, with_newrelic_agent=with_newrelic_agent,
         with_wdb=with_wdb, debug_mode=debug_mode)
 
 reload_required = handler.reload_required
@@ -1073,7 +1082,19 @@ def generate_wsgi_handler_script(options):
         print(WSGI_DEFAULT_SCRIPT % options, file=fp)
 
 SERVER_METRICS_SCRIPT = """
+import os
 import logging
+
+newrelic_config_file = '%(newrelic_config_file)s'
+newrelic_environment = '%(newrelic_environment)s'
+
+with_newrelic_platform = %(with_newrelic_platform)s
+
+if with_newrelic_platform:
+    if newrelic_config_file:
+        os.environ['NEW_RELIC_CONFIG_FILE'] = newrelic_config_file
+    if newrelic_environment:
+        os.environ['NEW_RELIC_ENVIRONMENT'] = newrelic_environment
 
 logging.basicConfig(level=logging.INFO,
     format='%%(name)s (pid=%%(process)d, level=%%(levelname)s): %%(message)s')
@@ -1626,6 +1647,13 @@ option_list = (
             'platform plugin should be enabled for reporting server level '
             'metrics.'),
 
+    optparse.make_option('--newrelic-config-file', metavar='FILE-PATH',
+            default='', help='Specify the location of the New Relic agent '
+            'configuration file.'),
+    optparse.make_option('--newrelic-environment', metavar='NAME',
+            default='', help='Specify the name of the environment section '
+            'that should be used from New Relic agent configuration file.'),
+
     optparse.make_option('--with-wdb', action='store_true', default=False,
             help='Flag indicating whether the wdb interactive debugger '
             'should be enabled for the WSGI application.'),
@@ -1862,6 +1890,10 @@ def _cmd_setup_server(command, args, options):
                 script = os.path.abspath(script)
             handler_scripts.append((extension, script))
         options['handler_scripts'] = handler_scripts
+
+    if options['newrelic_config_file']:
+        options['newrelic_config_file'] = os.path.abspath(
+                options['newrelic_config_file'])
 
     if options['with_newrelic']:
         options['with_newrelic_agent'] = True

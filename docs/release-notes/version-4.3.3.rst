@@ -223,3 +223,14 @@ you could just have instead used::
 
     --access-log-format common
 
+8. Added the ``--newrelic-config-file`` and ``--newrelic-environment``
+options to ``mod_wsgi-express``. This allows these to be set using command
+line options rather than requiring the New Relic environment variables.
+Importantly, when the options are used, the values will be embedded in the
+generated files if using ``--setup-only``. Thus they will still be set when
+later using the ``apachectl`` control script to start the server.
+
+Note that when these options are used, they will cause the equivalent New
+Relic environment variable for that option to be ignored, both if running
+the server immediately, or if using ``--setup-only`` and running the server
+later using ``apachectl``.
