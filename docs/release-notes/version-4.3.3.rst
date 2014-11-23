@@ -85,6 +85,20 @@ harder to create a condition where not all data could be written onto the
 UNIX socket in one call. Yet, when buffer sizes for the UNIX socket on
 MacOS X were increased, it was still possible to induce the bug.
 
+Features Changed
+----------------
+
+1. Until recently, a failed attempt to change the working directory for a
+daemon process to the user the process runs as would be ignored. Now it
+will cause a hard failure that will prevent the daemon process from
+starting. This would cause issues where the user, usually the default
+Apache user, has not valid home directory. Now what will happens is that
+any attempt will only be made to change the working directory to the home
+directory of the user the daemon process runs as, if the 'user' option had
+been explicitly set to define the user and the user is different to the
+user that Apache child worker processes run as. In other words, is
+different to the default Apache user.
+
 New Features
 ------------
 

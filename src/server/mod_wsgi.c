@@ -7467,7 +7467,12 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
         }
     }
 
-    /* Setup the working directory for the process. */
+    /*
+     * Setup the working directory for the process. It is either set to
+     * what the 'home' option explicitly provides, or the home home
+     * directory of the user, where it has been set to be different to
+     * the user that Apache's own processes run as.
+     */
 
     if (daemon->group->home) {
         if (chdir(daemon->group->home) == -1) {
@@ -7478,7 +7483,7 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
             return -1;
         }
     }
-    else {
+    else if (geteuid() != ap_unixd_config.user_id) {
         struct passwd *pwent;
 
         pwent = getpwuid(geteuid());
@@ -7487,7 +7492,8 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
             if (chdir(pwent->pw_dir) == -1) {
                 ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                              "mod_wsgi (pid=%d): Unable to change working "
-                             "directory to '%s'.", getpid(), pwent->pw_dir);
+                             "directory to home directory '%s' for uid=%ld.",
+                             getpid(), pwent->pw_dir, (long)geteuid());
 
             return -1;
             }
