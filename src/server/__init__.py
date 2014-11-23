@@ -324,10 +324,10 @@ AddOutputFilterByType DEFLATE application/javascript
 
 <IfDefine WSGI_ROTATE_LOGS>
 ErrorLog "|%(rotatelogs_executable)s \\
-    %(error_log)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM"
+    %(error_log_file)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM"
 </IfDefine>
 <IfDefine !WSGI_ROTATE_LOGS>
-ErrorLog '%(error_log)s'
+ErrorLog "%(error_log_file)s"
 </IfDefine>
 LogLevel %(log_level)s
 
@@ -338,10 +338,10 @@ LoadModule log_config_module %(modules_directory)s/mod_log_config.so
 LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b" common
 <IfDefine WSGI_ROTATE_LOGS>
 CustomLog "|%(rotatelogs_executable)s \\
-    %(log_directory)s/access_log.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM" common
+    %(access_log_file)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM" common
 </IfDefine>
 <IfDefine !WSGI_ROTATE_LOGS>
-CustomLog "%(log_directory)s/access_log" common
+CustomLog "%(access_log_file)s" common
 </IfDefine>
 </IfDefine>
 
@@ -1566,6 +1566,13 @@ option_list = (
             help='Flag indicating whether the web server startup log should '
             'be enabled. Defaults to being disabled.'),
 
+    optparse.make_option('--log-to-terminal', action='store_true',
+            default=False, help='Flag indicating whether logs should '
+            'be directed back to the terminal. Defaults to being disabled. '
+            'If --log-directory is set explicitly, it will override this '
+            'option. If logging to the terminal is carried out, any '
+            'rotating of log files will be disabled.'),
+
     optparse.make_option('--rotate-logs', action='store_true', default=False,
             help='Flag indicating whether log rotation should be performed.'),
     optparse.make_option('--max-log-size', default=5, type='int',
@@ -1756,6 +1763,13 @@ def _cmd_setup_server(command, args, options):
 
     if not options['log_directory']:
         options['log_directory'] = options['server_root']
+    else:
+        # The --log-directory option overrides --log-to-terminal.
+        options['log_to_terminal'] = False
+
+    if options['log_to_terminal']:
+        # The --log-to-terminal option overrides --rotate-logs.
+        options['rotate_logs'] = False
 
     try:
         os.mkdir(options['log_directory'])
@@ -1765,7 +1779,17 @@ def _cmd_setup_server(command, args, options):
     if not os.path.isabs(options['log_directory']):
         options['log_directory'] = os.path.abspath(options['log_directory'])
 
-    options['error_log'] = os.path.join(options['log_directory'], 'error_log')
+    if not options['log_to_terminal']:
+        options['error_log_file'] = os.path.join(options['log_directory'],
+                'error_log')
+    else:
+        options['error_log_file'] = '/dev/stderr'
+
+    if not options['log_to_terminal']:
+        options['access_log_file'] = os.path.join(
+                options['log_directory'], 'access_log')
+    else:
+        options['access_log_file'] = '/dev/stdout'
 
     options['pid_file'] = ((options['pid_file'] and os.path.abspath(
             options['pid_file'])) or os.path.join(options['server_root'],
@@ -1931,12 +1955,14 @@ def _cmd_setup_server(command, args, options):
     options['httpd_arguments_list'] = []
 
     if options['startup_log']:
-        options['startup_log_filename']= os.path.join(
-                options['log_directory'], 'startup.log')
+        if not options['log_to_terminal']:
+            options['startup_log_file'] = os.path.join(
+                    options['log_directory'], 'startup.log')
+        else:
+            options['startup_log_file'] = '/dev/stdout'
 
         options['httpd_arguments_list'].append('-E')
-        options['httpd_arguments_list'].append(
-                options['startup_log_filename'])
+        options['httpd_arguments_list'].append(options['startup_log_file'])
 
     if options['server_name']:
         host = options['server_name']
@@ -2030,11 +2056,13 @@ def _cmd_setup_server(command, args, options):
     print('Server Root       :', options['server_root'])
     print('Server Conf       :', options['httpd_conf'])
 
-    print('Error Log File    :', options['error_log'])
+    print('Error Log File    :', options['error_log_file'])
 
     if options['access_log']:
-        print('Access Log File   :', os.path.join(options['log_directory'],
-                'access_log'))
+        print('Access Log File   :', options['access_log_file'])
+
+    if options['startup_log']:
+        print('Startup Log File   :', options['startup_log_file'])
 
     if options['envvars_script']:
         print('Environ Variables :', options['envvars_script'])
@@ -2063,7 +2091,7 @@ def cmd_start_server(params):
 
     executable = os.path.join(config['server_root'], 'apachectl')
     name = executable.ljust(len(config['process_name']))
-    os.execl(executable, name, 'start', '-DNO_DETACH')
+    os.execl(executable, name, 'start', '-DFOREGROUND')
 
 def cmd_install_module(params):
     formatter = optparse.IndentedHelpFormatter()
