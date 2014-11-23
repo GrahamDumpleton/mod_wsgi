@@ -336,12 +336,14 @@ LogLevel %(log_level)s
 LoadModule log_config_module %(modules_directory)s/mod_log_config.so
 </IfModule>
 LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b" common
+LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b \\"%%{Referer}i\\" \\"%%{User-agent}i\\"" combined
+LogFormat "%(access_log_format)s" custom
 <IfDefine WSGI_ROTATE_LOGS>
 CustomLog "|%(rotatelogs_executable)s \\
-    %(access_log_file)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM" common
+    %(access_log_file)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM" %(log_format_nickname)s
 </IfDefine>
 <IfDefine !WSGI_ROTATE_LOGS>
-CustomLog "%(access_log_file)s" common
+CustomLog "%(access_log_file)s" %(log_format_nickname)s
 </IfDefine>
 </IfDefine>
 
@@ -1573,6 +1575,9 @@ option_list = (
             'option. If logging to the terminal is carried out, any '
             'rotating of log files will be disabled.'),
 
+    optparse.make_option('--access-log-format', metavar='FORMAT',
+            help='Specify the format of the access log records.'),
+
     optparse.make_option('--rotate-logs', action='store_true', default=False,
             help='Flag indicating whether log rotation should be performed.'),
     optparse.make_option('--max-log-size', default=5, type='int',
@@ -1790,6 +1795,19 @@ def _cmd_setup_server(command, args, options):
                 options['log_directory'], 'access_log')
     else:
         options['access_log_file'] = '/dev/stdout'
+
+    if options['access_log_format']:
+        if options['access_log_format'] in ('common', 'combined'):
+            options['log_format_nickname'] = options['access_log_format']
+            options['access_log_format'] = 'undefined'
+        else:
+            options['log_format_nickname'] = 'custom'
+    else:
+        options['log_format_nickname'] = 'common'
+        options['access_log_format'] = 'undefined'
+
+    options['access_log_format'] = options['access_log_format'].replace(
+            '\"', '\\"')
 
     options['pid_file'] = ((options['pid_file'] and os.path.abspath(
             options['pid_file'])) or os.path.join(options['server_root'],

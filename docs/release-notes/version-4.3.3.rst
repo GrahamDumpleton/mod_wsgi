@@ -202,3 +202,24 @@ This should not be used in conjunction with ``--setup-only`` option when
 using the generated ``apachectl`` script, unless the ``-DFOREGROUND``
 option is also being supplied to ``apachectl`` at the time it is run with
 the ``start`` command.
+
+7. Added the ``--access-log-format`` option to ``mod_wsgi-express``. By
+default if the access log is enabled, entries will follow the 'common' log
+format as typically used by Apache. You have two options of how you can use
+the ``--access-log-format``. The first is to give it the argument
+'combined', which will then cause it to use this alternate log format
+which is again often used with Apache. The other is to specify the log
+format string yourself.
+
+The format string can contain format string components as would be used
+with the ``LogFormat`` directive. For example, to specify the equivalent to
+the 'common' log format, you could use::
+
+    --access-log-format "%h %l %u %t \"%r\" %>s %b"
+
+This 'common' log format is identified via a nickname in the same way
+'combined' is, so if you did have to specify it explicitly for some reason,
+you could just have instead used::
+
+    --access-log-format common
+
