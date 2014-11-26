@@ -85,6 +85,11 @@ harder to create a condition where not all data could be written onto the
 UNIX socket in one call. Yet, when buffer sizes for the UNIX socket on
 MacOS X were increased, it was still possible to induce the bug.
 
+5. When the ``--working-directory`` option for ``mod_wsgi-express`` was
+given a relative path name, that wasn't being translated to an absolute
+path name when substituting the ``home`` option of ``WSGIDaemonProcess``
+causing server startup to fail.
+
 Features Changed
 ----------------
 

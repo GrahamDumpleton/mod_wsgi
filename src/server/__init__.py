@@ -1713,6 +1713,7 @@ def _cmd_setup_server(command, args, options):
     options['mod_wsgi_so'] = where()
 
     options['working_directory'] = options['working_directory'] or os.getcwd()
+    options['working_directory'] = os.path.abspath(options['working_directory'])
 
     if not options['host']:
         options['listener_host'] = None
