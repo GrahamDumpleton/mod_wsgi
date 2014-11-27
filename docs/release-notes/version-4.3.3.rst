@@ -255,3 +255,10 @@ reports will be output to the ``htmlcov`` directory under the server
 working directory, or the directory specified using the
 ``--coverage-directory`` option. The ``coverage`` module must be installed
 for this feature to work.
+
+11. Added the ``--enable-profiler`` option to ``mod_wsgi-express``. When
+specified and at the same time the ``--debug-mode`` option is specified,
+then coverage analysis is enabled. When the server is exited, then the
+profiler data will be output to the ``pstats.dat`` file under the server
+working directory, or the file specified using the ``profiler-output-file``
+option.

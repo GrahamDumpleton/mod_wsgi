@@ -1039,6 +1039,8 @@ debug_mode = %(debug_mode)s
 enable_debugger = %(enable_debugger)s
 enable_coverage = %(enable_coverage)s
 coverage_directory = '%(coverage_directory)s'
+enable_profiler = %(enable_profiler)s
+profiler_output_file = '%(profiler_output_file)s'
 
 def output_coverage_report():
     coverage_info.stop()
@@ -1049,6 +1051,16 @@ if enable_coverage:
     coverage_info = coverage()
     coverage_info.start()
     atexit.register(output_coverage_report)
+
+def output_profiler_data():
+    profiler_info.disable()
+    profiler_info.dump_stats(profiler_output_file)
+
+if enable_profiler:
+    from cProfile import Profile
+    profiler_info = Profile()
+    profiler_info.enable()
+    atexit.register(output_profiler_data)
 
 if with_newrelic_agent:
     if newrelic_config_file:
@@ -1745,6 +1757,13 @@ option_list = (
             'which coverage analysis will be generated when enabled under '
             'debug mode.'),
 
+    optparse.make_option('--enable-profiler', action='store_true',
+            default=False, help='Flag indicating whether code profiling '
+            'is enabled when running in debug mode.'),
+    optparse.make_option('--profiler-output-file', metavar='FILE-PATH',
+            default='', help='Override the path to the file into which '
+            'profiler data will be written when enabled under debug mode.'),
+
     optparse.make_option('--setup-only', action='store_true', default=False,
             help='Flag indicating that after the configuration files have '
             'been setup, that the command should then exit and not go on '
@@ -2112,9 +2131,19 @@ def _cmd_setup_server(command, args, options):
                 os.mkdir(options['coverage_directory'])
             except Exception:
                 pass
+
+        if options['enable_profiler']:
+            if not options['profiler_output_file']:
+                options['profiler_output_file'] = os.path.join(
+                        options['server_root'], 'pstats.dat')
+            else:
+                options['profiler_output_file'] = os.path.abspath(
+                        options['profiler_output_file'])
+
     else:
         options['enable_debugger'] = False
         options['enable_coverage'] = False
+        options['enable_profiler'] = False
 
     options['parent_domain'] = 'unspecified'
 
@@ -2207,6 +2236,9 @@ def _cmd_setup_server(command, args, options):
     if options['enable_coverage']:
         print('Coverage Output   :', os.path.join(
                 options['coverage_directory'], 'index.html'))
+
+    if options['enable_profiler']:
+        print('Profiler Output   :', options['profiler_output_file'])
 
     if options['envvars_script']:
         print('Environ Variables :', options['envvars_script'])
