@@ -13,6 +13,7 @@ import imp
 import pwd
 import grp
 import re
+import pdb
 
 try:
     import Queue as queue
@@ -835,11 +836,42 @@ def start_reloader(interval=1.0):
         atexit.register(_exiting)
     _lock.release()
 
+class PostMortemDebugger(object):
+
+    def __init__(self, application):
+        self.application = application
+        self.generator = None
+
+    def __call__(self, environ, start_response):
+        try:
+            self.generator = self.application(environ, start_response)
+            return self
+        except Exception:
+            pdb.post_mortem()
+            raise
+
+    def __iter__(self):
+        try:
+            for item in self.generator:
+                yield item
+        except Exception:
+            pdb.post_mortem()
+            raise
+
+    def close(self):
+        try:
+            if hasattr(self.generator, 'close'):
+                return self.generator.close()
+        except Exception:
+            pdb.post_mortem()
+            raise
+
 class ApplicationHandler(object):
 
     def __init__(self, entry_point, application_type='script',
             callable_object='application', mount_point='/',
-            with_newrelic_agent=False, with_wdb=False, debug_mode=False):
+            with_newrelic_agent=False, with_wdb=False, debug_mode=False,
+            enable_pdb=False):
 
         self.entry_point = entry_point
         self.application_type = application_type
@@ -885,6 +917,10 @@ class ApplicationHandler(object):
             self.setup_wdb()
 
         self.debug_mode = debug_mode
+        self.enable_pdb = enable_pdb
+
+        if debug_mode and enable_pdb:
+            self.setup_post_mortem_debugging()
 
     def setup_newrelic_agent(self):
         import newrelic.agent
@@ -905,6 +941,9 @@ class ApplicationHandler(object):
     def setup_wdb(self):
         from wdb.ext import WdbMiddleware
         self.application = WdbMiddleware(self.application)
+
+    def setup_post_mortem_debugging(self):
+        self.application = PostMortemDebugger(self.application)
 
     def reload_required(self, environ):
         if self.debug_mode:
@@ -993,6 +1032,7 @@ newrelic_environment = '%(newrelic_environment)s'
 with_wdb = %(with_wdb)s
 reload_on_changes = %(reload_on_changes)s
 debug_mode = %(debug_mode)s
+enable_pdb = %(enable_pdb)s
 
 if with_newrelic_agent:
     if newrelic_config_file:
@@ -1003,7 +1043,7 @@ if with_newrelic_agent:
 handler = mod_wsgi.server.ApplicationHandler(entry_point,
         application_type=application_type, callable_object=callable_object,
         mount_point=mount_point, with_newrelic_agent=with_newrelic_agent,
-        with_wdb=with_wdb, debug_mode=debug_mode)
+        with_wdb=with_wdb, debug_mode=debug_mode, enable_pdb=enable_pdb)
 
 reload_required = handler.reload_required
 handle_request = handler.handle_request
@@ -1672,6 +1712,12 @@ option_list = (
             'communication with workers. All forms of source code reloading '
             'will also be disabled. Both stdin and stdout will be attached '
             'to the console to allow interaction with the Python debugger.'),
+
+    optparse.make_option('--enable-pdb', action='store_true', default=False,
+            help='Flag indicating whether post mortem debugging of any '
+            'exceptions which propogate out from the WSGI application '
+            'when running in debug mode should be performed. Post mortem '
+            'debugging is performed using the Python debugger (pdb).'),
 
     optparse.make_option('--setup-only', action='store_true', default=False,
             help='Flag indicating that after the configuration files have '
