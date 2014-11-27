@@ -247,3 +247,11 @@ application, when consuming the response iterable, or when calling any
 ``close()`` method of the response iterable, then post mortem debugging of
 the exception will be triggered. Post mortem debugging is performed using
 the Python debugger (pdb).
+
+10. Added the ``--enable-coverage`` option to ``mod_wsgi-express``. When
+specified and at the same time the ``--debug-mode`` option is specified,
+then coverage analysis is enabled. When the server is exited, then the HTML
+reports will be output to the ``htmlcov`` directory under the server
+working directory, or the directory specified using the
+``--coverage-directory`` option. The ``coverage`` module must be installed
+for this feature to work.

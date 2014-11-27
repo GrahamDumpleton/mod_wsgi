@@ -1023,6 +1023,7 @@ class ResourceHandler(object):
 
 WSGI_HANDLER_SCRIPT = """
 import os
+import atexit
 import mod_wsgi.server
 
 entry_point = '%(entry_point)s'
@@ -1036,6 +1037,18 @@ with_wdb = %(with_wdb)s
 reload_on_changes = %(reload_on_changes)s
 debug_mode = %(debug_mode)s
 enable_debugger = %(enable_debugger)s
+enable_coverage = %(enable_coverage)s
+coverage_directory = '%(coverage_directory)s'
+
+def output_coverage_report():
+    coverage_info.stop()
+    coverage_info.html_report(directory=coverage_directory)
+
+if enable_coverage:
+    from coverage import coverage
+    coverage_info = coverage()
+    coverage_info.start()
+    atexit.register(output_coverage_report)
 
 if with_newrelic_agent:
     if newrelic_config_file:
@@ -1724,6 +1737,14 @@ option_list = (
             'performed. Post mortem debugging is performed using the '
             'Python debugger (pdb).'),
 
+    optparse.make_option('--enable-coverage', action='store_true',
+            default=False, help='Flag indicating whether coverage analysis '
+            'is enabled when running in debug mode.'),
+    optparse.make_option('--coverage-directory', metavar='DIRECTORY-PATH',
+            default='', help='Override the path to the directory into '
+            'which coverage analysis will be generated when enabled under '
+            'debug mode.'),
+
     optparse.make_option('--setup-only', action='store_true', default=False,
             help='Flag indicating that after the configuration files have '
             'been setup, that the command should then exit and not go on '
@@ -1954,14 +1975,6 @@ def _cmd_setup_server(command, args, options):
     if options['with_newrelic_platform']:
         options['server_metrics'] = True
 
-    generate_wsgi_handler_script(options)
-
-    if options['with_newrelic_platform']:
-        generate_server_metrics_script(options)
-
-    if options['with_wdb']:
-        generate_wdb_server_script(options)
-
     max_clients = options['processes'] * options['threads']
 
     if options['max_clients'] is not None:
@@ -2086,6 +2099,22 @@ def _cmd_setup_server(command, args, options):
     if options['debug_mode']:
         options['httpd_arguments_list'].append('-DONE_PROCESS')
 
+    if options['debug_mode']:
+        if options['enable_coverage']:
+            if not options['coverage_directory']:
+                options['coverage_directory'] = os.path.join(
+                        options['server_root'], 'htmlcov')
+            else:
+                options['coverage_directory'] = os.path.abspath(
+                        options['coverage_directory'])
+
+            try:
+                os.mkdir(options['coverage_directory'])
+            except Exception:
+                pass
+    else:
+        options['enable_coverage'] = False
+
     options['parent_domain'] = 'unspecified'
 
     if options['server_name']:
@@ -2144,6 +2173,14 @@ def _cmd_setup_server(command, args, options):
 
     options['python_executable'] = sys.executable
 
+    generate_wsgi_handler_script(options)
+
+    if options['with_newrelic_platform']:
+        generate_server_metrics_script(options)
+
+    if options['with_wdb']:
+        generate_wdb_server_script(options)
+
     generate_apache_config(options)
     generate_control_scripts(options)
 
@@ -2164,7 +2201,11 @@ def _cmd_setup_server(command, args, options):
         print('Access Log File   :', options['access_log_file'])
 
     if options['startup_log']:
-        print('Startup Log File   :', options['startup_log_file'])
+        print('Startup Log File  :', options['startup_log_file'])
+
+    if options['enable_coverage']:
+        print('Coverage Output   :', os.path.join(
+                options['coverage_directory'], 'index.html'))
 
     if options['envvars_script']:
         print('Environ Variables :', options['envvars_script'])
