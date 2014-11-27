@@ -13,7 +13,6 @@ import imp
 import pwd
 import grp
 import re
-import pdb
 
 try:
     import Queue as queue
@@ -842,12 +841,16 @@ class PostMortemDebugger(object):
         self.application = application
         self.generator = None
 
+    def debug_exception(self):
+        import pdb
+        pdb.post_mortem()
+
     def __call__(self, environ, start_response):
         try:
             self.generator = self.application(environ, start_response)
             return self
         except Exception:
-            pdb.post_mortem()
+            self.debug_exception()
             raise
 
     def __iter__(self):
@@ -855,7 +858,7 @@ class PostMortemDebugger(object):
             for item in self.generator:
                 yield item
         except Exception:
-            pdb.post_mortem()
+            self.debug_exception()
             raise
 
     def close(self):
@@ -863,7 +866,7 @@ class PostMortemDebugger(object):
             if hasattr(self.generator, 'close'):
                 return self.generator.close()
         except Exception:
-            pdb.post_mortem()
+            self.debug_exception()
             raise
 
 class ApplicationHandler(object):
