@@ -922,7 +922,7 @@ class ApplicationHandler(object):
         self.debug_mode = debug_mode
         self.enable_debugger = enable_debugger
 
-        if debug_mode and enable_debugger:
+        if enable_debugger:
             self.setup_post_mortem_debugging()
 
     def setup_newrelic_agent(self):
@@ -2113,6 +2113,7 @@ def _cmd_setup_server(command, args, options):
             except Exception:
                 pass
     else:
+        options['enable_debugger'] = False
         options['enable_coverage'] = False
 
     options['parent_domain'] = 'unspecified'
