@@ -240,7 +240,7 @@ Relic environment variable for that option to be ignored, both if running
 the server immediately, or if using ``--setup-only`` and running the server
 later using ``apachectl``.
 
-9. Added the ``--enable-pdb`` option to ``mod_wsgi-express``. When
+9. Added the ``--enable-debugger`` option to ``mod_wsgi-express``. When
 specified and at the same time the ``--debug-mode`` option is specified,
 then when an exception is raised from the initial execution of the WSGI
 application, when consuming the response iterable, or when calling any
