@@ -90,6 +90,11 @@ given a relative path name, that wasn't being translated to an absolute
 path name when substituting the ``home`` option of ``WSGIDaemonProcess``
 causing server startup to fail.
 
+6. When using ``--debug-mode`` of ``mod_wsgi-express`` the working
+directory for the application was not being added to ``sys.path``. This
+meant that if the WSGI script was referenced from a different directory,
+any module imports for other modules in that directory would fail.
+
 Features Changed
 ----------------
 
