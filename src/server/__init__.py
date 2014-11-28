@@ -163,6 +163,12 @@ LoadModule dir_module '%(modules_directory)s/mod_dir.so'
 LoadModule env_module '%(modules_directory)s/mod_env.so'
 </IfModule>
 
+<IfVersion >= 2.2.15>
+<IfModule !reqtimeout_module>
+LoadModule reqtimeout_module '%(modules_directory)s/mod_reqtimeout.so'
+</IfModule>
+</IfVersion>
+
 <IfDefine WSGI_COMPRESS_RESPONSES>
 <IfModule !deflate_module>
 LoadModule deflate_module '%(modules_directory)s/mod_deflate.so'
@@ -208,6 +214,11 @@ HostnameLookups Off
 MaxMemFree 64
 Timeout %(socket_timeout)s
 ListenBacklog %(server_backlog)s
+
+
+<IfVersion >= 2.2.15>
+RequestReadTimeout %(request_read_timeout)s
+</IfVersion>
 
 LimitRequestBody %(limit_request_body)s
 
@@ -313,10 +324,10 @@ AddOutputFilterByType DEFLATE application/javascript
 
 <IfDefine WSGI_ROTATE_LOGS>
 ErrorLog "|%(rotatelogs_executable)s \\
-    %(error_log)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM"
+    %(error_log_file)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM"
 </IfDefine>
 <IfDefine !WSGI_ROTATE_LOGS>
-ErrorLog '%(error_log)s'
+ErrorLog "%(error_log_file)s"
 </IfDefine>
 LogLevel %(log_level)s
 
@@ -325,13 +336,19 @@ LogLevel %(log_level)s
 LoadModule log_config_module %(modules_directory)s/mod_log_config.so
 </IfModule>
 LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b" common
+LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b \\"%%{Referer}i\\" \\"%%{User-agent}i\\"" combined
+LogFormat "%(access_log_format)s" custom
 <IfDefine WSGI_ROTATE_LOGS>
 CustomLog "|%(rotatelogs_executable)s \\
-    %(log_directory)s/access_log.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM" common
+    %(access_log_file)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM" %(log_format_nickname)s
 </IfDefine>
 <IfDefine !WSGI_ROTATE_LOGS>
-CustomLog "%(log_directory)s/access_log" common
+CustomLog "%(access_log_file)s" %(log_format_nickname)s
 </IfDefine>
+</IfDefine>
+
+<IfDefine WSGI_CHUNKED_REQUEST>
+WSGIChunkedRequest On
 </IfDefine>
 
 <IfDefine WSGI_WITH_SSL>
@@ -642,11 +659,6 @@ WSGIImportScript '%(server_root)s/server-metrics.py' \\
     process-group=express application-group=server-metrics
 """
 
-APACHE_WDB_CONFIG = """
-WSGIImportScript '%(server_root)s/wdb-server.py' \\
-    process-group=express application-group=wdb-server
-"""
-
 def generate_apache_config(options):
     with open(options['httpd_conf'], 'w') as fp:
         print(APACHE_GENERAL_CONFIG % options, file=fp)
@@ -701,14 +713,11 @@ def generate_apache_config(options):
                 print(APACHE_INCLUDE_CONFIG % dict(filename=filename),
                         file=fp)
 
-        if options['with_newrelic_platform'] or options['with_wdb']:
+        if options['with_newrelic_platform']:
             print(APACHE_TOOLS_CONFIG % options, file=fp)
 
         if options['with_newrelic_platform']:
             print(APACHE_METRICS_CONFIG % options, file=fp)
-
-        if options['with_wdb']:
-            print(APACHE_WDB_CONFIG % options, file=fp)
 
 _interval = 1.0
 _times = {}
@@ -818,11 +827,46 @@ def start_reloader(interval=1.0):
         atexit.register(_exiting)
     _lock.release()
 
+class PostMortemDebugger(object):
+
+    def __init__(self, application):
+        self.application = application
+        self.generator = None
+
+    def debug_exception(self):
+        import pdb
+        pdb.post_mortem()
+
+    def __call__(self, environ, start_response):
+        try:
+            self.generator = self.application(environ, start_response)
+            return self
+        except Exception:
+            self.debug_exception()
+            raise
+
+    def __iter__(self):
+        try:
+            for item in self.generator:
+                yield item
+        except Exception:
+            self.debug_exception()
+            raise
+
+    def close(self):
+        try:
+            if hasattr(self.generator, 'close'):
+                return self.generator.close()
+        except Exception:
+            self.debug_exception()
+            raise
+
 class ApplicationHandler(object):
 
     def __init__(self, entry_point, application_type='script',
             callable_object='application', mount_point='/',
-            with_newrelic=False, with_wdb=False, debug_mode=False):
+            with_newrelic_agent=False, debug_mode=False,
+            enable_debugger=False):
 
         self.entry_point = entry_point
         self.application_type = application_type
@@ -861,15 +905,16 @@ class ApplicationHandler(object):
         except Exception:
             self.mtime = None
 
-        if with_newrelic:
-            self.setup_newrelic()
-
-        if with_wdb:
-            self.setup_wdb()
+        if with_newrelic_agent:
+            self.setup_newrelic_agent()
 
         self.debug_mode = debug_mode
+        self.enable_debugger = enable_debugger
 
-    def setup_newrelic(self):
+        if enable_debugger:
+            self.setup_post_mortem_debugging()
+
+    def setup_newrelic_agent(self):
         import newrelic.agent
 
         config_file = os.environ.get('NEW_RELIC_CONFIG_FILE')
@@ -885,9 +930,8 @@ class ApplicationHandler(object):
         self.application = newrelic.agent.WSGIApplicationWrapper(
                 self.application)
 
-    def setup_wdb(self):
-        from wdb.ext import WdbMiddleware
-        self.application = WdbMiddleware(self.application)
+    def setup_post_mortem_debugging(self):
+        self.application = PostMortemDebugger(self.application)
 
     def reload_required(self, environ):
         if self.debug_mode:
@@ -963,21 +1007,71 @@ class ResourceHandler(object):
         return self.handle_request(environ, start_response)
 
 WSGI_HANDLER_SCRIPT = """
+import os
+import sys
+import atexit
 import mod_wsgi.server
+
+working_directory = '%(working_directory)s'
+python_paths = %(python_paths)s
 
 entry_point = '%(entry_point)s'
 application_type = '%(application_type)s'
 callable_object = '%(callable_object)s'
 mount_point = '%(mount_point)s'
-with_newrelic = %(with_newrelic_agent)s
-with_wdb = %(with_wdb)s
+with_newrelic_agent = %(with_newrelic_agent)s
+newrelic_config_file = '%(newrelic_config_file)s'
+newrelic_environment = '%(newrelic_environment)s'
 reload_on_changes = %(reload_on_changes)s
 debug_mode = %(debug_mode)s
+enable_debugger = %(enable_debugger)s
+enable_coverage = %(enable_coverage)s
+coverage_directory = '%(coverage_directory)s'
+enable_profiler = %(enable_profiler)s
+profiler_output_file = '%(profiler_output_file)s'
+
+if python_paths:
+    sys.path.extend(python_paths)
+
+if debug_mode:
+    # We need to fiddle sys.path as we are not using daemon mode and so
+    # the working directory will not be added to sys.path by virtue of
+    # 'home' option to WSGIDaemonProcess directive. We could use the
+    # WSGIPythonPath directive, but that will cause .pth files to also
+    # be evaluated.
+
+    sys.path.insert(0, working_directory)
+
+def output_coverage_report():
+    coverage_info.stop()
+    coverage_info.html_report(directory=coverage_directory)
+
+if enable_coverage:
+    from coverage import coverage
+    coverage_info = coverage()
+    coverage_info.start()
+    atexit.register(output_coverage_report)
+
+def output_profiler_data():
+    profiler_info.disable()
+    profiler_info.dump_stats(profiler_output_file)
+
+if enable_profiler:
+    from cProfile import Profile
+    profiler_info = Profile()
+    profiler_info.enable()
+    atexit.register(output_profiler_data)
+
+if with_newrelic_agent:
+    if newrelic_config_file:
+        os.environ['NEW_RELIC_CONFIG_FILE'] = newrelic_config_file
+    if newrelic_environment:
+        os.environ['NEW_RELIC_ENVIRONMENT'] = newrelic_environment
 
 handler = mod_wsgi.server.ApplicationHandler(entry_point,
         application_type=application_type, callable_object=callable_object,
-        mount_point=mount_point, with_newrelic=with_newrelic,
-        with_wdb=with_wdb, debug_mode=debug_mode)
+        mount_point=mount_point, with_newrelic_agent=with_newrelic_agent,
+        debug_mode=debug_mode, enable_debugger=enable_debugger)
 
 reload_required = handler.reload_required
 handle_request = handler.handle_request
@@ -1056,7 +1150,19 @@ def generate_wsgi_handler_script(options):
         print(WSGI_DEFAULT_SCRIPT % options, file=fp)
 
 SERVER_METRICS_SCRIPT = """
+import os
 import logging
+
+newrelic_config_file = '%(newrelic_config_file)s'
+newrelic_environment = '%(newrelic_environment)s'
+
+with_newrelic_platform = %(with_newrelic_platform)s
+
+if with_newrelic_platform:
+    if newrelic_config_file:
+        os.environ['NEW_RELIC_CONFIG_FILE'] = newrelic_config_file
+    if newrelic_environment:
+        os.environ['NEW_RELIC_ENVIRONMENT'] = newrelic_environment
 
 logging.basicConfig(level=logging.INFO,
     format='%%(name)s (pid=%%(process)d, level=%%(levelname)s): %%(message)s')
@@ -1079,36 +1185,6 @@ def generate_server_metrics_script(options):
     path = os.path.join(options['server_root'], 'server-metrics.py')
     with open(path, 'w') as fp:
         print(SERVER_METRICS_SCRIPT % options, file=fp)
-
-WDB_SERVER_SCRIPT = """
-from wdb_server import server
-try:
-    from wdb_server.sockets import handle_connection
-except ImportError:
-    from wdb_server.streams import handle_connection
-
-from tornado.ioloop import IOLoop
-from tornado.options import options
-from tornado.netutil import bind_sockets, add_accept_handler
-from threading import Thread
-
-def run_server():
-    ioloop = IOLoop.instance()
-    sockets = bind_sockets(options.socket_port)
-    for socket in sockets:
-        add_accept_handler(socket, handle_connection, ioloop)
-    server.listen(options.server_port)
-    ioloop.start()
-
-thread = Thread(target=run_server)
-thread.setDaemon(True)
-thread.start()
-"""
-
-def generate_wdb_server_script(options):
-    path = os.path.join(options['server_root'], 'wdb-server.py')
-    with open(path, 'w') as fp:
-        print(WDB_SERVER_SCRIPT, file=fp)
 
 WSGI_CONTROL_SCRIPT = """
 #!/bin/sh
@@ -1325,11 +1401,55 @@ option_list = (
             'to pass before timing out on a read or write operation on '
             'a socket and aborting the request. Defaults to 60 seconds.'),
 
-    optparse.make_option('--queue-timeout', type='int', default=30,
+    optparse.make_option('--queue-timeout', type='int', default=45,
             metavar='SECONDS', help='Maximum number of seconds allowed '
             'for a request to be accepted by a worker process to be '
             'handled, taken from the time when the Apache child process '
             'originally accepted the request. Defaults to 30 seconds.'),
+
+    optparse.make_option('--header-timeout', type='int', default=15,
+            metavar='SECONDS', help='The number of seconds allowed for '
+            'receiving the request including the headers. This may be '
+            'dynamically increased if a minimum rate for reading the '
+            'request and headers is also specified, up to any limit '
+            'imposed by a maximum header timeout. Defaults to 15 seconds.'),
+
+    optparse.make_option('--header-max-timeout', type='int', default=30,
+            metavar='SECONDS', help='Maximum number of seconds allowed for '
+            'receiving the request including the headers. This is the hard '
+            'limit after taking into consideration and increases to the '
+            'basic timeout due to minimum rate for reading the request and '
+            'headers which may be specified. Defaults to 30 seconds.'),
+
+    optparse.make_option('--header-min-rate', type='int', default=500,
+            metavar='BYTES', help='The number of bytes required to be sent '
+            'as part of the request and headers to trigger a dynamic '
+            'increase in the timeout on receiving the request including '
+            'headers. Each time this number of bytes is received the timeout '
+            'will be increased by 1 second up to any maximum specified by '
+            'the maximum header timeout. Defaults to 500 bytes.'),
+
+    optparse.make_option('--body-timeout', type='int', default=15,
+            metavar='SECONDS', help='The number of seconds allowed for '
+            'receiving the request body. This may be dynamically increased '
+            'if a minimum rate for reading the request body is also '
+            'specified, up to any limit imposed by a maximum body timeout. '
+            'Defaults to 15 seconds.'),
+
+    optparse.make_option('--body-max-timeout', type='int', default=0,
+            metavar='SECONDS', help='Maximum number of seconds allowed for '
+            'receiving the request body. This is the hard limit after '
+            'taking into consideration and increases to the basic timeout '
+            'due to minimum rate for reading the request body which may be '
+            'specified. Defaults to 0 indicating there is no maximum.'),
+
+    optparse.make_option('--body-min-rate', type='int', default=500,
+            metavar='BYTES', help='The number of bytes required to be sent '
+            'as part of the request body to trigger a dynamic increase in '
+            'the timeout on receiving the request body. Each time this '
+            'number of bytes is received the timeout will be increased '
+            'by 1 second up to any maximum specified by the maximum body '
+            'timeout. Defaults to 500 bytes.'),
 
     optparse.make_option('--server-backlog', type='int', default=500,
             metavar='NUMBER', help='Depth of server socket listener '
@@ -1507,6 +1627,16 @@ option_list = (
             help='Flag indicating whether the web server startup log should '
             'be enabled. Defaults to being disabled.'),
 
+    optparse.make_option('--log-to-terminal', action='store_true',
+            default=False, help='Flag indicating whether logs should '
+            'be directed back to the terminal. Defaults to being disabled. '
+            'If --log-directory is set explicitly, it will override this '
+            'option. If logging to the terminal is carried out, any '
+            'rotating of log files will be disabled.'),
+
+    optparse.make_option('--access-log-format', metavar='FORMAT',
+            help='Specify the format of the access log records.'),
+
     optparse.make_option('--rotate-logs', action='store_true', default=False,
             help='Flag indicating whether log rotation should be performed.'),
     optparse.make_option('--max-log-size', default=5, type='int',
@@ -1516,6 +1646,14 @@ option_list = (
     optparse.make_option('--rotatelogs-executable',
             default=apxs_config.ROTATELOGS, metavar='FILE-PATH',
             help='Override the path to the rotatelogs executable.'),
+
+    optparse.make_option('--python-path', action='append',
+            dest='python_paths', metavar='DIRECTORY-PATH', help='Specify '
+            'the path to any additional directory that should be added to '
+            'the Python module search path. Note that these directories will '
+            'not be processed for \'.pth\' files. If processing of \'.pth\' '
+            'files is required, set the \'PYTHONPATH\' environment variable '
+            'in a script specified by the \'--envvars-script\' option.'),
 
     optparse.make_option('--python-eggs', metavar='DIRECTORY-PATH',
             help='Specify an alternate directory which should be used for '
@@ -1538,6 +1676,10 @@ option_list = (
             'handler for any resources matched from the document root '
             'directory with a specific extension type.'),
 
+    optparse.make_option('--chunked-request', action='store_true',
+            default=False, help='Flag indicating whether requests which '
+            'use chunked transfer encoding will be accepted.'),
+
     optparse.make_option('--with-newrelic', action='store_true',
             default=False, help='Flag indicating whether all New Relic '
             'performance monitoring features should be enabled.'),
@@ -1551,9 +1693,12 @@ option_list = (
             'platform plugin should be enabled for reporting server level '
             'metrics.'),
 
-    optparse.make_option('--with-wdb', action='store_true', default=False,
-            help='Flag indicating whether the wdb interactive debugger '
-            'should be enabled for the WSGI application.'),
+    optparse.make_option('--newrelic-config-file', metavar='FILE-PATH',
+            default='', help='Specify the location of the New Relic agent '
+            'configuration file.'),
+    optparse.make_option('--newrelic-environment', metavar='NAME',
+            default='', help='Specify the name of the environment section '
+            'that should be used from New Relic agent configuration file.'),
 
     optparse.make_option('--with-php5', action='store_true', default=False,
             help='Flag indicating whether PHP 5 support should be enabled.'),
@@ -1569,6 +1714,28 @@ option_list = (
             'communication with workers. All forms of source code reloading '
             'will also be disabled. Both stdin and stdout will be attached '
             'to the console to allow interaction with the Python debugger.'),
+
+    optparse.make_option('--enable-debugger', action='store_true',
+            default=False, help='Flag indicating whether post mortem '
+            'debugging of any exceptions which propogate out from the '
+            'WSGI application when running in debug mode should be '
+            'performed. Post mortem debugging is performed using the '
+            'Python debugger (pdb).'),
+
+    optparse.make_option('--enable-coverage', action='store_true',
+            default=False, help='Flag indicating whether coverage analysis '
+            'is enabled when running in debug mode.'),
+    optparse.make_option('--coverage-directory', metavar='DIRECTORY-PATH',
+            default='', help='Override the path to the directory into '
+            'which coverage analysis will be generated when enabled under '
+            'debug mode.'),
+
+    optparse.make_option('--enable-profiler', action='store_true',
+            default=False, help='Flag indicating whether code profiling '
+            'is enabled when running in debug mode.'),
+    optparse.make_option('--profiler-output-file', metavar='FILE-PATH',
+            default='', help='Override the path to the file into which '
+            'profiler data will be written when enabled under debug mode.'),
 
     optparse.make_option('--setup-only', action='store_true', default=False,
             help='Flag indicating that after the configuration files have '
@@ -1610,6 +1777,7 @@ def _cmd_setup_server(command, args, options):
     options['mod_wsgi_so'] = where()
 
     options['working_directory'] = options['working_directory'] or os.getcwd()
+    options['working_directory'] = os.path.abspath(options['working_directory'])
 
     if not options['host']:
         options['listener_host'] = None
@@ -1693,6 +1861,13 @@ def _cmd_setup_server(command, args, options):
 
     if not options['log_directory']:
         options['log_directory'] = options['server_root']
+    else:
+        # The --log-directory option overrides --log-to-terminal.
+        options['log_to_terminal'] = False
+
+    if options['log_to_terminal']:
+        # The --log-to-terminal option overrides --rotate-logs.
+        options['rotate_logs'] = False
 
     try:
         os.mkdir(options['log_directory'])
@@ -1702,7 +1877,30 @@ def _cmd_setup_server(command, args, options):
     if not os.path.isabs(options['log_directory']):
         options['log_directory'] = os.path.abspath(options['log_directory'])
 
-    options['error_log'] = os.path.join(options['log_directory'], 'error_log')
+    if not options['log_to_terminal']:
+        options['error_log_file'] = os.path.join(options['log_directory'],
+                'error_log')
+    else:
+        options['error_log_file'] = '/dev/stderr'
+
+    if not options['log_to_terminal']:
+        options['access_log_file'] = os.path.join(
+                options['log_directory'], 'access_log')
+    else:
+        options['access_log_file'] = '/dev/stdout'
+
+    if options['access_log_format']:
+        if options['access_log_format'] in ('common', 'combined'):
+            options['log_format_nickname'] = options['access_log_format']
+            options['access_log_format'] = 'undefined'
+        else:
+            options['log_format_nickname'] = 'custom'
+    else:
+        options['log_format_nickname'] = 'common'
+        options['access_log_format'] = 'undefined'
+
+    options['access_log_format'] = options['access_log_format'].replace(
+            '\"', '\\"')
 
     options['pid_file'] = ((options['pid_file'] and os.path.abspath(
             options['pid_file'])) or os.path.join(options['server_root'],
@@ -1727,6 +1925,24 @@ def _cmd_setup_server(command, args, options):
 
     options['keep_alive'] = options['keep_alive_timeout'] != 0
 
+    request_read_timeout = ''
+
+    if options['header_timeout'] > 0:
+        request_read_timeout += 'header=%d' % options['header_timeout']
+        if options['header_max_timeout'] > 0:
+            request_read_timeout += '-%d' % options['header_max_timeout']
+        if options['header_min_rate'] > 0:
+            request_read_timeout += ',MinRate=%d' % options['header_min_rate']
+        
+    if options['body_timeout'] > 0:
+        request_read_timeout += ' body=%d' % options['body_timeout']
+        if options['body_max_timeout'] > 0:
+            request_read_timeout += '-%d' % options['body_max_timeout']
+        if options['body_min_rate'] > 0:
+            request_read_timeout += ',MinRate=%d' % options['body_min_rate']
+
+    options['request_read_timeout'] = request_read_timeout
+
     if options['server_metrics']:
         options['daemon_server_metrics_flag'] = 'On'
     else:
@@ -1740,20 +1956,16 @@ def _cmd_setup_server(command, args, options):
             handler_scripts.append((extension, script))
         options['handler_scripts'] = handler_scripts
 
+    if options['newrelic_config_file']:
+        options['newrelic_config_file'] = os.path.abspath(
+                options['newrelic_config_file'])
+
     if options['with_newrelic']:
         options['with_newrelic_agent'] = True
         options['with_newrelic_platform'] = True
 
     if options['with_newrelic_platform']:
         options['server_metrics'] = True
-
-    generate_wsgi_handler_script(options)
-
-    if options['with_newrelic_platform']:
-        generate_server_metrics_script(options)
-
-    if options['with_wdb']:
-        generate_wdb_server_script(options)
 
     max_clients = options['processes'] * options['threads']
 
@@ -1850,12 +2062,14 @@ def _cmd_setup_server(command, args, options):
     options['httpd_arguments_list'] = []
 
     if options['startup_log']:
-        options['startup_log_filename']= os.path.join(
-                options['log_directory'], 'startup.log')
+        if not options['log_to_terminal']:
+            options['startup_log_file'] = os.path.join(
+                    options['log_directory'], 'startup.log')
+        else:
+            options['startup_log_file'] = '/dev/stdout'
 
         options['httpd_arguments_list'].append('-E')
-        options['httpd_arguments_list'].append(
-                options['startup_log_filename'])
+        options['httpd_arguments_list'].append(options['startup_log_file'])
 
     if options['server_name']:
         host = options['server_name']
@@ -1876,6 +2090,33 @@ def _cmd_setup_server(command, args, options):
 
     if options['debug_mode']:
         options['httpd_arguments_list'].append('-DONE_PROCESS')
+
+    if options['debug_mode']:
+        if options['enable_coverage']:
+            if not options['coverage_directory']:
+                options['coverage_directory'] = os.path.join(
+                        options['server_root'], 'htmlcov')
+            else:
+                options['coverage_directory'] = os.path.abspath(
+                        options['coverage_directory'])
+
+            try:
+                os.mkdir(options['coverage_directory'])
+            except Exception:
+                pass
+
+        if options['enable_profiler']:
+            if not options['profiler_output_file']:
+                options['profiler_output_file'] = os.path.join(
+                        options['server_root'], 'pstats.dat')
+            else:
+                options['profiler_output_file'] = os.path.abspath(
+                        options['profiler_output_file'])
+
+    else:
+        options['enable_debugger'] = False
+        options['enable_coverage'] = False
+        options['enable_profiler'] = False
 
     options['parent_domain'] = 'unspecified'
 
@@ -1922,6 +2163,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_AUTH_USER')
     if options['auth_group_script']:
         options['httpd_arguments_list'].append('-DWSGI_AUTH_GROUP')
+    if options['chunked_request']:
+        options['httpd_arguments_list'].append('-DWSGI_CHUNKED_REQUEST')
     if options['with_php5']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PHP5')
 
@@ -1932,6 +2175,11 @@ def _cmd_setup_server(command, args, options):
             ' '.join(options['httpd_arguments_list']))
 
     options['python_executable'] = sys.executable
+
+    generate_wsgi_handler_script(options)
+
+    if options['with_newrelic_platform']:
+        generate_server_metrics_script(options)
 
     generate_apache_config(options)
     generate_control_scripts(options)
@@ -1947,11 +2195,20 @@ def _cmd_setup_server(command, args, options):
     print('Server Root       :', options['server_root'])
     print('Server Conf       :', options['httpd_conf'])
 
-    print('Error Log File    :', options['error_log'])
+    print('Error Log File    :', options['error_log_file'])
 
     if options['access_log']:
-        print('Access Log File   :', os.path.join(options['log_directory'],
-                'access_log'))
+        print('Access Log File   :', options['access_log_file'])
+
+    if options['startup_log']:
+        print('Startup Log File  :', options['startup_log_file'])
+
+    if options['enable_coverage']:
+        print('Coverage Output   :', os.path.join(
+                options['coverage_directory'], 'index.html'))
+
+    if options['enable_profiler']:
+        print('Profiler Output   :', options['profiler_output_file'])
 
     if options['envvars_script']:
         print('Environ Variables :', options['envvars_script'])
@@ -1980,7 +2237,7 @@ def cmd_start_server(params):
 
     executable = os.path.join(config['server_root'], 'apachectl')
     name = executable.ljust(len(config['process_name']))
-    os.execl(executable, name, 'start', '-DNO_DETACH')
+    os.execl(executable, name, 'start', '-DFOREGROUND')
 
 def cmd_install_module(params):
     formatter = optparse.IndentedHelpFormatter()

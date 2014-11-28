@@ -61,4 +61,4 @@ class Command(BaseCommand):
 
         executable = os.path.join(options['server_root'], 'apachectl')
         name = executable.ljust(len(options['process_name']))
-        os.execl(executable, name, 'start', '-DNO_DETACH')
+        os.execl(executable, name, 'start', '-DFOREGROUND')

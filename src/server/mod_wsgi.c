@@ -464,6 +464,10 @@ static const char *wsgi_process_group(request_rec *r, const char *s)
     const char *name = NULL;
     const char *value = NULL;
 
+    const char *h = NULL;
+    apr_port_t p = 0;
+    const char *n = NULL;
+
     if (!s)
         return "";
 
@@ -475,6 +479,45 @@ static const char *wsgi_process_group(request_rec *r, const char *s)
     if (*name) {
         if (!strcmp(name, "{GLOBAL}"))
             return "";
+
+        if (!strcmp(name, "{RESOURCE}")) {
+            h = r->server->server_hostname;
+            p = ap_get_server_port(r);
+            n = wsgi_script_name(r);
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u|%s", h, p, n);
+            else
+                return apr_psprintf(r->pool, "%s|%s", h, n);
+        }
+
+        if (!strcmp(name, "{SERVER}")) {
+            h = r->server->server_hostname;
+            p = ap_get_server_port(r);
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
+
+        if (!strcmp(name, "{HOST}")) {
+            h = r->hostname;
+            p = ap_get_server_port(r);
+
+            /*
+             * The Host header could be empty or absent for HTTP/1.0
+             * or older. In that case fallback to ServerName.
+             */
+
+            if (h == NULL || *h == 0)
+                h = r->server->server_hostname;
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
 
         if (strstr(name, "{ENV:") == name) {
             long len = 0;
@@ -522,6 +565,9 @@ static const char *wsgi_server_group(request_rec *r, const char *s)
     name = s + 1;
 
     if (*name) {
+        if (!strcmp(name, "{GLOBAL}"))
+            return "";
+
         if (!strcmp(name, "{SERVER}")) {
             h = r->server->server_hostname;
             p = ap_get_server_port(r);
@@ -532,8 +578,23 @@ static const char *wsgi_server_group(request_rec *r, const char *s)
                 return h;
         }
 
-        if (!strcmp(name, "{GLOBAL}"))
-            return "";
+        if (!strcmp(name, "{HOST}")) {
+            h = r->hostname;
+            p = ap_get_server_port(r);
+
+            /*
+             * The Host header could be empty or absent for HTTP/1.0
+             * or older. In that case fallback to ServerName.
+             */
+
+            if (h == NULL || *h == 0)
+                h = r->server->server_hostname;
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
     }
 
     return s;
@@ -565,6 +626,9 @@ static const char *wsgi_application_group(request_rec *r, const char *s)
     name = s + 1;
 
     if (*name) {
+        if (!strcmp(name, "{GLOBAL}"))
+            return "";
+
         if (!strcmp(name, "{RESOURCE}")) {
             h = r->server->server_hostname;
             p = ap_get_server_port(r);
@@ -586,8 +650,23 @@ static const char *wsgi_application_group(request_rec *r, const char *s)
                 return h;
         }
 
-        if (!strcmp(name, "{GLOBAL}"))
-            return "";
+        if (!strcmp(name, "{HOST}")) {
+            h = r->hostname;
+            p = ap_get_server_port(r);
+
+            /*
+             * The Host header could be empty or absent for HTTP/1.0
+             * or older. In that case fallback to ServerName.
+             */
+
+            if (h == NULL || *h == 0)
+                h = r->server->server_hostname;
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
 
         if (strstr(name, "{ENV:") == name) {
             long len = 0;
@@ -794,6 +873,20 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
     return config;
 }
 
+/* Error reporting. */
+
+static void wsgi_log_script_error(request_rec *r, const char *e, const char *n)
+{
+    char *message = NULL;
+
+    if (!n)
+        n = r->filename;
+
+    message = apr_psprintf(r->pool, "%s: %s", e, n);
+
+    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "%s", message);
+}
+
 /* Class objects used by response handler. */
 
 static PyTypeObject Dispatch_Type;
@@ -807,6 +900,9 @@ typedef struct {
         apr_size_t size;
         apr_size_t offset;
         apr_size_t length;
+        apr_bucket_brigade *bb;
+        int seen_eos;
+        int seen_error;
 } InputObject;
 
 static PyTypeObject Input_Type;
@@ -828,11 +924,22 @@ static InputObject *newInputObject(request_rec *r)
     self->offset = 0;
     self->length = 0;
 
+    self->bb = NULL;
+
+    self->seen_eos = 0;
+    self->seen_error = 0;
+
     return self;
 }
 
 static void Input_dealloc(InputObject *self)
 {
+    if (self->bb) {
+        Py_BEGIN_ALLOW_THREADS
+        apr_brigade_destroy(self->bb);
+        Py_END_ALLOW_THREADS
+    }
+
     if (self->buffer)
         free(self->buffer);
 
@@ -848,6 +955,179 @@ static PyObject *Input_close(InputObject *self, PyObject *args)
 
     Py_INCREF(Py_None);
     return Py_None;
+}
+
+static apr_status_t wsgi_strtoff(apr_off_t *offset, const char *nptr,
+                                 char **endptr, int base)
+{
+   errno = 0;
+   if (sizeof(apr_off_t) == 4) {
+       *offset = strtol(nptr, endptr, base);
+   }
+   else {
+       *offset = apr_strtoi64(nptr, endptr, base);
+   }
+   return APR_FROM_OS_ERROR(errno);
+}
+
+static long Input_read_from_input(InputObject *self, char *buffer,
+                                  apr_size_t bufsiz)
+{
+    request_rec *r = self->r;
+    apr_bucket_brigade *bb = self->bb;
+
+    apr_status_t rv;
+
+    apr_status_t error_status = 0;
+    const char *error_message = NULL;
+
+    /* If have already seen end of input, return an empty string. */
+
+    if (self->seen_eos)
+        return 0;
+
+    /* If have already encountered an error, then raise a new error. */
+
+    if (self->seen_error) {
+        PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi request data read "
+                "error: Input is already in error state.");
+
+        return -1;
+    }
+
+    /*
+     * When reaading the request content we will be saying that we
+     * should block if there is no input data available at that
+     * point but not all data has been exhausted. We therefore need
+     * to ensure that we do not cause Python as a whole to block by
+     * releasing the GIL, but also must remember to reacquire the GIL
+     * when we exit.
+     */
+
+    Py_BEGIN_ALLOW_THREADS
+
+    /*
+     * Create the bucket brigade the first time it is required and
+     * save it against the input object. We need to make sure we
+     * perform a cleanup, but not destroy, the bucket brigade each
+     * time we exit this function.
+     */
+
+    if (!bb) {
+        bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+
+        if (bb == NULL) {
+            r->connection->keepalive = AP_CONN_CLOSE;
+            error_message = "Unable to create bucket brigade";
+            goto finally;
+        }
+
+        self->bb = bb;
+    }
+
+    /* Force the required amount of input to be read. */
+
+    rv = ap_get_brigade(r->input_filters, bb, AP_MODE_READBYTES,
+                        APR_BLOCK_READ, bufsiz);
+
+    if (rv != APR_SUCCESS) {
+        /*
+         * If we actually fail here, we want to just return and
+         * stop trying to read data from the client. The HTTP_IN
+         * input filter is a bit of a pain here as it can return
+         * EAGAIN in various strange situations where it isn't
+         * believed that it means to retry, but that it is still
+         * a permanent failure. This can include timeouts and
+         * errors in chunked encoding format. To avoid a message
+         * of 'Resource temporarily unavailable' which could be
+         * confusing, replace it with a generic message that the
+         * connection was terminated.
+         */
+
+        r->connection->keepalive = AP_CONN_CLOSE;
+
+        if (APR_STATUS_IS_EAGAIN(rv))
+            error_message = "Connection was terminated";
+        else
+            error_status = rv;
+
+        goto finally;
+    }
+
+    /*
+     * If this fails, it means that a filter is written incorrectly and
+     * that it needs to learn how to properly handle APR_BLOCK_READ
+     * requests by returning data when requested.
+     */
+
+    AP_DEBUG_ASSERT(!APR_BRIGADE_EMPTY(bb));
+
+    /*
+     * Check to see if EOS terminates the brigade. If so, we remember
+     * this to avoid any attempts to read more data in future calls.
+     */
+
+    if (APR_BUCKET_IS_EOS(APR_BRIGADE_LAST(bb)))
+        self->seen_eos = 1;
+
+    /* Now extract the actual data from the bucket brigade. */
+
+    rv = apr_brigade_flatten(bb, buffer, &bufsiz);
+
+    if (rv != APR_SUCCESS) {
+        error_status = rv;
+        goto finally;
+    }
+
+finally:
+    /*
+     * We must always cleanup up, not destroy, the brigade after
+     * each call.
+     */
+
+    if (bb)
+        apr_brigade_cleanup(bb);
+
+    /* Make sure we reacquire the GIL when all done. */
+
+    Py_END_ALLOW_THREADS
+
+    /*
+     * Set any Python exception when an error has occurred and
+     * remember there was an error so can flag on subsequent
+     * reads that already in an error state.
+     */
+
+    if (error_status) {
+        char status_buffer[512];
+
+        error_message = apr_psprintf(r->pool, "Apache/mod_wsgi request "
+                "data read error: %s.", apr_strerror(error_status,
+                status_buffer, sizeof(status_buffer)-1), NULL);
+
+        PyErr_SetString(PyExc_IOError, error_message);
+
+        self->seen_error = 1;
+
+        return -1;
+    }
+    else if (error_message) {
+        error_message = apr_psprintf(r->pool, "Apache/mod_wsgi request "
+                "data read error: %s.", error_message, NULL);
+
+        PyErr_SetString(PyExc_IOError, error_message);
+
+        self->seen_error = 1;
+
+        return -1;
+    }
+
+    /*
+     * Finally return the amount of data that was read. This will be
+     * zero if all data has been consumed.
+     */
+
+    return bufsiz;
 }
 
 static PyObject *Input_read(InputObject *self, PyObject *args)
@@ -882,14 +1162,17 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
     }
 #endif
 
+    if (self->seen_error) {
+        PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi request data read "
+                "error: Input is already in error state.");
+
+        return NULL;
+    }
+
     init = self->init;
 
-    if (!self->init) {
-        if (!ap_should_client_block(self->r))
-            self->done = 1;
-
+    if (!self->init)
         self->init = 1;
-    }
 
     /* No point continuing if no more data to be consumed. */
 
@@ -913,14 +1196,10 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
         if (!init) {
             char dummy[1];
 
-            Py_BEGIN_ALLOW_THREADS
-            n = ap_get_client_block(self->r, dummy, 0);
-            Py_END_ALLOW_THREADS
+            n = Input_read_from_input(self, dummy, 0);
 
-            if (n == -1) {
-                PyErr_SetString(PyExc_IOError, "request data read error");
+            if (n == -1)
                 return NULL;
-            }
         }
 
         return PyString_FromString("");
@@ -970,13 +1249,9 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
         if (length < size) {
             while (length != size) {
-                Py_BEGIN_ALLOW_THREADS
-                n = ap_get_client_block(self->r, buffer + length,
-                                        size - length);
-                Py_END_ALLOW_THREADS
+                n = Input_read_from_input(self, buffer+length, size-length);
 
                 if (n == -1) {
-                    PyErr_SetString(PyExc_IOError, "request data read error");
                     Py_DECREF(result);
                     return NULL;
                 }
@@ -1027,15 +1302,15 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
          * is not truncated.
          */
 
-        size = self->length;
+        if (self->buffer) {
+            size = self->length;
+            size = size + (size >> 2);
 
-        if (!self->r->read_chunked && self->r->remaining > 0)
-            size += self->r->remaining;
-
-        size = size + (size >> 2);
-
-        if (size < 256)
-            size = self->r->read_chunked ? 8192 : 256;
+            if (size < HUGE_STRING_LEN)
+                size = HUGE_STRING_LEN;
+        }
+        else
+            size = HUGE_STRING_LEN;
 
         /* Allocate string of the estimated size. */
 
@@ -1065,12 +1340,9 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
         /* Now make first attempt at reading remaining data. */
 
-        Py_BEGIN_ALLOW_THREADS
-        n = ap_get_client_block(self->r, buffer + length, size - length);
-        Py_END_ALLOW_THREADS
+        n = Input_read_from_input(self, buffer+length, size-length);
 
         if (n == -1) {
-            PyErr_SetString(PyExc_IOError, "request data read error");
             Py_DECREF(result);
             return NULL;
         }
@@ -1102,12 +1374,9 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
             /* Now make succesive attempt at reading data. */
 
-            Py_BEGIN_ALLOW_THREADS
-            n = ap_get_client_block(self->r, buffer + length, size - length);
-            Py_END_ALLOW_THREADS
+            n = Input_read_from_input(self, buffer+length, size-length);
 
             if (n == -1) {
-                PyErr_SetString(PyExc_IOError, "request data read error");
                 Py_DECREF(result);
                 return NULL;
             }
@@ -1154,12 +1423,15 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "|l:readline", &size))
         return NULL;
 
-    if (!self->init) {
-        if (!ap_should_client_block(self->r))
-            self->done = 1;
+    if (self->seen_error) {
+        PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi request data read "
+                "error: Input is already in error state.");
 
-        self->init = 1;
+        return NULL;
     }
+
+    if (!self->init)
+        self->init = 1;
 
     /*
      * No point continuing if requested size is zero or if no
@@ -1224,12 +1496,9 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
             char *p = NULL;
             char *q = NULL;
 
-            Py_BEGIN_ALLOW_THREADS
-            n = ap_get_client_block(self->r, buffer + length, size - length);
-            Py_END_ALLOW_THREADS
+            n = Input_read_from_input(self, buffer+length, size-length);
 
             if (n == -1) {
-                PyErr_SetString(PyExc_IOError, "request data read error");
                 Py_DECREF(result);
                 return NULL;
             }
@@ -1360,12 +1629,9 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
             char *p = NULL;
             char *q = NULL;
 
-            Py_BEGIN_ALLOW_THREADS
-            n = ap_get_client_block(self->r, buffer + length, size - length);
-            Py_END_ALLOW_THREADS
+            n = Input_read_from_input(self, buffer+length, size-length);
 
             if (n == -1) {
-                PyErr_SetString(PyExc_IOError, "request data read error");
                 Py_DECREF(result);
                 return NULL;
             }
@@ -1932,7 +2198,8 @@ static int Adapter_output(AdapterObject *self, const char *data,
                               getpid());
             }
             else
-                PyErr_SetString(PyExc_IOError, "client connection closed");
+                PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client "
+                                "connection closed.");
 
             return 0;
         }
@@ -1966,7 +2233,14 @@ static int Adapter_output(AdapterObject *self, const char *data,
         Py_END_ALLOW_THREADS
 
         if (rv != APR_SUCCESS) {
-            PyErr_SetString(PyExc_IOError, "failed to write data");
+            char status_buffer[512];
+            const char *error_message;
+
+            error_message = apr_psprintf(r->pool, "Apache/mod_wsgi failed "
+                    "to write response data: %s.", apr_strerror(rv,
+                    status_buffer, sizeof(status_buffer)-1), NULL);
+
+            PyErr_SetString(PyExc_IOError, error_message);
             return 0;
         }
 
@@ -1993,7 +2267,8 @@ static int Adapter_output(AdapterObject *self, const char *data,
                           getpid());
         }
         else
-            PyErr_SetString(PyExc_IOError, "client connection closed");
+            PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client "
+                            "connection closed.");
 
         return 0;
     }
@@ -2016,7 +2291,8 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
     r = self->r;
 
     if (r->connection->aborted) {
-        PyErr_SetString(PyExc_IOError, "client connection closed");
+        PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client "
+                        "connection closed.");
         return 0;
     }
 
@@ -2063,7 +2339,14 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
     Py_END_ALLOW_THREADS
 
     if (rv != APR_SUCCESS) {
-        PyErr_SetString(PyExc_IOError, "failed to write data");
+        char status_buffer[512];
+        const char *error_message;
+
+        error_message = apr_psprintf(r->pool, "Apache/mod_wsgi failed "
+                "to write response data: %s.", apr_strerror(rv,
+                status_buffer, sizeof(status_buffer)-1), NULL);
+
+        PyErr_SetString(PyExc_IOError, error_message);
         return 0;
     }
 
@@ -2072,7 +2355,8 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
     Py_END_ALLOW_THREADS
 
     if (r->connection->aborted) {
-        PyErr_SetString(PyExc_IOError, "client connection closed");
+        PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client connection "
+                        "closed.");
         return 0;
     }
 
@@ -2628,6 +2912,16 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                 self->result = OK;
 
             wsgi_log_python_error(self->r, self->log, self->r->filename);
+
+            /*
+             * If response content is being chunked and an error
+             * occurred, we need to prevent the sending of the EOS
+             * bucket so a client is able to detect that the the
+             * response was incomplete.
+             */
+
+            if (self->r->chunked)
+                self->r->eos_sent = 1;
         }
 
         if (PyObject_HasAttrString(self->sequence, "close")) {
@@ -2675,11 +2969,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
 {
     PyObject *item = NULL;
-    PyObject *latin_item = NULL;
     const char *data = NULL;
     long length = 0;
-
-    /* XXX The use of latin_item here looks very broken. */
 
     if (!self->r) {
         PyErr_SetString(PyExc_RuntimeError, "request object has expired");
@@ -2692,7 +2983,6 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
     if (!PyString_Check(item)) {
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
                      "of type %.200s found", item->ob_type->tp_name);
-        Py_XDECREF(latin_item);
         return NULL;
     }
 
@@ -2700,11 +2990,8 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
     length = PyString_Size(item);
 
     if (!Adapter_output(self, data, length, item, 1)) {
-        Py_XDECREF(latin_item);
         return NULL;
     }
-
-    Py_XDECREF(latin_item);
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -3886,7 +4173,11 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
         object->application_group = application_group;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-        if (*object->process_group) {
+        if (*object->process_group &&
+            strcmp(object->process_group, "%{RESOURCE}") != 0 &&
+            strcmp(object->process_group, "%{SERVER}") != 0 &&
+            strcmp(object->process_group, "%{HOST}") != 0) {
+
             WSGIProcessGroup *group = NULL;
             WSGIProcessGroup *entries = NULL;
             WSGIProcessGroup *entry = NULL;
@@ -5110,18 +5401,6 @@ static int wsgi_hook_intercept(request_rec *r)
 
 /* Handler for the response handler phase. */
 
-static void wsgi_log_script_error(request_rec *r, const char *e, const char *n)
-{
-    char *message = NULL;
-
-    if (!n)
-        n = r->filename;
-
-    message = apr_psprintf(r->pool, "%s: %s", e, n);
-
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "%s", message);
-}
-
 static void wsgi_drop_invalid_headers(request_rec *r);
 
 static void wsgi_build_environment(request_rec *r)
@@ -5284,9 +5563,6 @@ static void wsgi_build_environment(request_rec *r)
     apr_table_setn(r->subprocess_env, "mod_wsgi.listener_port",
                    apr_psprintf(r->pool, "%d", c->local_addr->port));
 #endif
-
-    apr_table_setn(r->subprocess_env, "mod_wsgi.input_chunked",
-                   apr_psprintf(r->pool, "%d", !!r->read_chunked));
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.enable_sendfile",
                    apr_psprintf(r->pool, "%d", config->enable_sendfile));
@@ -6007,6 +6283,9 @@ static int wsgi_hook_handler(request_rec *r)
 
     const char *value = NULL;
 
+    const char *tenc = NULL;
+    const char *lenp = NULL;
+
     /* Filter out the obvious case of no handler defined. */
 
     if (!r->handler)
@@ -6134,42 +6413,85 @@ static int wsgi_hook_handler(request_rec *r)
 #endif
 
     /*
-     * Setup policy to apply if request contains a body. Note
-     * that WSGI specification doesn't strictly allow for chunked
-     * request content as CONTENT_LENGTH required when reading
-     * input and application isn't meant to read more than what
-     * is defined by CONTENT_LENGTH. To allow chunked request
-     * content tell Apache to dechunk it. For application to use
-     * the content, it has to ignore WSGI specification and use
-     * read() with no arguments to read all available input, or
-     * call read() with specific block size until read() returns
-     * an empty string.
+     * Setup policy to apply if request contains a body. Note that the
+     * WSGI specification doesn't strictly allow for chunked request
+     * content as CONTENT_LENGTH is required when reading input and
+     * an application isn't meant to read more than what is defined by
+     * CONTENT_LENGTH. We still optionally allow chunked request content.
+     * For an application to use the content, it has to ignore the WSGI
+     * specification and use read() with no arguments to read all
+     * available input, or call read() with specific block size until
+     * read() returns an empty string.
      */
 
-    if (config->chunked_request)
-        status = ap_setup_client_block(r, REQUEST_CHUNKED_DECHUNK);
-    else
-        status = ap_setup_client_block(r, REQUEST_CHUNKED_ERROR);
+    tenc = apr_table_get(r->headers_in, "Transfer-Encoding");
 
-    if (status != OK)
-        return status;
+    if (tenc) {
+        /* Only chunked transfer encoding is supported. */
+
+        if (strcasecmp(tenc, "chunked")) {
+            wsgi_log_script_error(r, apr_psprintf(r->pool,
+                    "Unexpected value for Transfer-Encoding of '%s' "
+                    "supplied. Only 'chunked' supported.", tenc),
+                    r->filename);
+            return HTTP_NOT_IMPLEMENTED;
+        }
+
+        /* Only allow chunked requests when explicitly enabled. */
+
+        if (!config->chunked_request) {
+            wsgi_log_script_error(r, "Received request requiring chunked "
+                    "transfer encoding, but optional support for chunked "
+                    "transfer encoding has not been enabled.", r->filename);
+            return HTTP_LENGTH_REQUIRED;
+        }
+
+        /*
+         * When chunked transfer encoding is specified, there should
+         * not be any content length specified.
+         */
+
+        if (lenp) {
+            wsgi_log_script_error(r, "Unexpected Content-Length header "
+                    "supplied where Transfer-Encoding was specified "
+                    "as 'chunked'.", r->filename);
+            return HTTP_BAD_REQUEST;
+        }
+    }
 
     /*
-     * Check to see if request content is too large and end
-     * request here. We do this as otherwise it will not be done
-     * until first time input data is read in application.
-     * Problem is that underlying HTTP output filter will
-     * also generate a 413 response and the error raised from
-     * the application will be appended to that. The call to
-     * ap_discard_request_body() is hopefully enough to trigger
-     * sending of the 413 response by the HTTP filter.
+     * Check to see if the request content is too large if the
+     * Content-Length header is defined then end the request here. We do
+     * this as otherwise it will not be done until first time input data
+     * is read in by the application. Problem is that underlying HTTP
+     * output filter will also generate a 413 response and the error
+     * raised from the application will be appended to that. The call to
+     * ap_discard_request_body() is hopefully enough to trigger sending
+     * of the 413 response by the HTTP filter.
      */
 
-    limit = ap_get_limit_req_body(r);
+    lenp = apr_table_get(r->headers_in, "Content-Length");
 
-    if (limit && limit < r->remaining) {
-        ap_discard_request_body(r);
-        return OK;
+    if (lenp) {
+        char *endstr;
+        apr_off_t length;
+
+        if (wsgi_strtoff(&length, lenp, &endstr, 10)
+            || *endstr || length < 0) {
+
+            wsgi_log_script_error(r, apr_psprintf(r->pool,
+                    "Invalid Content-Length header value of '%s' was "
+                    "supplied.", lenp), r->filename);
+
+            return HTTP_BAD_REQUEST;
+        }
+
+        limit = ap_get_limit_req_body(r);
+
+        if (limit && limit < length) {
+            ap_discard_request_body(r);
+            return OK;
+        }
     }
 
     /* Build the sub process environment. */
@@ -7145,7 +7467,12 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
         }
     }
 
-    /* Setup the working directory for the process. */
+    /*
+     * Setup the working directory for the process. It is either set to
+     * what the 'home' option explicitly provides, or the home home
+     * directory of the user, where it has been set to be different to
+     * the user that Apache's own processes run as.
+     */
 
     if (daemon->group->home) {
         if (chdir(daemon->group->home) == -1) {
@@ -7156,7 +7483,7 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
             return -1;
         }
     }
-    else {
+    else if (geteuid() != ap_unixd_config.user_id) {
         struct passwd *pwent;
 
         pwent = getpwuid(geteuid());
@@ -7165,7 +7492,8 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
             if (chdir(pwent->pw_dir) == -1) {
                 ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                              "mod_wsgi (pid=%d): Unable to change working "
-                             "directory to '%s'.", getpid(), pwent->pw_dir);
+                             "directory to home directory '%s' for uid=%ld.",
+                             getpid(), pwent->pw_dir, (long)geteuid());
 
             return -1;
             }
@@ -8751,7 +9079,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (result == -1) {
                 ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Couldn't set memory time "
+                             "mod_wsgi (pid=%d): Couldn't set memory "
                              "limit of %ld for process '%s'.", getpid(),
                              (long)daemon->group->memory_limit,
                              daemon->group->name);
@@ -8781,7 +9109,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             if (result == -1) {
                 ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
                              "mod_wsgi (pid=%d): Couldn't set virtual memory "
-                             "time limit of %ld for process '%s'.", getpid(),
+                             "limit of %ld for process '%s'.", getpid(),
                              (long)daemon->group->virtual_memory_limit,
                              daemon->group->name);
             }
@@ -9425,50 +9753,65 @@ static apr_status_t wsgi_socket_send(apr_socket_t *sock, const char *buf,
         if (rv != APR_SUCCESS)
             return rv;
 
+        buf += len;
         buf_size -= len;
     }
 
     return APR_SUCCESS;
 }
 
-static apr_status_t wsgi_send_strings(apr_pool_t *p, apr_socket_t *sock,
-                                      const char **s)
+static apr_status_t wsgi_socket_sendv(apr_socket_t *sock, struct iovec *vec,
+                                      int nvec)
 {
     apr_status_t rv;
+    apr_size_t written = 0;
+    apr_size_t to_write = 0;
+    int i, offset;
 
-    apr_size_t total = 0;
+    /* Calculate how much has to be sent. */
 
-    apr_size_t n;
-    apr_size_t i;
-    apr_size_t l;
-
-    char *buffer;
-    char *offset;
-
-    total += sizeof(n);
-
-    for (n = 0; s[n]; n++)
-        total += (strlen(s[n]) + 1);
-
-    buffer = apr_palloc(p, total + sizeof(total));
-    offset = buffer;
-
-    memcpy(offset, &total, sizeof(total));
-    offset += sizeof(total);
-
-    memcpy(offset, &n, sizeof(n));
-    offset += sizeof(n);
-
-    for (i = 0; i < n; i++) {
-        l = (strlen(s[i]) + 1);
-        memcpy(offset, s[i], l);
-        offset += l;
+    for (i = 0; i < nvec; i++) {
+        to_write += vec[i].iov_len;
     }
 
-    total += sizeof(total);
+    /* Loop until all data has been sent. */
 
-    if ((rv = wsgi_socket_send(sock, buffer, total)) != APR_SUCCESS)
-        return rv;
+    offset = 0;
+
+    while (to_write) {
+        apr_size_t n = 0;
+
+        rv = apr_socket_sendv(sock, vec+offset, nvec-offset, &n);
+
+        if (rv != APR_SUCCESS)
+            return rv;
+
+        if (n > 0) {
+            /* Bail out of all data has been sent. */
+
+            written += n;
+
+            if (written >= to_write)
+                break;
+
+            /*
+             * Not all data was sent, so ween need to try
+             * again with the remainder of the data. We
+             * first need to work out where to start from.
+             */
+
+            for (i = offset; i < nvec; ) {
+                if (n >= vec[i].iov_len) {
+                    offset++;
+                    n -= vec[i++].iov_len;
+                } else {
+                    vec[i].iov_len -= n;
+                    vec[i].iov_base = (char *) vec[i].iov_base + n;
+                    break;
+                }
+            }
+        }
+    }
 
     return APR_SUCCESS;
 }
@@ -9479,10 +9822,16 @@ static apr_status_t wsgi_send_request(request_rec *r,
 {
     int rv;
 
-    char **vars;
     const apr_array_header_t *env_arr;
     const apr_table_entry_t *elts;
-    int i, j;
+    int i;
+
+    struct iovec *vec;
+    struct iovec *vec_start;
+    struct iovec *vec_next;
+
+    apr_size_t total = 0;
+    apr_size_t count = 0;
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_connects",
                    apr_psprintf(r->pool, "%d", config->daemon_connects));
@@ -9494,20 +9843,55 @@ static apr_status_t wsgi_send_request(request_rec *r,
     env_arr = apr_table_elts(r->subprocess_env);
     elts = (const apr_table_entry_t *)env_arr->elts;
 
-    vars = (char **)apr_palloc(r->pool,
-                               ((2*env_arr->nelts)+1)*sizeof(char *));
+    /*
+     * Sending total amount of data, followed by count of separate
+     * strings and then each null terminated string. The total is
+     * inclusive of the bytes used for the count of the strings.
+     */
 
-    for (i=0, j=0; i<env_arr->nelts; ++i) {
+    vec = (struct iovec *)apr_palloc(r->pool, (2+(2*env_arr->nelts))*
+                                     sizeof(struct iovec));
+
+    vec_start = &vec[2];
+    vec_next = vec_start;
+
+    for (i=0; i<env_arr->nelts; ++i) {
         if (!elts[i].key)
             continue;
 
-        vars[j++] = elts[i].key;
-        vars[j++] = elts[i].val ? elts[i].val : "";
+        vec_next->iov_base = (void*)elts[i].key;
+        vec_next->iov_len = strlen(elts[i].key) + 1;
+
+        total += vec_next->iov_len;
+
+        vec_next++;
+
+        if (elts[i].val) {
+            vec_next->iov_base = (void*)elts[i].val;
+            vec_next->iov_len = strlen(elts[i].val) + 1;
+        }
+        else
+        {
+            vec_next->iov_base = (void*)"";
+            vec_next->iov_len = 1;
+        }
+
+        total += vec_next->iov_len;
+
+        vec_next++;
     }
 
-    vars[j] = NULL;
+    count = vec_next - vec_start;
 
-    rv = wsgi_send_strings(r->pool, daemon->socket, (const char **)vars);
+    vec[1].iov_base = (void*)&count;
+    vec[1].iov_len = sizeof(count);
+
+    total += vec[1].iov_len;
+
+    vec[0].iov_base = (void*)&total;
+    vec[0].iov_len = sizeof(total);
+
+    rv = wsgi_socket_sendv(daemon->socket, vec, (int)(vec_next-vec));
 
     if (rv != APR_SUCCESS)
         return rv;
@@ -9589,7 +9973,7 @@ static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
      */
 
     cookie_table = apr_table_make(r->pool, 2);
-    apr_table_do(wsgi_copy_header, cookie_table, r->err_headers_out,
+    apr_table_do(wsgi_copy_header, cookie_table, r->headers_out,
                  "Set-Cookie", NULL);
 
     authen_table = apr_table_make(r->pool, 2);
@@ -9669,18 +10053,18 @@ static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
              * values combined for these.
              */
 
-            apr_table_overlap(r->err_headers_out, merge,
+            apr_table_overlap(r->headers_out, merge,
                               APR_OVERLAP_TABLES_MERGE);
 
             /*
-             * No add in the special headers which we can't merge
+             * Now add in the special headers which we can't merge
              * because it gives certain browsers problems.
              */
 
             if (!apr_is_empty_table(cookie_table)) {
-                apr_table_unset(r->err_headers_out, "Set-Cookie");
-                r->err_headers_out = apr_table_overlay(r->pool,
-                    r->err_headers_out, cookie_table);
+                apr_table_unset(r->headers_out, "Set-Cookie");
+                r->headers_out = apr_table_overlay(r->pool,
+                    r->headers_out, cookie_table);
             }
 
             if (!apr_is_empty_table(authen_table)) {
@@ -10013,6 +10397,9 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
     return OK;
 }
 
+#define ASCII_CRLF  "\015\012"
+#define ASCII_ZERO  "\060"
+
 static int wsgi_execute_remote(request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
@@ -10051,7 +10438,8 @@ static int wsgi_execute_remote(request_rec *r)
                            config->process_group)) {
             wsgi_log_script_error(r, apr_psprintf(r->pool, "Daemon "
                                   "process called '%s' cannot be "
-                                  "accessed by this WSGI application",
+                                  "accessed by this WSGI application "
+                                  "as not a member of allowed groups",
                                   config->process_group), r->filename);
 
             return HTTP_INTERNAL_SERVER_ERROR;
@@ -10496,7 +10884,16 @@ static int wsgi_execute_remote(request_rec *r)
 
     r->status = HTTP_OK;
 
-    /* Transfer any request content which was provided. */
+    /*
+     * Transfer any request content which was provided. Note that we
+     * actually frame each data block sent with same format as is used
+     * for chunked transfer encoding. This will be decoded in the
+     * daemon process. This is done so that the EOS can be properly
+     * identified by the daemon process in the absence of a value for
+     * CONTENT_LENGTH that can be relied on. The CONTENT_LENGTH is
+     * dodgy when have mutating input filters and none will be present
+     * at all if chunked request content was used.
+     */
 
     seen_eos = 0;
     child_stopped_reading = 0;
@@ -10510,9 +10907,20 @@ static int wsgi_execute_remote(request_rec *r)
                             APR_BLOCK_READ, HUGE_STRING_LEN);
 
         if (rv != APR_SUCCESS) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                         "mod_wsgi (pid=%d): Unable to get bucket brigade "
-                         "for request.", getpid());
+            char status_buffer[512];
+            const char *error_message;
+
+            error_message = apr_psprintf(r->pool, "Request data read "
+                    "error when proxying data to daemon process: %s",
+                    apr_strerror(rv, status_buffer, sizeof(
+                    status_buffer)-1), NULL);
+
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                         "mod_wsgi (pid=%d): %s.", getpid(), error_message);
+
+            if (APR_STATUS_IS_TIMEUP(rv))
+                return HTTP_REQUEST_TIME_OUT;
+
             return HTTP_INTERNAL_SERVER_ERROR;
         }
 
@@ -10523,34 +10931,101 @@ static int wsgi_execute_remote(request_rec *r)
             const char *data;
             apr_size_t len;
 
+            char chunk_hdr[20];
+            apr_size_t hdr_len;
+
+            struct iovec vec[3];
+
             if (APR_BUCKET_IS_EOS(bucket)) {
+                /* Send closing frame for chunked content. */
+
+                rv = wsgi_socket_send(daemon->socket,
+                        ASCII_ZERO ASCII_CRLF ASCII_CRLF, 5);
+
+                if (rv != APR_SUCCESS) {
+                    char status_buffer[512];
+                    const char *error_message;
+
+                    error_message = apr_psprintf(r->pool, "Request data write "
+                            "error when proxying data to daemon process: %s",
+                            apr_strerror(rv, status_buffer, sizeof(
+                            status_buffer)-1), NULL);
+
+                    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                                 "mod_wsgi (pid=%d): %s.", getpid(),
+                                 error_message);
+                }
+
                 seen_eos = 1;
                 break;
             }
 
             /* We can't do much with this. */
+
             if (APR_BUCKET_IS_FLUSH(bucket)) {
                 continue;
             }
 
             /* If the child stopped, we still must read to EOS. */
+
             if (child_stopped_reading) {
                 continue;
             }
 
             /* Read block. */
-            apr_bucket_read(bucket, &data, &len, APR_BLOCK_READ);
+
+            rv = apr_bucket_read(bucket, &data, &len, APR_BLOCK_READ);
+
+            if (rv != APR_SUCCESS) {
+                char status_buffer[512];
+                const char *error_message;
+
+                error_message = apr_psprintf(r->pool, "Request data read "
+                        "error when proxying data to daemon process: %s",
+                        apr_strerror(rv, status_buffer, sizeof(
+                        status_buffer)-1), NULL);
+
+                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                             "mod_wsgi (pid=%d): %s.", getpid(),
+                             error_message);
+
+                break;
+            }
 
             /*
              * Keep writing data to the child until done or too
              * much time elapses with no progress or an error
-             * occurs.
+             * occurs. Frame the data being sent with format used
+             * for chunked transfer encoding.
              */
 
-            rv = wsgi_socket_send(daemon->socket, data, len);
+            hdr_len = apr_snprintf(chunk_hdr, sizeof(chunk_hdr),
+                    "%" APR_UINT64_T_HEX_FMT ASCII_CRLF, (apr_uint64_t)len);
+
+            vec[0].iov_base = (void *)chunk_hdr;
+            vec[0].iov_len = hdr_len;
+            vec[1].iov_base = (void *)data;
+            vec[1].iov_len = len;
+            vec[2].iov_base = (void *)ASCII_CRLF;
+            vec[2].iov_len = 2;
+
+            rv = wsgi_socket_sendv(daemon->socket, vec, 3);
 
             if (rv != APR_SUCCESS) {
+                char status_buffer[512];
+                const char *error_message;
+
+                error_message = apr_psprintf(r->pool, "Request data write "
+                        "error when proxying data to daemon process: %s",
+                        apr_strerror(rv, status_buffer, sizeof(
+                        status_buffer)-1), NULL);
+
+                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                             "mod_wsgi (pid=%d): %s.", getpid(),
+                             error_message);
+
                 /* Daemon stopped reading, discard remainder. */
+
                 child_stopped_reading = 1;
             }
         }
@@ -11186,10 +11661,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     if (item)
         apr_table_setn(r->headers_in, "Content-Length", item);
 
-    /* Install the standard HTTP input filter. */
-
-    ap_add_input_filter("HTTP_IN", NULL, r, r->connection);
-
     /* Set details of WSGI specific request config. */
 
     config->process_group = apr_table_get(r->subprocess_env,
@@ -11213,40 +11684,21 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
         config->enable_sendfile = 0;
 
     /*
-     * Define how input data is to be processed. This
-     * was already done in the Apache child process and
-     * so it shouldn't fail. More importantly, it sets
-     * up request data tracking how much input has been
-     * read or if more remains.
+     * Install the standard HTTP input filter and set header for
+     * chunked transfer encoding to force it to dechunk the input.
+     * This is necessary as we chunk the data that is proxied to
+     * the daemon processes so that we can determining whether we
+     * actually receive all input or it was truncated.
+     *
+     * Note that the subprocess_env table that gets passed to the
+     * WSGI environ dictionary has already been populated, so the
+     * Transfer-Encoding header will not be passed in the WSGI
+     * environ dictionary as a result of this.
      */
 
-    ap_setup_client_block(r, REQUEST_CHUNKED_ERROR);
+    apr_table_setn(r->headers_in, "Transfer-Encoding", "chunked");
 
-    /*
-     * Where original request used chunked transfer
-     * encoding, we have to do a further fiddle here and
-     * make Apache think that request content length is
-     * maximum length possible. This is to satisfy the
-     * HTTP_IN input filter. Also flag request as being
-     * chunked so WSGI input function doesn't think that
-     * there may actually be that amount of data
-     * remaining.
-     */
-
-    item = apr_table_get(r->subprocess_env, "mod_wsgi.input_chunked");
-
-    if (item && !strcasecmp(item, "1")) {
-        if (sizeof(apr_off_t) == sizeof(long)) {
-            apr_table_setn(r->headers_in, "Content-Length",
-                           apr_psprintf(r->pool, "%ld", LONG_MAX));
-        }
-        else {
-            apr_table_setn(r->headers_in, "Content-Length",
-                           apr_psprintf(r->pool, "%d", INT_MAX));
-        }
-
-        r->read_chunked = 1;
-    }
+    ap_add_input_filter("HTTP_IN", NULL, r, r->connection);
 
     /* Check for queue timeout. */
 
