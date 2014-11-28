@@ -269,7 +269,7 @@ for this feature to work.
 specified and at the same time the ``--debug-mode`` option is specified,
 then coverage analysis is enabled. When the server is exited, then the
 profiler data will be output to the ``pstats.dat`` file under the server
-working directory, or the file specified using the ``profiler-output-file``
+working directory, or the file specified using the ``--profiler-output-file``
 option.
 
 12. Added the ``--python-path`` option to ``mod_wsgi-express`` to specify
