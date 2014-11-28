@@ -267,3 +267,11 @@ then coverage analysis is enabled. When the server is exited, then the
 profiler data will be output to the ``pstats.dat`` file under the server
 working directory, or the file specified using the ``profiler-output-file``
 option.
+
+12. Added the ``--python-path`` option to ``mod_wsgi-express`` to specify
+additional directories that should be added to the Python module search path.
+
+Note that these directories will not be processed for ``.pth`` files. If
+processing of ``.pth`` files is required, then the ``PYTHONPATH`` environment
+variable should be set and exported in a script file referred to using the
+``--envvars-script`` option.

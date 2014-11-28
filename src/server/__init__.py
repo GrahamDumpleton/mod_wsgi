@@ -1028,6 +1028,8 @@ import atexit
 import mod_wsgi.server
 
 working_directory = '%(working_directory)s'
+python_paths = %(python_paths)s
+
 entry_point = '%(entry_point)s'
 application_type = '%(application_type)s'
 callable_object = '%(callable_object)s'
@@ -1043,6 +1045,9 @@ enable_coverage = %(enable_coverage)s
 coverage_directory = '%(coverage_directory)s'
 enable_profiler = %(enable_profiler)s
 profiler_output_file = '%(profiler_output_file)s'
+
+if python_paths:
+    sys.path.extend(python_paths)
 
 if debug_mode:
     # We need to fiddle sys.path as we are not using daemon mode and so
@@ -1688,6 +1693,14 @@ option_list = (
     optparse.make_option('--rotatelogs-executable',
             default=apxs_config.ROTATELOGS, metavar='FILE-PATH',
             help='Override the path to the rotatelogs executable.'),
+
+    optparse.make_option('--python-path', action='append',
+            dest='python_paths', metavar='DIRECTORY-PATH', help='Specify '
+            'the path to any additional directory that should be added to '
+            'the Python module search path. Note that these directories will '
+            'not be processed for \'.pth\' files. If processing of \'.pth\' '
+            'files is required, set the \'PYTHONPATH\' environment variable '
+            'in a script specified by the \'--envvars-script\' option.'),
 
     optparse.make_option('--python-eggs', metavar='DIRECTORY-PATH',
             help='Specify an alternate directory which should be used for '
