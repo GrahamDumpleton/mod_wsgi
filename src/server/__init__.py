@@ -659,11 +659,6 @@ WSGIImportScript '%(server_root)s/server-metrics.py' \\
     process-group=express application-group=server-metrics
 """
 
-APACHE_WDB_CONFIG = """
-WSGIImportScript '%(server_root)s/wdb-server.py' \\
-    process-group=express application-group=wdb-server
-"""
-
 def generate_apache_config(options):
     with open(options['httpd_conf'], 'w') as fp:
         print(APACHE_GENERAL_CONFIG % options, file=fp)
@@ -718,14 +713,11 @@ def generate_apache_config(options):
                 print(APACHE_INCLUDE_CONFIG % dict(filename=filename),
                         file=fp)
 
-        if options['with_newrelic_platform'] or options['with_wdb']:
+        if options['with_newrelic_platform']:
             print(APACHE_TOOLS_CONFIG % options, file=fp)
 
         if options['with_newrelic_platform']:
             print(APACHE_METRICS_CONFIG % options, file=fp)
-
-        if options['with_wdb']:
-            print(APACHE_WDB_CONFIG % options, file=fp)
 
 _interval = 1.0
 _times = {}
@@ -873,7 +865,7 @@ class ApplicationHandler(object):
 
     def __init__(self, entry_point, application_type='script',
             callable_object='application', mount_point='/',
-            with_newrelic_agent=False, with_wdb=False, debug_mode=False,
+            with_newrelic_agent=False, debug_mode=False,
             enable_debugger=False):
 
         self.entry_point = entry_point
@@ -916,9 +908,6 @@ class ApplicationHandler(object):
         if with_newrelic_agent:
             self.setup_newrelic_agent()
 
-        if with_wdb:
-            self.setup_wdb()
-
         self.debug_mode = debug_mode
         self.enable_debugger = enable_debugger
 
@@ -940,10 +929,6 @@ class ApplicationHandler(object):
 
         self.application = newrelic.agent.WSGIApplicationWrapper(
                 self.application)
-
-    def setup_wdb(self):
-        from wdb.ext import WdbMiddleware
-        self.application = WdbMiddleware(self.application)
 
     def setup_post_mortem_debugging(self):
         self.application = PostMortemDebugger(self.application)
@@ -1037,7 +1022,6 @@ mount_point = '%(mount_point)s'
 with_newrelic_agent = %(with_newrelic_agent)s
 newrelic_config_file = '%(newrelic_config_file)s'
 newrelic_environment = '%(newrelic_environment)s'
-with_wdb = %(with_wdb)s
 reload_on_changes = %(reload_on_changes)s
 debug_mode = %(debug_mode)s
 enable_debugger = %(enable_debugger)s
@@ -1087,8 +1071,7 @@ if with_newrelic_agent:
 handler = mod_wsgi.server.ApplicationHandler(entry_point,
         application_type=application_type, callable_object=callable_object,
         mount_point=mount_point, with_newrelic_agent=with_newrelic_agent,
-        with_wdb=with_wdb, debug_mode=debug_mode,
-        enable_debugger=enable_debugger)
+        debug_mode=debug_mode, enable_debugger=enable_debugger)
 
 reload_required = handler.reload_required
 handle_request = handler.handle_request
@@ -1202,36 +1185,6 @@ def generate_server_metrics_script(options):
     path = os.path.join(options['server_root'], 'server-metrics.py')
     with open(path, 'w') as fp:
         print(SERVER_METRICS_SCRIPT % options, file=fp)
-
-WDB_SERVER_SCRIPT = """
-from wdb_server import server
-try:
-    from wdb_server.sockets import handle_connection
-except ImportError:
-    from wdb_server.streams import handle_connection
-
-from tornado.ioloop import IOLoop
-from tornado.options import options
-from tornado.netutil import bind_sockets, add_accept_handler
-from threading import Thread
-
-def run_server():
-    ioloop = IOLoop.instance()
-    sockets = bind_sockets(options.socket_port)
-    for socket in sockets:
-        add_accept_handler(socket, handle_connection, ioloop)
-    server.listen(options.server_port)
-    ioloop.start()
-
-thread = Thread(target=run_server)
-thread.setDaemon(True)
-thread.start()
-"""
-
-def generate_wdb_server_script(options):
-    path = os.path.join(options['server_root'], 'wdb-server.py')
-    with open(path, 'w') as fp:
-        print(WDB_SERVER_SCRIPT, file=fp)
 
 WSGI_CONTROL_SCRIPT = """
 #!/bin/sh
@@ -1747,10 +1700,6 @@ option_list = (
             default='', help='Specify the name of the environment section '
             'that should be used from New Relic agent configuration file.'),
 
-    optparse.make_option('--with-wdb', action='store_true', default=False,
-            help='Flag indicating whether the wdb interactive debugger '
-            'should be enabled for the WSGI application.'),
-
     optparse.make_option('--with-php5', action='store_true', default=False,
             help='Flag indicating whether PHP 5 support should be enabled.'),
 
@@ -2231,9 +2180,6 @@ def _cmd_setup_server(command, args, options):
 
     if options['with_newrelic_platform']:
         generate_server_metrics_script(options)
-
-    if options['with_wdb']:
-        generate_wdb_server_script(options)
 
     generate_apache_config(options)
     generate_control_scripts(options)

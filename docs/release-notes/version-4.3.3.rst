@@ -109,6 +109,10 @@ been explicitly set to define the user and the user is different to the
 user that Apache child worker processes run as. In other words, is
 different to the default Apache user.
 
+2. The support for the ``wdb`` debugger was removed. Decided that it wasn't
+mainstream enough and not ideal that still required a separate service and
+port to handle debugging sessions.
+
 New Features
 ------------
 
