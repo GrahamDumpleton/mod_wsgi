@@ -1,10 +1,10 @@
 =============
-Version 4.3.3
+Version 4.4.0
 =============
 
-Version 4.3.3 of mod_wsgi can be obtained from:
+Version 4.4.0 of mod_wsgi can be obtained from:
 
-  https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/4.3.3
+  https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/4.4.0
 
 Known Issues
 ------------
