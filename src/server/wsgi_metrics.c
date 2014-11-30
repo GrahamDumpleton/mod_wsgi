@@ -93,6 +93,7 @@ static PyObject *wsgi_process_metrics(void)
             return Py_None;
         }
     }
+#if defined(MOD_WSGI_WITH_DAEMONS)
     else {
         if (!wsgi_daemon_process->group->server_metrics) {
             Py_INCREF(Py_None);
@@ -100,6 +101,7 @@ static PyObject *wsgi_process_metrics(void)
             return Py_None;
         }
     }
+#endif
 
     result = PyDict_New();
 
@@ -221,6 +223,7 @@ static PyObject *wsgi_server_metrics(void)
             return Py_None;
         }
     }
+#if defined(MOD_WSGI_WITH_DAEMONS)
     else {
         if (!wsgi_daemon_process->group->server_metrics) {
             Py_INCREF(Py_None);
@@ -228,6 +231,7 @@ static PyObject *wsgi_server_metrics(void)
             return Py_None;
         }
     }
+#endif
 
     gs_record = ap_get_scoreboard_global();
 
