@@ -1615,6 +1615,14 @@ option_list = (
             help='Specify an alternate directory for where the generated '
             'web server configuration, startup files and logs will be '
             'stored. Defaults to a sub directory of /tmp.'),
+
+    optparse.make_option('--server-mpm', action='append',
+            dest='server_mpm_variables', metavar='NAME', help='Specify '
+            'preferred MPM to use when using Apache 2.4 with dynamically '
+            'loadable MPMs and more than one is available. By default '
+            'the MPM precedence order when no preference is given is '
+            '\"event\", \"worker" and \"prefork\".'),
+
     optparse.make_option('--log-directory', metavar='DIRECTORY-PATH',
             help='Specify an alternate directory for where the log files '
             'will be stored. Defaults to the server root directory.'),
@@ -1758,17 +1766,18 @@ def cmd_setup_server(params):
 
     _cmd_setup_server('setup-server', args, vars(options))
 
-def _mpm_module_defines(modules_directory):
+def _mpm_module_defines(modules_directory, preferred=None):
     result = []
     workers = ['event', 'worker', 'prefork']
     found = False
     for name in workers:
-        if os.path.exists(os.path.join(modules_directory,
-                'mod_mpm_%s.so' % name)):
-            if not found:
-                result.append('-DWSGI_MPM_ENABLE_%s_MODULE' % name.upper())
-                found = True
-            result.append('-DWSGI_MPM_EXISTS_%s_MODULE' % name.upper())
+        if not preferred or name in preferred:
+            if os.path.exists(os.path.join(modules_directory,
+                    'mod_mpm_%s.so' % name)):
+                if not found:
+                    result.append('-DWSGI_MPM_ENABLE_%s_MODULE' % name.upper())
+                    found = True
+                result.append('-DWSGI_MPM_EXISTS_%s_MODULE' % name.upper())
     return result
 
 def _cmd_setup_server(command, args, options):
@@ -2169,7 +2178,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_WITH_PHP5')
 
     options['httpd_arguments_list'].extend(
-            _mpm_module_defines(options['modules_directory']))
+            _mpm_module_defines(options['modules_directory'],
+            options['server_mpm_variables']))
 
     options['httpd_arguments'] = '-f %s %s' % (options['httpd_conf'],
             ' '.join(options['httpd_arguments_list']))
