@@ -531,6 +531,7 @@ DocumentRoot '%(document_root)s'
 <IfDefine WSGI_DIRECTORY_INDEX>
     DirectoryIndex %(directory_index)s
 </IfDefine>
+<IfDefine !WSGI_STATIC_ONLY>
     RewriteEngine On
     RewriteCond %%{REQUEST_FILENAME} !-f
 <IfDefine WSGI_DIRECTORY_INDEX>
@@ -540,6 +541,7 @@ DocumentRoot '%(document_root)s'
     RewriteCond %%{REQUEST_URI} !/server-status
 </IfDefine>
     RewriteRule .* - [H=wsgi-handler]
+</IfDefine>
     Order allow,deny
     Allow from all
 </Directory>
@@ -1813,8 +1815,9 @@ def _cmd_setup_server(command, args, options):
     if not args:
         options['entry_point'] = os.path.join(options['server_root'],
                 'default.wsgi')
-        options['application_type'] = 'script'
-        options['enable_docs'] = True
+        if options['application_type'] != 'static':
+            options['application_type'] = 'script'
+            options['enable_docs'] = True
     elif options['application_type'] in ('script', 'paste'):
         options['entry_point'] = os.path.abspath(args[0])
     else:
@@ -2146,6 +2149,9 @@ def _cmd_setup_server(command, args, options):
 
     if options['allow_localhost']:
         options['httpd_arguments_list'].append('-DWSGI_ALLOW_LOCALHOST')
+
+    if options['application_type'] == 'static':
+        options['httpd_arguments_list'].append('-DWSGI_STATIC_ONLY')
 
     if options['server_metrics']:
         options['httpd_arguments_list'].append('-DWSGI_SERVER_METRICS')

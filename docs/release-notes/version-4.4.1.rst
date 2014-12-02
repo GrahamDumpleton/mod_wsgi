@@ -22,3 +22,10 @@ option, if you are using Apache 2.4 with dynamically loadable MPM modules
 and more than one option for the MPM is available, you can specify your
 preference for which is used. If not specified, then the precedence order
 for MPMs is 'event', 'worker' and finally 'prefork'.
+
+2. Added ``static`` as an option for ``--application-type`` when running
+``mod_wsgi-express``. When set as ``static``, only static files will be
+served. One can still set specific handler types for different extensions
+which may invoke a Python handler script, but there will be no global
+fallback WSGI application for any URLs that do not map to static files. In
+these cases a normal HTTP 404 response will be returned instead.
