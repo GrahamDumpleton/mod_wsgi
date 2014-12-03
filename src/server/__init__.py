@@ -550,6 +550,12 @@ DocumentRoot '%(document_root)s'
 WSGIErrorOverride On
 </IfDefine>
 
+<IfDefine WSGI_HOST_ACCESS>
+<Location />
+    WSGIAccessScript '%(host_access_script)s'
+</Location>
+</IfDefine>
+
 <IfDefine WSGI_AUTH_USER>
 <Location />
     AuthType %(auth_type)s
@@ -1554,6 +1560,9 @@ option_list = (
             'will be available at the /server-status sub URL. Defaults to '
             'being disabled.'),
 
+    optparse.make_option('--host-access-script', metavar='SCRIPT-PATH',
+            default=None, help='Specify a Python script file for '
+            'performing host access checks.'),
     optparse.make_option('--auth-user-script', metavar='SCRIPT-PATH',
             default=None, help='Specify a Python script file for '
             'performing user authentication.'),
@@ -1822,6 +1831,10 @@ def _cmd_setup_server(command, args, options):
         options['entry_point'] = os.path.abspath(args[0])
     else:
         options['entry_point'] = args[0]
+
+    if options['host_access_script']:
+        options['host_access_script'] = os.path.abspath(
+                options['host_access_script'])
 
     if options['auth_user_script']:
         options['auth_user_script'] = os.path.abspath(
@@ -2174,6 +2187,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_LISTENER_HOST')
     if options['error_override']:
         options['httpd_arguments_list'].append('-DWSGI_ERROR_OVERRIDE')
+    if options['host_access_script']:
+        options['httpd_arguments_list'].append('-DWSGI_HOST_ACCESS')
     if options['auth_user_script']:
         options['httpd_arguments_list'].append('-DWSGI_AUTH_USER')
     if options['auth_group_script']:

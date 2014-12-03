@@ -29,3 +29,9 @@ served. One can still set specific handler types for different extensions
 which may invoke a Python handler script, but there will be no global
 fallback WSGI application for any URLs that do not map to static files. In
 these cases a normal HTTP 404 response will be returned instead.
+
+3. Added ``--host-access-script`` option to ``mod_wsgi-express`` to allow
+a Python script to be provided which can control host access. This uses
+the ``WSGIAccessScript`` directive and the handler script should define an
+``allow_access(environ, host)`` function which returns ``True`` if access is
+allowed or ``False`` if blocked.
