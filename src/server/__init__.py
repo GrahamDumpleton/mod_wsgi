@@ -837,20 +837,29 @@ def start_reloader(interval=1.0):
 
 class PostMortemDebugger(object):
 
-    def __init__(self, application):
+    def __init__(self, application, startup):
         self.application = application
         self.generator = None
 
-    def debug_exception(self):
         import pdb
-        pdb.post_mortem()
+        self.debugger = pdb.Pdb()
+
+        if startup:
+            self.activate_console()
+
+    def activate_console(self):
+        self.debugger.set_trace(sys._getframe().f_back)
+
+    def run_post_mortem(self):
+        self.debugger.reset()
+        self.debugger.interaction(None, sys.exc_info()[2])
 
     def __call__(self, environ, start_response):
         try:
             self.generator = self.application(environ, start_response)
             return self
         except Exception:
-            self.debug_exception()
+            self.run_post_mortem()
             raise
 
     def __iter__(self):
@@ -874,7 +883,7 @@ class ApplicationHandler(object):
     def __init__(self, entry_point, application_type='script',
             callable_object='application', mount_point='/',
             with_newrelic_agent=False, debug_mode=False,
-            enable_debugger=False):
+            enable_debugger=False, debugger_startup=False):
 
         self.entry_point = entry_point
         self.application_type = application_type
@@ -920,7 +929,7 @@ class ApplicationHandler(object):
         self.enable_debugger = enable_debugger
 
         if enable_debugger:
-            self.setup_post_mortem_debugging()
+            self.setup_debugger(debugger_startup)
 
     def setup_newrelic_agent(self):
         import newrelic.agent
@@ -938,8 +947,8 @@ class ApplicationHandler(object):
         self.application = newrelic.agent.WSGIApplicationWrapper(
                 self.application)
 
-    def setup_post_mortem_debugging(self):
-        self.application = PostMortemDebugger(self.application)
+    def setup_debugger(self, startup):
+        self.application = PostMortemDebugger(self.application, startup)
 
     def reload_required(self, environ):
         if self.debug_mode:
@@ -1033,6 +1042,7 @@ newrelic_environment = '%(newrelic_environment)s'
 reload_on_changes = %(reload_on_changes)s
 debug_mode = %(debug_mode)s
 enable_debugger = %(enable_debugger)s
+debugger_startup = %(debugger_startup)s
 enable_coverage = %(enable_coverage)s
 coverage_directory = '%(coverage_directory)s'
 enable_profiler = %(enable_profiler)s
@@ -1079,7 +1089,8 @@ if with_newrelic_agent:
 handler = mod_wsgi.server.ApplicationHandler(entry_point,
         application_type=application_type, callable_object=callable_object,
         mount_point=mount_point, with_newrelic_agent=with_newrelic_agent,
-        debug_mode=debug_mode, enable_debugger=enable_debugger)
+        debug_mode=debug_mode, enable_debugger=enable_debugger,
+        debugger_startup=debugger_startup)
 
 reload_required = handler.reload_required
 handle_request = handler.handle_request
@@ -1736,10 +1747,15 @@ option_list = (
 
     optparse.make_option('--enable-debugger', action='store_true',
             default=False, help='Flag indicating whether post mortem '
-            'debugging of any exceptions which propogate out from the '
+            'debugging of any exceptions which propagate out from the '
             'WSGI application when running in debug mode should be '
             'performed. Post mortem debugging is performed using the '
             'Python debugger (pdb).'),
+    optparse.make_option('--debugger-startup', action='store_true',
+            default=False, help='Flag indicating whether when post '
+            'mortem debugging is enabled, that the debugger should '
+            'also be thrown into the interactive console on initial '
+            'startup of the server to allow breakpoints to be setup.'),
 
     optparse.make_option('--enable-coverage', action='store_true',
             default=False, help='Flag indicating whether coverage analysis '

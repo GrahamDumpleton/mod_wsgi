@@ -35,3 +35,8 @@ a Python script to be provided which can control host access. This uses
 the ``WSGIAccessScript`` directive and the handler script should define an
 ``allow_access(environ, host)`` function which returns ``True`` if access is
 allowed or ``False`` if blocked.
+
+4. Added ``--debugger-startup`` option to be used in conjunction with
+the ``--enable-debugger`` option of ``mod_wsgi-express`` when in debug mode.
+The option will cause the debugger to be activated on server start before
+any requests are handled to allow breakpoints to be set.
