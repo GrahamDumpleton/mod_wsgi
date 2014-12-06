@@ -1218,6 +1218,21 @@ WSGI_RUN_GROUP="${WSGI_RUN_GROUP:-%(group)s}"
 export WSGI_RUN_USER
 export WSGI_RUN_GROUP
 
+if [ `id -u` = "0" -a ${WSGI_RUN_USER} = "root" ]; then
+    cat << EOF
+
+WARNING: When running as the 'root' user, it is required that the options
+'--user' and '--group' be specified to mod_wsgi-express. These should
+define a non 'root' user and group under which the Apache child worker
+processes and mod_wsgi daemon processes should be run. Failure to specify
+these options will result in Apache and/or the mod_wsgi daemon processes
+failing to start. See the mod_wsgi-express documentation for further
+information on this restriction.
+
+EOF
+
+fi
+
 LANG='%(lang)s'
 LC_ALL='%(locale)s'
 
@@ -1233,7 +1248,7 @@ fi
 
 STATUSURL="http://%(host)s:%(port)s/server-status"
 
-if [ "x$ARGV" = "x" ] ; then
+if [ "x$ARGV" = "x" ]; then
     ARGV="-h"
 fi
 
