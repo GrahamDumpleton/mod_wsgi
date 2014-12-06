@@ -175,6 +175,27 @@ def _version():
         match = re.search(pattern, fp.read(), flags=re.MULTILINE)
     return match.group('version')
 
+# Final check to make sure a shared library for Python does actually
+# exist. Warn if one doesn't as we really want a shared library.
+
+SHARED_LIBRARY_WARNING = """
+WARNING: The Python installation you are using does not appear to have
+been installed with a shared library, or in the case of MacOS X, as a
+framework. Where these are not present, the compilation of mod_wsgi may
+fail, or if it does succeed, will result in extra memory being used by
+all processes at run time as a result of the static library needing to
+be loaded in its entirety to every process. It is highly recommended
+that you reinstall the Python installation being used from source code,
+supplying the '--enable-shared' option to the 'configure' script when
+configuring the source code prior to building and installing it.
+"""
+
+if (not get_python_config('Py_ENABLE_SHARED') and
+        not get_python_config('PYTHONFRAMEWORK')):
+    print(SHARED_LIBRARY_WARNING)
+
+# Now finally run distutils.
+
 setup(name = 'mod_wsgi',
     version = _version(),
     description = 'Installer for Apache/mod_wsgi.',
