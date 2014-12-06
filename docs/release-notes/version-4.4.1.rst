@@ -14,6 +14,15 @@ need updating. As most new changes relate to mod_wsgi daemon mode, which is
 not supported under Windows, you should keep using the last available
 binary for version 3.X on Windows instead.
 
+Features Changed
+----------------
+
+1. When an error occurs in writing back a response to the HTTP client,
+during the consumption of the iterable returned by the WSGI application,
+the message will now be logged at debug level rather than error level. Note
+that under Apache 2.2 it isn't possible to suppress the message generated
+by Apache itself from the core_output_filter, so that may still appear.
+
 New Features
 ------------
 

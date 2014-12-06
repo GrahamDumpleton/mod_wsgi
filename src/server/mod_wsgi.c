@@ -2236,11 +2236,24 @@ static int Adapter_output(AdapterObject *self, const char *data,
             char status_buffer[512];
             const char *error_message;
 
-            error_message = apr_psprintf(r->pool, "Apache/mod_wsgi failed "
-                    "to write response data: %s.", apr_strerror(rv,
-                    status_buffer, sizeof(status_buffer)-1), NULL);
+            if (!exception_when_aborted) {
+                error_message = apr_psprintf(r->pool, "Failed to write "
+                        "response data: %s", apr_strerror(rv, status_buffer,
+                        sizeof(status_buffer)-1), NULL);
 
-            PyErr_SetString(PyExc_IOError, error_message);
+                ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, self->r,
+                              "mod_wsgi (pid=%d): %s.", getpid(),
+                              error_message);
+            }
+            else {
+                error_message = apr_psprintf(r->pool, "Apache/mod_wsgi "
+                        "failed to write response data: %s",
+                        apr_strerror(rv, status_buffer,
+                        sizeof(status_buffer)-1), NULL);
+
+                PyErr_SetString(PyExc_IOError, error_message);
+            }
+
             return 0;
         }
 
