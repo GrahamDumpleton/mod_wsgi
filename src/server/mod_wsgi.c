@@ -11818,7 +11818,7 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
     if (data) {
         ap_log_error(APLOG_MARK, APLOG_CRIT, 0, NULL,
                      "mod_wsgi (pid=%d): The mod_python module can "
-                     "not be used on conjunction with mod_wsgi 4.0+. "
+                     "not be used in conjunction with mod_wsgi 4.0+. "
                      "Remove the mod_python module from the Apache "
                      "configuration.", getpid());
 
