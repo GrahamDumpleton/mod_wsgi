@@ -49,3 +49,12 @@ allowed or ``False`` if blocked.
 the ``--enable-debugger`` option of ``mod_wsgi-express`` when in debug mode.
 The option will cause the debugger to be activated on server start before
 any requests are handled to allow breakpoints to be set.
+
+5. Added a ``socket-user`` option to ``WSGIDaemonProcess`` to allow the
+owner of the UNIX listener socket for the daemon process group to be
+overridden. This can be used when using mod_ruid2 to change the owner of
+the socket from the default Apache user, to the user under which mod_ruid2
+will run Apache when handling requests. This is necessary otherwise the
+Apache child worker process will not be able to connect to the listener
+socket for the mod_wsgi daemon process to proxy the request to the WSGI
+application.

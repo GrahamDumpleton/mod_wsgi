@@ -6592,6 +6592,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int socket_timeout = 0;
     int queue_timeout = 0;
 
+    const char *socket_user = NULL;
+
     int listen_backlog = WSGI_LISTEN_BACKLOG;
 
     const char *display_name = NULL;
@@ -6873,6 +6875,25 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                        "or 0 for default.";
             }
         }
+        else if (!strcmp(option, "socket-user")) {
+            uid_t socket_uid;
+
+            if (!*value)
+                return "Invalid socket user for WSGI daemon process.";
+
+            socket_uid = ap_uname2id(value);
+
+            if (*value == '#') {
+                struct passwd *entry = NULL;
+
+                if ((entry = getpwuid(socket_uid)) == NULL)
+                    return "Couldn't determine user name from socket user.";
+
+                value = entry->pw_name;
+            }
+
+            socket_user = value;
+        }
         else if (!strcmp(option, "script-user")) {
             uid_t script_uid;
 
@@ -7051,6 +7072,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->connect_timeout = apr_time_from_sec(connect_timeout);
     entry->socket_timeout = apr_time_from_sec(socket_timeout);
     entry->queue_timeout = apr_time_from_sec(queue_timeout);
+
+    entry->socket_user = apr_pstrdup(cmd->pool, socket_user);
 
     entry->listen_backlog = listen_backlog;
 
@@ -7643,14 +7666,19 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
     if (!geteuid()) {
 #if defined(MPM_ITK) || defined(ITK_MPM)
-        if (chown(process->socket_path, process->uid, -1) < 0) {
+        uid_t socket_uid = process->uid;
 #else
-        if (chown(process->socket_path, ap_unixd_config.user_id, -1) < 0) {
+        uid_t socket_uid = ap_unixd_config.user_id;
 #endif
+
+        if (process->socket_user)
+            socket_uid = ap_uname2id(process->socket_user);
+
+        if (chown(process->socket_path, socket_uid, -1) < 0) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                          "mod_wsgi (pid=%d): Couldn't change owner of unix "
-                         "domain socket '%s'.", getpid(),
-                         process->socket_path);
+                         "domain socket '%s' to uid=%ld.", getpid(),
+                         process->socket_path, (long)socket_uid);
             return -1;
         }
     }
