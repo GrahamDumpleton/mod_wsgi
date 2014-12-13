@@ -934,16 +934,23 @@ static InputObject *newInputObject(request_rec *r)
 
 static void Input_dealloc(InputObject *self)
 {
-    if (self->bb) {
-        Py_BEGIN_ALLOW_THREADS
-        apr_brigade_destroy(self->bb);
-        Py_END_ALLOW_THREADS
-    }
-
     if (self->buffer)
         free(self->buffer);
 
     PyObject_Del(self);
+}
+
+static void Input_finish(InputObject *self)
+{
+    if (self->bb) {
+        Py_BEGIN_ALLOW_THREADS
+        apr_brigade_destroy(self->bb);
+        Py_END_ALLOW_THREADS
+
+        self->bb = NULL;
+    }
+
+    self->r = NULL;
 }
 
 static PyObject *Input_close(InputObject *self, PyObject *args)
@@ -3688,7 +3695,8 @@ static int wsgi_execute_script(request_rec *r)
                  */
 
                 adapter->r = NULL;
-                adapter->input->r = NULL;
+
+                Input_finish(adapter->input);
 
                 /* Close the log object so data is flushed. */
 

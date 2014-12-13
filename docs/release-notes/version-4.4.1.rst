@@ -14,6 +14,17 @@ need updating. As most new changes relate to mod_wsgi daemon mode, which is
 not supported under Windows, you should keep using the last available
 binary for version 3.X on Windows instead.
 
+Bugs Fixed
+----------
+
+1. Process crashes could occur when request content had been consumed by
+the WSGI application. The trigger was when the Python ``wsgi.input`` was
+still in existence after the web request had finished. The destruction of
+the ``wsgi.input`` object was accessing memory which had already been
+released back to the Apache memory pools and potentially reused. This could
+cause crashes or other unexplained behaviour. This issue was introduced in
+version 4.4.0 of mod_wsgi.
+
 Features Changed
 ----------------
 
