@@ -1,0 +1,8 @@
+APACHE_ROOTDIR = c:\Apache24
+APACHE_VERSION = 24
+
+PYTHON_ROOTDIR = c:\Python33
+PYTHON_VERSION = 33
+
+include common.mk
+
