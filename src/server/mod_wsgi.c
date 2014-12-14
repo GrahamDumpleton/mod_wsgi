@@ -9772,8 +9772,9 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
             else {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
                              "mod_wsgi (pid=%d): Unable to connect to "
-                             "WSGI daemon process '%s' on '%s'.",
-                             getpid(), daemon->name, daemon->socket_path);
+                             "WSGI daemon process '%s' on '%s' as user "
+                             "with uid=%ld.", getpid(), daemon->name,
+                             daemon->socket_path, (long)geteuid());
 
                 apr_socket_close(daemon->socket);
 
