@@ -34,6 +34,11 @@ the message will now be logged at debug level rather than error level. Note
 that under Apache 2.2 it isn't possible to suppress the message generated
 by Apache itself from the core_output_filter, so that may still appear.
 
+2. The ``--profiler-output-file`` option for ``mod_wsgi-express`` was
+changed to ``--profiler-directory`` and now refers to a directory, with
+individual pstats files being added to the directory for each session
+rather than reusing the same name all the time.
+
 New Features
 ------------
 

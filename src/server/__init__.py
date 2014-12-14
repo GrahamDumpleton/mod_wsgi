@@ -1027,6 +1027,8 @@ WSGI_HANDLER_SCRIPT = """
 import os
 import sys
 import atexit
+import time
+
 import mod_wsgi.server
 
 working_directory = '%(working_directory)s'
@@ -1046,7 +1048,7 @@ debugger_startup = %(debugger_startup)s
 enable_coverage = %(enable_coverage)s
 coverage_directory = '%(coverage_directory)s'
 enable_profiler = %(enable_profiler)s
-profiler_output_file = '%(profiler_output_file)s'
+profiler_directory = '%(profiler_directory)s'
 
 if python_paths:
     sys.path.extend(python_paths)
@@ -1072,7 +1074,9 @@ if enable_coverage:
 
 def output_profiler_data():
     profiler_info.disable()
-    profiler_info.dump_stats(profiler_output_file)
+    output_file = '%%s-%%d.pstats' %% (int(time.time()*1000000), os.getpid())
+    output_file = os.path.join(profiler_directory, output_file)
+    profiler_info.dump_stats(output_file)
 
 if enable_profiler:
     from cProfile import Profile
@@ -1783,9 +1787,10 @@ option_list = (
     optparse.make_option('--enable-profiler', action='store_true',
             default=False, help='Flag indicating whether code profiling '
             'is enabled when running in debug mode.'),
-    optparse.make_option('--profiler-output-file', metavar='FILE-PATH',
-            default='', help='Override the path to the file into which '
-            'profiler data will be written when enabled under debug mode.'),
+    optparse.make_option('--profiler-directory', metavar='DIRECTORY-PATH',
+            default='', help='Override the path to the directory into '
+            'which profiler data will be written when enabled under debug '
+            'mode.'),
 
     optparse.make_option('--setup-only', action='store_true', default=False,
             help='Flag indicating that after the configuration files have '
@@ -2162,12 +2167,17 @@ def _cmd_setup_server(command, args, options):
                 pass
 
         if options['enable_profiler']:
-            if not options['profiler_output_file']:
-                options['profiler_output_file'] = os.path.join(
-                        options['server_root'], 'pstats.dat')
+            if not options['profiler_directory']:
+                options['profiler_directory'] = os.path.join(
+                        options['server_root'], 'pstats')
             else:
-                options['profiler_output_file'] = os.path.abspath(
-                        options['profiler_output_file'])
+                options['profiler_directory'] = os.path.abspath(
+                        options['profiler_directory'])
+
+            try:
+                os.mkdir(options['profiler_directory'])
+            except Exception:
+                pass
 
     else:
         options['enable_debugger'] = False
@@ -2270,7 +2280,7 @@ def _cmd_setup_server(command, args, options):
                 options['coverage_directory'], 'index.html'))
 
     if options['enable_profiler']:
-        print('Profiler Output   :', options['profiler_output_file'])
+        print('Profiler Output   :', options['profiler_directory'])
 
     if options['envvars_script']:
         print('Environ Variables :', options['envvars_script'])
