@@ -13,6 +13,9 @@ import imp
 import pwd
 import grp
 import re
+import pprint
+import time
+import traceback
 
 try:
     import Queue as queue
@@ -878,12 +881,115 @@ class PostMortemDebugger(object):
             self.debug_exception()
             raise
 
+class RequestRecorder(object):
+
+    def __init__(self, application, savedir):
+        self.application = application
+        self.savedir = savedir
+        self.lock = threading.Lock()
+        self.pid = os.getpid()
+        self.count = 0
+
+    def __call__(self, environ, start_response):
+        with self.lock:
+            self.count += 1
+            count = self.count
+
+        key = "%s-%s-%s" % (int(time.time()*1000000), self.pid, count)
+
+        iheaders = os.path.join(self.savedir, key + ".iheaders")
+        iheaders_fp = open(iheaders, 'w')
+
+        icontent = os.path.join(self.savedir, key + ".icontent")
+        icontent_fp = open(icontent, 'w+b')
+
+        oheaders = os.path.join(self.savedir, key + ".oheaders")
+        oheaders_fp = open(oheaders, 'w')
+
+        ocontent = os.path.join(self.savedir, key + ".ocontent")
+        ocontent_fp = open(ocontent, 'w+b')
+
+        oaexcept = os.path.join(self.savedir, key + ".oaexcept")
+        oaexcept_fp = open(oaexcept, 'w')
+
+        orexcept = os.path.join(self.savedir, key + ".orexcept")
+        orexcept_fp = open(orexcept, 'w')
+
+        ofexcept = os.path.join(self.savedir, key + ".ofexcept")
+        ofexcept_fp = open(ofexcept, 'w')
+
+        errors = environ['wsgi.errors']
+        pprint.pprint(environ, stream=iheaders_fp)
+        iheaders_fp.close()
+
+        input = environ['wsgi.input']
+
+        data = input.read(8192)
+
+        while data:
+            icontent_fp.write(data)
+            data = input.read(8192)
+
+        icontent_fp.flush()
+        icontent_fp.seek(0, os.SEEK_SET)
+
+        environ['wsgi.input'] = icontent_fp
+
+        def _start_response(status, response_headers, *args):
+            pprint.pprint(((status, response_headers)+args),
+                    stream=oheaders_fp)
+
+            _write = start_response(status, response_headers, *args)
+
+            def write(self, data):
+                ocontent_fp.write(data)
+                ocontent_fp.flush()
+                return _write(data)
+
+            return write
+
+        try:
+            try:
+                result = self.application(environ, _start_response)
+
+            except:
+                traceback.print_exception(*sys.exc_info(), file=oaexcept_fp)
+                raise
+
+            try:
+                for data in result:
+                    ocontent_fp.write(data)
+                    ocontent_fp.flush()
+                    yield data
+
+            except:
+                traceback.print_exception(*sys.exc_info(), file=orexcept_fp)
+                raise
+
+            finally:
+                try:
+                    if hasattr(result, 'close'):
+                        result.close()
+
+                except:
+                    traceback.print_exception(*sys.exc_info(),
+                            file=ofexcept_fp)
+                    raise
+
+        finally:
+            oheaders_fp.close()
+            ocontent_fp.close()
+            oaexcept_fp.close()
+            orexcept_fp.close()
+            ofexcept_fp.close()
+
 class ApplicationHandler(object):
 
     def __init__(self, entry_point, application_type='script',
             callable_object='application', mount_point='/',
             with_newrelic_agent=False, debug_mode=False,
-            enable_debugger=False, debugger_startup=False):
+            enable_debugger=False, debugger_startup=False,
+            enable_recorder=False, recorder_directory=None):
 
         self.entry_point = entry_point
         self.application_type = application_type
@@ -931,6 +1037,9 @@ class ApplicationHandler(object):
         if enable_debugger:
             self.setup_debugger(debugger_startup)
 
+        if enable_recorder:
+            self.setup_recorder(recorder_directory)
+
     def setup_newrelic_agent(self):
         import newrelic.agent
 
@@ -949,6 +1058,9 @@ class ApplicationHandler(object):
 
     def setup_debugger(self, startup):
         self.application = PostMortemDebugger(self.application, startup)
+
+    def setup_recorder(self, savedir):
+        self.application = RequestRecorder(self.application, savedir)
 
     def reload_required(self, environ):
         if self.debug_mode:
@@ -1049,6 +1161,8 @@ enable_coverage = %(enable_coverage)s
 coverage_directory = '%(coverage_directory)s'
 enable_profiler = %(enable_profiler)s
 profiler_directory = '%(profiler_directory)s'
+enable_recorder = %(enable_recorder)s
+recorder_directory = '%(recorder_directory)s'
 
 if python_paths:
     sys.path.extend(python_paths)
@@ -1094,7 +1208,8 @@ handler = mod_wsgi.server.ApplicationHandler(entry_point,
         application_type=application_type, callable_object=callable_object,
         mount_point=mount_point, with_newrelic_agent=with_newrelic_agent,
         debug_mode=debug_mode, enable_debugger=enable_debugger,
-        debugger_startup=debugger_startup)
+        debugger_startup=debugger_startup, enable_recorder=enable_recorder,
+        recorder_directory=recorder_directory)
 
 reload_required = handler.reload_required
 handle_request = handler.handle_request
@@ -1792,6 +1907,14 @@ option_list = (
             'which profiler data will be written when enabled under debug '
             'mode.'),
 
+    optparse.make_option('--enable-recorder', action='store_true',
+            default=False, help='Flag indicating whether recording of '
+            'requests is enabled when running in debug mode.'),
+    optparse.make_option('--recorder-directory', metavar='DIRECTORY-PATH',
+            default='', help='Override the path to the directory into '
+            'which recorder data will be written when enabled under debug '
+            'mode.'),
+
     optparse.make_option('--setup-only', action='store_true', default=False,
             help='Flag indicating that after the configuration files have '
             'been setup, that the command should then exit and not go on '
@@ -2179,10 +2302,24 @@ def _cmd_setup_server(command, args, options):
             except Exception:
                 pass
 
+        if options['enable_recorder']:
+            if not options['recorder_directory']:
+                options['recorder_directory'] = os.path.join(
+                        options['server_root'], 'archive')
+            else:
+                options['recorder_directory'] = os.path.abspath(
+                        options['recorder_directory'])
+
+            try:
+                os.mkdir(options['recorder_directory'])
+            except Exception:
+                pass
+
     else:
         options['enable_debugger'] = False
         options['enable_coverage'] = False
         options['enable_profiler'] = False
+        options['enable_recorder'] = False
 
     options['parent_domain'] = 'unspecified'
 
@@ -2281,6 +2418,9 @@ def _cmd_setup_server(command, args, options):
 
     if options['enable_profiler']:
         print('Profiler Output   :', options['profiler_directory'])
+
+    if options['enable_recorder']:
+        print('Recorder Output   :', options['recorder_directory'])
 
     if options['envvars_script']:
         print('Environ Variables :', options['envvars_script'])

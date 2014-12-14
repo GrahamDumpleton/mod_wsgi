@@ -74,3 +74,6 @@ will run Apache when handling requests. This is necessary otherwise the
 Apache child worker process will not be able to connect to the listener
 socket for the mod_wsgi daemon process to proxy the request to the WSGI
 application.
+
+6. Added a ``--enable-recorder`` option for enabling request recording when
+also using debug mode.
