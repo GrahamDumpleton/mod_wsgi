@@ -934,16 +934,23 @@ static InputObject *newInputObject(request_rec *r)
 
 static void Input_dealloc(InputObject *self)
 {
-    if (self->bb) {
-        Py_BEGIN_ALLOW_THREADS
-        apr_brigade_destroy(self->bb);
-        Py_END_ALLOW_THREADS
-    }
-
     if (self->buffer)
         free(self->buffer);
 
     PyObject_Del(self);
+}
+
+static void Input_finish(InputObject *self)
+{
+    if (self->bb) {
+        Py_BEGIN_ALLOW_THREADS
+        apr_brigade_destroy(self->bb);
+        Py_END_ALLOW_THREADS
+
+        self->bb = NULL;
+    }
+
+    self->r = NULL;
 }
 
 static PyObject *Input_close(InputObject *self, PyObject *args)
@@ -2236,11 +2243,24 @@ static int Adapter_output(AdapterObject *self, const char *data,
             char status_buffer[512];
             const char *error_message;
 
-            error_message = apr_psprintf(r->pool, "Apache/mod_wsgi failed "
-                    "to write response data: %s.", apr_strerror(rv,
-                    status_buffer, sizeof(status_buffer)-1), NULL);
+            if (!exception_when_aborted) {
+                error_message = apr_psprintf(r->pool, "Failed to write "
+                        "response data: %s", apr_strerror(rv, status_buffer,
+                        sizeof(status_buffer)-1), NULL);
 
-            PyErr_SetString(PyExc_IOError, error_message);
+                ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, self->r,
+                              "mod_wsgi (pid=%d): %s.", getpid(),
+                              error_message);
+            }
+            else {
+                error_message = apr_psprintf(r->pool, "Apache/mod_wsgi "
+                        "failed to write response data: %s",
+                        apr_strerror(rv, status_buffer,
+                        sizeof(status_buffer)-1), NULL);
+
+                PyErr_SetString(PyExc_IOError, error_message);
+            }
+
             return 0;
         }
 
@@ -3675,7 +3695,8 @@ static int wsgi_execute_script(request_rec *r)
                  */
 
                 adapter->r = NULL;
-                adapter->input->r = NULL;
+
+                Input_finish(adapter->input);
 
                 /* Close the log object so data is flushed. */
 
@@ -6579,6 +6600,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int socket_timeout = 0;
     int queue_timeout = 0;
 
+    const char *socket_user = NULL;
+
     int listen_backlog = WSGI_LISTEN_BACKLOG;
 
     const char *display_name = NULL;
@@ -6860,6 +6883,25 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                        "or 0 for default.";
             }
         }
+        else if (!strcmp(option, "socket-user")) {
+            uid_t socket_uid;
+
+            if (!*value)
+                return "Invalid socket user for WSGI daemon process.";
+
+            socket_uid = ap_uname2id(value);
+
+            if (*value == '#') {
+                struct passwd *entry = NULL;
+
+                if ((entry = getpwuid(socket_uid)) == NULL)
+                    return "Couldn't determine user name from socket user.";
+
+                value = entry->pw_name;
+            }
+
+            socket_user = value;
+        }
         else if (!strcmp(option, "script-user")) {
             uid_t script_uid;
 
@@ -7038,6 +7080,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->connect_timeout = apr_time_from_sec(connect_timeout);
     entry->socket_timeout = apr_time_from_sec(socket_timeout);
     entry->queue_timeout = apr_time_from_sec(queue_timeout);
+
+    entry->socket_user = apr_pstrdup(cmd->pool, socket_user);
 
     entry->listen_backlog = listen_backlog;
 
@@ -7630,14 +7674,19 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
     if (!geteuid()) {
 #if defined(MPM_ITK) || defined(ITK_MPM)
-        if (chown(process->socket_path, process->uid, -1) < 0) {
+        uid_t socket_uid = process->uid;
 #else
-        if (chown(process->socket_path, ap_unixd_config.user_id, -1) < 0) {
+        uid_t socket_uid = ap_unixd_config.user_id;
 #endif
+
+        if (process->socket_user)
+            socket_uid = ap_uname2id(process->socket_user);
+
+        if (chown(process->socket_path, socket_uid, -1) < 0) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                          "mod_wsgi (pid=%d): Couldn't change owner of unix "
-                         "domain socket '%s'.", getpid(),
-                         process->socket_path);
+                         "domain socket '%s' to uid=%ld.", getpid(),
+                         process->socket_path, (long)socket_uid);
             return -1;
         }
     }
@@ -9723,8 +9772,9 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
             else {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
                              "mod_wsgi (pid=%d): Unable to connect to "
-                             "WSGI daemon process '%s' on '%s'.",
-                             getpid(), daemon->name, daemon->socket_path);
+                             "WSGI daemon process '%s' on '%s' as user "
+                             "with uid=%ld.", getpid(), daemon->name,
+                             daemon->socket_path, (long)geteuid());
 
                 apr_socket_close(daemon->socket);
 
@@ -11805,7 +11855,7 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
     if (data) {
         ap_log_error(APLOG_MARK, APLOG_CRIT, 0, NULL,
                      "mod_wsgi (pid=%d): The mod_python module can "
-                     "not be used on conjunction with mod_wsgi 4.0+. "
+                     "not be used in conjunction with mod_wsgi 4.0+. "
                      "Remove the mod_python module from the Apache "
                      "configuration.", getpid());
 

@@ -13,6 +13,9 @@ import imp
 import pwd
 import grp
 import re
+import pprint
+import time
+import traceback
 
 try:
     import Queue as queue
@@ -531,6 +534,7 @@ DocumentRoot '%(document_root)s'
 <IfDefine WSGI_DIRECTORY_INDEX>
     DirectoryIndex %(directory_index)s
 </IfDefine>
+<IfDefine !WSGI_STATIC_ONLY>
     RewriteEngine On
     RewriteCond %%{REQUEST_FILENAME} !-f
 <IfDefine WSGI_DIRECTORY_INDEX>
@@ -540,12 +544,19 @@ DocumentRoot '%(document_root)s'
     RewriteCond %%{REQUEST_URI} !/server-status
 </IfDefine>
     RewriteRule .* - [H=wsgi-handler]
+</IfDefine>
     Order allow,deny
     Allow from all
 </Directory>
 
 <IfDefine WSGI_ERROR_OVERRIDE>
 WSGIErrorOverride On
+</IfDefine>
+
+<IfDefine WSGI_HOST_ACCESS>
+<Location />
+    WSGIAccessScript '%(host_access_script)s'
+</Location>
 </IfDefine>
 
 <IfDefine WSGI_AUTH_USER>
@@ -829,20 +840,29 @@ def start_reloader(interval=1.0):
 
 class PostMortemDebugger(object):
 
-    def __init__(self, application):
+    def __init__(self, application, startup):
         self.application = application
         self.generator = None
 
-    def debug_exception(self):
         import pdb
-        pdb.post_mortem()
+        self.debugger = pdb.Pdb()
+
+        if startup:
+            self.activate_console()
+
+    def activate_console(self):
+        self.debugger.set_trace(sys._getframe().f_back)
+
+    def run_post_mortem(self):
+        self.debugger.reset()
+        self.debugger.interaction(None, sys.exc_info()[2])
 
     def __call__(self, environ, start_response):
         try:
             self.generator = self.application(environ, start_response)
             return self
         except Exception:
-            self.debug_exception()
+            self.run_post_mortem()
             raise
 
     def __iter__(self):
@@ -861,12 +881,115 @@ class PostMortemDebugger(object):
             self.debug_exception()
             raise
 
+class RequestRecorder(object):
+
+    def __init__(self, application, savedir):
+        self.application = application
+        self.savedir = savedir
+        self.lock = threading.Lock()
+        self.pid = os.getpid()
+        self.count = 0
+
+    def __call__(self, environ, start_response):
+        with self.lock:
+            self.count += 1
+            count = self.count
+
+        key = "%s-%s-%s" % (int(time.time()*1000000), self.pid, count)
+
+        iheaders = os.path.join(self.savedir, key + ".iheaders")
+        iheaders_fp = open(iheaders, 'w')
+
+        icontent = os.path.join(self.savedir, key + ".icontent")
+        icontent_fp = open(icontent, 'w+b')
+
+        oheaders = os.path.join(self.savedir, key + ".oheaders")
+        oheaders_fp = open(oheaders, 'w')
+
+        ocontent = os.path.join(self.savedir, key + ".ocontent")
+        ocontent_fp = open(ocontent, 'w+b')
+
+        oaexcept = os.path.join(self.savedir, key + ".oaexcept")
+        oaexcept_fp = open(oaexcept, 'w')
+
+        orexcept = os.path.join(self.savedir, key + ".orexcept")
+        orexcept_fp = open(orexcept, 'w')
+
+        ofexcept = os.path.join(self.savedir, key + ".ofexcept")
+        ofexcept_fp = open(ofexcept, 'w')
+
+        errors = environ['wsgi.errors']
+        pprint.pprint(environ, stream=iheaders_fp)
+        iheaders_fp.close()
+
+        input = environ['wsgi.input']
+
+        data = input.read(8192)
+
+        while data:
+            icontent_fp.write(data)
+            data = input.read(8192)
+
+        icontent_fp.flush()
+        icontent_fp.seek(0, os.SEEK_SET)
+
+        environ['wsgi.input'] = icontent_fp
+
+        def _start_response(status, response_headers, *args):
+            pprint.pprint(((status, response_headers)+args),
+                    stream=oheaders_fp)
+
+            _write = start_response(status, response_headers, *args)
+
+            def write(self, data):
+                ocontent_fp.write(data)
+                ocontent_fp.flush()
+                return _write(data)
+
+            return write
+
+        try:
+            try:
+                result = self.application(environ, _start_response)
+
+            except:
+                traceback.print_exception(*sys.exc_info(), file=oaexcept_fp)
+                raise
+
+            try:
+                for data in result:
+                    ocontent_fp.write(data)
+                    ocontent_fp.flush()
+                    yield data
+
+            except:
+                traceback.print_exception(*sys.exc_info(), file=orexcept_fp)
+                raise
+
+            finally:
+                try:
+                    if hasattr(result, 'close'):
+                        result.close()
+
+                except:
+                    traceback.print_exception(*sys.exc_info(),
+                            file=ofexcept_fp)
+                    raise
+
+        finally:
+            oheaders_fp.close()
+            ocontent_fp.close()
+            oaexcept_fp.close()
+            orexcept_fp.close()
+            ofexcept_fp.close()
+
 class ApplicationHandler(object):
 
     def __init__(self, entry_point, application_type='script',
             callable_object='application', mount_point='/',
             with_newrelic_agent=False, debug_mode=False,
-            enable_debugger=False):
+            enable_debugger=False, debugger_startup=False,
+            enable_recorder=False, recorder_directory=None):
 
         self.entry_point = entry_point
         self.application_type = application_type
@@ -912,7 +1035,10 @@ class ApplicationHandler(object):
         self.enable_debugger = enable_debugger
 
         if enable_debugger:
-            self.setup_post_mortem_debugging()
+            self.setup_debugger(debugger_startup)
+
+        if enable_recorder:
+            self.setup_recorder(recorder_directory)
 
     def setup_newrelic_agent(self):
         import newrelic.agent
@@ -930,8 +1056,11 @@ class ApplicationHandler(object):
         self.application = newrelic.agent.WSGIApplicationWrapper(
                 self.application)
 
-    def setup_post_mortem_debugging(self):
-        self.application = PostMortemDebugger(self.application)
+    def setup_debugger(self, startup):
+        self.application = PostMortemDebugger(self.application, startup)
+
+    def setup_recorder(self, savedir):
+        self.application = RequestRecorder(self.application, savedir)
 
     def reload_required(self, environ):
         if self.debug_mode:
@@ -1010,6 +1139,8 @@ WSGI_HANDLER_SCRIPT = """
 import os
 import sys
 import atexit
+import time
+
 import mod_wsgi.server
 
 working_directory = '%(working_directory)s'
@@ -1025,10 +1156,13 @@ newrelic_environment = '%(newrelic_environment)s'
 reload_on_changes = %(reload_on_changes)s
 debug_mode = %(debug_mode)s
 enable_debugger = %(enable_debugger)s
+debugger_startup = %(debugger_startup)s
 enable_coverage = %(enable_coverage)s
 coverage_directory = '%(coverage_directory)s'
 enable_profiler = %(enable_profiler)s
-profiler_output_file = '%(profiler_output_file)s'
+profiler_directory = '%(profiler_directory)s'
+enable_recorder = %(enable_recorder)s
+recorder_directory = '%(recorder_directory)s'
 
 if python_paths:
     sys.path.extend(python_paths)
@@ -1054,7 +1188,9 @@ if enable_coverage:
 
 def output_profiler_data():
     profiler_info.disable()
-    profiler_info.dump_stats(profiler_output_file)
+    output_file = '%%s-%%d.pstats' %% (int(time.time()*1000000), os.getpid())
+    output_file = os.path.join(profiler_directory, output_file)
+    profiler_info.dump_stats(output_file)
 
 if enable_profiler:
     from cProfile import Profile
@@ -1071,7 +1207,9 @@ if with_newrelic_agent:
 handler = mod_wsgi.server.ApplicationHandler(entry_point,
         application_type=application_type, callable_object=callable_object,
         mount_point=mount_point, with_newrelic_agent=with_newrelic_agent,
-        debug_mode=debug_mode, enable_debugger=enable_debugger)
+        debug_mode=debug_mode, enable_debugger=enable_debugger,
+        debugger_startup=debugger_startup, enable_recorder=enable_recorder,
+        recorder_directory=recorder_directory)
 
 reload_required = handler.reload_required
 handle_request = handler.handle_request
@@ -1199,6 +1337,21 @@ WSGI_RUN_GROUP="${WSGI_RUN_GROUP:-%(group)s}"
 export WSGI_RUN_USER
 export WSGI_RUN_GROUP
 
+if [ `id -u` = "0" -a ${WSGI_RUN_USER} = "root" ]; then
+    cat << EOF
+
+WARNING: When running as the 'root' user, it is required that the options
+'--user' and '--group' be specified to mod_wsgi-express. These should
+define a non 'root' user and group under which the Apache child worker
+processes and mod_wsgi daemon processes should be run. Failure to specify
+these options will result in Apache and/or the mod_wsgi daemon processes
+failing to start. See the mod_wsgi-express documentation for further
+information on this restriction.
+
+EOF
+
+fi
+
 LANG='%(lang)s'
 LC_ALL='%(locale)s'
 
@@ -1214,7 +1367,7 @@ fi
 
 STATUSURL="http://%(host)s:%(port)s/server-status"
 
-if [ "x$ARGV" = "x" ] ; then
+if [ "x$ARGV" = "x" ]; then
     ARGV="-h"
 fi
 
@@ -1552,6 +1705,9 @@ option_list = (
             'will be available at the /server-status sub URL. Defaults to '
             'being disabled.'),
 
+    optparse.make_option('--host-access-script', metavar='SCRIPT-PATH',
+            default=None, help='Specify a Python script file for '
+            'performing host access checks.'),
     optparse.make_option('--auth-user-script', metavar='SCRIPT-PATH',
             default=None, help='Specify a Python script file for '
             'performing user authentication.'),
@@ -1615,6 +1771,14 @@ option_list = (
             help='Specify an alternate directory for where the generated '
             'web server configuration, startup files and logs will be '
             'stored. Defaults to a sub directory of /tmp.'),
+
+    optparse.make_option('--server-mpm', action='append',
+            dest='server_mpm_variables', metavar='NAME', help='Specify '
+            'preferred MPM to use when using Apache 2.4 with dynamically '
+            'loadable MPMs and more than one is available. By default '
+            'the MPM precedence order when no preference is given is '
+            '\"event\", \"worker" and \"prefork\".'),
+
     optparse.make_option('--log-directory', metavar='DIRECTORY-PATH',
             help='Specify an alternate directory for where the log files '
             'will be stored. Defaults to the server root directory.'),
@@ -1717,10 +1881,15 @@ option_list = (
 
     optparse.make_option('--enable-debugger', action='store_true',
             default=False, help='Flag indicating whether post mortem '
-            'debugging of any exceptions which propogate out from the '
+            'debugging of any exceptions which propagate out from the '
             'WSGI application when running in debug mode should be '
             'performed. Post mortem debugging is performed using the '
             'Python debugger (pdb).'),
+    optparse.make_option('--debugger-startup', action='store_true',
+            default=False, help='Flag indicating whether when post '
+            'mortem debugging is enabled, that the debugger should '
+            'also be thrown into the interactive console on initial '
+            'startup of the server to allow breakpoints to be setup.'),
 
     optparse.make_option('--enable-coverage', action='store_true',
             default=False, help='Flag indicating whether coverage analysis '
@@ -1733,9 +1902,18 @@ option_list = (
     optparse.make_option('--enable-profiler', action='store_true',
             default=False, help='Flag indicating whether code profiling '
             'is enabled when running in debug mode.'),
-    optparse.make_option('--profiler-output-file', metavar='FILE-PATH',
-            default='', help='Override the path to the file into which '
-            'profiler data will be written when enabled under debug mode.'),
+    optparse.make_option('--profiler-directory', metavar='DIRECTORY-PATH',
+            default='', help='Override the path to the directory into '
+            'which profiler data will be written when enabled under debug '
+            'mode.'),
+
+    optparse.make_option('--enable-recorder', action='store_true',
+            default=False, help='Flag indicating whether recording of '
+            'requests is enabled when running in debug mode.'),
+    optparse.make_option('--recorder-directory', metavar='DIRECTORY-PATH',
+            default='', help='Override the path to the directory into '
+            'which recorder data will be written when enabled under debug '
+            'mode.'),
 
     optparse.make_option('--setup-only', action='store_true', default=False,
             help='Flag indicating that after the configuration files have '
@@ -1758,17 +1936,18 @@ def cmd_setup_server(params):
 
     _cmd_setup_server('setup-server', args, vars(options))
 
-def _mpm_module_defines(modules_directory):
+def _mpm_module_defines(modules_directory, preferred=None):
     result = []
     workers = ['event', 'worker', 'prefork']
     found = False
     for name in workers:
-        if os.path.exists(os.path.join(modules_directory,
-                'mod_mpm_%s.so' % name)):
-            if not found:
-                result.append('-DWSGI_MPM_ENABLE_%s_MODULE' % name.upper())
-                found = True
-            result.append('-DWSGI_MPM_EXISTS_%s_MODULE' % name.upper())
+        if not preferred or name in preferred:
+            if os.path.exists(os.path.join(modules_directory,
+                    'mod_mpm_%s.so' % name)):
+                if not found:
+                    result.append('-DWSGI_MPM_ENABLE_%s_MODULE' % name.upper())
+                    found = True
+                result.append('-DWSGI_MPM_EXISTS_%s_MODULE' % name.upper())
     return result
 
 def _cmd_setup_server(command, args, options):
@@ -1804,12 +1983,17 @@ def _cmd_setup_server(command, args, options):
     if not args:
         options['entry_point'] = os.path.join(options['server_root'],
                 'default.wsgi')
-        options['application_type'] = 'script'
-        options['enable_docs'] = True
+        if options['application_type'] != 'static':
+            options['application_type'] = 'script'
+            options['enable_docs'] = True
     elif options['application_type'] in ('script', 'paste'):
         options['entry_point'] = os.path.abspath(args[0])
     else:
         options['entry_point'] = args[0]
+
+    if options['host_access_script']:
+        options['host_access_script'] = os.path.abspath(
+                options['host_access_script'])
 
     if options['auth_user_script']:
         options['auth_user_script'] = os.path.abspath(
@@ -2106,17 +2290,36 @@ def _cmd_setup_server(command, args, options):
                 pass
 
         if options['enable_profiler']:
-            if not options['profiler_output_file']:
-                options['profiler_output_file'] = os.path.join(
-                        options['server_root'], 'pstats.dat')
+            if not options['profiler_directory']:
+                options['profiler_directory'] = os.path.join(
+                        options['server_root'], 'pstats')
             else:
-                options['profiler_output_file'] = os.path.abspath(
-                        options['profiler_output_file'])
+                options['profiler_directory'] = os.path.abspath(
+                        options['profiler_directory'])
+
+            try:
+                os.mkdir(options['profiler_directory'])
+            except Exception:
+                pass
+
+        if options['enable_recorder']:
+            if not options['recorder_directory']:
+                options['recorder_directory'] = os.path.join(
+                        options['server_root'], 'archive')
+            else:
+                options['recorder_directory'] = os.path.abspath(
+                        options['recorder_directory'])
+
+            try:
+                os.mkdir(options['recorder_directory'])
+            except Exception:
+                pass
 
     else:
         options['enable_debugger'] = False
         options['enable_coverage'] = False
         options['enable_profiler'] = False
+        options['enable_recorder'] = False
 
     options['parent_domain'] = 'unspecified'
 
@@ -2137,6 +2340,9 @@ def _cmd_setup_server(command, args, options):
 
     if options['allow_localhost']:
         options['httpd_arguments_list'].append('-DWSGI_ALLOW_LOCALHOST')
+
+    if options['application_type'] == 'static':
+        options['httpd_arguments_list'].append('-DWSGI_STATIC_ONLY')
 
     if options['server_metrics']:
         options['httpd_arguments_list'].append('-DWSGI_SERVER_METRICS')
@@ -2159,6 +2365,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_LISTENER_HOST')
     if options['error_override']:
         options['httpd_arguments_list'].append('-DWSGI_ERROR_OVERRIDE')
+    if options['host_access_script']:
+        options['httpd_arguments_list'].append('-DWSGI_HOST_ACCESS')
     if options['auth_user_script']:
         options['httpd_arguments_list'].append('-DWSGI_AUTH_USER')
     if options['auth_group_script']:
@@ -2169,7 +2377,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_WITH_PHP5')
 
     options['httpd_arguments_list'].extend(
-            _mpm_module_defines(options['modules_directory']))
+            _mpm_module_defines(options['modules_directory'],
+            options['server_mpm_variables']))
 
     options['httpd_arguments'] = '-f %s %s' % (options['httpd_conf'],
             ' '.join(options['httpd_arguments_list']))
@@ -2208,7 +2417,10 @@ def _cmd_setup_server(command, args, options):
                 options['coverage_directory'], 'index.html'))
 
     if options['enable_profiler']:
-        print('Profiler Output   :', options['profiler_output_file'])
+        print('Profiler Output   :', options['profiler_directory'])
+
+    if options['enable_recorder']:
+        print('Recorder Output   :', options['recorder_directory'])
 
     if options['envvars_script']:
         print('Environ Variables :', options['envvars_script'])

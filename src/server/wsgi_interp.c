@@ -2139,8 +2139,8 @@ void wsgi_python_init(apr_pool_t *p)
                 Py_SetPythonHome((char *)python_home);
 #endif
             }
-#endif
         }
+#endif
 
         /*
          * Set environment variable PYTHONHASHSEED. We need to

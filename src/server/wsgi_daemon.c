@@ -22,6 +22,8 @@
 
 /* ------------------------------------------------------------------------- */
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
+
 int wsgi_daemon_count = 0;
 apr_hash_t *wsgi_daemon_index = NULL;
 apr_hash_t *wsgi_daemon_listeners = NULL;
@@ -33,6 +35,8 @@ int volatile wsgi_request_count = 0;
 WSGIDaemonThread *wsgi_worker_threads = NULL;
 
 WSGIThreadStack *wsgi_worker_stack = NULL;
+
+#endif
 
 /* ------------------------------------------------------------------------- */
 
