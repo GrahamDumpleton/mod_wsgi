@@ -28,3 +28,7 @@ the ``WSGIDaemonProcess`` directive or the ``--locale`` option to
 the operating system, that the locale couldn't be set wasn't logged. Such
 a message is now logged along with a suggestion to use ``C.UTF-8`` as a
 fallback locale if the intent is to have ``UTF-8`` support.
+
+2. When using the ``--https-only`` option with ``mod_wsgi-express``, a HTTP
+request was not being redirected to be a HTTPS request when there were no
+server aliases specified.

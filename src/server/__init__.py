@@ -458,10 +458,10 @@ Redirect permanent / http://%(server_name)s:%(port)s/
 ServerName %(server_name)s
 <IfDefine WSGI_SERVER_ALIAS>
 ServerAlias %(server_aliases)s
+</IfDefine>
 RewriteEngine On
 RewriteCond %%{HTTPS} off
 RewriteRule (.*) https://%%{HTTP_HOST}%%{REQUEST_URI}
-</IfDefine>
 </VirtualHost>
 <IfDefine WSGI_REDIRECT_WWW>
 <VirtualHost *:%(port)s>
