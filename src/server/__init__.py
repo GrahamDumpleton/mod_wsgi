@@ -1356,7 +1356,7 @@ LANG='%(lang)s'
 LC_ALL='%(locale)s'
 
 export LANG
-export LOCALE
+export LC_ALL
 
 ACMD="$1"
 ARGV="$@"
