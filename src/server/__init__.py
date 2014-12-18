@@ -354,7 +354,7 @@ CustomLog "%(access_log_file)s" %(log_format_nickname)s
 WSGIChunkedRequest On
 </IfDefine>
 
-<IfDefine WSGI_WITH_SSL>
+<IfDefine WSGI_WITH_HTTPS>
 <IfModule !ssl_module>
 LoadModule ssl_module %(modules_directory)s/mod_ssl.so
 </IfModule>
@@ -477,17 +477,17 @@ RewriteRule (.*) https://%%{HTTP_HOST}%%{REQUEST_URI}
 
 <IfDefine WSGI_VIRTUAL_HOST>
 
-<IfDefine WSGI_WITH_SSL>
+<IfDefine WSGI_WITH_HTTPS>
 <IfDefine WSGI_LISTENER_HOST>
-Listen %(host)s:%(ssl_port)s
+Listen %(host)s:%(https_port)s
 </IfDefine>
 <IfDefine !WSGI_LISTENER_HOST>
-Listen %(ssl_port)s
+Listen %(https_port)s
 </IfDefine>
 <IfVersion < 2.4>
-NameVirtualHost *:%(ssl_port)s
+NameVirtualHost *:%(https_port)s
 </IfVersion>
-<VirtualHost _default_:%(ssl_port)s>
+<VirtualHost _default_:%(https_port)s>
 <Location />
 Order deny,allow
 Deny from all
@@ -499,7 +499,7 @@ SSLEngine On
 SSLCertificateFile %(ssl_certificate)s.crt
 SSLCertificateKeyFile %(ssl_certificate)s.key
 </VirtualHost>
-<VirtualHost *:%(ssl_port)s>
+<VirtualHost *:%(https_port)s>
 ServerName %(server_name)s
 <IfDefine WSGI_SERVER_ALIAS>
 ServerAlias %(server_aliases)s
@@ -509,9 +509,9 @@ SSLCertificateFile %(ssl_certificate)s.crt
 SSLCertificateKeyFile %(ssl_certificate)s.key
 </VirtualHost>
 <IfDefine WSGI_REDIRECT_WWW>
-<VirtualHost *:%(ssl_port)s>
+<VirtualHost *:%(https_port)s>
 ServerName %(parent_domain)s
-Redirect permanent / https://%(server_name)s:%(ssl_port)s/
+Redirect permanent / https://%(server_name)s:%(https_port)s/
 SSLEngine On
 SSLCertificateFile %(ssl_certificate)s.crt
 SSLCertificateKeyFile %(ssl_certificate)s.key
@@ -1433,9 +1433,12 @@ option_list = (
             metavar='NUMBER', help='The specific port to bind to and '
             'on which requests are to be accepted. Defaults to port 8000.'),
 
+    optparse.make_option('--https-port', type='int', metavar='NUMBER',
+            help='The specific port to bind to and on which secure '
+            'requests are to be accepted.'),
     optparse.make_option('--ssl-port', type='int', metavar='NUMBER',
-            help='The specific port to bind to and on which requests are '
-            'to be accepted for SSL connections.'),
+            dest='https_port', help=optparse.SUPPRESS_HELP),
+
     optparse.make_option('--ssl-certificate', default=None,
             metavar='FILE-PATH', help='Specify the path to the SSL '
             'certificate files. It is expected that the files have \'.crt\' '
@@ -1444,9 +1447,9 @@ option_list = (
             'the extension.'),
     optparse.make_option('--https-only', action='store_true',
             default=False, help='Flag indicating whether any requests '
-	    'made using a HTTP request over the non SSL connection should '
-	    'be redirected automatically to use a HTTPS request over the '
-	    'SSL connection.'),
+	    'made using a HTTP request over the non connection connection '
+            'should be redirected automatically to use a HTTPS request '
+            'over the secure connection.'),
 
     optparse.make_option('--server-name', default=None, metavar='HOSTNAME',
             help='The primary host name of the web server. If this name '
@@ -2265,12 +2268,12 @@ def _cmd_setup_server(command, args, options):
     else:
         options['url'] = 'http://%s:%s/' % (host, options['port'])
 
-    if options['ssl_port'] == 443:
-        options['ssl_url'] = 'https://%s/' % host
-    elif options['ssl_port'] is not None:
-        options['ssl_url'] = 'https://%s:%s/' % (host, options['ssl_port'])
+    if options['https_port'] == 443:
+        options['https_url'] = 'https://%s/' % host
+    elif options['https_port'] is not None:
+        options['https_url'] = 'https://%s:%s/' % (host, options['https_port'])
     else:
-        options['ssl_url'] = None
+        options['https_url'] = None
 
     if options['debug_mode']:
         options['httpd_arguments_list'].append('-DONE_PROCESS')
@@ -2329,8 +2332,8 @@ def _cmd_setup_server(command, args, options):
             options['httpd_arguments_list'].append('-DWSGI_REDIRECT_WWW')
             options['parent_domain'] = options['server_name'][4:]
 
-    if options['ssl_port'] and options['ssl_certificate']:
-        options['httpd_arguments_list'].append('-DWSGI_WITH_SSL')
+    if options['https_port'] and options['ssl_certificate']:
+        options['httpd_arguments_list'].append('-DWSGI_WITH_HTTPS')
     if options['https_only']:
         options['httpd_arguments_list'].append('-DWSGI_HTTPS_ONLY')
 
@@ -2393,42 +2396,42 @@ def _cmd_setup_server(command, args, options):
     generate_apache_config(options)
     generate_control_scripts(options)
 
-    print('Server URL        :', options['url'])
+    print('Server URL         :', options['url'])
 
-    if options['ssl_url']:
-        print('Server URL (SSL)  :', options['ssl_url'])
+    if options['https_url']:
+        print('Server URL (HTTPS) :', options['https_url'])
 
     if options['server_status']:
-        print('Server Status     :', '%sserver-status' % options['url'])
+        print('Server Status      :', '%sserver-status' % options['url'])
 
-    print('Server Root       :', options['server_root'])
-    print('Server Conf       :', options['httpd_conf'])
+    print('Server Root        :', options['server_root'])
+    print('Server Conf        :', options['httpd_conf'])
 
-    print('Error Log File    :', options['error_log_file'])
+    print('Error Log File     :', options['error_log_file'])
 
     if options['access_log']:
-        print('Access Log File   :', options['access_log_file'])
+        print('Access Log File    :', options['access_log_file'])
 
     if options['startup_log']:
-        print('Startup Log File  :', options['startup_log_file'])
+        print('Startup Log File   :', options['startup_log_file'])
 
     if options['enable_coverage']:
-        print('Coverage Output   :', os.path.join(
+        print('Coverage Output    :', os.path.join(
                 options['coverage_directory'], 'index.html'))
 
     if options['enable_profiler']:
-        print('Profiler Output   :', options['profiler_directory'])
+        print('Profiler Output    :', options['profiler_directory'])
 
     if options['enable_recorder']:
-        print('Recorder Output   :', options['recorder_directory'])
+        print('Recorder Output    :', options['recorder_directory'])
 
     if options['envvars_script']:
-        print('Environ Variables :', options['envvars_script'])
+        print('Environ Variables  :', options['envvars_script'])
 
     if command == 'setup-server' or options['setup_only']:
         if not options['envvars_script']:
-            print('Environ Variables :', options['server_root'] + '/envvars')
-        print('Control Script    :', options['server_root'] + '/apachectl')
+            print('Environ Variables  :', options['server_root'] + '/envvars')
+        print('Control Script     :', options['server_root'] + '/apachectl')
 
     return options
 

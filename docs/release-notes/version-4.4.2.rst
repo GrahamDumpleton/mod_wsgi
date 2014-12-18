@@ -19,6 +19,14 @@ can be obtained from:
 
 * http://www.lfd.uci.edu/~gohlke/pythonlibs/#mod_wsgi
 
+Features Changed
+----------------
+
+1. The ``--ssl-port`` option has been deprecated in favour of the option
+``--https-port``. Strictly speaking SSL no longer exists and has been
+supplanted with TLS. The 'S' in 'HTTPS' is actually meant to mean secure
+and not 'SSL'. So change name of option to properly match terminoligy.
+
 Bugs Fixed
 ----------
 
