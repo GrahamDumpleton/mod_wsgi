@@ -18,3 +18,13 @@ for version 3.X on Windows instead. Binaries compiled by a third party
 can be obtained from:
 
 * http://www.lfd.uci.edu/~gohlke/pythonlibs/#mod_wsgi
+
+Bugs Fixed
+----------
+
+1. When a default language was specified using the ``locale`` option to
+the ``WSGIDaemonProcess`` directive or the ``--locale`` option to
+``mod_wsgi-express``, if it did not actually match a locale supported by
+the operating system, that the locale couldn't be set wasn't logged. Such
+a message is now logged along with a suggestion to use ``C.UTF-8`` as a
+fallback locale if the intent is to have ``UTF-8`` support.

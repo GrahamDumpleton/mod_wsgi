@@ -9194,18 +9194,35 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         /* Set lang/locale if specified for daemon process. */
 
         if (daemon->group->lang) {
-            char *envvar = apr_pstrcat(p, "LANG=", daemon->group->lang, NULL);
+            char *envvar;
+
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Setting lang to %s.",
-                         getpid(), daemon->group->lang);
+                         "mod_wsgi (pid=%d): Setting lang to %s for "
+                         "daemon process group %s.", getpid(),
+                         daemon->group->lang, daemon->group->name);
+
+            envvar = apr_pstrcat(p, "LANG=", daemon->group->lang, NULL);
             putenv(envvar);
         }
 
         if (daemon->group->locale) {
+            char *result;
+
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Setting locale to %s.",
-                         getpid(), daemon->group->locale);
-            setlocale(LC_ALL, daemon->group->locale);
+                         "mod_wsgi (pid=%d): Setting locale to %s for "
+                         "daemon process group %s.", getpid(),
+                         daemon->group->locale, daemon->group->name);
+
+            result = setlocale(LC_ALL, daemon->group->locale);
+
+            if (!result) {
+                ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+                             "mod_wsgi (pid=%d): Unsupported locale setting "
+                             "%s specified for daemon process group %s. "
+                             "Consider using 'C.UTF-8' as fallback setting.",
+                             getpid(), daemon->group->locale,
+                             daemon->group->name);
+            }
         }
 
         /*
