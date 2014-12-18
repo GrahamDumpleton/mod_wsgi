@@ -1737,13 +1737,13 @@ option_list = (
             help='Specify an alternate script file for user defined web '
             'server environment variables. Defaults to using the '
             '\'envvars\' stored under the server root directory.'),
-    optparse.make_option('--lang', default='en_US.UTF-8', metavar='NAME',
+    optparse.make_option('--lang', default='C.UTF-8', metavar='NAME',
             help='Specify the default language locale as normally defined '
-            'by the LANG environment variable. Defaults to \'en_US.UTF-8\'.'),
-    optparse.make_option('--locale', default='en_US.UTF-8', metavar='NAME',
+            'by the LANG environment variable. Defaults to \'C.UTF-8\'.'),
+    optparse.make_option('--locale', default='C.UTF-8', metavar='NAME',
             help='Specify the default natural language formatting style '
             'as normally defined by the LC_ALL environment variable. '
-            'Defaults to \'en_US.UTF-8\'.'),
+            'Defaults to \'C.UTF-8\'.'),
 
     optparse.make_option('--setenv', action='append', nargs=2,
             dest='setenv_variables', metavar='KEY VALUE', help='Specify '
