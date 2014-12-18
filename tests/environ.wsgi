@@ -2,6 +2,7 @@ from __future__ import print_function
 
 import os
 import sys
+import locale
 
 try:
     from cStringIO import StringIO
@@ -65,6 +66,18 @@ def application(environ, start_response):
     print(file=output)
 
     print('PATH: %s' % sys.path, file=output)
+    print(file=output)
+
+    print('LANG: %s' % os.environ.get('LANG'), file=output)
+    print('LC_ALL: %s' % os.environ.get('LC_ALL'), file=output)
+    print('sys.getdefaultencoding(): %s' % sys.getdefaultencoding(),
+            file=output)
+    print('locale.getlocale(): %s' % (locale.getlocale(),),
+            file=output)
+    print('locale.getdefaultlocale(): %s' % (locale.getdefaultlocale(),),
+            file=output)
+    print('locale.getpreferredencoding(): %s' % locale.getpreferredencoding(),
+            file=output)
     print(file=output)
 
     keys = sorted(environ.keys())
