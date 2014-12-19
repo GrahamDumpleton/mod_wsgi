@@ -28,13 +28,13 @@ LDLIBS = \
  libapr-1.lib \
  libaprutil-1.lib
 
-SRCFILES = ../src/server/*.c
+SRCFILES = ..\src\server\*.c
 
 mod_wsgi.so : $(SRCFILES)
 	cl $(CPPFLAGS) $(CFLAGS) $(SRCFILES) /LD $(LDFLAGS) $(LDLIBS) /OUT:$@
 	mt -manifest $@.manifest -outputresource:$@;2
 
-VARIANT = ap$(APACHE_VERSION)py$(PYTHON_VERSION)
+VARIANT = py$(PYTHON_VERSION)
 
 install : mod_wsgi.so
 	copy $? $(APACHE_ROOTDIR)\modules\mod_wsgi-$(VARIANT).so
@@ -42,7 +42,7 @@ install : mod_wsgi.so
 	:
 	:
 	:
-	: You now need to edit $(APACHE_ROOTDIR)/conf/httpd.conf and add:
+	: You now need to edit $(APACHE_ROOTDIR)\conf\httpd.conf and add:
 	:
 	:   LoadModule wsgi_module modules/mod_wsgi-$(VARIANT).so
 	:
