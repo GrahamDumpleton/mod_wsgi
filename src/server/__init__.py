@@ -16,6 +16,7 @@ import re
 import pprint
 import time
 import traceback
+import locale
 
 try:
     import Queue as queue
@@ -1740,13 +1741,18 @@ option_list = (
             help='Specify an alternate script file for user defined web '
             'server environment variables. Defaults to using the '
             '\'envvars\' stored under the server root directory.'),
-    optparse.make_option('--lang', default='C.UTF-8', metavar='NAME',
-            help='Specify the default language locale as normally defined '
-            'by the LANG environment variable. Defaults to \'C.UTF-8\'.'),
-    optparse.make_option('--locale', default='C.UTF-8', metavar='NAME',
-            help='Specify the default natural language formatting style '
-            'as normally defined by the LC_ALL environment variable. '
-            'Defaults to \'C.UTF-8\'.'),
+
+    optparse.make_option('--lang', default=None, metavar='NAME',
+            help=optparse.SUPPRESS_HELP),
+    optparse.make_option('--locale', default=None, metavar='NAME',
+            help='Specify the natural language locale for the process '
+            'as normally defined by the \'LC_ALL\' environment variable. '
+            'If not specified, then the default locale for this process '
+            'will be used. If the default locale is however \'C\' or '
+            '\'POSIX\' then an attempt will be made to use either the '
+            '\'en_US.UTF-8\' or \'C.UTF-8\' locales and if that is not '
+            'possible only then fallback to the default locale of this '
+            'process.'),
 
     optparse.make_option('--setenv', action='append', nargs=2,
             dest='setenv_variables', metavar='KEY VALUE', help='Specify '
@@ -2246,6 +2252,33 @@ def _cmd_setup_server(command, args, options):
             options['envvars_script']) if options['envvars_script'] is
             not None else None)
 
+    if options['locale'] is None:
+        options['locale'] = options['lang']
+
+    if options['locale'] is None:
+        language, encoding = locale.getdefaultlocale()
+        if language is None:
+            language = 'C'
+        if encoding is None:
+            options['locale'] = locale.normalize(language)
+        else:
+            options['locale'] = locale.normalize(language + '.' + encoding)
+
+    if options['locale'].upper() in ('C', 'POSIX'):
+        oldlocale = locale.setlocale(locale.LC_ALL)
+        try:
+            locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+            options['locale'] = 'C.UTF-8'
+        except locale.Error:
+            try:
+                locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+                options['locale'] = 'en_US.UTF-8'
+            except locale.Error:
+                pass
+        locale.setlocale(locale.LC_ALL, oldlocale)
+
+    options['lang'] = options['locale']
+
     options['httpd_arguments_list'] = []
 
     if options['startup_log']:
@@ -2432,6 +2465,8 @@ def _cmd_setup_server(command, args, options):
         if not options['envvars_script']:
             print('Environ Variables  :', options['server_root'] + '/envvars')
         print('Control Script     :', options['server_root'] + '/apachectl')
+
+    print('Locale Setting     :', options['locale'])
 
     return options
 

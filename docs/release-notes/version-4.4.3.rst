@@ -18,3 +18,26 @@ for version 3.X on Windows instead. Binaries compiled by a third party
 can be obtained from:
 
 * http://www.lfd.uci.edu/~gohlke/pythonlibs/#mod_wsgi
+
+Features Changed
+----------------
+
+1. The ``--lang`` option to ``mod_wsgi-express`` has been deprecated. Any
+default language locale setting should be set exclusively using the
+``--locale`` option.
+
+2. The behaviour of the ``--locale`` option to ``mod_wsgi-express`` has
+changed. Previously if this option was not defined, then both of the locales
+``en_US.UTF-8`` and ``C.UTF-8`` have at times been hardwired as the default
+locale. These locales are though not always present. As a consequence, a
+new algorithm is now used.
+
+If the ``--locale`` option is supplied, the argument will be used as the
+locale. If no argument is supplied, the default locale for the executing
+``mod_wsgi-express`` process will be used. If that however is ``C`` or
+``POSIX``, then an attempt will be made to use either the ``en_US.UTF-8``
+or ``C.UTF-8`` locales and if that is not possible only then fallback to
+the default locale of the ``mod_wsgi-express`` process.
+
+In other words, unless you override the default language locale, an attempt
+is made to use an English language locale with ``UTF-8`` encoding.
