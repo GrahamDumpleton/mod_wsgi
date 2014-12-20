@@ -2267,12 +2267,12 @@ def _cmd_setup_server(command, args, options):
     if options['locale'].upper() in ('C', 'POSIX'):
         oldlocale = locale.setlocale(locale.LC_ALL)
         try:
-            locale.setlocale(locale.LC_ALL, 'C.UTF-8')
-            options['locale'] = 'C.UTF-8'
+            locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+            options['locale'] = 'en_US.UTF-8'
         except locale.Error:
             try:
-                locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
-                options['locale'] = 'en_US.UTF-8'
+                locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+                options['locale'] = 'C.UTF-8'
             except locale.Error:
                 pass
         locale.setlocale(locale.LC_ALL, oldlocale)
