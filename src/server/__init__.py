@@ -50,10 +50,13 @@ def where():
     return MOD_WSGI_SO
 
 def default_run_user():
-   return pwd.getpwuid(os.getuid()).pw_name
+    return pwd.getpwuid(os.getuid()).pw_name
 
 def default_run_group():
-   return grp.getgrgid(pwd.getpwuid(os.getuid()).pw_gid).gr_name
+    try:
+        return grp.getgrgid(pwd.getpwuid(os.getuid()).pw_gid).gr_name
+    except KeyError:
+        return '#%d' % pwd.getpwuid(os.getuid()).pw_gid
 
 def find_program(names, default=None, paths=[]):
     for name in names:

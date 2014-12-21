@@ -41,3 +41,12 @@ the default locale of the ``mod_wsgi-express`` process.
 
 In other words, unless you override the default language locale, an attempt
 is made to use an English language locale with ``UTF-8`` encoding.
+
+Bugs Fixed
+----------
+
+1. The ``mod_wsgi-express`` script would fail on startup if the user had
+a corresponding group ID which didn't actually match an existing group in
+the groups file and no override group was being specified. When this
+occurs, the group will now be specified as ``#nnn`` where ``nnn`` is the
+group ID.
