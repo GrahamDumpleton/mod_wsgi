@@ -1110,7 +1110,7 @@ finally:
 
         error_message = apr_psprintf(r->pool, "Apache/mod_wsgi request "
                 "data read error: %s.", apr_strerror(error_status,
-                status_buffer, sizeof(status_buffer)-1), NULL);
+                status_buffer, sizeof(status_buffer)-1));
 
         PyErr_SetString(PyExc_IOError, error_message);
 
@@ -1120,7 +1120,7 @@ finally:
     }
     else if (error_message) {
         error_message = apr_psprintf(r->pool, "Apache/mod_wsgi request "
-                "data read error: %s.", error_message, NULL);
+                "data read error: %s.", error_message);
 
         PyErr_SetString(PyExc_IOError, error_message);
 
@@ -2246,7 +2246,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
             if (!exception_when_aborted) {
                 error_message = apr_psprintf(r->pool, "Failed to write "
                         "response data: %s", apr_strerror(rv, status_buffer,
-                        sizeof(status_buffer)-1), NULL);
+                        sizeof(status_buffer)-1));
 
                 ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, self->r,
                               "mod_wsgi (pid=%d): %s.", getpid(),
@@ -2256,7 +2256,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
                 error_message = apr_psprintf(r->pool, "Apache/mod_wsgi "
                         "failed to write response data: %s",
                         apr_strerror(rv, status_buffer,
-                        sizeof(status_buffer)-1), NULL);
+                        sizeof(status_buffer)-1));
 
                 PyErr_SetString(PyExc_IOError, error_message);
             }
@@ -2364,7 +2364,7 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
 
         error_message = apr_psprintf(r->pool, "Apache/mod_wsgi failed "
                 "to write response data: %s.", apr_strerror(rv,
-                status_buffer, sizeof(status_buffer)-1), NULL);
+                status_buffer, sizeof(status_buffer)-1));
 
         PyErr_SetString(PyExc_IOError, error_message);
         return 0;
@@ -10980,7 +10980,7 @@ static int wsgi_execute_remote(request_rec *r)
             error_message = apr_psprintf(r->pool, "Request data read "
                     "error when proxying data to daemon process: %s",
                     apr_strerror(rv, status_buffer, sizeof(
-                    status_buffer)-1), NULL);
+                    status_buffer)-1));
 
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                          "mod_wsgi (pid=%d): %s.", getpid(), error_message);
@@ -11016,7 +11016,7 @@ static int wsgi_execute_remote(request_rec *r)
                     error_message = apr_psprintf(r->pool, "Request data write "
                             "error when proxying data to daemon process: %s",
                             apr_strerror(rv, status_buffer, sizeof(
-                            status_buffer)-1), NULL);
+                            status_buffer)-1));
 
                     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                                  "mod_wsgi (pid=%d): %s.", getpid(),
@@ -11050,7 +11050,7 @@ static int wsgi_execute_remote(request_rec *r)
                 error_message = apr_psprintf(r->pool, "Request data read "
                         "error when proxying data to daemon process: %s",
                         apr_strerror(rv, status_buffer, sizeof(
-                        status_buffer)-1), NULL);
+                        status_buffer)-1));
 
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                              "mod_wsgi (pid=%d): %s.", getpid(),
@@ -11085,7 +11085,7 @@ static int wsgi_execute_remote(request_rec *r)
                 error_message = apr_psprintf(r->pool, "Request data write "
                         "error when proxying data to daemon process: %s",
                         apr_strerror(rv, status_buffer, sizeof(
-                        status_buffer)-1), NULL);
+                        status_buffer)-1));
 
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                              "mod_wsgi (pid=%d): %s.", getpid(),
