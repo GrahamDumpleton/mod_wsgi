@@ -27,6 +27,11 @@ Features Changed
 supplanted with TLS. The 'S' in 'HTTPS' is actually meant to mean secure
 and not 'SSL'. So change name of option to properly match terminoligy.
 
+2. The name of the startup log was changed such that naming was consistent
+with how logs are normally named with Apache. That is ``startup_log``
+instead of ``startup.log``, thereby matching convention with ``error_log``
+and ``access_log``.
+
 Bugs Fixed
 ----------
 

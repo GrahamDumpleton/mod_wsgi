@@ -2287,7 +2287,7 @@ def _cmd_setup_server(command, args, options):
     if options['startup_log']:
         if not options['log_to_terminal']:
             options['startup_log_file'] = os.path.join(
-                    options['log_directory'], 'startup.log')
+                    options['log_directory'], 'startup_log')
         else:
             options['startup_log_file'] = '/dev/stdout'
 
