@@ -2077,13 +2077,25 @@ def _cmd_setup_server(command, args, options):
         options['error_log_file'] = os.path.join(options['log_directory'],
                 'error_log')
     else:
-        options['error_log_file'] = '/dev/stderr'
+        try:
+            with open('/dev/stderr', 'w'):
+                pass
+        except IOError:
+            options['error_log_file'] = '|tee'
+        else:
+            options['error_log_file'] = '/dev/stderr'
 
     if not options['log_to_terminal']:
         options['access_log_file'] = os.path.join(
                 options['log_directory'], 'access_log')
     else:
-        options['access_log_file'] = '/dev/stdout'
+        try:
+            with open('/dev/stdout', 'w'):
+                pass
+        except IOError:
+            options['access_log_file'] = '|tee'
+        else:
+            options['access_log_file'] = '/dev/stdout'
 
     if options['access_log_format']:
         if options['access_log_format'] in ('common', 'combined'):
@@ -2289,7 +2301,13 @@ def _cmd_setup_server(command, args, options):
             options['startup_log_file'] = os.path.join(
                     options['log_directory'], 'startup_log')
         else:
-            options['startup_log_file'] = '/dev/stdout'
+            try:
+                with open('/dev/stderr', 'w'):
+                    pass
+            except IOError:
+                options['startup_log_file'] = None
+            else:
+                options['startup_log_file'] = '/dev/stderr'
 
         options['httpd_arguments_list'].append('-E')
         options['httpd_arguments_list'].append(options['startup_log_file'])
