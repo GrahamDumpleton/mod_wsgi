@@ -2081,7 +2081,7 @@ def _cmd_setup_server(command, args, options):
             with open('/dev/stderr', 'w'):
                 pass
         except IOError:
-            options['error_log_file'] = '|tee'
+            options['error_log_file'] = '|%s' % find_program('tee')
         else:
             options['error_log_file'] = '/dev/stderr'
 
@@ -2093,7 +2093,7 @@ def _cmd_setup_server(command, args, options):
             with open('/dev/stdout', 'w'):
                 pass
         except IOError:
-            options['access_log_file'] = '|tee'
+            options['access_log_file'] = '|%s' % find_program('tee')
         else:
             options['access_log_file'] = '/dev/stdout'
 
