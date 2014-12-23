@@ -1427,7 +1427,11 @@ option_list = (
             'indicating that the provided entry point is a Python module '
             'which should be imported using the standard Python import '
             'mechanism, or \'paste\' indicating that the provided entry '
-            'point is a Paste deployment configuration file.'),
+            'point is a Paste deployment configuration file. If you want '
+            'to just use the server to host static files only, then you '
+            'can also instead supply \'static\' with the target being '
+            'the directory containing the files to server or the current '
+            'directory if none is supplied.'),
 
     optparse.make_option('--host', default=None, metavar='IP-ADDRESS',
             help='The specific host (IP address) interface on which '
@@ -1993,15 +1997,26 @@ def _cmd_setup_server(command, args, options):
                 options['ssl_certificate'])
 
     if not args:
-        options['entry_point'] = os.path.join(options['server_root'],
-                'default.wsgi')
         if options['application_type'] != 'static':
+            options['entry_point'] = os.path.join(
+                    options['server_root'], 'default.wsgi')
             options['application_type'] = 'script'
             options['enable_docs'] = True
-    elif options['application_type'] in ('script', 'paste'):
-        options['entry_point'] = os.path.abspath(args[0])
+        else:
+            if not options['document_root']:
+                options['document_root'] = os.getcwd()
+            options['entry_point'] = 'undefined'
     else:
-        options['entry_point'] = args[0]
+        if options['application_type'] in ('script', 'paste'):
+            options['entry_point'] = os.path.abspath(args[0])
+        elif options['application_type'] == 'static':
+            if not options['document_root']:
+                options['document_root'] = os.path.abspath(args[0])
+                options['entry_point'] = 'ignored'
+            else:
+                options['entry_point'] = 'overridden'
+        else:
+            options['entry_point'] = args[0]
 
     if options['host_access_script']:
         options['host_access_script'] = os.path.abspath(
