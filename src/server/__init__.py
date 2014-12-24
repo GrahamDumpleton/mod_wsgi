@@ -242,7 +242,7 @@ WSGIRestrictEmbedded On
 WSGISocketPrefix %(server_root)s/wsgi
 <IfDefine WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
-   display-name='%(process_name)s' \\
+   display-name='%(daemon_name)s' \\
    home='%(working_directory)s' \\
    processes=%(processes)s \\
    threads=%(threads)s \\
@@ -267,7 +267,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
 </IfDefine>
 <IfDefine !WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
-   display-name='%(process_name)s' \\
+   display-name='%(daemon_name)s' \\
    home='%(working_directory)s' \\
    threads=%(threads)s \\
    maximum-requests=%(maximum_requests)s \\
@@ -1329,7 +1329,7 @@ def generate_server_metrics_script(options):
         print(SERVER_METRICS_SCRIPT % options, file=fp)
 
 WSGI_CONTROL_SCRIPT = """
-#!/bin/sh
+#!/usr/bin/env bash
 
 # %(sys_argv)s
 
@@ -1377,7 +1377,7 @@ fi
 
 case $ACMD in
 start|stop|restart|graceful|graceful-stop)
-    exec $HTTPD -k $ARGV
+    exec -a "%(process_name)s" $HTTPD -k $ARGV
     ;;
 configtest)
     exec $HTTPD -t
@@ -1843,6 +1843,12 @@ option_list = (
     optparse.make_option('--httpd-executable', default=apxs_config.HTTPD,
             metavar='FILE-PATH', help='Override the path to the Apache web '
             'server executable.'),
+    optparse.make_option('--process-name', metavar='NAME', help='Override '
+            'the name given to the Apache parent process. This might be '
+            'needed when a process manager expects the process to be named '
+            'a certain way but due to a sequence of exec calls the name '
+            'changed.'),
+
     optparse.make_option('--modules-directory', default=apxs_config.LIBEXECDIR,
             metavar='DIRECTORY-PATH', help='Override the path to the Apache '
             'web server modules directory.'),
@@ -1980,7 +1986,7 @@ def _cmd_setup_server(command, args, options):
     else:
         options['listener_host'] = options['host']
 
-    options['process_name'] = '(wsgi:%s:%s:%s)' % (options['host'],
+    options['daemon_name'] = '(wsgi:%s:%s:%s)' % (options['host'],
             options['port'], os.getuid())
 
     if not options['server_root']:
@@ -2280,6 +2286,12 @@ def _cmd_setup_server(command, args, options):
          options['httpd_executable'] = find_program(
                  [options['httpd_executable']], 'httpd', ['/usr/sbin'])
 
+    if not options['process_name']:
+        options['process_name'] = options['httpd_executable']
+
+    options['process_name'] = options['process_name'].ljust(
+            len(options['daemon_name']))
+
     options['envvars_script'] = (os.path.abspath(
             options['envvars_script']) if options['envvars_script'] is
             not None else None)
@@ -2524,8 +2536,7 @@ def cmd_start_server(params):
         return
 
     executable = os.path.join(config['server_root'], 'apachectl')
-    name = executable.ljust(len(config['process_name']))
-    os.execl(executable, name, 'start', '-DFOREGROUND')
+    os.execl(executable, executable, 'start', '-DFOREGROUND')
 
 def cmd_install_module(params):
     formatter = optparse.IndentedHelpFormatter()

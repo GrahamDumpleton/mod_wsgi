@@ -50,3 +50,12 @@ a corresponding group ID which didn't actually match an existing group in
 the groups file and no override group was being specified. When this
 occurs, the group will now be specified as ``#nnn`` where ``nnn`` is the
 group ID.
+
+New Features
+------------
+
+1. Added ``--process-name`` option to ``mod_wsgi-express`` to allow the
+name of the Apache parent process to be overridden as it would be displayed
+in ``ps``. This is necessary under some process manager systems where it
+looks for a certain name, but with shell script wrappers and exec calls
+happening around ``mod_wsgi-express`` the name would change.
