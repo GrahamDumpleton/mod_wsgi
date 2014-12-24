@@ -1375,9 +1375,11 @@ if [ "x$ARGV" = "x" ]; then
     ARGV="-h"
 fi
 
+PROCESS_NAME="%(process_name)s"
+
 case $ACMD in
 start|stop|restart|graceful|graceful-stop)
-    exec -a "%(process_name)s" $HTTPD -k $ARGV
+    exec -a "$PROCESS_NAME" $HTTPD -k $ARGV
     ;;
 configtest)
     exec $HTTPD -t
