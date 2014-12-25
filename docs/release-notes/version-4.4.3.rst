@@ -42,6 +42,11 @@ the default locale of the ``mod_wsgi-express`` process.
 In other words, unless you override the default language locale, an attempt
 is made to use an English language locale with ``UTF-8`` encoding.
 
+3. Unless the process name is overridden using ``--process-name`` option
+to ``mod_wsgi-express``, the Apache parent and child worker process will
+be given a name such as ``httpd (mod_wsgi-express)`` making them more
+easily distinguishable from a traditional Apache installation.
+
 Bugs Fixed
 ----------
 

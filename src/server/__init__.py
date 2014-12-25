@@ -2289,7 +2289,8 @@ def _cmd_setup_server(command, args, options):
                  [options['httpd_executable']], 'httpd', ['/usr/sbin'])
 
     if not options['process_name']:
-        options['process_name'] = options['httpd_executable']
+        options['process_name'] = os.path.basename(
+                options['httpd_executable']) + ' (mod_wsgi-express)'
 
     options['process_name'] = options['process_name'].ljust(
             len(options['daemon_name']))
