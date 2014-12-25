@@ -16,6 +16,7 @@ import re
 import pprint
 import time
 import traceback
+import locale
 
 try:
     import Queue as queue
@@ -49,10 +50,13 @@ def where():
     return MOD_WSGI_SO
 
 def default_run_user():
-   return pwd.getpwuid(os.getuid()).pw_name
+    return pwd.getpwuid(os.getuid()).pw_name
 
 def default_run_group():
-   return grp.getgrgid(pwd.getpwuid(os.getuid()).pw_gid).gr_name
+    try:
+        return grp.getgrgid(pwd.getpwuid(os.getuid()).pw_gid).gr_name
+    except KeyError:
+        return '#%d' % pwd.getpwuid(os.getuid()).pw_gid
 
 def find_program(names, default=None, paths=[]):
     for name in names:
@@ -238,7 +242,7 @@ WSGIRestrictEmbedded On
 WSGISocketPrefix %(server_root)s/wsgi
 <IfDefine WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
-   display-name='%(process_name)s' \\
+   display-name='%(daemon_name)s' \\
    home='%(working_directory)s' \\
    processes=%(processes)s \\
    threads=%(threads)s \\
@@ -263,7 +267,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
 </IfDefine>
 <IfDefine !WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
-   display-name='%(process_name)s' \\
+   display-name='%(daemon_name)s' \\
    home='%(working_directory)s' \\
    threads=%(threads)s \\
    maximum-requests=%(maximum_requests)s \\
@@ -1325,7 +1329,7 @@ def generate_server_metrics_script(options):
         print(SERVER_METRICS_SCRIPT % options, file=fp)
 
 WSGI_CONTROL_SCRIPT = """
-#!/bin/sh
+#!/usr/bin/env bash
 
 # %(sys_argv)s
 
@@ -1371,9 +1375,11 @@ if [ "x$ARGV" = "x" ]; then
     ARGV="-h"
 fi
 
+PROCESS_NAME="%(process_name)s"
+
 case $ACMD in
 start|stop|restart|graceful|graceful-stop)
-    exec $HTTPD -k $ARGV
+    exec -a "$PROCESS_NAME" $HTTPD -k $ARGV
     ;;
 configtest)
     exec $HTTPD -t
@@ -1423,7 +1429,11 @@ option_list = (
             'indicating that the provided entry point is a Python module '
             'which should be imported using the standard Python import '
             'mechanism, or \'paste\' indicating that the provided entry '
-            'point is a Paste deployment configuration file.'),
+            'point is a Paste deployment configuration file. If you want '
+            'to just use the server to host static files only, then you '
+            'can also instead supply \'static\' with the target being '
+            'the directory containing the files to server or the current '
+            'directory if none is supplied.'),
 
     optparse.make_option('--host', default=None, metavar='IP-ADDRESS',
             help='The specific host (IP address) interface on which '
@@ -1740,13 +1750,18 @@ option_list = (
             help='Specify an alternate script file for user defined web '
             'server environment variables. Defaults to using the '
             '\'envvars\' stored under the server root directory.'),
-    optparse.make_option('--lang', default='C.UTF-8', metavar='NAME',
-            help='Specify the default language locale as normally defined '
-            'by the LANG environment variable. Defaults to \'C.UTF-8\'.'),
-    optparse.make_option('--locale', default='C.UTF-8', metavar='NAME',
-            help='Specify the default natural language formatting style '
-            'as normally defined by the LC_ALL environment variable. '
-            'Defaults to \'C.UTF-8\'.'),
+
+    optparse.make_option('--lang', default=None, metavar='NAME',
+            help=optparse.SUPPRESS_HELP),
+    optparse.make_option('--locale', default=None, metavar='NAME',
+            help='Specify the natural language locale for the process '
+            'as normally defined by the \'LC_ALL\' environment variable. '
+            'If not specified, then the default locale for this process '
+            'will be used. If the default locale is however \'C\' or '
+            '\'POSIX\' then an attempt will be made to use either the '
+            '\'en_US.UTF-8\' or \'C.UTF-8\' locales and if that is not '
+            'possible only then fallback to the default locale of this '
+            'process.'),
 
     optparse.make_option('--setenv', action='append', nargs=2,
             dest='setenv_variables', metavar='KEY VALUE', help='Specify '
@@ -1830,6 +1845,12 @@ option_list = (
     optparse.make_option('--httpd-executable', default=apxs_config.HTTPD,
             metavar='FILE-PATH', help='Override the path to the Apache web '
             'server executable.'),
+    optparse.make_option('--process-name', metavar='NAME', help='Override '
+            'the name given to the Apache parent process. This might be '
+            'needed when a process manager expects the process to be named '
+            'a certain way but due to a sequence of exec calls the name '
+            'changed.'),
+
     optparse.make_option('--modules-directory', default=apxs_config.LIBEXECDIR,
             metavar='DIRECTORY-PATH', help='Override the path to the Apache '
             'web server modules directory.'),
@@ -1967,7 +1988,7 @@ def _cmd_setup_server(command, args, options):
     else:
         options['listener_host'] = options['host']
 
-    options['process_name'] = '(wsgi:%s:%s:%s)' % (options['host'],
+    options['daemon_name'] = '(wsgi:%s:%s:%s)' % (options['host'],
             options['port'], os.getuid())
 
     if not options['server_root']:
@@ -1984,15 +2005,26 @@ def _cmd_setup_server(command, args, options):
                 options['ssl_certificate'])
 
     if not args:
-        options['entry_point'] = os.path.join(options['server_root'],
-                'default.wsgi')
         if options['application_type'] != 'static':
+            options['entry_point'] = os.path.join(
+                    options['server_root'], 'default.wsgi')
             options['application_type'] = 'script'
             options['enable_docs'] = True
-    elif options['application_type'] in ('script', 'paste'):
-        options['entry_point'] = os.path.abspath(args[0])
+        else:
+            if not options['document_root']:
+                options['document_root'] = os.getcwd()
+            options['entry_point'] = 'undefined'
     else:
-        options['entry_point'] = args[0]
+        if options['application_type'] in ('script', 'paste'):
+            options['entry_point'] = os.path.abspath(args[0])
+        elif options['application_type'] == 'static':
+            if not options['document_root']:
+                options['document_root'] = os.path.abspath(args[0])
+                options['entry_point'] = 'ignored'
+            else:
+                options['entry_point'] = 'overridden'
+        else:
+            options['entry_point'] = args[0]
 
     if options['host_access_script']:
         options['host_access_script'] = os.path.abspath(
@@ -2068,13 +2100,27 @@ def _cmd_setup_server(command, args, options):
         options['error_log_file'] = os.path.join(options['log_directory'],
                 'error_log')
     else:
-        options['error_log_file'] = '/dev/stderr'
+        try:
+            with open('/dev/stderr', 'w'):
+                pass
+        except IOError:
+            options['error_log_file'] = '|%s' % find_program(
+                    ['tee'], default='tee')
+        else:
+            options['error_log_file'] = '/dev/stderr'
 
     if not options['log_to_terminal']:
         options['access_log_file'] = os.path.join(
                 options['log_directory'], 'access_log')
     else:
-        options['access_log_file'] = '/dev/stdout'
+        try:
+            with open('/dev/stdout', 'w'):
+                pass
+        except IOError:
+            options['access_log_file'] = '|%s' % find_program(
+                    ['tee'], default='tee')
+        else:
+            options['access_log_file'] = '/dev/stdout'
 
     if options['access_log_format']:
         if options['access_log_format'] in ('common', 'combined'):
@@ -2242,18 +2288,58 @@ def _cmd_setup_server(command, args, options):
          options['httpd_executable'] = find_program(
                  [options['httpd_executable']], 'httpd', ['/usr/sbin'])
 
+    if not options['process_name']:
+        options['process_name'] = os.path.basename(
+                options['httpd_executable']) + ' (mod_wsgi-express)'
+
+    options['process_name'] = options['process_name'].ljust(
+            len(options['daemon_name']))
+
     options['envvars_script'] = (os.path.abspath(
             options['envvars_script']) if options['envvars_script'] is
             not None else None)
+
+    if options['locale'] is None:
+        options['locale'] = options['lang']
+
+    if options['locale'] is None:
+        language, encoding = locale.getdefaultlocale()
+        if language is None:
+            language = 'C'
+        if encoding is None:
+            options['locale'] = locale.normalize(language)
+        else:
+            options['locale'] = locale.normalize(language + '.' + encoding)
+
+    if options['locale'].upper() in ('C', 'POSIX'):
+        oldlocale = locale.setlocale(locale.LC_ALL)
+        try:
+            locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+            options['locale'] = 'en_US.UTF-8'
+        except locale.Error:
+            try:
+                locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+                options['locale'] = 'C.UTF-8'
+            except locale.Error:
+                pass
+        locale.setlocale(locale.LC_ALL, oldlocale)
+
+    options['lang'] = options['locale']
 
     options['httpd_arguments_list'] = []
 
     if options['startup_log']:
         if not options['log_to_terminal']:
             options['startup_log_file'] = os.path.join(
-                    options['log_directory'], 'startup.log')
+                    options['log_directory'], 'startup_log')
         else:
-            options['startup_log_file'] = '/dev/stdout'
+            try:
+                with open('/dev/stderr', 'w'):
+                    pass
+            except IOError:
+                options['startup_log_file'] = None
+            else:
+                options['startup_log_file'] = '/dev/stderr'
 
         options['httpd_arguments_list'].append('-E')
         options['httpd_arguments_list'].append(options['startup_log_file'])
@@ -2433,6 +2519,8 @@ def _cmd_setup_server(command, args, options):
             print('Environ Variables  :', options['server_root'] + '/envvars')
         print('Control Script     :', options['server_root'] + '/apachectl')
 
+    print('Locale Setting     :', options['locale'])
+
     return options
 
 def cmd_start_server(params):
@@ -2451,8 +2539,7 @@ def cmd_start_server(params):
         return
 
     executable = os.path.join(config['server_root'], 'apachectl')
-    name = executable.ljust(len(config['process_name']))
-    os.execl(executable, name, 'start', '-DFOREGROUND')
+    os.execl(executable, executable, 'start', '-DFOREGROUND')
 
 def cmd_install_module(params):
     formatter = optparse.IndentedHelpFormatter()

@@ -38,15 +38,9 @@ static void wsgi_python_bucket_destroy(void *data)
 {
     wsgi_apr_bucket_python *h = data;
 
-    fprintf(stderr, "wsgi_python_bucket_destroy\n");
-
     if (apr_bucket_shared_destroy(h)) {
         if (h->decref_string) {
             InterpreterObject *interp = NULL;
-
-            fprintf(stderr, "wsgi_apr_bucket_python_make #1\n");
-            fprintf(stderr, "application_group=%s\n", h->application_group);
-            fflush(stderr);
 
             interp = wsgi_acquire_interpreter(h->application_group);
             Py_DECREF(h->string_object);
@@ -81,10 +75,6 @@ static apr_bucket *wsgi_apr_bucket_python_make(apr_bucket *b,
                                                )
 {
     wsgi_apr_bucket_python *h;
-
-    fprintf(stderr, "wsgi_apr_bucket_python_make\n");
-    fprintf(stderr, "length=%zd\n", length);
-    fflush(stderr);
 
     h = apr_bucket_alloc(sizeof(*h), b->list);
 
@@ -122,9 +112,6 @@ static apr_status_t wsgi_python_bucket_setaside(apr_bucket *b, apr_pool_t *p)
 {
     wsgi_apr_bucket_python *h = b->data;
 
-    fprintf(stderr, "wsgi_python_bucket_setaside\n");
-    fflush(stderr);
-
     if (h->decref_string) {
         /*
          * XXX Not sure if this is correct. Can't assume that if doing
@@ -133,24 +120,13 @@ static apr_status_t wsgi_python_bucket_setaside(apr_bucket *b, apr_pool_t *p)
          */
         InterpreterObject *interp = NULL;
 
-        fprintf(stderr, "wsgi_python_bucket_setaside #1\n");
-        fflush(stderr);
-
         interp = wsgi_acquire_interpreter(h->application_group);
         Py_INCREF(h->string_object);
         wsgi_release_interpreter(interp);
     }
     else {
-        fprintf(stderr, "wsgi_python_bucket_setaside #2\n");
-        fflush(stderr);
-
         Py_INCREF(h->string_object);
     }
-
-    fprintf(stderr, "wsgi_python_bucket_setaside #3\n");
-    fprintf(stderr, "start=%lld\n", b->start);
-    fprintf(stderr, "length=%zd\n", b->length);
-    fflush(stderr);
 
     wsgi_apr_bucket_python_make(b, (char *)h->base + b->start, b->length,
             h->application_group, h->string_object, 1);
