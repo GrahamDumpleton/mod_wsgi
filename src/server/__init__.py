@@ -2521,6 +2521,9 @@ def _cmd_setup_server(command, args, options):
 
     print('Locale Setting     :', options['locale'])
 
+    print('Daemon Processes   :', options['processes'])
+    print('Daemon Threads     :', options['threads'])
+
     return options
 
 def cmd_start_server(params):

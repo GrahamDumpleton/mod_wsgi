@@ -18,3 +18,9 @@ for version 3.X on Windows instead. Binaries compiled by a third party
 can be obtained from:
 
 * http://www.lfd.uci.edu/~gohlke/pythonlibs/#mod_wsgi
+
+New Features
+------------
+
+1. The ``mod_wsgi-express`` command will now output to ``stdout`` the
+number of daemon processes and threads being used.
