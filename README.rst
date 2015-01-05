@@ -41,8 +41,8 @@ If running Linux, any corresponding developer variant of the specific
 Apache package you are using also needs to be installed. This is required
 in order to be able to compile mod_wsgi from source code.
 
-For example, on Ubuntu Linux, if you were using the Apache prefork MPM
-you would need both:
+For example, on Ubuntu Linux with Apache 2.2, if you were using the Apache
+prefork MPM you would need both:
 
 * apache2-mpm-prefork
 * apache2-prefork-dev

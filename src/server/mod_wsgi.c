@@ -5797,7 +5797,7 @@ static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
 
     if (ssl_var_lookup == 0)
     {
-        Py_XINCREF(Py_None);
+        Py_INCREF(Py_None);
 
         return Py_None;
     }
@@ -5806,7 +5806,7 @@ static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
                            self->r->connection, self->r, name);
 
     if (!value) {
-        Py_XINCREF(Py_None);
+        Py_INCREF(Py_None);
 
         return Py_None;
     }
