@@ -24,3 +24,7 @@ New Features
 
 1. The ``mod_wsgi-express`` command will now output to ``stdout`` the
 number of daemon processes and threads being used.
+
+2. Add automatic installation of precompiled Apache binaries when deploying
+``mod_wsgi-express`` to Heroku or OpenShift. These binaries will be pulled
+down from S3 and installed as part of the mod_wsgi package.

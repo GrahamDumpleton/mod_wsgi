@@ -1335,6 +1335,13 @@ WSGI_CONTROL_SCRIPT = """
 
 HTTPD="%(httpd_executable)s %(httpd_arguments)s"
 
+SHLIBPATH="%(shlibpath)s"
+
+if [ "x$SHLIBPATH" != "x" ]; then
+    %(shlibpath_var)s="$SHLIBPATH:$%(shlibpath_var)s"
+    export %(shlibpath_var)s
+fi
+
 WSGI_RUN_USER="${WSGI_RUN_USER:-%(user)s}"
 WSGI_RUN_GROUP="${WSGI_RUN_GROUP:-%(group)s}"
 
@@ -2474,6 +2481,16 @@ def _cmd_setup_server(command, args, options):
 
     options['python_executable'] = sys.executable
 
+    options['shlibpath_var'] = apxs_config.SHLIBPATH_VAR
+
+    if apxs_config.WITH_PACKAGES:
+        shlibpath = []
+        shlibpath.append(os.path.join(apxs_config.PACKAGES, 'apr-util', 'lib'))
+        shlibpath.append(os.path.join(apxs_config.PACKAGES, 'apr', 'lib'))
+        options['shlibpath'] = ':'.join(shlibpath)
+    else:
+        options['shlibpath'] = ''
+
     generate_wsgi_handler_script(options)
 
     if options['with_newrelic_platform']:
@@ -2613,6 +2630,9 @@ def main():
         cmd_start_server(args)
     else:
         parser.error('Invalid command was specified.')
+
+def start(*args):
+    cmd_start_server(list(args))
 
 if __name__ == '__main__':
     main()
