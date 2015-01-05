@@ -51,27 +51,10 @@ REMOTE_TARBALL_URL = None
 if LOCAL_TARBALL_FILE is None and REMOTE_TARBALL_NAME:
     REMOTE_TARBALL_URL = '%s/%s/%s' % (PREFIX, BUCKET, REMOTE_TARBALL_NAME)
 
-# Work out if we are actually performing an install as we don't want to
-# download any binaries or try and install them if we aren't. To
-# determine this, we need to scan through the arguments, skipping any
-# global options being passed to distutils and then look for 'install'.
-# Note that older versions of pip appear to use the 'egg_info' command
-# and not the 'install' command to somehow trigger installations.
-
 WITH_PACKAGES = False
-SETUP_COMMAND = None
-
-for arg in sys.argv[1:]:
-    if arg.startswith('-'):
-        continue
-
-    SETUP_COMMAND = arg
-
-    break
 
 if REMOTE_TARBALL_URL or LOCAL_TARBALL_FILE:
-    if arg in ('install', 'egg_info'):
-        WITH_PACKAGES = True
+    WITH_PACKAGES = True
 
 # If we are doing an install, download the tarball and unpack it into
 # the 'packages' subdirectory. We will then add everything in that

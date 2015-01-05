@@ -18,3 +18,10 @@ for version 3.X on Windows instead. Binaries compiled by a third party
 can be obtained from:
 
 * http://www.lfd.uci.edu/~gohlke/pythonlibs/#mod_wsgi
+
+Bugs Fixed
+----------
+
+1. When installing ``mod_wsgi-express`` from PyPi on OpenShift as a
+dependency of an application ``setup.py`` file, the precompiled Apache
+binaries would not be installed.
