@@ -9206,12 +9206,16 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         }
 
         if (daemon->group->locale) {
+            char *envvar;
             char *result;
 
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
                          "mod_wsgi (pid=%d): Setting locale to %s for "
                          "daemon process group %s.", getpid(),
                          daemon->group->locale, daemon->group->name);
+
+            envvar = apr_pstrcat(p, "LC_ALL=", daemon->group->locale, NULL);
+            putenv(envvar);
 
             result = setlocale(LC_ALL, daemon->group->locale);
 

@@ -18,3 +18,13 @@ for version 3.X on Windows instead. Binaries compiled by a third party
 can be obtained from:
 
 * http://www.lfd.uci.edu/~gohlke/pythonlibs/#mod_wsgi
+
+Bugs Fixed
+----------
+
+1. Override ``LC_ALL`` environment variable when ``locale`` option to the
+``WSGIDaemonProcess`` directive. It is not always sufficient to just call
+``setlocale()`` as some Python code, including interpreter initialisation
+can still consult the original ``LC_ALL`` environment variable. In this
+case this can result in an undesired file system encoding still being
+selected.
