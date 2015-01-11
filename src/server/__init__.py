@@ -2536,10 +2536,27 @@ def _cmd_setup_server(command, args, options):
             print('Environ Variables  :', options['server_root'] + '/envvars')
         print('Control Script     :', options['server_root'] + '/apachectl')
 
-    print('Locale Setting     :', options['locale'])
+    if options['processes'] == 1:
+        print('Request Capacity   : %s (%s process * %s threads)' % (
+                options['processes']*options['threads'],
+                options['processes'], options['threads']))
+    else:
+        print('Request Capacity   : %s (%s processes * %s threads)' % (
+                options['processes']*options['threads'],
+                options['processes'], options['threads']))
 
-    print('Daemon Processes   :', options['processes'])
-    print('Daemon Threads     :', options['threads'])
+    print('Request Timeout    : %s (seconds)' % options['request_timeout'])
+
+    print('Queue Backlog      : %s (connections)' % options['daemon_backlog'])
+
+    print('Queue Timeout      : %s (seconds)' % options['queue_timeout'])
+
+    print('Server Capacity    : %s (event/worker), %s (prefork)' % (
+            options['worker_max_clients'], options['prefork_max_clients']))
+
+    print('Server Backlog     : %s (connections)' % options['server_backlog'])
+
+    print('Locale Setting     :', options['locale'])
 
     return options
 
