@@ -163,29 +163,7 @@ Visual Studio 2008. This is referred to as being compiled for VC9.
 
 You must therefore use a version of Apache compiled for VC9.
 
-For Microsoft Visual Studio 2008, you need to download it from Microsoft.
-
-You have two options here. The first is to download the '.iso' images
-described in the following post on StackOverflow.
-
-* http://stackoverflow.com/a/15319069/128141
-
-Use the one labelled as:
-
-* VS 2008 Express SP1
-
-The direct link is:
-
-* http://download.microsoft.com/download/E/8/E/E8EEB394-7F42-4963-A2D8-29559B738298/VS2008ExpressWithSP1ENUX1504728.iso
-
-If this stops working see the StackOverflow post in case an updated link
-is added.
-
-This version of Visual Studio can only compile 32 bit binaries. This is
-okay as only a 32 bit binary for Apache is available from ApacheLounge for
-VC9.
-
-The second option for the Microsoft C/C++ compiler is that from:
+For the Microsoft C/C++ compiler, you need to download it from Microsoft.
 
 * http://www.microsoft.com/en-us/download/details.aspx?id=44266
 
@@ -207,10 +185,7 @@ Visual Studio 2008. This is referred to as being compiled for VC9.
 
 You must therefore use a version of Apache compiled for VC9.
 
-For Microsoft Visual Studio 2008, you need to download it from Microsoft.
-
-As you require a 64 bit compiler, you cannot use the first option given
-above and instead must use the second option.
+For the Microsoft C/C++ compiler, you need to download it from Microsoft.
 
 * http://www.microsoft.com/en-us/download/details.aspx?id=44266
 
@@ -232,7 +207,7 @@ Visual Studio 2010. This is referred to as being compiled for VC10.
 
 You must therefore use a version of Apache compiled for VC10.
 
-For Microsoft Visual Studio 2010, you need to download it from Microsoft.
+For the Microsoft C/C++ compiler, you need to download it from Microsoft.
 
 * http://www.visualstudio.com/downloads/download-visual-studio-vs#DownloadFamilies_4
 
@@ -240,7 +215,7 @@ Use the one labelled as:
 
 * Visual C++ 2010 Express
 
-This version of Visual Studio can only compile 32 bit binaries.
+This version of the Microsoft C/C++ compiler can only compile 32 bit binaries.
 
 Python 3.3, 3.4 (64 Bit)
 ++++++++++++++++++++++++
@@ -258,7 +233,7 @@ Visual Studio 2010. This is referred to as being compiled for VC10.
 
 You must therefore use a version of Apache compiled for VC10.
 
-For Microsoft Visual Studio 2010, you need to download it from Microsoft.
+For the Microsoft C/C++ compiler, you need to download it from Microsoft.
 
 * http://www.microsoft.com/en-us/download/details.aspx?id=8279
 
