@@ -19,3 +19,12 @@ Bugs Fixed
 can still consult the original ``LC_ALL`` environment variable. In this
 case this can result in an undesired file system encoding still being
 selected.
+
+New Features
+------------
+
+1. Added ``--enable-gdb`` option to ``mod_wsgi-express`` for when running
+in debug mode. With this option set, Apache will be started up within
+``gdb`` allowing the debug of process crashes on startup or while handling
+requests. If the ``gdb`` program is not in ``PATH``, the ``--gdb-executable``
+option can be set to give its location.

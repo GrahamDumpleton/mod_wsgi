@@ -1333,7 +1333,10 @@ WSGI_CONTROL_SCRIPT = """
 
 # %(sys_argv)s
 
-HTTPD="%(httpd_executable)s %(httpd_arguments)s"
+HTTPD="%(httpd_executable)s"
+HTTPD_ARGS="%(httpd_arguments)s"
+
+HTTPD_COMMAND="$HTTPD $HTTPD_ARGS"
 
 SHLIBPATH="%(shlibpath)s"
 
@@ -1382,20 +1385,28 @@ if [ "x$ARGV" = "x" ]; then
     ARGV="-h"
 fi
 
+GDB="%(gdb_executable)s"
+ENABLE_GDB="%(enable_gdb)s"
+
 PROCESS_NAME="%(process_name)s"
 
 case $ACMD in
 start|stop|restart|graceful|graceful-stop)
-    exec -a "$PROCESS_NAME" $HTTPD -k $ARGV
+    if [ "x$ENABLE_GDB" != "xTrue" ]; then
+        exec -a "$PROCESS_NAME" $HTTPD_COMMAND -k $ARGV
+    else
+        echo "run $HTTPD_ARGS -k $ARGV" > %(server_root)s/gdb.cmds
+        gdb -x %(server_root)s/gdb.cmds $HTTPD
+    fi
     ;;
 configtest)
-    exec $HTTPD -t
+    exec $HTTPD_COMMAND -t
     ;;
 status)
     exec %(python_executable)s -m webbrowser -t $STATUSURL
     ;;
 *)
-    exec $HTTPD $ARGV
+    exec $HTTPD_COMMAND $ARGV
 esac
 """
 
@@ -1946,6 +1957,14 @@ option_list = (
             'which recorder data will be written when enabled under debug '
             'mode.'),
 
+    optparse.make_option('--enable-gdb', action='store_true',
+            default=False, help='Flag indicating whether Apache should '
+            'be run under \'gdb\' when running in debug mode. This '
+            'would be use to debug process crashes.'),
+    optparse.make_option('--gdb-executable', default='gdb',
+            metavar='FILE-PATH', help='Override the path to the gdb '
+            'executable.'),
+
     optparse.make_option('--setup-only', action='store_true', default=False,
             help='Flag indicating that after the configuration files have '
             'been setup, that the command should then exit and not go on '
@@ -2416,6 +2435,7 @@ def _cmd_setup_server(command, args, options):
         options['enable_coverage'] = False
         options['enable_profiler'] = False
         options['enable_recorder'] = False
+        options['enable_gdb'] = False
 
     options['parent_domain'] = 'unspecified'
 
