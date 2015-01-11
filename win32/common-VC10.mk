@@ -33,7 +33,7 @@ SRCFILES = ..\src\server\*.c
 mod_wsgi.so : $(SRCFILES)
 	cl $(CPPFLAGS) $(CFLAGS) $(SRCFILES) /LD $(LDFLAGS) $(LDLIBS) /OUT:$@
 
-VARIANT = py$(PYTHON_VERSION)
+VARIANT = py$(PYTHON_VERSION)-VC10
 
 install : mod_wsgi.so
 	copy $? $(APACHE_ROOTDIR)\modules\mod_wsgi-$(VARIANT).so
