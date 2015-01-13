@@ -11481,6 +11481,26 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     r->proto_input_filters = c->input_filters;
     r->input_filters = r->proto_input_filters;
 
+#if (AP_SERVER_MINORVERSION_NUMBER <= 2 && \
+     AP_MODULE_MAGIC_AT_LEAST(20051115, 36)) || \
+    (AP_SERVER_MINORVERSION_NUMBER > 2 && \
+     AP_MODULE_MAGIC_AT_LEAST(20120211, 37))
+
+    /*
+     * New request_rec fields were added to Apache because of changes
+     * related to CVE-2013-5704. The change means that mod_wsgi version
+     * 4.4.0-4.4.5 will crash if run on the Apache versions with the
+     * addition fields if mod_wsgi daemon mode is used. If the change
+     * for the CVE was backported, even 4.4.6 onwards will crash as
+     * Apache with backported changes will not update the module magic
+     * number. In that case the cpp conditional here would have to be
+     * removed from around the code.
+     */
+
+    r->trailers_in = apr_table_make(r->pool, 5);
+    r->trailers_out = apr_table_make(r->pool, 5);
+#endif
+
     r->per_dir_config  = r->server->lookup_defaults;
 
     r->sent_bodyct = 0;
