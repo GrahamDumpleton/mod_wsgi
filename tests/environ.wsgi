@@ -72,6 +72,8 @@ def application(environ, start_response):
     print('LC_ALL: %s' % os.environ.get('LC_ALL'), file=output)
     print('sys.getdefaultencoding(): %s' % sys.getdefaultencoding(),
             file=output)
+    print('sys.getfilesystemencoding(): %s' % sys.getfilesystemencoding(),
+            file=output)
     print('locale.getlocale(): %s' % (locale.getlocale(),),
             file=output)
     print('locale.getdefaultlocale(): %s' % (locale.getdefaultlocale(),),

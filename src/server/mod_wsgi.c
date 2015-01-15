@@ -9206,12 +9206,16 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         }
 
         if (daemon->group->locale) {
+            char *envvar;
             char *result;
 
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
                          "mod_wsgi (pid=%d): Setting locale to %s for "
                          "daemon process group %s.", getpid(),
                          daemon->group->locale, daemon->group->name);
+
+            envvar = apr_pstrcat(p, "LC_ALL=", daemon->group->locale, NULL);
+            putenv(envvar);
 
             result = setlocale(LC_ALL, daemon->group->locale);
 
@@ -11368,6 +11372,27 @@ static apr_status_t wsgi_header_filter(ap_filter_t *f, apr_bucket_brigade *b)
     return ap_pass_brigade(f->next, b);
 }
 
+typedef struct cve_2013_5704_fields cve_2013_5704_fields;
+typedef struct cve_2013_5704_apache22 cve_2013_5704_apache22;
+typedef struct cve_2013_5704_apache24 cve_2013_5704_apache24;
+
+struct cve_2013_5704_fields {
+    apr_table_t *trailers_in;
+    apr_table_t *trailers_out;
+};
+
+struct cve_2013_5704_apache22 {
+    struct ap_filter_t *proto_input_filters;
+    int eos_sent;
+    cve_2013_5704_fields fields;
+};
+
+struct cve_2013_5704_apache24 {
+    apr_sockaddr_t *useragent_addr;
+    char *useragent_ip;
+    cve_2013_5704_fields fields;
+};
+
 static int wsgi_hook_daemon_handler(conn_rec *c)
 {
     apr_socket_t *csd;
@@ -11396,6 +11421,13 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     const char *item;
 
     int queue_timeout_occurred = 0;
+
+#if ! (AP_MODULE_MAGIC_AT_LEAST(20120211, 37) || \
+    (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
+     AP_SERVER_MINORVERSION_NUMBER <= 2 && \
+     AP_MODULE_MAGIC_AT_LEAST(20051115, 36)))
+    apr_size_t size = 0;
+#endif
 
     /* Don't do anything if not in daemon process. */
 
@@ -11450,10 +11482,22 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
             next = current->next;
     }
 
-    /* Create and populate our own request object. */
+    /*
+     * Create and populate our own request object. We allocate more
+     * memory than we require here for the request_rec in order to
+     * implement an opimistic hack for the case where mod_wsgi is built
+     * against an Apache version prior to CVE-2013-6704 being applied to
+     * it. If that Apache is upgraded but mod_wsgi not recompiled then
+     * it will crash in daemon mode. We therefore use the extra space to
+     * set the structure members which are added by CVE-2013-6704 to try
+     * and avoid that situation. Note that this is distinct from the
+     * hack down below to deal with where mod_wsgi was compiled against
+     * an Apache version which had CVE-2013-6704 backported.
+     */
 
     apr_pool_create(&p, c->pool);
-    r = apr_pcalloc(p, sizeof(request_rec));
+
+    r = apr_pcalloc(p, sizeof(request_rec)+sizeof(cve_2013_5704_fields));
 
     r->pool = p;
     r->connection = c;
@@ -11476,6 +11520,78 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     r->output_filters = r->proto_output_filters;
     r->proto_input_filters = c->input_filters;
     r->input_filters = r->proto_input_filters;
+
+#if AP_MODULE_MAGIC_AT_LEAST(20120211, 37) || \
+    (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
+     AP_SERVER_MINORVERSION_NUMBER <= 2 && \
+     AP_MODULE_MAGIC_AT_LEAST(20051115, 36))
+
+    /*
+     * New request_rec fields were added to Apache because of changes
+     * related to CVE-2013-5704. The change means that mod_wsgi version
+     * 4.4.0-4.4.5 will crash if run on the Apache versions with the
+     * addition fields if mod_wsgi daemon mode is used. If we are using
+     * Apache 2.2.29 or 2.4.11, we set the fields direct against the
+     * new structure members.
+     */
+
+    r->trailers_in = apr_table_make(r->pool, 5);
+    r->trailers_out = apr_table_make(r->pool, 5);
+#else
+    /*
+     * We use a huge hack here to try and identify when CVE-2013-5704
+     * has been back ported to older Apache version. This is necessary
+     * as when backported the Apache module magic number will not be
+     * updated and it isn't possible to determine from that at compile
+     * time if the new structure members exist and so that they should
+     * be set. We therefore try and work out whether the extra structure
+     * members exist through looking at the size of request_rec and
+     * whether memory has been allocated above what is known to be the
+     * last member in the structure before the new members were added.
+     */
+
+#if AP_SERVER_MINORVERSION_NUMBER <= 2
+    size = offsetof(request_rec, eos_sent);
+    size += sizeof(r->eos_sent);
+#else
+    size = offsetof(request_rec, useragent_ip);
+    size += sizeof(r->useragent_ip);
+#endif
+
+    /*
+     * Check whether request_rec is at least as large as minimal size
+     * plus the size of the extra fields. If it is, then we need to
+     * set the additional fields.
+     */
+
+    if (sizeof(request_rec) >= size + sizeof(cve_2013_5704_fields)) {
+#if AP_SERVER_MINORVERSION_NUMBER <= 2
+        cve_2013_5704_apache22 *rext;
+        rext = (cve_2013_5704_apache22 *)&r->proto_input_filters;
+#else
+        cve_2013_5704_apache24 *rext;
+        rext = (cve_2013_5704_apache24 *)&r->useragent_addr;
+#endif
+
+        rext->fields.trailers_in = apr_table_make(r->pool, 5);
+        rext->fields.trailers_out = apr_table_make(r->pool, 5);
+    }
+    else {
+        /*
+         * Finally, to allow forward portability of a compiled mod_wsgi
+         * binary from an Apache version without the CVE-2013-5704
+         * change to one where it is, without needing to recompile
+         * mod_wsgi, we set fields in the extra memory we added before
+         * the actual request_rec.
+         */
+
+        cve_2013_5704_fields *rext;
+        rext = (cve_2013_5704_fields *)(r+1);
+
+        rext->trailers_in = apr_table_make(r->pool, 5);
+        rext->trailers_out = apr_table_make(r->pool, 5);
+    }
+#endif
 
     r->per_dir_config  = r->server->lookup_defaults;
 

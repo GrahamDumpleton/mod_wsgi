@@ -48,8 +48,11 @@
 #include "http_connection.h"
 #include "apr_poll.h"
 #include "apr_signal.h"
-#include "apr_support.h"
 #include "http_vhost.h"
+
+#if APR_MAJOR_VERSION < 2
+#include "apr_support.h"
+#endif
 
 #if APR_MAJOR_VERSION < 1
 #define apr_atomic_cas32 apr_atomic_cas

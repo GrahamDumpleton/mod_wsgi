@@ -34,7 +34,7 @@ mod_wsgi.so : $(SRCFILES)
 	cl $(CPPFLAGS) $(CFLAGS) $(SRCFILES) /LD $(LDFLAGS) $(LDLIBS) /OUT:$@
 	mt -manifest $@.manifest -outputresource:$@;2
 
-VARIANT = py$(PYTHON_VERSION)
+VARIANT = py$(PYTHON_VERSION)-VC9
 
 install : mod_wsgi.so
 	copy $? $(APACHE_ROOTDIR)\modules\mod_wsgi-$(VARIANT).so
