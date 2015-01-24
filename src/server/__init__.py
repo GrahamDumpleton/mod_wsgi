@@ -703,7 +703,8 @@ WSGIImportScript '%(server_root)s/server-metrics.py' \\
 """
 
 APACHE_SERVICE_CONFIG = """
-WSGIDaemonProcess 'service:%(name)s' display-name=%%{GROUP} threads=1
+WSGIDaemonProcess 'service:%(name)s' display-name=%%{GROUP} threads=1 \\
+    user='%(user)s' group='%(group)s'
 WSGIImportScript '%(script)s' process-group='service:%(name)s' \\
     application-group=%%{GLOBAL}
 """
@@ -768,9 +769,13 @@ def generate_apache_config(options):
                         file=fp)
 
         if options['service_scripts']:
+            users = dict(options['service_users'] or [])
+            groups = dict(options['service_groups'] or [])
             for name, script in options['service_scripts']:
-                print(APACHE_SERVICE_CONFIG % dict(name=name, script=script),
-                        file=fp)
+                user = users.get(name, '${WSGI_RUN_USER}')
+                group = groups.get(name, '${WSGI_RUN_GROUP}')
+                print(APACHE_SERVICE_CONFIG % dict(name=name, user=user,
+                        group=group, script=script), file=fp)
 
         if options['include_files']:
             for filename in options['include_files']:
@@ -1723,12 +1728,12 @@ option_list = (
             'the worker processes will still though be reloaded if the '
             'WSGI script file itself is modified.'),
 
-    optparse.make_option('--user', default=default_run_user(), metavar='NAME',
-            help='When being run by the root user, the user that the WSGI '
-            'application should be run as.'),
+    optparse.make_option('--user', default=default_run_user(),
+            metavar='USERNAME', help='When being run by the root user, '
+            'the user that the WSGI application should be run as.'),
     optparse.make_option('--group', default=default_run_group(),
-            metavar='NAME', help='When being run by the root user, the group '
-            'that the WSGI application should be run as.'),
+            metavar='GROUP', help='When being run by the root user, the '
+            'group that the WSGI application should be run as.'),
 
     optparse.make_option('--callable-object', default='application',
             metavar='NAME', help='The name of the entry point for the WSGI '
@@ -1972,10 +1977,20 @@ option_list = (
             help='Flag indicating whether PHP 5 support should be enabled.'),
 
     optparse.make_option('--service-script', action='append', nargs=2,
-            dest='service_scripts', metavar='NAME SCRIPT-PATH',
+            dest='service_scripts', metavar='SERVICE SCRIPT-PATH',
             help='Specify the name of a Python script to be loaded and '
             'executed in the context of a distinct daemon process. Used '
             'for running a managed service.'),
+    optparse.make_option('--service-user', action='append', nargs=2,
+            dest='service_users', metavar='SERVICE USERNAME',
+            help='When being run by the root user, the user that the '
+            'distinct daemon process started to run the managed service '
+            'should be run as.'),
+    optparse.make_option('--service-group', action='append', nargs=2,
+            dest='service_groups', metavar='SERVICE GROUP',
+            help='When being run by the root user, the group that the '
+            'distinct daemon process started to run the managed service '
+            'should be run as.'),
 
     optparse.make_option('--enable-docs', action='store_true', default=False,
             help='Flag indicating whether the mod_wsgi documentation should '
