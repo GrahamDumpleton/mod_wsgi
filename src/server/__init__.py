@@ -77,7 +77,7 @@ def find_mimetypes():
 
 APACHE_GENERAL_CONFIG = """
 <IfModule !version_module>
-LoadModule version_module '%(modules_directory)s/mod_version.so'
+LoadModule version_module '${HTTPD_MODULES_DIRECTORY}/mod_version.so'
 </IfModule>
 
 ServerName %(host)s
@@ -110,7 +110,7 @@ LockFile '%(server_root)s/accept.lock'
 <IfModule !mpm_worker_module>
 <IfModule !mpm_prefork_module>
 <IfDefine WSGI_MPM_EXISTS_PREFORK_MODULE>
-LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
+LoadModule mpm_prefork_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_prefork.so'
 </IfDefine>
 </IfModule>
 </IfModule>
@@ -123,13 +123,13 @@ LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
 <IfModule !mpm_worker_module>
 <IfModule !mpm_prefork_module>
 <IfDefine WSGI_MPM_ENABLE_EVENT_MODULE>
-LoadModule mpm_event_module '%(modules_directory)s/mod_mpm_event.so'
+LoadModule mpm_event_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_event.so'
 </IfDefine>
 <IfDefine WSGI_MPM_ENABLE_WORKER_MODULE>
-LoadModule mpm_worker_module '%(modules_directory)s/mod_mpm_worker.so'
+LoadModule mpm_worker_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_worker.so'
 </IfDefine>
 <IfDefine WSGI_MPM_ENABLE_PREFORK_MODULE>
-LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
+LoadModule mpm_prefork_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_prefork.so'
 </IfDefine>
 </IfModule>
 </IfModule>
@@ -138,66 +138,66 @@ LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
 
 <IfVersion >= 2.4>
 <IfModule !access_compat_module>
-LoadModule access_compat_module '%(modules_directory)s/mod_access_compat.so'
+LoadModule access_compat_module '${HTTPD_MODULES_DIRECTORY}/mod_access_compat.so'
 </IfModule>
 <IfModule !unixd_module>
-LoadModule unixd_module '%(modules_directory)s/mod_unixd.so'
+LoadModule unixd_module '${HTTPD_MODULES_DIRECTORY}/mod_unixd.so'
 </IfModule>
 <IfModule !authn_core_module>
-LoadModule authn_core_module '%(modules_directory)s/mod_authn_core.so'
+LoadModule authn_core_module '${HTTPD_MODULES_DIRECTORY}/mod_authn_core.so'
 </IfModule>
 <IfModule !authz_core_module>
-LoadModule authz_core_module '%(modules_directory)s/mod_authz_core.so'
+LoadModule authz_core_module '${HTTPD_MODULES_DIRECTORY}/mod_authz_core.so'
 </IfModule>
 </IfVersion>
 
 <IfModule !authz_host_module>
-LoadModule authz_host_module '%(modules_directory)s/mod_authz_host.so'
+LoadModule authz_host_module '${HTTPD_MODULES_DIRECTORY}/mod_authz_host.so'
 </IfModule>
 <IfModule !mime_module>
-LoadModule mime_module '%(modules_directory)s/mod_mime.so'
+LoadModule mime_module '${HTTPD_MODULES_DIRECTORY}/mod_mime.so'
 </IfModule>
 <IfModule !rewrite_module>
-LoadModule rewrite_module '%(modules_directory)s/mod_rewrite.so'
+LoadModule rewrite_module '${HTTPD_MODULES_DIRECTORY}/mod_rewrite.so'
 </IfModule>
 <IfModule !alias_module>
-LoadModule alias_module '%(modules_directory)s/mod_alias.so'
+LoadModule alias_module '${HTTPD_MODULES_DIRECTORY}/mod_alias.so'
 </IfModule>
 <IfModule !dir_module>
-LoadModule dir_module '%(modules_directory)s/mod_dir.so'
+LoadModule dir_module '${HTTPD_MODULES_DIRECTORY}/mod_dir.so'
 </IfModule>
 <IfModule !env_module>
-LoadModule env_module '%(modules_directory)s/mod_env.so'
+LoadModule env_module '${HTTPD_MODULES_DIRECTORY}/mod_env.so'
 </IfModule>
 
 <IfVersion >= 2.2.15>
 <IfModule !reqtimeout_module>
-LoadModule reqtimeout_module '%(modules_directory)s/mod_reqtimeout.so'
+LoadModule reqtimeout_module '${HTTPD_MODULES_DIRECTORY}/mod_reqtimeout.so'
 </IfModule>
 </IfVersion>
 
 <IfDefine WSGI_COMPRESS_RESPONSES>
 <IfModule !deflate_module>
-LoadModule deflate_module '%(modules_directory)s/mod_deflate.so'
+LoadModule deflate_module '${HTTPD_MODULES_DIRECTORY}/mod_deflate.so'
 </IfModule>
 </IfDefine>
 
 <IfDefine WSGI_AUTH_USER>
 <IfModule !auth_basic_module>
-LoadModule auth_basic_module '%(modules_directory)s/mod_auth_basic.so'
+LoadModule auth_basic_module '${HTTPD_MODULES_DIRECTORY}/mod_auth_basic.so'
 </IfModule>
 <IfModule !auth_digest_module>
-LoadModule auth_digest_module '%(modules_directory)s/mod_auth_digest.so'
+LoadModule auth_digest_module '${HTTPD_MODULES_DIRECTORY}/mod_auth_digest.so'
 </IfModule>
 <IfModule !authz_user_module>
-LoadModule authz_user_module '%(modules_directory)s/mod_authz_user.so'
+LoadModule authz_user_module '${HTTPD_MODULES_DIRECTORY}/mod_authz_user.so'
 </IfModule>
 </IfDefine>
 
 <IfModule mpm_prefork_module>
 <IfDefine WSGI_WITH_PHP5>
 <IfModule !php5_module>
-Loadmodule php5_module '%(modules_directory)s/libphp5.so'
+Loadmodule php5_module '${HTTPD_MODULES_DIRECTORY}/libphp5.so'
 </IfModule>
 AddHandler application/x-httpd-php .php
 </IfDefine>
@@ -207,7 +207,7 @@ LoadModule wsgi_module '%(mod_wsgi_so)s'
 
 <IfDefine WSGI_SERVER_METRICS>
 <IfModule !status_module>
-LoadModule status_module '%(modules_directory)s/mod_status.so'
+LoadModule status_module '${HTTPD_MODULES_DIRECTORY}/mod_status.so'
 </IfModule>
 </IfDefine>
 
@@ -340,7 +340,7 @@ LogLevel %(log_level)s
 
 <IfDefine WSGI_ACCESS_LOG>
 <IfModule !log_config_module>
-LoadModule log_config_module %(modules_directory)s/mod_log_config.so
+LoadModule log_config_module ${HTTPD_MODULES_DIRECTORY}/mod_log_config.so
 </IfModule>
 LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b" common
 LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b \\"%%{Referer}i\\" \\"%%{User-agent}i\\"" combined
@@ -360,7 +360,7 @@ WSGIChunkedRequest On
 
 <IfDefine WSGI_WITH_HTTPS>
 <IfModule !ssl_module>
-LoadModule ssl_module %(modules_directory)s/mod_ssl.so
+LoadModule ssl_module ${HTTPD_MODULES_DIRECTORY}/mod_ssl.so
 </IfModule>
 </IfDefine>
 
@@ -1337,6 +1337,9 @@ HTTPD="%(httpd_executable)s"
 HTTPD_ARGS="%(httpd_arguments)s"
 
 HTTPD_COMMAND="$HTTPD $HTTPD_ARGS"
+
+HTTPD_MODULES_DIRECTORY="%(modules_directory)s"
+export HTTPD_MODULES_DIRECTORY
 
 SHLIBPATH="%(shlibpath)s"
 
