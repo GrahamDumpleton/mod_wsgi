@@ -674,6 +674,12 @@ WSGIImportScript '%(server_root)s/server-metrics.py' \\
     process-group=express application-group=server-metrics
 """
 
+APACHE_SERVICE_CONFIG = """
+WSGIDaemonProcess 'service:%(name)s' display-name=%%{GROUP} threads=1
+WSGIImportScript '%(script)s' process-group='service:%(name)s' \\
+    application-group=%%{GLOBAL}
+"""
+
 def generate_apache_config(options):
     with open(options['httpd_conf'], 'w') as fp:
         print(APACHE_GENERAL_CONFIG % options, file=fp)
@@ -720,6 +726,11 @@ def generate_apache_config(options):
 
             for extension, script in options['handler_scripts']:
                 print(APACHE_EXTENSION_CONFIG % dict(extension=extension),
+                        file=fp)
+
+        if options['service_scripts']:
+            for name, script in options['service_scripts']:
+                print(APACHE_SERVICE_CONFIG % dict(name=name, script=script),
                         file=fp)
 
         if options['include_files']:
@@ -1912,6 +1923,12 @@ option_list = (
     optparse.make_option('--with-php5', action='store_true', default=False,
             help='Flag indicating whether PHP 5 support should be enabled.'),
 
+    optparse.make_option('--service-script', action='append', nargs=2,
+            dest='service_scripts', metavar='NAME SCRIPT-PATH',
+            help='Specify the name of a Python script to be loaded and '
+            'executed in the context of a distinct daemon process. Used '
+            'for running a managed service.'),
+
     optparse.make_option('--enable-docs', action='store_true', default=False,
             help='Flag indicating whether the mod_wsgi documentation should '
             'be made available at the /__wsgi__/docs sub URL.'),
@@ -2228,6 +2245,14 @@ def _cmd_setup_server(command, args, options):
 
     if options['with_newrelic_platform']:
         options['server_metrics'] = True
+
+    if options['service_scripts']:
+        service_scripts = []
+        for name, script in options['service_scripts']:
+            if not os.path.isabs(script):
+                script = os.path.abspath(script)
+            service_scripts.append((name, script))
+        options['service_scripts'] = service_scripts
 
     max_clients = options['processes'] * options['threads']
 
