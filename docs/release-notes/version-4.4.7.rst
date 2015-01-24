@@ -10,6 +10,14 @@ For details on the availability of Windows binaries see:
 
   https://github.com/GrahamDumpleton/mod_wsgi/tree/master/win32
 
+Features Changed
+----------------
+
+1. The ``proxy-buffer-size`` option to ``WSGIDaemonProcess`` directive
+was renamed to ``response-buffer-size`` to avoid confusion with options
+related to normal HTTP proxying. The ``--proxy-buffer-size`` option of
+``mod_wsgi-express`` was similarly renamed to ``--response-buffer-size``.
+
 New Features
 ------------
 

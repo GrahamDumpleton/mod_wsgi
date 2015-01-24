@@ -122,7 +122,7 @@ typedef struct {
     int send_buffer_size;
     int recv_buffer_size;
     int header_buffer_size;
-    int proxy_buffer_size;
+    int response_buffer_size;
     const char *script_user;
     const char *script_group;
     int cpu_time_limit;

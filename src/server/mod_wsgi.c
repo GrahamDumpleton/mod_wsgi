@@ -6609,7 +6609,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int send_buffer_size = 0;
     int recv_buffer_size = 0;
     int header_buffer_size = 0;
-    int proxy_buffer_size = 0;
+    int response_buffer_size = 0;
 
     const char *script_user = NULL;
     const char *script_group = NULL;
@@ -6873,13 +6873,13 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                        "or 0 for default.";
             }
         }
-        else if (!strcmp(option, "proxy-buffer-size")) {
+        else if (!strcmp(option, "response-buffer-size")) {
             if (!*value)
-                return "Invalid proxy buffer size for WSGI daemon process.";
+                return "Invalid response buffer size for WSGI daemon process.";
 
-            proxy_buffer_size = atoi(value);
-            if (proxy_buffer_size < 65536 && proxy_buffer_size != 0) {
-                return "Proxy buffer size must be >= 65536 bytes, "
+            response_buffer_size = atoi(value);
+            if (response_buffer_size < 65536 && response_buffer_size != 0) {
+                return "Response buffer size must be >= 65536 bytes, "
                        "or 0 for default.";
             }
         }
@@ -7090,7 +7090,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->send_buffer_size = send_buffer_size;
     entry->recv_buffer_size = recv_buffer_size;
     entry->header_buffer_size = header_buffer_size;
-    entry->proxy_buffer_size = proxy_buffer_size;
+    entry->response_buffer_size = response_buffer_size;
 
     entry->script_user = script_user;
     entry->script_group = script_group;
@@ -11202,7 +11202,7 @@ static int wsgi_execute_remote(request_rec *r)
 
     /* Transfer any response content. */
 
-    return wsgi_transfer_response(r, bbin, group->proxy_buffer_size);
+    return wsgi_transfer_response(r, bbin, group->response_buffer_size);
 }
 
 static apr_status_t wsgi_socket_read(apr_socket_t *sock, void *vbuf,
