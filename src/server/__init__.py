@@ -437,6 +437,14 @@ MaxRequestsPerChild 0
 ThreadStackSize 262144
 </IfModule>
 
+<IfDefine !WSGI_VIRTUAL_HOST>
+<IfVersion < 2.4>
+NameVirtualHost *:%(port)s
+</IfVersion>
+<VirtualHost _default_:%(port)s>
+</VirtualHost>
+</IfDefine>
+
 <IfDefine WSGI_VIRTUAL_HOST>
 
 <IfVersion < 2.4>
@@ -617,6 +625,13 @@ APACHE_PROXY_PASS_CONFIG = """
 ProxyPass '%(mount_point)s' '%(url)s'
 """
 
+APACHE_PROXY_PASS_HOST_CONFIG = """
+<VirtualHost *:%(port)s>
+ServerName %(host)s
+ProxyPass / '%(url)s'
+</VirtualHost>
+"""
+
 APACHE_ALIAS_DIRECTORY_CONFIG = """
 Alias '%(mount_point)s' '%(directory)s'
 
@@ -701,6 +716,12 @@ def generate_apache_config(options):
             for mount_point, url in options['proxy_url_aliases']:
                 print(APACHE_PROXY_PASS_CONFIG % dict(
                         mount_point=mount_point, url=url), file=fp)
+
+        if options['proxy_virtual_hosts']:
+            for host, url in options['proxy_virtual_hosts']:
+                print(APACHE_PROXY_PASS_HOST_CONFIG % dict(
+                        host=host, port=options['port'], url=url),
+                        file=fp)
 
         if options['url_aliases']:
             for mount_point, target in sorted(options['url_aliases'],
@@ -1752,6 +1773,10 @@ option_list = (
             dest='proxy_url_aliases', metavar='URL-PATH URL',
             help='Map a sub URL such that any requests against it will be '
             'proxied to the specified URL.'),
+    optparse.make_option('--proxy-virtual-host', action='append', nargs=2,
+            dest='proxy_virtual_hosts', metavar='HOSTNAME URL',
+            help='Proxy any requests for the specified host name to the '
+            'remote URL.'),
 
     optparse.make_option('--keep-alive-timeout', type='int', default=0,
             metavar='SECONDS', help='The number of seconds which a client '
@@ -2542,7 +2567,7 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_CHUNKED_REQUEST')
     if options['with_php5']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PHP5')
-    if options['proxy_url_aliases']:
+    if options['proxy_url_aliases'] or options['proxy_virtual_hosts']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY')
 
     options['httpd_arguments_list'].extend(

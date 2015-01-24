@@ -20,3 +20,7 @@ Apache, even though it is a distinct application.
 
 2. Added ``--proxy-url-alias`` option to ``mod_wsgi-express`` for setting
 up proxying of a sub URL of the site to a remote URL.
+
+3. Added ``--proxy-virtual-host`` option to ``mod_wsgi-express`` for setting
+up proxying of a whole virtual host to a remote URL. Only supports proxying
+of HTTP requests and not HTTPS requests.
