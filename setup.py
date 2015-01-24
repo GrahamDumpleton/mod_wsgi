@@ -429,5 +429,4 @@ setup(name = 'mod_wsgi',
     ext_modules = [extension],
     entry_points = { 'console_scripts':
         ['mod_wsgi-express = mod_wsgi.server:main'],},
-    install_requires = ['mod_wsgi-metrics >= 1.0.0'],
 )
