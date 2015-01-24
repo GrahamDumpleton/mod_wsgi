@@ -17,3 +17,6 @@ New Features
 Python script to be loaded and executed in the context of a distinct
 daemon process. This can be used for executing a service to be managed by
 Apache, even though it is a distinct application.
+
+2. Added ``--proxy-url-alias`` option to ``mod_wsgi-express`` for setting
+up proxying of a sub URL of the site to a remote URL.

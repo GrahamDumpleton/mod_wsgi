@@ -194,6 +194,15 @@ LoadModule authz_user_module '${HTTPD_MODULES_DIRECTORY}/mod_authz_user.so'
 </IfModule>
 </IfDefine>
 
+<IfDefine WSGI_WITH_PROXY>
+<IfModule !proxy_module>
+LoadModule proxy_module ${HTTPD_MODULES_DIRECTORY}/mod_proxy.so
+</IfModule>
+<IfModule !proxy_http_module>
+LoadModule proxy_http_module ${HTTPD_MODULES_DIRECTORY}/mod_proxy_http.so
+</IfModule>
+</IfDefine>
+
 <IfModule mpm_prefork_module>
 <IfDefine WSGI_WITH_PHP5>
 <IfModule !php5_module>
@@ -604,6 +613,10 @@ WSGIImportScript '%(server_root)s/handler.wsgi' \\
 </IfDefine>
 """
 
+APACHE_PROXY_PASS_CONFIG = """
+ProxyPass '%(mount_point)s' '%(url)s'
+"""
+
 APACHE_ALIAS_DIRECTORY_CONFIG = """
 Alias '%(mount_point)s' '%(directory)s'
 
@@ -683,6 +696,11 @@ WSGIImportScript '%(script)s' process-group='service:%(name)s' \\
 def generate_apache_config(options):
     with open(options['httpd_conf'], 'w') as fp:
         print(APACHE_GENERAL_CONFIG % options, file=fp)
+
+        if options['proxy_url_aliases']:
+            for mount_point, url in options['proxy_url_aliases']:
+                print(APACHE_PROXY_PASS_CONFIG % dict(
+                        mount_point=mount_point, url=url), file=fp)
 
         if options['url_aliases']:
             for mount_point, target in sorted(options['url_aliases'],
@@ -1730,6 +1748,11 @@ option_list = (
             default=False, help='Flag indicating whether Apache error '
             'documents will override application error responses.'),
 
+    optparse.make_option('--proxy-url-alias', action='append', nargs=2,
+            dest='proxy_url_aliases', metavar='URL-PATH URL',
+            help='Map a sub URL such that any requests against it will be '
+            'proxied to the specified URL.'),
+
     optparse.make_option('--keep-alive-timeout', type='int', default=0,
             metavar='SECONDS', help='The number of seconds which a client '
             'connection will be kept alive to allow subsequent requests '
@@ -2519,6 +2542,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_CHUNKED_REQUEST')
     if options['with_php5']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PHP5')
+    if options['proxy_url_aliases']:
+        options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory'],
