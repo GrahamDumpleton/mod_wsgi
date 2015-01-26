@@ -267,6 +267,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    inactivity-timeout=%(inactivity_timeout)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
+   eviction-timeout=%(eviction_timeout)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
@@ -291,6 +292,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    inactivity-timeout=%(inactivity_timeout)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
+   eviction-timeout=%(eviction_timeout)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
@@ -1606,10 +1608,16 @@ option_list = (
 
     optparse.make_option('--graceful-timeout', type='int', default=15,
             metavar='SECONDS', help='Grace period for requests to complete '
-            'normally, without accepting new requests, when worker processes '
-            'are being shutdown and restarted due to maximum requests being '
-            'reached or due to graceful restart signal. Defaults to 15 '
-            'seconds.'),
+            'normally, while still accepting new requests, when worker '
+            'processes are being shutdown and restarted due to maximum '
+            'requests being reached. Defaults to 15 seconds.'),
+    optparse.make_option('--eviction-timeout', type='int', default=0,
+            metavar='SECONDS', help='Grace period for requests to complete '
+            'normally, while still accepting new requests, when the WSGI '
+            'application is being evicted from the worker processes, and '
+            'the process restarted, due to forced graceful restart signal. '
+            'Defaults to timeout specified by \'--graceful-timeout\' '
+            'option.'),
 
     optparse.make_option('--deadlock-timeout', type='int', default=60,
             metavar='SECONDS', help='Maximum number of seconds allowed '

@@ -39,3 +39,21 @@ up proxying of a sub URL of the site to a remote URL.
 3. Added ``--proxy-virtual-host`` option to ``mod_wsgi-express`` for setting
 up proxying of a whole virtual host to a remote URL. Only supports proxying
 of HTTP requests and not HTTPS requests.
+
+4. Added ``eviction-timeout`` option to ``WSGIDaemonProcess`` directive.
+For the case where the graceful restart signal, usually ``SIGUSR1``, is
+sent to a daemon process to evict the WSGI application and restart the
+process, this controls how many seconds the process will wait, while still
+accepting new requests, before it reaches an idle state with no active
+requests and shuts down.
+
+The ``graceful-timeout`` option previously performed this exact role in
+this case previously, but a separate option is being added to allow a
+different timeout period to be specified for the case for forced eviction.
+The existing ``graceful-timeout`` option is still used when a maximum
+requests option or CPU usage limit is set. For backwards compatibility,
+if ``eviction-timeout`` isn't set, it will fall back to using any value
+specified using the ``graceful-timeout`` option.
+
+The ``--eviction-timeout`` option has also been added to
+``mod_wsgi-express`` and behaves in a similar fashion.
