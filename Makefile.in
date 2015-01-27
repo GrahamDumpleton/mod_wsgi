@@ -23,18 +23,18 @@ CFLAGS = @CFLAGS@
 LDFLAGS = @LDFLAGS@
 LDLIBS = @LDLIBS@
 
-SRCFILES = src/server/mod_wsgi.c src/server/wsgi_*.c
+SRCFILES = src/server/libmod_wsgi.c src/server/wsgi_*.c
 
-all : src/server/mod_wsgi.la
+all : src/server/libmod_wsgi.la
 
-src/server/mod_wsgi.la : $(SRCFILES)
+src/server/libmod_wsgi.la : $(SRCFILES)
 	$(APXS) -c $(CPPFLAGS) $(CFLAGS) $(SRCFILES) $(LDFLAGS) $(LDLIBS)
 
 $(DESTDIR)$(LIBEXECDIR) :
 	mkdir -p $@
 
 install : all $(DESTDIR)$(LIBEXECDIR)
-	$(APXS) -i -S LIBEXECDIR=$(DESTDIR)$(LIBEXECDIR) -n 'mod_wsgi' src/server/mod_wsgi.la
+	$(APXS) -i -S LIBEXECDIR=$(DESTDIR)$(LIBEXECDIR) -n 'libmod_wsgi' src/server/libmod_wsgi.la
 
 clean :
 	-rm -rf src/server/.libs
