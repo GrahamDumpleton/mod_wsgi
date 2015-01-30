@@ -78,21 +78,30 @@ if REQUIRE_APACHE:
     if not os.path.isdir(destdir):
         os.mkdir(destdir)
 
-    os.system('cd build/apr-1.5.1 && '
+    res = os.system('cd build/apr-1.5.1 && '
             './configure --prefix=%(destdir)s/apr && '
             'make && make install' % dict(destdir=destdir))
 
-    os.system('cd build/apr-util-1.5.4 && '
+    if res:
+        raise RuntimeError('Failed to build APR.')
+
+    res = os.system('cd build/apr-util-1.5.4 && '
             './configure --prefix=%(destdir)s/apr-util '
             '--with-apr=%(destdir)s/apr/bin/apr-1-config && '
             'make && make install' % dict(destdir=destdir))
 
-    os.system('cd build/httpd-2.4.12 && '
+    if res:
+        raise RuntimeError('Failed to build APR-UTIL.')
+
+    res = os.system('cd build/httpd-2.4.12 && '
             './configure --prefix=%(destdir)s/apache '
             '--enable-mpms-shared=all --enable-so --enable-rewrite '
             '--with-apr=%(destdir)s/apr/bin/apr-1-config '
             '--with-apr-util=%(destdir)s/apr-util/bin/apu-1-config && '
             'make && make install' % dict(destdir=destdir))
+
+    if res:
+        raise RuntimeError('Failed to build APACHE.')
 
     shutil.rmtree('src/packages/apache/htdocs', ignore_errors=True)
     shutil.rmtree('src/packages/apache/icons', ignore_errors=True)
