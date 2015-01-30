@@ -19,42 +19,120 @@ from distutils.core import Extension
 from distutils.sysconfig import get_config_var as get_python_config
 from distutils.sysconfig import get_python_lib
 
-# Before anything else, this setup.py uses various tricks to install
-# precompiled Apache binaries for the Heroku and OpenShift environments.
-# Once they are installed, then the installation of the mod_wsgi package
-# itself will be triggered, ensuring that it can be built against the
-# precompiled Apache binaries which were installed.
-#
-# We therefore first need to work out whether we are actually running on
-# either Heroku of OpenShift. If we are, then we identify the set of
-# precompiled binaries we are to use and copy it into the Python
-# installation.
+# Before anything else, this setup.py uses various tricks to potentially
+# install Apache. This can be from source code if that ability is
+# enabled, or from precompiled Apache binaries for Heroku and OpenShift
+# environments. Once they are installed, then the installation of the
+# mod_wsgi package itself will be triggered, ensuring that it can be
+# built against the precompiled Apache binaries which were installed.
 
-PREFIX = 'https://s3.amazonaws.com'
-BUCKET = os.environ.get('MOD_WSGI_REMOTE_S3_BUCKET_NAME', 'modwsgi.org')
+def download_url(url):
+    package = os.path.basename(url)
+    if not os.path.isfile(package):
+        print('Downloading', url)
+        urlretrieve(url, package+'.download')
+        os.rename(package+'.download', package)
+    return package
 
-REMOTE_TARBALL_NAME = os.environ.get('MOD_WSGI_REMOTE_PACKAGES_NAME')
+def extract_tar(src, dst):
+    print('Extracting', src)
+    tar = tarfile.open(src)
+    tar.extractall(dst)
+    tar.close()
 
-TGZ_OPENSHIFT='mod_wsgi-packages-openshift-centos6-apache-2.4.10-1.tar.gz'
-TGZ_HEROKU='mod_wsgi-packages-heroku-cedar14-apache-2.4.10-1.tar.gz'
+REQUIRE_APACHE = os.environ.get('MOD_WSGI_REQUIRE_APACHE')
 
-if not REMOTE_TARBALL_NAME:
-    if os.environ.get('OPENSHIFT_HOMEDIR'):
-        REMOTE_TARBALL_NAME = TGZ_OPENSHIFT
-    elif os.path.isdir('/app/.heroku'):
-        REMOTE_TARBALL_NAME = TGZ_HEROKU
+if REQUIRE_APACHE:
+    # If building from source code has been enabled, then we download
+    # the source code and compile it, then installing it where required.
 
-LOCAL_TARBALL_FILE = os.environ.get('MOD_WSGI_LOCAL_PACKAGES_FILE')
+    ASF_URL = 'http://www.us.apache.org/dist/'
 
-REMOTE_TARBALL_URL = None
+    APR_URL = ASF_URL + 'apr/apr-1.5.1.tar.gz'
+    APR_UTIL_URL = ASF_URL + 'apr/apr-util-1.5.4.tar.gz'
+    APACHE_URL = ASF_URL + 'httpd/httpd-2.4.12.tar.gz'
 
-if LOCAL_TARBALL_FILE is None and REMOTE_TARBALL_NAME:
-    REMOTE_TARBALL_URL = '%s/%s/%s' % (PREFIX, BUCKET, REMOTE_TARBALL_NAME)
+    download_url(APR_URL)
+    download_url(APR_UTIL_URL)
+    download_url(APACHE_URL)
 
-WITH_PACKAGES = False
+    if not os.path.isdir('build'):
+        os.mkdir('build')
 
-if REMOTE_TARBALL_URL or LOCAL_TARBALL_FILE:
+    if not os.path.isdir('build/packages'):
+        os.mkdir('build/packages')
+
+    shutil.rmtree('build/apr-1.5.1', ignore_errors=True)
+    shutil.rmtree('build/apr-util-1.5.4', ignore_errors=True)
+    shutil.rmtree('build/httpd-2.4.12', ignore_errors=True)
+
+    extract_tar('apr-1.5.1.tar.gz', 'build')
+    extract_tar('apr-util-1.5.4.tar.gz', 'build')
+    extract_tar('httpd-2.4.12.tar.gz', 'build')
+
+    shutil.rmtree('src/packages', ignore_errors=True)
+
+    destdir = os.path.join(os.path.abspath(
+            os.path.dirname(__file__)), 'src/packages')
+
+    if not os.path.isdir(destdir):
+        os.mkdir(destdir)
+
+    os.system('cd build/apr-1.5.1 && '
+            './configure --prefix=%(destdir)s/apr && '
+            'make && make install' % dict(destdir=destdir))
+
+    os.system('cd build/apr-util-1.5.4 && '
+            './configure --prefix=%(destdir)s/apr-util '
+            '--with-apr=%(destdir)s/apr/bin/apr-1-config && '
+            'make && make install' % dict(destdir=destdir))
+
+    os.system('cd build/httpd-2.4.12 && '
+            './configure --prefix=%(destdir)s/apache '
+            '--enable-mpms-shared=all --enable-so --enable-rewrite '
+            '--with-apr=%(destdir)s/apr/bin/apr-1-config '
+            '--with-apr-util=%(destdir)s/apr-util/bin/apu-1-config && '
+            'make && make install' % dict(destdir=destdir))
+
+    shutil.rmtree('src/packages/apache/htdocs', ignore_errors=True)
+    shutil.rmtree('src/packages/apache/icons', ignore_errors=True)
+    shutil.rmtree('src/packages/apache/man', ignore_errors=True)
+    shutil.rmtree('src/packages/apache/manual', ignore_errors=True)
+
     WITH_PACKAGES = True
+
+    REMOTE_TARBALL_URL = None
+    LOCAL_TARBALL_FILE = None
+
+else:
+    # Work out whether we are actually running on either Heroku of
+    # OpenShift. If we are, then we identify the set of precompiled
+    # binaries we are to use and copy it into the Python installation.
+
+    PREFIX = 'https://s3.amazonaws.com'
+    BUCKET = os.environ.get('MOD_WSGI_REMOTE_S3_BUCKET_NAME', 'modwsgi.org')
+
+    REMOTE_TARBALL_NAME = os.environ.get('MOD_WSGI_REMOTE_PACKAGES_NAME')
+    LOCAL_TARBALL_FILE = os.environ.get('MOD_WSGI_LOCAL_PACKAGES_FILE')
+
+    TGZ_OPENSHIFT='mod_wsgi-packages-openshift-centos6-apache-2.4.10-1.tar.gz'
+    TGZ_HEROKU='mod_wsgi-packages-heroku-cedar14-apache-2.4.10-1.tar.gz'
+
+    if not REMOTE_TARBALL_NAME and not LOCAL_TARBALL_FILE:
+        if os.environ.get('OPENSHIFT_HOMEDIR'):
+            REMOTE_TARBALL_NAME = TGZ_OPENSHIFT
+        elif os.path.isdir('/app/.heroku'):
+            REMOTE_TARBALL_NAME = TGZ_HEROKU
+
+    REMOTE_TARBALL_URL = None
+
+    if LOCAL_TARBALL_FILE is None and REMOTE_TARBALL_NAME:
+        REMOTE_TARBALL_URL = '%s/%s/%s' % (PREFIX, BUCKET, REMOTE_TARBALL_NAME)
+
+    WITH_PACKAGES = False
+
+    if REMOTE_TARBALL_URL or LOCAL_TARBALL_FILE:
+        WITH_PACKAGES = True
 
 # If we are doing an install, download the tarball and unpack it into
 # the 'packages' subdirectory. We will then add everything in that
@@ -69,11 +147,12 @@ if WITH_PACKAGES:
             os.rename(REMOTE_TARBALL_NAME+'.download', REMOTE_TARBALL_NAME)
         LOCAL_TARBALL_FILE = REMOTE_TARBALL_NAME
 
-    shutil.rmtree('src/packages', ignore_errors=True)
+    if LOCAL_TARBALL_FILE:
+        shutil.rmtree('src/packages', ignore_errors=True)
 
-    tar = tarfile.open(LOCAL_TARBALL_FILE)
-    tar.extractall('src/packages')
-    tar.close()
+        tar = tarfile.open(LOCAL_TARBALL_FILE)
+        tar.extractall('src/packages')
+        tar.close()
 
     open('src/packages/__init__.py', 'a').close()
 
