@@ -2603,14 +2603,7 @@ def _cmd_setup_server(command, args, options):
     options['python_executable'] = sys.executable
 
     options['shlibpath_var'] = apxs_config.SHLIBPATH_VAR
-
-    if apxs_config.WITH_PACKAGES:
-        shlibpath = []
-        shlibpath.append(os.path.join(apxs_config.PACKAGES, 'apr-util', 'lib'))
-        shlibpath.append(os.path.join(apxs_config.PACKAGES, 'apr', 'lib'))
-        options['shlibpath'] = ':'.join(shlibpath)
-    else:
-        options['shlibpath'] = ''
+    options['shlibpath'] = apxs_config.SHLIBPATH
 
     generate_wsgi_handler_script(options)
 

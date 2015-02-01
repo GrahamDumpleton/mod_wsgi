@@ -19,136 +19,48 @@ from distutils.core import Extension
 from distutils.sysconfig import get_config_var as get_python_config
 from distutils.sysconfig import get_python_lib
 
-# Before anything else, this setup.py uses various tricks to potentially
-# install Apache. This can be from source code if that ability is
-# enabled, or from precompiled Apache binaries for Heroku and OpenShift
-# environments. Once they are installed, then the installation of the
+# Before anything else, this setup.py uses some tricks to potentially
+# install Apache. This can be from a local tarball, or from precompiled
+# Apache binaries for Heroku and OpenShift environments downloaded from
+# Amazon S3. Once they are installed, then the installation of the
 # mod_wsgi package itself will be triggered, ensuring that it can be
 # built against the precompiled Apache binaries which were installed.
+#
+# First work out whether we are actually running on either Heroku or
+# OpenShift. If we are, then we identify the set of precompiled binaries
+# we are to use and copy it into the Python installation.
 
-def download_url(url):
-    package = os.path.basename(url)
-    if not os.path.isfile(package):
-        print('Downloading', url)
-        urlretrieve(url, package+'.download')
-        os.rename(package+'.download', package)
-    return package
+PREFIX = 'https://s3.amazonaws.com'
+BUCKET = os.environ.get('MOD_WSGI_REMOTE_S3_BUCKET_NAME', 'modwsgi.org')
 
-def extract_tar(src, dst):
-    print('Extracting', src)
-    tar = tarfile.open(src)
-    tar.extractall(dst)
-    tar.close()
+REMOTE_TARBALL_NAME = os.environ.get('MOD_WSGI_REMOTE_PACKAGES_NAME')
+LOCAL_TARBALL_FILE = os.environ.get('MOD_WSGI_LOCAL_PACKAGES_FILE')
 
-REQUIRE_APACHE = os.environ.get('MOD_WSGI_REQUIRE_APACHE')
+TGZ_OPENSHIFT='mod_wsgi-packages-openshift-centos6-apache-2.4.10-1.tar.gz'
+TGZ_HEROKU='mod_wsgi-packages-heroku-cedar14-apache-2.4.10-1.tar.gz'
 
-if REQUIRE_APACHE:
-    # If building from source code has been enabled, then we download
-    # the source code and compile it, then installing it where required.
+if not REMOTE_TARBALL_NAME and not LOCAL_TARBALL_FILE:
+    if os.environ.get('OPENSHIFT_HOMEDIR'):
+        REMOTE_TARBALL_NAME = TGZ_OPENSHIFT
+    elif os.path.isdir('/app/.heroku'):
+        REMOTE_TARBALL_NAME = TGZ_HEROKU
 
-    ASF_URL = 'http://www.us.apache.org/dist/'
+REMOTE_TARBALL_URL = None
 
-    APR_URL = ASF_URL + 'apr/apr-1.5.1.tar.gz'
-    APR_UTIL_URL = ASF_URL + 'apr/apr-util-1.5.4.tar.gz'
-    APACHE_URL = ASF_URL + 'httpd/httpd-2.4.12.tar.gz'
+if LOCAL_TARBALL_FILE is None and REMOTE_TARBALL_NAME:
+    REMOTE_TARBALL_URL = '%s/%s/%s' % (PREFIX, BUCKET, REMOTE_TARBALL_NAME)
 
-    download_url(APR_URL)
-    download_url(APR_UTIL_URL)
-    download_url(APACHE_URL)
+WITH_TARBALL_PACKAGE = False
 
-    if not os.path.isdir('build'):
-        os.mkdir('build')
-
-    if not os.path.isdir('build/packages'):
-        os.mkdir('build/packages')
-
-    shutil.rmtree('build/apr-1.5.1', ignore_errors=True)
-    shutil.rmtree('build/apr-util-1.5.4', ignore_errors=True)
-    shutil.rmtree('build/httpd-2.4.12', ignore_errors=True)
-
-    extract_tar('apr-1.5.1.tar.gz', 'build')
-    extract_tar('apr-util-1.5.4.tar.gz', 'build')
-    extract_tar('httpd-2.4.12.tar.gz', 'build')
-
-    shutil.rmtree('src/packages', ignore_errors=True)
-
-    destdir = os.path.join(os.path.abspath(
-            os.path.dirname(__file__)), 'src/packages')
-
-    if not os.path.isdir(destdir):
-        os.mkdir(destdir)
-
-    res = os.system('cd build/apr-1.5.1 && '
-            './configure --prefix=%(destdir)s/apr && '
-            'make && make install' % dict(destdir=destdir))
-
-    if res:
-        raise RuntimeError('Failed to build APR.')
-
-    res = os.system('cd build/apr-util-1.5.4 && '
-            './configure --prefix=%(destdir)s/apr-util '
-            '--with-apr=%(destdir)s/apr/bin/apr-1-config && '
-            'make && make install' % dict(destdir=destdir))
-
-    if res:
-        raise RuntimeError('Failed to build APR-UTIL.')
-
-    res = os.system('cd build/httpd-2.4.12 && '
-            './configure --prefix=%(destdir)s/apache '
-            '--enable-mpms-shared=all --enable-so --enable-rewrite '
-            '--with-apr=%(destdir)s/apr/bin/apr-1-config '
-            '--with-apr-util=%(destdir)s/apr-util/bin/apu-1-config && '
-            'make && make install' % dict(destdir=destdir))
-
-    if res:
-        raise RuntimeError('Failed to build APACHE.')
-
-    shutil.rmtree('src/packages/apache/htdocs', ignore_errors=True)
-    shutil.rmtree('src/packages/apache/icons', ignore_errors=True)
-    shutil.rmtree('src/packages/apache/man', ignore_errors=True)
-    shutil.rmtree('src/packages/apache/manual', ignore_errors=True)
-
-    WITH_PACKAGES = True
-
-    REMOTE_TARBALL_URL = None
-    LOCAL_TARBALL_FILE = None
-
-else:
-    # Work out whether we are actually running on either Heroku of
-    # OpenShift. If we are, then we identify the set of precompiled
-    # binaries we are to use and copy it into the Python installation.
-
-    PREFIX = 'https://s3.amazonaws.com'
-    BUCKET = os.environ.get('MOD_WSGI_REMOTE_S3_BUCKET_NAME', 'modwsgi.org')
-
-    REMOTE_TARBALL_NAME = os.environ.get('MOD_WSGI_REMOTE_PACKAGES_NAME')
-    LOCAL_TARBALL_FILE = os.environ.get('MOD_WSGI_LOCAL_PACKAGES_FILE')
-
-    TGZ_OPENSHIFT='mod_wsgi-packages-openshift-centos6-apache-2.4.10-1.tar.gz'
-    TGZ_HEROKU='mod_wsgi-packages-heroku-cedar14-apache-2.4.10-1.tar.gz'
-
-    if not REMOTE_TARBALL_NAME and not LOCAL_TARBALL_FILE:
-        if os.environ.get('OPENSHIFT_HOMEDIR'):
-            REMOTE_TARBALL_NAME = TGZ_OPENSHIFT
-        elif os.path.isdir('/app/.heroku'):
-            REMOTE_TARBALL_NAME = TGZ_HEROKU
-
-    REMOTE_TARBALL_URL = None
-
-    if LOCAL_TARBALL_FILE is None and REMOTE_TARBALL_NAME:
-        REMOTE_TARBALL_URL = '%s/%s/%s' % (PREFIX, BUCKET, REMOTE_TARBALL_NAME)
-
-    WITH_PACKAGES = False
-
-    if REMOTE_TARBALL_URL or LOCAL_TARBALL_FILE:
-        WITH_PACKAGES = True
+if REMOTE_TARBALL_URL or LOCAL_TARBALL_FILE:
+    WITH_TARBALL_PACKAGE = True
 
 # If we are doing an install, download the tarball and unpack it into
 # the 'packages' subdirectory. We will then add everything in that
 # directory as package data so that it will be installed into the Python
 # installation.
 
-if WITH_PACKAGES:
+if WITH_TARBALL_PACKAGE:
     if REMOTE_TARBALL_URL:
         if not os.path.isfile(REMOTE_TARBALL_NAME):
             print('Downloading', REMOTE_TARBALL_URL)
@@ -207,19 +119,27 @@ def find_program(names, default=None, paths=[]):
 
 APXS = os.environ.get('APXS')
 
+WITH_HTTPD_PACKAGE = False
+
 if APXS is None:
-    APXS = find_program(['apxs2', 'apxs'], 'apxs', ['/usr/sbin', os.getcwd()])
+    APXS = find_program(['mod_wsgi-apxs'])
+    if APXS is not None:
+        WITH_HTTPD_PACKAGE = True
+
+if APXS is None:
+    APXS = find_program(['mod_wsgi-apxs', 'apxs2', 'apxs'],
+            'apxs', ['/usr/sbin', os.getcwd()])
 elif not os.path.isabs(APXS):
     APXS = find_program([APXS], APXS, ['/usr/sbin', os.getcwd()])
 
-if not WITH_PACKAGES:
+if not WITH_TARBALL_PACKAGE:
     if not os.path.isabs(APXS) or not os.access(APXS, os.X_OK):
         raise RuntimeError('The %r command appears not to be installed or '
                 'is not executable. Please check the list of prerequisites '
                 'in the documentation for this package and install any '
                 'missing Apache httpd server packages.' % APXS)
 
-if WITH_PACKAGES: 
+if WITH_TARBALL_PACKAGE: 
     SCRIPT_DIR = os.path.join(os.path.dirname(__file__), 'src', 'packages')
 
     CONFIG_FILE = os.path.join(SCRIPT_DIR, 'apache/build/config_vars.mk')
@@ -336,18 +256,31 @@ SHLIBPATH_VAR = get_apxs_config('SHLIBPATH_VAR')
 APXS_CONFIG_TEMPLATE = """
 import os
 
-WITH_PACKAGES = %(WITH_PACKAGES)r
+WITH_TARBALL_PACKAGE = %(WITH_TARBALL_PACKAGE)r
+WITH_HTTPD_PACKAGE = %(WITH_HTTPD_PACKAGE)r
 
-if WITH_PACKAGES:
+if WITH_HTTPD_PACKAGE:
+    import mod_wsgi.httpd
+    PACKAGES = os.path.join(os.path.dirname(mod_wsgi.httpd.__file__))
+    BINDIR = os.path.join(PACKAGES, 'bin')
+    SBINDIR = BINDIR
+    LIBEXECDIR = os.path.join(PACKAGES, 'modules')
+    SHLIBPATH = os.path.join(PACKAGES, 'lib')
+elif WITH_TARBALL_PACKAGE:
     import mod_wsgi.packages
     PACKAGES = os.path.join(os.path.dirname(mod_wsgi.packages.__file__))
     BINDIR = os.path.join(PACKAGES, 'apache', 'bin')
     SBINDIR = BINDIR
     LIBEXECDIR = os.path.join(PACKAGES, 'apache', 'modules')
+    SHLIBPATH = []
+    SHLIBPATH.append(os.path.join(PACKAGES, 'apr-util', 'lib'))
+    SHLIBPATH.append(os.path.join(PACKAGES, 'apr', 'lib'))
+    SHLIBPATH = ':'.join(SHLIBPATH)
 else:
     BINDIR = '%(BINDIR)s'
     SBINDIR = '%(SBINDIR)s'
     LIBEXECDIR = '%(LIBEXECDIR)s'
+    SHLIBPATH = ''
 
 MPM_NAME = '%(MPM_NAME)s'
 PROGNAME = '%(PROGNAME)s'
@@ -370,7 +303,9 @@ else:
 
 with open(os.path.join(os.path.dirname(__file__),
         'src/server/apxs_config.py'), 'w') as fp:
-    print(APXS_CONFIG_TEMPLATE % dict(WITH_PACKAGES=WITH_PACKAGES,
+    print(APXS_CONFIG_TEMPLATE % dict(
+            WITH_TARBALL_PACKAGE=WITH_TARBALL_PACKAGE,
+            WITH_HTTPD_PACKAGE=WITH_HTTPD_PACKAGE,
             BINDIR=BINDIR, SBINDIR=SBINDIR, LIBEXECDIR=LIBEXECDIR,
             MPM_NAME=MPM_NAME, PROGNAME=PROGNAME,
             SHLIBPATH_VAR=SHLIBPATH_VAR), file=fp)
