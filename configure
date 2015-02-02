@@ -581,7 +581,7 @@ PACKAGE_STRING=
 PACKAGE_BUGREPORT=
 PACKAGE_URL=
 
-ac_unique_file="src/server/mod_wsgi.c"
+ac_unique_file="src/server/libmod_wsgi.c"
 ac_subst_vars='LTLIBOBJS
 LIBOBJS
 LIBEXECDIR

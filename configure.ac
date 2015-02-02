@@ -16,7 +16,7 @@ dnl  limitations under the License.
 
 dnl Process this file with autoconf to produce a configure script.
 
-AC_INIT(src/server/mod_wsgi.c)
+AC_INIT(src/server/libmod_wsgi.c)
 
 AC_ARG_ENABLE(framework, AC_HELP_STRING([--enable-framework],
             [enable mod_wsgi framework link]),
