@@ -57,3 +57,13 @@ specified using the ``graceful-timeout`` option.
 
 The ``--eviction-timeout`` option has also been added to
 ``mod_wsgi-express`` and behaves in a similar fashion.
+
+5. Added support for new ``mod_wsgi-httpd`` package. The ``mod_wsgi-httpd``
+package is a pip installable package which will build the Apache httpd
+server and install it into the Python installation. If the
+``mod_wsgi-httpd`` package is installed before installing this package,
+then the Apache httpd server installation installed by ``mod_wsgi-httpd``
+will be used instead of any system installed version of the Apache httpd
+server when running ``mod_wsgi-express``. This allows you to workaround
+any inability to upgrade the main Apache installation, or install its 'dev'
+package if missing, or install it outright if not present.
