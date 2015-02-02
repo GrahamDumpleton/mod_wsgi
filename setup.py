@@ -197,29 +197,6 @@ if WITH_TARBALL_PACKAGE:
     CONFIG['SBINDIR'] = get_apxs_config('sbindir')
     CONFIG['PROGNAME'] = get_apxs_config('progname')
 
-    _CFLAGS_NAMES = ['SHLTCFLAGS', 'CFLAGS', 'NOTEST_CPPFLAGS',
-        'EXTRA_CPPFLAGS', 'EXTRA_CFLAGS']
-
-    _CFLAGS_VALUES = []
-
-    for name in _CFLAGS_NAMES:
-        value = get_apxs_config(name)
-
-        # Heroku doesn't appear to run the same version of gcc
-        # that a standard Ubuntu installation does and which was
-        # used to originally build the Apache binaries. We need
-        # therefore to strip out flags that the Heroku gcc may
-        # not understand.
-
-        if value:
-            if os.path.isdir('/app/.heroku'):
-                value = value.replace('-prefer-pic', '')
-
-        if value:
-            _CFLAGS_VALUES.append(value)
-
-    CONFIG['CFLAGS'] = ' '.join(_CFLAGS_VALUES)
-
 else:
     def get_apxs_config(query):
         p = subprocess.Popen([APXS, '-q', query],
