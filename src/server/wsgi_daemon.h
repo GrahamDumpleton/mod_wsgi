@@ -113,6 +113,7 @@ typedef struct {
     apr_time_t inactivity_timeout;
     apr_time_t request_timeout;
     apr_time_t graceful_timeout;
+    apr_time_t eviction_timeout;
     apr_time_t connect_timeout;
     apr_time_t socket_timeout;
     apr_time_t queue_timeout;
@@ -122,7 +123,7 @@ typedef struct {
     int send_buffer_size;
     int recv_buffer_size;
     int header_buffer_size;
-    int proxy_buffer_size;
+    int response_buffer_size;
     const char *script_user;
     const char *script_group;
     int cpu_time_limit;

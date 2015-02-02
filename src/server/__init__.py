@@ -77,7 +77,7 @@ def find_mimetypes():
 
 APACHE_GENERAL_CONFIG = """
 <IfModule !version_module>
-LoadModule version_module '%(modules_directory)s/mod_version.so'
+LoadModule version_module '${HTTPD_MODULES_DIRECTORY}/mod_version.so'
 </IfModule>
 
 ServerName %(host)s
@@ -110,7 +110,7 @@ LockFile '%(server_root)s/accept.lock'
 <IfModule !mpm_worker_module>
 <IfModule !mpm_prefork_module>
 <IfDefine WSGI_MPM_EXISTS_PREFORK_MODULE>
-LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
+LoadModule mpm_prefork_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_prefork.so'
 </IfDefine>
 </IfModule>
 </IfModule>
@@ -123,13 +123,13 @@ LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
 <IfModule !mpm_worker_module>
 <IfModule !mpm_prefork_module>
 <IfDefine WSGI_MPM_ENABLE_EVENT_MODULE>
-LoadModule mpm_event_module '%(modules_directory)s/mod_mpm_event.so'
+LoadModule mpm_event_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_event.so'
 </IfDefine>
 <IfDefine WSGI_MPM_ENABLE_WORKER_MODULE>
-LoadModule mpm_worker_module '%(modules_directory)s/mod_mpm_worker.so'
+LoadModule mpm_worker_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_worker.so'
 </IfDefine>
 <IfDefine WSGI_MPM_ENABLE_PREFORK_MODULE>
-LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
+LoadModule mpm_prefork_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_prefork.so'
 </IfDefine>
 </IfModule>
 </IfModule>
@@ -138,66 +138,75 @@ LoadModule mpm_prefork_module '%(modules_directory)s/mod_mpm_prefork.so'
 
 <IfVersion >= 2.4>
 <IfModule !access_compat_module>
-LoadModule access_compat_module '%(modules_directory)s/mod_access_compat.so'
+LoadModule access_compat_module '${HTTPD_MODULES_DIRECTORY}/mod_access_compat.so'
 </IfModule>
 <IfModule !unixd_module>
-LoadModule unixd_module '%(modules_directory)s/mod_unixd.so'
+LoadModule unixd_module '${HTTPD_MODULES_DIRECTORY}/mod_unixd.so'
 </IfModule>
 <IfModule !authn_core_module>
-LoadModule authn_core_module '%(modules_directory)s/mod_authn_core.so'
+LoadModule authn_core_module '${HTTPD_MODULES_DIRECTORY}/mod_authn_core.so'
 </IfModule>
 <IfModule !authz_core_module>
-LoadModule authz_core_module '%(modules_directory)s/mod_authz_core.so'
+LoadModule authz_core_module '${HTTPD_MODULES_DIRECTORY}/mod_authz_core.so'
 </IfModule>
 </IfVersion>
 
 <IfModule !authz_host_module>
-LoadModule authz_host_module '%(modules_directory)s/mod_authz_host.so'
+LoadModule authz_host_module '${HTTPD_MODULES_DIRECTORY}/mod_authz_host.so'
 </IfModule>
 <IfModule !mime_module>
-LoadModule mime_module '%(modules_directory)s/mod_mime.so'
+LoadModule mime_module '${HTTPD_MODULES_DIRECTORY}/mod_mime.so'
 </IfModule>
 <IfModule !rewrite_module>
-LoadModule rewrite_module '%(modules_directory)s/mod_rewrite.so'
+LoadModule rewrite_module '${HTTPD_MODULES_DIRECTORY}/mod_rewrite.so'
 </IfModule>
 <IfModule !alias_module>
-LoadModule alias_module '%(modules_directory)s/mod_alias.so'
+LoadModule alias_module '${HTTPD_MODULES_DIRECTORY}/mod_alias.so'
 </IfModule>
 <IfModule !dir_module>
-LoadModule dir_module '%(modules_directory)s/mod_dir.so'
+LoadModule dir_module '${HTTPD_MODULES_DIRECTORY}/mod_dir.so'
 </IfModule>
 <IfModule !env_module>
-LoadModule env_module '%(modules_directory)s/mod_env.so'
+LoadModule env_module '${HTTPD_MODULES_DIRECTORY}/mod_env.so'
 </IfModule>
 
 <IfVersion >= 2.2.15>
 <IfModule !reqtimeout_module>
-LoadModule reqtimeout_module '%(modules_directory)s/mod_reqtimeout.so'
+LoadModule reqtimeout_module '${HTTPD_MODULES_DIRECTORY}/mod_reqtimeout.so'
 </IfModule>
 </IfVersion>
 
 <IfDefine WSGI_COMPRESS_RESPONSES>
 <IfModule !deflate_module>
-LoadModule deflate_module '%(modules_directory)s/mod_deflate.so'
+LoadModule deflate_module '${HTTPD_MODULES_DIRECTORY}/mod_deflate.so'
 </IfModule>
 </IfDefine>
 
 <IfDefine WSGI_AUTH_USER>
 <IfModule !auth_basic_module>
-LoadModule auth_basic_module '%(modules_directory)s/mod_auth_basic.so'
+LoadModule auth_basic_module '${HTTPD_MODULES_DIRECTORY}/mod_auth_basic.so'
 </IfModule>
 <IfModule !auth_digest_module>
-LoadModule auth_digest_module '%(modules_directory)s/mod_auth_digest.so'
+LoadModule auth_digest_module '${HTTPD_MODULES_DIRECTORY}/mod_auth_digest.so'
 </IfModule>
 <IfModule !authz_user_module>
-LoadModule authz_user_module '%(modules_directory)s/mod_authz_user.so'
+LoadModule authz_user_module '${HTTPD_MODULES_DIRECTORY}/mod_authz_user.so'
+</IfModule>
+</IfDefine>
+
+<IfDefine WSGI_WITH_PROXY>
+<IfModule !proxy_module>
+LoadModule proxy_module ${HTTPD_MODULES_DIRECTORY}/mod_proxy.so
+</IfModule>
+<IfModule !proxy_http_module>
+LoadModule proxy_http_module ${HTTPD_MODULES_DIRECTORY}/mod_proxy_http.so
 </IfModule>
 </IfDefine>
 
 <IfModule mpm_prefork_module>
 <IfDefine WSGI_WITH_PHP5>
 <IfModule !php5_module>
-Loadmodule php5_module '%(modules_directory)s/libphp5.so'
+Loadmodule php5_module '${HTTPD_MODULES_DIRECTORY}/libphp5.so'
 </IfModule>
 AddHandler application/x-httpd-php .php
 </IfDefine>
@@ -207,7 +216,7 @@ LoadModule wsgi_module '%(mod_wsgi_so)s'
 
 <IfDefine WSGI_SERVER_METRICS>
 <IfModule !status_module>
-LoadModule status_module '%(modules_directory)s/mod_status.so'
+LoadModule status_module '${HTTPD_MODULES_DIRECTORY}/mod_status.so'
 </IfModule>
 </IfDefine>
 
@@ -258,11 +267,12 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    inactivity-timeout=%(inactivity_timeout)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
+   eviction-timeout=%(eviction_timeout)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
    header-buffer-size=%(header_buffer_size)s \\
-   proxy-buffer-size=%(proxy_buffer_size)s \\
+   response-buffer-size=%(response_buffer_size)s \\
    server-metrics=%(daemon_server_metrics_flag)s
 </IfDefine>
 <IfDefine !WSGI_MULTIPROCESS>
@@ -282,10 +292,11 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    inactivity-timeout=%(inactivity_timeout)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
+   eviction-timeout=%(eviction_timeout)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
-   proxy-buffer-size=%(proxy_buffer_size)s \\
+   response-buffer-size=%(response_buffer_size)s \\
    server-metrics=%(daemon_server_metrics_flag)s
 </IfDefine>
 </IfDefine>
@@ -340,7 +351,7 @@ LogLevel %(log_level)s
 
 <IfDefine WSGI_ACCESS_LOG>
 <IfModule !log_config_module>
-LoadModule log_config_module %(modules_directory)s/mod_log_config.so
+LoadModule log_config_module ${HTTPD_MODULES_DIRECTORY}/mod_log_config.so
 </IfModule>
 LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b" common
 LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b \\"%%{Referer}i\\" \\"%%{User-agent}i\\"" combined
@@ -360,7 +371,7 @@ WSGIChunkedRequest On
 
 <IfDefine WSGI_WITH_HTTPS>
 <IfModule !ssl_module>
-LoadModule ssl_module %(modules_directory)s/mod_ssl.so
+LoadModule ssl_module ${HTTPD_MODULES_DIRECTORY}/mod_ssl.so
 </IfModule>
 </IfDefine>
 
@@ -427,6 +438,14 @@ ThreadsPerChild 1
 MaxRequestsPerChild 0
 ThreadStackSize 262144
 </IfModule>
+
+<IfDefine !WSGI_VIRTUAL_HOST>
+<IfVersion < 2.4>
+NameVirtualHost *:%(port)s
+</IfVersion>
+<VirtualHost _default_:%(port)s>
+</VirtualHost>
+</IfDefine>
 
 <IfDefine WSGI_VIRTUAL_HOST>
 
@@ -604,6 +623,17 @@ WSGIImportScript '%(server_root)s/handler.wsgi' \\
 </IfDefine>
 """
 
+APACHE_PROXY_PASS_CONFIG = """
+ProxyPass '%(mount_point)s' '%(url)s'
+"""
+
+APACHE_PROXY_PASS_HOST_CONFIG = """
+<VirtualHost *:%(port)s>
+ServerName %(host)s
+ProxyPass / '%(url)s'
+</VirtualHost>
+"""
+
 APACHE_ALIAS_DIRECTORY_CONFIG = """
 Alias '%(mount_point)s' '%(directory)s'
 
@@ -674,9 +704,27 @@ WSGIImportScript '%(server_root)s/server-metrics.py' \\
     process-group=express application-group=server-metrics
 """
 
+APACHE_SERVICE_CONFIG = """
+WSGIDaemonProcess 'service:%(name)s' display-name=%%{GROUP} threads=1 \\
+    user='%(user)s' group='%(group)s'
+WSGIImportScript '%(script)s' process-group='service:%(name)s' \\
+    application-group=%%{GLOBAL}
+"""
+
 def generate_apache_config(options):
     with open(options['httpd_conf'], 'w') as fp:
         print(APACHE_GENERAL_CONFIG % options, file=fp)
+
+        if options['proxy_url_aliases']:
+            for mount_point, url in options['proxy_url_aliases']:
+                print(APACHE_PROXY_PASS_CONFIG % dict(
+                        mount_point=mount_point, url=url), file=fp)
+
+        if options['proxy_virtual_hosts']:
+            for host, url in options['proxy_virtual_hosts']:
+                print(APACHE_PROXY_PASS_HOST_CONFIG % dict(
+                        host=host, port=options['port'], url=url),
+                        file=fp)
 
         if options['url_aliases']:
             for mount_point, target in sorted(options['url_aliases'],
@@ -721,6 +769,15 @@ def generate_apache_config(options):
             for extension, script in options['handler_scripts']:
                 print(APACHE_EXTENSION_CONFIG % dict(extension=extension),
                         file=fp)
+
+        if options['service_scripts']:
+            users = dict(options['service_users'] or [])
+            groups = dict(options['service_groups'] or [])
+            for name, script in options['service_scripts']:
+                user = users.get(name, '${WSGI_RUN_USER}')
+                group = groups.get(name, '${WSGI_RUN_GROUP}')
+                print(APACHE_SERVICE_CONFIG % dict(name=name, user=user,
+                        group=group, script=script), file=fp)
 
         if options['include_files']:
             for filename in options['include_files']:
@@ -1338,6 +1395,9 @@ HTTPD_ARGS="%(httpd_arguments)s"
 
 HTTPD_COMMAND="$HTTPD $HTTPD_ARGS"
 
+HTTPD_MODULES_DIRECTORY="%(modules_directory)s"
+export HTTPD_MODULES_DIRECTORY
+
 SHLIBPATH="%(shlibpath)s"
 
 if [ "x$SHLIBPATH" != "x" ]; then
@@ -1548,10 +1608,16 @@ option_list = (
 
     optparse.make_option('--graceful-timeout', type='int', default=15,
             metavar='SECONDS', help='Grace period for requests to complete '
-            'normally, without accepting new requests, when worker processes '
-            'are being shutdown and restarted due to maximum requests being '
-            'reached or due to graceful restart signal. Defaults to 15 '
-            'seconds.'),
+            'normally, while still accepting new requests, when worker '
+            'processes are being shutdown and restarted due to maximum '
+            'requests being reached. Defaults to 15 seconds.'),
+    optparse.make_option('--eviction-timeout', type='int', default=0,
+            metavar='SECONDS', help='Grace period for requests to complete '
+            'normally, while still accepting new requests, when the WSGI '
+            'application is being evicted from the worker processes, and '
+            'the process restarted, due to forced graceful restart signal. '
+            'Defaults to timeout specified by \'--graceful-timeout\' '
+            'option.'),
 
     optparse.make_option('--deadlock-timeout', type='int', default=60,
             metavar='SECONDS', help='Maximum number of seconds allowed '
@@ -1655,7 +1721,7 @@ option_list = (
             metavar='NUMBER', help='Size of buffer used for reading '
             'response headers from daemon processes. Defaults to 0, '
             'indicating internal default of 32768 bytes is used.'),
-    optparse.make_option('--proxy-buffer-size', type='int', default=0,
+    optparse.make_option('--response-buffer-size', type='int', default=0,
             metavar='NUMBER', help='Maximum amount of response content '
             'that will be allowed to be buffered in the Apache child '
             'worker process when proxying the response from a daemon '
@@ -1670,12 +1736,12 @@ option_list = (
             'the worker processes will still though be reloaded if the '
             'WSGI script file itself is modified.'),
 
-    optparse.make_option('--user', default=default_run_user(), metavar='NAME',
-            help='When being run by the root user, the user that the WSGI '
-            'application should be run as.'),
+    optparse.make_option('--user', default=default_run_user(),
+            metavar='USERNAME', help='When being run by the root user, '
+            'the user that the WSGI application should be run as.'),
     optparse.make_option('--group', default=default_run_group(),
-            metavar='NAME', help='When being run by the root user, the group '
-            'that the WSGI application should be run as.'),
+            metavar='GROUP', help='When being run by the root user, the '
+            'group that the WSGI application should be run as.'),
 
     optparse.make_option('--callable-object', default='application',
             metavar='NAME', help='The name of the entry point for the WSGI '
@@ -1715,6 +1781,15 @@ option_list = (
     optparse.make_option('--error-override', action='store_true',
             default=False, help='Flag indicating whether Apache error '
             'documents will override application error responses.'),
+
+    optparse.make_option('--proxy-url-alias', action='append', nargs=2,
+            dest='proxy_url_aliases', metavar='URL-PATH URL',
+            help='Map a sub URL such that any requests against it will be '
+            'proxied to the specified URL.'),
+    optparse.make_option('--proxy-virtual-host', action='append', nargs=2,
+            dest='proxy_virtual_hosts', metavar='HOSTNAME URL',
+            help='Proxy any requests for the specified host name to the '
+            'remote URL.'),
 
     optparse.make_option('--keep-alive-timeout', type='int', default=0,
             metavar='SECONDS', help='The number of seconds which a client '
@@ -1908,6 +1983,22 @@ option_list = (
 
     optparse.make_option('--with-php5', action='store_true', default=False,
             help='Flag indicating whether PHP 5 support should be enabled.'),
+
+    optparse.make_option('--service-script', action='append', nargs=2,
+            dest='service_scripts', metavar='SERVICE SCRIPT-PATH',
+            help='Specify the name of a Python script to be loaded and '
+            'executed in the context of a distinct daemon process. Used '
+            'for running a managed service.'),
+    optparse.make_option('--service-user', action='append', nargs=2,
+            dest='service_users', metavar='SERVICE USERNAME',
+            help='When being run by the root user, the user that the '
+            'distinct daemon process started to run the managed service '
+            'should be run as.'),
+    optparse.make_option('--service-group', action='append', nargs=2,
+            dest='service_groups', metavar='SERVICE GROUP',
+            help='When being run by the root user, the group that the '
+            'distinct daemon process started to run the managed service '
+            'should be run as.'),
 
     optparse.make_option('--enable-docs', action='store_true', default=False,
             help='Flag indicating whether the mod_wsgi documentation should '
@@ -2226,6 +2317,14 @@ def _cmd_setup_server(command, args, options):
     if options['with_newrelic_platform']:
         options['server_metrics'] = True
 
+    if options['service_scripts']:
+        service_scripts = []
+        for name, script in options['service_scripts']:
+            if not os.path.isabs(script):
+                script = os.path.abspath(script)
+            service_scripts.append((name, script))
+        options['service_scripts'] = service_scripts
+
     max_clients = options['processes'] * options['threads']
 
     if options['max_clients'] is not None:
@@ -2491,6 +2590,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_CHUNKED_REQUEST')
     if options['with_php5']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PHP5')
+    if options['proxy_url_aliases'] or options['proxy_virtual_hosts']:
+        options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory'],
@@ -2502,14 +2603,7 @@ def _cmd_setup_server(command, args, options):
     options['python_executable'] = sys.executable
 
     options['shlibpath_var'] = apxs_config.SHLIBPATH_VAR
-
-    if apxs_config.WITH_PACKAGES:
-        shlibpath = []
-        shlibpath.append(os.path.join(apxs_config.PACKAGES, 'apr-util', 'lib'))
-        shlibpath.append(os.path.join(apxs_config.PACKAGES, 'apr', 'lib'))
-        options['shlibpath'] = ':'.join(shlibpath)
-    else:
-        options['shlibpath'] = ''
+    options['shlibpath'] = apxs_config.SHLIBPATH
 
     generate_wsgi_handler_script(options)
 

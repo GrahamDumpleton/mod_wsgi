@@ -85,6 +85,7 @@ static apr_interval_time_t wsgi_deadlock_timeout = 0;
 static apr_interval_time_t wsgi_idle_timeout = 0;
 static apr_interval_time_t wsgi_request_timeout = 0;
 static apr_interval_time_t wsgi_graceful_timeout = 0;
+static apr_interval_time_t wsgi_eviction_timeout = 0;
 static apr_time_t volatile wsgi_deadlock_shutdown_time = 0;
 static apr_time_t volatile wsgi_idle_shutdown_time = 0;
 static apr_time_t volatile wsgi_graceful_shutdown_time = 0;
@@ -6596,6 +6597,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int inactivity_timeout = 0;
     int request_timeout = 0;
     int graceful_timeout = 0;
+    int eviction_timeout = 0;
     int connect_timeout = 15;
     int socket_timeout = 0;
     int queue_timeout = 0;
@@ -6609,7 +6611,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int send_buffer_size = 0;
     int recv_buffer_size = 0;
     int header_buffer_size = 0;
-    int proxy_buffer_size = 0;
+    int response_buffer_size = 0;
 
     const char *script_user = NULL;
     const char *script_group = NULL;
@@ -6808,6 +6810,14 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (graceful_timeout < 0)
                 return "Invalid graceful timeout for WSGI daemon process.";
         }
+        else if (!strcmp(option, "eviction-timeout")) {
+            if (!*value)
+                return "Invalid eviction timeout for WSGI daemon process.";
+
+            eviction_timeout = atoi(value);
+            if (eviction_timeout < 0)
+                return "Invalid eviction timeout for WSGI daemon process.";
+        }
         else if (!strcmp(option, "connect-timeout")) {
             if (!*value)
                 return "Invalid connect timeout for WSGI daemon process.";
@@ -6873,13 +6883,13 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                        "or 0 for default.";
             }
         }
-        else if (!strcmp(option, "proxy-buffer-size")) {
+        else if (!strcmp(option, "response-buffer-size")) {
             if (!*value)
-                return "Invalid proxy buffer size for WSGI daemon process.";
+                return "Invalid response buffer size for WSGI daemon process.";
 
-            proxy_buffer_size = atoi(value);
-            if (proxy_buffer_size < 65536 && proxy_buffer_size != 0) {
-                return "Proxy buffer size must be >= 65536 bytes, "
+            response_buffer_size = atoi(value);
+            if (response_buffer_size < 65536 && response_buffer_size != 0) {
+                return "Response buffer size must be >= 65536 bytes, "
                        "or 0 for default.";
             }
         }
@@ -7077,6 +7087,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->inactivity_timeout = apr_time_from_sec(inactivity_timeout);
     entry->request_timeout = apr_time_from_sec(request_timeout);
     entry->graceful_timeout = apr_time_from_sec(graceful_timeout);
+    entry->eviction_timeout = apr_time_from_sec(eviction_timeout);
     entry->connect_timeout = apr_time_from_sec(connect_timeout);
     entry->socket_timeout = apr_time_from_sec(socket_timeout);
     entry->queue_timeout = apr_time_from_sec(queue_timeout);
@@ -7090,7 +7101,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->send_buffer_size = send_buffer_size;
     entry->recv_buffer_size = recv_buffer_size;
     entry->header_buffer_size = header_buffer_size;
-    entry->proxy_buffer_size = proxy_buffer_size;
+    entry->response_buffer_size = response_buffer_size;
 
     entry->script_user = script_user;
     entry->script_group = script_group;
@@ -8288,6 +8299,9 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
                      "mod_wsgi (pid=%d): Graceful timeout is %d.",
                      getpid(), (int)(apr_time_sec(wsgi_graceful_timeout)));
+        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Eviction timeout is %d.",
+                     getpid(), (int)(apr_time_sec(wsgi_eviction_timeout)));
     }
 
     while (1) {
@@ -8579,6 +8593,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     wsgi_idle_timeout = daemon->group->inactivity_timeout;
     wsgi_request_timeout = daemon->group->request_timeout;
     wsgi_graceful_timeout = daemon->group->graceful_timeout;
+    wsgi_eviction_timeout = daemon->group->eviction_timeout;
 
     if (wsgi_deadlock_timeout || wsgi_idle_timeout) {
         rv = apr_thread_create(&reaper, thread_attr, wsgi_monitor_thread,
@@ -8751,17 +8766,20 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
                     apr_thread_mutex_lock(wsgi_monitor_lock);
                     wsgi_graceful_shutdown_time = apr_time_now();
-                    wsgi_graceful_shutdown_time += wsgi_graceful_timeout;
+                    if (wsgi_eviction_timeout)
+                        wsgi_graceful_shutdown_time += wsgi_eviction_timeout;
+                    else
+                        wsgi_graceful_shutdown_time += wsgi_graceful_timeout;
                     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Graceful shutdown "
+                                 "mod_wsgi (pid=%d): Process eviction "
                                  "requested, waiting for requests to complete "
                                  "'%s'.", getpid(), daemon->group->name);
                 }
                 else {
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Graceful shutdown "
+                                 "mod_wsgi (pid=%d): Process eviction "
                                  "requested, triggering immediate shutdown "
                                  "'%s'.", getpid(), daemon->group->name);
 
@@ -11202,7 +11220,7 @@ static int wsgi_execute_remote(request_rec *r)
 
     /* Transfer any response content. */
 
-    return wsgi_transfer_response(r, bbin, group->proxy_buffer_size);
+    return wsgi_transfer_response(r, bbin, group->response_buffer_size);
 }
 
 static apr_status_t wsgi_socket_read(apr_socket_t *sock, void *vbuf,

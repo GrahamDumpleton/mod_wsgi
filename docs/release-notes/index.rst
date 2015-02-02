@@ -5,6 +5,7 @@ Release Notes
 .. toctree::
    :maxdepth: 2
 
+   version-4.4.7.rst
    version-4.4.6.rst
    version-4.4.5.rst
    version-4.4.4.rst

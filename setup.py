@@ -19,49 +19,48 @@ from distutils.core import Extension
 from distutils.sysconfig import get_config_var as get_python_config
 from distutils.sysconfig import get_python_lib
 
-# Before anything else, this setup.py uses various tricks to install
-# precompiled Apache binaries for the Heroku and OpenShift environments.
-# Once they are installed, then the installation of the mod_wsgi package
-# itself will be triggered, ensuring that it can be built against the
-# precompiled Apache binaries which were installed.
+# Before anything else, this setup.py uses some tricks to potentially
+# install Apache. This can be from a local tarball, or from precompiled
+# Apache binaries for Heroku and OpenShift environments downloaded from
+# Amazon S3. Once they are installed, then the installation of the
+# mod_wsgi package itself will be triggered, ensuring that it can be
+# built against the precompiled Apache binaries which were installed.
 #
-# We therefore first need to work out whether we are actually running on
-# either Heroku of OpenShift. If we are, then we identify the set of
-# precompiled binaries we are to use and copy it into the Python
-# installation.
+# First work out whether we are actually running on either Heroku or
+# OpenShift. If we are, then we identify the set of precompiled binaries
+# we are to use and copy it into the Python installation.
 
 PREFIX = 'https://s3.amazonaws.com'
 BUCKET = os.environ.get('MOD_WSGI_REMOTE_S3_BUCKET_NAME', 'modwsgi.org')
 
 REMOTE_TARBALL_NAME = os.environ.get('MOD_WSGI_REMOTE_PACKAGES_NAME')
+LOCAL_TARBALL_FILE = os.environ.get('MOD_WSGI_LOCAL_PACKAGES_FILE')
 
 TGZ_OPENSHIFT='mod_wsgi-packages-openshift-centos6-apache-2.4.10-1.tar.gz'
 TGZ_HEROKU='mod_wsgi-packages-heroku-cedar14-apache-2.4.10-1.tar.gz'
 
-if not REMOTE_TARBALL_NAME:
+if not REMOTE_TARBALL_NAME and not LOCAL_TARBALL_FILE:
     if os.environ.get('OPENSHIFT_HOMEDIR'):
         REMOTE_TARBALL_NAME = TGZ_OPENSHIFT
     elif os.path.isdir('/app/.heroku'):
         REMOTE_TARBALL_NAME = TGZ_HEROKU
-
-LOCAL_TARBALL_FILE = os.environ.get('MOD_WSGI_LOCAL_PACKAGES_FILE')
 
 REMOTE_TARBALL_URL = None
 
 if LOCAL_TARBALL_FILE is None and REMOTE_TARBALL_NAME:
     REMOTE_TARBALL_URL = '%s/%s/%s' % (PREFIX, BUCKET, REMOTE_TARBALL_NAME)
 
-WITH_PACKAGES = False
+WITH_TARBALL_PACKAGE = False
 
 if REMOTE_TARBALL_URL or LOCAL_TARBALL_FILE:
-    WITH_PACKAGES = True
+    WITH_TARBALL_PACKAGE = True
 
 # If we are doing an install, download the tarball and unpack it into
 # the 'packages' subdirectory. We will then add everything in that
 # directory as package data so that it will be installed into the Python
 # installation.
 
-if WITH_PACKAGES:
+if WITH_TARBALL_PACKAGE:
     if REMOTE_TARBALL_URL:
         if not os.path.isfile(REMOTE_TARBALL_NAME):
             print('Downloading', REMOTE_TARBALL_URL)
@@ -69,11 +68,12 @@ if WITH_PACKAGES:
             os.rename(REMOTE_TARBALL_NAME+'.download', REMOTE_TARBALL_NAME)
         LOCAL_TARBALL_FILE = REMOTE_TARBALL_NAME
 
-    shutil.rmtree('src/packages', ignore_errors=True)
+    if LOCAL_TARBALL_FILE:
+        shutil.rmtree('src/packages', ignore_errors=True)
 
-    tar = tarfile.open(LOCAL_TARBALL_FILE)
-    tar.extractall('src/packages')
-    tar.close()
+        tar = tarfile.open(LOCAL_TARBALL_FILE)
+        tar.extractall('src/packages')
+        tar.close()
 
     open('src/packages/__init__.py', 'a').close()
 
@@ -119,19 +119,27 @@ def find_program(names, default=None, paths=[]):
 
 APXS = os.environ.get('APXS')
 
+WITH_HTTPD_PACKAGE = False
+
 if APXS is None:
-    APXS = find_program(['apxs2', 'apxs'], 'apxs', ['/usr/sbin', os.getcwd()])
+    APXS = find_program(['mod_wsgi-apxs'])
+    if APXS is not None:
+        WITH_HTTPD_PACKAGE = True
+
+if APXS is None:
+    APXS = find_program(['mod_wsgi-apxs', 'apxs2', 'apxs'],
+            'apxs', ['/usr/sbin', os.getcwd()])
 elif not os.path.isabs(APXS):
     APXS = find_program([APXS], APXS, ['/usr/sbin', os.getcwd()])
 
-if not WITH_PACKAGES:
+if not WITH_TARBALL_PACKAGE:
     if not os.path.isabs(APXS) or not os.access(APXS, os.X_OK):
         raise RuntimeError('The %r command appears not to be installed or '
                 'is not executable. Please check the list of prerequisites '
                 'in the documentation for this package and install any '
                 'missing Apache httpd server packages.' % APXS)
 
-if WITH_PACKAGES: 
+if WITH_TARBALL_PACKAGE: 
     SCRIPT_DIR = os.path.join(os.path.dirname(__file__), 'src', 'packages')
 
     CONFIG_FILE = os.path.join(SCRIPT_DIR, 'apache/build/config_vars.mk')
@@ -189,29 +197,6 @@ if WITH_PACKAGES:
     CONFIG['SBINDIR'] = get_apxs_config('sbindir')
     CONFIG['PROGNAME'] = get_apxs_config('progname')
 
-    _CFLAGS_NAMES = ['SHLTCFLAGS', 'CFLAGS', 'NOTEST_CPPFLAGS',
-        'EXTRA_CPPFLAGS', 'EXTRA_CFLAGS']
-
-    _CFLAGS_VALUES = []
-
-    for name in _CFLAGS_NAMES:
-        value = get_apxs_config(name)
-
-        # Heroku doesn't appear to run the same version of gcc
-        # that a standard Ubuntu installation does and which was
-        # used to originally build the Apache binaries. We need
-        # therefore to strip out flags that the Heroku gcc may
-        # not understand.
-
-        if value:
-            if os.path.isdir('/app/.heroku'):
-                value = value.replace('-prefer-pic', '')
-
-        if value:
-            _CFLAGS_VALUES.append(value)
-
-    CONFIG['CFLAGS'] = ' '.join(_CFLAGS_VALUES)
-
 else:
     def get_apxs_config(query):
         p = subprocess.Popen([APXS, '-q', query],
@@ -248,18 +233,31 @@ SHLIBPATH_VAR = get_apxs_config('SHLIBPATH_VAR')
 APXS_CONFIG_TEMPLATE = """
 import os
 
-WITH_PACKAGES = %(WITH_PACKAGES)r
+WITH_TARBALL_PACKAGE = %(WITH_TARBALL_PACKAGE)r
+WITH_HTTPD_PACKAGE = %(WITH_HTTPD_PACKAGE)r
 
-if WITH_PACKAGES:
+if WITH_HTTPD_PACKAGE:
+    import mod_wsgi.httpd
+    PACKAGES = os.path.join(os.path.dirname(mod_wsgi.httpd.__file__))
+    BINDIR = os.path.join(PACKAGES, 'bin')
+    SBINDIR = BINDIR
+    LIBEXECDIR = os.path.join(PACKAGES, 'modules')
+    SHLIBPATH = os.path.join(PACKAGES, 'lib')
+elif WITH_TARBALL_PACKAGE:
     import mod_wsgi.packages
     PACKAGES = os.path.join(os.path.dirname(mod_wsgi.packages.__file__))
     BINDIR = os.path.join(PACKAGES, 'apache', 'bin')
     SBINDIR = BINDIR
     LIBEXECDIR = os.path.join(PACKAGES, 'apache', 'modules')
+    SHLIBPATH = []
+    SHLIBPATH.append(os.path.join(PACKAGES, 'apr-util', 'lib'))
+    SHLIBPATH.append(os.path.join(PACKAGES, 'apr', 'lib'))
+    SHLIBPATH = ':'.join(SHLIBPATH)
 else:
     BINDIR = '%(BINDIR)s'
     SBINDIR = '%(SBINDIR)s'
     LIBEXECDIR = '%(LIBEXECDIR)s'
+    SHLIBPATH = ''
 
 MPM_NAME = '%(MPM_NAME)s'
 PROGNAME = '%(PROGNAME)s'
@@ -282,7 +280,9 @@ else:
 
 with open(os.path.join(os.path.dirname(__file__),
         'src/server/apxs_config.py'), 'w') as fp:
-    print(APXS_CONFIG_TEMPLATE % dict(WITH_PACKAGES=WITH_PACKAGES,
+    print(APXS_CONFIG_TEMPLATE % dict(
+            WITH_TARBALL_PACKAGE=WITH_TARBALL_PACKAGE,
+            WITH_HTTPD_PACKAGE=WITH_HTTPD_PACKAGE,
             BINDIR=BINDIR, SBINDIR=SBINDIR, LIBEXECDIR=LIBEXECDIR,
             MPM_NAME=MPM_NAME, PROGNAME=PROGNAME,
             SHLIBPATH_VAR=SHLIBPATH_VAR), file=fp)
@@ -429,5 +429,4 @@ setup(name = 'mod_wsgi',
     ext_modules = [extension],
     entry_points = { 'console_scripts':
         ['mod_wsgi-express = mod_wsgi.server:main'],},
-    install_requires = ['mod_wsgi-metrics >= 1.0.0'],
 )
