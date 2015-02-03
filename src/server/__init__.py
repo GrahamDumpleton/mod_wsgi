@@ -1912,6 +1912,16 @@ option_list = (
     optparse.make_option('--access-log-format', metavar='FORMAT',
             help='Specify the format of the access log records.'),
 
+    optparse.make_option('--error-log-name', metavar='FILE-NAME',
+            default='error_log', help='Specify the name of the error '
+            'log file when it is being written to the log directory.'),
+    optparse.make_option('--access-log-name', metavar='FILE-NAME',
+            default='access_log', help='Specify the name of the access '
+            'log file when it is being written to the log directory.'),
+    optparse.make_option('--startup-log-name', metavar='FILE-NAME',
+            default='startup_log', help='Specify the name of the startup '
+            'log file when it is being written to the log directory.'),
+
     optparse.make_option('--rotate-logs', action='store_true', default=False,
             help='Flag indicating whether log rotation should be performed.'),
     optparse.make_option('--max-log-size', default=5, type='int',
@@ -2215,7 +2225,7 @@ def _cmd_setup_server(command, args, options):
 
     if not options['log_to_terminal']:
         options['error_log_file'] = os.path.join(options['log_directory'],
-                'error_log')
+                options['error_log_name'])
     else:
         try:
             with open('/dev/stderr', 'w'):
@@ -2228,7 +2238,7 @@ def _cmd_setup_server(command, args, options):
 
     if not options['log_to_terminal']:
         options['access_log_file'] = os.path.join(
-                options['log_directory'], 'access_log')
+                options['log_directory'], options['access_log_name'])
     else:
         try:
             with open('/dev/stdout', 'w'):
@@ -2456,7 +2466,7 @@ def _cmd_setup_server(command, args, options):
     if options['startup_log']:
         if not options['log_to_terminal']:
             options['startup_log_file'] = os.path.join(
-                    options['log_directory'], 'startup_log')
+                    options['log_directory'], options['startup_log_name'])
         else:
             try:
                 with open('/dev/stderr', 'w'):
