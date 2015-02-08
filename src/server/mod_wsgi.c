@@ -8421,6 +8421,29 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
             }
         }
 
+        if (!restart && wsgi_eviction_timeout) {
+            if (graceful_time) {
+                if (graceful_time <= now) {
+                    ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                                 "mod_wsgi (pid=%d): Daemon process "
+                                 "graceful timer expired '%s'.", getpid(),
+                                 group->name);
+
+                    restart = 1;
+                }
+                else {
+                    if (!period || ((graceful_time - now) < period))
+                        period = graceful_time - now;
+                    else if (wsgi_eviction_timeout < period)
+                        period = wsgi_eviction_timeout;
+                }
+            }
+            else {
+                if (!period || (wsgi_eviction_timeout < period))
+                    period = wsgi_eviction_timeout;
+            }
+        }
+
         if (restart) {
             wsgi_daemon_shutdown++;
             kill(getpid(), SIGINT);

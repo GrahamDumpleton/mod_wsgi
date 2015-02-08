@@ -21,7 +21,7 @@ version of the Microsoft C/C++ compiler as the version of Python you are
 using.
 
 4. That you are using a mod_wsgi binary built with the same version of
-the Microsoft C/++ compiler as the version of Python you are using.
+the Microsoft C/C++ compiler as the version of Python you are using.
 
 The Microsoft C/C++ compiler versions which were used for various Python
 versions are:
