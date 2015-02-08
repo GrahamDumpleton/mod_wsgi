@@ -237,21 +237,21 @@ WITH_TARBALL_PACKAGE = %(WITH_TARBALL_PACKAGE)r
 WITH_HTTPD_PACKAGE = %(WITH_HTTPD_PACKAGE)r
 
 if WITH_HTTPD_PACKAGE:
-    import mod_wsgi.httpd
-    PACKAGES = os.path.join(os.path.dirname(mod_wsgi.httpd.__file__))
-    BINDIR = os.path.join(PACKAGES, 'bin')
+    from mod_wsgi_packages.httpd import __file__ as PACKAGES_ROOTDIR
+    PACKAGES_ROOTDIR = os.path.dirname(PACKAGES_ROOTDIR)
+    BINDIR = os.path.join(PACKAGES_ROOTDIR, 'bin')
     SBINDIR = BINDIR
-    LIBEXECDIR = os.path.join(PACKAGES, 'modules')
-    SHLIBPATH = os.path.join(PACKAGES, 'lib')
+    LIBEXECDIR = os.path.join(PACKAGES_ROOTDIR, 'modules')
+    SHLIBPATH = os.path.join(PACKAGES_ROOTDIR, 'lib')
 elif WITH_TARBALL_PACKAGE:
-    import mod_wsgi.packages
-    PACKAGES = os.path.join(os.path.dirname(mod_wsgi.packages.__file__))
-    BINDIR = os.path.join(PACKAGES, 'apache', 'bin')
+    from mod_wsgi.packages import __file__ as PACKAGES_ROOTDIR
+    PACKAGES_ROOTDIR = os.path.dirname(PACKAGES_ROOTDIR)
+    BINDIR = os.path.join(PACKAGES_ROOTDIR, 'apache', 'bin')
     SBINDIR = BINDIR
-    LIBEXECDIR = os.path.join(PACKAGES, 'apache', 'modules')
+    LIBEXECDIR = os.path.join(PACKAGES_ROOTDIR, 'apache', 'modules')
     SHLIBPATH = []
-    SHLIBPATH.append(os.path.join(PACKAGES, 'apr-util', 'lib'))
-    SHLIBPATH.append(os.path.join(PACKAGES, 'apr', 'lib'))
+    SHLIBPATH.append(os.path.join(PACKAGES_ROOTDIR, 'apr-util', 'lib'))
+    SHLIBPATH.append(os.path.join(PACKAGES_ROOTDIR, 'apr', 'lib'))
     SHLIBPATH = ':'.join(SHLIBPATH)
 else:
     BINDIR = '%(BINDIR)s'
