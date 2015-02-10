@@ -12356,6 +12356,7 @@ static void wsgi_drop_invalid_headers(request_rec *r)
 }
 
 static const char *wsgi_proxy_headers[] = {
+    "HTTP_X_FORWARDED_FOR",
     "HTTP_X_FORWARDED_HTTPS",
     "HTTP_X_FORWARDED_PROTO",
     "HTTP_X_FORWARDED_SCHEME",
@@ -12395,7 +12396,37 @@ static void wsgi_process_proxy_headers(request_rec *r)
         value = apr_table_get(r->subprocess_env, name);
 
         if (value) {
-            if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
+            if (!strcmp(name, "HTTP_X_FORWARDED_FOR")) {
+                const char *end = NULL;
+
+                /*
+                 * A potentially comma separated list where client
+                 * we are interested in will be listed first.
+                 */
+
+                while (*value != '\0' && apr_isspace(*value))
+                    value++;
+
+                if (*value != '\0') {
+                    end = value;
+
+                    while (*end != '\0' && *end != ',')
+                        end++;
+
+                    /* Need to deal with trailing whitespace. */
+
+                    while (end != value) {
+                        if (!apr_isspace(*(end-1)))
+                            break;
+
+                        end--;
+                    }
+
+                    apr_table_setn(r->subprocess_env, "REMOTE_ADDR",
+                            apr_pstrndup(r->pool, value, (end-value)));
+                }
+            }
+            else if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
                 !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
                 !strcmp(name, "HTTP_X_SCHEME")) {
 
