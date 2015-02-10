@@ -369,6 +369,10 @@ CustomLog "%(access_log_file)s" %(log_format_nickname)s
 WSGIChunkedRequest On
 </IfDefine>
 
+<IfDefine WSGI_WITH_PROXY_HEADERS>
+WSGITrustedProxyHeaders %(trusted_proxy_headers)s
+</IfDefine>
+
 <IfDefine WSGI_WITH_HTTPS>
 <IfModule !ssl_module>
 LoadModule ssl_module ${HTTPD_MODULES_DIRECTORY}/mod_ssl.so
@@ -1791,6 +1795,11 @@ option_list = (
             help='Proxy any requests for the specified host name to the '
             'remote URL.'),
 
+    optparse.make_option('--trust-proxy-header', action='append', default=[],
+            dest='trusted_proxy_headers', metavar='HEADER-NAME',
+            help='The name of any trusted HTTP header providing details '
+            'of the front end client request when proxying.'),
+
     optparse.make_option('--keep-alive-timeout', type='int', default=0,
             metavar='SECONDS', help='The number of seconds which a client '
             'connection will be kept alive to allow subsequent requests '
@@ -2463,6 +2472,9 @@ def _cmd_setup_server(command, args, options):
 
     options['httpd_arguments_list'] = []
 
+    options['trusted_proxy_headers'] = ' '.join(
+            options['trusted_proxy_headers'])
+
     if options['startup_log']:
         if not options['log_to_terminal']:
             options['startup_log_file'] = os.path.join(
@@ -2602,6 +2614,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_WITH_PHP5')
     if options['proxy_url_aliases'] or options['proxy_virtual_hosts']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY')
+    if options['trusted_proxy_headers']:
+        options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY_HEADERS')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory'],

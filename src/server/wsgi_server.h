@@ -104,6 +104,8 @@ typedef struct {
     int chunked_request;
     int map_head_to_get;
 
+    apr_array_header_t *trusted_proxy_headers;
+
     int enable_sendfile;
 
     apr_hash_t *handler_scripts;

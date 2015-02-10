@@ -184,6 +184,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->map_head_to_get = parent->map_head_to_get;
 
+    if (child->trusted_proxy_headers)
+        config->trusted_proxy_headers = child->trusted_proxy_headers;
+    else
+        config->trusted_proxy_headers = parent->trusted_proxy_headers;
+
     if (child->enable_sendfile != -1)
         config->enable_sendfile = child->enable_sendfile;
     else
@@ -219,6 +224,8 @@ typedef struct {
     int chunked_request;
     int map_head_to_get;
 
+    apr_array_header_t *trusted_proxy_headers;
+
     int enable_sendfile;
 
     WSGIScriptFile *access_script;
@@ -250,6 +257,8 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->error_override = -1;
     object->chunked_request = -1;
     object->map_head_to_get = -1;
+
+    object->trusted_proxy_headers = NULL;
 
     object->enable_sendfile = -1;
 
@@ -338,6 +347,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->map_head_to_get = parent->map_head_to_get;
 
+    if (child->trusted_proxy_headers)
+        config->trusted_proxy_headers = child->trusted_proxy_headers;
+    else
+        config->trusted_proxy_headers = parent->trusted_proxy_headers;
+
     if (child->enable_sendfile != -1)
         config->enable_sendfile = child->enable_sendfile;
     else
@@ -397,6 +411,8 @@ typedef struct {
     int error_override;
     int chunked_request;
     int map_head_to_get;
+
+    apr_array_header_t *trusted_proxy_headers;
 
     int enable_sendfile;
 
@@ -832,6 +848,11 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         if (config->map_head_to_get < 0)
             config->map_head_to_get = 2;
     }
+
+    config->trusted_proxy_headers = dconfig->trusted_proxy_headers;
+
+    if (!config->trusted_proxy_headers)
+        config->trusted_proxy_headers = sconfig->trusted_proxy_headers;
 
     config->enable_sendfile = dconfig->enable_sendfile;
 
@@ -4971,6 +4992,40 @@ static const char *wsgi_set_map_head_to_get(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static char *wsgi_http2env(apr_pool_t *a, const char *w);
+
+static const char *wsgi_set_trusted_proxy_headers(cmd_parms *cmd,
+                                                  void *mconfig,
+                                                  const char *args)
+{
+    apr_array_header_t *headers = NULL;
+
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+
+        headers = apr_array_make(cmd->pool, 3, sizeof(char*));
+        dconfig->trusted_proxy_headers = headers;
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+
+        headers = apr_array_make(cmd->pool, 3, sizeof(char*));
+        sconfig->trusted_proxy_headers = headers;
+    }
+
+    while (*args) {
+        const char **entry = NULL;
+
+        entry = (const char **)apr_array_push(headers);
+        *entry = wsgi_http2env(cmd->pool, ap_getword_conf(cmd->pool, &args));
+    }
+
+    return NULL;
+}
+
 static const char *wsgi_set_enable_sendfile(cmd_parms *cmd, void *mconfig,
                                             const char *f)
 {
@@ -5424,6 +5479,7 @@ static int wsgi_hook_intercept(request_rec *r)
 /* Handler for the response handler phase. */
 
 static void wsgi_drop_invalid_headers(request_rec *r);
+static void wsgi_process_proxy_headers(request_rec *r);
 
 static void wsgi_build_environment(request_rec *r)
 {
@@ -5458,6 +5514,8 @@ static void wsgi_build_environment(request_rec *r)
 
     ap_add_cgi_vars(r);
     ap_add_common_vars(r);
+
+    wsgi_process_proxy_headers(r);
 
     /*
      * Mutate a HEAD request into a GET request. This is
@@ -12297,6 +12355,91 @@ static void wsgi_drop_invalid_headers(request_rec *r)
     }
 }
 
+static const char *wsgi_proxy_headers[] = {
+    "HTTP_X_FORWARDED_HTTPS",
+    "HTTP_X_FORWARDED_PROTO",
+    "HTTP_X_FORWARDED_SCHEME",
+    "HTTP_X_FORWARDED_SSL",
+    "HTTP_X_SCHEME",
+    NULL,
+};
+
+static void wsgi_process_proxy_headers(request_rec *r)
+{
+    WSGIRequestConfig *config = NULL;
+
+    apr_array_header_t *trusted_proxy_headers = NULL;
+
+    int i = 0;
+
+    config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
+                                                       &wsgi_module);
+
+    trusted_proxy_headers = config->trusted_proxy_headers;
+
+    /* Nothing to do if no trusted headers have been specified. */
+
+    if (!trusted_proxy_headers)
+        return;
+
+    /*
+     * Check for any special processing required for each trusted
+     * header which has been specified.
+     */
+
+    for (i=0; i<trusted_proxy_headers->nelts; i++) {
+        const char *name = NULL;
+        const char *value = NULL;
+
+        name = ((const char**)trusted_proxy_headers->elts)[i];
+        value = apr_table_get(r->subprocess_env, name);
+
+        if (value) {
+            if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
+                !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
+                !strcmp(name, "HTTP_X_SCHEME")) {
+
+                /* Value can be either 'http' or 'https'. */
+
+                if (!strcasecmp(value, "https"))
+                    apr_table_setn(r->subprocess_env, "HTTPS", "1");
+                else if (!strcasecmp(value, "http"))
+                    apr_table_unset(r->subprocess_env, "HTTPS");
+            }
+            else if (!strcmp(name, "HTTP_X_FORWARDED_HTTPS") ||
+                     !strcmp(name, "HTTP_X_FORWARDED_SSL")) {
+
+                /*
+                 * Value can be a boolean like flag such as 'On',
+                 * 'Off', 'true', 'false', '1' or '0'.
+                 */
+
+                if (!strcasecmp(value, "On") ||
+                    !strcasecmp(value, "true") ||
+                    !strcasecmp(value, "1")) {
+
+                    apr_table_setn(r->subprocess_env, "HTTPS", "1");
+                }
+                else if (!strcasecmp(value, "Off") ||
+                    !strcasecmp(value, "false") ||
+                    !strcasecmp(value, "0")) {
+
+                    apr_table_unset(r->subprocess_env, "HTTPS");
+                }
+            }
+        }
+    }
+
+    /*
+     * Remove all trusted proxy headers from request environment
+     * so not reinterpreted by the WSGI applicaton.
+     */
+
+
+    for (i=0; wsgi_proxy_headers[i]; i++)
+        apr_table_unset(r->subprocess_env, wsgi_proxy_headers[i]);
+}
+
 static char *wsgi_http2env(apr_pool_t *a, const char *w)
 {
     char *res = (char *)apr_palloc(a, sizeof("HTTP_") + strlen(w));
@@ -14427,6 +14570,9 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable support for chunked requests."),
     AP_INIT_TAKE1("WSGIMapHEADToGET", wsgi_set_map_head_to_get,
         NULL, OR_FILEINFO, "Enable/Disable mapping of HEAD to GET."),
+
+    AP_INIT_RAW_ARGS("WSGITrustedProxyHeaders", wsgi_set_trusted_proxy_headers,
+        NULL, OR_FILEINFO, "Specify a list of trusted proxy headers."),
 
 #ifndef WIN32
     AP_INIT_TAKE1("WSGIEnableSendfile", wsgi_set_enable_sendfile,
