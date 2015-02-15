@@ -12428,6 +12428,11 @@ static void wsgi_process_proxy_headers(request_rec *r)
                             apr_pstrndup(r->pool, value, (end-value)));
                 }
             }
+            else if (!strcmp(name, "HTTP_X_REAL_IP")) {
+                /* Use the value as is. */
+
+                apr_table_setn(r->subprocess_env, "REMOTE_ADDR", value);
+            }
             else if (!strcmp(name, "HTTP_X_FORWARDED_HOST")) {
                 /* Use the value as is. May include a port. */
 
