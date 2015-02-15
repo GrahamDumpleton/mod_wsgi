@@ -12355,8 +12355,7 @@ static void wsgi_drop_invalid_headers(request_rec *r)
     }
 }
 
-static const char *wsgi_proxy_headers[] = {
-    "HTTP_X_FORWARDED_FOR",
+static const char *wsgi_proxy_scheme_headers[] = {
     "HTTP_X_FORWARDED_HTTPS",
     "HTTP_X_FORWARDED_PROTO",
     "HTTP_X_FORWARDED_SCHEME",
@@ -12370,6 +12369,8 @@ static void wsgi_process_proxy_headers(request_rec *r)
     WSGIRequestConfig *config = NULL;
 
     apr_array_header_t *trusted_proxy_headers = NULL;
+
+    const char *trusted_scheme_header = NULL;
 
     int i = 0;
 
@@ -12430,6 +12431,8 @@ static void wsgi_process_proxy_headers(request_rec *r)
                 !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
                 !strcmp(name, "HTTP_X_SCHEME")) {
 
+                trusted_scheme_header = name;
+
                 /* Value can be either 'http' or 'https'. */
 
                 if (!strcasecmp(value, "https"))
@@ -12439,6 +12442,8 @@ static void wsgi_process_proxy_headers(request_rec *r)
             }
             else if (!strcmp(name, "HTTP_X_FORWARDED_HTTPS") ||
                      !strcmp(name, "HTTP_X_FORWARDED_SSL")) {
+
+                trusted_scheme_header = name;
 
                 /*
                  * Value can be a boolean like flag such as 'On',
@@ -12462,13 +12467,18 @@ static void wsgi_process_proxy_headers(request_rec *r)
     }
 
     /*
-     * Remove all trusted proxy headers from request environment
-     * so not reinterpreted by the WSGI applicaton.
+     * Remove all proxy scheme headers from request environment
+     * which weren't matched as being trusted.
      */
 
+    if (trusted_scheme_header) {
+        const char *name = NULL;
 
-    for (i=0; wsgi_proxy_headers[i]; i++)
-        apr_table_unset(r->subprocess_env, wsgi_proxy_headers[i]);
+        for (i=0; (name=wsgi_proxy_scheme_headers[i]); i++) {
+            if (strcmp(name, trusted_scheme_header))
+                apr_table_unset(r->subprocess_env, name);
+        }
+    }
 }
 
 static char *wsgi_http2env(apr_pool_t *a, const char *w)
