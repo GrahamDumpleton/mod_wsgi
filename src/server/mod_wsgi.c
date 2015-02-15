@@ -12428,6 +12428,11 @@ static void wsgi_process_proxy_headers(request_rec *r)
                             apr_pstrndup(r->pool, value, (end-value)));
                 }
             }
+            else if (!strcmp(name, "HTTP_X_FORWARDED_HOST")) {
+                /* Use the value as is. May include a port. */
+
+                apr_table_setn(r->subprocess_env, "HTTP_HOST", value);
+            }
             else if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
                 !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
                 !strcmp(name, "HTTP_X_SCHEME")) {
