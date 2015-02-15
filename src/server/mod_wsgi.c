@@ -12360,6 +12360,7 @@ static const char *wsgi_proxy_scheme_headers[] = {
     "HTTP_X_FORWARDED_PROTO",
     "HTTP_X_FORWARDED_SCHEME",
     "HTTP_X_FORWARDED_SSL",
+    "HTTP_X_HTTPS",
     "HTTP_X_SCHEME",
     NULL,
 };
@@ -12441,7 +12442,8 @@ static void wsgi_process_proxy_headers(request_rec *r)
                     apr_table_unset(r->subprocess_env, "HTTPS");
             }
             else if (!strcmp(name, "HTTP_X_FORWARDED_HTTPS") ||
-                     !strcmp(name, "HTTP_X_FORWARDED_SSL")) {
+                     !strcmp(name, "HTTP_X_FORWARDED_SSL") ||
+                     !strcmp(name, "HTTP_X_HTTPS")) {
 
                 trusted_scheme_header = name;
 
