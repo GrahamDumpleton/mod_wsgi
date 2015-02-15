@@ -12433,6 +12433,16 @@ static void wsgi_process_proxy_headers(request_rec *r)
 
                 apr_table_setn(r->subprocess_env, "HTTP_HOST", value);
             }
+            else if (!strcmp(name, "HTTP_X_FORWARDED_SERVER")) {
+                /* Use the value as is. */
+
+                apr_table_setn(r->subprocess_env, "SERVER_NAME", value);
+            }
+            else if (!strcmp(name, "HTTP_X_FORWARDED_PORT")) {
+                /* Use the value as is. */
+
+                apr_table_setn(r->subprocess_env, "SERVER_PORT", value);
+            }
             else if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
                 !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
                 !strcmp(name, "HTTP_X_SCHEME")) {
