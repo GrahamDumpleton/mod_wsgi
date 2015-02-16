@@ -5497,25 +5497,24 @@ static void wsgi_build_environment(request_rec *r)
                                                        &wsgi_module);
 
     /*
-     * Populate environment with standard CGI variables. Before
-     * we do this though, we ensure that we delete any headers
-     * which use invalid characters. This is necessary to ensure
-     * that someone doesn't try and take advantage of header
-     * spoofing. This can come about where characters other than
-     * alphanumerics or '-' are used as the conversion of non
-     * alphanumerics to '_' means one can get collisions. This
-     * is technically only an issue with Apache 2.2 as Apache
-     * 2.4 addresses the problem and drops them anyway. Still go
-     * through and drop them even for Apache 2.4 as not sure
-     * which version of Apache 2.4 introduces the change.
+     * Remove any invalid headers which use invalid characters.
+     * This is necessary to ensure that someone doesn't try and
+     * take advantage of header spoofing. This can come about
+     * where characters other than alphanumerics or '-' are used
+     * as the conversion of non alphanumerics to '_' means one
+     * can get collisions. This is technically only an issue
+     * with Apache 2.2 as Apache 2.4 addresses the problem and
+     * drops them anyway. Still go through and drop them even
+     * for Apache 2.4 as not sure which version of Apache 2.4
+     * introduces the change.
      */
 
     wsgi_drop_invalid_headers(r);
 
+    /* Populate environment with standard CGI variables. */
+
     ap_add_cgi_vars(r);
     ap_add_common_vars(r);
-
-    wsgi_process_proxy_headers(r);
 
     /*
      * Mutate a HEAD request into a GET request. This is
@@ -5549,14 +5548,6 @@ static void wsgi_build_environment(request_rec *r)
         if (r->method_number == M_GET)
             apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
     }
-
-    /* Determine whether connection uses HTTPS protocol. */
-
-    if (!wsgi_is_https)
-        wsgi_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
-
-    if (wsgi_is_https && wsgi_is_https(r->connection))
-        apr_table_set(r->subprocess_env, "HTTPS", "1");
 
     /*
      * If enabled, pass along authorisation headers which Apache
@@ -5613,6 +5604,34 @@ static void wsgi_build_environment(request_rec *r)
         ap_no2slash((char*)path_info);
         apr_table_setn(r->subprocess_env, "PATH_INFO", path_info);
     }
+
+    /*
+     * Save away the SCRIPT_NAME and PATH_INFO values at this point
+     * so we have a way of determining if they are rewritten somehow.
+     * This can be important when dealing with rewrite rules and
+     * a trusted header was being handled for SCRIPT_NAME.
+     */
+
+    apr_table_setn(r->subprocess_env, "mod_wsgi.script_name", script_name);
+    apr_table_setn(r->subprocess_env, "mod_wsgi.path_info", path_info);
+
+    /*
+     * Perform fixups on environment based on trusted proxy headers
+     * sent through from a front end proxy.
+     */
+
+    wsgi_process_proxy_headers(r);
+
+    /*
+     * Determine whether connection uses HTTPS protocol. This has
+     * to be done after and fixups due to trusted proxy headers.
+     */
+
+    if (!wsgi_is_https)
+        wsgi_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
+
+    if (wsgi_is_https && wsgi_is_https(r->connection))
+        apr_table_set(r->subprocess_env, "HTTPS", "1");
 
     /*
      * Set values specific to mod_wsgi configuration. These control
@@ -12365,6 +12384,12 @@ static const char *wsgi_proxy_scheme_headers[] = {
     NULL,
 };
 
+static const char *wsgi_proxy_script_name_headers[] = {
+    "HTTP_X_SCRIPT_NAME",
+    "HTTP_X_FORWARDED_SCRIPT_NAME",
+    NULL,
+};
+
 static void wsgi_process_proxy_headers(request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
@@ -12372,6 +12397,7 @@ static void wsgi_process_proxy_headers(request_rec *r)
     apr_array_header_t *trusted_proxy_headers = NULL;
 
     const char *trusted_scheme_header = NULL;
+    const char *trusted_script_name_header = NULL;
 
     int i = 0;
 
@@ -12448,6 +12474,20 @@ static void wsgi_process_proxy_headers(request_rec *r)
 
                 apr_table_setn(r->subprocess_env, "SERVER_PORT", value);
             }
+            else if (!strcmp(name, "HTTP_X_SCRIPT_NAME") ||
+                     !strcmp(name, "HTTP_X_FORWARDED_SCRIPT_NAME")) {
+                /*
+                 * Use the value as is. We want to remember what the
+                 * original value for SCRIPT_NAME was though.
+                 */
+
+                apr_table_setn(r->subprocess_env, "mod_wsgi.mount_point",
+                               value);
+
+                trusted_script_name_header = name;
+
+                apr_table_setn(r->subprocess_env, "SCRIPT_NAME", value);
+            }
             else if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
                 !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
                 !strcmp(name, "HTTP_X_SCHEME")) {
@@ -12498,6 +12538,20 @@ static void wsgi_process_proxy_headers(request_rec *r)
 
         for (i=0; (name=wsgi_proxy_scheme_headers[i]); i++) {
             if (strcmp(name, trusted_scheme_header))
+                apr_table_unset(r->subprocess_env, name);
+        }
+    }
+
+    /*
+     * Remove all proxy script name headers from request environment
+     * which weren't matched as being trusted.
+     */
+
+    if (trusted_script_name_header) {
+        const char *name = NULL;
+
+        for (i=0; (name=wsgi_proxy_script_name_headers[i]); i++) {
+            if (strcmp(name, trusted_script_name_header))
                 apr_table_unset(r->subprocess_env, name);
         }
     }

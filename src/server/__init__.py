@@ -1144,16 +1144,35 @@ class ApplicationHandler(object):
         # Strip out the leading component due to internal redirect in
         # Apache when using web application as fallback resource.
 
+        mount_point = environ.get('mod_wsgi.mount_point')
+
         script_name = environ.get('SCRIPT_NAME')
         path_info = environ.get('PATH_INFO')
 
-        environ['SCRIPT_NAME'] = ''
-        environ['PATH_INFO'] = script_name + path_info
+        if mount_point is not None:
+            # If this is set then it means that SCRIPT_NAME was
+            # overridden by a trusted proxy header. In this case
+            # we want to ignore any local mount point, simply
+            # stripping it from the path.
 
-        if self.mount_point != '/':
-            if environ['PATH_INFO'].startswith(self.mount_point):
-                environ['SCRIPT_NAME'] = self.mount_point
-                environ['PATH_INFO'] = environ['PATH_INFO'][len(self.mount_point):]
+            script_name = environ['mod_wsgi.script_name']
+
+            environ['PATH_INFO'] = script_name + path_info
+
+            if self.mount_point != '/':
+                if environ['PATH_INFO'].startswith(self.mount_point):
+                    environ['PATH_INFO'] = environ['PATH_INFO'][len(
+                            self.mount_point):]
+
+        else:
+            environ['SCRIPT_NAME'] = ''
+            environ['PATH_INFO'] = script_name + path_info
+
+            if self.mount_point != '/':
+                if environ['PATH_INFO'].startswith(self.mount_point):
+                    environ['SCRIPT_NAME'] = self.mount_point
+                    environ['PATH_INFO'] = environ['PATH_INFO'][len(
+                            self.mount_point):]
 
         return self.application(environ, start_response)
 
@@ -2201,6 +2220,9 @@ def _cmd_setup_server(command, args, options):
 
     if not options['mount_point'].startswith('/'):
         options['mount_point'] = os.path.normpath('/' + options['mount_point'])
+
+    # Create subdirectories for mount points in document directory
+    # so that fallback resource rewrite rule will work.
 
     if options['mount_point'] != '/':
         parts = options['mount_point'].rstrip('/').split('/')[1:]
