@@ -629,12 +629,14 @@ WSGIImportScript '%(server_root)s/handler.wsgi' \\
 
 APACHE_PROXY_PASS_CONFIG = """
 ProxyPass '%(mount_point)s' '%(url)s'
+ProxyPassReverse '%(mount_point)s' '%(url)s'
 """
 
 APACHE_PROXY_PASS_HOST_CONFIG = """
 <VirtualHost *:%(port)s>
 ServerName %(host)s
 ProxyPass / '%(url)s'
+ProxyPassReverse / '%(url)s'
 </VirtualHost>
 """
 
