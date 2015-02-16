@@ -12384,6 +12384,12 @@ static const char *wsgi_proxy_scheme_headers[] = {
     NULL,
 };
 
+static const char *wsgi_proxy_host_headers[] = {
+    "HTTP_X_FORWARDED_HOST",
+    "HTTP_X_HOST",
+    NULL,
+};
+
 static const char *wsgi_proxy_script_name_headers[] = {
     "HTTP_X_SCRIPT_NAME",
     "HTTP_X_FORWARDED_SCRIPT_NAME",
@@ -12396,7 +12402,12 @@ static void wsgi_process_proxy_headers(request_rec *r)
 
     apr_array_header_t *trusted_proxy_headers = NULL;
 
+    int match_scheme_header = 0;
+    int match_host_header = 0;
+    int match_script_name_header = 0;
+
     const char *trusted_scheme_header = NULL;
+    const char *trusted_host_header = NULL;
     const char *trusted_script_name_header = NULL;
 
     int i = 0;
@@ -12423,14 +12434,14 @@ static void wsgi_process_proxy_headers(request_rec *r)
         name = ((const char**)trusted_proxy_headers->elts)[i];
         value = apr_table_get(r->subprocess_env, name);
 
-        if (value) {
-            if (!strcmp(name, "HTTP_X_FORWARDED_FOR")) {
-                const char *end = NULL;
-
+        if (!strcmp(name, "HTTP_X_FORWARDED_FOR")) {
+            if (value) {
                 /*
                  * A potentially comma separated list where client
                  * we are interested in will be listed first.
                  */
+
+                const char *end = NULL;
 
                 while (*value != '\0' && apr_isspace(*value))
                     value++;
@@ -12454,28 +12465,47 @@ static void wsgi_process_proxy_headers(request_rec *r)
                             apr_pstrndup(r->pool, value, (end-value)));
                 }
             }
-            else if (!strcmp(name, "HTTP_X_REAL_IP")) {
+        }
+        else if (!strcmp(name, "HTTP_X_REAL_IP")) {
+            if (value) {
                 /* Use the value as is. */
 
                 apr_table_setn(r->subprocess_env, "REMOTE_ADDR", value);
             }
-            else if (!strcmp(name, "HTTP_X_FORWARDED_HOST")) {
+        }
+        else if (!strcmp(name, "HTTP_X_FORWARDED_HOST") ||
+                 !strcmp(name, "HTTP_X_HOST")) {
+
+            match_host_header = 1;
+
+            if (value) {
                 /* Use the value as is. May include a port. */
+
+                trusted_host_header = name;
 
                 apr_table_setn(r->subprocess_env, "HTTP_HOST", value);
             }
-            else if (!strcmp(name, "HTTP_X_FORWARDED_SERVER")) {
+        }
+        else if (!strcmp(name, "HTTP_X_FORWARDED_SERVER")) {
+            if (value) {
                 /* Use the value as is. */
 
                 apr_table_setn(r->subprocess_env, "SERVER_NAME", value);
             }
-            else if (!strcmp(name, "HTTP_X_FORWARDED_PORT")) {
+        }
+        else if (!strcmp(name, "HTTP_X_FORWARDED_PORT")) {
+            if (value) {
                 /* Use the value as is. */
 
                 apr_table_setn(r->subprocess_env, "SERVER_PORT", value);
             }
-            else if (!strcmp(name, "HTTP_X_SCRIPT_NAME") ||
-                     !strcmp(name, "HTTP_X_FORWARDED_SCRIPT_NAME")) {
+        }
+        else if (!strcmp(name, "HTTP_X_SCRIPT_NAME") ||
+                 !strcmp(name, "HTTP_X_FORWARDED_SCRIPT_NAME")) {
+
+            match_script_name_header = 1;
+
+            if (value) {
                 /*
                  * Use the value as is. We want to remember what the
                  * original value for SCRIPT_NAME was though.
@@ -12488,10 +12518,14 @@ static void wsgi_process_proxy_headers(request_rec *r)
 
                 apr_table_setn(r->subprocess_env, "SCRIPT_NAME", value);
             }
-            else if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
-                !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
-                !strcmp(name, "HTTP_X_SCHEME")) {
+        }
+        else if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
+            !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
+            !strcmp(name, "HTTP_X_SCHEME")) {
 
+            match_scheme_header = 1;
+
+            if (value) {
                 trusted_scheme_header = name;
 
                 /* Value can be either 'http' or 'https'. */
@@ -12501,10 +12535,14 @@ static void wsgi_process_proxy_headers(request_rec *r)
                 else if (!strcasecmp(value, "http"))
                     apr_table_unset(r->subprocess_env, "HTTPS");
             }
-            else if (!strcmp(name, "HTTP_X_FORWARDED_HTTPS") ||
-                     !strcmp(name, "HTTP_X_FORWARDED_SSL") ||
-                     !strcmp(name, "HTTP_X_HTTPS")) {
+        }
+        else if (!strcmp(name, "HTTP_X_FORWARDED_HTTPS") ||
+                 !strcmp(name, "HTTP_X_FORWARDED_SSL") ||
+                 !strcmp(name, "HTTP_X_HTTPS")) {
 
+            match_scheme_header = 1;
+
+            if (value) {
                 trusted_scheme_header = name;
 
                 /*
@@ -12533,11 +12571,26 @@ static void wsgi_process_proxy_headers(request_rec *r)
      * which weren't matched as being trusted.
      */
 
-    if (trusted_scheme_header) {
+    if (match_scheme_header) {
         const char *name = NULL;
 
         for (i=0; (name=wsgi_proxy_scheme_headers[i]); i++) {
-            if (strcmp(name, trusted_scheme_header))
+            if (!trusted_scheme_header || strcmp(name, trusted_scheme_header)) {
+                apr_table_unset(r->subprocess_env, name);
+            }
+        }
+    }
+
+    /*
+     * Remove all proxy host from request environment which weren't
+     * matched as being trusted.
+     */
+
+    if (match_host_header) {
+        const char *name = NULL;
+
+        for (i=0; (name=wsgi_proxy_host_headers[i]); i++) {
+            if (!trusted_host_header || strcmp(name, trusted_host_header))
                 apr_table_unset(r->subprocess_env, name);
         }
     }
@@ -12547,12 +12600,14 @@ static void wsgi_process_proxy_headers(request_rec *r)
      * which weren't matched as being trusted.
      */
 
-    if (trusted_script_name_header) {
+    if (match_script_name_header) {
         const char *name = NULL;
 
         for (i=0; (name=wsgi_proxy_script_name_headers[i]); i++) {
-            if (strcmp(name, trusted_script_name_header))
+            if (!trusted_script_name_header ||
+                strcmp(name, trusted_script_name_header)) {
                 apr_table_unset(r->subprocess_env, name);
+            }
         }
     }
 }
