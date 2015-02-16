@@ -627,9 +627,18 @@ WSGIImportScript '%(server_root)s/handler.wsgi' \\
 </IfDefine>
 """
 
-APACHE_PROXY_PASS_CONFIG = """
+APACHE_PROXY_PASS_MOUNT_POINT_CONFIG = """
 ProxyPass '%(mount_point)s' '%(url)s'
 ProxyPassReverse '%(mount_point)s' '%(url)s'
+"""
+
+APACHE_PROXY_PASS_MOUNT_POINT_SLASH_CONFIG = """
+ProxyPass '%(mount_point)s/' '%(url)s/'
+ProxyPassReverse '%(mount_point)s/' '%(url)s/'
+<LocationMatch '^%(mount_point)s$'>
+RewriteEngine On
+RewriteRule - http://%%{HTTP_HOST}%%{REQUEST_URI}/ [R=302,L]
+</LocationMatch>
 """
 
 APACHE_PROXY_PASS_HOST_CONFIG = """
@@ -721,10 +730,14 @@ def generate_apache_config(options):
     with open(options['httpd_conf'], 'w') as fp:
         print(APACHE_GENERAL_CONFIG % options, file=fp)
 
-        if options['proxy_url_aliases']:
-            for mount_point, url in options['proxy_url_aliases']:
-                print(APACHE_PROXY_PASS_CONFIG % dict(
-                        mount_point=mount_point, url=url), file=fp)
+        if options['proxy_mount_points']:
+            for mount_point, url in options['proxy_mount_points']:
+                if mount_point.endswith('/'):
+                    print(APACHE_PROXY_PASS_MOUNT_POINT_CONFIG % dict(
+                            mount_point=mount_point, url=url), file=fp)
+                else:
+                    print(APACHE_PROXY_PASS_MOUNT_POINT_SLASH_CONFIG % dict(
+                            mount_point=mount_point, url=url), file=fp)
 
         if options['proxy_virtual_hosts']:
             for host, url in options['proxy_virtual_hosts']:
@@ -1807,10 +1820,15 @@ option_list = (
             default=False, help='Flag indicating whether Apache error '
             'documents will override application error responses.'),
 
-    optparse.make_option('--proxy-url-alias', action='append', nargs=2,
-            dest='proxy_url_aliases', metavar='URL-PATH URL',
+    optparse.make_option('--proxy-mount-point', action='append', nargs=2,
+            dest='proxy_mount_points', metavar='URL-PATH URL',
             help='Map a sub URL such that any requests against it will be '
-            'proxied to the specified URL.'),
+            'proxied to the specified URL. This is only for proxying to a '
+            'site as a whole, or a sub site, not individual resources.'),
+    optparse.make_option('--proxy-url-alias', action='append', nargs=2,
+            dest='proxy_mount_points', metavar='URL-PATH URL',
+            help=optparse.SUPPRESS_HELP),
+
     optparse.make_option('--proxy-virtual-host', action='append', nargs=2,
             dest='proxy_virtual_hosts', metavar='HOSTNAME URL',
             help='Proxy any requests for the specified host name to the '
@@ -2636,7 +2654,7 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_CHUNKED_REQUEST')
     if options['with_php5']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PHP5')
-    if options['proxy_url_aliases'] or options['proxy_virtual_hosts']:
+    if options['proxy_mount_points'] or options['proxy_virtual_hosts']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY')
     if options['trusted_proxy_headers']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY_HEADERS')
