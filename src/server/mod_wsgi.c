@@ -5588,7 +5588,6 @@ static void wsgi_build_environment(request_rec *r)
     script_name = apr_table_get(r->subprocess_env, "SCRIPT_NAME");
 
     if (*script_name == '/') {
-        fprintf(stderr, "SCRIPT_NAME %s\n", script_name);
         while (*script_name && (*(script_name+1) == '/'))
             script_name++;
         script_name = apr_pstrdup(r->pool, script_name);
@@ -5599,7 +5598,6 @@ static void wsgi_build_environment(request_rec *r)
     path_info = apr_table_get(r->subprocess_env, "PATH_INFO");
 
     if (*path_info == '/') {
-        fprintf(stderr, "PATH_INFO %s\n", path_info);
         while (*path_info && (*(path_info+1) == '/'))
             path_info++;
         path_info = apr_pstrdup(r->pool, path_info);
