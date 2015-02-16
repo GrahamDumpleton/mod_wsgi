@@ -169,6 +169,9 @@ LoadModule dir_module '${HTTPD_MODULES_DIRECTORY}/mod_dir.so'
 <IfModule !env_module>
 LoadModule env_module '${HTTPD_MODULES_DIRECTORY}/mod_env.so'
 </IfModule>
+<IfModule !headers_module>
+LoadModule headers_module '${HTTPD_MODULES_DIRECTORY}/mod_headers.so'
+</IfModule>
 
 <IfVersion >= 2.2.15>
 <IfModule !reqtimeout_module>
@@ -534,6 +537,11 @@ ServerAlias %(server_aliases)s
 SSLEngine On
 SSLCertificateFile %(ssl_certificate)s.crt
 SSLCertificateKeyFile %(ssl_certificate)s.key
+<IfDefine WSGI_HTTPS_ONLY>
+<IfDefine WSGI_HSTS_POLICY>
+Header set Strict-Transport-Security %(hsts_policy)s
+</IfDefine>
+</IfDefine>
 </VirtualHost>
 <IfDefine WSGI_REDIRECT_WWW>
 <VirtualHost *:%(https_port)s>
@@ -1573,9 +1581,12 @@ option_list = (
             'the extension.'),
     optparse.make_option('--https-only', action='store_true',
             default=False, help='Flag indicating whether any requests '
-	    'made using a HTTP request over the non connection connection '
+	    'made using a HTTP request over the non secure connection '
             'should be redirected automatically to use a HTTPS request '
             'over the secure connection.'),
+    optparse.make_option('--hsts-policy', default=None, metavar='PARAMS',
+            help='Specify the HTST policy that should be applied when '
+            'HTTPS only connections are being enforced.'),
 
     optparse.make_option('--server-name', default=None, metavar='HOSTNAME',
             help='The primary host name of the web server. If this name '
@@ -2612,6 +2623,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_WITH_HTTPS')
     if options['https_only']:
         options['httpd_arguments_list'].append('-DWSGI_HTTPS_ONLY')
+    if options['hsts_policy']:
+        options['httpd_arguments_list'].append('-DWSGI_HSTS_POLICY')
 
     if options['server_aliases']:
         options['httpd_arguments_list'].append('-DWSGI_SERVER_ALIAS')
