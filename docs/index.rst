@@ -19,7 +19,7 @@ host any Python application which supports the Python WSGI_ interface.
 Status
 ======
 
-No mod_wsgi is not dead, it's just been resting.
+No mod_wsgi is not dead, it was just resting.
 
 Renewed development on mod_wsgi began early 2014, with a considerable
 amount of new development work and fixes being performed. This included the
@@ -27,7 +27,9 @@ ability to install mod_wsgi using 'pip', along with an admin command
 called ``mod_wsgi-express`` which provides a really simple way of starting
 up Apache/mod_wsgi with an automatically generated configuration.
 
-Completely revised documentation will progressively be incorporated here.
+Completely revised documentation will eventually be incorporated here.
+Right now though I am having too much fun working on all the new features.
+
 In the mean time keep referring to the older documentation at:
 
     http://www.modwsgi.org/
