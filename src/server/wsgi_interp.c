@@ -72,6 +72,9 @@ static PyObject *SignalIntercept_call(
     if (wsgi_daemon_pid != 0 && wsgi_daemon_pid != getpid())
         return PyObject_Call(self->wrapped, args, kwds);
 
+    if (wsgi_worker_pid != 0 && wsgi_worker_pid != getpid())
+        return PyObject_Call(self->wrapped, args, kwds);
+
     if (!PyArg_ParseTuple(args, "iO:signal", &n, &h))
         return NULL;
 

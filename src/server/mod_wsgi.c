@@ -12264,6 +12264,10 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
     }
 #endif
 
+    /* Remember worker process ID. */
+
+    wsgi_worker_pid = getpid();
+
     /* Create lock for request monitoring. */
 
     apr_thread_mutex_create(&wsgi_monitor_lock,
