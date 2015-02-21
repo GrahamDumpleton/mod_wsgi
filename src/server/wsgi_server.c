@@ -34,6 +34,7 @@ const char *wsgi_daemon_group = "";
 /* Process information. */
 
 pid_t wsgi_parent_pid = 0;
+pid_t wsgi_daemon_pid = 0;
 
 /* New Relic monitoring agent. */
 

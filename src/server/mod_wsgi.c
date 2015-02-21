@@ -7302,6 +7302,9 @@ static void wsgi_signal_handler(int signum)
 {
     apr_size_t nbytes = 1;
 
+    if (wsgi_daemon_pid != 0 && wsgi_daemon_pid != getpid())
+        exit(-1);
+
     if (signum == AP_SIG_GRACEFUL) {
         apr_file_write(wsgi_signal_pipe_out, "G", &nbytes);
         apr_file_flush(wsgi_signal_pipe_out);
@@ -9192,6 +9195,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         }
 
         wsgi_daemon_shutdown = 0;
+
+        wsgi_daemon_pid = getpid();
 
         apr_signal(SIGINT, wsgi_signal_handler);
         apr_signal(SIGTERM, wsgi_signal_handler);

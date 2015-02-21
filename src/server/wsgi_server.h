@@ -28,6 +28,7 @@
 
 extern server_rec *wsgi_server;
 extern pid_t wsgi_parent_pid;
+extern pid_t wsgi_daemon_pid;
 extern const char *wsgi_daemon_group;
 
 /* New Relic monitoring agent. */
