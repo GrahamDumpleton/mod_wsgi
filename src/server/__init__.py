@@ -169,6 +169,9 @@ LoadModule dir_module '${HTTPD_MODULES_DIRECTORY}/mod_dir.so'
 <IfModule !env_module>
 LoadModule env_module '${HTTPD_MODULES_DIRECTORY}/mod_env.so'
 </IfModule>
+<IfModule !headers_module>
+LoadModule headers_module '${HTTPD_MODULES_DIRECTORY}/mod_headers.so'
+</IfModule>
 
 <IfVersion >= 2.2.15>
 <IfModule !reqtimeout_module>
@@ -369,6 +372,10 @@ CustomLog "%(access_log_file)s" %(log_format_nickname)s
 WSGIChunkedRequest On
 </IfDefine>
 
+<IfDefine WSGI_WITH_PROXY_HEADERS>
+WSGITrustedProxyHeaders %(trusted_proxy_headers)s
+</IfDefine>
+
 <IfDefine WSGI_WITH_HTTPS>
 <IfModule !ssl_module>
 LoadModule ssl_module ${HTTPD_MODULES_DIRECTORY}/mod_ssl.so
@@ -530,6 +537,11 @@ ServerAlias %(server_aliases)s
 SSLEngine On
 SSLCertificateFile %(ssl_certificate)s.crt
 SSLCertificateKeyFile %(ssl_certificate)s.key
+<IfDefine WSGI_HTTPS_ONLY>
+<IfDefine WSGI_HSTS_POLICY>
+Header set Strict-Transport-Security %(hsts_policy)s
+</IfDefine>
+</IfDefine>
 </VirtualHost>
 <IfDefine WSGI_REDIRECT_WWW>
 <VirtualHost *:%(https_port)s>
@@ -623,14 +635,25 @@ WSGIImportScript '%(server_root)s/handler.wsgi' \\
 </IfDefine>
 """
 
-APACHE_PROXY_PASS_CONFIG = """
+APACHE_PROXY_PASS_MOUNT_POINT_CONFIG = """
 ProxyPass '%(mount_point)s' '%(url)s'
+ProxyPassReverse '%(mount_point)s' '%(url)s'
+"""
+
+APACHE_PROXY_PASS_MOUNT_POINT_SLASH_CONFIG = """
+ProxyPass '%(mount_point)s/' '%(url)s/'
+ProxyPassReverse '%(mount_point)s/' '%(url)s/'
+<LocationMatch '^%(mount_point)s$'>
+RewriteEngine On
+RewriteRule - http://%%{HTTP_HOST}%%{REQUEST_URI}/ [R=302,L]
+</LocationMatch>
 """
 
 APACHE_PROXY_PASS_HOST_CONFIG = """
 <VirtualHost *:%(port)s>
 ServerName %(host)s
 ProxyPass / '%(url)s'
+ProxyPassReverse / '%(url)s'
 </VirtualHost>
 """
 
@@ -715,10 +738,14 @@ def generate_apache_config(options):
     with open(options['httpd_conf'], 'w') as fp:
         print(APACHE_GENERAL_CONFIG % options, file=fp)
 
-        if options['proxy_url_aliases']:
-            for mount_point, url in options['proxy_url_aliases']:
-                print(APACHE_PROXY_PASS_CONFIG % dict(
-                        mount_point=mount_point, url=url), file=fp)
+        if options['proxy_mount_points']:
+            for mount_point, url in options['proxy_mount_points']:
+                if mount_point.endswith('/'):
+                    print(APACHE_PROXY_PASS_MOUNT_POINT_CONFIG % dict(
+                            mount_point=mount_point, url=url), file=fp)
+                else:
+                    print(APACHE_PROXY_PASS_MOUNT_POINT_SLASH_CONFIG % dict(
+                            mount_point=mount_point, url=url), file=fp)
 
         if options['proxy_virtual_hosts']:
             for host, url in options['proxy_virtual_hosts']:
@@ -1138,16 +1165,35 @@ class ApplicationHandler(object):
         # Strip out the leading component due to internal redirect in
         # Apache when using web application as fallback resource.
 
+        mount_point = environ.get('mod_wsgi.mount_point')
+
         script_name = environ.get('SCRIPT_NAME')
         path_info = environ.get('PATH_INFO')
 
-        environ['SCRIPT_NAME'] = ''
-        environ['PATH_INFO'] = script_name + path_info
+        if mount_point is not None:
+            # If this is set then it means that SCRIPT_NAME was
+            # overridden by a trusted proxy header. In this case
+            # we want to ignore any local mount point, simply
+            # stripping it from the path.
 
-        if self.mount_point != '/':
-            if environ['PATH_INFO'].startswith(self.mount_point):
-                environ['SCRIPT_NAME'] = self.mount_point
-                environ['PATH_INFO'] = environ['PATH_INFO'][len(self.mount_point):]
+            script_name = environ['mod_wsgi.script_name']
+
+            environ['PATH_INFO'] = script_name + path_info
+
+            if self.mount_point != '/':
+                if environ['PATH_INFO'].startswith(self.mount_point):
+                    environ['PATH_INFO'] = environ['PATH_INFO'][len(
+                            self.mount_point):]
+
+        else:
+            environ['SCRIPT_NAME'] = ''
+            environ['PATH_INFO'] = script_name + path_info
+
+            if self.mount_point != '/':
+                if environ['PATH_INFO'].startswith(self.mount_point):
+                    environ['SCRIPT_NAME'] = self.mount_point
+                    environ['PATH_INFO'] = environ['PATH_INFO'][len(
+                            self.mount_point):]
 
         return self.application(environ, start_response)
 
@@ -1535,9 +1581,12 @@ option_list = (
             'the extension.'),
     optparse.make_option('--https-only', action='store_true',
             default=False, help='Flag indicating whether any requests '
-	    'made using a HTTP request over the non connection connection '
+	    'made using a HTTP request over the non secure connection '
             'should be redirected automatically to use a HTTPS request '
             'over the secure connection.'),
+    optparse.make_option('--hsts-policy', default=None, metavar='PARAMS',
+            help='Specify the HTST policy that should be applied when '
+            'HTTPS only connections are being enforced.'),
 
     optparse.make_option('--server-name', default=None, metavar='HOSTNAME',
             help='The primary host name of the web server. If this name '
@@ -1782,14 +1831,24 @@ option_list = (
             default=False, help='Flag indicating whether Apache error '
             'documents will override application error responses.'),
 
-    optparse.make_option('--proxy-url-alias', action='append', nargs=2,
-            dest='proxy_url_aliases', metavar='URL-PATH URL',
+    optparse.make_option('--proxy-mount-point', action='append', nargs=2,
+            dest='proxy_mount_points', metavar='URL-PATH URL',
             help='Map a sub URL such that any requests against it will be '
-            'proxied to the specified URL.'),
+            'proxied to the specified URL. This is only for proxying to a '
+            'site as a whole, or a sub site, not individual resources.'),
+    optparse.make_option('--proxy-url-alias', action='append', nargs=2,
+            dest='proxy_mount_points', metavar='URL-PATH URL',
+            help=optparse.SUPPRESS_HELP),
+
     optparse.make_option('--proxy-virtual-host', action='append', nargs=2,
             dest='proxy_virtual_hosts', metavar='HOSTNAME URL',
             help='Proxy any requests for the specified host name to the '
             'remote URL.'),
+
+    optparse.make_option('--trust-proxy-header', action='append', default=[],
+            dest='trusted_proxy_headers', metavar='HEADER-NAME',
+            help='The name of any trusted HTTP header providing details '
+            'of the front end client request when proxying.'),
 
     optparse.make_option('--keep-alive-timeout', type='int', default=0,
             metavar='SECONDS', help='The number of seconds which a client '
@@ -2191,6 +2250,9 @@ def _cmd_setup_server(command, args, options):
     if not options['mount_point'].startswith('/'):
         options['mount_point'] = os.path.normpath('/' + options['mount_point'])
 
+    # Create subdirectories for mount points in document directory
+    # so that fallback resource rewrite rule will work.
+
     if options['mount_point'] != '/':
         parts = options['mount_point'].rstrip('/').split('/')[1:]
         subdir = options['document_root']
@@ -2463,6 +2525,9 @@ def _cmd_setup_server(command, args, options):
 
     options['httpd_arguments_list'] = []
 
+    options['trusted_proxy_headers'] = ' '.join(
+            options['trusted_proxy_headers'])
+
     if options['startup_log']:
         if not options['log_to_terminal']:
             options['startup_log_file'] = os.path.join(
@@ -2558,6 +2623,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_WITH_HTTPS')
     if options['https_only']:
         options['httpd_arguments_list'].append('-DWSGI_HTTPS_ONLY')
+    if options['hsts_policy']:
+        options['httpd_arguments_list'].append('-DWSGI_HSTS_POLICY')
 
     if options['server_aliases']:
         options['httpd_arguments_list'].append('-DWSGI_SERVER_ALIAS')
@@ -2600,8 +2667,10 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_CHUNKED_REQUEST')
     if options['with_php5']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PHP5')
-    if options['proxy_url_aliases'] or options['proxy_virtual_hosts']:
+    if options['proxy_mount_points'] or options['proxy_virtual_hosts']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY')
+    if options['trusted_proxy_headers']:
+        options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY_HEADERS')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory'],

@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2014 GRAHAM DUMPLETON
+ * Copyright 2007-2015 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,8 @@
 
 extern server_rec *wsgi_server;
 extern pid_t wsgi_parent_pid;
+extern pid_t wsgi_worker_pid;
+extern pid_t wsgi_daemon_pid;
 extern const char *wsgi_daemon_group;
 
 /* New Relic monitoring agent. */
@@ -103,6 +105,8 @@ typedef struct {
     int error_override;
     int chunked_request;
     int map_head_to_get;
+
+    apr_array_header_t *trusted_proxy_headers;
 
     int enable_sendfile;
 

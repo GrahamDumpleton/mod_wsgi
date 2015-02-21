@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2014 GRAHAM DUMPLETON
+ * Copyright 2007-2015 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,8 @@ const char *wsgi_daemon_group = "";
 /* Process information. */
 
 pid_t wsgi_parent_pid = 0;
+pid_t wsgi_worker_pid = 0;
+pid_t wsgi_daemon_pid = 0;
 
 /* New Relic monitoring agent. */
 

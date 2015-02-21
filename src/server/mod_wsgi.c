@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2014 GRAHAM DUMPLETON
+ * Copyright 2007-2015 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -184,6 +184,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->map_head_to_get = parent->map_head_to_get;
 
+    if (child->trusted_proxy_headers)
+        config->trusted_proxy_headers = child->trusted_proxy_headers;
+    else
+        config->trusted_proxy_headers = parent->trusted_proxy_headers;
+
     if (child->enable_sendfile != -1)
         config->enable_sendfile = child->enable_sendfile;
     else
@@ -219,6 +224,8 @@ typedef struct {
     int chunked_request;
     int map_head_to_get;
 
+    apr_array_header_t *trusted_proxy_headers;
+
     int enable_sendfile;
 
     WSGIScriptFile *access_script;
@@ -250,6 +257,8 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->error_override = -1;
     object->chunked_request = -1;
     object->map_head_to_get = -1;
+
+    object->trusted_proxy_headers = NULL;
 
     object->enable_sendfile = -1;
 
@@ -338,6 +347,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->map_head_to_get = parent->map_head_to_get;
 
+    if (child->trusted_proxy_headers)
+        config->trusted_proxy_headers = child->trusted_proxy_headers;
+    else
+        config->trusted_proxy_headers = parent->trusted_proxy_headers;
+
     if (child->enable_sendfile != -1)
         config->enable_sendfile = child->enable_sendfile;
     else
@@ -397,6 +411,8 @@ typedef struct {
     int error_override;
     int chunked_request;
     int map_head_to_get;
+
+    apr_array_header_t *trusted_proxy_headers;
 
     int enable_sendfile;
 
@@ -832,6 +848,11 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
         if (config->map_head_to_get < 0)
             config->map_head_to_get = 2;
     }
+
+    config->trusted_proxy_headers = dconfig->trusted_proxy_headers;
+
+    if (!config->trusted_proxy_headers)
+        config->trusted_proxy_headers = sconfig->trusted_proxy_headers;
 
     config->enable_sendfile = dconfig->enable_sendfile;
 
@@ -3869,6 +3890,8 @@ static void wsgi_python_child_init(apr_pool_t *p)
     PyType_Ready(&Dispatch_Type);
     PyType_Ready(&Auth_Type);
 
+    PyType_Ready(&SignalIntercept_Type);
+
 #if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 4)
     PyType_Ready(&ShutdownInterpreter_Type);
 #endif
@@ -4971,6 +4994,40 @@ static const char *wsgi_set_map_head_to_get(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static char *wsgi_http2env(apr_pool_t *a, const char *w);
+
+static const char *wsgi_set_trusted_proxy_headers(cmd_parms *cmd,
+                                                  void *mconfig,
+                                                  const char *args)
+{
+    apr_array_header_t *headers = NULL;
+
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+
+        headers = apr_array_make(cmd->pool, 3, sizeof(char*));
+        dconfig->trusted_proxy_headers = headers;
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+
+        headers = apr_array_make(cmd->pool, 3, sizeof(char*));
+        sconfig->trusted_proxy_headers = headers;
+    }
+
+    while (*args) {
+        const char **entry = NULL;
+
+        entry = (const char **)apr_array_push(headers);
+        *entry = wsgi_http2env(cmd->pool, ap_getword_conf(cmd->pool, &args));
+    }
+
+    return NULL;
+}
+
 static const char *wsgi_set_enable_sendfile(cmd_parms *cmd, void *mconfig,
                                             const char *f)
 {
@@ -5424,6 +5481,7 @@ static int wsgi_hook_intercept(request_rec *r)
 /* Handler for the response handler phase. */
 
 static void wsgi_drop_invalid_headers(request_rec *r);
+static void wsgi_process_proxy_headers(request_rec *r);
 
 static void wsgi_build_environment(request_rec *r)
 {
@@ -5441,20 +5499,21 @@ static void wsgi_build_environment(request_rec *r)
                                                        &wsgi_module);
 
     /*
-     * Populate environment with standard CGI variables. Before
-     * we do this though, we ensure that we delete any headers
-     * which use invalid characters. This is necessary to ensure
-     * that someone doesn't try and take advantage of header
-     * spoofing. This can come about where characters other than
-     * alphanumerics or '-' are used as the conversion of non
-     * alphanumerics to '_' means one can get collisions. This
-     * is technically only an issue with Apache 2.2 as Apache
-     * 2.4 addresses the problem and drops them anyway. Still go
-     * through and drop them even for Apache 2.4 as not sure
-     * which version of Apache 2.4 introduces the change.
+     * Remove any invalid headers which use invalid characters.
+     * This is necessary to ensure that someone doesn't try and
+     * take advantage of header spoofing. This can come about
+     * where characters other than alphanumerics or '-' are used
+     * as the conversion of non alphanumerics to '_' means one
+     * can get collisions. This is technically only an issue
+     * with Apache 2.2 as Apache 2.4 addresses the problem and
+     * drops them anyway. Still go through and drop them even
+     * for Apache 2.4 as not sure which version of Apache 2.4
+     * introduces the change.
      */
 
     wsgi_drop_invalid_headers(r);
+
+    /* Populate environment with standard CGI variables. */
 
     ap_add_cgi_vars(r);
     ap_add_common_vars(r);
@@ -5491,14 +5550,6 @@ static void wsgi_build_environment(request_rec *r)
         if (r->method_number == M_GET)
             apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
     }
-
-    /* Determine whether connection uses HTTPS protocol. */
-
-    if (!wsgi_is_https)
-        wsgi_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
-
-    if (wsgi_is_https && wsgi_is_https(r->connection))
-        apr_table_set(r->subprocess_env, "HTTPS", "1");
 
     /*
      * If enabled, pass along authorisation headers which Apache
@@ -5538,7 +5589,7 @@ static void wsgi_build_environment(request_rec *r)
 
     script_name = apr_table_get(r->subprocess_env, "SCRIPT_NAME");
 
-    if (*script_name) {
+    if (*script_name == '/') {
         while (*script_name && (*(script_name+1) == '/'))
             script_name++;
         script_name = apr_pstrdup(r->pool, script_name);
@@ -5548,13 +5599,41 @@ static void wsgi_build_environment(request_rec *r)
 
     path_info = apr_table_get(r->subprocess_env, "PATH_INFO");
 
-    if (*path_info) {
+    if (*path_info == '/') {
         while (*path_info && (*(path_info+1) == '/'))
             path_info++;
         path_info = apr_pstrdup(r->pool, path_info);
         ap_no2slash((char*)path_info);
         apr_table_setn(r->subprocess_env, "PATH_INFO", path_info);
     }
+
+    /*
+     * Save away the SCRIPT_NAME and PATH_INFO values at this point
+     * so we have a way of determining if they are rewritten somehow.
+     * This can be important when dealing with rewrite rules and
+     * a trusted header was being handled for SCRIPT_NAME.
+     */
+
+    apr_table_setn(r->subprocess_env, "mod_wsgi.script_name", script_name);
+    apr_table_setn(r->subprocess_env, "mod_wsgi.path_info", path_info);
+
+    /*
+     * Perform fixups on environment based on trusted proxy headers
+     * sent through from a front end proxy.
+     */
+
+    wsgi_process_proxy_headers(r);
+
+    /*
+     * Determine whether connection uses HTTPS protocol. This has
+     * to be done after and fixups due to trusted proxy headers.
+     */
+
+    if (!wsgi_is_https)
+        wsgi_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
+
+    if (wsgi_is_https && wsgi_is_https(r->connection))
+        apr_table_set(r->subprocess_env, "HTTPS", "1");
 
     /*
      * Set values specific to mod_wsgi configuration. These control
@@ -7224,6 +7303,9 @@ static apr_file_t *wsgi_signal_pipe_out = NULL;
 static void wsgi_signal_handler(int signum)
 {
     apr_size_t nbytes = 1;
+
+    if (wsgi_daemon_pid != 0 && wsgi_daemon_pid != getpid())
+        exit(-1);
 
     if (signum == AP_SIG_GRACEFUL) {
         apr_file_write(wsgi_signal_pipe_out, "G", &nbytes);
@@ -9115,6 +9197,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         }
 
         wsgi_daemon_shutdown = 0;
+
+        wsgi_daemon_pid = getpid();
 
         apr_signal(SIGINT, wsgi_signal_handler);
         apr_signal(SIGTERM, wsgi_signal_handler);
@@ -12180,6 +12264,10 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
     }
 #endif
 
+    /* Remember worker process ID. */
+
+    wsgi_worker_pid = getpid();
+
     /* Create lock for request monitoring. */
 
     apr_thread_mutex_create(&wsgi_monitor_lock,
@@ -12293,6 +12381,244 @@ static void wsgi_drop_invalid_headers(request_rec *r)
             key = ((char **)to_delete->elts)[i];
 
             apr_table_unset(r->headers_in, key);
+        }
+    }
+}
+
+static const char *wsgi_proxy_scheme_headers[] = {
+    "HTTP_X_FORWARDED_HTTPS",
+    "HTTP_X_FORWARDED_PROTO",
+    "HTTP_X_FORWARDED_SCHEME",
+    "HTTP_X_FORWARDED_SSL",
+    "HTTP_X_HTTPS",
+    "HTTP_X_SCHEME",
+    NULL,
+};
+
+static const char *wsgi_proxy_host_headers[] = {
+    "HTTP_X_FORWARDED_HOST",
+    "HTTP_X_HOST",
+    NULL,
+};
+
+static const char *wsgi_proxy_script_name_headers[] = {
+    "HTTP_X_SCRIPT_NAME",
+    "HTTP_X_FORWARDED_SCRIPT_NAME",
+    NULL,
+};
+
+static void wsgi_process_proxy_headers(request_rec *r)
+{
+    WSGIRequestConfig *config = NULL;
+
+    apr_array_header_t *trusted_proxy_headers = NULL;
+
+    int match_scheme_header = 0;
+    int match_host_header = 0;
+    int match_script_name_header = 0;
+
+    const char *trusted_scheme_header = NULL;
+    const char *trusted_host_header = NULL;
+    const char *trusted_script_name_header = NULL;
+
+    int i = 0;
+
+    config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
+                                                       &wsgi_module);
+
+    trusted_proxy_headers = config->trusted_proxy_headers;
+
+    /* Nothing to do if no trusted headers have been specified. */
+
+    if (!trusted_proxy_headers)
+        return;
+
+    /*
+     * Check for any special processing required for each trusted
+     * header which has been specified.
+     */
+
+    for (i=0; i<trusted_proxy_headers->nelts; i++) {
+        const char *name = NULL;
+        const char *value = NULL;
+
+        name = ((const char**)trusted_proxy_headers->elts)[i];
+        value = apr_table_get(r->subprocess_env, name);
+
+        if (!strcmp(name, "HTTP_X_FORWARDED_FOR")) {
+            if (value) {
+                /*
+                 * A potentially comma separated list where client
+                 * we are interested in will be listed first.
+                 */
+
+                const char *end = NULL;
+
+                while (*value != '\0' && apr_isspace(*value))
+                    value++;
+
+                if (*value != '\0') {
+                    end = value;
+
+                    while (*end != '\0' && *end != ',')
+                        end++;
+
+                    /* Need to deal with trailing whitespace. */
+
+                    while (end != value) {
+                        if (!apr_isspace(*(end-1)))
+                            break;
+
+                        end--;
+                    }
+
+                    apr_table_setn(r->subprocess_env, "REMOTE_ADDR",
+                            apr_pstrndup(r->pool, value, (end-value)));
+                }
+            }
+        }
+        else if (!strcmp(name, "HTTP_X_REAL_IP")) {
+            if (value) {
+                /* Use the value as is. */
+
+                apr_table_setn(r->subprocess_env, "REMOTE_ADDR", value);
+            }
+        }
+        else if (!strcmp(name, "HTTP_X_FORWARDED_HOST") ||
+                 !strcmp(name, "HTTP_X_HOST")) {
+
+            match_host_header = 1;
+
+            if (value) {
+                /* Use the value as is. May include a port. */
+
+                trusted_host_header = name;
+
+                apr_table_setn(r->subprocess_env, "HTTP_HOST", value);
+            }
+        }
+        else if (!strcmp(name, "HTTP_X_FORWARDED_SERVER")) {
+            if (value) {
+                /* Use the value as is. */
+
+                apr_table_setn(r->subprocess_env, "SERVER_NAME", value);
+            }
+        }
+        else if (!strcmp(name, "HTTP_X_FORWARDED_PORT")) {
+            if (value) {
+                /* Use the value as is. */
+
+                apr_table_setn(r->subprocess_env, "SERVER_PORT", value);
+            }
+        }
+        else if (!strcmp(name, "HTTP_X_SCRIPT_NAME") ||
+                 !strcmp(name, "HTTP_X_FORWARDED_SCRIPT_NAME")) {
+
+            match_script_name_header = 1;
+
+            if (value) {
+                /*
+                 * Use the value as is. We want to remember what the
+                 * original value for SCRIPT_NAME was though.
+                 */
+
+                apr_table_setn(r->subprocess_env, "mod_wsgi.mount_point",
+                               value);
+
+                trusted_script_name_header = name;
+
+                apr_table_setn(r->subprocess_env, "SCRIPT_NAME", value);
+            }
+        }
+        else if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
+            !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
+            !strcmp(name, "HTTP_X_SCHEME")) {
+
+            match_scheme_header = 1;
+
+            if (value) {
+                trusted_scheme_header = name;
+
+                /* Value can be either 'http' or 'https'. */
+
+                if (!strcasecmp(value, "https"))
+                    apr_table_setn(r->subprocess_env, "HTTPS", "1");
+                else if (!strcasecmp(value, "http"))
+                    apr_table_unset(r->subprocess_env, "HTTPS");
+            }
+        }
+        else if (!strcmp(name, "HTTP_X_FORWARDED_HTTPS") ||
+                 !strcmp(name, "HTTP_X_FORWARDED_SSL") ||
+                 !strcmp(name, "HTTP_X_HTTPS")) {
+
+            match_scheme_header = 1;
+
+            if (value) {
+                trusted_scheme_header = name;
+
+                /*
+                 * Value can be a boolean like flag such as 'On',
+                 * 'Off', 'true', 'false', '1' or '0'.
+                 */
+
+                if (!strcasecmp(value, "On") ||
+                    !strcasecmp(value, "true") ||
+                    !strcasecmp(value, "1")) {
+
+                    apr_table_setn(r->subprocess_env, "HTTPS", "1");
+                }
+                else if (!strcasecmp(value, "Off") ||
+                    !strcasecmp(value, "false") ||
+                    !strcasecmp(value, "0")) {
+
+                    apr_table_unset(r->subprocess_env, "HTTPS");
+                }
+            }
+        }
+    }
+
+    /*
+     * Remove all proxy scheme headers from request environment
+     * which weren't matched as being trusted.
+     */
+
+    if (match_scheme_header) {
+        const char *name = NULL;
+
+        for (i=0; (name=wsgi_proxy_scheme_headers[i]); i++) {
+            if (!trusted_scheme_header || strcmp(name, trusted_scheme_header)) {
+                apr_table_unset(r->subprocess_env, name);
+            }
+        }
+    }
+
+    /*
+     * Remove all proxy host from request environment which weren't
+     * matched as being trusted.
+     */
+
+    if (match_host_header) {
+        const char *name = NULL;
+
+        for (i=0; (name=wsgi_proxy_host_headers[i]); i++) {
+            if (!trusted_host_header || strcmp(name, trusted_host_header))
+                apr_table_unset(r->subprocess_env, name);
+        }
+    }
+
+    /*
+     * Remove all proxy script name headers from request environment
+     * which weren't matched as being trusted.
+     */
+
+    if (match_script_name_header) {
+        const char *name = NULL;
+
+        for (i=0; (name=wsgi_proxy_script_name_headers[i]); i++) {
+            if (!trusted_script_name_header ||
+                strcmp(name, trusted_script_name_header)) {
+                apr_table_unset(r->subprocess_env, name);
+            }
         }
     }
 }
@@ -14427,6 +14753,9 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable support for chunked requests."),
     AP_INIT_TAKE1("WSGIMapHEADToGET", wsgi_set_map_head_to_get,
         NULL, OR_FILEINFO, "Enable/Disable mapping of HEAD to GET."),
+
+    AP_INIT_RAW_ARGS("WSGITrustedProxyHeaders", wsgi_set_trusted_proxy_headers,
+        NULL, OR_FILEINFO, "Specify a list of trusted proxy headers."),
 
 #ifndef WIN32
     AP_INIT_TAKE1("WSGIEnableSendfile", wsgi_set_enable_sendfile,
