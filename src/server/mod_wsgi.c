@@ -3890,6 +3890,8 @@ static void wsgi_python_child_init(apr_pool_t *p)
     PyType_Ready(&Dispatch_Type);
     PyType_Ready(&Auth_Type);
 
+    PyType_Ready(&SignalIntercept_Type);
+
 #if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 4)
     PyType_Ready(&ShutdownInterpreter_Type);
 #endif

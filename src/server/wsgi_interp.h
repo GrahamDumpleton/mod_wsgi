@@ -29,6 +29,13 @@
 typedef struct {
     PyObject_HEAD
     PyObject *wrapped;
+} SignalInterceptObject;
+
+extern PyTypeObject SignalIntercept_Type;
+
+typedef struct {
+    PyObject_HEAD
+    PyObject *wrapped;
 } ShutdownInterpreterObject;
 
 extern PyTypeObject ShutdownInterpreter_Type;
