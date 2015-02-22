@@ -1272,7 +1272,7 @@ enable_recorder = %(enable_recorder)s
 recorder_directory = '%(recorder_directory)s'
 
 if python_paths:
-    sys.path.extend(python_paths)
+    sys.path[0:0] = python_paths
 
 if debug_mode:
     # We need to fiddle sys.path as we are not using daemon mode and so
