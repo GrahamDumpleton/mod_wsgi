@@ -16,3 +16,16 @@ Bugs Fixed
 1. Fixed a reference counting bug which would cause a daemon process to
 crash if both ``home`` and ``python-path`` options were specified at the
 same time with the ``WSGIDaemonProcess`` directive.
+
+Features Changed
+----------------
+
+1. When specifying a service script with the ``--service-script`` option of
+``mod_wsgi-express``, the home directory for the process will now be set to
+the same home directory as used for the hosted WGSI application. Python
+modules from the WSGI application will therefore be automatically found
+when imported. Any directory paths added using ``--python-path`` option
+will also be added as search directories for Python module imports, with
+any ``.pth`` files in those directories also being handled. In addition,
+the language locale and Python eggs directory used by the hosted WSGI
+application will also be used for the service script.

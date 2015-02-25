@@ -728,9 +728,18 @@ WSGIImportScript '%(server_root)s/server-metrics.py' \\
 """
 
 APACHE_SERVICE_CONFIG = """
-WSGIDaemonProcess 'service:%(name)s' display-name=%%{GROUP} threads=1 \\
-    user='%(user)s' group='%(group)s'
-WSGIImportScript '%(script)s' process-group='service:%(name)s' \\
+WSGIDaemonProcess 'service:%(name)s' \\
+    display-name=%%{GROUP} \\
+    user='%(user)s' \\
+    group='%(group)s' \\
+    home='%(working_directory)s' \\
+    threads=1 \\
+    python-path='%(python_path)s' \\
+    python-eggs='%(python_eggs)s' \\
+    lang='%(lang)s' \\
+    locale='%(locale)s'
+WSGIImportScript '%(script)s' \\
+    process-group='service:%(name)s' \\
     application-group=%%{GLOBAL}
 """
 
@@ -803,8 +812,15 @@ def generate_apache_config(options):
             for name, script in options['service_scripts']:
                 user = users.get(name, '${WSGI_RUN_USER}')
                 group = groups.get(name, '${WSGI_RUN_GROUP}')
+                python_paths = (options['python_paths'] and
+                        options['python_paths'] or [])
                 print(APACHE_SERVICE_CONFIG % dict(name=name, user=user,
-                        group=group, script=script), file=fp)
+                        group=group, script=script,
+                        python_path=':'.join(python_paths),
+                        working_directory=options['working_directory'],
+                        python_eggs=options['python_eggs'],
+                        lang=options['lang'], locale=options['locale']),
+                        file=fp)
 
         if options['include_files']:
             for filename in options['include_files']:
