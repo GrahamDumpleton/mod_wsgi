@@ -800,7 +800,7 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     module = PyImport_ImportModule("site");
 
-    if (wsgi_python_path) {
+    if (wsgi_python_path && *wsgi_python_path) {
         PyObject *path = NULL;
 
         path = PySys_GetObject("path");
