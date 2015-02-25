@@ -812,11 +812,9 @@ def generate_apache_config(options):
             for name, script in options['service_scripts']:
                 user = users.get(name, '${WSGI_RUN_USER}')
                 group = groups.get(name, '${WSGI_RUN_GROUP}')
-                python_paths = (options['python_paths'] and
-                        options['python_paths'] or [])
                 print(APACHE_SERVICE_CONFIG % dict(name=name, user=user,
                         group=group, script=script,
-                        python_path=':'.join(python_paths),
+                        python_path=options['python_path'],
                         working_directory=options['working_directory'],
                         python_eggs=options['python_eggs'],
                         lang=options['lang'], locale=options['locale']),
@@ -2355,6 +2353,11 @@ def _cmd_setup_server(command, args, options):
         os.mkdir(options['python_eggs'])
     except Exception:
         pass
+
+    if options['python_paths'] is None:
+        options['python_paths'] = []
+
+    options['python_path'] = ':'.join(options['python_paths'])
 
     options['multiprocess'] = options['processes'] is not None
     options['processes'] = options['processes'] or 1
