@@ -29,3 +29,8 @@ will also be added as search directories for Python module imports, with
 any ``.pth`` files in those directories also being handled. In addition,
 the language locale and Python eggs directory used by the hosted WSGI
 application will also be used for the service script.
+
+2. When specifying ``--python-path`` option, when paths are now setup for
+the WSGI application, they will be added in such a way that they appear at
+the head of ``sys.path`` and any ``.pth`` files in those directories are
+also handled.

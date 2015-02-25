@@ -259,6 +259,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    processes=%(processes)s \\
    threads=%(threads)s \\
    maximum-requests=%(maximum_requests)s \\
+   python-path='%(python_path)s' \\
    python-eggs='%(python_eggs)s' \\
    lang='%(lang)s' \\
    locale='%(locale)s' \\
@@ -284,6 +285,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    home='%(working_directory)s' \\
    threads=%(threads)s \\
    maximum-requests=%(maximum_requests)s \\
+   python-path='%(python_path)s' \\
    python-eggs='%(python_eggs)s' \\
    lang='%(lang)s' \\
    locale='%(locale)s' \\
@@ -1265,7 +1267,6 @@ import time
 import mod_wsgi.server
 
 working_directory = '%(working_directory)s'
-python_paths = %(python_paths)s
 
 entry_point = '%(entry_point)s'
 application_type = '%(application_type)s'
@@ -1284,9 +1285,6 @@ enable_profiler = %(enable_profiler)s
 profiler_directory = '%(profiler_directory)s'
 enable_recorder = %(enable_recorder)s
 recorder_directory = '%(recorder_directory)s'
-
-if python_paths:
-    sys.path.extend(python_paths)
 
 if debug_mode:
     # We need to fiddle sys.path as we are not using daemon mode and so
