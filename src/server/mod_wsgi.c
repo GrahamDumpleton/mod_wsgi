@@ -9535,6 +9535,10 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         apr_os_sock_put(&daemon->listener, &daemon->group->listener_fd, p);
 
+        /* Time daemon process started waiting for requests. */
+
+        wsgi_restart_time = apr_time_now();
+
         /* Run the main routine for the daemon process. */
 
         wsgi_daemon_main(p, daemon);
@@ -12291,6 +12295,10 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
         wsgi_python_child_init(p);
     }
+
+    /* Time child process started waiting for requests. */
+
+    wsgi_restart_time = apr_time_now();
 }
 
 #include "apr_lib.h"
