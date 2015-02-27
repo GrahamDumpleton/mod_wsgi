@@ -173,6 +173,12 @@ LoadModule env_module '${HTTPD_MODULES_DIRECTORY}/mod_env.so'
 LoadModule headers_module '${HTTPD_MODULES_DIRECTORY}/mod_headers.so'
 </IfModule>
 
+<IfDefine WSGI_DIRECTORY_LISTING>
+<IfModule !autoindex_module>
+LoadModule autoindex_module '${HTTPD_MODULES_DIRECTORY}/mod_autoindex.so'
+</IfModule>
+</IfDefine>
+
 <IfVersion >= 2.2.15>
 <IfModule !reqtimeout_module>
 LoadModule reqtimeout_module '${HTTPD_MODULES_DIRECTORY}/mod_reqtimeout.so'
@@ -570,6 +576,9 @@ DocumentRoot '%(document_root)s'
 <Directory '%(document_root)s%(mount_point)s'>
 <IfDefine WSGI_DIRECTORY_INDEX>
     DirectoryIndex %(directory_index)s
+</IfDefine>
+<IfDefine WSGI_DIRECTORY_LISTING>
+    Options +Indexes
 </IfDefine>
 <IfDefine !WSGI_STATIC_ONLY>
     RewriteEngine On
@@ -1825,6 +1834,10 @@ option_list = (
             'document root directory. Requests mapping to the directory '
             'will be mapped to this resource rather than being passed '
             'through to the WSGI application.'),
+    optparse.make_option('--directory-listing', action='store_true',
+            default=False, help='Flag indicating if directory listing '
+            'should be enabled where static file application type is '
+            'being used and no directory index file has been specified.'),
 
     optparse.make_option('--mount-point', metavar='URL-PATH', default='/',
             help='The URL path at which the WSGI application will be '
@@ -2660,6 +2673,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_SERVER_STATUS')
     if options['directory_index']:
         options['httpd_arguments_list'].append('-DWSGI_DIRECTORY_INDEX')
+    if options['directory_listing']:
+        options['httpd_arguments_list'].append('-DWSGI_DIRECTORY_LISTING')
     if options['access_log']:
         options['httpd_arguments_list'].append('-DWSGI_ACCESS_LOG')
     if options['rotate_logs']:

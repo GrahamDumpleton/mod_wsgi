@@ -34,3 +34,10 @@ application will also be used for the service script.
 the WSGI application, they will be added in such a way that they appear at
 the head of ``sys.path`` and any ``.pth`` files in those directories are
 also handled.
+
+New Features
+------------
+
+1. Added the ``--directory-listing`` option to ``mod_wsgi-express`` to
+allow automatic directory listings to be enabled when using the static file
+application type and no explicit directory index file has been specified.
