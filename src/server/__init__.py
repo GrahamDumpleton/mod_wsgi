@@ -534,8 +534,12 @@ Allow from localhost
 </IfDefine>
 </Location>
 SSLEngine On
-SSLCertificateFile %(ssl_certificate)s.crt
-SSLCertificateKeyFile %(ssl_certificate)s.key
+SSLCertificateFile %(ssl_certificate_file)s
+SSLCertificateKeyFile %(ssl_certificate_key_file)s
+<IfDefine WSGI_VERIFY_CLIENT>
+SSLCACertificateFile %(ssl_ca_certificate_file)s
+SSLVerifyClient none
+</IfDefine>
 </VirtualHost>
 <VirtualHost *:%(https_port)s>
 ServerName %(server_name)s
@@ -543,8 +547,12 @@ ServerName %(server_name)s
 ServerAlias %(server_aliases)s
 </IfDefine>
 SSLEngine On
-SSLCertificateFile %(ssl_certificate)s.crt
-SSLCertificateKeyFile %(ssl_certificate)s.key
+SSLCertificateFile %(ssl_certificate_file)s
+SSLCertificateKeyFile %(ssl_certificate_key_file)s
+<IfDefine WSGI_VERIFY_CLIENT>
+SSLCACertificateFile %(ssl_ca_certificate_file)s
+SSLVerifyClient none
+</IfDefine>
 <IfDefine WSGI_HTTPS_ONLY>
 <IfDefine WSGI_HSTS_POLICY>
 Header set Strict-Transport-Security %(hsts_policy)s
@@ -556,8 +564,12 @@ Header set Strict-Transport-Security %(hsts_policy)s
 ServerName %(parent_domain)s
 Redirect permanent / https://%(server_name)s:%(https_port)s/
 SSLEngine On
-SSLCertificateFile %(ssl_certificate)s.crt
-SSLCertificateKeyFile %(ssl_certificate)s.key
+SSLCertificateFile %(ssl_certificate_file)s
+SSLCertificateKeyFile %(ssl_certificate_key_file)s
+<IfDefine WSGI_VERIFY_CLIENT>
+SSLCACertificateFile %(ssl_ca_certificate_file)s
+SSLVerifyClient none
+</IfDefine>
 </VirtualHost>
 </IfDefine>
 </IfDefine>
@@ -704,6 +716,15 @@ Alias /__wsgi__/images '%(images_directory)s'
 </Directory>
 """
 
+APACHE_VERIFY_CLIENT_CONFIG = """
+<IfDefine WSGI_VERIFY_CLIENT>
+<Location '%(path)s'>
+SSLVerifyClient require
+SSLVerifyDepth 1
+</Location>
+</IfDefine>
+"""
+
 APACHE_ERROR_DOCUMENT_CONFIG = """
 ErrorDocument '%(status)s' '%(document)s'
 """
@@ -800,6 +821,13 @@ def generate_apache_config(options):
             for status, document in options['error_documents']:
                 print(APACHE_ERROR_DOCUMENT_CONFIG % dict(status=status,
                         document=document.replace("'", "\\'")), file=fp)
+
+        if options['ssl_verify_client_urls']:
+            paths = sorted(options['ssl_verify_client_urls'], reverse=True)
+            for path in paths:
+                print(APACHE_VERIFY_CLIENT_CONFIG % dict(path=path), file=fp)
+        else:
+            print(APACHE_VERIFY_CLIENT_CONFIG % dict(path='/'), file=fp)
 
         if options['setenv_variables']:
             for name, value in options['setenv_variables']:
@@ -1594,12 +1622,37 @@ option_list = (
     optparse.make_option('--ssl-port', type='int', metavar='NUMBER',
             dest='https_port', help=optparse.SUPPRESS_HELP),
 
-    optparse.make_option('--ssl-certificate', default=None,
+    optparse.make_option('--ssl-certificate-file', default=None,
             metavar='FILE-PATH', help='Specify the path to the SSL '
-            'certificate files. It is expected that the files have \'.crt\' '
-            'and \'.key\' extensions. This option should refer to the '
-            'common part of the names for both files which appears before '
-            'the extension.'),
+            'certificate file.'),
+    optparse.make_option('--ssl-certificate-key-file', default=None,
+            metavar='FILE-PATH', help='Specify the path to the private '
+            'key file corresponding to the SSL certificate file.'),
+
+    optparse.make_option('--ssl-certificate', default=None,
+            metavar='FILE-PATH', help='Specify the common path to the SSL '
+            'certificate files. This is a convenience function so that '
+            'only one option is required to specify the location of the '
+            'certificate file and the private key file. It is expected that '
+            'the files have \'.crt\' and \'.key\' extensions. This option '
+            'should refer to the common part of the names for both files '
+            'which appears before the extension.'),
+
+    optparse.make_option('--ssl-ca-certificate-file', default=None,
+            metavar='FILE-PATH', help='Specify the path to the file with '
+            'the CA certificates to be used for client authentication. When '
+            'specified, access to the whole site will by default require '
+            'client authentication. To require client authentication for '
+            'only parts of the site, use the --ssl-verify-client option.'),
+
+    optparse.make_option('--ssl-verify-client', action='append',
+            metavar='URL-PATH', dest='ssl_verify_client_urls',
+            help='Specify a sub URL of the site for which client '
+            'authentication is required. When this option is specified, '
+            'the default of client authentication being required for the '
+            'whole site will be disabled and verification will only be '
+            'required for the specified sub URL.'),
+
     optparse.make_option('--https-only', action='store_true',
             default=False, help='Flag indicating whether any requests '
 	    'made using a HTTP request over the non secure connection '
@@ -2211,9 +2264,27 @@ def _cmd_setup_server(command, args, options):
     except Exception:
         pass
 
+    if options['ssl_certificate_file']:
+        options['ssl_certificate_file'] = os.path.abspath(
+                options['ssl_certificate_file'])
+
+    if options['ssl_certificate_key_file']:
+        options['ssl_certificate_key_file'] = os.path.abspath(
+                options['ssl_certificate_key_file'])
+
     if options['ssl_certificate']:
         options['ssl_certificate'] = os.path.abspath(
                 options['ssl_certificate'])
+
+        options['ssl_certificate_file'] = options['ssl_certificate']
+        options['ssl_certificate_file'] += '.crt'
+
+        options['ssl_certificate_key_file'] = options['ssl_certificate']
+        options['ssl_certificate_key_file'] += '.key'
+
+    if options['ssl_ca_certificate_file']:
+        options['ssl_ca_certificate_file'] = os.path.abspath(
+                options['ssl_ca_certificate_file'])
 
     if not args:
         if options['application_type'] != 'static':
@@ -2649,8 +2720,13 @@ def _cmd_setup_server(command, args, options):
             options['httpd_arguments_list'].append('-DWSGI_REDIRECT_WWW')
             options['parent_domain'] = options['server_name'][4:]
 
-    if options['https_port'] and options['ssl_certificate']:
+    if (options['https_port'] and options['ssl_certificate_file'] and
+            options['ssl_certificate_key_file']):
         options['httpd_arguments_list'].append('-DWSGI_WITH_HTTPS')
+
+    if options['ssl_ca_certificate_file']:
+        options['httpd_arguments_list'].append('-DWSGI_VERIFY_CLIENT')
+
     if options['https_only']:
         options['httpd_arguments_list'].append('-DWSGI_HTTPS_ONLY')
     if options['hsts_policy']:

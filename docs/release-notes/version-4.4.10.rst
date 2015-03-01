@@ -41,3 +41,23 @@ New Features
 1. Added the ``--directory-listing`` option to ``mod_wsgi-express`` to
 allow automatic directory listings to be enabled when using the static file
 application type and no explicit directory index file has been specified.
+
+2. In addition to the convenience function of ``--ssl-certificate`` for
+``mod_wsgi-express``, which allowed the SSL certificate and private key
+file to be specified using one option by specifying the command file
+name up to the extension, separate ``--ssl-certificate-file`` and
+``--ssl-certificate-key-file`` options are now also provided. These
+would either both need to be specified, or the existing
+``--ssl-certificate`` option used, when specifying that secure HTTPS
+connections should be used through having specified ``--https-port``.
+
+3. Added the ``--ssl-ca-certificate-file`` option to ``mod_wsgi-express``.
+If specified this should give the location of the file with any CA
+certificates to be used for client authentication. As soon as this option
+is provided, the client authentication will be required for the whole site.
+This would generally be used in conjunction with the ``--https-only``
+option so that only a secure communication channel is being used.
+
+If you do not wish for the whole site to required client authentication,
+you can use the ``--ssl-verify-client`` option to specify sub URLs for
+which client authentication should be performed.
