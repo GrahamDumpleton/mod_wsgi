@@ -558,6 +558,9 @@ SSLVerifyClient none
 Header set Strict-Transport-Security %(hsts_policy)s
 </IfDefine>
 </IfDefine>
+<IfDefine WSGI_SSL_ENVIRONMENT>
+SSLOptions +StdEnvVars
+</IfDefine>
 </VirtualHost>
 <IfDefine WSGI_REDIRECT_WWW>
 <VirtualHost *:%(https_port)s>
@@ -1653,11 +1656,17 @@ option_list = (
             'whole site will be disabled and verification will only be '
             'required for the specified sub URL.'),
 
+    optparse.make_option('--ssl-environment', action='store_true',
+            default=False, help='Flag indicating whether the standard set '
+            'of SSL related variables are passed in the per request '
+            'environment passed to a handler.'),
+
     optparse.make_option('--https-only', action='store_true',
             default=False, help='Flag indicating whether any requests '
 	    'made using a HTTP request over the non secure connection '
             'should be redirected automatically to use a HTTPS request '
             'over the secure connection.'),
+
     optparse.make_option('--hsts-policy', default=None, metavar='PARAMS',
             help='Specify the HTST policy that should be applied when '
             'HTTPS only connections are being enforced.'),
@@ -2723,9 +2732,11 @@ def _cmd_setup_server(command, args, options):
     if (options['https_port'] and options['ssl_certificate_file'] and
             options['ssl_certificate_key_file']):
         options['httpd_arguments_list'].append('-DWSGI_WITH_HTTPS')
-
     if options['ssl_ca_certificate_file']:
         options['httpd_arguments_list'].append('-DWSGI_VERIFY_CLIENT')
+
+    if options['ssl_environment']:
+        options['httpd_arguments_list'].append('-DWSGI_SSL_ENVIRONMENT')
 
     if options['https_only']:
         options['httpd_arguments_list'].append('-DWSGI_HTTPS_ONLY')

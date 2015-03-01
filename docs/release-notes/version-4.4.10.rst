@@ -61,3 +61,7 @@ option so that only a secure communication channel is being used.
 If you do not wish for the whole site to required client authentication,
 you can use the ``--ssl-verify-client`` option to specify sub URLs for
 which client authentication should be performed.
+
+4. Added the ``--ssl-environment`` option to ``mod_wsgi-express`` to enable
+the passing of standard SSL variables in the WSGI environ dictionary passed
+to the WSGI application.
