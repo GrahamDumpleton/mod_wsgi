@@ -2039,8 +2039,8 @@ option_list = (
     optparse.make_option('--log-directory', metavar='DIRECTORY-PATH',
             help='Specify an alternate directory for where the log files '
             'will be stored. Defaults to the server root directory.'),
-    optparse.make_option('--log-level', default='info', metavar='NAME',
-            help='Specify the log level for logging. Defaults to \'info\'.'),
+    optparse.make_option('--log-level', default='warn', metavar='NAME',
+            help='Specify the log level for logging. Defaults to \'warn\'.'),
     optparse.make_option('--access-log', action='store_true', default=False,
             help='Flag indicating whether the web server access log '
             'should be enabled. Defaults to being disabled.'),
@@ -2822,6 +2822,7 @@ def _cmd_setup_server(command, args, options):
     print('Server Root        :', options['server_root'])
     print('Server Conf        :', options['httpd_conf'])
 
+    print('Error Log Level    :', options['log_level'])
     print('Error Log File     :', options['error_log_file'])
 
     if options['access_log']:

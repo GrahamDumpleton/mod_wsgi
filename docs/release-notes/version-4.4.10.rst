@@ -20,7 +20,12 @@ same time with the ``WSGIDaemonProcess`` directive.
 Features Changed
 ----------------
 
-1. When specifying a service script with the ``--service-script`` option of
+1. Changed the default Apache log level for ``mod_wsgi-express`` to
+``warn`` instead of ``info``. This has been done avoid very noisy logs
+when enabling secure HTTP connections. To set back to ``info`` level use
+the ``--log-level`` option.
+
+2. When specifying a service script with the ``--service-script`` option of
 ``mod_wsgi-express``, the home directory for the process will now be set to
 the same home directory as used for the hosted WGSI application. Python
 modules from the WSGI application will therefore be automatically found
@@ -30,7 +35,7 @@ any ``.pth`` files in those directories also being handled. In addition,
 the language locale and Python eggs directory used by the hosted WSGI
 application will also be used for the service script.
 
-2. When specifying ``--python-path`` option, when paths are now setup for
+3. When specifying ``--python-path`` option, when paths are now setup for
 the WSGI application, they will be added in such a way that they appear at
 the head of ``sys.path`` and any ``.pth`` files in those directories are
 also handled.
