@@ -499,14 +499,14 @@ ServerAlias %(server_aliases)s
 </IfDefine>
 RewriteEngine On
 RewriteCond %%{HTTPS} off
-RewriteRule (.*) https://%%{HTTP_HOST}%%{REQUEST_URI}
+RewriteRule (.*) https://%(server_name)s:%(https_port)s%%{REQUEST_URI}
 </VirtualHost>
 <IfDefine WSGI_REDIRECT_WWW>
 <VirtualHost *:%(port)s>
 ServerName %(parent_domain)s
 RewriteEngine On
 RewriteCond %%{HTTPS} off
-RewriteRule (.*) https://%%{HTTP_HOST}%%{REQUEST_URI}
+RewriteRule (.*) https://%(server_name)s:%(https_port)s%%{REQUEST_URI}
 </VirtualHost>
 </IfDefine>
 </IfDefine>

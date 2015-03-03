@@ -17,6 +17,10 @@ Bugs Fixed
 crash if both ``home`` and ``python-path`` options were specified at the
 same time with the ``WSGIDaemonProcess`` directive.
 
+2. When using ``--https-only`` option with ``mod_wsgi-express``, the
+redirection from the ``http`` address to the ``https`` address was not
+setting the correct port for ``https``.
+
 Features Changed
 ----------------
 
