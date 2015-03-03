@@ -1154,7 +1154,7 @@ class ApplicationHandler(object):
             self.application = loadapp('config:%s' % entry_point)
             self.target = entry_point
 
-        else:
+        elif application_type != 'static':
             self.module = imp.new_module('__wsgi__')
             self.module.__file__ = entry_point
 
@@ -2304,7 +2304,7 @@ def _cmd_setup_server(command, args, options):
         else:
             if not options['document_root']:
                 options['document_root'] = os.getcwd()
-            options['entry_point'] = 'undefined'
+            options['entry_point'] = '(static)'
     else:
         if options['application_type'] in ('script', 'paste'):
             options['entry_point'] = os.path.abspath(args[0])
