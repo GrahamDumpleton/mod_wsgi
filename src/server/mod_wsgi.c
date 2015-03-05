@@ -189,6 +189,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->trusted_proxy_headers = parent->trusted_proxy_headers;
 
+    if (child->trusted_proxies)
+        config->trusted_proxies = child->trusted_proxies;
+    else
+        config->trusted_proxies = parent->trusted_proxies;
+
     if (child->enable_sendfile != -1)
         config->enable_sendfile = child->enable_sendfile;
     else
@@ -225,6 +230,7 @@ typedef struct {
     int map_head_to_get;
 
     apr_array_header_t *trusted_proxy_headers;
+    apr_array_header_t *trusted_proxies;
 
     int enable_sendfile;
 
@@ -259,6 +265,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->map_head_to_get = -1;
 
     object->trusted_proxy_headers = NULL;
+    object->trusted_proxies = NULL;
 
     object->enable_sendfile = -1;
 
@@ -352,6 +359,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->trusted_proxy_headers = parent->trusted_proxy_headers;
 
+    if (child->trusted_proxies)
+        config->trusted_proxies = child->trusted_proxies;
+    else
+        config->trusted_proxies = parent->trusted_proxies;
+
     if (child->enable_sendfile != -1)
         config->enable_sendfile = child->enable_sendfile;
     else
@@ -413,6 +425,7 @@ typedef struct {
     int map_head_to_get;
 
     apr_array_header_t *trusted_proxy_headers;
+    apr_array_header_t *trusted_proxies;
 
     int enable_sendfile;
 
@@ -853,6 +866,11 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     if (!config->trusted_proxy_headers)
         config->trusted_proxy_headers = sconfig->trusted_proxy_headers;
+
+    config->trusted_proxies = dconfig->trusted_proxies;
+
+    if (!config->trusted_proxies)
+        config->trusted_proxies = sconfig->trusted_proxies;
 
     config->enable_sendfile = dconfig->enable_sendfile;
 
@@ -5006,16 +5024,24 @@ static const char *wsgi_set_trusted_proxy_headers(cmd_parms *cmd,
         WSGIDirectoryConfig *dconfig = NULL;
         dconfig = (WSGIDirectoryConfig *)mconfig;
 
-        headers = apr_array_make(cmd->pool, 3, sizeof(char*));
-        dconfig->trusted_proxy_headers = headers;
+        if (!dconfig->trusted_proxy_headers) {
+            headers = apr_array_make(cmd->pool, 3, sizeof(char*));
+            dconfig->trusted_proxy_headers = headers;
+        }
+        else
+            headers = dconfig->trusted_proxy_headers;
     }
     else {
         WSGIServerConfig *sconfig = NULL;
         sconfig = ap_get_module_config(cmd->server->module_config,
                                        &wsgi_module);
 
-        headers = apr_array_make(cmd->pool, 3, sizeof(char*));
-        sconfig->trusted_proxy_headers = headers;
+        if (!sconfig->trusted_proxy_headers) {
+            headers = apr_array_make(cmd->pool, 3, sizeof(char*));
+            sconfig->trusted_proxy_headers = headers;
+        }
+        else
+            headers = sconfig->trusted_proxy_headers;
     }
 
     while (*args) {
@@ -5023,6 +5049,101 @@ static const char *wsgi_set_trusted_proxy_headers(cmd_parms *cmd,
 
         entry = (const char **)apr_array_push(headers);
         *entry = wsgi_http2env(cmd->pool, ap_getword_conf(cmd->pool, &args));
+    }
+
+    return NULL;
+}
+
+static int wsgi_looks_like_ip(const char *ip) {
+    static const char ipv4_set[] = "0123456789./";
+    static const char ipv6_set[] = "0123456789abcdef:/";
+
+    const char *ptr;
+
+    /* Zero length value is not valid. */
+
+    if (!*ip)
+      return 0;
+
+    /* Determine if this could be a IPv6 or IPv4 address. */
+
+    ptr = ip;
+
+    if (strchr(ip, ':')) {
+        while(*ptr && strchr(ipv6_set, *ptr) != NULL)
+            ++ptr;
+    }
+    else {
+        while(*ptr && strchr(ipv4_set, *ptr) != NULL)
+            ++ptr;
+    }
+
+    return (*ptr == '\0');
+}
+
+static const char *wsgi_set_trusted_proxies(cmd_parms *cmd,
+                                              void *mconfig, const char *args)
+{
+    apr_array_header_t *proxy_ips = NULL;
+
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+
+        if (!dconfig->trusted_proxies) {
+            proxy_ips = apr_array_make(cmd->pool, 3, sizeof(char*));
+            dconfig->trusted_proxies = proxy_ips;
+        }
+        else
+            proxy_ips = dconfig->trusted_proxies;
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+
+        if (!sconfig->trusted_proxies) {
+            proxy_ips = apr_array_make(cmd->pool, 3, sizeof(char*));
+            sconfig->trusted_proxies = proxy_ips;
+        }
+        else
+            proxy_ips = sconfig->trusted_proxies;
+    }
+
+    while (*args) {
+        const char *proxy_ip;
+
+        proxy_ip = ap_getword_conf(cmd->pool, &args);
+
+        if (wsgi_looks_like_ip(proxy_ip)) {
+            char *ip;
+            char *mask;
+            apr_ipsubnet_t **sub;
+            apr_status_t rv;
+
+            ip = apr_pstrdup(cmd->temp_pool, proxy_ip);
+
+            if ((mask = ap_strchr(ip, '/')))
+                *mask++ = '\0';
+
+            sub = (apr_ipsubnet_t **)apr_array_push(proxy_ips);
+
+            rv = apr_ipsubnet_create(sub, ip, mask, cmd->pool);
+
+            if (rv != APR_SUCCESS) {
+                char msgbuf[128];
+                apr_strerror(rv, msgbuf, sizeof(msgbuf));
+
+                return apr_pstrcat(cmd->pool, "Unable to parse trusted "
+                                   "proxy IP address/subnet of \"", proxy_ip,
+                                   "\". ", msgbuf, NULL);
+            }
+        }
+        else {
+            return apr_pstrcat(cmd->pool, "Unable to parse trusted proxy "
+                               "IP address/subnet of \"", proxy_ip, "\".",
+                               NULL);
+        }
     }
 
     return NULL;
@@ -12393,6 +12514,12 @@ static void wsgi_drop_invalid_headers(request_rec *r)
     }
 }
 
+static const char *wsgi_proxy_client_headers[] = {
+    "HTTP_X_FORWARDED_FOR",
+    "HTTP_X_REAL_IP",
+    NULL,
+};
+
 static const char *wsgi_proxy_scheme_headers[] = {
     "HTTP_X_FORWARDED_HTTPS",
     "HTTP_X_FORWARDED_PROTO",
@@ -12415,21 +12542,214 @@ static const char *wsgi_proxy_script_name_headers[] = {
     NULL,
 };
 
+static int wsgi_ip_is_in_array(apr_sockaddr_t *client_ip,
+                               apr_array_header_t *proxy_ips) {
+    int i;
+    apr_ipsubnet_t **subs = (apr_ipsubnet_t **)proxy_ips->elts;
+
+    for (i = 0; i < proxy_ips->nelts; i++) {
+        if (apr_ipsubnet_test(subs[i], client_ip)) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static void wsgi_process_forwarded_for(request_rec *r,
+                                       WSGIRequestConfig *config,
+                                       const char *value
+)
+{
+    if (config->trusted_proxies) {
+        /*
+         * A potentially comma separated list where client we are
+         * interested in will be that immediately before the last
+         * trusted proxy working from the end forwards. If there
+         * are no trusted proxies then we use the last.
+         */
+
+        apr_array_header_t *arr;
+
+        arr = apr_array_make(r->pool, 3, sizeof(char *));
+
+        while (*value != '\0') {
+            /* Skip leading whitespace for item. */
+
+            while (*value != '\0' && apr_isspace(*value))
+                value++;
+
+            if (*value != '\0') {
+                const char *end = NULL;
+                const char *next = NULL;
+
+                char **entry = NULL;
+
+                end = value;
+
+                while (*end != '\0' && *end != ',')
+                    end++;
+
+                if (*end == '\0')
+                    next = end;
+                else if (*end == ',')
+                    next = end+1;
+
+                /* Need deal with trailing whitespace. */
+
+                while (end != value) {
+                    if (!apr_isspace(*(end-1)))
+                        break;
+
+                    end--;
+                }
+
+                entry = (char **)apr_array_push(arr);
+                *entry = apr_pstrndup(r->pool, value, (end-value));
+
+                value = next;
+            }
+        }
+
+        if (arr->nelts != 0) {
+            /* HTTP_X_FORDWARDED_FOR wasn't just an empty string. */
+
+            char **items;
+            int first = -1;
+            int i;
+
+            items = (char **)arr->elts;
+
+            /*
+             * Work out the position of the IP closest to the start
+             * that we actually trusted.
+             */
+
+            for (i=arr->nelts; i>0; ) {
+                apr_sockaddr_t *sa;
+                apr_status_t rv;
+
+                i--;
+
+                rv = apr_sockaddr_info_get(&sa, items[i], APR_UNSPEC,
+                                           0, 0, r->pool);
+
+                if (rv == APR_SUCCESS) {
+                    if (!wsgi_ip_is_in_array(sa, config->trusted_proxies))
+                        break;
+
+                    first = i;
+                }
+                else {
+                    ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+                              "mod_wsgi (pid=%d): Forwarded IP of \"%s\" is "
+                              "not a valid IP address.", getpid(), items[i]);
+                    break;
+                }
+            }
+
+            if (first >= 0) {
+                /*
+                 * We found at least one trusted IP. We use the
+                 * IP that may have appeared before that as
+                 * REMOTE_ADDR. We rewrite HTTP_X_FORWARDED_FOR
+                 * to record only from REMOTE_ADDR onwards.
+                 */
+
+                char *list;
+
+                i = first-1;
+                if (i<0)
+                    i = 0;
+
+                apr_table_setn(r->subprocess_env, "REMOTE_ADDR", items[i]);
+
+                list = items[i];
+
+                i++;
+
+                while (arr->nelts != i) {
+                    list = apr_pstrcat(r->pool, list, ", ", items[i], NULL);
+                    i++;
+                }
+
+                apr_table_setn(r->subprocess_env, "HTTP_X_FORWARDED_FOR",
+                               list);
+            }
+            else {
+                /*
+                 * No trusted IP. Use the last for REMOTE_ADDR.
+                 * We rewrite HTTP_X_FORWARDED_FOR to record only
+                 * the last.
+                 */
+
+                apr_table_setn(r->subprocess_env, "REMOTE_ADDR",
+                        items[arr->nelts-1]);
+                apr_table_setn(r->subprocess_env, "HTTP_X_FORWARDED_FOR",
+                        items[arr->nelts-1]);
+            }
+        }
+    }
+    else {
+        /*
+         * We do not need to validate the proxies. We will have a
+         * potentially comma separated list where the client we
+         * are interested in will be listed first.
+         */
+
+        const char *end = NULL;
+
+        /* Skip leading whitespace for item. */
+
+        while (*value != '\0' && apr_isspace(*value))
+            value++;
+
+        if (*value != '\0') {
+            end = value;
+
+            while (*end != '\0' && *end != ',')
+                end++;
+
+            /* Need deal with trailing whitespace. */
+
+            while (end != value) {
+                if (!apr_isspace(*(end-1)))
+                    break;
+
+                end--;
+            }
+
+            /* Override REMOTE_ADDR. Leave HTTP_X_FORWARDED_FOR. */
+
+            apr_table_setn(r->subprocess_env, "REMOTE_ADDR",
+                    apr_pstrndup(r->pool, value, (end-value)));
+        }
+    }
+}
+
 static void wsgi_process_proxy_headers(request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
 
     apr_array_header_t *trusted_proxy_headers = NULL;
 
-    int match_scheme_header = 0;
+    int match_client_header = 0;
     int match_host_header = 0;
     int match_script_name_header = 0;
+    int match_scheme_header = 0;
 
-    const char *trusted_scheme_header = NULL;
+    const char *trusted_client_header = NULL;
     const char *trusted_host_header = NULL;
     const char *trusted_script_name_header = NULL;
+    const char *trusted_scheme_header = NULL;
 
     int i = 0;
+
+    int trusted_proxy = 1;
+
+    const char *client_ip = NULL;
+
+    apr_status_t rv;
 
     config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
                                                        &wsgi_module);
@@ -12443,144 +12763,208 @@ static void wsgi_process_proxy_headers(request_rec *r)
 
     /*
      * Check for any special processing required for each trusted
-     * header which has been specified.
+     * header which has been specified. We should only do this if
+     * there was no list of trusted proxies, or if the client IP
+     * was that of a trusted proxy.
      */
 
-    for (i=0; i<trusted_proxy_headers->nelts; i++) {
-        const char *name = NULL;
-        const char *value = NULL;
+    if (config->trusted_proxies) {
+        client_ip = apr_table_get(r->subprocess_env, "REMOTE_ADDR");
 
-        name = ((const char**)trusted_proxy_headers->elts)[i];
-        value = apr_table_get(r->subprocess_env, name);
+        if (client_ip) {
+            apr_sockaddr_t *sa;
 
-        if (!strcmp(name, "HTTP_X_FORWARDED_FOR")) {
-            if (value) {
-                /*
-                 * A potentially comma separated list where client
-                 * we are interested in will be listed first.
-                 */
+            rv = apr_sockaddr_info_get(&sa, client_ip, APR_UNSPEC,
+                                       0, 0, r->pool);
 
-                const char *end = NULL;
+            if (rv == APR_SUCCESS) {
+                if (!wsgi_ip_is_in_array(sa, config->trusted_proxies))
+                    trusted_proxy = 0;
+            }
+            else {
+                ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                              "mod_wsgi (pid=%d): REMOTE_ADDR of \"%s\" is "
+                              "not a valid IP address.", getpid(), client_ip);
 
-                while (*value != '\0' && apr_isspace(*value))
-                    value++;
+                trusted_proxy = 0;
+            }
+        }
+        else
+            trusted_proxy = 0;
+    }
 
-                if (*value != '\0') {
-                    end = value;
+    if (trusted_proxy) {
+        for (i=0; i<trusted_proxy_headers->nelts; i++) {
+            const char *name = NULL;
+            const char *value = NULL;
 
-                    while (*end != '\0' && *end != ',')
-                        end++;
+            name = ((const char**)trusted_proxy_headers->elts)[i];
+            value = apr_table_get(r->subprocess_env, name);
 
-                    /* Need to deal with trailing whitespace. */
+            if (!strcmp(name, "HTTP_X_FORWARDED_FOR")) {
+                match_client_header = 1;
 
-                    while (end != value) {
-                        if (!apr_isspace(*(end-1)))
-                            break;
+                if (value) {
+                    wsgi_process_forwarded_for(r, config, value);
 
-                        end--;
+                    trusted_client_header = name;
+                }
+            }
+            else if (!strcmp(name, "HTTP_X_REAL_IP")) {
+                match_client_header = 1;
+
+                if (value) {
+                    /* Use the value as is. */
+
+                    apr_table_setn(r->subprocess_env, "REMOTE_ADDR", value);
+
+                    trusted_client_header = name;
+                }
+            }
+            else if (!strcmp(name, "HTTP_X_FORWARDED_HOST") ||
+                     !strcmp(name, "HTTP_X_HOST")) {
+
+                match_host_header = 1;
+
+                if (value) {
+                    /* Use the value as is. May include a port. */
+
+                    trusted_host_header = name;
+
+                    apr_table_setn(r->subprocess_env, "HTTP_HOST", value);
+                }
+            }
+            else if (!strcmp(name, "HTTP_X_FORWARDED_SERVER")) {
+                if (value) {
+                    /* Use the value as is. */
+
+                    apr_table_setn(r->subprocess_env, "SERVER_NAME", value);
+                }
+            }
+            else if (!strcmp(name, "HTTP_X_FORWARDED_PORT")) {
+                if (value) {
+                    /* Use the value as is. */
+
+                    apr_table_setn(r->subprocess_env, "SERVER_PORT", value);
+                }
+            }
+            else if (!strcmp(name, "HTTP_X_SCRIPT_NAME") ||
+                     !strcmp(name, "HTTP_X_FORWARDED_SCRIPT_NAME")) {
+
+                match_script_name_header = 1;
+
+                if (value) {
+                    /*
+                     * Use the value as is. We want to remember what the
+                     * original value for SCRIPT_NAME was though.
+                     */
+
+                    apr_table_setn(r->subprocess_env, "mod_wsgi.mount_point",
+                                   value);
+
+                    trusted_script_name_header = name;
+
+                    apr_table_setn(r->subprocess_env, "SCRIPT_NAME", value);
+                }
+            }
+            else if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
+                !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
+                !strcmp(name, "HTTP_X_SCHEME")) {
+
+                match_scheme_header = 1;
+
+                if (value) {
+                    trusted_scheme_header = name;
+
+                    /* Value can be either 'http' or 'https'. */
+
+                    if (!strcasecmp(value, "https"))
+                        apr_table_setn(r->subprocess_env, "HTTPS", "1");
+                    else if (!strcasecmp(value, "http"))
+                        apr_table_unset(r->subprocess_env, "HTTPS");
+                }
+            }
+            else if (!strcmp(name, "HTTP_X_FORWARDED_HTTPS") ||
+                     !strcmp(name, "HTTP_X_FORWARDED_SSL") ||
+                     !strcmp(name, "HTTP_X_HTTPS")) {
+
+                match_scheme_header = 1;
+
+                if (value) {
+                    trusted_scheme_header = name;
+
+                    /*
+                     * Value can be a boolean like flag such as 'On',
+                     * 'Off', 'true', 'false', '1' or '0'.
+                     */
+
+                    if (!strcasecmp(value, "On") ||
+                        !strcasecmp(value, "true") ||
+                        !strcasecmp(value, "1")) {
+
+                        apr_table_setn(r->subprocess_env, "HTTPS", "1");
                     }
+                    else if (!strcasecmp(value, "Off") ||
+                        !strcasecmp(value, "false") ||
+                        !strcasecmp(value, "0")) {
 
-                    apr_table_setn(r->subprocess_env, "REMOTE_ADDR",
-                            apr_pstrndup(r->pool, value, (end-value)));
+                        apr_table_unset(r->subprocess_env, "HTTPS");
+                    }
                 }
             }
         }
-        else if (!strcmp(name, "HTTP_X_REAL_IP")) {
-            if (value) {
-                /* Use the value as is. */
+    }
+    else {
+        /*
+         * If it isn't a trusted proxy, we still need to knock
+         * out any headers for categories we were interested in.
+         */
 
-                apr_table_setn(r->subprocess_env, "REMOTE_ADDR", value);
+        for (i=0; i<trusted_proxy_headers->nelts; i++) {
+            const char *name = NULL;
+            const char *value = NULL;
+
+            name = ((const char**)trusted_proxy_headers->elts)[i];
+            value = apr_table_get(r->subprocess_env, name);
+
+            if (!strcmp(name, "HTTP_X_FORWARDED_FOR") ||
+                     !strcmp(name, "HTTP_X_REAL_IP")) {
+
+                match_client_header = 1;
+            }
+            else if (!strcmp(name, "HTTP_X_FORWARDED_HOST") ||
+                     !strcmp(name, "HTTP_X_HOST")) {
+
+                match_host_header = 1;
+            }
+            else if (!strcmp(name, "HTTP_X_SCRIPT_NAME") ||
+                     !strcmp(name, "HTTP_X_FORWARDED_SCRIPT_NAME")) {
+
+                match_script_name_header = 1;
+            }
+            else if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
+                !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
+                !strcmp(name, "HTTP_X_SCHEME") ||
+                !strcmp(name, "HTTP_X_FORWARDED_HTTPS") ||
+                !strcmp(name, "HTTP_X_FORWARDED_SSL") ||
+                !strcmp(name, "HTTP_X_HTTPS")) {
+
+                match_scheme_header = 1;
             }
         }
-        else if (!strcmp(name, "HTTP_X_FORWARDED_HOST") ||
-                 !strcmp(name, "HTTP_X_HOST")) {
+    }
 
-            match_host_header = 1;
+    /*
+     * Remove all client IP headers from request environment which
+     * weren't matched as being trusted.
+     */
 
-            if (value) {
-                /* Use the value as is. May include a port. */
+    if (match_client_header) {
+        const char *name = NULL;
 
-                trusted_host_header = name;
-
-                apr_table_setn(r->subprocess_env, "HTTP_HOST", value);
-            }
-        }
-        else if (!strcmp(name, "HTTP_X_FORWARDED_SERVER")) {
-            if (value) {
-                /* Use the value as is. */
-
-                apr_table_setn(r->subprocess_env, "SERVER_NAME", value);
-            }
-        }
-        else if (!strcmp(name, "HTTP_X_FORWARDED_PORT")) {
-            if (value) {
-                /* Use the value as is. */
-
-                apr_table_setn(r->subprocess_env, "SERVER_PORT", value);
-            }
-        }
-        else if (!strcmp(name, "HTTP_X_SCRIPT_NAME") ||
-                 !strcmp(name, "HTTP_X_FORWARDED_SCRIPT_NAME")) {
-
-            match_script_name_header = 1;
-
-            if (value) {
-                /*
-                 * Use the value as is. We want to remember what the
-                 * original value for SCRIPT_NAME was though.
-                 */
-
-                apr_table_setn(r->subprocess_env, "mod_wsgi.mount_point",
-                               value);
-
-                trusted_script_name_header = name;
-
-                apr_table_setn(r->subprocess_env, "SCRIPT_NAME", value);
-            }
-        }
-        else if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
-            !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
-            !strcmp(name, "HTTP_X_SCHEME")) {
-
-            match_scheme_header = 1;
-
-            if (value) {
-                trusted_scheme_header = name;
-
-                /* Value can be either 'http' or 'https'. */
-
-                if (!strcasecmp(value, "https"))
-                    apr_table_setn(r->subprocess_env, "HTTPS", "1");
-                else if (!strcasecmp(value, "http"))
-                    apr_table_unset(r->subprocess_env, "HTTPS");
-            }
-        }
-        else if (!strcmp(name, "HTTP_X_FORWARDED_HTTPS") ||
-                 !strcmp(name, "HTTP_X_FORWARDED_SSL") ||
-                 !strcmp(name, "HTTP_X_HTTPS")) {
-
-            match_scheme_header = 1;
-
-            if (value) {
-                trusted_scheme_header = name;
-
-                /*
-                 * Value can be a boolean like flag such as 'On',
-                 * 'Off', 'true', 'false', '1' or '0'.
-                 */
-
-                if (!strcasecmp(value, "On") ||
-                    !strcasecmp(value, "true") ||
-                    !strcasecmp(value, "1")) {
-
-                    apr_table_setn(r->subprocess_env, "HTTPS", "1");
-                }
-                else if (!strcasecmp(value, "Off") ||
-                    !strcasecmp(value, "false") ||
-                    !strcasecmp(value, "0")) {
-
-                    apr_table_unset(r->subprocess_env, "HTTPS");
-                }
+        for (i=0; (name=wsgi_proxy_client_headers[i]); i++) {
+            if (!trusted_client_header || strcmp(name, trusted_client_header)) {
+                apr_table_unset(r->subprocess_env, name);
             }
         }
     }
@@ -14764,6 +15148,8 @@ static const command_rec wsgi_commands[] =
 
     AP_INIT_RAW_ARGS("WSGITrustedProxyHeaders", wsgi_set_trusted_proxy_headers,
         NULL, OR_FILEINFO, "Specify a list of trusted proxy headers."),
+    AP_INIT_RAW_ARGS("WSGITrustedProxies", wsgi_set_trusted_proxies,
+        NULL, OR_FILEINFO, "Specify a list of trusted proxies."),
 
 #ifndef WIN32
     AP_INIT_TAKE1("WSGIEnableSendfile", wsgi_set_enable_sendfile,

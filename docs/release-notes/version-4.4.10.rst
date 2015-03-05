@@ -74,3 +74,15 @@ which client authentication should be performed.
 4. Added the ``--ssl-environment`` option to ``mod_wsgi-express`` to enable
 the passing of standard SSL variables in the WSGI environ dictionary passed
 to the WSGI application.
+
+5. Added the ``WSGITrustedProxies`` directive and corresponding option of
+``--trust-proxy`` to ``mod_wsgi-express``. This works in conjunction with
+the ``WSGITrustedProxyHeaders`` directive and ``--trust-proxy-header``
+option of ``mod_wsgi-express``. When trusted proxies are specified, then
+proxy headers will only be trusted if the request originated with a trusted
+proxy. Further, any IP addresses corresponding to a proxy listed in the
+``X-Forwarded-For`` header will only be trusted if specified. When
+determining the value for ``REMOTE_ADDR`` the IP preceding the last
+recognised proxy the request passed through will be used and not simply the
+first IP listed in the header. The header will be rewritten to reflect what
+was honoured with client IPs of dubious origin discarded.

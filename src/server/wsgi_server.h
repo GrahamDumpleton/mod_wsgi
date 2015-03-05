@@ -109,6 +109,7 @@ typedef struct {
     int map_head_to_get;
 
     apr_array_header_t *trusted_proxy_headers;
+    apr_array_header_t *trusted_proxies;
 
     int enable_sendfile;
 

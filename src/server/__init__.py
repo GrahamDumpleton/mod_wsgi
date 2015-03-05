@@ -383,6 +383,9 @@ WSGIChunkedRequest On
 <IfDefine WSGI_WITH_PROXY_HEADERS>
 WSGITrustedProxyHeaders %(trusted_proxy_headers)s
 </IfDefine>
+<IfDefine WSGI_WITH_TRUSTED_PROXIES>
+WSGITrustedProxies %(trusted_proxies)s
+</IfDefine>
 
 <IfDefine WSGI_WITH_HTTPS>
 <IfModule !ssl_module>
@@ -1936,6 +1939,10 @@ option_list = (
             dest='trusted_proxy_headers', metavar='HEADER-NAME',
             help='The name of any trusted HTTP header providing details '
             'of the front end client request when proxying.'),
+    optparse.make_option('--trust-proxy', action='append', default=[],
+            dest='trusted_proxies', metavar='IP-ADDRESS/SUBNET',
+            help='The IP address or subnet corresponding to any trusted '
+            'proxy.'),
 
     optparse.make_option('--keep-alive-timeout', type='int', default=0,
             metavar='SECONDS', help='The number of seconds which a client '
@@ -2638,6 +2645,8 @@ def _cmd_setup_server(command, args, options):
     options['trusted_proxy_headers'] = ' '.join(
             options['trusted_proxy_headers'])
 
+    options['trusted_proxies'] = ' '.join(options['trusted_proxies'])
+
     if options['startup_log']:
         if not options['log_to_terminal']:
             options['startup_log_file'] = os.path.join(
@@ -2790,6 +2799,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY')
     if options['trusted_proxy_headers']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY_HEADERS')
+    if options['trusted_proxies']:
+        options['httpd_arguments_list'].append('-DWSGI_WITH_TRUSTED_PROXIES')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory'],
