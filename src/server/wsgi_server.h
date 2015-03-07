@@ -32,6 +32,8 @@ extern pid_t wsgi_worker_pid;
 extern pid_t wsgi_daemon_pid;
 extern const char *wsgi_daemon_group;
 
+extern apr_time_t wsgi_restart_time;
+
 /* New Relic monitoring agent. */
 
 extern const char *wsgi_newrelic_config_file;
@@ -107,6 +109,7 @@ typedef struct {
     int map_head_to_get;
 
     apr_array_header_t *trusted_proxy_headers;
+    apr_array_header_t *trusted_proxies;
 
     int enable_sendfile;
 

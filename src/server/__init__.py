@@ -173,6 +173,12 @@ LoadModule env_module '${HTTPD_MODULES_DIRECTORY}/mod_env.so'
 LoadModule headers_module '${HTTPD_MODULES_DIRECTORY}/mod_headers.so'
 </IfModule>
 
+<IfDefine WSGI_DIRECTORY_LISTING>
+<IfModule !autoindex_module>
+LoadModule autoindex_module '${HTTPD_MODULES_DIRECTORY}/mod_autoindex.so'
+</IfModule>
+</IfDefine>
+
 <IfVersion >= 2.2.15>
 <IfModule !reqtimeout_module>
 LoadModule reqtimeout_module '${HTTPD_MODULES_DIRECTORY}/mod_reqtimeout.so'
@@ -259,6 +265,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    processes=%(processes)s \\
    threads=%(threads)s \\
    maximum-requests=%(maximum_requests)s \\
+   python-path='%(python_path)s' \\
    python-eggs='%(python_eggs)s' \\
    lang='%(lang)s' \\
    locale='%(locale)s' \\
@@ -284,6 +291,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    home='%(working_directory)s' \\
    threads=%(threads)s \\
    maximum-requests=%(maximum_requests)s \\
+   python-path='%(python_path)s' \\
    python-eggs='%(python_eggs)s' \\
    lang='%(lang)s' \\
    locale='%(locale)s' \\
@@ -374,6 +382,9 @@ WSGIChunkedRequest On
 
 <IfDefine WSGI_WITH_PROXY_HEADERS>
 WSGITrustedProxyHeaders %(trusted_proxy_headers)s
+</IfDefine>
+<IfDefine WSGI_WITH_TRUSTED_PROXIES>
+WSGITrustedProxies %(trusted_proxies)s
 </IfDefine>
 
 <IfDefine WSGI_WITH_HTTPS>
@@ -491,14 +502,14 @@ ServerAlias %(server_aliases)s
 </IfDefine>
 RewriteEngine On
 RewriteCond %%{HTTPS} off
-RewriteRule (.*) https://%%{HTTP_HOST}%%{REQUEST_URI}
+RewriteRule (.*) https://%(server_name)s:%(https_port)s%%{REQUEST_URI}
 </VirtualHost>
 <IfDefine WSGI_REDIRECT_WWW>
 <VirtualHost *:%(port)s>
 ServerName %(parent_domain)s
 RewriteEngine On
 RewriteCond %%{HTTPS} off
-RewriteRule (.*) https://%%{HTTP_HOST}%%{REQUEST_URI}
+RewriteRule (.*) https://%(server_name)s:%(https_port)s%%{REQUEST_URI}
 </VirtualHost>
 </IfDefine>
 </IfDefine>
@@ -526,8 +537,12 @@ Allow from localhost
 </IfDefine>
 </Location>
 SSLEngine On
-SSLCertificateFile %(ssl_certificate)s.crt
-SSLCertificateKeyFile %(ssl_certificate)s.key
+SSLCertificateFile %(ssl_certificate_file)s
+SSLCertificateKeyFile %(ssl_certificate_key_file)s
+<IfDefine WSGI_VERIFY_CLIENT>
+SSLCACertificateFile %(ssl_ca_certificate_file)s
+SSLVerifyClient none
+</IfDefine>
 </VirtualHost>
 <VirtualHost *:%(https_port)s>
 ServerName %(server_name)s
@@ -535,12 +550,19 @@ ServerName %(server_name)s
 ServerAlias %(server_aliases)s
 </IfDefine>
 SSLEngine On
-SSLCertificateFile %(ssl_certificate)s.crt
-SSLCertificateKeyFile %(ssl_certificate)s.key
+SSLCertificateFile %(ssl_certificate_file)s
+SSLCertificateKeyFile %(ssl_certificate_key_file)s
+<IfDefine WSGI_VERIFY_CLIENT>
+SSLCACertificateFile %(ssl_ca_certificate_file)s
+SSLVerifyClient none
+</IfDefine>
 <IfDefine WSGI_HTTPS_ONLY>
 <IfDefine WSGI_HSTS_POLICY>
 Header set Strict-Transport-Security %(hsts_policy)s
 </IfDefine>
+</IfDefine>
+<IfDefine WSGI_SSL_ENVIRONMENT>
+SSLOptions +StdEnvVars
 </IfDefine>
 </VirtualHost>
 <IfDefine WSGI_REDIRECT_WWW>
@@ -548,8 +570,12 @@ Header set Strict-Transport-Security %(hsts_policy)s
 ServerName %(parent_domain)s
 Redirect permanent / https://%(server_name)s:%(https_port)s/
 SSLEngine On
-SSLCertificateFile %(ssl_certificate)s.crt
-SSLCertificateKeyFile %(ssl_certificate)s.key
+SSLCertificateFile %(ssl_certificate_file)s
+SSLCertificateKeyFile %(ssl_certificate_key_file)s
+<IfDefine WSGI_VERIFY_CLIENT>
+SSLCACertificateFile %(ssl_ca_certificate_file)s
+SSLVerifyClient none
+</IfDefine>
 </VirtualHost>
 </IfDefine>
 </IfDefine>
@@ -568,6 +594,9 @@ DocumentRoot '%(document_root)s'
 <Directory '%(document_root)s%(mount_point)s'>
 <IfDefine WSGI_DIRECTORY_INDEX>
     DirectoryIndex %(directory_index)s
+</IfDefine>
+<IfDefine WSGI_DIRECTORY_LISTING>
+    Options +Indexes
 </IfDefine>
 <IfDefine !WSGI_STATIC_ONLY>
     RewriteEngine On
@@ -693,6 +722,15 @@ Alias /__wsgi__/images '%(images_directory)s'
 </Directory>
 """
 
+APACHE_VERIFY_CLIENT_CONFIG = """
+<IfDefine WSGI_VERIFY_CLIENT>
+<Location '%(path)s'>
+SSLVerifyClient require
+SSLVerifyDepth 1
+</Location>
+</IfDefine>
+"""
+
 APACHE_ERROR_DOCUMENT_CONFIG = """
 ErrorDocument '%(status)s' '%(document)s'
 """
@@ -728,9 +766,18 @@ WSGIImportScript '%(server_root)s/server-metrics.py' \\
 """
 
 APACHE_SERVICE_CONFIG = """
-WSGIDaemonProcess 'service:%(name)s' display-name=%%{GROUP} threads=1 \\
-    user='%(user)s' group='%(group)s'
-WSGIImportScript '%(script)s' process-group='service:%(name)s' \\
+WSGIDaemonProcess 'service:%(name)s' \\
+    display-name=%%{GROUP} \\
+    user='%(user)s' \\
+    group='%(group)s' \\
+    home='%(working_directory)s' \\
+    threads=1 \\
+    python-path='%(python_path)s' \\
+    python-eggs='%(python_eggs)s' \\
+    lang='%(lang)s' \\
+    locale='%(locale)s'
+WSGIImportScript '%(script)s' \\
+    process-group='service:%(name)s' \\
     application-group=%%{GLOBAL}
 """
 
@@ -781,6 +828,13 @@ def generate_apache_config(options):
                 print(APACHE_ERROR_DOCUMENT_CONFIG % dict(status=status,
                         document=document.replace("'", "\\'")), file=fp)
 
+        if options['ssl_verify_client_urls']:
+            paths = sorted(options['ssl_verify_client_urls'], reverse=True)
+            for path in paths:
+                print(APACHE_VERIFY_CLIENT_CONFIG % dict(path=path), file=fp)
+        else:
+            print(APACHE_VERIFY_CLIENT_CONFIG % dict(path='/'), file=fp)
+
         if options['setenv_variables']:
             for name, value in options['setenv_variables']:
                 print(APACHE_SETENV_CONFIG % dict(name=name, value=value),
@@ -804,7 +858,12 @@ def generate_apache_config(options):
                 user = users.get(name, '${WSGI_RUN_USER}')
                 group = groups.get(name, '${WSGI_RUN_GROUP}')
                 print(APACHE_SERVICE_CONFIG % dict(name=name, user=user,
-                        group=group, script=script), file=fp)
+                        group=group, script=script,
+                        python_path=options['python_path'],
+                        working_directory=options['working_directory'],
+                        python_eggs=options['python_eggs'],
+                        lang=options['lang'], locale=options['locale']),
+                        file=fp)
 
         if options['include_files']:
             for filename in options['include_files']:
@@ -1098,7 +1157,7 @@ class ApplicationHandler(object):
             self.application = loadapp('config:%s' % entry_point)
             self.target = entry_point
 
-        else:
+        elif application_type != 'static':
             self.module = imp.new_module('__wsgi__')
             self.module.__file__ = entry_point
 
@@ -1251,7 +1310,6 @@ import time
 import mod_wsgi.server
 
 working_directory = '%(working_directory)s'
-python_paths = %(python_paths)s
 
 entry_point = '%(entry_point)s'
 application_type = '%(application_type)s'
@@ -1270,9 +1328,6 @@ enable_profiler = %(enable_profiler)s
 profiler_directory = '%(profiler_directory)s'
 enable_recorder = %(enable_recorder)s
 recorder_directory = '%(recorder_directory)s'
-
-if python_paths:
-    sys.path.extend(python_paths)
 
 if debug_mode:
     # We need to fiddle sys.path as we are not using daemon mode and so
@@ -1573,17 +1628,48 @@ option_list = (
     optparse.make_option('--ssl-port', type='int', metavar='NUMBER',
             dest='https_port', help=optparse.SUPPRESS_HELP),
 
-    optparse.make_option('--ssl-certificate', default=None,
+    optparse.make_option('--ssl-certificate-file', default=None,
             metavar='FILE-PATH', help='Specify the path to the SSL '
-            'certificate files. It is expected that the files have \'.crt\' '
-            'and \'.key\' extensions. This option should refer to the '
-            'common part of the names for both files which appears before '
-            'the extension.'),
+            'certificate file.'),
+    optparse.make_option('--ssl-certificate-key-file', default=None,
+            metavar='FILE-PATH', help='Specify the path to the private '
+            'key file corresponding to the SSL certificate file.'),
+
+    optparse.make_option('--ssl-certificate', default=None,
+            metavar='FILE-PATH', help='Specify the common path to the SSL '
+            'certificate files. This is a convenience function so that '
+            'only one option is required to specify the location of the '
+            'certificate file and the private key file. It is expected that '
+            'the files have \'.crt\' and \'.key\' extensions. This option '
+            'should refer to the common part of the names for both files '
+            'which appears before the extension.'),
+
+    optparse.make_option('--ssl-ca-certificate-file', default=None,
+            metavar='FILE-PATH', help='Specify the path to the file with '
+            'the CA certificates to be used for client authentication. When '
+            'specified, access to the whole site will by default require '
+            'client authentication. To require client authentication for '
+            'only parts of the site, use the --ssl-verify-client option.'),
+
+    optparse.make_option('--ssl-verify-client', action='append',
+            metavar='URL-PATH', dest='ssl_verify_client_urls',
+            help='Specify a sub URL of the site for which client '
+            'authentication is required. When this option is specified, '
+            'the default of client authentication being required for the '
+            'whole site will be disabled and verification will only be '
+            'required for the specified sub URL.'),
+
+    optparse.make_option('--ssl-environment', action='store_true',
+            default=False, help='Flag indicating whether the standard set '
+            'of SSL related variables are passed in the per request '
+            'environment passed to a handler.'),
+
     optparse.make_option('--https-only', action='store_true',
             default=False, help='Flag indicating whether any requests '
 	    'made using a HTTP request over the non secure connection '
             'should be redirected automatically to use a HTTPS request '
             'over the secure connection.'),
+
     optparse.make_option('--hsts-policy', default=None, metavar='PARAMS',
             help='Specify the HTST policy that should be applied when '
             'HTTPS only connections are being enforced.'),
@@ -1813,6 +1899,10 @@ option_list = (
             'document root directory. Requests mapping to the directory '
             'will be mapped to this resource rather than being passed '
             'through to the WSGI application.'),
+    optparse.make_option('--directory-listing', action='store_true',
+            default=False, help='Flag indicating if directory listing '
+            'should be enabled where static file application type is '
+            'being used and no directory index file has been specified.'),
 
     optparse.make_option('--mount-point', metavar='URL-PATH', default='/',
             help='The URL path at which the WSGI application will be '
@@ -1849,6 +1939,10 @@ option_list = (
             dest='trusted_proxy_headers', metavar='HEADER-NAME',
             help='The name of any trusted HTTP header providing details '
             'of the front end client request when proxying.'),
+    optparse.make_option('--trust-proxy', action='append', default=[],
+            dest='trusted_proxies', metavar='IP-ADDRESS/SUBNET',
+            help='The IP address or subnet corresponding to any trusted '
+            'proxy.'),
 
     optparse.make_option('--keep-alive-timeout', type='int', default=0,
             metavar='SECONDS', help='The number of seconds which a client '
@@ -1952,8 +2046,8 @@ option_list = (
     optparse.make_option('--log-directory', metavar='DIRECTORY-PATH',
             help='Specify an alternate directory for where the log files '
             'will be stored. Defaults to the server root directory.'),
-    optparse.make_option('--log-level', default='info', metavar='NAME',
-            help='Specify the log level for logging. Defaults to \'info\'.'),
+    optparse.make_option('--log-level', default='warn', metavar='NAME',
+            help='Specify the log level for logging. Defaults to \'warn\'.'),
     optparse.make_option('--access-log', action='store_true', default=False,
             help='Flag indicating whether the web server access log '
             'should be enabled. Defaults to being disabled.'),
@@ -2186,9 +2280,27 @@ def _cmd_setup_server(command, args, options):
     except Exception:
         pass
 
+    if options['ssl_certificate_file']:
+        options['ssl_certificate_file'] = os.path.abspath(
+                options['ssl_certificate_file'])
+
+    if options['ssl_certificate_key_file']:
+        options['ssl_certificate_key_file'] = os.path.abspath(
+                options['ssl_certificate_key_file'])
+
     if options['ssl_certificate']:
         options['ssl_certificate'] = os.path.abspath(
                 options['ssl_certificate'])
+
+        options['ssl_certificate_file'] = options['ssl_certificate']
+        options['ssl_certificate_file'] += '.crt'
+
+        options['ssl_certificate_key_file'] = options['ssl_certificate']
+        options['ssl_certificate_key_file'] += '.key'
+
+    if options['ssl_ca_certificate_file']:
+        options['ssl_ca_certificate_file'] = os.path.abspath(
+                options['ssl_ca_certificate_file'])
 
     if not args:
         if options['application_type'] != 'static':
@@ -2199,7 +2311,7 @@ def _cmd_setup_server(command, args, options):
         else:
             if not options['document_root']:
                 options['document_root'] = os.getcwd()
-            options['entry_point'] = 'undefined'
+            options['entry_point'] = '(static)'
     else:
         if options['application_type'] in ('script', 'paste'):
             options['entry_point'] = os.path.abspath(args[0])
@@ -2339,6 +2451,11 @@ def _cmd_setup_server(command, args, options):
         os.mkdir(options['python_eggs'])
     except Exception:
         pass
+
+    if options['python_paths'] is None:
+        options['python_paths'] = []
+
+    options['python_path'] = ':'.join(options['python_paths'])
 
     options['multiprocess'] = options['processes'] is not None
     options['processes'] = options['processes'] or 1
@@ -2528,6 +2645,8 @@ def _cmd_setup_server(command, args, options):
     options['trusted_proxy_headers'] = ' '.join(
             options['trusted_proxy_headers'])
 
+    options['trusted_proxies'] = ' '.join(options['trusted_proxies'])
+
     if options['startup_log']:
         if not options['log_to_terminal']:
             options['startup_log_file'] = os.path.join(
@@ -2619,8 +2738,15 @@ def _cmd_setup_server(command, args, options):
             options['httpd_arguments_list'].append('-DWSGI_REDIRECT_WWW')
             options['parent_domain'] = options['server_name'][4:]
 
-    if options['https_port'] and options['ssl_certificate']:
+    if (options['https_port'] and options['ssl_certificate_file'] and
+            options['ssl_certificate_key_file']):
         options['httpd_arguments_list'].append('-DWSGI_WITH_HTTPS')
+    if options['ssl_ca_certificate_file']:
+        options['httpd_arguments_list'].append('-DWSGI_VERIFY_CLIENT')
+
+    if options['ssl_environment']:
+        options['httpd_arguments_list'].append('-DWSGI_SSL_ENVIRONMENT')
+
     if options['https_only']:
         options['httpd_arguments_list'].append('-DWSGI_HTTPS_ONLY')
     if options['hsts_policy']:
@@ -2643,6 +2769,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_SERVER_STATUS')
     if options['directory_index']:
         options['httpd_arguments_list'].append('-DWSGI_DIRECTORY_INDEX')
+    if options['directory_listing']:
+        options['httpd_arguments_list'].append('-DWSGI_DIRECTORY_LISTING')
     if options['access_log']:
         options['httpd_arguments_list'].append('-DWSGI_ACCESS_LOG')
     if options['rotate_logs']:
@@ -2671,6 +2799,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY')
     if options['trusted_proxy_headers']:
         options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY_HEADERS')
+    if options['trusted_proxies']:
+        options['httpd_arguments_list'].append('-DWSGI_WITH_TRUSTED_PROXIES')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory'],
@@ -2703,7 +2833,8 @@ def _cmd_setup_server(command, args, options):
     print('Server Root        :', options['server_root'])
     print('Server Conf        :', options['httpd_conf'])
 
-    print('Error Log File     :', options['error_log_file'])
+    print('Error Log File     : %s (%s)' % (options['error_log_file'],
+            options['log_level']))
 
     if options['access_log']:
         print('Access Log File    :', options['access_log_file'])

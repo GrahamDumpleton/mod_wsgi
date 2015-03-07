@@ -798,10 +798,11 @@ InterpreterObject *newInterpreterObject(const char *name)
     if (!wsgi_daemon_pool)
         wsgi_python_path = wsgi_server_config->python_path;
 
-    if (wsgi_python_path) {
+    module = PyImport_ImportModule("site");
+
+    if (wsgi_python_path && *wsgi_python_path) {
         PyObject *path = NULL;
 
-        module = PyImport_ImportModule("site");
         path = PySys_GetObject("path");
 
         if (module && path) {
@@ -982,8 +983,6 @@ InterpreterObject *newInterpreterObject(const char *name)
                 Py_END_ALLOW_THREADS
             }
         }
-
-        Py_XDECREF(module);
     }
 
     /*
@@ -1013,10 +1012,10 @@ InterpreterObject *newInterpreterObject(const char *name)
             PyList_Insert(path, 0, item);
             Py_DECREF(item);
         }
-
-        Py_XDECREF(module);
     }
 #endif
+
+    Py_XDECREF(module);
 
     /*
      * Create 'mod_wsgi' Python module. We first try and import an
