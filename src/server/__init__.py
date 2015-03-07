@@ -2833,8 +2833,8 @@ def _cmd_setup_server(command, args, options):
     print('Server Root        :', options['server_root'])
     print('Server Conf        :', options['httpd_conf'])
 
-    print('Error Log Level    :', options['log_level'])
-    print('Error Log File     :', options['error_log_file'])
+    print('Error Log File     : %s (%s)' % (options['error_log_file'],
+            options['log_level']))
 
     if options['access_log']:
         print('Access Log File    :', options['access_log_file'])
