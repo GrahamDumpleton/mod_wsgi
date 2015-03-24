@@ -10081,8 +10081,8 @@ static apr_status_t wsgi_socket_send(apr_socket_t *sock, const char *buf,
     return APR_SUCCESS;
 }
 
-static apr_status_t wsgi_socket_sendv(apr_socket_t *sock, struct iovec *vec,
-                                      int nvec)
+static apr_status_t wsgi_socket_sendv_limit(apr_socket_t *sock,
+        struct iovec *vec, int nvec)
 {
     apr_status_t rv;
     apr_size_t written = 0;
