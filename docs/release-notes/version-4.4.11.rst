@@ -18,3 +18,12 @@ number of separate data blocks that could be passed to system ``writev()``
 call. This was an issue on Solaris where the limit is 16 and meant that since
 version 4.4.0, daemon mode of mod_wsgi would fail where a HTTP request had
 more than a small number of headers.
+
+New Features
+------------
+
+1. Added the ``--service-log`` option to ``mod_wsgi-express`` for
+specifying the name of a log file for a specific service script. The
+arguments are the name of the service and the file name for the log. The
+log file will be placed in the log directory, be it the default, or a
+specific log directory if specified.
