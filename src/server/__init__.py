@@ -781,6 +781,31 @@ WSGIImportScript '%(script)s' \\
     application-group=%%{GLOBAL}
 """
 
+APACHE_SERVICE_WITH_LOG_CONFIG = """
+<VirtualHost *:%(port)s>
+<IfDefine WSGI_ROTATE_LOGS>
+ErrorLog "|%(rotatelogs_executable)s \\
+    %(log_directory)s/%(log_file)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM"
+</IfDefine>
+<IfDefine !WSGI_ROTATE_LOGS>
+ErrorLog "%(log_directory)s/%(log_file)s"
+</IfDefine>
+WSGIDaemonProcess 'service:%(name)s' \\
+    display-name=%%{GROUP} \\
+    user='%(user)s' \\
+    group='%(group)s' \\
+    home='%(working_directory)s' \\
+    threads=1 \\
+    python-path='%(python_path)s' \\
+    python-eggs='%(python_eggs)s' \\
+    lang='%(lang)s' \\
+    locale='%(locale)s'
+WSGIImportScript '%(script)s' \\
+    process-group='service:%(name)s' \\
+    application-group=%%{GLOBAL}
+</VirtualHost>
+"""
+
 def generate_apache_config(options):
     with open(options['httpd_conf'], 'w') as fp:
         print(APACHE_GENERAL_CONFIG % options, file=fp)
@@ -852,18 +877,35 @@ def generate_apache_config(options):
                         file=fp)
 
         if options['service_scripts']:
+            service_log_files = {}
+            if options['service_log_files']:
+                service_log_files.update(options['service_log_files'])
             users = dict(options['service_users'] or [])
             groups = dict(options['service_groups'] or [])
             for name, script in options['service_scripts']:
                 user = users.get(name, '${WSGI_RUN_USER}')
                 group = groups.get(name, '${WSGI_RUN_GROUP}')
-                print(APACHE_SERVICE_CONFIG % dict(name=name, user=user,
-                        group=group, script=script,
-                        python_path=options['python_path'],
-                        working_directory=options['working_directory'],
-                        python_eggs=options['python_eggs'],
-                        lang=options['lang'], locale=options['locale']),
-                        file=fp)
+                if name in service_log_files:
+                    print(APACHE_SERVICE_WITH_LOG_CONFIG % dict(name=name,
+                            user=user, group=group, script=script,
+                            port=options['port'],
+                            log_directory=options['log_directory'],
+                            log_file=service_log_files[name],
+                            rotatelogs_executable=options['rotatelogs_executable'],
+                            max_log_size=options['max_log_size'],
+                            python_path=options['python_path'],
+                            working_directory=options['working_directory'],
+                            python_eggs=options['python_eggs'],
+                            lang=options['lang'], locale=options['locale']),
+                            file=fp)
+                else:
+                    print(APACHE_SERVICE_CONFIG % dict(name=name, user=user,
+                            group=group, script=script,
+                            python_path=options['python_path'],
+                            working_directory=options['working_directory'],
+                            python_eggs=options['python_eggs'],
+                            lang=options['lang'], locale=options['locale']),
+                            file=fp)
 
         if options['include_files']:
             for filename in options['include_files']:
@@ -2162,6 +2204,10 @@ option_list = (
             help='When being run by the root user, the group that the '
             'distinct daemon process started to run the managed service '
             'should be run as.'),
+    optparse.make_option('--service-log-file', action='append', nargs=2,
+            dest='service_log_files', metavar='SERVICE FILE-NAME',
+            help='Specify the name of a separate log file to be used for '
+            'the managed service.'),
 
     optparse.make_option('--enable-docs', action='store_true', default=False,
             help='Flag indicating whether the mod_wsgi documentation should '
