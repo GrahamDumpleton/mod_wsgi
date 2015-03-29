@@ -66,11 +66,6 @@ extern int wsgi_python_required;
 extern const char *wsgi_python_path;
 extern const char *wsgi_python_eggs;
 
-#if APR_HAS_THREADS
-extern int wsgi_thread_count;
-extern apr_threadkey_t *wsgi_thread_key;
-#endif
-
 extern PyObject *wsgi_interpreters;
 
 #if APR_HAS_THREADS

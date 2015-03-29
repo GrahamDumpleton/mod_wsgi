@@ -34,10 +34,17 @@ extern apr_thread_mutex_t* wsgi_monitor_lock;
 
 extern PyMethodDef wsgi_process_metrics_method[];
 
-extern double wsgi_start_request(void);
-extern double wsgi_end_request(void);
+extern void wsgi_start_request(void);
+extern void wsgi_end_request(void);
 
 extern PyMethodDef wsgi_server_metrics_method[];
+
+extern long wsgi_event_subscribers(void);
+extern void wsgi_publish_event(const char *name, PyObject *event);
+
+extern PyMethodDef wsgi_process_events_method[];
+
+extern PyMethodDef wsgi_request_data_method[];
 
 /* ------------------------------------------------------------------------- */
 

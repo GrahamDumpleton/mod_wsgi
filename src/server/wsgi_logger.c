@@ -21,6 +21,7 @@
 #include "wsgi_logger.h"
 
 #include "wsgi_server.h"
+#include "wsgi_metrics.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -563,7 +564,8 @@ PyTypeObject Log_Type = {
     0,                      /*tp_is_gc*/
 };
 
-void wsgi_log_python_error(request_rec *r, PyObject *log, const char *filename)
+void wsgi_log_python_error(request_rec *r, PyObject *log,
+                           const char *filename, int publish)
 {
     PyObject *m = NULL;
     PyObject *result = NULL;
@@ -672,9 +674,26 @@ void wsgi_log_python_error(request_rec *r, PyObject *log, const char *filename)
         }
     }
     else {
-        Py_XDECREF(type);
-        Py_XDECREF(value);
-        Py_XDECREF(traceback);
+        if (publish) {
+            PyObject *event = NULL;
+            PyObject *object = NULL;
+
+            if (wsgi_event_subscribers()) {
+                event = PyDict_New();
+
+                object = Py_BuildValue("(OOO)", type, value, traceback);
+                PyDict_SetItemString(event, "exc_info", object);
+                Py_DECREF(object);
+
+                wsgi_publish_event("request_exception", event);
+
+                Py_DECREF(event);
+            }
+        }
+
+        Py_DECREF(type);
+        Py_DECREF(value);
+        Py_DECREF(traceback);
     }
 
     Py_XDECREF(result);

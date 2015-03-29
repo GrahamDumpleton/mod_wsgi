@@ -1,5 +1,5 @@
-#ifndef WSGI_LOGGER_H
-#define WSGI_LOGGER_H
+#ifndef WSGI_THREAD_H
+#define WSGI_THREAD_H
 
 /* ------------------------------------------------------------------------- */
 
@@ -26,12 +26,25 @@
 
 /* ------------------------------------------------------------------------- */
 
-extern PyTypeObject Log_Type;
+typedef struct {
+    int thread_id;
+    int request_thread;
+    apr_int64_t request_count;
+    PyObject *request_data;
+} WSGIThreadInfo;
 
-extern PyObject *newLogObject(request_rec *r, int level, const char *target);
+extern int wsgi_total_threads;
+extern int wsgi_request_threads;
+extern apr_threadkey_t *wsgi_thread_key;
 
-extern void wsgi_log_python_error(request_rec *r, PyObject *log,
-                                  const char *filename, int publish);
+extern WSGIThreadInfo *wsgi_thread_info(int create, int request);
+
+typedef struct {
+    double user_time;
+    double system_time;
+} WSGIThreadCPUUsage;
+
+extern int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage);
 
 /* ------------------------------------------------------------------------- */
 

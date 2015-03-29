@@ -24,6 +24,8 @@
 #include "wsgi_daemon.h"
 #include "wsgi_server.h"
 #include "wsgi_memory.h"
+#include "wsgi_logger.h"
+#include "wsgi_thread.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -75,14 +77,26 @@ static double wsgi_utilization_time(int adjustment)
     return utilization;
 }
 
-double wsgi_start_request(void)
+void wsgi_start_request(void)
 {
-    return wsgi_utilization_time(1);
+    WSGIThreadInfo *thread_info;
+
+    thread_info = wsgi_thread_info(1, 1);
+    thread_info->request_data = PyDict_New();
+
+    wsgi_utilization_time(1);
 }
 
-double wsgi_end_request(void)
+void wsgi_end_request(void)
 {
-    return wsgi_utilization_time(-1);
+    WSGIThreadInfo *thread_info;
+
+    thread_info = wsgi_thread_info(0, 1);
+
+    if (thread_info && thread_info->request_data)
+        Py_CLEAR(thread_info->request_data);
+
+    wsgi_utilization_time(-1);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -118,6 +132,7 @@ WSGI_STATIC_INTERNED_STRING(memory_max_rss);
 WSGI_STATIC_INTERNED_STRING(memory_rss);
 WSGI_STATIC_INTERNED_STRING(cpu_user_time);
 WSGI_STATIC_INTERNED_STRING(cpu_system_time);
+WSGI_STATIC_INTERNED_STRING(request_threads);
 
 static PyObject *wsgi_status_flags[SERVER_NUM_STATUS];
 
@@ -158,6 +173,7 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(memory_rss);
         WSGI_CREATE_INTERNED_STRING_ID(cpu_user_time);
         WSGI_CREATE_INTERNED_STRING_ID(cpu_system_time);
+        WSGI_CREATE_INTERNED_STRING_ID(request_threads);
 
         WSGI_CREATE_STATUS_FLAG(SERVER_DEAD, "."); 
         WSGI_CREATE_STATUS_FLAG(SERVER_READY, "_");
@@ -215,10 +231,10 @@ static PyObject *wsgi_process_metrics(void)
 
     result = PyDict_New();
 
-        object = wsgi_PyInt_FromLong(getpid());
-        PyDict_SetItem(result,
-                WSGI_INTERNED_STRING(pid), object);
-        Py_DECREF(object);
+    object = wsgi_PyInt_FromLong(getpid());
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(pid), object);
+    Py_DECREF(object);
 
     object = wsgi_PyInt_FromLongLong(wsgi_total_requests);
     PyDict_SetItem(result,
@@ -280,6 +296,11 @@ static PyObject *wsgi_process_metrics(void)
     object = wsgi_PyInt_FromLongLong(running_time);
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(running_time), object);
+    Py_DECREF(object);
+
+    object = wsgi_PyInt_FromLong(wsgi_request_threads);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(request_threads), object);
     Py_DECREF(object);
 
     return result;
@@ -511,6 +532,253 @@ static PyObject *wsgi_server_metrics(void)
 
 PyMethodDef wsgi_server_metrics_method[] = {
     { "server_metrics",     (PyCFunction)wsgi_server_metrics,
+                            METH_NOARGS, 0 },
+    { NULL },
+};
+
+/* ------------------------------------------------------------------------- */
+
+static PyObject *wsgi_subscribe_events(PyObject *self, PyObject *args)
+{
+    PyObject *callback = NULL;
+
+    PyObject *module = NULL;
+
+    if (!PyArg_ParseTuple(args, "O", &callback))
+        return NULL;
+
+    module = PyImport_ImportModule("mod_wsgi");
+
+    if (module) {
+        PyObject *dict = NULL;
+        PyObject *list = NULL;
+
+        dict = PyModule_GetDict(module);
+        list = PyDict_GetItemString(dict, "event_callbacks");
+
+        if (list)
+            PyList_Append(list, callback);
+        else
+            return NULL;
+    }
+    else
+        return NULL;
+
+    Py_DECREF(module);
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+long wsgi_event_subscribers(void)
+{
+    PyObject *module = NULL;
+
+    module = PyImport_ImportModule("mod_wsgi");
+
+    if (module) {
+        PyObject *dict = NULL;
+        PyObject *list = NULL;
+
+        long result = 0;
+
+        dict = PyModule_GetDict(module);
+        list = PyDict_GetItemString(dict, "event_callbacks");
+
+        if (list)
+            result = PyList_Size(list);
+
+        Py_XDECREF(module);
+
+        return result;
+    }
+    else
+        return 0;
+}
+
+void wsgi_publish_event(const char *name, PyObject *event)
+{
+    int i;
+
+    PyObject *module = NULL;
+    PyObject *list = NULL;
+
+    module = PyImport_ImportModule("mod_wsgi");
+
+    if (module) {
+        PyObject *dict = NULL;
+
+        dict = PyModule_GetDict(module);
+        list = PyDict_GetItemString(dict, "event_callbacks");
+
+        Py_INCREF(list);
+    }
+    else {
+        Py_BEGIN_ALLOW_THREADS
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Unable to import mod_wsgi when "
+                     "publishing events.", getpid());
+        Py_END_ALLOW_THREADS
+
+        PyErr_Clear();
+
+        return;
+    }
+
+    Py_XDECREF(module);
+
+    if (!list) {
+        Py_BEGIN_ALLOW_THREADS
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Unable to find event subscribers.",
+                     getpid());
+        Py_END_ALLOW_THREADS
+
+        PyErr_Clear();
+
+        return;
+    }
+
+    for (i=0; i<PyList_Size(list); i++) {
+        PyObject *callback = NULL;
+
+        PyObject *res = NULL;
+        PyObject *args = NULL;
+
+        callback = PyList_GetItem(list, i);
+
+        Py_INCREF(callback);
+
+        args = Py_BuildValue("(s)", name);
+
+        res = PyObject_Call(callback, args, event);
+
+        if (!res) {
+            PyObject *m = NULL;
+            PyObject *result = NULL;
+
+            PyObject *type = NULL;
+            PyObject *value = NULL;
+            PyObject *traceback = NULL;
+
+            Py_BEGIN_ALLOW_THREADS
+            ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Exception occurred within "
+                         "event callback.", getpid());
+            Py_END_ALLOW_THREADS
+
+            PyErr_Fetch(&type, &value, &traceback);
+            PyErr_NormalizeException(&type, &value, &traceback);
+
+            if (!value) {
+                value = Py_None;
+                Py_INCREF(value);
+            }
+
+            if (!traceback) {
+                traceback = Py_None;
+                Py_INCREF(traceback);
+            }
+
+            m = PyImport_ImportModule("traceback");
+
+            if (m) {
+                PyObject *d = NULL;
+                PyObject *o = NULL;
+                d = PyModule_GetDict(m);
+                o = PyDict_GetItemString(d, "print_exception");
+                if (o) {
+                    PyObject *log = NULL;
+                    PyObject *args = NULL;
+                    Py_INCREF(o);
+                    log = newLogObject(NULL, APLOG_ERR, NULL);
+                    args = Py_BuildValue("(OOOOO)", type, value,
+                                         traceback, Py_None, log);
+                    result = PyEval_CallObject(o, args);
+                    Py_DECREF(args);
+                    Py_DECREF(log);
+                    Py_DECREF(o);
+                }
+            }
+
+            if (!result) {
+                /*
+                 * If can't output exception and traceback then
+                 * use PyErr_Print to dump out details of the
+                 * exception. For SystemExit though if we do
+                 * that the process will actually be terminated
+                 * so can only clear the exception information
+                 * and keep going.
+                 */
+
+                PyErr_Restore(type, value, traceback);
+
+                if (!PyErr_ExceptionMatches(PyExc_SystemExit)) {
+                    PyErr_Print();
+                    PyErr_Clear();
+                }
+                else {
+                    PyErr_Clear();
+                }
+            }
+            else {
+                Py_XDECREF(type);
+                Py_XDECREF(value);
+                Py_XDECREF(traceback);
+            }
+
+            Py_XDECREF(result);
+
+            Py_XDECREF(m);
+        }
+        else if (PyDict_Check(res)) {
+            PyDict_Update(event, res);
+        }
+
+        Py_XDECREF(res);
+
+        Py_DECREF(callback);
+        Py_DECREF(args);
+    }
+
+    Py_DECREF(list);
+}
+
+/* ------------------------------------------------------------------------- */
+
+PyMethodDef wsgi_process_events_method[] = {
+    { "subscribe_events",   (PyCFunction)wsgi_subscribe_events,
+                            METH_VARARGS, 0 },
+    { NULL },
+};
+
+/* ------------------------------------------------------------------------- */
+
+static PyObject *wsgi_request_data(PyObject *self, PyObject *args)
+{
+    WSGIThreadInfo *thread_info;
+
+    thread_info = wsgi_thread_info(0, 0);
+
+    if (!thread_info) {
+        PyErr_SetString(PyExc_RuntimeError, "no active request for thread");
+        return NULL;
+    }
+
+    if (!thread_info->request_data) {
+        PyErr_SetString(PyExc_RuntimeError, "no active request for thread");
+        return NULL;
+    }
+
+    Py_INCREF(thread_info->request_data);
+
+    return thread_info->request_data;
+}
+
+/* ------------------------------------------------------------------------- */
+
+PyMethodDef wsgi_request_data_method[] = {
+    { "request_data",       (PyCFunction)wsgi_request_data,
                             METH_NOARGS, 0 },
     { NULL },
 };
