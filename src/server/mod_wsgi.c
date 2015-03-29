@@ -3123,7 +3123,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
                 if (total_seconds && total_seconds > response_time) {
                     user_seconds = (user_seconds/total_seconds)*response_time;
-                    system_seconds = response_time = user_seconds;
+                    system_seconds = response_time - user_seconds;
                 }
 
                 value = PyFloat_FromDouble(user_seconds);
