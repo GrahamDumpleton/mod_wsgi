@@ -19,6 +19,12 @@ call. This was an issue on Solaris where the limit is 16 and meant that since
 version 4.4.0, daemon mode of mod_wsgi would fail where a HTTP request had
 more than a small number of headers.
 
+2. When installing the ``mod_wsgi`` package using ``pip`` and rather
+than activating the virtual environment you were referring to ``pip`` by
+path from the ``bin`` directory, the ``mod_wsgi-httpd`` package which
+had already been installed into the virtual environment would not be
+detected.
+
 New Features
 ------------
 
