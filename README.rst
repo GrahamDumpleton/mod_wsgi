@@ -296,15 +296,3 @@ agent configuration file.
     export NEW_RELIC_CONFIG_FILE
 
     mod_wsgi-express start-server wsgi.py --with-newrelic
-
-When using this option, if you have also installed the ``mod_wsgi-metrics``
-Python package, then additional metrics about Apache and mod_wsgi will also
-be reported via the New Relic Platform API. These will appear as a separate
-set of dashboards under 'mod_wsgi' in the left hand side navigation bar of
-the New Relic UI.
-
-New Relic provides a free Lite tier so there is no excuse for not using it.
-Learn about what your Python web application is really doing. [1]_
-
-.. [1] Disclaimer: I work for New Relic and am the primary developer of
-       the Python agent. So of course it is awesome. :-)
