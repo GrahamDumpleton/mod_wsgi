@@ -10081,8 +10081,8 @@ static apr_status_t wsgi_socket_send(apr_socket_t *sock, const char *buf,
     return APR_SUCCESS;
 }
 
-static apr_status_t wsgi_socket_sendv(apr_socket_t *sock, struct iovec *vec,
-                                      int nvec)
+static apr_status_t wsgi_socket_sendv_limit(apr_socket_t *sock,
+        struct iovec *vec, int nvec)
 {
     apr_status_t rv;
     apr_size_t written = 0;
@@ -10135,6 +10135,40 @@ static apr_status_t wsgi_socket_sendv(apr_socket_t *sock, struct iovec *vec,
     }
 
     return APR_SUCCESS;
+}
+
+static apr_status_t wsgi_socket_sendv(apr_socket_t *sock, struct iovec *vec,
+                                      int nvec)
+{
+#if defined(_SC_IOV_MAX)
+    static size_t iov_max = 0;
+    
+    if (iov_max == 0)
+        iov_max = sysconf(_SC_IOV_MAX);
+#else
+    static size_t iov_max = APR_MAX_IOVEC_SIZE;
+#endif
+
+    if (nvec > iov_max) {
+        int offset = 0;
+
+        while (nvec > 0) {
+            apr_status_t rv;
+
+            rv = wsgi_socket_sendv_limit(sock, &vec[offset],
+                    (nvec < iov_max ? nvec : (int)iov_max));
+
+            if (rv != APR_SUCCESS)
+                return rv;
+
+            nvec -= iov_max;
+            offset += iov_max;
+        }
+
+        return APR_SUCCESS;
+    }
+    else
+        return wsgi_socket_sendv_limit(sock, vec, nvec);
 }
 
 static apr_status_t wsgi_send_request(request_rec *r,

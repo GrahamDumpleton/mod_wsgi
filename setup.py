@@ -122,7 +122,8 @@ APXS = os.environ.get('APXS')
 WITH_HTTPD_PACKAGE = False
 
 if APXS is None:
-    APXS = find_program(['mod_wsgi-apxs'])
+    APXS = find_program(['mod_wsgi-apxs'],
+            paths=[os.path.dirname(sys.executable)])
     if APXS is not None:
         WITH_HTTPD_PACKAGE = True
 

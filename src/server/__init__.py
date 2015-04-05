@@ -781,6 +781,31 @@ WSGIImportScript '%(script)s' \\
     application-group=%%{GLOBAL}
 """
 
+APACHE_SERVICE_WITH_LOG_CONFIG = """
+<VirtualHost *:%(port)s>
+<IfDefine WSGI_ROTATE_LOGS>
+ErrorLog "|%(rotatelogs_executable)s \\
+    %(log_directory)s/%(log_file)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM"
+</IfDefine>
+<IfDefine !WSGI_ROTATE_LOGS>
+ErrorLog "%(log_directory)s/%(log_file)s"
+</IfDefine>
+WSGIDaemonProcess 'service:%(name)s' \\
+    display-name=%%{GROUP} \\
+    user='%(user)s' \\
+    group='%(group)s' \\
+    home='%(working_directory)s' \\
+    threads=1 \\
+    python-path='%(python_path)s' \\
+    python-eggs='%(python_eggs)s' \\
+    lang='%(lang)s' \\
+    locale='%(locale)s'
+WSGIImportScript '%(script)s' \\
+    process-group='service:%(name)s' \\
+    application-group=%%{GLOBAL}
+</VirtualHost>
+"""
+
 def generate_apache_config(options):
     with open(options['httpd_conf'], 'w') as fp:
         print(APACHE_GENERAL_CONFIG % options, file=fp)
@@ -852,18 +877,35 @@ def generate_apache_config(options):
                         file=fp)
 
         if options['service_scripts']:
+            service_log_files = {}
+            if options['service_log_files']:
+                service_log_files.update(options['service_log_files'])
             users = dict(options['service_users'] or [])
             groups = dict(options['service_groups'] or [])
             for name, script in options['service_scripts']:
                 user = users.get(name, '${WSGI_RUN_USER}')
                 group = groups.get(name, '${WSGI_RUN_GROUP}')
-                print(APACHE_SERVICE_CONFIG % dict(name=name, user=user,
-                        group=group, script=script,
-                        python_path=options['python_path'],
-                        working_directory=options['working_directory'],
-                        python_eggs=options['python_eggs'],
-                        lang=options['lang'], locale=options['locale']),
-                        file=fp)
+                if name in service_log_files:
+                    print(APACHE_SERVICE_WITH_LOG_CONFIG % dict(name=name,
+                            user=user, group=group, script=script,
+                            port=options['port'],
+                            log_directory=options['log_directory'],
+                            log_file=service_log_files[name],
+                            rotatelogs_executable=options['rotatelogs_executable'],
+                            max_log_size=options['max_log_size'],
+                            python_path=options['python_path'],
+                            working_directory=options['working_directory'],
+                            python_eggs=options['python_eggs'],
+                            lang=options['lang'], locale=options['locale']),
+                            file=fp)
+                else:
+                    print(APACHE_SERVICE_CONFIG % dict(name=name, user=user,
+                            group=group, script=script,
+                            python_path=options['python_path'],
+                            working_directory=options['working_directory'],
+                            python_eggs=options['python_eggs'],
+                            lang=options['lang'], locale=options['locale']),
+                            file=fp)
 
         if options['include_files']:
             for filename in options['include_files']:
@@ -1328,8 +1370,18 @@ enable_profiler = %(enable_profiler)s
 profiler_directory = '%(profiler_directory)s'
 enable_recorder = %(enable_recorder)s
 recorder_directory = '%(recorder_directory)s'
+enable_gdb = %(enable_gdb)s
+
+os.environ['MOD_WSGI_EXPRESS'] = 'true'
+os.environ['MOD_WSGI_SERVER_NAME'] = '%(server_host)s'
+os.environ['MOD_WSGI_SERVER_ALIASES'] = %(server_aliases)r or ''
+
+if reload_on_changes:
+    os.environ['MOD_WSGI_RELOADER_ENABLED'] = 'true'
 
 if debug_mode:
+    os.environ['MOD_WSGI_DEBUG_MODE'] = 'true'
+
     # We need to fiddle sys.path as we are not using daemon mode and so
     # the working directory will not be added to sys.path by virtue of
     # 'home' option to WSGIDaemonProcess directive. We could use the
@@ -1338,11 +1390,16 @@ if debug_mode:
 
     sys.path.insert(0, working_directory)
 
+if enable_debugger:
+    os.environ['MOD_WSGI_DEBUGGER_ENABLED'] = 'true'
+
 def output_coverage_report():
     coverage_info.stop()
     coverage_info.html_report(directory=coverage_directory)
 
 if enable_coverage:
+    os.environ['MOD_WSGI_COVERAGE_ENABLED'] = 'true'
+
     from coverage import coverage
     coverage_info = coverage()
     coverage_info.start()
@@ -1355,10 +1412,18 @@ def output_profiler_data():
     profiler_info.dump_stats(output_file)
 
 if enable_profiler:
+    os.environ['MOD_WSGI_PROFILER_ENABLED'] = 'true'
+
     from cProfile import Profile
     profiler_info = Profile()
     profiler_info.enable()
     atexit.register(output_profiler_data)
+
+if enable_recorder:
+    os.environ['MOD_WSGI_RECORDER_ENABLED'] = 'true'
+
+if enable_gdb:
+    os.environ['MOD_WSGI_GDB_ENABLED'] = 'true'
 
 if with_newrelic_agent:
     if newrelic_config_file:
@@ -2162,6 +2227,10 @@ option_list = (
             help='When being run by the root user, the group that the '
             'distinct daemon process started to run the managed service '
             'should be run as.'),
+    optparse.make_option('--service-log-file', action='append', nargs=2,
+            dest='service_log_files', metavar='SERVICE FILE-NAME',
+            help='Specify the name of a separate log file to be used for '
+            'the managed service.'),
 
     optparse.make_option('--enable-docs', action='store_true', default=False,
             help='Flag indicating whether the mod_wsgi documentation should '
@@ -2667,6 +2736,8 @@ def _cmd_setup_server(command, args, options):
         host = options['server_name']
     else:
         host = options['host']
+
+    options['server_host'] = host
 
     if options['port'] == 80:
         options['url'] = 'http://%s/' % host
