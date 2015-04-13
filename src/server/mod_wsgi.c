@@ -3101,7 +3101,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         if (response_time < 0.0)
             response_time = 0.0;
 
-        if (start_usage.user_time != 0.0) {
+        if (end_usage.user_time != 0.0) {
             if (wsgi_thread_cpu_usage(&end_usage)) {
                 double user_seconds;
                 double system_seconds;

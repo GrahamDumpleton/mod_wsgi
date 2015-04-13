@@ -90,6 +90,20 @@ int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage)
 
         return 1;
     }
+#elif defined(linux) && defined(RUSAGE_THREAD)
+    struct rusage info;
+
+    usage->user_time = 0.0;
+    usage->system_time = 0.0;
+
+    if (getrusage(RUSAGE_THREAD, &info) == 0) {
+        usage->user_time = info.ru_utime.tv_sec;
+        usage->user_time += info.ru_utime.tv_usec / 1000000.0;
+        usage->system_time = info.ru_stime.tv_sec;
+        usage->system_time += info.ru_stime.tv_usec / 1000000.0;
+
+        return 1;
+    }
 #elif defined(linux)
     FILE* fp;
     char filename[256];
