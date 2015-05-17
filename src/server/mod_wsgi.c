@@ -3098,11 +3098,11 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         event = PyDict_New();
 
         value = wsgi_PyInt_FromLongLong(self->output_length);
-        PyDict_SetItemString(event, "response_length", value);
+        PyDict_SetItemString(event, "output_length", value);
         Py_DECREF(value);
 
         value = wsgi_PyInt_FromLongLong(self->output_blocks);
-        PyDict_SetItemString(event, "response_blocks", value);
+        PyDict_SetItemString(event, "output_blocks", value);
         Py_DECREF(value);
 
         finish_time = apr_time_now();
