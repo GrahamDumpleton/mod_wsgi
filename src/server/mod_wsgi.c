@@ -9616,6 +9616,11 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             }
         }
 
+        /* Create lock for request monitoring. */
+
+        apr_thread_mutex_create(&wsgi_monitor_lock,
+                                APR_THREAD_MUTEX_UNNESTED, p);
+
         /*
          * Initialise Python if required to be done in the child
          * process. Note that it will not be initialised if
@@ -9787,11 +9792,6 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         wsgi_newrelic_environment = daemon->group->newrelic_environment;
 
         wsgi_python_child_init(wsgi_daemon_pool);
-
-        /* Create lock for request monitoring. */
-
-        apr_thread_mutex_create(&wsgi_monitor_lock,
-                                APR_THREAD_MUTEX_UNNESTED, p);
 
         /*
          * Create socket wrapper for listener file descriptor
