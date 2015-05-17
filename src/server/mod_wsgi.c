@@ -1915,6 +1915,7 @@ typedef struct {
         int content_length_set;
         apr_off_t content_length;
         apr_off_t output_length;
+        apr_off_t output_blocks;
         apr_time_t start_time;
 } AdapterObject;
 
@@ -1945,6 +1946,7 @@ static AdapterObject *newAdapterObject(request_rec *r)
     self->content_length_set = 0;
     self->content_length = 0;
     self->output_length = 0;
+    self->output_blocks = 0;
 
     self->input = newInputObject(r);
     self->log = newLogObject(r, APLOG_ERR, NULL);
@@ -2083,6 +2085,11 @@ static int Adapter_output(AdapterObject *self, const char *data,
     }
 
     r = self->r;
+
+    /* Count how many separate blocks have been output. */
+
+    if (string_object)
+        self->output_blocks++;
 
     /* Have response headers yet been sent. */
 
@@ -3092,6 +3099,10 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         value = wsgi_PyInt_FromLongLong(self->output_length);
         PyDict_SetItemString(event, "response_length", value);
+        Py_DECREF(value);
+
+        value = wsgi_PyInt_FromLongLong(self->output_blocks);
+        PyDict_SetItemString(event, "response_blocks", value);
         Py_DECREF(value);
 
         finish_time = apr_time_now();
