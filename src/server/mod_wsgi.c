@@ -1916,6 +1916,7 @@ typedef struct {
         apr_off_t content_length;
         apr_off_t output_length;
         apr_off_t output_blocks;
+        apr_time_t output_time;
         apr_time_t start_time;
 } AdapterObject;
 
@@ -1947,6 +1948,8 @@ static AdapterObject *newAdapterObject(request_rec *r)
     self->content_length = 0;
     self->output_length = 0;
     self->output_blocks = 0;
+
+    self->output_time = 0;
 
     self->input = newInputObject(r);
     self->log = newLogObject(r, APLOG_ERR, NULL);
@@ -2066,6 +2069,9 @@ static int Adapter_output(AdapterObject *self, const char *data,
     apr_status_t rv;
     request_rec *r;
 
+    apr_time_t output_start = 0;
+    apr_time_t output_finish = 0;
+
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_idle_timeout) {
         apr_thread_mutex_lock(wsgi_monitor_lock);
@@ -2085,6 +2091,10 @@ static int Adapter_output(AdapterObject *self, const char *data,
     }
 
     r = self->r;
+
+    /* Remember we started sending this block of output. */
+
+    output_start = apr_time_now();
 
     /* Count how many separate blocks have been output. */
 
@@ -2186,6 +2196,12 @@ static int Adapter_output(AdapterObject *self, const char *data,
                 if (*v || errno == ERANGE || l < 0) {
                     PyErr_SetString(PyExc_ValueError,
                                     "invalid content length");
+
+                    output_finish = apr_time_now();
+
+                    if (output_finish > output_start)
+                        self->output_time += (output_finish - output_start);
+
                     return 0;
                 }
 
@@ -2272,6 +2288,11 @@ static int Adapter_output(AdapterObject *self, const char *data,
                 PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client "
                                 "connection closed.");
 
+            output_finish = apr_time_now();
+
+            if (output_finish > output_start)
+                self->output_time += (output_finish - output_start);
+
             return 0;
         }
 
@@ -2325,6 +2346,11 @@ static int Adapter_output(AdapterObject *self, const char *data,
                 PyErr_SetString(PyExc_IOError, error_message);
             }
 
+            output_finish = apr_time_now();
+
+            if (output_finish > output_start)
+                self->output_time += (output_finish - output_start);
+
             return 0;
         }
 
@@ -2332,6 +2358,13 @@ static int Adapter_output(AdapterObject *self, const char *data,
         apr_brigade_cleanup(self->bb);
         Py_END_ALLOW_THREADS
     }
+
+    /* Add how much time we spent send this block of output. */
+
+    output_finish = apr_time_now();
+
+    if (output_finish > output_start)
+        self->output_time += (output_finish - output_start);
 
     /*
      * Check whether aborted connection was found when data
@@ -2919,9 +2952,11 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     if (nrwrapper)
         object = nrwrapper;
 
+    self->start_time = apr_time_now();
+
     apr_table_setn(self->r->subprocess_env, "mod_wsgi.script_start",
                    apr_psprintf(self->r->pool, "%" APR_TIME_T_FMT,
-                   apr_time_now()));
+                   self->start_time));
 
     vars = Adapter_environ(self);
 
@@ -2945,8 +2980,6 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     start_usage.system_time = 0.0;
 
     if (wsgi_event_subscribers()) {
-        self->start_time = apr_time_now();
-
         wsgi_thread_cpu_usage(&start_usage);
 
         event = PyDict_New();
@@ -2955,7 +2988,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         PyDict_SetItemString(event, "request_environ", vars);
 
         value = PyFloat_FromDouble(apr_time_sec((double)self->start_time));
-        PyDict_SetItemString(event, "start_time", value);
+        PyDict_SetItemString(event, "application_start", value);
         Py_DECREF(value);
 
         wsgi_publish_event("request_started", event);
@@ -3093,7 +3126,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     /* Publish event for the end of the request. */
 
     if (wsgi_event_subscribers()) {
-        double response_time = 0.0;
+        double application_time = 0.0;
+        double output_time = 0.0;
 
         event = PyDict_New();
 
@@ -3105,12 +3139,17 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         PyDict_SetItemString(event, "output_blocks", value);
         Py_DECREF(value);
 
+        output_time = apr_time_sec((double)self->output_time);
+
+        if (output_time < 0.0)
+            output_time = 0.0;
+
         finish_time = apr_time_now();
 
-        response_time = apr_time_sec((double)finish_time-self->start_time);
+        application_time = apr_time_sec((double)finish_time-self->start_time);
 
-        if (response_time < 0.0)
-            response_time = 0.0;
+        if (application_time < 0.0)
+            application_time = 0.0;
 
         if (end_usage.user_time != 0.0) {
             if (wsgi_thread_cpu_usage(&end_usage)) {
@@ -3132,9 +3171,9 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
                 total_seconds = user_seconds + system_seconds;
 
-                if (total_seconds && total_seconds > response_time) {
-                    user_seconds = (user_seconds/total_seconds)*response_time;
-                    system_seconds = response_time - user_seconds;
+                if (total_seconds && total_seconds > application_time) {
+                    user_seconds = (user_seconds/total_seconds)*application_time;
+                    system_seconds = application_time - user_seconds;
                 }
 
                 value = PyFloat_FromDouble(user_seconds);
@@ -3147,12 +3186,20 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
             }
         }
 
-        value = PyFloat_FromDouble(apr_time_sec((double)finish_time));
-        PyDict_SetItemString(event, "finish_time", value);
+        value = PyFloat_FromDouble(output_time);
+        PyDict_SetItemString(event, "output_time", value);
         Py_DECREF(value);
 
-        value = PyFloat_FromDouble(response_time);
-        PyDict_SetItemString(event, "response_time", value);
+        value = PyFloat_FromDouble(apr_time_sec((double)self->start_time));
+        PyDict_SetItemString(event, "application_start", value);
+        Py_DECREF(value);
+
+        value = PyFloat_FromDouble(apr_time_sec((double)finish_time));
+        PyDict_SetItemString(event, "application_finish", value);
+        Py_DECREF(value);
+
+        value = PyFloat_FromDouble(application_time);
+        PyDict_SetItemString(event, "application_time", value);
         Py_DECREF(value);
 
         wsgi_publish_event("request_finished", event);
