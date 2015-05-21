@@ -10590,6 +10590,8 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
     apr_size_t bytes_transfered = 0;
 
+    int bucket_count = 0;
+
     if (buffer_size == 0)
         buffer_size = 65536;
 
@@ -10676,6 +10678,8 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
             bytes_transfered = 0;
 
+            bucket_count = 0;
+
             /*
              * Retry read from daemon using a blocking read. We do
              * not delete the bucket as we want to operate on the
@@ -10713,18 +10717,27 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
         APR_BRIGADE_INSERT_TAIL(tmpbb, e);
 
         /*
-         * If we have reached the threshold, we want to flush the
-         * data so that we aren't buffering too much in memory
-         * and blowing out memory size.
+         * If we have reached the buffer size threshold, we want
+         * to flush the data so that we aren't buffering too much
+         * in memory and blowing out memory size. We also have a
+         * check on the number of buckets we have accumulated as
+         * a large number of buckets with very small amounts of
+         * data will also accumulate a lot of memory. Apache's
+         * own flow control doesn't cope with such a situation.
+         * Right now hard wire the max number of buckets at 32.
          */
 
         bytes_transfered += length;
 
-        if (bytes_transfered > buffer_size) {
+        bucket_count += 1;
+
+        if (bytes_transfered > buffer_size || bucket_count > 32) {
             APR_BRIGADE_INSERT_TAIL(tmpbb, apr_bucket_flush_create(
                                     r->connection->bucket_alloc));
 
             bytes_transfered = 0;
+
+            bucket_count = 0;
 
             /*
              * Since we flushed the data out to the client, it is
