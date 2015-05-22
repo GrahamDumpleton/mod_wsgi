@@ -10724,14 +10724,17 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
          * a large number of buckets with very small amounts of
          * data will also accumulate a lot of memory. Apache's
          * own flow control doesn't cope with such a situation.
-         * Right now hard wire the max number of buckets at 32.
+         * Right now hard wire the max number of buckets at 16
+         * which equates to worst case number of separate data
+         * blocks can be written by a writev() call on systems
+         * such as Solaris.
          */
 
         bytes_transfered += length;
 
         bucket_count += 1;
 
-        if (bytes_transfered > buffer_size || bucket_count > 32) {
+        if (bytes_transfered > buffer_size || bucket_count >= 16) {
             APR_BRIGADE_INSERT_TAIL(tmpbb, apr_bucket_flush_create(
                                     r->connection->bucket_alloc));
 
