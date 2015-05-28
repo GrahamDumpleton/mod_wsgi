@@ -944,6 +944,9 @@ typedef struct {
         apr_bucket_brigade *bb;
         int seen_eos;
         int seen_error;
+        apr_off_t bytes;
+        apr_off_t reads;
+        apr_time_t time;
 } InputObject;
 
 static PyTypeObject Input_Type;
@@ -969,6 +972,10 @@ static InputObject *newInputObject(request_rec *r)
 
     self->seen_eos = 0;
     self->seen_error = 0;
+
+    self->bytes = 0;
+    self->reads = 0;
+    self->time = 0;
 
     return self;
 }
@@ -1029,6 +1036,9 @@ static long Input_read_from_input(InputObject *self, char *buffer,
     apr_status_t error_status = 0;
     const char *error_message = NULL;
 
+    apr_time_t start = 0;
+    apr_time_t finish = 0;
+
     /* If have already seen end of input, return an empty string. */
 
     if (self->seen_eos)
@@ -1053,6 +1063,10 @@ static long Input_read_from_input(InputObject *self, char *buffer,
      */
 
     Py_BEGIN_ALLOW_THREADS
+
+    start = apr_time_now();
+
+    self->reads += 1;
 
     /*
      * Create the bucket brigade the first time it is required and
@@ -1135,6 +1149,11 @@ finally:
 
     if (bb)
         apr_brigade_cleanup(bb);
+
+    finish = apr_time_now();
+
+    if (finish > start)
+        self->time += (finish - start);
 
     /* Make sure we reacquire the GIL when all done. */
 
@@ -1450,6 +1469,8 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
         }
     }
 
+    self->bytes += length;
+
     return result;
 }
 
@@ -1738,6 +1759,8 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
                 return NULL;
         }
     }
+
+    self->bytes += length;
 
     return result;
 }
@@ -3130,6 +3153,18 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         double output_time = 0.0;
 
         event = PyDict_New();
+
+        value = wsgi_PyInt_FromLongLong(self->input->reads);
+        PyDict_SetItemString(event, "input_reads", value);
+        Py_DECREF(value);
+
+        value = wsgi_PyInt_FromLongLong(self->input->bytes);
+        PyDict_SetItemString(event, "input_length", value);
+        Py_DECREF(value);
+
+        value = PyFloat_FromDouble(apr_time_sec((double)self->input->time));
+        PyDict_SetItemString(event, "input_time", value);
+        Py_DECREF(value);
 
         value = wsgi_PyInt_FromLongLong(self->output_length);
         PyDict_SetItemString(event, "output_length", value);
