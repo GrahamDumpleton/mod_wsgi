@@ -133,6 +133,7 @@ WSGI_STATIC_INTERNED_STRING(memory_rss);
 WSGI_STATIC_INTERNED_STRING(cpu_user_time);
 WSGI_STATIC_INTERNED_STRING(cpu_system_time);
 WSGI_STATIC_INTERNED_STRING(request_threads);
+WSGI_STATIC_INTERNED_STRING(active_requests);
 
 static PyObject *wsgi_status_flags[SERVER_NUM_STATUS];
 
@@ -174,6 +175,7 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(cpu_user_time);
         WSGI_CREATE_INTERNED_STRING_ID(cpu_system_time);
         WSGI_CREATE_INTERNED_STRING_ID(request_threads);
+        WSGI_CREATE_INTERNED_STRING_ID(active_requests);
 
         WSGI_CREATE_STATUS_FLAG(SERVER_DEAD, "."); 
         WSGI_CREATE_STATUS_FLAG(SERVER_READY, "_");
@@ -301,6 +303,11 @@ static PyObject *wsgi_process_metrics(void)
     object = wsgi_PyInt_FromLong(wsgi_request_threads);
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(request_threads), object);
+    Py_DECREF(object);
+
+    object = wsgi_PyInt_FromLong(wsgi_active_requests);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(active_requests), object);
     Py_DECREF(object);
 
     return result;
