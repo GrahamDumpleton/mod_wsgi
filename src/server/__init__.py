@@ -283,7 +283,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
    header-buffer-size=%(header_buffer_size)s \\
    response-buffer-size=%(response_buffer_size)s \\
-   server-metrics=%(daemon_server_metrics_flag)s
+   server-metrics=%(server_metrics_flag)s
 </IfDefine>
 <IfDefine !WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
@@ -308,7 +308,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
    response-buffer-size=%(response_buffer_size)s \\
-   server-metrics=%(daemon_server_metrics_flag)s
+   server-metrics=%(server_metrics_flag)s
 </IfDefine>
 </IfDefine>
 
@@ -323,6 +323,8 @@ WSGIRestrictStdin Off
 <IfDefine WSGI_SERVER_METRICS>
 ExtendedStatus On
 </IfDefine>
+
+WSGIServerMetrics %(server_metrics_flag)s
 
 <IfDefine WSGI_SERVER_STATUS>
 <Location /server-status>
@@ -775,7 +777,8 @@ WSGIDaemonProcess 'service:%(name)s' \\
     python-path='%(python_path)s' \\
     python-eggs='%(python_eggs)s' \\
     lang='%(lang)s' \\
-    locale='%(locale)s'
+    locale='%(locale)s' \\
+    server-metrics=%(server_metrics_flag)s
 WSGIImportScript '%(script)s' \\
     process-group='service:%(name)s' \\
     application-group=%%{GLOBAL}
@@ -799,7 +802,8 @@ WSGIDaemonProcess 'service:%(name)s' \\
     python-path='%(python_path)s' \\
     python-eggs='%(python_eggs)s' \\
     lang='%(lang)s' \\
-    locale='%(locale)s'
+    locale='%(locale)s' \\
+    server-metrics=%(server_metrics_flag)s
 WSGIImportScript '%(script)s' \\
     process-group='service:%(name)s' \\
     application-group=%%{GLOBAL}
@@ -896,7 +900,8 @@ def generate_apache_config(options):
                             python_path=options['python_path'],
                             working_directory=options['working_directory'],
                             python_eggs=options['python_eggs'],
-                            lang=options['lang'], locale=options['locale']),
+                            lang=options['lang'], locale=options['locale'],
+                            server_metrics_flag=options['server_metrics_flag']),
                             file=fp)
                 else:
                     print(APACHE_SERVICE_CONFIG % dict(name=name, user=user,
@@ -904,7 +909,8 @@ def generate_apache_config(options):
                             python_path=options['python_path'],
                             working_directory=options['working_directory'],
                             python_eggs=options['python_eggs'],
-                            lang=options['lang'], locale=options['locale']),
+                            lang=options['lang'], locale=options['locale'],
+                            server_metrics_flag=options['server_metrics_flag']),
                             file=fp)
 
         if options['include_files']:
@@ -2552,9 +2558,9 @@ def _cmd_setup_server(command, args, options):
     options['request_read_timeout'] = request_read_timeout
 
     if options['server_metrics']:
-        options['daemon_server_metrics_flag'] = 'On'
+        options['server_metrics_flag'] = 'On'
     else:
-        options['daemon_server_metrics_flag'] = 'Off'
+        options['server_metrics_flag'] = 'Off'
 
     if options['handler_scripts']:
         handler_scripts = []
