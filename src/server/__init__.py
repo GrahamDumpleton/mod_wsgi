@@ -1736,7 +1736,7 @@ option_list = (
             'over the secure connection.'),
 
     optparse.make_option('--hsts-policy', default=None, metavar='PARAMS',
-            help='Specify the HTST policy that should be applied when '
+            help='Specify the HSTS policy that should be applied when '
             'HTTPS only connections are being enforced.'),
 
     optparse.make_option('--server-name', default=None, metavar='HOSTNAME',
