@@ -224,7 +224,7 @@ Use the latest Python 3.3 or 3.4 binary available from the PSF:
 
 * https://www.python.org/downloads/release/python-279/
 
-You must use the 32 bit version which is labelled as:
+You must use the 64 bit version which is labelled as:
 
 * Windows x86-x86 MSI installer
 
