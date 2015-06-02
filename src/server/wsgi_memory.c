@@ -7,7 +7,9 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#define PSAPI_VERSION 1
 #include <psapi.h>
+#pragma comment(lib, "psapi.lib")
 
 #elif defined(__unix__) || defined(__unix) || defined(unix) || (defined(__APPLE__) && defined(__MACH__))
 #include <unistd.h>
