@@ -682,7 +682,7 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
                 event = PyDict_New();
 
                 object = Py_BuildValue("(OOO)", type, value, traceback);
-                PyDict_SetItemString(event, "exc_info", object);
+                PyDict_SetItemString(event, "exception_info", object);
                 Py_DECREF(object);
 
                 wsgi_publish_event("request_exception", event);

@@ -2051,6 +2051,7 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 
         PyDict_SetItemString(event, "response_status", status_line);
         PyDict_SetItemString(event, "response_headers", headers);
+        PyDict_SetItemString(event, "exception_info", exc_info);
 
         wsgi_publish_event("response_started", event);
 
