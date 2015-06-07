@@ -441,6 +441,10 @@ typedef struct {
 
     int daemon_connects;
     int daemon_restarts;
+
+    apr_time_t request_start;
+    apr_time_t queue_start;
+    apr_time_t daemon_start;
 } WSGIRequestConfig;
 
 static long wsgi_find_path_info(const char *uri, const char *path_info)
@@ -910,6 +914,10 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
 
     config->daemon_connects = 0;
     config->daemon_restarts = 0;
+
+    config->request_start = 0;
+    config->queue_start = 0;
+    config->daemon_start = 0;
 
     return config;
 }
@@ -3018,6 +3026,21 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         value = wsgi_PyInt_FromLong(self->config->daemon_restarts);
         PyDict_SetItemString(event, "daemon_restarts", value);
+        Py_DECREF(value);
+
+        value = PyFloat_FromDouble(apr_time_sec(
+                                   (double)self->config->request_start));
+        PyDict_SetItemString(event, "request_start", value);
+        Py_DECREF(value);
+
+        value = PyFloat_FromDouble(apr_time_sec(
+                                   (double)self->config->queue_start));
+        PyDict_SetItemString(event, "queue_start", value);
+        Py_DECREF(value);
+
+        value = PyFloat_FromDouble(apr_time_sec(
+                                   (double)self->config->daemon_start));
+        PyDict_SetItemString(event, "daemon_start", value);
         Py_DECREF(value);
 
         PyDict_SetItemString(event, "application_object", object);
@@ -6960,6 +6983,8 @@ static int wsgi_hook_handler(request_rec *r)
     }
 
     /* Build the sub process environment. */
+
+    config->request_start = r->request_time;
 
     wsgi_build_environment(r);
 
@@ -12405,6 +12430,37 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     else
         config->enable_sendfile = 0;
 
+    config->daemon_connects = atoi(apr_table_get(r->subprocess_env,
+                                                 "mod_wsgi.daemon_connects"));
+    config->daemon_restarts = atoi(apr_table_get(r->subprocess_env,
+                                                 "mod_wsgi.daemon_restarts"));
+
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.request_start");
+
+    if (item) {
+        errno = 0;
+        config->request_start = apr_strtoi64(item, (char **)&item, 10);
+
+        if (!(!*item && errno != ERANGE))
+            config->request_start = 0.0;
+    }
+
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.queue_start");
+
+    if (item) {
+        errno = 0;
+        config->queue_start = apr_strtoi64(item, (char **)&item, 10);
+
+        if (!(!*item && errno != ERANGE))
+            config->queue_start = 0.0;
+    }
+
+    config->daemon_start = apr_time_now();
+
+    apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_start",
+                   apr_psprintf(r->pool, "%" APR_TIME_T_FMT,
+                   config->daemon_start));
+
     /*
      * Install the standard HTTP input filter and set header for
      * chunked transfer encoding to force it to dechunk the input.
@@ -12427,27 +12483,20 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     r->status = HTTP_OK;
 
     if (wsgi_daemon_process->group->queue_timeout) {
-        item = apr_table_get(r->subprocess_env, "mod_wsgi.request_start");
-
-        if (item) {
-            apr_time_t request_time = 0;
+        if (config->request_start) {
             apr_time_t queue_time = 0;
 
-            errno = 0;
-            request_time = apr_strtoi64(item, (char **)&item, 10);
+            queue_time = config->daemon_start - config->request_start;
 
-            if (!*item && errno != ERANGE) {
-                queue_time = apr_time_now() - request_time;
-                if (queue_time > wsgi_daemon_process->group->queue_timeout) {
-                    queue_timeout_occurred = 1;
+            if (queue_time > wsgi_daemon_process->group->queue_timeout) {
+                queue_timeout_occurred = 1;
 
-                    r->status_line = "200 Timeout";
+                r->status_line = "200 Timeout";
 
-                    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                 "mod_wsgi (pid=%d): Queue timeout expired "
-                                 "for WSGI daemon process '%s'.", getpid(),
-                                 wsgi_daemon_process->group->name);
-                }
+                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                             "mod_wsgi (pid=%d): Queue timeout expired "
+                             "for WSGI daemon process '%s'.", getpid(),
+                             wsgi_daemon_process->group->name);
             }
         }
     }
@@ -12468,10 +12517,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      */
 
     if (!queue_timeout_occurred) {
-        apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_start",
-                       apr_psprintf(r->pool, "%" APR_TIME_T_FMT,
-                       apr_time_now()));
-
         if (wsgi_execute_script(r) != OK) {
             r->status = HTTP_INTERNAL_SERVER_ERROR;
             r->status_line = "200 Error";
