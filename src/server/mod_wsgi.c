@@ -2993,7 +2993,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     PyDict_SetItemString(vars, "mod_wsgi.thread_id", value);
     Py_DECREF(value);
 
-    value = wsgi_PyInt_FromLongLong(++thread_handle->request_count);
+    value = wsgi_PyInt_FromLongLong(thread_handle->request_count);
     PyDict_SetItemString(vars, "mod_wsgi.thread_requests", value);
     Py_DECREF(value);
 
@@ -3031,6 +3031,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     }
 
     /* Pass the request through to the WSGI application. */
+
+    thread_handle->request_count++;
 
     start = PyObject_GetAttrString((PyObject *)self, "start_response");
 
