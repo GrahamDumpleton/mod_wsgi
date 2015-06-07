@@ -24,7 +24,7 @@ def event_handler(name, **kwargs):
         environ = kwargs['request_environ']
         start_time = time.time()
         request['start_time'] = start_time
-        return dict(application=wrapper(kwargs['application']))
+        return dict(application_object=wrapper(kwargs['application_object']))
     elif name == 'request_finished':
         request = mod_wsgi.request_data()
         print('REQUEST', request)
