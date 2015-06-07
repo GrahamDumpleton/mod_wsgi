@@ -3264,10 +3264,6 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         PyDict_SetItemString(event, "output_time", value);
         Py_DECREF(value);
 
-        value = PyFloat_FromDouble(apr_time_sec((double)self->start_time));
-        PyDict_SetItemString(event, "application_start", value);
-        Py_DECREF(value);
-
         value = PyFloat_FromDouble(apr_time_sec((double)finish_time));
         PyDict_SetItemString(event, "application_finish", value);
         Py_DECREF(value);
