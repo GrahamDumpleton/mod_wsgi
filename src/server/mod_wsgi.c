@@ -3007,7 +3007,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         event = PyDict_New();
 
-        PyDict_SetItemString(event, "application", object);
+        PyDict_SetItemString(event, "application_object", object);
+
         PyDict_SetItemString(event, "request_environ", vars);
 
         value = PyFloat_FromDouble(apr_time_sec((double)self->start_time));
@@ -3016,7 +3017,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         wsgi_publish_event("request_started", event);
 
-        evwrapper = PyDict_GetItemString(event, "application");
+        evwrapper = PyDict_GetItemString(event, "application_object");
 
         if (evwrapper) {
             if (evwrapper != object) {
