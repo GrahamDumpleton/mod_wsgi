@@ -3012,6 +3012,14 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         PyDict_SetItemString(event, "thread_id", value);
         Py_DECREF(value);
 
+        value = wsgi_PyInt_FromLong(self->config->daemon_connects);
+        PyDict_SetItemString(event, "daemon_connects", value);
+        Py_DECREF(value);
+
+        value = wsgi_PyInt_FromLong(self->config->daemon_restarts);
+        PyDict_SetItemString(event, "daemon_restarts", value);
+        Py_DECREF(value);
+
         PyDict_SetItemString(event, "application_object", object);
 
         PyDict_SetItemString(event, "request_environ", vars);
