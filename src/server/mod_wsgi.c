@@ -3008,6 +3008,10 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         event = PyDict_New();
 
+        value = wsgi_PyInt_FromLong(thread_handle->thread_id);
+        PyDict_SetItemString(event, "thread_id", value);
+        Py_DECREF(value);
+
         PyDict_SetItemString(event, "application_object", object);
 
         PyDict_SetItemString(event, "request_environ", vars);
