@@ -77,7 +77,7 @@ def find_mimetypes():
 
 APACHE_GENERAL_CONFIG = """
 <IfModule !version_module>
-LoadModule version_module '${HTTPD_MODULES_DIRECTORY}/mod_version.so'
+LoadModule version_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_version.so'
 </IfModule>
 
 ServerName %(host)s
@@ -90,13 +90,13 @@ DefaultRuntimeDir '%(server_root)s'
 
 ServerSignature Off
 
-User ${WSGI_RUN_USER}
-Group ${WSGI_RUN_GROUP}
+User ${MOD_WSGI_USER}
+Group ${MOD_WSGI_GROUP}
 
-<IfDefine WSGI_LISTENER_HOST>
+<IfDefine MOD_WSGI_WITH_LISTENER_HOST>
 Listen %(host)s:%(port)s
 </IfDefine>
-<IfDefine !WSGI_LISTENER_HOST>
+<IfDefine !MOD_WSGI_WITH_LISTENER_HOST>
 Listen %(port)s
 </IfDefine>
 
@@ -105,12 +105,12 @@ LockFile '%(server_root)s/accept.lock'
 </IfVersion>
 
 <IfVersion >= 2.4>
-<IfDefine WSGI_WITH_PHP5>
+<IfDefine MOD_WSGI_WITH_PHP5>
 <IfModule !mpm_event_module>
 <IfModule !mpm_worker_module>
 <IfModule !mpm_prefork_module>
-<IfDefine WSGI_MPM_EXISTS_PREFORK_MODULE>
-LoadModule mpm_prefork_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_prefork.so'
+<IfDefine MOD_WSGI_MPM_EXISTS_PREFORK_MODULE>
+LoadModule mpm_prefork_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_mpm_prefork.so'
 </IfDefine>
 </IfModule>
 </IfModule>
@@ -122,14 +122,14 @@ LoadModule mpm_prefork_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_prefork.so'
 <IfModule !mpm_event_module>
 <IfModule !mpm_worker_module>
 <IfModule !mpm_prefork_module>
-<IfDefine WSGI_MPM_ENABLE_EVENT_MODULE>
-LoadModule mpm_event_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_event.so'
+<IfDefine MOD_WSGI_MPM_ENABLE_EVENT_MODULE>
+LoadModule mpm_event_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_mpm_event.so'
 </IfDefine>
-<IfDefine WSGI_MPM_ENABLE_WORKER_MODULE>
-LoadModule mpm_worker_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_worker.so'
+<IfDefine MOD_WSGI_MPM_ENABLE_WORKER_MODULE>
+LoadModule mpm_worker_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_mpm_worker.so'
 </IfDefine>
-<IfDefine WSGI_MPM_ENABLE_PREFORK_MODULE>
-LoadModule mpm_prefork_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_prefork.so'
+<IfDefine MOD_WSGI_MPM_ENABLE_PREFORK_MODULE>
+LoadModule mpm_prefork_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_mpm_prefork.so'
 </IfDefine>
 </IfModule>
 </IfModule>
@@ -138,84 +138,84 @@ LoadModule mpm_prefork_module '${HTTPD_MODULES_DIRECTORY}/mod_mpm_prefork.so'
 
 <IfVersion >= 2.4>
 <IfModule !access_compat_module>
-LoadModule access_compat_module '${HTTPD_MODULES_DIRECTORY}/mod_access_compat.so'
+LoadModule access_compat_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_access_compat.so'
 </IfModule>
 <IfModule !unixd_module>
-LoadModule unixd_module '${HTTPD_MODULES_DIRECTORY}/mod_unixd.so'
+LoadModule unixd_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_unixd.so'
 </IfModule>
 <IfModule !authn_core_module>
-LoadModule authn_core_module '${HTTPD_MODULES_DIRECTORY}/mod_authn_core.so'
+LoadModule authn_core_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_authn_core.so'
 </IfModule>
 <IfModule !authz_core_module>
-LoadModule authz_core_module '${HTTPD_MODULES_DIRECTORY}/mod_authz_core.so'
+LoadModule authz_core_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_authz_core.so'
 </IfModule>
 </IfVersion>
 
 <IfModule !authz_host_module>
-LoadModule authz_host_module '${HTTPD_MODULES_DIRECTORY}/mod_authz_host.so'
+LoadModule authz_host_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_authz_host.so'
 </IfModule>
 <IfModule !mime_module>
-LoadModule mime_module '${HTTPD_MODULES_DIRECTORY}/mod_mime.so'
+LoadModule mime_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_mime.so'
 </IfModule>
 <IfModule !rewrite_module>
-LoadModule rewrite_module '${HTTPD_MODULES_DIRECTORY}/mod_rewrite.so'
+LoadModule rewrite_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_rewrite.so'
 </IfModule>
 <IfModule !alias_module>
-LoadModule alias_module '${HTTPD_MODULES_DIRECTORY}/mod_alias.so'
+LoadModule alias_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_alias.so'
 </IfModule>
 <IfModule !dir_module>
-LoadModule dir_module '${HTTPD_MODULES_DIRECTORY}/mod_dir.so'
+LoadModule dir_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_dir.so'
 </IfModule>
 <IfModule !env_module>
-LoadModule env_module '${HTTPD_MODULES_DIRECTORY}/mod_env.so'
+LoadModule env_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_env.so'
 </IfModule>
 <IfModule !headers_module>
-LoadModule headers_module '${HTTPD_MODULES_DIRECTORY}/mod_headers.so'
+LoadModule headers_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_headers.so'
 </IfModule>
 
-<IfDefine WSGI_DIRECTORY_LISTING>
+<IfDefine MOD_WSGI_DIRECTORY_LISTING>
 <IfModule !autoindex_module>
-LoadModule autoindex_module '${HTTPD_MODULES_DIRECTORY}/mod_autoindex.so'
+LoadModule autoindex_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_autoindex.so'
 </IfModule>
 </IfDefine>
 
 <IfVersion >= 2.2.15>
 <IfModule !reqtimeout_module>
-LoadModule reqtimeout_module '${HTTPD_MODULES_DIRECTORY}/mod_reqtimeout.so'
+LoadModule reqtimeout_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_reqtimeout.so'
 </IfModule>
 </IfVersion>
 
-<IfDefine WSGI_COMPRESS_RESPONSES>
+<IfDefine MOD_WSGI_COMPRESS_RESPONSES>
 <IfModule !deflate_module>
-LoadModule deflate_module '${HTTPD_MODULES_DIRECTORY}/mod_deflate.so'
+LoadModule deflate_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_deflate.so'
 </IfModule>
 </IfDefine>
 
-<IfDefine WSGI_AUTH_USER>
+<IfDefine MOD_WSGI_AUTH_USER>
 <IfModule !auth_basic_module>
-LoadModule auth_basic_module '${HTTPD_MODULES_DIRECTORY}/mod_auth_basic.so'
+LoadModule auth_basic_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_auth_basic.so'
 </IfModule>
 <IfModule !auth_digest_module>
-LoadModule auth_digest_module '${HTTPD_MODULES_DIRECTORY}/mod_auth_digest.so'
+LoadModule auth_digest_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_auth_digest.so'
 </IfModule>
 <IfModule !authz_user_module>
-LoadModule authz_user_module '${HTTPD_MODULES_DIRECTORY}/mod_authz_user.so'
+LoadModule authz_user_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_authz_user.so'
 </IfModule>
 </IfDefine>
 
-<IfDefine WSGI_WITH_PROXY>
+<IfDefine MOD_WSGI_WITH_PROXY>
 <IfModule !proxy_module>
-LoadModule proxy_module ${HTTPD_MODULES_DIRECTORY}/mod_proxy.so
+LoadModule proxy_module ${MOD_WSGI_MODULES_DIRECTORY}/mod_proxy.so
 </IfModule>
 <IfModule !proxy_http_module>
-LoadModule proxy_http_module ${HTTPD_MODULES_DIRECTORY}/mod_proxy_http.so
+LoadModule proxy_http_module ${MOD_WSGI_MODULES_DIRECTORY}/mod_proxy_http.so
 </IfModule>
 </IfDefine>
 
 <IfModule mpm_prefork_module>
-<IfDefine WSGI_WITH_PHP5>
+<IfDefine MOD_WSGI_WITH_PHP5>
 <IfModule !php5_module>
-Loadmodule php5_module '${HTTPD_MODULES_DIRECTORY}/libphp5.so'
+Loadmodule php5_module '${MOD_WSGI_MODULES_DIRECTORY}/libphp5.so'
 </IfModule>
 AddHandler application/x-httpd-php .php
 </IfDefine>
@@ -223,9 +223,9 @@ AddHandler application/x-httpd-php .php
 
 LoadModule wsgi_module '%(mod_wsgi_so)s'
 
-<IfDefine WSGI_SERVER_METRICS>
+<IfDefine MOD_WSGI_SERVER_METRICS>
 <IfModule !status_module>
-LoadModule status_module '${HTTPD_MODULES_DIRECTORY}/mod_status.so'
+LoadModule status_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_status.so'
 </IfModule>
 </IfDefine>
 
@@ -258,7 +258,7 @@ WSGIPythonHome '%(python_home)s'
 <IfDefine !ONE_PROCESS>
 WSGIRestrictEmbedded On
 WSGISocketPrefix %(server_root)s/wsgi
-<IfDefine WSGI_MULTIPROCESS>
+<IfDefine MOD_WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
    display-name='%(daemon_name)s' \\
    home='%(working_directory)s' \\
@@ -285,7 +285,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    response-buffer-size=%(response_buffer_size)s \\
    server-metrics=%(daemon_server_metrics_flag)s
 </IfDefine>
-<IfDefine !WSGI_MULTIPROCESS>
+<IfDefine !MOD_WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
    display-name='%(daemon_name)s' \\
    home='%(working_directory)s' \\
@@ -320,11 +320,11 @@ WSGIMapHEADToGET %(map_head_to_get)s
 WSGIRestrictStdin Off
 </IfDefine>
 
-<IfDefine WSGI_SERVER_METRICS>
+<IfDefine MOD_WSGI_SERVER_METRICS>
 ExtendedStatus On
 </IfDefine>
 
-<IfDefine WSGI_SERVER_STATUS>
+<IfDefine MOD_WSGI_SERVER_STATUS>
 <Location /server-status>
     SetHandler server-status
     Order deny,allow
@@ -333,15 +333,15 @@ ExtendedStatus On
 </Location>
 </IfDefine>
 
-<IfDefine WSGI_KEEP_ALIVE>
+<IfDefine MOD_WSGI_KEEP_ALIVE>
 KeepAlive On
 KeepAliveTimeout %(keep_alive_timeout)s
 </IfDefine>
-<IfDefine !WSGI_KEEP_ALIVE>
+<IfDefine !MOD_WSGI_KEEP_ALIVE>
 KeepAlive Off
 </IfDefine>
 
-<IfDefine WSGI_COMPRESS_RESPONSES>
+<IfDefine MOD_WSGI_COMPRESS_RESPONSES>
 AddOutputFilterByType DEFLATE text/plain
 AddOutputFilterByType DEFLATE text/html
 AddOutputFilterByType DEFLATE text/xml
@@ -351,45 +351,45 @@ AddOutputFilterByType DEFLATE application/xhtml+xml
 AddOutputFilterByType DEFLATE application/javascript
 </IfDefine>
 
-<IfDefine WSGI_ROTATE_LOGS>
+<IfDefine MOD_WSGI_ROTATE_LOGS>
 ErrorLog "|%(rotatelogs_executable)s \\
     %(error_log_file)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM"
 </IfDefine>
-<IfDefine !WSGI_ROTATE_LOGS>
+<IfDefine !MOD_WSGI_ROTATE_LOGS>
 ErrorLog "%(error_log_file)s"
 </IfDefine>
 LogLevel %(log_level)s
 
-<IfDefine WSGI_ACCESS_LOG>
+<IfDefine MOD_WSGI_ACCESS_LOG>
 <IfModule !log_config_module>
-LoadModule log_config_module ${HTTPD_MODULES_DIRECTORY}/mod_log_config.so
+LoadModule log_config_module ${MOD_WSGI_MODULES_DIRECTORY}/mod_log_config.so
 </IfModule>
 LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b" common
 LogFormat "%%h %%l %%u %%t \\"%%r\\" %%>s %%b \\"%%{Referer}i\\" \\"%%{User-agent}i\\"" combined
 LogFormat "%(access_log_format)s" custom
-<IfDefine WSGI_ROTATE_LOGS>
+<IfDefine MOD_WSGI_ROTATE_LOGS>
 CustomLog "|%(rotatelogs_executable)s \\
     %(access_log_file)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM" %(log_format_nickname)s
 </IfDefine>
-<IfDefine !WSGI_ROTATE_LOGS>
+<IfDefine !MOD_WSGI_ROTATE_LOGS>
 CustomLog "%(access_log_file)s" %(log_format_nickname)s
 </IfDefine>
 </IfDefine>
 
-<IfDefine WSGI_CHUNKED_REQUEST>
+<IfDefine MOD_WSGI_CHUNKED_REQUEST>
 WSGIChunkedRequest On
 </IfDefine>
 
-<IfDefine WSGI_WITH_PROXY_HEADERS>
+<IfDefine MOD_WSGI_WITH_PROXY_HEADERS>
 WSGITrustedProxyHeaders %(trusted_proxy_headers)s
 </IfDefine>
-<IfDefine WSGI_WITH_TRUSTED_PROXIES>
+<IfDefine MOD_WSGI_WITH_TRUSTED_PROXIES>
 WSGITrustedProxies %(trusted_proxies)s
 </IfDefine>
 
-<IfDefine WSGI_WITH_HTTPS>
+<IfDefine MOD_WSGI_WITH_HTTPS>
 <IfModule !ssl_module>
-LoadModule ssl_module ${HTTPD_MODULES_DIRECTORY}/mod_ssl.so
+LoadModule ssl_module ${MOD_WSGI_MODULES_DIRECTORY}/mod_ssl.so
 </IfModule>
 </IfDefine>
 
@@ -457,7 +457,7 @@ MaxRequestsPerChild 0
 ThreadStackSize 262144
 </IfModule>
 
-<IfDefine !WSGI_VIRTUAL_HOST>
+<IfDefine !MOD_WSGI_VIRTUAL_HOST>
 <IfVersion < 2.4>
 NameVirtualHost *:%(port)s
 </IfVersion>
@@ -465,7 +465,7 @@ NameVirtualHost *:%(port)s
 </VirtualHost>
 </IfDefine>
 
-<IfDefine WSGI_VIRTUAL_HOST>
+<IfDefine MOD_WSGI_VIRTUAL_HOST>
 
 <IfVersion < 2.4>
 NameVirtualHost *:%(port)s
@@ -474,19 +474,19 @@ NameVirtualHost *:%(port)s
 <Location />
 Order deny,allow
 Deny from all
-<IfDefine WSGI_ALLOW_LOCALHOST>
+<IfDefine MOD_WSGI_ALLOW_LOCALHOST>
 Allow from localhost
 </IfDefine>
 </Location>
 </VirtualHost>
-<IfDefine !WSGI_HTTPS_ONLY>
+<IfDefine !MOD_WSGI_HTTPS_ONLY>
 <VirtualHost *:%(port)s>
 ServerName %(server_name)s
-<IfDefine WSGI_SERVER_ALIAS>
+<IfDefine MOD_WSGI_SERVER_ALIAS>
 ServerAlias %(server_aliases)s
 </IfDefine>
 </VirtualHost>
-<IfDefine WSGI_REDIRECT_WWW>
+<IfDefine MOD_WSGI_REDIRECT_WWW>
 <VirtualHost *:%(port)s>
 ServerName %(parent_domain)s
 Redirect permanent / http://%(server_name)s:%(port)s/
@@ -494,17 +494,17 @@ Redirect permanent / http://%(server_name)s:%(port)s/
 </IfDefine>
 </IfDefine>
 
-<IfDefine WSGI_HTTPS_ONLY>
+<IfDefine MOD_WSGI_HTTPS_ONLY>
 <VirtualHost *:%(port)s>
 ServerName %(server_name)s
-<IfDefine WSGI_SERVER_ALIAS>
+<IfDefine MOD_WSGI_SERVER_ALIAS>
 ServerAlias %(server_aliases)s
 </IfDefine>
 RewriteEngine On
 RewriteCond %%{HTTPS} off
 RewriteRule (.*) https://%(server_name)s:%(https_port)s%%{REQUEST_URI}
 </VirtualHost>
-<IfDefine WSGI_REDIRECT_WWW>
+<IfDefine MOD_WSGI_REDIRECT_WWW>
 <VirtualHost *:%(port)s>
 ServerName %(parent_domain)s
 RewriteEngine On
@@ -516,13 +516,13 @@ RewriteRule (.*) https://%(server_name)s:%(https_port)s%%{REQUEST_URI}
 
 </IfDefine>
 
-<IfDefine WSGI_VIRTUAL_HOST>
+<IfDefine MOD_WSGI_VIRTUAL_HOST>
 
-<IfDefine WSGI_WITH_HTTPS>
-<IfDefine WSGI_LISTENER_HOST>
+<IfDefine MOD_WSGI_WITH_HTTPS>
+<IfDefine MOD_WSGI_WITH_LISTENER_HOST>
 Listen %(host)s:%(https_port)s
 </IfDefine>
-<IfDefine !WSGI_LISTENER_HOST>
+<IfDefine !MOD_WSGI_WITH_LISTENER_HOST>
 Listen %(https_port)s
 </IfDefine>
 <IfVersion < 2.4>
@@ -532,47 +532,47 @@ NameVirtualHost *:%(https_port)s
 <Location />
 Order deny,allow
 Deny from all
-<IfDefine WSGI_ALLOW_LOCALHOST>
+<IfDefine MOD_WSGI_ALLOW_LOCALHOST>
 Allow from localhost
 </IfDefine>
 </Location>
 SSLEngine On
 SSLCertificateFile %(ssl_certificate_file)s
 SSLCertificateKeyFile %(ssl_certificate_key_file)s
-<IfDefine WSGI_VERIFY_CLIENT>
+<IfDefine MOD_WSGI_VERIFY_CLIENT>
 SSLCACertificateFile %(ssl_ca_certificate_file)s
 SSLVerifyClient none
 </IfDefine>
 </VirtualHost>
 <VirtualHost *:%(https_port)s>
 ServerName %(server_name)s
-<IfDefine WSGI_SERVER_ALIAS>
+<IfDefine MOD_WSGI_SERVER_ALIAS>
 ServerAlias %(server_aliases)s
 </IfDefine>
 SSLEngine On
 SSLCertificateFile %(ssl_certificate_file)s
 SSLCertificateKeyFile %(ssl_certificate_key_file)s
-<IfDefine WSGI_VERIFY_CLIENT>
+<IfDefine MOD_WSGI_VERIFY_CLIENT>
 SSLCACertificateFile %(ssl_ca_certificate_file)s
 SSLVerifyClient none
 </IfDefine>
-<IfDefine WSGI_HTTPS_ONLY>
-<IfDefine WSGI_HSTS_POLICY>
+<IfDefine MOD_WSGI_HTTPS_ONLY>
+<IfDefine MOD_WSGI_HSTS_POLICY>
 Header set Strict-Transport-Security %(hsts_policy)s
 </IfDefine>
 </IfDefine>
-<IfDefine WSGI_SSL_ENVIRONMENT>
+<IfDefine MOD_WSGI_SSL_ENVIRONMENT>
 SSLOptions +StdEnvVars
 </IfDefine>
 </VirtualHost>
-<IfDefine WSGI_REDIRECT_WWW>
+<IfDefine MOD_WSGI_REDIRECT_WWW>
 <VirtualHost *:%(https_port)s>
 ServerName %(parent_domain)s
 Redirect permanent / https://%(server_name)s:%(https_port)s/
 SSLEngine On
 SSLCertificateFile %(ssl_certificate_file)s
 SSLCertificateKeyFile %(ssl_certificate_key_file)s
-<IfDefine WSGI_VERIFY_CLIENT>
+<IfDefine MOD_WSGI_VERIFY_CLIENT>
 SSLCACertificateFile %(ssl_ca_certificate_file)s
 SSLVerifyClient none
 </IfDefine>
@@ -592,19 +592,19 @@ DocumentRoot '%(document_root)s'
 </Directory>
 
 <Directory '%(document_root)s%(mount_point)s'>
-<IfDefine WSGI_DIRECTORY_INDEX>
+<IfDefine MOD_WSGI_DIRECTORY_INDEX>
     DirectoryIndex %(directory_index)s
 </IfDefine>
-<IfDefine WSGI_DIRECTORY_LISTING>
+<IfDefine MOD_WSGI_DIRECTORY_LISTING>
     Options +Indexes
 </IfDefine>
-<IfDefine !WSGI_STATIC_ONLY>
+<IfDefine !MOD_WSGI_STATIC_ONLY>
     RewriteEngine On
     RewriteCond %%{REQUEST_FILENAME} !-f
-<IfDefine WSGI_DIRECTORY_INDEX>
+<IfDefine MOD_WSGI_DIRECTORY_INDEX>
     RewriteCond %%{REQUEST_FILENAME} !-d
 </IfDefine>
-<IfDefine WSGI_SERVER_STATUS>
+<IfDefine MOD_WSGI_SERVER_STATUS>
     RewriteCond %%{REQUEST_URI} !/server-status
 </IfDefine>
     RewriteRule .* - [H=wsgi-handler]
@@ -613,35 +613,35 @@ DocumentRoot '%(document_root)s'
     Allow from all
 </Directory>
 
-<IfDefine WSGI_ERROR_OVERRIDE>
+<IfDefine MOD_WSGI_ERROR_OVERRIDE>
 WSGIErrorOverride On
 </IfDefine>
 
-<IfDefine WSGI_HOST_ACCESS>
+<IfDefine MOD_WSGI_HOST_ACCESS>
 <Location />
     WSGIAccessScript '%(host_access_script)s'
 </Location>
 </IfDefine>
 
-<IfDefine WSGI_AUTH_USER>
+<IfDefine MOD_WSGI_AUTH_USER>
 <Location />
     AuthType %(auth_type)s
     AuthName '%(host)s:%(port)s'
     Auth%(auth_type)sProvider wsgi
     WSGIAuthUserScript '%(auth_user_script)s'
-<IfDefine WSGI_AUTH_GROUP>
+<IfDefine MOD_WSGI_AUTH_GROUP>
     WSGIAuthGroupScript '%(auth_group_script)s'
 </IfDefine>
 <IfVersion < 2.4>
     Require valid-user
-<IfDefine WSGI_AUTH_GROUP>
+<IfDefine MOD_WSGI_AUTH_GROUP>
     Require wsgi-group '%(auth_group)s'
 </IfDefine>
 </IfVersion>
 <IfVersion >= 2.4>
     <RequireAll>
     Require valid-user
-<IfDefine WSGI_AUTH_GROUP>
+<IfDefine MOD_WSGI_AUTH_GROUP>
     Require wsgi-group '%(auth_group)s'
 </IfDefine>
     </RequireAll>
@@ -723,7 +723,7 @@ Alias /__wsgi__/images '%(images_directory)s'
 """
 
 APACHE_VERIFY_CLIENT_CONFIG = """
-<IfDefine WSGI_VERIFY_CLIENT>
+<IfDefine MOD_WSGI_VERIFY_CLIENT>
 <Location '%(path)s'>
 SSLVerifyClient require
 SSLVerifyDepth 1
@@ -783,11 +783,11 @@ WSGIImportScript '%(script)s' \\
 
 APACHE_SERVICE_WITH_LOG_CONFIG = """
 <VirtualHost *:%(port)s>
-<IfDefine WSGI_ROTATE_LOGS>
+<IfDefine MOD_WSGI_ROTATE_LOGS>
 ErrorLog "|%(rotatelogs_executable)s \\
     %(log_directory)s/%(log_file)s.%%Y-%%m-%%d-%%H_%%M_%%S %(max_log_size)sM"
 </IfDefine>
-<IfDefine !WSGI_ROTATE_LOGS>
+<IfDefine !MOD_WSGI_ROTATE_LOGS>
 ErrorLog "%(log_directory)s/%(log_file)s"
 </IfDefine>
 WSGIDaemonProcess 'service:%(name)s' \\
@@ -883,8 +883,8 @@ def generate_apache_config(options):
             users = dict(options['service_users'] or [])
             groups = dict(options['service_groups'] or [])
             for name, script in options['service_scripts']:
-                user = users.get(name, '${WSGI_RUN_USER}')
-                group = groups.get(name, '${WSGI_RUN_GROUP}')
+                user = users.get(name, '${MOD_WSGI_USER}')
+                group = groups.get(name, '${MOD_WSGI_GROUP}')
                 if name in service_log_files:
                     print(APACHE_SERVICE_WITH_LOG_CONFIG % dict(name=name,
                             user=user, group=group, script=script,
@@ -1561,8 +1561,8 @@ HTTPD_ARGS="%(httpd_arguments)s"
 
 HTTPD_COMMAND="$HTTPD $HTTPD_ARGS"
 
-HTTPD_MODULES_DIRECTORY="%(modules_directory)s"
-export HTTPD_MODULES_DIRECTORY
+MOD_WSGI_MODULES_DIRECTORY="%(modules_directory)s"
+export MOD_WSGI_MODULES_DIRECTORY
 
 SHLIBPATH="%(shlibpath)s"
 
@@ -1571,13 +1571,27 @@ if [ "x$SHLIBPATH" != "x" ]; then
     export %(shlibpath_var)s
 fi
 
-WSGI_RUN_USER="${WSGI_RUN_USER:-%(user)s}"
-WSGI_RUN_GROUP="${WSGI_RUN_GROUP:-%(group)s}"
+MOD_WSGI_SERVER_ROOT="%(server_root)s"
 
-export WSGI_RUN_USER
-export WSGI_RUN_GROUP
+export MOD_WSGI_SERVER_ROOT
 
-if [ `id -u` = "0" -a ${WSGI_RUN_USER} = "root" ]; then
+MOD_WSGI_LISTENER_HOST="%(host)s"
+
+export MOD_WSGI_LISTENER_HOST
+
+MOD_WSGI_HTTP_PORT="%(port)s"
+MOD_WSGI_HTTPS_PORT="%(https_port)s"
+
+export MOD_WSGI_HTTP_PORT
+export MOD_WSGI_HTTPS_PORT
+
+MOD_WSGI_USER="${MOD_WSGI_USER:-%(user)s}"
+MOD_WSGI_GROUP="${MOD_WSGI_GROUP:-%(group)s}"
+
+export MOD_WSGI_USER
+export MOD_WSGI_GROUP
+
+if [ `id -u` = "0" -a ${MOD_WSGI_USER} = "root" ]; then
     cat << EOF
 
 WARNING: When running as the 'root' user, it is required that the options
@@ -1591,6 +1605,10 @@ information on this restriction.
 EOF
 
 fi
+
+MOD_WSGI_WORKING_DIRECTORY="%(working_directory)s"
+
+export MOD_WSGI_WORKING_DIRECTORY
 
 LANG='%(lang)s'
 LC_ALL='%(locale)s'
@@ -2318,9 +2336,9 @@ def _mpm_module_defines(modules_directory, preferred=None):
             if os.path.exists(os.path.join(modules_directory,
                     'mod_mpm_%s.so' % name)):
                 if not found:
-                    result.append('-DWSGI_MPM_ENABLE_%s_MODULE' % name.upper())
+                    result.append('-DMOD_WSGI_MPM_ENABLE_%s_MODULE' % name.upper())
                     found = True
-                result.append('-DWSGI_MPM_EXISTS_%s_MODULE' % name.upper())
+                result.append('-DMOD_WSGI_MPM_EXISTS_%s_MODULE' % name.upper())
     return result
 
 def _cmd_setup_server(command, args, options):
@@ -2804,74 +2822,74 @@ def _cmd_setup_server(command, args, options):
     options['parent_domain'] = 'unspecified'
 
     if options['server_name']:
-        options['httpd_arguments_list'].append('-DWSGI_VIRTUAL_HOST')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_VIRTUAL_HOST')
         if options['server_name'].lower().startswith('www.'):
-            options['httpd_arguments_list'].append('-DWSGI_REDIRECT_WWW')
+            options['httpd_arguments_list'].append('-DMOD_WSGI_REDIRECT_WWW')
             options['parent_domain'] = options['server_name'][4:]
 
     if (options['https_port'] and options['ssl_certificate_file'] and
             options['ssl_certificate_key_file']):
-        options['httpd_arguments_list'].append('-DWSGI_WITH_HTTPS')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_HTTPS')
     if options['ssl_ca_certificate_file']:
-        options['httpd_arguments_list'].append('-DWSGI_VERIFY_CLIENT')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_VERIFY_CLIENT')
 
     if options['ssl_environment']:
-        options['httpd_arguments_list'].append('-DWSGI_SSL_ENVIRONMENT')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_SSL_ENVIRONMENT')
 
     if options['https_only']:
-        options['httpd_arguments_list'].append('-DWSGI_HTTPS_ONLY')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_HTTPS_ONLY')
     if options['hsts_policy']:
-        options['httpd_arguments_list'].append('-DWSGI_HSTS_POLICY')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_HSTS_POLICY')
 
     if options['server_aliases']:
-        options['httpd_arguments_list'].append('-DWSGI_SERVER_ALIAS')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_SERVER_ALIAS')
         options['server_aliases'] = ' '.join(options['server_aliases'])
 
     if options['allow_localhost']:
-        options['httpd_arguments_list'].append('-DWSGI_ALLOW_LOCALHOST')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_ALLOW_LOCALHOST')
 
     if options['application_type'] == 'static':
-        options['httpd_arguments_list'].append('-DWSGI_STATIC_ONLY')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_STATIC_ONLY')
 
     if options['server_metrics']:
-        options['httpd_arguments_list'].append('-DWSGI_SERVER_METRICS')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_SERVER_METRICS')
     if options['server_status']:
-        options['httpd_arguments_list'].append('-DWSGI_SERVER_METRICS')
-        options['httpd_arguments_list'].append('-DWSGI_SERVER_STATUS')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_SERVER_METRICS')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_SERVER_STATUS')
     if options['directory_index']:
-        options['httpd_arguments_list'].append('-DWSGI_DIRECTORY_INDEX')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_DIRECTORY_INDEX')
     if options['directory_listing']:
-        options['httpd_arguments_list'].append('-DWSGI_DIRECTORY_LISTING')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_DIRECTORY_LISTING')
     if options['access_log']:
-        options['httpd_arguments_list'].append('-DWSGI_ACCESS_LOG')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_ACCESS_LOG')
     if options['rotate_logs']:
-        options['httpd_arguments_list'].append('-DWSGI_ROTATE_LOGS')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_ROTATE_LOGS')
     if options['keep_alive'] != 0:
-        options['httpd_arguments_list'].append('-DWSGI_KEEP_ALIVE')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_KEEP_ALIVE')
     if options['compress_responses'] != 0:
-        options['httpd_arguments_list'].append('-DWSGI_COMPRESS_RESPONSES')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_COMPRESS_RESPONSES')
     if options['multiprocess']:
-        options['httpd_arguments_list'].append('-DWSGI_MULTIPROCESS')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_MULTIPROCESS')
     if options['listener_host']:
-        options['httpd_arguments_list'].append('-DWSGI_LISTENER_HOST')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_LISTENER_HOST')
     if options['error_override']:
-        options['httpd_arguments_list'].append('-DWSGI_ERROR_OVERRIDE')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_ERROR_OVERRIDE')
     if options['host_access_script']:
-        options['httpd_arguments_list'].append('-DWSGI_HOST_ACCESS')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_HOST_ACCESS')
     if options['auth_user_script']:
-        options['httpd_arguments_list'].append('-DWSGI_AUTH_USER')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_AUTH_USER')
     if options['auth_group_script']:
-        options['httpd_arguments_list'].append('-DWSGI_AUTH_GROUP')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_AUTH_GROUP')
     if options['chunked_request']:
-        options['httpd_arguments_list'].append('-DWSGI_CHUNKED_REQUEST')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_CHUNKED_REQUEST')
     if options['with_php5']:
-        options['httpd_arguments_list'].append('-DWSGI_WITH_PHP5')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PHP5')
     if options['proxy_mount_points'] or options['proxy_virtual_hosts']:
-        options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PROXY')
     if options['trusted_proxy_headers']:
-        options['httpd_arguments_list'].append('-DWSGI_WITH_PROXY_HEADERS')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PROXY_HEADERS')
     if options['trusted_proxies']:
-        options['httpd_arguments_list'].append('-DWSGI_WITH_TRUSTED_PROXIES')
+        options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_TRUSTED_PROXIES')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory'],
