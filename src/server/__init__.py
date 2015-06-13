@@ -88,6 +88,7 @@ PidFile '%(pid_file)s'
 DefaultRuntimeDir '%(server_root)s'
 </IfVersion>
 
+ServerTokens ProductOnly
 ServerSignature Off
 
 User ${MOD_WSGI_USER}

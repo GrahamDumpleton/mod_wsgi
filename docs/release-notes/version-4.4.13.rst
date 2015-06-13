@@ -17,6 +17,14 @@ Bugs Fixed
 OpenShift and Heroku as ``mod_wsgi-apxs`` isn't used for tarball based
 installs.
 
+Features Changed
+----------------
+
+1. For ``mod_wsgi-express``, only the web server type is now shown in the
+server tokens sent back in the ``Server`` response header. This prevents
+users from knowing any specifics and thus using that to determine possible
+vulnerabilities.
+
 New Features
 ------------
 
