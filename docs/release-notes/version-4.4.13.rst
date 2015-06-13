@@ -49,3 +49,6 @@ variables are:
   installed.
 * *MOD_WSGI_RUN_USER* - The user that the WSGI application will be run as.
 * *MOD_WSGI_RUN_GROUP* - The group that the WSGI application will be run as.
+
+2. Added ``X-Client-IP`` to list of possible trusted headers indicating the
+true remote address of client when passing through a proxy.
