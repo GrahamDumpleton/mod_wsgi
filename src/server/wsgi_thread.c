@@ -38,6 +38,7 @@
 int wsgi_total_threads;
 int wsgi_request_threads;
 apr_threadkey_t *wsgi_thread_key;
+apr_array_header_t *wsgi_thread_details;
 
 WSGIThreadInfo *wsgi_thread_info(int create, int request)
 {
@@ -46,10 +47,20 @@ WSGIThreadInfo *wsgi_thread_info(int create, int request)
     apr_threadkey_private_get((void**)&thread_handle, wsgi_thread_key);
 
     if (!thread_handle && create) {
+        WSGIThreadInfo **entry = NULL;
+
+        if (!wsgi_thread_details) {
+            wsgi_thread_details = apr_array_make(
+                    wsgi_server->process->pool, 3, sizeof(char*));
+        }
+
         thread_handle = (WSGIThreadInfo *)apr_pcalloc(
                 wsgi_server->process->pool, sizeof(WSGIThreadInfo));
 
         thread_handle->thread_id = wsgi_total_threads++;
+
+        entry = (WSGIThreadInfo **)apr_array_push(wsgi_thread_details);
+        *entry = thread_handle;
 
         apr_threadkey_private_set(thread_handle, wsgi_thread_key);
     }

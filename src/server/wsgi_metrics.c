@@ -134,6 +134,8 @@ WSGI_STATIC_INTERNED_STRING(cpu_user_time);
 WSGI_STATIC_INTERNED_STRING(cpu_system_time);
 WSGI_STATIC_INTERNED_STRING(request_threads);
 WSGI_STATIC_INTERNED_STRING(active_requests);
+WSGI_STATIC_INTERNED_STRING(threads);
+WSGI_STATIC_INTERNED_STRING(thread_id);
 
 static PyObject *wsgi_status_flags[SERVER_NUM_STATUS];
 
@@ -176,6 +178,8 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(cpu_system_time);
         WSGI_CREATE_INTERNED_STRING_ID(request_threads);
         WSGI_CREATE_INTERNED_STRING_ID(active_requests);
+        WSGI_CREATE_INTERNED_STRING_ID(threads);
+        WSGI_CREATE_INTERNED_STRING_ID(thread_id);
 
         WSGI_CREATE_STATUS_FLAG(SERVER_DEAD, "."); 
         WSGI_CREATE_STATUS_FLAG(SERVER_READY, "_");
@@ -200,6 +204,11 @@ static PyObject *wsgi_process_metrics(void)
     PyObject *result = NULL;
 
     PyObject *object = NULL;
+
+    PyObject *thread_list = NULL;
+    WSGIThreadInfo **thread_info = NULL;
+
+    int i;
 
 #ifdef HAVE_TIMES
     struct tms tmsbuf; 
@@ -309,6 +318,34 @@ static PyObject *wsgi_process_metrics(void)
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(active_requests), object);
     Py_DECREF(object);
+
+    thread_list = PyList_New(0);
+
+    PyDict_SetItem(result, WSGI_INTERNED_STRING(threads), thread_list);
+
+    thread_info = (WSGIThreadInfo **)wsgi_thread_details->elts;
+
+    for (i=0; i<wsgi_thread_details->nelts; i++) {
+        PyObject *entry = NULL;
+
+        if (thread_info[i]->request_thread) {
+            entry = PyDict_New();
+
+            object = wsgi_PyInt_FromLong(thread_info[i]->thread_id);
+            PyDict_SetItem(entry, WSGI_INTERNED_STRING(thread_id), object);
+            Py_DECREF(object);
+
+            object = wsgi_PyInt_FromLongLong(thread_info[i]->request_count);
+            PyDict_SetItem(entry, WSGI_INTERNED_STRING(request_count), object);
+            Py_DECREF(object);
+
+            PyList_Append(thread_list, entry);
+
+            Py_DECREF(entry);
+        }
+    }
+
+    Py_DECREF(thread_list);
 
     return result;
 }
