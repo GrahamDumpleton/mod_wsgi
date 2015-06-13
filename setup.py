@@ -92,8 +92,6 @@ if WITH_TARBALL_PACKAGE:
         packages = ['mod_wsgi', 'mod_wsgi.packages'],
         package_dir = {'mod_wsgi': 'src'},
         package_data = {'mod_wsgi': package_files},
-        entry_points = { 'console_scripts':
-                ['mod_wsgi-apxs = mod_wsgi.packages.apxs:main'],},
     )
 
 # From this point on we will now actually install mod_wsgi. First we need

@@ -10,6 +10,13 @@ For details on the availability of Windows binaries see:
 
   https://github.com/GrahamDumpleton/mod_wsgi/tree/master/win32
 
+Bugs Fixed
+----------
+
+1. The pip installable 'mod_wsgi' package was failing to install on
+OpenShift and Heroku as ``mod_wsgi-apxs`` isn't used for tarball based
+installs.
+
 New Features
 ------------
 
