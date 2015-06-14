@@ -12566,6 +12566,7 @@ static void wsgi_drop_invalid_headers(request_rec *r)
 
 static const char *wsgi_proxy_client_headers[] = {
     "HTTP_X_FORWARDED_FOR",
+    "HTTP_X_CLIENT_IP",
     "HTTP_X_REAL_IP",
     NULL,
 };
@@ -12860,7 +12861,9 @@ static void wsgi_process_proxy_headers(request_rec *r)
                     trusted_client_header = name;
                 }
             }
-            else if (!strcmp(name, "HTTP_X_REAL_IP")) {
+            else if (!strcmp(name, "HTTP_X_CLIENT_IP") ||
+                    !strcmp(name, "HTTP_X_REAL_IP")) {
+
                 match_client_header = 1;
 
                 if (value) {
