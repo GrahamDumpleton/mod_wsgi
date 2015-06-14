@@ -36,8 +36,8 @@ BUCKET = os.environ.get('MOD_WSGI_REMOTE_S3_BUCKET_NAME', 'modwsgi.org')
 REMOTE_TARBALL_NAME = os.environ.get('MOD_WSGI_REMOTE_PACKAGES_NAME')
 LOCAL_TARBALL_FILE = os.environ.get('MOD_WSGI_LOCAL_PACKAGES_FILE')
 
-TGZ_OPENSHIFT='mod_wsgi-packages-openshift-centos6-apache-2.4.10-1.tar.gz'
-TGZ_HEROKU='mod_wsgi-packages-heroku-cedar14-apache-2.4.10-1.tar.gz'
+TGZ_OPENSHIFT='mod_wsgi-packages-openshift-centos6-apache-2.4.12-1.tar.gz'
+TGZ_HEROKU='mod_wsgi-packages-heroku-cedar14-apache-2.4.12-1.tar.gz'
 
 if not REMOTE_TARBALL_NAME and not LOCAL_TARBALL_FILE:
     if os.environ.get('OPENSHIFT_HOMEDIR'):
