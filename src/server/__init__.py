@@ -668,11 +668,27 @@ WSGIImportScript '%(server_root)s/handler.wsgi' \\
 APACHE_PROXY_PASS_MOUNT_POINT_CONFIG = """
 ProxyPass '%(mount_point)s' '%(url)s'
 ProxyPassReverse '%(mount_point)s' '%(url)s'
+<Location '%(mount_point)s'>
+RewriteEngine On
+RewriteRule .* - [E=SERVER_PORT:%%{SERVER_PORT},NE]
+RequestHeader set X-Forwarded-Port %%{SERVER_PORT}e
+RewriteCond %%{HTTPS} on
+RewriteRule .* - [E=URL_SCHEME:https,NE]
+RequestHeader set X-Forwarded-Scheme %%{URL_SCHEME}e env=URL_SCHEME
+</Location>
 """
 
 APACHE_PROXY_PASS_MOUNT_POINT_SLASH_CONFIG = """
 ProxyPass '%(mount_point)s/' '%(url)s/'
 ProxyPassReverse '%(mount_point)s/' '%(url)s/'
+<Location '%(mount_point)s/'>
+RewriteEngine On
+RewriteRule .* - [E=SERVER_PORT:%%{SERVER_PORT},NE]
+RequestHeader set X-Forwarded-Port %%{SERVER_PORT}e
+RewriteCond %%{HTTPS} on
+RewriteRule .* - [E=URL_SCHEME:https,NE]
+RequestHeader set X-Forwarded-Scheme %%{URL_SCHEME}e env=URL_SCHEME
+</Location>
 <LocationMatch '^%(mount_point)s$'>
 RewriteEngine On
 RewriteRule - http://%%{HTTP_HOST}%%{REQUEST_URI}/ [R=302,L]
@@ -684,6 +700,11 @@ APACHE_PROXY_PASS_HOST_CONFIG = """
 ServerName %(host)s
 ProxyPass / '%(url)s'
 ProxyPassReverse / '%(url)s'
+RequestHeader set X-Forwarded-Port %(port)s
+RewriteEngine On
+RewriteCond %%{HTTPS} on
+RewriteRule .* - [E=URL_SCHEME:https,NE]
+RequestHeader set X-Forwarded-Scheme %%{URL_SCHEME}e env=URL_SCHEME
 </VirtualHost>
 """
 

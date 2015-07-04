@@ -9,3 +9,15 @@ Version 4.4.14 of mod_wsgi can be obtained from:
 For details on the availability of Windows binaries see:
 
   https://github.com/GrahamDumpleton/mod_wsgi/tree/master/win32
+
+New Features
+------------
+
+1. When proxying a URL path or a virtual host, now setting request
+header for ``X-Forwarded-Port`` so back end knows correct port that
+front end used.
+
+2. When proxying a URL path, if the request came in over a secure HTTP
+connection, now setting request header for ``X-Forwarded-Scheme`` so back
+end knows that front end handled the request over a secure connection.
+The value of the header will be ``https``.
