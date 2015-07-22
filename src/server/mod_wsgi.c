@@ -8562,6 +8562,7 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
         if (group->mutex) {
             apr_status_t rv;
             rv = apr_proc_mutex_unlock(group->mutex);
+
             if (rv != APR_SUCCESS) {
                 if (!wsgi_daemon_shutdown) {
                     wsgi_worker_release();
@@ -12846,6 +12847,7 @@ static void wsgi_drop_invalid_headers(request_rec *r)
 
 static const char *wsgi_proxy_client_headers[] = {
     "HTTP_X_FORWARDED_FOR",
+    "HTTP_X_CLIENT_IP",
     "HTTP_X_REAL_IP",
     NULL,
 };
@@ -13140,7 +13142,9 @@ static void wsgi_process_proxy_headers(request_rec *r)
                     trusted_client_header = name;
                 }
             }
-            else if (!strcmp(name, "HTTP_X_REAL_IP")) {
+            else if (!strcmp(name, "HTTP_X_CLIENT_IP") ||
+                    !strcmp(name, "HTTP_X_REAL_IP")) {
+
                 match_client_header = 1;
 
                 if (value) {
