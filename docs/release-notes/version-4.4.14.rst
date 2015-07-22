@@ -10,6 +10,13 @@ For details on the availability of Windows binaries see:
 
   https://github.com/GrahamDumpleton/mod_wsgi/tree/master/win32
 
+Bugs Fixed
+----------
+
+1. The ``--compress-responses`` option of ``mod_wsgi-express`` was
+failing when Apache 2.4 was used. This was because ``mod_filter`` module
+is required when using Apache 2.4 and it wasn't being loaded.
+
 New Features
 ------------
 

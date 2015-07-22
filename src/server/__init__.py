@@ -173,6 +173,9 @@ LoadModule env_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_env.so'
 <IfModule !headers_module>
 LoadModule headers_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_headers.so'
 </IfModule>
+<IfModule !filter_module>
+LoadModule filter_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_filter.so'
+</IfModule>
 
 <IfDefine MOD_WSGI_DIRECTORY_LISTING>
 <IfModule !autoindex_module>
