@@ -449,6 +449,14 @@ static PyObject *Log_writable(LogObject *self, PyObject *args)
     Py_INCREF(Py_True);
     return Py_True;
 }
+
+static PyObject *Log_fileno(LogObject *self, PyObject *args)
+{
+    PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi log object is not "
+            "associated with a file descriptor.");
+
+    return NULL;
+}
 #endif
 
 static PyObject *Log_closed(LogObject *self, void *closure)
@@ -504,6 +512,7 @@ static PyMethodDef Log_methods[] = {
     { "readable",   (PyCFunction)Log_readable,   METH_NOARGS, 0 },
     { "seekable",   (PyCFunction)Log_seekable,   METH_NOARGS, 0 },
     { "writable",   (PyCFunction)Log_writable,   METH_NOARGS, 0 },
+    { "fileno",     (PyCFunction)Log_fileno,   METH_NOARGS, 0 },
 #endif
     { NULL, NULL}
 };

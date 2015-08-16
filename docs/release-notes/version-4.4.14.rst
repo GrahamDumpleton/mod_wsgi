@@ -17,6 +17,16 @@ Bugs Fixed
 failing when Apache 2.4 was used. This was because ``mod_filter`` module
 is required when using Apache 2.4 and it wasn't being loaded.
 
+2. On Python 3, the IO object wrapped by ``sys.stdout`` and ``sys.stderr``,
+according to the Python documentation, must provide a ``fileno()`` method
+even though no file descriptor exists corresponding to the Apache error
+logs. The method should raise ``IOError`` if called to indicate not file
+descriptor can be returned.
+
+Previously, an attempt to use ``fileno()`` on ``sys.stdout`` and ``sys.stderr``
+would raise an ``AttributeError`` instead due to there being no ``fileno()``
+method.
+
 New Features
 ------------
 
