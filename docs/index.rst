@@ -4,7 +4,9 @@
 
    project-status
    security-issues
-   release-notes/index
+   getting-help
+   reporting-bugs
+   release-notes
 
 mod_wsgi
 ========
