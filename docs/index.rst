@@ -2,16 +2,6 @@
 mod_wsgi
 ========
 
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-
-   project-status
-   security-issues
-   getting-help
-   reporting-bugs
-   release-notes
-
 .. note::
 
    Documentation for mod_wsgi is being transitioned here from the old
@@ -43,3 +33,13 @@ web application due to being able to be run directly within your terminal.
 
 .. _WSGI: http://www.python.org/dev/peps/pep-0333/
 .. _PyPi: http://pypi.python.org/pypi/mod_wsgi
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   project-status
+   security-issues
+   getting-help
+   reporting-bugs
+   release-notes
