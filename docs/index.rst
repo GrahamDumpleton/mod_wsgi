@@ -1,3 +1,7 @@
+========
+mod_wsgi
+========
+
 .. toctree::
    :maxdepth: 1
    :hidden:
@@ -7,9 +11,6 @@
    getting-help
    reporting-bugs
    release-notes
-
-mod_wsgi
-========
 
 .. note::
 

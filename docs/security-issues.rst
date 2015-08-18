@@ -1,3 +1,4 @@
+===============
 Security Issues
 ===============
 
@@ -6,10 +7,7 @@ Due to security issues in versions of mod_wsgi up to and including version
 
 Release notes for versions containing security related fixes are:
 
-.. toctree::
-   :maxdepth: 2
-
-   release-notes/version-3.5.rst
+* :doc:`release-notes/version-3.5`
 
 Because many Linux distributions still ship ancient out of date versions
 which are not supported, it is highly recommended you avoid using packaged
