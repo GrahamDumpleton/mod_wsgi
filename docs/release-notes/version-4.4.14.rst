@@ -38,3 +38,7 @@ front end used.
 connection, now setting request header for ``X-Forwarded-Scheme`` so back
 end knows that front end handled the request over a secure connection.
 The value of the header will be ``https``.
+
+3. When using ``mod_wsgi-express``, it is now possible to supply the
+``--with-cgi`` option, with any files in the document root directory with
+a '.cgi' extension then being processed as traditional CGI scripts.

@@ -233,6 +233,18 @@ LoadModule status_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_status.so'
 </IfModule>
 </IfDefine>
 
+<IfDefine MOD_WSGI_CGID_SCRIPT>
+<IfModule !cgid_module>
+LoadModule cgid_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_cgid.so'
+</IfModule>
+</IfDefine>
+
+<IfDefine MOD_WSGI_CGI_SCRIPT>
+<IfModule !cgi_module>
+LoadModule cgi_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_cgi.so'
+</IfModule>
+</IfDefine>
+
 <IfVersion < 2.4>
 DefaultType text/plain
 </IfVersion>
@@ -602,6 +614,12 @@ DocumentRoot '%(document_root)s'
 <IfDefine MOD_WSGI_DIRECTORY_LISTING>
     Options +Indexes
 </IfDefine>
+<IfDefine MOD_WSGI_CGI_SCRIPT>
+    Options +ExecCGI
+</IfDefine>
+<IfDefine MOD_WSGI_CGID_SCRIPT>
+    Options +ExecCGI
+</IfDefine>
 <IfDefine !MOD_WSGI_STATIC_ONLY>
     RewriteEngine On
     RewriteCond %%{REQUEST_FILENAME} !-f
@@ -768,13 +786,13 @@ APACHE_PASSENV_CONFIG = """
 PassEnv '%(name)s'
 """
 
-APACHE_HANDLERS_CONFIG = """
+APACHE_HANDLER_SCRIPT_CONFIG = """
 WSGIHandlerScript wsgi-resource '%(server_root)s/resource.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
 """
 
-APACHE_EXTENSION_CONFIG = """
-AddHandler wsgi-resource %(extension)s
+APACHE_HANDLER_CONFIG = """
+AddHandler %(handler)s %(extension)s
 """
 
 APACHE_INCLUDE_CONFIG = """
@@ -895,11 +913,15 @@ def generate_apache_config(options):
                 print(APACHE_PASSENV_CONFIG % dict(name=name), file=fp)
 
         if options['handler_scripts']:
-            print(APACHE_HANDLERS_CONFIG % options, file=fp)
+            print(APACHE_HANDLER_SCRIPT_CONFIG % options, file=fp)
 
             for extension, script in options['handler_scripts']:
-                print(APACHE_EXTENSION_CONFIG % dict(extension=extension),
-                        file=fp)
+                print(APACHE_HANDLER_CONFIG % dict(handler='wsgi-resource',
+                        extension=extension), file=fp)
+
+        if options['with_cgi']:
+            print(APACHE_HANDLER_CONFIG % dict(handler='cgi-script',
+                    extension='.cgi'), file=fp)
 
         if options['service_scripts']:
             service_log_files = {}
@@ -2256,7 +2278,13 @@ option_list = (
             'that should be used from New Relic agent configuration file.'),
 
     optparse.make_option('--with-php5', action='store_true', default=False,
-            help='Flag indicating whether PHP 5 support should be enabled.'),
+            help='Flag indicating whether PHP 5 support should be enabled. '
+            'PHP code files must use the \'.php\' extension.'),
+
+    optparse.make_option('--with-cgi', action='store_true', default=False,
+            help='Flag indicating whether CGI script support should be '
+            'enabled. CGI scripts must use the \'.cgi\' extension and be '
+            'executable'),
 
     optparse.make_option('--service-script', action='append', nargs=2,
             dest='service_scripts', metavar='SERVICE SCRIPT-PATH',
@@ -2918,6 +2946,13 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PROXY_HEADERS')
     if options['trusted_proxies']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_TRUSTED_PROXIES')
+
+    if options['with_cgi']:
+        if os.path.exists(os.path.join(options['modules_directory'],
+                'mod_cgid.so')):
+            options['httpd_arguments_list'].append('-DMOD_WSGI_CGID_SCRIPT')
+        else:
+            options['httpd_arguments_list'].append('-DMOD_WSGI_CGI_SCRIPT')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory'],
