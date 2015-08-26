@@ -1,5 +1,5 @@
 ============
-Getting Help
+Finding Help
 ============
 
 If after you have gone through all the available documentation you still
@@ -71,7 +71,7 @@ to detail the following:
    distribution, who provided the distribution.
 
    If not using latest version of Apache available, then consider upgrading
-   and trying again. If at all possible, avoid using Apache 2.2. You
+   and trying again. If at all possible, avoid using Apache 2.0 or 2.2. You
    definitely shouldn't still be using Apache 1.3
 
 4. What operating system you are using.

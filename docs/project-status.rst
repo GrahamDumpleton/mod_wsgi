@@ -17,11 +17,13 @@ admin command called ``mod_wsgi-express`` which provides a really simple
 way of starting up Apache and mod_wsgi from the command line with an
 automatically generated configuration.
 
-Completely revised documentation will eventually be incorporated here.
-Right now though I am having too much fun working on new stuff. It also
-seems a bit pointless spending huge amounts of time documenting anything
-given that Linux distributions have historically tended to supply quite old
-versions of mod_wsgi anyway.
+Completely revised documentation will eventually be incorporated here. To
+date though it has been seen as being a bit pointless spending huge amounts
+of time documenting all the new features given that Linux distributions
+have historically tended to supply quite old versions of mod_wsgi anyway.
+Most users tend to outright refuse to build mod_wsgi from source code
+themselves and so are stuck with the much older versions their Linux
+distribution provides.
 
 In the mean time keep referring to the older documentation located on
 the Google Code site at:
@@ -36,9 +38,4 @@ Documentation for the new ``mod_wsgi-express`` feature will not be found
 on the Google Code site, but is documented in the PyPi entry for mod_wsgi
 at:
 
-   http://pypi.python.org/pypi/mod_wsgi 
-
-If you need help in using mod_wsgi, then use the mod_wsgi mailing list to
-ask your questions:
-
-    http://groups.google.com/group/modwsgi
+   https://pypi.python.org/pypi/mod_wsgi

@@ -10,12 +10,13 @@ mod_wsgi
 
 The mod_wsgi package implements a simple to use Apache module which can
 host any Python web application which supports the Python WSGI_
-specification.
+specification. The package can be installed in two different ways
+depending on your requirements.
 
-The package can be installed in two forms. The first is as a traditional
-Apache module installed into an existing Apache installation. Following
-this path you will need to manually configure Apache to load mod_wsgi and
-then pass through web requests to your WSGI application.
+The first is as a traditional Apache module installed into an existing
+Apache installation. Following this path you will need to manually
+configure Apache to load mod_wsgi and pass through web requests to your
+WSGI application.
 
 The second way of installing mod_wsgi is to install it from PyPi_ using the
 Python ``pip`` command. This builds and installs mod_wsgi into your Python
@@ -28,10 +29,11 @@ yourself.
 Both installation types are suitable for production deployments. The latter
 approach using ``mod_wsgi-express`` is the best solution if wishing to use
 Apache and mod_wsgi within a Docker container to host your WSGI application.
-This latter approach is also a better choice when developing your Python
-web application due to being able to be run directly within your terminal.
+It is also a better choice when using mod_wsgi during the development of
+your Python web application as you will be able to run it directly from
+your terminal.
 
-.. _WSGI: http://www.python.org/dev/peps/pep-0333/
+.. _WSGI: http://www.python.org/dev/peps/pep-3333/
 .. _PyPi: http://pypi.python.org/pypi/mod_wsgi
 
 .. toctree::
@@ -40,6 +42,13 @@ web application due to being able to be run directly within your terminal.
 
    project-status
    security-issues
-   getting-help
+   getting-started
+   requirements
+   installation
+   configuration
+   troubleshooting
+   finding-help
    reporting-bugs
+   contributing
+   source-code
    release-notes
