@@ -20,7 +20,8 @@ your mod_wsgi installation is working okay and that you at least understand
 the basics of configuring Apache.
 
 You can find a simple 'Hello World!' WSGI application, along with setup
-instructions, described in:
+instructions for the traditional way of setting up Apache and mod_wsgi,
+described in:
 
 * `Quick Configuration Guide <https://code.google.com/p/modwsgi/wiki/QuickConfigurationGuide>`_
 
@@ -28,3 +29,8 @@ Note that unless you are using Windows, where such a choice is not
 available, you should always use daemon mode of mod_wsgi. This is not the
 default mode, so you will need to ensure you follow the instructions to
 enable daemon mode.
+
+For a simpler way of running a Python WSGI application using mod_wsgi, also
+checkout ``mod_wsgi-express``, details of which can currently be found at:
+
+   https://pypi.python.org/pypi/mod_wsgi
