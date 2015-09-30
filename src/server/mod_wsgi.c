@@ -12305,7 +12305,12 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
     userdata_key = "wsgi_init";
 
     apr_pool_userdata_get(&data, userdata_key, s->process->pool);
-    if (!data) {
+    if (ap_scoreboard_image &&
+        ap_get_scoreboard_global()->running_generation) {
+        ap_log_error(APLOG_MARK, APLOG_INFO, 0, NULL,
+                     "Configuring module after graceful server restart.");
+    }
+    else if (!data) {
         apr_pool_userdata_set((const void *)1, userdata_key,
                               apr_pool_cleanup_null, s->process->pool);
         return OK;
