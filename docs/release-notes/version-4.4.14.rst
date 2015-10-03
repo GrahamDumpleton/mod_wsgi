@@ -27,6 +27,11 @@ Previously, an attempt to use ``fileno()`` on ``sys.stdout`` and ``sys.stderr``
 would raise an ``AttributeError`` instead due to there being no ``fileno()``
 method.
 
+3. Use compiler include flags from running of ``apr-config`` and
+``apu-config`` when doing ``pip`` install of ``mod_wsgi-express``. This is
+necessary as on MacOS X 10.11 El Capitan the include flags for APR returned
+by ``apxs`` refer to the wrong location causing installation to fail.
+
 New Features
 ------------
 

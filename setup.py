@@ -187,6 +187,12 @@ if WITH_TARBALL_PACKAGE:
             sub_value = expand_vars(value)
         return sub_value.replace('/mod_wsgi-packages/', SCRIPT_DIR+'/')
 
+    def get_apr_includes(query):
+        return ''
+
+    def get_apu_includes(query):
+        return ''
+
     CONFIG['PREFIX'] = get_apxs_config('prefix')
     CONFIG['TARGET'] = get_apxs_config('target')
     CONFIG['SYSCONFDIR'] = get_apxs_config('sysconfdir')
@@ -205,6 +211,28 @@ else:
             out = out.decode('UTF-8')
         return out.strip()
 
+    def get_apr_includes():
+        if not APR_CONFIG:
+            return ''
+
+        p = subprocess.Popen([APR_CONFIG, '--includes'],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = p.communicate()
+        if isinstance(out, bytes):
+            out = out.decode('UTF-8')
+        return out.strip()
+
+    def get_apu_includes():
+        if not APU_CONFIG:
+            return ''
+
+        p = subprocess.Popen([APU_CONFIG, '--includes'],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = p.communicate()
+        if isinstance(out, bytes):
+            out = out.decode('UTF-8')
+        return out.strip()
+
 INCLUDEDIR = get_apxs_config('INCLUDEDIR')
 CPPFLAGS = get_apxs_config('CPPFLAGS').split()
 CFLAGS = get_apxs_config('CFLAGS').split()
@@ -212,6 +240,12 @@ CFLAGS = get_apxs_config('CFLAGS').split()
 EXTRA_INCLUDES = get_apxs_config('EXTRA_INCLUDES').split()
 EXTRA_CPPFLAGS = get_apxs_config('EXTRA_CPPFLAGS').split()
 EXTRA_CFLAGS = get_apxs_config('EXTRA_CFLAGS').split()
+
+APR_CONFIG = get_apxs_config('APR_CONFIG')
+APU_CONFIG = get_apxs_config('APU_CONFIG')
+
+APR_INCLUDES = get_apr_includes().split()
+APU_INCLUDES = get_apu_includes().split()
 
 # Write out apxs_config.py which caches various configuration related to
 # Apache. For the case of using our own Apache build, this needs to
@@ -312,7 +346,7 @@ if os.path.exists(os.path.join(PYTHON_CFGDIR,
 
 INCLUDE_DIRS = [INCLUDEDIR]
 EXTRA_COMPILE_FLAGS = (EXTRA_INCLUDES + CPPFLAGS + EXTRA_CPPFLAGS +
-        CFLAGS + EXTRA_CFLAGS)
+        CFLAGS + EXTRA_CFLAGS + APR_INCLUDES + APU_INCLUDES)
 EXTRA_LINK_ARGS = PYTHON_LDFLAGS + PYTHON_LDLIBS
 
 # Force adding of LD_RUN_PATH for platforms that may need it.
