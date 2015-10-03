@@ -171,7 +171,7 @@ doing this, you will need to perform additional steps.
 
 The first thing you must do is supply the ``--user`` and ``--group``
 options to say what user and group your Python web application should run
-as. Most Linux distrbutions will pre define a special user for Apache to
+as. Most Linux distributions will pre define a special user for Apache to
 run as, so you can use that. Alternatively you can use any other special
 user account you have created for running the Python web application::
 

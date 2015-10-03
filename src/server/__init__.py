@@ -173,6 +173,9 @@ LoadModule env_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_env.so'
 <IfModule !headers_module>
 LoadModule headers_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_headers.so'
 </IfModule>
+<IfModule !filter_module>
+LoadModule filter_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_filter.so'
+</IfModule>
 
 <IfDefine MOD_WSGI_DIRECTORY_LISTING>
 <IfModule !autoindex_module>
@@ -227,6 +230,18 @@ LoadModule wsgi_module '%(mod_wsgi_so)s'
 <IfDefine MOD_WSGI_SERVER_METRICS>
 <IfModule !status_module>
 LoadModule status_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_status.so'
+</IfModule>
+</IfDefine>
+
+<IfDefine MOD_WSGI_CGID_SCRIPT>
+<IfModule !cgid_module>
+LoadModule cgid_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_cgid.so'
+</IfModule>
+</IfDefine>
+
+<IfDefine MOD_WSGI_CGI_SCRIPT>
+<IfModule !cgi_module>
+LoadModule cgi_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_cgi.so'
 </IfModule>
 </IfDefine>
 
@@ -599,6 +614,12 @@ DocumentRoot '%(document_root)s'
 <IfDefine MOD_WSGI_DIRECTORY_LISTING>
     Options +Indexes
 </IfDefine>
+<IfDefine MOD_WSGI_CGI_SCRIPT>
+    Options +ExecCGI
+</IfDefine>
+<IfDefine MOD_WSGI_CGID_SCRIPT>
+    Options +ExecCGI
+</IfDefine>
 <IfDefine !MOD_WSGI_STATIC_ONLY>
     RewriteEngine On
     RewriteCond %%{REQUEST_FILENAME} !-f
@@ -668,11 +689,27 @@ WSGIImportScript '%(server_root)s/handler.wsgi' \\
 APACHE_PROXY_PASS_MOUNT_POINT_CONFIG = """
 ProxyPass '%(mount_point)s' '%(url)s'
 ProxyPassReverse '%(mount_point)s' '%(url)s'
+<Location '%(mount_point)s'>
+RewriteEngine On
+RewriteRule .* - [E=SERVER_PORT:%%{SERVER_PORT},NE]
+RequestHeader set X-Forwarded-Port %%{SERVER_PORT}e
+RewriteCond %%{HTTPS} on
+RewriteRule .* - [E=URL_SCHEME:https,NE]
+RequestHeader set X-Forwarded-Scheme %%{URL_SCHEME}e env=URL_SCHEME
+</Location>
 """
 
 APACHE_PROXY_PASS_MOUNT_POINT_SLASH_CONFIG = """
 ProxyPass '%(mount_point)s/' '%(url)s/'
 ProxyPassReverse '%(mount_point)s/' '%(url)s/'
+<Location '%(mount_point)s/'>
+RewriteEngine On
+RewriteRule .* - [E=SERVER_PORT:%%{SERVER_PORT},NE]
+RequestHeader set X-Forwarded-Port %%{SERVER_PORT}e
+RewriteCond %%{HTTPS} on
+RewriteRule .* - [E=URL_SCHEME:https,NE]
+RequestHeader set X-Forwarded-Scheme %%{URL_SCHEME}e env=URL_SCHEME
+</Location>
 <LocationMatch '^%(mount_point)s$'>
 RewriteEngine On
 RewriteRule - http://%%{HTTP_HOST}%%{REQUEST_URI}/ [R=302,L]
@@ -684,6 +721,11 @@ APACHE_PROXY_PASS_HOST_CONFIG = """
 ServerName %(host)s
 ProxyPass / '%(url)s'
 ProxyPassReverse / '%(url)s'
+RequestHeader set X-Forwarded-Port %(port)s
+RewriteEngine On
+RewriteCond %%{HTTPS} on
+RewriteRule .* - [E=URL_SCHEME:https,NE]
+RequestHeader set X-Forwarded-Scheme %%{URL_SCHEME}e env=URL_SCHEME
 </VirtualHost>
 """
 
@@ -744,13 +786,13 @@ APACHE_PASSENV_CONFIG = """
 PassEnv '%(name)s'
 """
 
-APACHE_HANDLERS_CONFIG = """
+APACHE_HANDLER_SCRIPT_CONFIG = """
 WSGIHandlerScript wsgi-resource '%(server_root)s/resource.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
 """
 
-APACHE_EXTENSION_CONFIG = """
-AddHandler wsgi-resource %(extension)s
+APACHE_HANDLER_CONFIG = """
+AddHandler %(handler)s %(extension)s
 """
 
 APACHE_INCLUDE_CONFIG = """
@@ -871,11 +913,15 @@ def generate_apache_config(options):
                 print(APACHE_PASSENV_CONFIG % dict(name=name), file=fp)
 
         if options['handler_scripts']:
-            print(APACHE_HANDLERS_CONFIG % options, file=fp)
+            print(APACHE_HANDLER_SCRIPT_CONFIG % options, file=fp)
 
             for extension, script in options['handler_scripts']:
-                print(APACHE_EXTENSION_CONFIG % dict(extension=extension),
-                        file=fp)
+                print(APACHE_HANDLER_CONFIG % dict(handler='wsgi-resource',
+                        extension=extension), file=fp)
+
+        if options['with_cgi']:
+            print(APACHE_HANDLER_CONFIG % dict(handler='cgi-script',
+                    extension='.cgi'), file=fp)
 
         if options['service_scripts']:
             service_log_files = {}
@@ -1586,8 +1632,11 @@ MOD_WSGI_HTTPS_PORT="%(https_port)s"
 export MOD_WSGI_HTTP_PORT
 export MOD_WSGI_HTTPS_PORT
 
-MOD_WSGI_USER="${MOD_WSGI_USER:-%(user)s}"
-MOD_WSGI_GROUP="${MOD_WSGI_GROUP:-%(group)s}"
+WSGI_RUN_USER="${WSGI_RUN_USER:-%(user)s}"
+WSGI_RUN_GROUP="${WSGI_RUN_GROUP:-%(group)s}"
+
+MOD_WSGI_USER="${MOD_WSGI_USER:-${WSGI_RUN_USER}}"
+MOD_WSGI_GROUP="${MOD_WSGI_GROUP:-${WSGI_RUN_GROUP}}"
 
 export MOD_WSGI_USER
 export MOD_WSGI_GROUP
@@ -1764,7 +1813,7 @@ option_list = (
             'parent domain name to the \'www.\' server name will created.'),
     optparse.make_option('--server-alias', action='append',
             dest='server_aliases', metavar='HOSTNAME', help='A secondary '
-            'host name for the web server. May include wilcard patterns.'),
+            'host name for the web server. May include wildcard patterns.'),
     optparse.make_option('--allow-localhost', action='store_true',
             default=False, help='Flag indicating whether access via '
             'localhost should still be allowed when a server name has been '
@@ -2229,7 +2278,13 @@ option_list = (
             'that should be used from New Relic agent configuration file.'),
 
     optparse.make_option('--with-php5', action='store_true', default=False,
-            help='Flag indicating whether PHP 5 support should be enabled.'),
+            help='Flag indicating whether PHP 5 support should be enabled. '
+            'PHP code files must use the \'.php\' extension.'),
+
+    optparse.make_option('--with-cgi', action='store_true', default=False,
+            help='Flag indicating whether CGI script support should be '
+            'enabled. CGI scripts must use the \'.cgi\' extension and be '
+            'executable'),
 
     optparse.make_option('--service-script', action='append', nargs=2,
             dest='service_scripts', metavar='SERVICE SCRIPT-PATH',
@@ -2891,6 +2946,13 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PROXY_HEADERS')
     if options['trusted_proxies']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_TRUSTED_PROXIES')
+
+    if options['with_cgi']:
+        if os.path.exists(os.path.join(options['modules_directory'],
+                'mod_cgid.so')):
+            options['httpd_arguments_list'].append('-DMOD_WSGI_CGID_SCRIPT')
+        else:
+            options['httpd_arguments_list'].append('-DMOD_WSGI_CGI_SCRIPT')
 
     options['httpd_arguments_list'].extend(
             _mpm_module_defines(options['modules_directory'],
