@@ -1813,7 +1813,7 @@ option_list = (
             'parent domain name to the \'www.\' server name will created.'),
     optparse.make_option('--server-alias', action='append',
             dest='server_aliases', metavar='HOSTNAME', help='A secondary '
-            'host name for the web server. May include wilcard patterns.'),
+            'host name for the web server. May include wildcard patterns.'),
     optparse.make_option('--allow-localhost', action='store_true',
             default=False, help='Flag indicating whether access via '
             'localhost should still be allowed when a server name has been '
