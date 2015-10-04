@@ -12299,16 +12299,40 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
      * Init function gets called twice during startup, we only
      * need to actually do anything on the second time it is
      * called. This avoids unecessarily initialising and then
-     * destroying Python for no reason.
+     * destroying Python for no reason. We also though have to
+     * deal with a special case when a graceful restart is done.
+     * For that we are only called once, which is generally okay
+     * as the 'wsgi_init' key will be set from initial start up
+     * of the server. The exception to this is where the module
+     * is only loaded into Apache when the server is already
+     * running. In this case we have to detect that it is not
+     * the initial startup, but a subsequent restart. We can do
+     * this by looking at whether the scoreboard has been
+     * initialised yet. That is probably enough, but to be safe,
+     * also check what generation it is.
      */
 
     userdata_key = "wsgi_init";
 
     apr_pool_userdata_get(&data, userdata_key, s->process->pool);
+
     if (!data) {
         apr_pool_userdata_set((const void *)1, userdata_key,
                               apr_pool_cleanup_null, s->process->pool);
-        return OK;
+
+        /*
+         * Check for the special case of a graceful restart and
+         * the module being loaded for the first time. In this
+         * case we still go onto perform initialisation as the
+         * initialisation routine for the module will not be
+         * called a second time.
+         */
+
+        if (!ap_scoreboard_image ||
+            ap_get_scoreboard_global()->running_generation == 0) {
+
+            return OK;
+        }
     }
 
     /* Setup module version information. */

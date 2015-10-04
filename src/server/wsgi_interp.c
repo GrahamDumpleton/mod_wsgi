@@ -843,15 +843,13 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                 if (end) {
 #if PY_MAJOR_VERSION >= 3
-                    item = PyUnicode_Decode(start, end-start,
-                                            Py_FileSystemDefaultEncoding,
-                                            "surrogateescape");
+                    item = PyUnicode_DecodeFSDefaultAndSize(start, end-start);
+                    value = PyUnicode_AsUTF8(item);
 #else
                     item = PyString_FromStringAndSize(start, end-start);
+                    value = PyString_AsString(item);
 #endif
                     start = end+1;
-
-                    value = PyString_AsString(item);
 
                     Py_BEGIN_ALLOW_THREADS
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
@@ -879,15 +877,14 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                     while (result && end) {
 #if PY_MAJOR_VERSION >= 3
-                        item = PyUnicode_Decode(start, end-start,
-                                                Py_FileSystemDefaultEncoding,
-                                                "surrogateescape");
+                        item = PyUnicode_DecodeFSDefaultAndSize(start,
+                                end-start);
+                        value = PyUnicode_AsUTF8(item);
 #else
                         item = PyString_FromStringAndSize(start, end-start);
+                        value = PyString_AsString(item);
 #endif
                         start = end+1;
-
-                        value = PyString_AsString(item);
 
                         Py_BEGIN_ALLOW_THREADS
                         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
@@ -916,13 +913,21 @@ InterpreterObject *newInterpreterObject(const char *name)
                     }
                 }
 
+#if PY_MAJOR_VERSION >= 3
+                item = PyUnicode_DecodeFSDefault(start);
+                value = PyUnicode_AsUTF8(item);
+#else
+                item = PyString_FromString(start);
+                value = PyString_AsString(item);
+#endif
+
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                              "mod_wsgi (pid=%d): Adding '%s' to "
-                             "path.", getpid(), start);
+                             "path.", getpid(), value);
                 Py_END_ALLOW_THREADS
 
-                args = Py_BuildValue("(s)", start);
+                args = Py_BuildValue("(O)", item);
                 result = PyEval_CallObject(object, args);
 
                 if (!result) {
@@ -935,6 +940,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                 }
 
                 Py_XDECREF(result);
+                Py_XDECREF(item);
                 Py_DECREF(args);
 
                 Py_DECREF(object);
