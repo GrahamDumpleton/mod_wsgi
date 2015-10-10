@@ -2799,12 +2799,19 @@ def _cmd_setup_server(command, args, options):
                 with open('/dev/stderr', 'w'):
                     pass
             except IOError:
-                options['startup_log_file'] = None
+                try:
+                    with open('/dev/tty', 'w'):
+                        pass
+                except IOError:
+                    options['startup_log_file'] = None
+                else:
+                    options['startup_log_file'] = '/dev/tty'
             else:
                 options['startup_log_file'] = '/dev/stderr'
 
-        options['httpd_arguments_list'].append('-E')
-        options['httpd_arguments_list'].append(options['startup_log_file'])
+        if options['startup_log_file']:
+            options['httpd_arguments_list'].append('-E')
+            options['httpd_arguments_list'].append(options['startup_log_file'])
 
     if options['server_name']:
         host = options['server_name']
