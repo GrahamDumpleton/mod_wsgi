@@ -50,7 +50,10 @@ def where():
     return MOD_WSGI_SO
 
 def default_run_user():
-    return pwd.getpwuid(os.getuid()).pw_name
+    try:
+        return pwd.getpwuid(os.getuid()).pw_name
+    except KeyError:
+        return '#%d' % os.getuid()
 
 def default_run_group():
     try:
