@@ -631,7 +631,7 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                 pwent = getpwuid(geteuid());
 
-                if (getenv("USER")) {
+                if (pwent && getenv("USER")) {
 #if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("USER");
                     value = PyUnicode_Decode(pwent->pw_name,
@@ -649,7 +649,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                     Py_DECREF(value);
                 }
 
-                if (getenv("USERNAME")) {
+                if (pwent && getenv("USERNAME")) {
 #if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("USERNAME");
                     value = PyUnicode_Decode(pwent->pw_name,
@@ -667,7 +667,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                     Py_DECREF(value);
                 }
 
-                if (getenv("LOGNAME")) {
+                if (pwent && getenv("LOGNAME")) {
 #if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("LOGNAME");
                     value = PyUnicode_Decode(pwent->pw_name,
@@ -718,20 +718,24 @@ InterpreterObject *newInterpreterObject(const char *name)
                 struct passwd *pwent;
 
                 pwent = getpwuid(geteuid());
+
+                if (pwent) {
 #if PY_MAJOR_VERSION >= 3
-                key = PyUnicode_FromString("HOME");
-                value = PyUnicode_Decode(pwent->pw_dir, strlen(pwent->pw_dir),
-                                         Py_FileSystemDefaultEncoding,
-                                         "surrogateescape");
+                    key = PyUnicode_FromString("HOME");
+                    value = PyUnicode_Decode(pwent->pw_dir,
+                                             strlen(pwent->pw_dir),
+                                             Py_FileSystemDefaultEncoding,
+                                             "surrogateescape");
 #else
-                key = PyString_FromString("HOME");
-                value = PyString_FromString(pwent->pw_dir);
+                    key = PyString_FromString("HOME");
+                    value = PyString_FromString(pwent->pw_dir);
 #endif
 
-                PyObject_SetItem(object, key, value);
+                    PyObject_SetItem(object, key, value);
 
-                Py_DECREF(key);
-                Py_DECREF(value);
+                    Py_DECREF(key);
+                    Py_DECREF(value);
+                }
             }
 
             Py_DECREF(module);
