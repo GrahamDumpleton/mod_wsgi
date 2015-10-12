@@ -51,15 +51,23 @@ def where():
 
 def default_run_user():
     try:
-        return pwd.getpwuid(os.getuid()).pw_name
+        uid = os.getuid()
+        return pwd.getpwuid(uid).pw_name
     except KeyError:
-        return '#%d' % os.getuid()
+        return '#%d' % uid
 
 def default_run_group():
     try:
-        return grp.getgrgid(pwd.getpwuid(os.getuid()).pw_gid).gr_name
+        uid = os.getuid()
+        entry = pwd.getpwuid(uid)
     except KeyError:
-        return '#%d' % pwd.getpwuid(os.getuid()).pw_gid
+        return '#%d' % uid
+
+    try:
+        gid = entry.pw_gid
+        return grp.getgrgid(gid).gr_name
+    except KeyError:
+        return '#%d' % gid
 
 def find_program(names, default=None, paths=[]):
     for name in names:
