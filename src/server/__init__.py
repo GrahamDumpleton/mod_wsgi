@@ -1117,7 +1117,7 @@ class PostMortemDebugger(object):
             for item in self.generator:
                 yield item
         except Exception:
-            self.debug_exception()
+            self.run_post_mortem()
             raise
 
     def close(self):
@@ -1125,7 +1125,7 @@ class PostMortemDebugger(object):
             if hasattr(self.generator, 'close'):
                 return self.generator.close()
         except Exception:
-            self.debug_exception()
+            self.run_post_mortem()
             raise
 
 class RequestRecorder(object):
