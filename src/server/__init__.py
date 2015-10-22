@@ -1758,6 +1758,18 @@ option_list = (
             'the directory containing the files to server or the current '
             'directory if none is supplied.'),
 
+    optparse.make_option('--entry-point', default=None,
+            metavar='FILE-PATH|MODULE', help='The file system path or '
+            'module name identifying the file which contains the WSGI '
+            'application entry point. How the value given is interpreted '
+            'depends on the corresponding type identified using the '
+            '\'--application-type\' option. Use of this option is the '
+            'same as if the value had been given as argument but without '
+            'any option specifier. A named option is also provided so '
+            'as to make it clearer in a long option list what the entry '
+            'point actually is. If both methods are used, that specified '
+            'by this option will take precedence.'),
+
     optparse.make_option('--host', default=None, metavar='IP-ADDRESS',
             help='The specific host (IP address) interface on which '
             'requests are to be accepted. Defaults to listening on '
@@ -2455,6 +2467,9 @@ def _cmd_setup_server(command, args, options):
     if options['ssl_ca_certificate_file']:
         options['ssl_ca_certificate_file'] = os.path.abspath(
                 options['ssl_ca_certificate_file'])
+
+    if options['entry_point']:
+        args = [options['entry_point']]
 
     if not args:
         if options['application_type'] != 'static':

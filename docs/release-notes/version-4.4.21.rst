@@ -29,3 +29,9 @@ through and also what the execution environment looks like. It can be used
 by running::
 
     mod_wsgi-express start-server --application-type module mod_wsgi.server.environ
+
+2. Added ``--entry-point`` option to ``mod_wsgi-express`` as more explicit
+way of identifying the file or module name containing the WSGI application
+entry point or description. This is in addition to simply being able to
+list it without any option. The explicit way just makes it easier to see
+the purpose when you have a long list of options.
