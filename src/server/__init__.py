@@ -2843,6 +2843,11 @@ def _cmd_setup_server(command, args, options):
     else:
         options['https_url'] = None
 
+    if any((options['enable_debugger'], options['enable_coverage'],
+            options['enable_profiler'], options['enable_recorder'],
+            options['enable_gdb'])):
+        options['debug_mode'] = True
+
     if options['debug_mode']:
         options['httpd_arguments_list'].append('-DONE_PROCESS')
 
