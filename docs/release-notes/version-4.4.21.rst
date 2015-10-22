@@ -18,3 +18,14 @@ Features Changed
 ``--enable-gdb`` are used, debug module will now automatically be enabled.
 Previously you had to also supply the ``--debug-mode`` option otherwise
 these options wouldn't be honoured.
+
+New Features
+------------
+
+1. Add a WSGI test application to ``mod_wsgi-express`` which returns back
+details of the request headers, application environment and request content
+as the response. This can be used for testing how requests are passed
+through and also what the execution environment looks like. It can be used
+by running::
+
+    mod_wsgi-express start-server --application-type module mod_wsgi.server.environ
