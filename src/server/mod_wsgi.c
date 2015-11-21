@@ -8965,49 +8965,39 @@ static void wsgi_log_stack_traces(void)
                 while (current) {
                     int lineno;
 
-                    PyObject *filename = NULL;
-                    PyObject *name = NULL;
+                    char *filename = NULL;
+                    char *name = NULL;
 
                     lineno = current->f_lineno;
 
-#if PY_MAJOR_VERSION > 3
-                    filename = PyUnicode_EncodeUTF8(
-                            current->f_code->co_filename);
-                    name = PyUnicode_EncodeUTF8(
-                            current->f_code->co_name);
+#if PY_MAJOR_VERSION >= 3
+                    filename = PyUnicode_AsUTF8(current->f_code->co_filename);
+                    name = PyUnicode_AsUTF8(current->f_code->co_name);
 #else
-                    Py_INCREF(current->f_code->co_filename);
-                    filename = current->f_code->co_filename;
-                    Py_INCREF(current->f_code->co_name);
-                    name = current->f_code->co_name;
+                    filename = PyString_AsString(current->f_code->co_filename);
+                    name = PyString_AsString(current->f_code->co_name);
 #endif
 
                     if (current == (PyFrameObject *)frame) {
                         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                                 "mod_wsgi (pid=%d): Thread %ld executing "
                                 "file \"%s\", line %d, in %s", getpid(),
-                                thread_id, PyString_AsString(filename),
-                                lineno, PyString_AsString(name));
+                                thread_id, filename, lineno, name);
                     }
                     else {
                         if (current->f_back) {
                             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                                     "mod_wsgi (pid=%d): called from file "
                                     "\"%s\", line %d, in %s,", getpid(),
-                                    PyString_AsString(filename), lineno,
-                                    PyString_AsString(name));
+                                    filename, lineno, name);
                         }
                         else {
                             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                                     "mod_wsgi (pid=%d): called from file "
                                     "\"%s\", line %d, in %s.", getpid(),
-                                    PyString_AsString(filename), lineno,
-                                    PyString_AsString(name));
+                                    filename, lineno, name);
                         }
                     }
-
-                    Py_DECREF(filename);
-                    Py_DECREF(name);
 
                     current = current->f_back;
                 }
