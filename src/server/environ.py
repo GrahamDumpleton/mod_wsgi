@@ -27,6 +27,10 @@ def application(environ, start_response):
     print(file=output)
 
     print('python.version: %r' % (sys.version,), file=output)
+    print('python.prefix: %r' % (sys.prefix,), file=output)
+    print('python.path: %r' % (sys.path,), file=output)
+    print(file=output)
+
     print('apache.version: %r' % (apache.version,), file=output)
     print('mod_wsgi.version: %r' % (mod_wsgi.version,), file=output)
     print(file=output)
