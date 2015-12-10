@@ -882,18 +882,21 @@ def generate_apache_config(options):
         if options['url_aliases']:
             for mount_point, target in sorted(options['url_aliases'],
                     reverse=True):
-                target = os.path.abspath(target)
+                path = os.path.abspath(target)
 
-                if os.path.isdir(target):
-                    directory = target
+                if os.path.isdir(path):
+                    if target.endswith('/') and path != '/':
+                        directory = path + '/'
+                    else:
+                        directory = path
 
                     print(APACHE_ALIAS_DIRECTORY_CONFIG % dict(
                             mount_point=mount_point, directory=directory),
                             file=fp)
 
                 else:
-                    directory = os.path.dirname(target)
-                    filename = os.path.basename(target)
+                    directory = os.path.dirname(path)
+                    filename = os.path.basename(path)
 
                     print(APACHE_ALIAS_FILENAME_CONFIG % dict(
                             mount_point=mount_point, directory=directory,
