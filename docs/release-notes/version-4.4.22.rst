@@ -22,3 +22,19 @@ the process was shutting down.
 target directory had a trailing slash, that trailing slash was being
 incorrectly dropped. This would cause URL lookup to fail when the URL for
 the directory was a sub URL and also had a trailing slash.
+
+New Features
+------------
+
+1. When using ``mod_wsgi-express``, rewrite rules can now be added into the
+``rewrite.conf`` file located under the server root directory. An alternate
+location for the rewrite rules can be specified using the ``--rewrite-rules``
+option.
+
+Note that the rewrite rules are included within a ``Directory`` block of
+the Apache configuration file, for the document root directory. Any rules
+therefore needs to be written so as to work in this context.
+
+If you need to debug the rewrite rules and are using Apache 2.4, the
+easiest way to enable rewrite logging is to use the ``--log-level`` option
+with the quoted value of ``'info rewrite:trace8'``.
