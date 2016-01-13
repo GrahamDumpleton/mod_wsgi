@@ -7,7 +7,7 @@ Overview
 
 Running Apache/mod_wsgi on Windows can be a bit tricky.
 
-There are four requirements that you need to satsify.
+There are four requirements that should strictly be satisified.
 
 1. You need to ensure that you are using either 32 bit (Win32) versions of
 everything or 64 bit (Win64) versions of everything. You cannot mix 32 bit
@@ -43,6 +43,17 @@ and Apache may fail to startup or crash when handling requests.
 You may also have problems with using Python 2.6 or Python 2.7 binaries,
 which were compiled with the Microsoft VC9 C/C++ compiler, with a version
 of Apache 2.4 compiled with the Microsoft VC10 C/C++ compiler.
+
+The problem is that Apache Lounge, whose Apache binaries have been used
+up until this point, has stopped making available versions of Apache
+compiled with a VC9 compiler. This means that if you hadn't managed to
+download a Win32 VC9 version of Apache at some time in the past, you
+technically can't use mod_wsgi on Windows with Python 2.6 or Python 2.7
+any more as you can't get the right version of an Apache binary.
+
+See further comments below though about a possible way of running Python
+2.6 and Python 2.7 using a Win64 VC10 version of Apache. This is not
+gauranteed to work though as explained below.
 
 Using the pre-compiled binaries
 -------------------------------
@@ -91,24 +102,26 @@ The actual mod_wsgi binaries that are made available are:
 * Apache24-win64-VC10/modules/mod_wsgi-py33-VC10.so
 * Apache24-win64-VC10/modules/mod_wsgi-py34-VC10.so
 
-Those labelled with ``Apache22-win32-VC9`` should be used with the Apache
-2.2 Win32 VC9 version of Apache available from:
-
-* http://www.apachelounge.com/download/additional/
+Those labelled with ``Apache22-win32-VC9`` should be used with an Apache
+2.2 Win32 VC9 version of Apache. Alas Apache Lounge no longer makes such
+binaries available any more. If you don't already have an older version of
+Apache which has been compiled with the Win32 VC9 compiler you are out
+of luck.
 
 Those labelled with ``Apache24-win32-VC10`` should be used with the Apache
 2.4 Win32 VC10 version of Apache available from:
 
-* http://www.apachelounge.com/download/win32/
+* https://www.apachelounge.com/download/VC10/
 
 Those labelled with ``Apache24-win64-VC10`` should be used with the Apache
 2.4 Win64 VC10 version of Apache available from:
 
-* http://www.apachelounge.com/download/win64/
+* https://www.apachelounge.com/download/VC10/
 
-Note that Apache Lounge does not provide any Win64 VC9 binaries for Apache
-2.4. This means that technically there is no combination available for
-correctly running mod_wsgi with a Win64 VC9 version of Python 2.6 or 2.7.
+Note that Apache Lounge never made available any Win64 VC9 binaries for
+Apache 2.4. This means that technically there is no combination
+available for correctly running mod_wsgi with a Win64 VC9 version of
+Python 2.6 or 2.7.
 
 History shows that users simply don't want to accept this and don't want to
 understand that mixing VC9 and VC10 binaries are not guaranteed to work.
@@ -122,10 +135,11 @@ minimal and so it is possible that there are no instances of incompatible
 data structures being passed across the ABI boundary, but that cannot be
 guaranteed.
 
-So for those who will not accept 'No' as a answer, the following binaries
-are also provided. Because they are mixing binaries using different ABIs,
-they may or may not work for your particular cirumstances. You are still
-welcome to try, but there is no support for using this combination.
+So because Apache Lounge is no longer making available any VC9 versions of
+Apache, the following binaries are still provided. Because they are mixing
+binaries using different ABIs, they may or may not work for your particular
+cirumstances. You are still welcome to try, but there is no support for
+using this combination.
 
 * Apache24-win64-VC10/modules/mod_wsgi-py26-VC9.so
 * Apache24-win64-VC10/modules/mod_wsgi-py27-VC9.so
