@@ -174,7 +174,7 @@ Python 2.6, 2.7 (64 Bit Only)
 
 Use the latest Python 2.6 or 2.7 binary available from the PSF:
 
-* https://www.python.org/downloads/release/python-279/
+* https://www.python.org/downloads/
 
 You must use the 64 bit version which is labelled as:
 
@@ -196,7 +196,7 @@ Python 3.3, 3.4 (32 Bit)
 
 Use the latest Python 3.3 or 3.4 binary available from the PSF:
 
-* https://www.python.org/downloads/release/python-279/
+* https://www.python.org/downloads/
 
 You must use the 32 bit version which is labelled as:
 
@@ -222,11 +222,11 @@ Python 3.3, 3.4 (64 Bit)
 
 Use the latest Python 3.3 or 3.4 binary available from the PSF:
 
-* https://www.python.org/downloads/release/python-279/
+* https://www.python.org/downloads/
 
 You must use the 64 bit version which is labelled as:
 
-* Windows x86-x86 MSI installer
+* Windows x86-64 MSI installer
 
 Python 3.3 and 3.4 are compiled with the Microsoft C/C++ compiler from
 Visual Studio 2010. This is referred to as being compiled for VC10.
