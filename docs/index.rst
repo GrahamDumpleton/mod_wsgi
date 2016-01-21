@@ -4,9 +4,16 @@ mod_wsgi
 
 .. note::
 
-   Documentation for mod_wsgi is being transitioned here from the old
-   Google Code site. For more details and links to the old documentation
-   see :doc:`project-status`.
+   After much procrastination, but also a lack of time to do it anyway,
+   a last ditch effort is being made to get documentation for mod_wsgi
+   off the old Google Code site before it is archived and shutdown.
+   Chances are still that this will not happen and documentation will be
+   dumped here at the last minute in an unconverted state and so will
+   not be formatted properly, or will simply be in more of a mess than
+   it is now. Sorry, but if there were 48 hours in a day then maybe
+   something could be done about it, but there isn't, so you will just
+   have to be patient. For more details and links to the old
+   documentation, while it still exists, see :doc:`project-status`.
 
 The mod_wsgi package implements a simple to use Apache module which can
 host any Python web application which supports the Python WSGI_
