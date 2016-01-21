@@ -54,6 +54,7 @@ your terminal.
    installation
    configuration
    troubleshooting
+   user-guides
    finding-help
    reporting-bugs
    contributing
