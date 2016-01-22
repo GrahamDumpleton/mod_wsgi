@@ -2,9 +2,6 @@
 Configuration
 =============
 
-Documentation on specification configuration directives for Apache can be
-found below:
-
 .. toctree::
    :maxdepth: 2
 

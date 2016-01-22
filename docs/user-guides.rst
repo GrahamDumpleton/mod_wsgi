@@ -2,8 +2,6 @@
 User Guides
 ============
 
-This is a list of user guides on various topics related to mod_wsgi.
-
 .. toctree::
    :maxdepth: 1
 

@@ -52,9 +52,9 @@ your terminal.
    getting-started
    requirements
    installation
-   configuration
    troubleshooting
    user-guides
+   configuration
    finding-help
    reporting-bugs
    contributing
