@@ -473,7 +473,7 @@ The argument to the WSGIApplicationGroup directive can in general be any
 unique name of your choosing, although there are also a number of special
 values which you can use as well. For further information about these
 special values see the more detailed documentation on the
-:doc:`../config-directives/WSGIApplicationGroup` directive. Two of the
+:doc:`../configuration-directives/WSGIApplicationGroup` directive. Two of the
 special values worth highlighting are:
 
 **%{GLOBAL}**
@@ -603,7 +603,7 @@ user explicitly signals it to restart.
 
 For further information about the options that can be supplied to the
 WSGIDaemonProcess directive see the more detailed documentation for
-:doc:`../config-directives/WSGIDaemonProcess`. A few of the options
+:doc:`../configuration-directives/WSGIDaemonProcess`. A few of the options
 which can be supplied to the WSGIDaemonProcess directive worth highlighting
 are:
 

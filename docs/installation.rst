@@ -2,14 +2,6 @@
 Installation
 ============
 
-.. warning ::
-
-   Documentation linked here is actually located on the old Google Code
-   site and has not yet been transitioned to this site. Some documentation
-   on the old site may be out of date, especially anything related to
-   running mod_wsgi on Windows. For more details as to why and the links to
-   all the old documentation see :doc:`project-status`.
-
 The mod_wsgi package can be installed form source code or may also be
 available as a pre built binary package as part of your Linux distribution.
 
@@ -25,8 +17,8 @@ mod_wsgi from source code.
 For instructions on how to compile mod_wsgi from source code for UNIX like
 operating systems such as Linux and MacOS X see:
 
-* `Installation Instructions <https://code.google.com/p/modwsgi/wiki/InstallationInstructions>`_
+  * :doc:`user-guides/quick-installation-guide`
 
 If you are on Windows, you should instead use:
 
-* `Installation on Windows <https://github.com/GrahamDumpleton/mod_wsgi/blob/develop/win32/README.rst>`_
+  * https://github.com/GrahamDumpleton/mod_wsgi/blob/develop/win32/README.rst

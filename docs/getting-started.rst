@@ -6,7 +6,7 @@ If starting out with mod_wsgi it is recommended you start out with a simple
 'Hello World' type application.
 
 Do not attempt to use a Python web application dependent on a web framework
-such as Django, Flask or Pyramid until you have got a basic 'Hello World!'
+such as Django, Flask or Pyramid until you have got a basic 'Hello World'
 application running first. The simpler WSGI application will validate that
 your mod_wsgi installation is working okay and that you at least understand
 the basics of configuring Apache.
