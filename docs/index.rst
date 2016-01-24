@@ -2,12 +2,6 @@
 mod_wsgi
 ========
 
-.. note::
-
-   Documentation for mod_wsgi is being transitioned here from the old
-   Google Code site. For more details and links to the old documentation
-   see :doc:`project-status`.
-
 The mod_wsgi package implements a simple to use Apache module which can
 host any Python web application which supports the Python WSGI_
 specification. The package can be installed in two different ways
@@ -45,8 +39,9 @@ your terminal.
    getting-started
    requirements
    installation
-   configuration
    troubleshooting
+   user-guides
+   configuration
    finding-help
    reporting-bugs
    contributing

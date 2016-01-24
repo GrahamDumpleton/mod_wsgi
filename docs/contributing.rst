@@ -15,9 +15,8 @@ How to make a donation
 ----------------------
 
 If you use mod_wsgi and wish to show your appreciation, donations can be
-made via `PayPal <https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=636842>`_, an Amazon (USA store only) gift certificate sent to Graham.Dumpleton
-at gmail dot com or using `Gratipay
-<https://gratipay.com/~GrahamDumpleton/>`_.
+made via `PayPal <https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=636842>`_ or an Amazon (USA store only) gift certificate sent to Graham.Dumpleton
+at gmail dot com.
 
 A suggested formula for how much to donate is:
 
@@ -98,7 +97,7 @@ Open Source free loaders
 If you are the sort of person who thinks that the Internet exists only to
 provide you with free stuff and where you think everyone out there exists
 purely to help you work out your problems, then it may be better that you
-go free load off some other WSGI server project.
+go use some other WSGI server project.
 
 Even if you don't contribute as described above, if you at least recognise
 that other people are giving up their time to help you and that you put in
