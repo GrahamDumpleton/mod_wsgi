@@ -570,6 +570,9 @@ SSLCertificateKeyFile %(ssl_certificate_key_file)s
 SSLCACertificateFile %(ssl_ca_certificate_file)s
 SSLVerifyClient none
 </IfDefine>
+<IfDefine MOD_WSGI_CERTIFICATE_CHAIN>
+SSLCertificateChainFile %(ssl_certificate_chain_file)s
+</IfDefine>
 </VirtualHost>
 <VirtualHost *:%(https_port)s>
 ServerName %(server_name)s
@@ -582,6 +585,9 @@ SSLCertificateKeyFile %(ssl_certificate_key_file)s
 <IfDefine MOD_WSGI_VERIFY_CLIENT>
 SSLCACertificateFile %(ssl_ca_certificate_file)s
 SSLVerifyClient none
+</IfDefine>
+<IfDefine MOD_WSGI_CERTIFICATE_CHAIN>
+SSLCertificateChainFile %(ssl_certificate_chain_file)s
 </IfDefine>
 <IfDefine MOD_WSGI_HTTPS_ONLY>
 <IfDefine MOD_WSGI_HSTS_POLICY>
@@ -602,6 +608,9 @@ SSLCertificateKeyFile %(ssl_certificate_key_file)s
 <IfDefine MOD_WSGI_VERIFY_CLIENT>
 SSLCACertificateFile %(ssl_ca_certificate_file)s
 SSLVerifyClient none
+</IfDefine>
+<IfDefine MOD_WSGI_CERTIFICATE_CHAIN>
+SSLCertificateChainFile %(ssl_certificate_chain_file)s
 </IfDefine>
 </VirtualHost>
 </IfDefine>
@@ -1819,6 +1828,11 @@ option_list = (
             'whole site will be disabled and verification will only be '
             'required for the specified sub URL.'),
 
+    optparse.make_option('--ssl-certificate-chain-file', default=None,
+            metavar='FILE-PATH', help='Specify the path to a file '
+            'containing the certificates of Certification Authorities (CA) '
+            'which form the certificate chain of the server certificate.'),
+
     optparse.make_option('--ssl-environment', action='store_true',
             default=False, help='Flag indicating whether the standard set '
             'of SSL related variables are passed in the per request '
@@ -2477,6 +2491,10 @@ def _cmd_setup_server(command, args, options):
         options['ssl_ca_certificate_file'] = os.path.abspath(
                 options['ssl_ca_certificate_file'])
 
+    if options['ssl_certificate_chain_file']:
+        options['ssl_certificate_chain_file'] = os.path.abspath(
+                options['ssl_certificate_chain_file'])
+
     if options['entry_point']:
         args = [options['entry_point']]
 
@@ -2939,6 +2957,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_HTTPS')
     if options['ssl_ca_certificate_file']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_VERIFY_CLIENT')
+    if options['ssl_certificate_chain_file']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_CERTIFICATE_CHAIN')
 
     if options['ssl_environment']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_SSL_ENVIRONMENT')
