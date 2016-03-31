@@ -572,6 +572,9 @@ SSLCertificateKeyFile %(ssl_certificate_key_file)s
 SSLCACertificateFile %(ssl_ca_certificate_file)s
 SSLVerifyClient none
 </IfDefine>
+<IfDefine MOD_WSGI_CERTIFICATE_CHAIN>
+SSLCertificateChainFile %(ssl_certificate_chain_file)s
+</IfDefine>
 </VirtualHost>
 <VirtualHost *:%(https_port)s>
 ServerName %(server_name)s
@@ -584,6 +587,9 @@ SSLCertificateKeyFile %(ssl_certificate_key_file)s
 <IfDefine MOD_WSGI_VERIFY_CLIENT>
 SSLCACertificateFile %(ssl_ca_certificate_file)s
 SSLVerifyClient none
+</IfDefine>
+<IfDefine MOD_WSGI_CERTIFICATE_CHAIN>
+SSLCertificateChainFile %(ssl_certificate_chain_file)s
 </IfDefine>
 <IfDefine MOD_WSGI_HTTPS_ONLY>
 <IfDefine MOD_WSGI_HSTS_POLICY>
@@ -604,6 +610,9 @@ SSLCertificateKeyFile %(ssl_certificate_key_file)s
 <IfDefine MOD_WSGI_VERIFY_CLIENT>
 SSLCACertificateFile %(ssl_ca_certificate_file)s
 SSLVerifyClient none
+</IfDefine>
+<IfDefine MOD_WSGI_CERTIFICATE_CHAIN>
+SSLCertificateChainFile %(ssl_certificate_chain_file)s
 </IfDefine>
 </VirtualHost>
 </IfDefine>
@@ -633,8 +642,9 @@ DocumentRoot '%(document_root)s'
 <IfDefine MOD_WSGI_CGID_SCRIPT>
     Options +ExecCGI
 </IfDefine>
-<IfDefine !MOD_WSGI_STATIC_ONLY>
     RewriteEngine On
+    Include %(rewrite_rules)s
+<IfDefine !MOD_WSGI_STATIC_ONLY>
     RewriteCond %%{REQUEST_FILENAME} !-f
 <IfDefine MOD_WSGI_DIRECTORY_INDEX>
     RewriteCond %%{REQUEST_FILENAME} !-d
@@ -886,18 +896,21 @@ def generate_apache_config(options):
         if options['url_aliases']:
             for mount_point, target in sorted(options['url_aliases'],
                     reverse=True):
-                target = os.path.abspath(target)
+                path = os.path.abspath(target)
 
-                if os.path.isdir(target):
-                    directory = target
+                if os.path.isdir(path):
+                    if target.endswith('/') and path != '/':
+                        directory = path + '/'
+                    else:
+                        directory = path
 
                     print(APACHE_ALIAS_DIRECTORY_CONFIG % dict(
                             mount_point=mount_point, directory=directory),
                             file=fp)
 
                 else:
-                    directory = os.path.dirname(target)
-                    filename = os.path.basename(target)
+                    directory = os.path.dirname(path)
+                    filename = os.path.basename(path)
 
                     print(APACHE_ALIAS_FILENAME_CONFIG % dict(
                             mount_point=mount_point, directory=directory,
@@ -1821,6 +1834,11 @@ option_list = (
             'whole site will be disabled and verification will only be '
             'required for the specified sub URL.'),
 
+    optparse.make_option('--ssl-certificate-chain-file', default=None,
+            metavar='FILE-PATH', help='Specify the path to a file '
+            'containing the certificates of Certification Authorities (CA) '
+            'which form the certificate chain of the server certificate.'),
+
     optparse.make_option('--ssl-environment', action='store_true',
             default=False, help='Flag indicating whether the standard set '
             'of SSL related variables are passed in the per request '
@@ -2154,6 +2172,11 @@ option_list = (
             'included at the end of the generated web server configuration '
             'file.'),
 
+    optparse.make_option('--rewrite-rules', metavar='FILE-PATH',
+            help='Specify an alternate server configuration file which '
+            'contains rewrite rules. Defaults to using the '
+            '\'rewrite.conf\' stored under the server root directory.'),
+
     optparse.make_option('--envvars-script', metavar='FILE-PATH',
             help='Specify an alternate script file for user defined web '
             'server environment variables. Defaults to using the '
@@ -2474,6 +2497,10 @@ def _cmd_setup_server(command, args, options):
         options['ssl_ca_certificate_file'] = os.path.abspath(
                 options['ssl_ca_certificate_file'])
 
+    if options['ssl_certificate_chain_file']:
+        options['ssl_certificate_chain_file'] = os.path.abspath(
+                options['ssl_certificate_chain_file'])
+
     if options['entry_point']:
         args = [options['entry_point']]
 
@@ -2784,6 +2811,10 @@ def _cmd_setup_server(command, args, options):
     options['process_name'] = options['process_name'].ljust(
             len(options['daemon_name']))
 
+    options['rewrite_rules'] = (os.path.abspath(
+            options['rewrite_rules']) if options['rewrite_rules'] is
+            not None else None)
+
     options['envvars_script'] = (os.path.abspath(
             options['envvars_script']) if options['envvars_script'] is
             not None else None)
@@ -2932,6 +2963,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_HTTPS')
     if options['ssl_ca_certificate_file']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_VERIFY_CLIENT')
+    if options['ssl_certificate_chain_file']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_CERTIFICATE_CHAIN')
 
     if options['ssl_environment']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_SSL_ENVIRONMENT')
@@ -3015,9 +3048,6 @@ def _cmd_setup_server(command, args, options):
     if options['with_newrelic_platform']:
         generate_server_metrics_script(options)
 
-    generate_apache_config(options)
-    generate_control_scripts(options)
-
     print('Server URL         :', options['url'])
 
     if options['https_url']:
@@ -3048,10 +3078,15 @@ def _cmd_setup_server(command, args, options):
     if options['enable_recorder']:
         print('Recorder Output    :', options['recorder_directory'])
 
+    if options['rewrite_rules']:
+        print('Rewrite Rules      :', options['rewrite_rules'])
+
     if options['envvars_script']:
         print('Environ Variables  :', options['envvars_script'])
 
     if command == 'setup-server' or options['setup_only']:
+        if not options['rewrite_rules']:
+            print('Rewrite Rules      :', options['server_root'] + '/rewrite.conf')
         if not options['envvars_script']:
             print('Environ Variables  :', options['server_root'] + '/envvars')
         print('Control Script     :', options['server_root'] + '/apachectl')
@@ -3077,6 +3112,16 @@ def _cmd_setup_server(command, args, options):
     print('Server Backlog     : %s (connections)' % options['server_backlog'])
 
     print('Locale Setting     :', options['locale'])
+
+    if not options['rewrite_rules']:
+        options['rewrite_rules'] = options['server_root'] + '/rewrite.conf'
+
+        if not os.path.isfile(options['rewrite_rules']):
+            with open(options['rewrite_rules'], 'w') as fp:
+                pass
+
+    generate_apache_config(options)
+    generate_control_scripts(options)
 
     return options
 

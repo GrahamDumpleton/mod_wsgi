@@ -2,20 +2,31 @@
 Configuration
 =============
 
-.. warning ::
+.. toctree::
+   :maxdepth: 2
 
-   Documentation linked here is actually located on the old Google Code
-   site and has not yet been transitioned to this site. Some documentation
-   on the old site may be out of date, especially anything related to
-   running mod_wsgi on Windows. For more details as to why and the links to
-   all the old documentation see :doc:`project-status`.
-
-In addition to the quick configuration guide found at:
-
-* `Quick Configuration Guide <https://code.google.com/p/modwsgi/wiki/QuickConfigurationGuide>`_
-
-additional details on the configuration directives in mod_wsgi and how to
-use them is available in the following documents:
-
-* `Configuration Guidelines <https://code.google.com/p/modwsgi/wiki/ConfigurationGuidelines>`_
-* `Configuration Directives <https://code.google.com/p/modwsgi/wiki/ConfigurationDirectives>`_
+   configuration-directives/WSGIAcceptMutex
+   configuration-directives/WSGIAccessScript
+   configuration-directives/WSGIApplicationGroup
+   configuration-directives/WSGIAuthGroupScript
+   configuration-directives/WSGIAuthUserScript
+   configuration-directives/WSGICallableObject
+   configuration-directives/WSGICaseSensitivity
+   configuration-directives/WSGIDaemonProcess
+   configuration-directives/WSGIImportScript
+   configuration-directives/WSGILazyInitialization
+   configuration-directives/WSGIPassAuthorization
+   configuration-directives/WSGIProcessGroup
+   configuration-directives/WSGIPythonEggs
+   configuration-directives/WSGIPythonHome
+   configuration-directives/WSGIPythonOptimize
+   configuration-directives/WSGIPythonPath
+   configuration-directives/WSGIRestrictEmbedded
+   configuration-directives/WSGIRestrictProcess
+   configuration-directives/WSGIRestrictSignal
+   configuration-directives/WSGIRestrictStdin
+   configuration-directives/WSGIRestrictStdout
+   configuration-directives/WSGIScriptAlias
+   configuration-directives/WSGIScriptAliasMatch
+   configuration-directives/WSGIScriptReloading
+   configuration-directives/WSGISocketPrefix

@@ -1,6 +1,6 @@
 dnl  vim: set sw=4 expandtab :
 dnl
-dnl  Copyright 2007-2015 GRAHAM DUMPLETON
+dnl  Copyright 2007-2016 GRAHAM DUMPLETON
 dnl 
 dnl  Licensed under the Apache License, Version 2.0 (the "License");
 dnl  you may not use this file except in compliance with the License.
