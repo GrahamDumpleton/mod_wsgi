@@ -61,6 +61,7 @@ static PyTypeObject Auth_Type;
 #include "wsgi_metrics.h"
 #include "wsgi_daemon.h"
 #include "wsgi_buckets.h"
+#include "wsgi_thread.h"
 
 /* Module information. */
 
@@ -440,6 +441,10 @@ typedef struct {
 
     int daemon_connects;
     int daemon_restarts;
+
+    apr_time_t request_start;
+    apr_time_t queue_start;
+    apr_time_t daemon_start;
 } WSGIRequestConfig;
 
 static long wsgi_find_path_info(const char *uri, const char *path_info)
@@ -910,6 +915,10 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
     config->daemon_connects = 0;
     config->daemon_restarts = 0;
 
+    config->request_start = 0;
+    config->queue_start = 0;
+    config->daemon_start = 0;
+
     return config;
 }
 
@@ -943,6 +952,9 @@ typedef struct {
         apr_bucket_brigade *bb;
         int seen_eos;
         int seen_error;
+        apr_off_t bytes;
+        apr_off_t reads;
+        apr_time_t time;
 } InputObject;
 
 static PyTypeObject Input_Type;
@@ -968,6 +980,10 @@ static InputObject *newInputObject(request_rec *r)
 
     self->seen_eos = 0;
     self->seen_error = 0;
+
+    self->bytes = 0;
+    self->reads = 0;
+    self->time = 0;
 
     return self;
 }
@@ -1028,6 +1044,9 @@ static long Input_read_from_input(InputObject *self, char *buffer,
     apr_status_t error_status = 0;
     const char *error_message = NULL;
 
+    apr_time_t start = 0;
+    apr_time_t finish = 0;
+
     /* If have already seen end of input, return an empty string. */
 
     if (self->seen_eos)
@@ -1052,6 +1071,10 @@ static long Input_read_from_input(InputObject *self, char *buffer,
      */
 
     Py_BEGIN_ALLOW_THREADS
+
+    start = apr_time_now();
+
+    self->reads += 1;
 
     /*
      * Create the bucket brigade the first time it is required and
@@ -1134,6 +1157,11 @@ finally:
 
     if (bb)
         apr_brigade_cleanup(bb);
+
+    finish = apr_time_now();
+
+    if (finish > start)
+        self->time += (finish - start);
 
     /* Make sure we reacquire the GIL when all done. */
 
@@ -1449,6 +1477,8 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
         }
     }
 
+    self->bytes += length;
+
     return result;
 }
 
@@ -1738,6 +1768,8 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
         }
     }
 
+    self->bytes += length;
+
     return result;
 }
 
@@ -1914,6 +1946,9 @@ typedef struct {
         int content_length_set;
         apr_off_t content_length;
         apr_off_t output_length;
+        apr_off_t output_writes;
+        apr_time_t output_time;
+        apr_time_t start_time;
 } AdapterObject;
 
 static PyTypeObject Adapter_Type;
@@ -1943,6 +1978,9 @@ static AdapterObject *newAdapterObject(request_rec *r)
     self->content_length_set = 0;
     self->content_length = 0;
     self->output_length = 0;
+    self->output_writes = 0;
+
+    self->output_time = 0;
 
     self->input = newInputObject(r);
     self->log = newLogObject(r, APLOG_ERR, NULL);
@@ -1971,6 +2009,8 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 
     PyObject *status_line_as_bytes = NULL;
     PyObject *headers_as_bytes = NULL;
+
+    PyObject *event = NULL;
 
     if (!self->r) {
         PyErr_SetString(PyExc_RuntimeError, "request object has expired");
@@ -2012,6 +2052,20 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
         return NULL;
     }
 
+    /* Publish event for the start of the response. */
+
+    if (wsgi_event_subscribers()) {
+        event = PyDict_New();
+
+        PyDict_SetItemString(event, "response_status", status_line);
+        PyDict_SetItemString(event, "response_headers", headers);
+        PyDict_SetItemString(event, "exception_info", exc_info);
+
+        wsgi_publish_event("response_started", event);
+
+        Py_DECREF(event);
+    }
+
     status_line_as_bytes = wsgi_convert_status_line_to_bytes(status_line);
 
     if (!status_line_as_bytes)
@@ -2047,6 +2101,9 @@ static int Adapter_output(AdapterObject *self, const char *data,
     apr_status_t rv;
     request_rec *r;
 
+    apr_time_t output_start = 0;
+    apr_time_t output_finish = 0;
+
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_idle_timeout) {
         apr_thread_mutex_lock(wsgi_monitor_lock);
@@ -2066,6 +2123,15 @@ static int Adapter_output(AdapterObject *self, const char *data,
     }
 
     r = self->r;
+
+    /* Remember we started sending this block of output. */
+
+    output_start = apr_time_now();
+
+    /* Count how many separate blocks have been output. */
+
+    if (string_object)
+        self->output_writes++;
 
     /* Have response headers yet been sent. */
 
@@ -2162,6 +2228,12 @@ static int Adapter_output(AdapterObject *self, const char *data,
                 if (*v || errno == ERANGE || l < 0) {
                     PyErr_SetString(PyExc_ValueError,
                                     "invalid content length");
+
+                    output_finish = apr_time_now();
+
+                    if (output_finish > output_start)
+                        self->output_time += (output_finish - output_start);
+
                     return 0;
                 }
 
@@ -2248,6 +2320,11 @@ static int Adapter_output(AdapterObject *self, const char *data,
                 PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client "
                                 "connection closed.");
 
+            output_finish = apr_time_now();
+
+            if (output_finish > output_start)
+                self->output_time += (output_finish - output_start);
+
             return 0;
         }
 
@@ -2301,6 +2378,11 @@ static int Adapter_output(AdapterObject *self, const char *data,
                 PyErr_SetString(PyExc_IOError, error_message);
             }
 
+            output_finish = apr_time_now();
+
+            if (output_finish > output_start)
+                self->output_time += (output_finish - output_start);
+
             return 0;
         }
 
@@ -2308,6 +2390,13 @@ static int Adapter_output(AdapterObject *self, const char *data,
         apr_brigade_cleanup(self->bb);
         Py_END_ALLOW_THREADS
     }
+
+    /* Add how much time we spent send this block of output. */
+
+    output_finish = apr_time_now();
+
+    if (output_finish > output_start)
+        self->output_time += (output_finish - output_start);
 
     /*
      * Check whether aborted connection was found when data
@@ -2832,10 +2921,21 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     PyObject *iterator = NULL;
     PyObject *close = NULL;
 
-    PyObject *wrapper = NULL;
+    PyObject *nrwrapper = NULL;
+    PyObject *evwrapper = NULL;
+
+    PyObject *value = NULL;
+    PyObject *event = NULL;
 
     const char *msg = NULL;
     long length = 0;
+
+    WSGIThreadInfo *thread_handle = NULL;
+
+    apr_time_t finish_time;
+
+    WSGIThreadCPUUsage start_usage;
+    WSGIThreadCPUUsage end_usage;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_idle_timeout) {
@@ -2865,12 +2965,12 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
             if (factory) {
                 Py_INCREF(factory);
 
-                wrapper = PyObject_CallFunctionObjArgs(
+                nrwrapper = PyObject_CallFunctionObjArgs(
                         factory, object, Py_None, NULL);
 
-                if (!wrapper) {
+                if (!nrwrapper) {
                     wsgi_log_python_error(self->r, self->log,
-                                          self->r->filename);
+                                          self->r->filename, 0);
                     PyErr_Clear();
                 }
 
@@ -2881,14 +2981,95 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         }
     }
 
-    if (wrapper)
-        object = wrapper;
+    if (nrwrapper)
+        object = nrwrapper;
+
+    self->start_time = apr_time_now();
 
     apr_table_setn(self->r->subprocess_env, "mod_wsgi.script_start",
                    apr_psprintf(self->r->pool, "%" APR_TIME_T_FMT,
-                   apr_time_now()));
+                   self->start_time));
 
     vars = Adapter_environ(self);
+
+    value = wsgi_PyInt_FromLongLong(wsgi_total_requests);
+    PyDict_SetItemString(vars, "mod_wsgi.total_requests", value);
+    Py_DECREF(value);
+
+    thread_handle = wsgi_thread_info(1, 1);
+
+    value = wsgi_PyInt_FromLong(thread_handle->thread_id);
+    PyDict_SetItemString(vars, "mod_wsgi.thread_id", value);
+    Py_DECREF(value);
+
+    value = wsgi_PyInt_FromLongLong(thread_handle->request_count);
+    PyDict_SetItemString(vars, "mod_wsgi.thread_requests", value);
+    Py_DECREF(value);
+
+    /* Publish event for the start of the request. */
+
+    start_usage.user_time = 0.0;
+    start_usage.system_time = 0.0;
+
+    if (wsgi_event_subscribers()) {
+        wsgi_thread_cpu_usage(&start_usage);
+
+        event = PyDict_New();
+
+        value = wsgi_PyInt_FromLong(thread_handle->thread_id);
+        PyDict_SetItemString(event, "thread_id", value);
+        Py_DECREF(value);
+
+        value = wsgi_PyInt_FromLong(self->config->daemon_connects);
+        PyDict_SetItemString(event, "daemon_connects", value);
+        Py_DECREF(value);
+
+        value = wsgi_PyInt_FromLong(self->config->daemon_restarts);
+        PyDict_SetItemString(event, "daemon_restarts", value);
+        Py_DECREF(value);
+
+        value = PyFloat_FromDouble(apr_time_sec(
+                                   (double)self->config->request_start));
+        PyDict_SetItemString(event, "request_start", value);
+        Py_DECREF(value);
+
+        value = PyFloat_FromDouble(apr_time_sec(
+                                   (double)self->config->queue_start));
+        PyDict_SetItemString(event, "queue_start", value);
+        Py_DECREF(value);
+
+        value = PyFloat_FromDouble(apr_time_sec(
+                                   (double)self->config->daemon_start));
+        PyDict_SetItemString(event, "daemon_start", value);
+        Py_DECREF(value);
+
+        PyDict_SetItemString(event, "application_object", object);
+
+        PyDict_SetItemString(event, "request_environ", vars);
+
+        value = PyFloat_FromDouble(apr_time_sec((double)self->start_time));
+        PyDict_SetItemString(event, "application_start", value);
+        Py_DECREF(value);
+
+        wsgi_publish_event("request_started", event);
+
+        evwrapper = PyDict_GetItemString(event, "application_object");
+
+        if (evwrapper) {
+            if (evwrapper != object) {
+                Py_INCREF(evwrapper);
+                object = evwrapper;
+            }
+            else
+                evwrapper = NULL;
+        }
+
+        Py_DECREF(event);
+    }
+
+    /* Pass the request through to the WSGI application. */
+
+    thread_handle->request_count++;
 
     start = PyObject_GetAttrString((PyObject *)self, "start_response");
 
@@ -2971,7 +3152,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
             if (self->status_line && !self->headers)
                 self->result = OK;
 
-            wsgi_log_python_error(self->r, self->log, self->r->filename);
+            wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
 
             /*
              * If response content is being chunked and an error
@@ -2999,10 +3180,102 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         }
 
         if (PyErr_Occurred())
-            wsgi_log_python_error(self->r, self->log, self->r->filename);
+            wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
     }
     else
-        wsgi_log_python_error(self->r, self->log, self->r->filename);
+        wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
+
+    /* Publish event for the end of the request. */
+
+    if (wsgi_event_subscribers()) {
+        double application_time = 0.0;
+        double output_time = 0.0;
+
+        event = PyDict_New();
+
+        value = wsgi_PyInt_FromLongLong(self->input->reads);
+        PyDict_SetItemString(event, "input_reads", value);
+        Py_DECREF(value);
+
+        value = wsgi_PyInt_FromLongLong(self->input->bytes);
+        PyDict_SetItemString(event, "input_length", value);
+        Py_DECREF(value);
+
+        value = PyFloat_FromDouble(apr_time_sec((double)self->input->time));
+        PyDict_SetItemString(event, "input_time", value);
+        Py_DECREF(value);
+
+        value = wsgi_PyInt_FromLongLong(self->output_length);
+        PyDict_SetItemString(event, "output_length", value);
+        Py_DECREF(value);
+
+        value = wsgi_PyInt_FromLongLong(self->output_writes);
+        PyDict_SetItemString(event, "output_writes", value);
+        Py_DECREF(value);
+
+        output_time = apr_time_sec((double)self->output_time);
+
+        if (output_time < 0.0)
+            output_time = 0.0;
+
+        finish_time = apr_time_now();
+
+        application_time = apr_time_sec((double)finish_time-self->start_time);
+
+        if (application_time < 0.0)
+            application_time = 0.0;
+
+        if (end_usage.user_time != 0.0) {
+            if (wsgi_thread_cpu_usage(&end_usage)) {
+                double user_seconds;
+                double system_seconds;
+                double total_seconds;
+
+                user_seconds = end_usage.user_time;
+                user_seconds -= start_usage.user_time;
+
+                if (user_seconds < 0.0)
+                    user_seconds = 0.0;
+
+                system_seconds = end_usage.system_time;
+                system_seconds -= start_usage.system_time;
+
+                if (system_seconds < 0.0)
+                    system_seconds = 0.0;
+
+                total_seconds = user_seconds + system_seconds;
+
+                if (total_seconds && total_seconds > application_time) {
+                    user_seconds = (user_seconds/total_seconds)*application_time;
+                    system_seconds = application_time - user_seconds;
+                }
+
+                value = PyFloat_FromDouble(user_seconds);
+                PyDict_SetItemString(event, "cpu_user_time", value);
+                Py_DECREF(value);
+
+                value = PyFloat_FromDouble(system_seconds);
+                PyDict_SetItemString(event, "cpu_system_time", value);
+                Py_DECREF(value);
+            }
+        }
+
+        value = PyFloat_FromDouble(output_time);
+        PyDict_SetItemString(event, "output_time", value);
+        Py_DECREF(value);
+
+        value = PyFloat_FromDouble(apr_time_sec((double)finish_time));
+        PyDict_SetItemString(event, "application_finish", value);
+        Py_DECREF(value);
+
+        value = PyFloat_FromDouble(application_time);
+        PyDict_SetItemString(event, "application_time", value);
+        Py_DECREF(value);
+
+        wsgi_publish_event("request_finished", event);
+
+        Py_DECREF(event);
+    }
 
     /*
      * If result indicates an internal server error, then
@@ -3018,7 +3291,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     Py_DECREF(start);
     Py_DECREF(vars);
 
-    Py_XDECREF(wrapper);
+    Py_XDECREF(nrwrapper);
+    Py_XDECREF(evwrapper);
 
     Py_XDECREF(self->sequence);
     self->sequence = NULL;
@@ -3361,7 +3635,7 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         }
         Py_END_ALLOW_THREADS
 
-        wsgi_log_python_error(r, NULL, filename);
+        wsgi_log_python_error(r, NULL, filename, 0);
     }
 
     return m;
@@ -3423,7 +3697,7 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
             }
 
             if (PyErr_Occurred())
-                wsgi_log_python_error(r, NULL, filename);
+                wsgi_log_python_error(r, NULL, filename, 0);
 
             Py_XDECREF(result);
         }
@@ -3533,7 +3807,7 @@ static int wsgi_execute_script(request_rec *r)
                              script);
                 Py_END_ALLOW_THREADS
 
-                wsgi_log_python_error(r, NULL, r->filename);
+                wsgi_log_python_error(r, NULL, r->filename, 0);
             }
         }
 #endif
@@ -3682,10 +3956,9 @@ static int wsgi_execute_script(request_rec *r)
     }
 #endif
 
-    /* If embedded mode, need to do request count. */
+    /* Setup metrics for start of request. */
 
-    if (!wsgi_daemon_pool)
-        wsgi_start_request();
+    wsgi_start_request();
 
     /* Load module if not already loaded. */
 
@@ -3776,16 +4049,15 @@ static int wsgi_execute_script(request_rec *r)
     /* Log any details of exceptions if execution failed. */
 
     if (PyErr_Occurred())
-        wsgi_log_python_error(r, NULL, r->filename);
-
-    /* Cleanup and release interpreter, */
+        wsgi_log_python_error(r, NULL, r->filename, 0);
 
     Py_XDECREF(module);
 
-    /* If embedded mode, need to do request count. */
+    /* Finalise any metrics at end of the request. */
 
-    if (!wsgi_daemon_pool)
-        wsgi_end_request();
+    wsgi_end_request();
+
+    /* Cleanup and release interpreter, */
 
     wsgi_release_interpreter(interp);
 
@@ -3879,9 +4151,6 @@ static void wsgi_python_child_init(apr_pool_t *p)
     PyGILState_STATE state;
     PyObject *object = NULL;
 
-    int thread_id = 0;
-    int *thread_handle = NULL;
-
     /* Working with Python, so must acquire GIL. */
 
     state = PyGILState_Ensure();
@@ -3924,20 +4193,13 @@ static void wsgi_python_child_init(apr_pool_t *p)
 #endif
 
     /*
-     * Initialise the key for data related to a thread. At
-     * the moment we only record an integer thread ID to be
-     * used in lookup table to thread states associated with
-     * an interprter.
+     * Initialise the key for data related to a thread and force
+     * creation of thread info.
      */
 
-#if APR_HAS_THREADS
     apr_threadkey_private_create(&wsgi_thread_key, NULL, p);
 
-    thread_id = wsgi_thread_count++;
-    thread_handle = (int*)apr_pmemdup(wsgi_server->process->pool,
-                                      &thread_id, sizeof(thread_id));
-    apr_threadkey_private_set(thread_handle, wsgi_thread_key);
-#endif
+    wsgi_thread_info(1, 0);
 
     /*
      * Cache a reference to the first Python interpreter
@@ -6469,7 +6731,7 @@ static int wsgi_execute_dispatch(request_rec *r)
             /* Log any details of exceptions if execution failed. */
 
             if (PyErr_Occurred())
-                wsgi_log_python_error(r, NULL, script);
+                wsgi_log_python_error(r, NULL, script, 0);
 
             Py_DECREF(vars);
         }
@@ -6717,6 +6979,8 @@ static int wsgi_hook_handler(request_rec *r)
     }
 
     /* Build the sub process environment. */
+
+    config->request_start = r->request_time;
 
     wsgi_build_environment(r);
 
@@ -8298,6 +8562,7 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
         if (group->mutex) {
             apr_status_t rv;
             rv = apr_proc_mutex_unlock(group->mutex);
+
             if (rv != APR_SUCCESS) {
                 if (!wsgi_daemon_shutdown) {
                     wsgi_worker_release();
@@ -8326,8 +8591,6 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
         /* Process the request proxied from the child process. */
 
-        wsgi_start_request();
-
         apr_thread_mutex_lock(wsgi_monitor_lock);
         thread->request = apr_time_now();
         apr_thread_mutex_unlock(wsgi_monitor_lock);
@@ -8346,8 +8609,6 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
         thread->running = 0;
 
         /* Check to see if maximum number of requests reached. */
-
-        wsgi_end_request();
 
         if (daemon->group->maximum_requests) {
             if (--wsgi_request_count <= 0) {
@@ -9465,6 +9726,11 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             }
         }
 
+        /* Create lock for request monitoring. */
+
+        apr_thread_mutex_create(&wsgi_monitor_lock,
+                                APR_THREAD_MUTEX_UNNESTED, p);
+
         /*
          * Initialise Python if required to be done in the child
          * process. Note that it will not be initialised if
@@ -9613,6 +9879,10 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             }
         }
 
+        /* Time daemon process started waiting for requests. */
+
+        wsgi_restart_time = apr_time_now();
+
         /*
          * Setup Python in the child daemon process. Note that
          * we ensure that we are now marked as the original
@@ -9633,11 +9903,6 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         wsgi_python_child_init(wsgi_daemon_pool);
 
-        /* Create lock for request monitoring. */
-
-        apr_thread_mutex_create(&wsgi_monitor_lock,
-                                APR_THREAD_MUTEX_UNNESTED, p);
-
         /*
          * Create socket wrapper for listener file descriptor
          * and mutex for controlling which thread gets to
@@ -9645,10 +9910,6 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          */
 
         apr_os_sock_put(&daemon->listener, &daemon->group->listener_fd, p);
-
-        /* Time daemon process started waiting for requests. */
-
-        wsgi_restart_time = apr_time_now();
 
         /* Run the main routine for the daemon process. */
 
@@ -12156,6 +12417,37 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     else
         config->enable_sendfile = 0;
 
+    config->daemon_connects = atoi(apr_table_get(r->subprocess_env,
+                                                 "mod_wsgi.daemon_connects"));
+    config->daemon_restarts = atoi(apr_table_get(r->subprocess_env,
+                                                 "mod_wsgi.daemon_restarts"));
+
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.request_start");
+
+    if (item) {
+        errno = 0;
+        config->request_start = apr_strtoi64(item, (char **)&item, 10);
+
+        if (!(!*item && errno != ERANGE))
+            config->request_start = 0.0;
+    }
+
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.queue_start");
+
+    if (item) {
+        errno = 0;
+        config->queue_start = apr_strtoi64(item, (char **)&item, 10);
+
+        if (!(!*item && errno != ERANGE))
+            config->queue_start = 0.0;
+    }
+
+    config->daemon_start = apr_time_now();
+
+    apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_start",
+                   apr_psprintf(r->pool, "%" APR_TIME_T_FMT,
+                   config->daemon_start));
+
     /*
      * Install the standard HTTP input filter and set header for
      * chunked transfer encoding to force it to dechunk the input.
@@ -12178,27 +12470,20 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     r->status = HTTP_OK;
 
     if (wsgi_daemon_process->group->queue_timeout) {
-        item = apr_table_get(r->subprocess_env, "mod_wsgi.request_start");
-
-        if (item) {
-            apr_time_t request_time = 0;
+        if (config->request_start) {
             apr_time_t queue_time = 0;
 
-            errno = 0;
-            request_time = apr_strtoi64(item, (char **)&item, 10);
+            queue_time = config->daemon_start - config->request_start;
 
-            if (!*item && errno != ERANGE) {
-                queue_time = apr_time_now() - request_time;
-                if (queue_time > wsgi_daemon_process->group->queue_timeout) {
-                    queue_timeout_occurred = 1;
+            if (queue_time > wsgi_daemon_process->group->queue_timeout) {
+                queue_timeout_occurred = 1;
 
-                    r->status_line = "200 Timeout";
+                r->status_line = "200 Timeout";
 
-                    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                 "mod_wsgi (pid=%d): Queue timeout expired "
-                                 "for WSGI daemon process '%s'.", getpid(),
-                                 wsgi_daemon_process->group->name);
-                }
+                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                             "mod_wsgi (pid=%d): Queue timeout expired "
+                             "for WSGI daemon process '%s'.", getpid(),
+                             wsgi_daemon_process->group->name);
             }
         }
     }
@@ -12219,10 +12504,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      */
 
     if (!queue_timeout_occurred) {
-        apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_start",
-                       apr_psprintf(r->pool, "%" APR_TIME_T_FMT,
-                       apr_time_now()));
-
         if (wsgi_execute_script(r) != OK) {
             r->status = HTTP_INTERNAL_SERVER_ERROR;
             r->status_line = "200 Error";
@@ -12457,6 +12738,10 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
     wsgi_worker_pid = getpid();
 
+    /* Time child process started waiting for requests. */
+
+    wsgi_restart_time = apr_time_now();
+
     /* Create lock for request monitoring. */
 
     apr_thread_mutex_create(&wsgi_monitor_lock,
@@ -12480,10 +12765,6 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
         wsgi_python_child_init(p);
     }
-
-    /* Time child process started waiting for requests. */
-
-    wsgi_restart_time = apr_time_now();
 }
 
 #include "apr_lib.h"
@@ -13881,7 +14162,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
         /* Log any details of exceptions if execution failed. */
 
         if (PyErr_Occurred())
-            wsgi_log_python_error(r, NULL, script);
+            wsgi_log_python_error(r, NULL, script, 0);
     }
 
     /* Cleanup and release interpreter, */
@@ -14118,7 +14399,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
         /* Log any details of exceptions if execution failed. */
 
         if (PyErr_Occurred())
-            wsgi_log_python_error(r, NULL, script);
+            wsgi_log_python_error(r, NULL, script, 0);
     }
 
     /* Cleanup and release interpreter, */
@@ -14401,7 +14682,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
         /* Log any details of exceptions if execution failed. */
 
         if (PyErr_Occurred())
-            wsgi_log_python_error(r, NULL, script);
+            wsgi_log_python_error(r, NULL, script, 0);
     }
 
     /* Cleanup and release interpreter, */
@@ -14617,7 +14898,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
         /* Log any details of exceptions if execution failed. */
 
         if (PyErr_Occurred())
-            wsgi_log_python_error(r, NULL, script);
+            wsgi_log_python_error(r, NULL, script, 0);
     }
 
     /* Cleanup and release interpreter, */
@@ -14890,7 +15171,7 @@ static int wsgi_hook_check_user_id(request_rec *r)
         /* Log any details of exceptions if execution failed. */
 
         if (PyErr_Occurred())
-            wsgi_log_python_error(r, NULL, script);
+            wsgi_log_python_error(r, NULL, script, 0);
     }
 
     /* Cleanup and release interpreter, */

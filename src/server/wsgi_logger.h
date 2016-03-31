@@ -31,7 +31,7 @@ extern PyTypeObject Log_Type;
 extern PyObject *newLogObject(request_rec *r, int level, const char *target);
 
 extern void wsgi_log_python_error(request_rec *r, PyObject *log,
-                                  const char *filename);
+                                  const char *filename, int publish);
 
 /* ------------------------------------------------------------------------- */
 

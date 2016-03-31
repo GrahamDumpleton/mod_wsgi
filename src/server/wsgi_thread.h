@@ -1,10 +1,10 @@
-#ifndef WSGI_METRICS_H
-#define WSGI_METRICS_H
+#ifndef WSGI_THREAD_H
+#define WSGI_THREAD_H
 
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2016 GRAHAM DUMPLETON
+ * Copyright 2007-2015 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,25 +26,26 @@
 
 /* ------------------------------------------------------------------------- */
 
-extern apr_uint64_t wsgi_total_requests;
-extern int wsgi_active_requests;
-extern int wsgi_dump_stack_traces;
+typedef struct {
+    int thread_id;
+    int request_thread;
+    apr_int64_t request_count;
+    PyObject *request_data;
+} WSGIThreadInfo;
 
-extern apr_thread_mutex_t* wsgi_monitor_lock;
+extern int wsgi_total_threads;
+extern int wsgi_request_threads;
+extern apr_threadkey_t *wsgi_thread_key;
+extern apr_array_header_t *wsgi_thread_details;
 
-extern PyMethodDef wsgi_process_metrics_method[];
+extern WSGIThreadInfo *wsgi_thread_info(int create, int request);
 
-extern void wsgi_start_request(void);
-extern void wsgi_end_request(void);
+typedef struct {
+    double user_time;
+    double system_time;
+} WSGIThreadCPUUsage;
 
-extern PyMethodDef wsgi_server_metrics_method[];
-
-extern long wsgi_event_subscribers(void);
-extern void wsgi_publish_event(const char *name, PyObject *event);
-
-extern PyMethodDef wsgi_process_events_method[];
-
-extern PyMethodDef wsgi_request_data_method[];
+extern int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage);
 
 /* ------------------------------------------------------------------------- */
 
