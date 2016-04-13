@@ -345,6 +345,7 @@ WSGIMapHEADToGET %(map_head_to_get)s
 
 <IfDefine ONE_PROCESS>
 WSGIRestrictStdin Off
+WSGIPythonPath '%(python_path)s'
 </IfDefine>
 
 <IfDefine MOD_WSGI_SERVER_METRICS>
