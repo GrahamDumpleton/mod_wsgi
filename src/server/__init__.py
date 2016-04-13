@@ -345,7 +345,9 @@ WSGIMapHEADToGET %(map_head_to_get)s
 
 <IfDefine ONE_PROCESS>
 WSGIRestrictStdin Off
+<IfDefine MOD_WSGI_WITH_PYTHON_PATH>
 WSGIPythonPath '%(python_path)s'
+</IfDefine>
 </IfDefine>
 
 <IfDefine MOD_WSGI_SERVER_METRICS>
@@ -3024,6 +3026,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PROXY_HEADERS')
     if options['trusted_proxies']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_TRUSTED_PROXIES')
+    if options['python_path']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PYTHON_PATH')
 
     if options['with_cgi']:
         if os.path.exists(os.path.join(options['modules_directory'],
