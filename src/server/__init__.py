@@ -282,6 +282,8 @@ LimitRequestBody %(limit_request_body)s
 
 WSGIPythonHome '%(python_home)s'
 
+WSGIVerboseDebugging '%(verbose_debugging_flag)s'
+
 <IfDefine !ONE_PROCESS>
 WSGIRestrictEmbedded On
 WSGISocketPrefix %(server_root)s/wsgi
@@ -345,6 +347,9 @@ WSGIMapHEADToGET %(map_head_to_get)s
 
 <IfDefine ONE_PROCESS>
 WSGIRestrictStdin Off
+<IfDefine MOD_WSGI_WITH_PYTHON_PATH>
+WSGIPythonPath '%(python_path)s'
+</IfDefine>
 </IfDefine>
 
 <IfDefine MOD_WSGI_SERVER_METRICS>
@@ -2240,6 +2245,9 @@ option_list = (
             help='Flag indicating whether the web server startup log should '
             'be enabled. Defaults to being disabled.'),
 
+    optparse.make_option('--verbose-debugging', action='store_true',
+            dest='verbose_debugging', help=optparse.SUPPRESS_HELP),
+
     optparse.make_option('--log-to-terminal', action='store_true',
             default=False, help='Flag indicating whether logs should '
             'be directed back to the terminal. Defaults to being disabled. '
@@ -2876,6 +2884,11 @@ def _cmd_setup_server(command, args, options):
             options['httpd_arguments_list'].append('-E')
             options['httpd_arguments_list'].append(options['startup_log_file'])
 
+    if options['verbose_debugging']:
+        options['verbose_debugging_flag'] = 'On'
+    else:
+        options['verbose_debugging_flag'] = 'Off'
+
     if options['server_name']:
         host = options['server_name']
     else:
@@ -3023,6 +3036,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PROXY_HEADERS')
     if options['trusted_proxies']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_TRUSTED_PROXIES')
+    if options['python_path']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PYTHON_PATH')
 
     if options['with_cgi']:
         if os.path.exists(os.path.join(options['modules_directory'],
