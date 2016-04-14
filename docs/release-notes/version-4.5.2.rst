@@ -10,5 +10,5 @@ Bugs Fixed
 ----------
 
 1. When using ``--debug-mode`` with ``mod_wsgi-express`` any additional
-   directories to search for Python modules which were supplied by the
-   ``--python-path`` option were not being add to ``sys.path``.
+   directories to search for Python modules, which were supplied by the
+   ``--python-path`` option, were not being added to ``sys.path``.
