@@ -3128,6 +3128,8 @@ def _cmd_setup_server(command, args, options):
 
     print('Locale Setting     :', options['locale'])
 
+    sys.stdout.flush()
+
     if not options['rewrite_rules']:
         options['rewrite_rules'] = options['server_root'] + '/rewrite.conf'
 
