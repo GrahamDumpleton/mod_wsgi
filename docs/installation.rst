@@ -18,6 +18,7 @@ For instructions on how to compile mod_wsgi from source code for UNIX like
 operating systems such as Linux and MacOS X see:
 
   * :doc:`user-guides/quick-installation-guide`
+  * :doc:`user-guides/installation-on-macosx`
 
 If you are on Windows, you should instead use:
 
