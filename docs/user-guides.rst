@@ -6,6 +6,7 @@ User Guides
    :maxdepth: 1
 
    user-guides/quick-installation-guide
+   user-guides/installation-on-macosx
    user-guides/quick-configuration-guide
    user-guides/configuration-guidelines
    user-guides/installation-issues
