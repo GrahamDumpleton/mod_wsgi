@@ -3749,6 +3749,8 @@ static int wsgi_execute_script(request_rec *r)
 
     int status;
 
+    WSGIThreadInfo *thread_info = NULL;
+
     /* Grab request configuration. */
 
     config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
@@ -3958,7 +3960,7 @@ static int wsgi_execute_script(request_rec *r)
 
     /* Setup metrics for start of request. */
 
-    wsgi_start_request();
+    thread_info = wsgi_start_request();
 
     /* Load module if not already loaded. */
 
@@ -3995,6 +3997,9 @@ static int wsgi_execute_script(request_rec *r)
                 PyObject *method = NULL;
                 PyObject *args = NULL;
 
+                Py_INCREF(adapter->log);
+                thread_info->log = adapter->log;
+
                 Py_INCREF(object);
                 status = Adapter_run(adapter, object);
                 Py_DECREF(object);
@@ -4028,6 +4033,8 @@ static int wsgi_execute_script(request_rec *r)
 
                 Py_XDECREF(object);
                 Py_XDECREF(method);
+
+                Py_CLEAR(thread_info->log);
 
                 adapter->bb = NULL;
             }

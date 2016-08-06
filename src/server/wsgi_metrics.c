@@ -77,7 +77,7 @@ static double wsgi_utilization_time(int adjustment)
     return utilization;
 }
 
-void wsgi_start_request(void)
+WSGIThreadInfo *wsgi_start_request(void)
 {
     WSGIThreadInfo *thread_info;
 
@@ -85,6 +85,8 @@ void wsgi_start_request(void)
     thread_info->request_data = PyDict_New();
 
     wsgi_utilization_time(1);
+
+    return thread_info;
 }
 
 void wsgi_end_request(void)
@@ -93,8 +95,13 @@ void wsgi_end_request(void)
 
     thread_info = wsgi_thread_info(0, 1);
 
-    if (thread_info && thread_info->request_data)
-        Py_CLEAR(thread_info->request_data);
+    if (thread_info) {
+        if (thread_info->log)
+            Py_CLEAR(thread_info->log);
+
+        if (thread_info->request_data)
+            Py_CLEAR(thread_info->request_data);
+    }
 
     wsgi_utilization_time(-1);
 }

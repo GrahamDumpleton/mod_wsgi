@@ -22,6 +22,7 @@
 
 #include "wsgi_server.h"
 #include "wsgi_metrics.h"
+#include "wsgi_thread.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -220,6 +221,13 @@ static void Log_dealloc(LogObject *self)
 
 static PyObject *Log_flush(LogObject *self, PyObject *args)
 {
+    WSGIThreadInfo *thread_info = NULL;
+
+    thread_info = wsgi_thread_info(0, 0);
+
+    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
+        return Log_flush((LogObject *)thread_info->log, args);
+
     if (self->expired) {
         PyErr_SetString(PyExc_RuntimeError, "log object has expired");
         return NULL;
@@ -240,6 +248,13 @@ static PyObject *Log_flush(LogObject *self, PyObject *args)
 static PyObject *Log_close(LogObject *self, PyObject *args)
 {
     PyObject *result = NULL;
+
+    WSGIThreadInfo *thread_info = NULL;
+
+    thread_info = wsgi_thread_info(0, 0);
+
+    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
+        return Log_close((LogObject *)thread_info->log, args);
 
     if (!self->expired)
         result = Log_flush(self, args);
@@ -368,6 +383,13 @@ static PyObject *Log_write(LogObject *self, PyObject *args)
     const char *msg = NULL;
     int len = -1;
 
+    WSGIThreadInfo *thread_info = NULL;
+
+    thread_info = wsgi_thread_info(0, 0);
+
+    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
+        return Log_write((LogObject *)thread_info->log, args);
+
     if (self->expired) {
         PyErr_SetString(PyExc_RuntimeError, "log object has expired");
         return NULL;
@@ -387,6 +409,13 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
     PyObject *sequence = NULL;
     PyObject *iterator = NULL;
     PyObject *item = NULL;
+
+    WSGIThreadInfo *thread_info = NULL;
+
+    thread_info = wsgi_thread_info(0, 0);
+
+    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
+        return Log_writelines((LogObject *)thread_info->log, args);
 
     if (self->expired) {
         PyErr_SetString(PyExc_RuntimeError, "log object has expired");
@@ -469,12 +498,26 @@ static PyObject *Log_closed(LogObject *self, void *closure)
 #if PY_MAJOR_VERSION < 3
 static PyObject *Log_get_softspace(LogObject *self, void *closure)
 {
+    WSGIThreadInfo *thread_info = NULL;
+
+    thread_info = wsgi_thread_info(0, 0);
+
+    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
+        return Log_get_softspace((LogObject *)thread_info->log, closure);
+
     return PyInt_FromLong(self->softspace);
 }
 
 static int Log_set_softspace(LogObject *self, PyObject *value)
 {
     long new;
+
+    WSGIThreadInfo *thread_info = NULL;
+
+    thread_info = wsgi_thread_info(0, 0);
+
+    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
+        return Log_set_softspace((LogObject *)thread_info->log, value);
 
     if (value == NULL) {
         PyErr_SetString(PyExc_TypeError, "can't delete softspace attribute");
@@ -494,6 +537,13 @@ static int Log_set_softspace(LogObject *self, PyObject *value)
 
 static PyObject *Log_get_encoding(LogObject *self, void *closure)
 {
+    WSGIThreadInfo *thread_info = NULL;
+
+    thread_info = wsgi_thread_info(0, 0);
+
+    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
+        return Log_get_encoding((LogObject *)thread_info->log, closure);
+
     return PyUnicode_FromString("utf-8");
 }
 

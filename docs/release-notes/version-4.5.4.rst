@@ -14,6 +14,18 @@ Bugs Fixed
    to the daemon process so that log messages generated against the request
    would use the same ID in logs when using the ``%L`` format modifier.
 
+Features Changed
+----------------
+
+1. If ``sys.stdout`` and ``sys.stderr`` are used in the context of the
+   thread handling a request, calls against them to log messages will be
+   routed back via ``wsgi.errors`` from the per request WSGI ``environ``
+   dictionary. This avoids the danger of logged messages from different
+   request handlers being intermixed as buffering will now be done on a per
+   request basis. Such messages will also be logged with the correct
+   connection and request log ID if the ``%L`` formatter is used in the
+   error log format.
+
 New Features
 ------------
 
