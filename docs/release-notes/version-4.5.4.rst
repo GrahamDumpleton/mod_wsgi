@@ -14,6 +14,11 @@ Bugs Fixed
    to the daemon process so that log messages generated against the request
    would use the same ID in logs when using the ``%L`` format modifier.
 
+2. When using Apache 2.4 and daemon mode, the remote client port
+   information was not being cached such that log messages generated
+   against the request would use the port in logs when using the ``%a``
+   format modifier.
+
 Features Changed
 ----------------
 

@@ -12353,9 +12353,13 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 #if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
     r->connection->client_ip = (char *)apr_table_get(r->subprocess_env,
                                                      "REMOTE_ADDR");
+    r->connection->client_addr->port = atoi(apr_table_get(r->subprocess_env,
+                                                          "REMOTE_PORT"));
 #else
     r->connection->remote_ip = (char *)apr_table_get(r->subprocess_env,
                                                      "REMOTE_ADDR");
+    r->connection->remote_addr->port = atoi(apr_table_get(r->subprocess_env,
+                                                          "REMOTE_PORT"));
 #endif
 
 #if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
