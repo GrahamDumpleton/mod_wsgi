@@ -57,6 +57,8 @@ WSGIThreadInfo *wsgi_thread_info(int create, int request)
         thread_handle = (WSGIThreadInfo *)apr_pcalloc(
                 wsgi_server->process->pool, sizeof(WSGIThreadInfo));
 
+        thread_handle->log = NULL;
+
         thread_handle->thread_id = wsgi_total_threads++;
 
         entry = (WSGIThreadInfo **)apr_array_push(wsgi_thread_details);

@@ -394,6 +394,10 @@ ErrorLog "%(error_log_file)s"
 </IfDefine>
 LogLevel %(log_level)s
 
+<IfDefine MOD_WSGI_ERROR_LOG_FORMAT>
+ErrorLogFormat "%(error_log_format)s"
+</IfDefine>
+
 <IfDefine MOD_WSGI_ACCESS_LOG>
 <IfModule !log_config_module>
 LoadModule log_config_module ${MOD_WSGI_MODULES_DIRECTORY}/mod_log_config.so
@@ -2257,6 +2261,8 @@ option_list = (
 
     optparse.make_option('--access-log-format', metavar='FORMAT',
             help='Specify the format of the access log records.'),
+    optparse.make_option('--error-log-format', metavar='FORMAT',
+            help='Specify the format of the error log records.'),
 
     optparse.make_option('--error-log-name', metavar='FILE-NAME',
             default='error_log', help='Specify the name of the error '
@@ -2646,6 +2652,10 @@ def _cmd_setup_server(command, args, options):
     options['access_log_format'] = options['access_log_format'].replace(
             '\"', '\\"')
 
+    if options['error_log_format']:
+        options['error_log_format'] = options['error_log_format'].replace(
+                '\"', '\\"')
+
     options['pid_file'] = ((options['pid_file'] and os.path.abspath(
             options['pid_file'])) or os.path.join(options['server_root'],
             'httpd.pid'))
@@ -3006,6 +3016,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_DIRECTORY_INDEX')
     if options['directory_listing']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_DIRECTORY_LISTING')
+    if options['error_log_format']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_ERROR_LOG_FORMAT')
     if options['access_log']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_ACCESS_LOG')
     if options['rotate_logs']:

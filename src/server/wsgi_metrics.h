@@ -24,6 +24,8 @@
 #include "wsgi_python.h"
 #include "wsgi_apache.h"
 
+#include "wsgi_thread.h"
+
 /* ------------------------------------------------------------------------- */
 
 extern apr_uint64_t wsgi_total_requests;
@@ -34,7 +36,7 @@ extern apr_thread_mutex_t* wsgi_monitor_lock;
 
 extern PyMethodDef wsgi_process_metrics_method[];
 
-extern void wsgi_start_request(void);
+extern WSGIThreadInfo *wsgi_start_request(void);
 extern void wsgi_end_request(void);
 
 extern PyMethodDef wsgi_server_metrics_method[];

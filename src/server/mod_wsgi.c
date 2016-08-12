@@ -3749,6 +3749,8 @@ static int wsgi_execute_script(request_rec *r)
 
     int status;
 
+    WSGIThreadInfo *thread_info = NULL;
+
     /* Grab request configuration. */
 
     config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
@@ -3958,7 +3960,7 @@ static int wsgi_execute_script(request_rec *r)
 
     /* Setup metrics for start of request. */
 
-    wsgi_start_request();
+    thread_info = wsgi_start_request();
 
     /* Load module if not already loaded. */
 
@@ -3995,6 +3997,9 @@ static int wsgi_execute_script(request_rec *r)
                 PyObject *method = NULL;
                 PyObject *args = NULL;
 
+                Py_INCREF(adapter->log);
+                thread_info->log = adapter->log;
+
                 Py_INCREF(object);
                 status = Adapter_run(adapter, object);
                 Py_DECREF(object);
@@ -4028,6 +4033,8 @@ static int wsgi_execute_script(request_rec *r)
 
                 Py_XDECREF(object);
                 Py_XDECREF(method);
+
+                Py_CLEAR(thread_info->log);
 
                 adapter->bb = NULL;
             }
@@ -6053,6 +6060,27 @@ static void wsgi_build_environment(request_rec *r)
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.request_start",
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT, r->request_time));
+
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+    if (!r->log_id || !r->connection->log_id) {
+        const char **id;
+
+        /* Need to cast const away. */
+
+        if (r)
+            id = &((request_rec *)r)->log_id;
+        else
+            id = &((conn_rec *)c)->log_id;
+
+        ap_run_generate_log_id(c, r, id);
+    }
+
+    if (r->log_id)
+        apr_table_setn(r->subprocess_env, "mod_wsgi.request_id", r->log_id);
+    if (r->connection->log_id)
+        apr_table_setn(r->subprocess_env, "mod_wsgi.connection_id",
+                       r->connection->log_id);
+#endif
 }
 
 typedef struct {
@@ -12325,9 +12353,13 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 #if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
     r->connection->client_ip = (char *)apr_table_get(r->subprocess_env,
                                                      "REMOTE_ADDR");
+    r->connection->client_addr->port = atoi(apr_table_get(r->subprocess_env,
+                                                          "REMOTE_PORT"));
 #else
     r->connection->remote_ip = (char *)apr_table_get(r->subprocess_env,
                                                      "REMOTE_ADDR");
+    r->connection->remote_addr->port = atoi(apr_table_get(r->subprocess_env,
+                                                          "REMOTE_PORT"));
 #endif
 
 #if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
@@ -12428,7 +12460,9 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
         errno = 0;
         config->request_start = apr_strtoi64(item, (char **)&item, 10);
 
-        if (!(!*item && errno != ERANGE))
+        if (!*item && errno != ERANGE)
+            r->request_time = config->request_start;
+        else
             config->request_start = 0.0;
     }
 
@@ -12447,6 +12481,18 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_start",
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT,
                    config->daemon_start));
+
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.request_id");
+
+    if (item)
+        r->log_id = item;
+
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.connection_id");
+
+    if (item)
+        r->connection->log_id = item;
+#endif
 
     /*
      * Install the standard HTTP input filter and set header for
