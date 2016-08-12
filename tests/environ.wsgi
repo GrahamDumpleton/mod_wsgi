@@ -13,6 +13,10 @@ import mod_wsgi
 import apache
 
 def application(environ, start_response):
+    print('global message')
+    print('request message', file=environ['wsgi.errors'])
+    print('queued message', end='')
+
     headers = []
     headers.append(('Content-Type', 'text/plain; charset="UTF-8"'))
     write = start_response('200 OK', headers)
