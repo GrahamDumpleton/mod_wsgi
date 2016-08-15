@@ -221,13 +221,6 @@ static void Log_dealloc(LogObject *self)
 
 static PyObject *Log_flush(LogObject *self, PyObject *args)
 {
-    WSGIThreadInfo *thread_info = NULL;
-
-    thread_info = wsgi_thread_info(0, 0);
-
-    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
-        return Log_flush((LogObject *)thread_info->log, args);
-
     if (self->expired) {
         PyErr_SetString(PyExc_RuntimeError, "log object has expired");
         return NULL;
@@ -248,13 +241,6 @@ static PyObject *Log_flush(LogObject *self, PyObject *args)
 static PyObject *Log_close(LogObject *self, PyObject *args)
 {
     PyObject *result = NULL;
-
-    WSGIThreadInfo *thread_info = NULL;
-
-    thread_info = wsgi_thread_info(0, 0);
-
-    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
-        return Log_close((LogObject *)thread_info->log, args);
 
     if (!self->expired)
         result = Log_flush(self, args);
