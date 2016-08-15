@@ -373,8 +373,15 @@ static PyObject *Log_write(LogObject *self, PyObject *args)
 
     thread_info = wsgi_thread_info(0, 0);
 
-    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
-        return Log_write((LogObject *)thread_info->log, args);
+    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self) {
+        PyObject *result;
+
+        Py_INCREF(thread_info->log);
+        result = Log_write((LogObject *)thread_info->log, args);
+        Py_DECREF(thread_info->log);
+
+        return result;
+    }
 
     if (self->expired) {
         PyErr_SetString(PyExc_RuntimeError, "log object has expired");
@@ -400,8 +407,15 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
 
     thread_info = wsgi_thread_info(0, 0);
 
-    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
-        return Log_writelines((LogObject *)thread_info->log, args);
+    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self) {
+        PyObject *result;
+
+        Py_INCREF(thread_info->log);
+        result = Log_writelines((LogObject *)thread_info->log, args);
+        Py_DECREF(thread_info->log);
+
+        return result;
+    }
 
     if (self->expired) {
         PyErr_SetString(PyExc_RuntimeError, "log object has expired");
@@ -488,8 +502,15 @@ static PyObject *Log_get_softspace(LogObject *self, void *closure)
 
     thread_info = wsgi_thread_info(0, 0);
 
-    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
-        return Log_get_softspace((LogObject *)thread_info->log, closure);
+    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self) {
+        PyObject *result;
+
+        Py_INCREF(thread_info->log);
+        result = Log_get_softspace((LogObject *)thread_info->log, closure);
+        Py_DECREF(thread_info->log);
+
+        return result;
+    }
 
     return PyInt_FromLong(self->softspace);
 }
@@ -502,8 +523,15 @@ static int Log_set_softspace(LogObject *self, PyObject *value)
 
     thread_info = wsgi_thread_info(0, 0);
 
-    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
-        return Log_set_softspace((LogObject *)thread_info->log, value);
+    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self) {
+        PyObject *result;
+
+        Py_INCREF(thread_info->log);
+        result = Log_set_softspace((LogObject *)thread_info->log, value);
+        Py_DECREF(thread_info->log);
+
+        return result;
+    }
 
     if (value == NULL) {
         PyErr_SetString(PyExc_TypeError, "can't delete softspace attribute");
@@ -527,8 +555,15 @@ static PyObject *Log_get_encoding(LogObject *self, void *closure)
 
     thread_info = wsgi_thread_info(0, 0);
 
-    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self)
-        return Log_get_encoding((LogObject *)thread_info->log, closure);
+    if (thread_info && thread_info->log && thread_info->log != (PyObject *)self) {
+        PyObject *result;
+
+        Py_INCREF(thread_info->log);
+        result = Log_get_encoding((LogObject *)thread_info->log, closure);
+        Py_DECREF(thread_info->log);
+
+        return result;
+    }
 
     return PyUnicode_FromString("utf-8");
 }
