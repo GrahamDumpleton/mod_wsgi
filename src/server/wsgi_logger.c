@@ -369,6 +369,7 @@ static PyObject *Log_write(LogObject *self, PyObject *args)
     const char *msg = NULL;
     int len = -1;
 
+#if 0
     WSGIThreadInfo *thread_info = NULL;
 
     thread_info = wsgi_thread_info(0, 0);
@@ -382,6 +383,7 @@ static PyObject *Log_write(LogObject *self, PyObject *args)
 
         return result;
     }
+#endif
 
     if (self->expired) {
         PyErr_SetString(PyExc_RuntimeError, "log object has expired");
@@ -403,6 +405,7 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
     PyObject *iterator = NULL;
     PyObject *item = NULL;
 
+#if 0
     WSGIThreadInfo *thread_info = NULL;
 
     thread_info = wsgi_thread_info(0, 0);
@@ -416,6 +419,7 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
 
         return result;
     }
+#endif
 
     if (self->expired) {
         PyErr_SetString(PyExc_RuntimeError, "log object has expired");
@@ -498,6 +502,7 @@ static PyObject *Log_closed(LogObject *self, void *closure)
 #if PY_MAJOR_VERSION < 3
 static PyObject *Log_get_softspace(LogObject *self, void *closure)
 {
+#if 0
     WSGIThreadInfo *thread_info = NULL;
 
     thread_info = wsgi_thread_info(0, 0);
@@ -511,6 +516,7 @@ static PyObject *Log_get_softspace(LogObject *self, void *closure)
 
         return result;
     }
+#endif
 
     return PyInt_FromLong(self->softspace);
 }
@@ -519,6 +525,7 @@ static int Log_set_softspace(LogObject *self, PyObject *value)
 {
     long new;
 
+#if 0
     WSGIThreadInfo *thread_info = NULL;
 
     thread_info = wsgi_thread_info(0, 0);
@@ -532,6 +539,7 @@ static int Log_set_softspace(LogObject *self, PyObject *value)
 
         return result;
     }
+#endif
 
     if (value == NULL) {
         PyErr_SetString(PyExc_TypeError, "can't delete softspace attribute");
@@ -551,6 +559,7 @@ static int Log_set_softspace(LogObject *self, PyObject *value)
 
 static PyObject *Log_get_encoding(LogObject *self, void *closure)
 {
+#if 0
     WSGIThreadInfo *thread_info = NULL;
 
     thread_info = wsgi_thread_info(0, 0);
@@ -564,6 +573,7 @@ static PyObject *Log_get_encoding(LogObject *self, void *closure)
 
         return result;
     }
+#endif
 
     return PyUnicode_FromString("utf-8");
 }
