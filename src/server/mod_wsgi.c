@@ -1938,6 +1938,7 @@ typedef struct {
         apr_bucket_brigade *bb;
         WSGIRequestConfig *config;
         InputObject *input;
+        PyObject *log_buffer;
         PyObject *log;
         int status;
         const char *status_line;
@@ -1983,7 +1984,9 @@ static AdapterObject *newAdapterObject(request_rec *r)
     self->output_time = 0;
 
     self->input = newInputObject(r);
-    self->log = newLogObject(r, APLOG_ERR, NULL);
+
+    self->log_buffer = newLogBufferObject(r, APLOG_ERR, "wsgi.errors", 0);
+    self->log = newLogWrapperObject(self->log_buffer);
 
     return self;
 }
@@ -1994,6 +1997,8 @@ static void Adapter_dealloc(AdapterObject *self)
     Py_XDECREF(self->sequence);
 
     Py_DECREF(self->input);
+
+    Py_DECREF(self->log_buffer);
     Py_DECREF(self->log);
 
     PyObject_Del(self);
@@ -3997,8 +4002,8 @@ static int wsgi_execute_script(request_rec *r)
                 PyObject *method = NULL;
                 PyObject *args = NULL;
 
-                Py_INCREF(adapter->log);
-                thread_info->log = adapter->log;
+                Py_INCREF(adapter->log_buffer);
+                thread_info->log_buffer = adapter->log_buffer;
 
                 Py_INCREF(object);
                 status = Adapter_run(adapter, object);
@@ -4034,7 +4039,7 @@ static int wsgi_execute_script(request_rec *r)
                 Py_XDECREF(object);
                 Py_XDECREF(method);
 
-                Py_CLEAR(thread_info->log);
+                Py_CLEAR(thread_info->log_buffer);
 
                 adapter->bb = NULL;
             }
@@ -6103,7 +6108,7 @@ static DispatchObject *newDispatchObject(request_rec *r,
 
     self->r = r;
 
-    self->log = newLogObject(r, APLOG_ERR, NULL);
+    self->log = newLogObject(r, APLOG_ERR, NULL, 0);
 
     return self;
 }
@@ -13455,7 +13460,7 @@ static AuthObject *newAuthObject(request_rec *r, WSGIRequestConfig *config)
 
     self->r = r;
 
-    self->log = newLogObject(r, APLOG_ERR, NULL);
+    self->log = newLogObject(r, APLOG_ERR, NULL, 0);
 
     return self;
 }

@@ -96,8 +96,8 @@ void wsgi_end_request(void)
     thread_info = wsgi_thread_info(0, 1);
 
     if (thread_info) {
-        if (thread_info->log)
-            Py_CLEAR(thread_info->log);
+        if (thread_info->log_buffer)
+            Py_CLEAR(thread_info->log_buffer);
 
         if (thread_info->request_data)
             Py_CLEAR(thread_info->request_data);
@@ -742,7 +742,7 @@ void wsgi_publish_event(const char *name, PyObject *event)
                     PyObject *log = NULL;
                     PyObject *args = NULL;
                     Py_INCREF(o);
-                    log = newLogObject(NULL, APLOG_ERR, NULL);
+                    log = newLogObject(NULL, APLOG_ERR, NULL, 0);
                     args = Py_BuildValue("(OOOOO)", type, value,
                                          traceback, Py_None, log);
                     result = PyEval_CallObject(o, args);

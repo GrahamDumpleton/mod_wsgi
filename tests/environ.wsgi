@@ -13,9 +13,12 @@ import mod_wsgi
 import apache
 
 def application(environ, start_response):
-    print('global message')
-    print('request message', file=environ['wsgi.errors'])
-    print('queued message', end='')
+    print('global message #1')
+    print('request message #1', file=environ['wsgi.errors'])
+    print('global message #2')
+    print('request message #2', file=environ['wsgi.errors'])
+    print('queued message #1', '+', sep="", end='')
+    print('queued message #2', end='')
 
     headers = []
     headers.append(('Content-Type', 'text/plain; charset="UTF-8"'))

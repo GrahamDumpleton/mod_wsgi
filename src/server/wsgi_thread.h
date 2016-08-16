@@ -31,7 +31,7 @@ typedef struct {
     int request_thread;
     apr_int64_t request_count;
     PyObject *request_data;
-    PyObject *log;
+    PyObject *log_buffer;
 } WSGIThreadInfo;
 
 extern int wsgi_total_threads;
