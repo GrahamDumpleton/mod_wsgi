@@ -304,6 +304,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    connect-timeout=%(connect_timeout)s \\
    request-timeout=%(request_timeout)s \\
    inactivity-timeout=%(inactivity_timeout)s \\
+   startup-timeout=%(startup_timeout)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
    eviction-timeout=%(eviction_timeout)s \\
@@ -330,6 +331,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    connect-timeout=%(connect_timeout)s \\
    request-timeout=%(request_timeout)s \\
    inactivity-timeout=%(inactivity_timeout)s \\
+   startup-timeout=%(startup_timeout)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
    eviction-timeout=%(eviction_timeout)s \\
@@ -1920,6 +1922,14 @@ option_list = (
             'worker process should never be restarted based on the number '
             'of requests received.'),
 
+    optparse.make_option('--startup-timeout', type='int', default=15,
+            metavar='SECONDS', help='Maximum number of seconds allowed '
+            'to pass waiting for the application to be successfully '
+            'loaded and started by a worker process. When this timeout '
+            'has been reached without the application having been '
+            'successfully loaded and started, the worker process will '
+            'be forced to restart. Defaults to 15 seconds.'),
+
     optparse.make_option('--shutdown-timeout', type='int', default=5,
             metavar='SECONDS', help='Maximum number of seconds allowed '
             'to pass when waiting for a worker process to shutdown as a '
@@ -3128,6 +3138,9 @@ def _cmd_setup_server(command, args, options):
                 options['processes'], options['threads']))
 
     print('Request Timeout    : %s (seconds)' % options['request_timeout'])
+
+    if options['startup_timeout']:
+        print('Startup Timeout    : %s (seconds)' % options['startup_timeout'])
 
     print('Queue Backlog      : %s (connections)' % options['daemon_backlog'])
 

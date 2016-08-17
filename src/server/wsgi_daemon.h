@@ -109,6 +109,7 @@ typedef struct {
     int stack_size;
     int maximum_requests;
     int shutdown_timeout;
+    apr_time_t startup_timeout;
     apr_time_t deadlock_timeout;
     apr_time_t inactivity_timeout;
     apr_time_t request_timeout;
