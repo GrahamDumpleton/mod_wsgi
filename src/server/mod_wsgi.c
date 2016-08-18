@@ -1035,7 +1035,7 @@ static apr_status_t wsgi_strtoff(apr_off_t *offset, const char *nptr,
    return APR_FROM_OS_ERROR(errno);
 }
 
-static long Input_read_from_input(InputObject *self, char *buffer,
+static apr_int64_t Input_read_from_input(InputObject *self, char *buffer,
                                   apr_size_t bufsiz)
 {
     request_rec *r = self->r;
@@ -1216,7 +1216,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
     apr_size_t length = 0;
     int init = 0;
 
-    apr_size_t n;
+    apr_int64_t n;
 
     if (!self->r) {
         PyErr_SetString(PyExc_RuntimeError, "request object has expired");
@@ -1492,7 +1492,7 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
     char *buffer = NULL;
     apr_size_t length = 0;
 
-    apr_size_t n;
+    apr_int64_t n;
 
     if (!self->r) {
         PyErr_SetString(PyExc_RuntimeError, "request object has expired");
