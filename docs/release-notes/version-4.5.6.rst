@@ -15,6 +15,14 @@ Bugs Fixed
    was reverted in 4.5.5 as the change was causing process crashes under
    Python 3.
 
+2. When using Apache 2.4 use new style ``Require`` directive instead of
+   older ``Order`` and ``Allow`` when setting up access controls for
+   ``mod_wsgi-express``. This fixes a problem where when using
+   ``--include-file`` and ``Require`` directive was being used. Precedence
+   order was such that older directives were overriding new directive and
+   it was possible to permit access to additional directories when using
+   custom configuration.
+
 New Features
 ------------
 
