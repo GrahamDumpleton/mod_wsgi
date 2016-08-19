@@ -23,6 +23,14 @@ Bugs Fixed
    it was possible to permit access to additional directories when using
    custom configuration.
 
+3. Django 1.10 requires that management commands use argparse style
+   options but ``mod_wsgi-express`` uses optparse style options. Can no
+   longer simply merge main script option list to get management command
+   option list. Instead need to convert optparse list to argparse format on
+   the fly, as still need to retain main script option list as optparse
+   until drop Python 2.6 support. Changes stop ``runmodwsgi`` management
+   command failing when using Django 1.10+.
+
 New Features
 ------------
 
