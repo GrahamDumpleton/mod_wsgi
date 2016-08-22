@@ -55,6 +55,9 @@ class Command(BaseCommand):
                         del kwargs['action']
                         kwargs['type'] = check_percentage
 
+                    if kwargs.get('nargs') == 1:
+                        del kwargs['nargs']
+
                 parser.add_argument(*opts, **kwargs)
 
     def handle(self, *args, **options):
