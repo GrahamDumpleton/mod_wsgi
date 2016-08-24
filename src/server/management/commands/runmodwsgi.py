@@ -85,8 +85,10 @@ class Command(BaseCommand):
         if hasattr(settings, 'BASE_DIR'):
             options['working_directory'] = settings.BASE_DIR
         else:
-            settings_mod = sys.modules[os.environ['DJANGO_SETTINGS_MODULE']]
-            parent = os.path.dirname(os.path.dirname(settings_mod.__file__))
+            settings_module_path = os.environ['DJANGO_SETTINGS_MODULE']
+            root_module_path = settings_module_path.split('.')[0]
+            root_module = sys.modules[root_module_path]
+            parent = os.path.dirname(os.path.dirname(root_module.__file__))
             options['working_directory'] = parent
 
         url_aliases = options.setdefault('url_aliases') or []
