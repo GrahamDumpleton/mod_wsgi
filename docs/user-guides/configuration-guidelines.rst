@@ -525,7 +525,7 @@ tuning Apache. This is because the default MPM settings are never usually
 suitable for Python web applications, instead being biased towards static
 file serving and PHP applications. If you run embedded mode without tuning
 the MPM settings, you can experience problems with memory usage, due to
-default number of processes being too may, and can also experience load
+default number of processes being too many, and can also experience load
 spikes, due to how Apache performs lazy creation of processes to meet
 demand.
 
