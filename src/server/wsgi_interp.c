@@ -98,7 +98,7 @@ static PyObject *SignalIntercept_call(
             PyObject *args = NULL;
             PyObject *result = NULL;
             Py_INCREF(o);
-            log = newLogObject(NULL, APLOG_WARNING, NULL);
+            log = newLogObject(NULL, APLOG_WARNING, NULL, 0);
             args = Py_BuildValue("(OOO)", Py_None, Py_None, log);
             result = PyEval_CallObject(o, args);
             Py_XDECREF(result);
@@ -269,7 +269,7 @@ static PyObject *ShutdownInterpreter_call(
                         PyObject *log = NULL;
                         PyObject *args = NULL;
                         Py_INCREF(o);
-                        log = newLogObject(NULL, APLOG_ERR, NULL);
+                        log = newLogObject(NULL, APLOG_ERR, NULL, 0);
                         args = Py_BuildValue("(OOOOO)", type, value,
                                              traceback, Py_None, log);
                         result = PyEval_CallObject(o, args);
@@ -516,7 +516,7 @@ InterpreterObject *newInterpreterObject(const char *name)
      * the 'pdb' module.
      */
 
-    object = newLogObject(NULL, APLOG_ERR, "stderr");
+    object = newLogObject(NULL, APLOG_ERR, "stderr", 1);
     PySys_SetObject("stderr", object);
     Py_DECREF(object);
 
@@ -529,7 +529,7 @@ InterpreterObject *newInterpreterObject(const char *name)
             Py_DECREF(object);
         }
         else {
-            object = newLogObject(NULL, APLOG_ERR, "stdout");
+            object = newLogObject(NULL, APLOG_ERR, "stdout", 1);
             PySys_SetObject("stdout", object);
             Py_DECREF(object);
         }
@@ -1614,7 +1614,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
                         PyObject *log = NULL;
                         PyObject *args = NULL;
                         Py_INCREF(o);
-                        log = newLogObject(NULL, APLOG_ERR, NULL);
+                        log = newLogObject(NULL, APLOG_ERR, NULL, 0);
                         args = Py_BuildValue("(OOOOO)", type, value,
                                              traceback, Py_None, log);
                         result = PyEval_CallObject(o, args);
@@ -1747,7 +1747,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
                     PyObject *log = NULL;
                     PyObject *args = NULL;
                     Py_INCREF(o);
-                    log = newLogObject(NULL, APLOG_ERR, NULL);
+                    log = newLogObject(NULL, APLOG_ERR, NULL, 0);
                     args = Py_BuildValue("(OOOOO)", type, value,
                                          traceback, Py_None, log);
                     result = PyEval_CallObject(o, args);

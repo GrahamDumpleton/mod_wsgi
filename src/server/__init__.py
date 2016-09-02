@@ -276,8 +276,13 @@ LimitRequestBody %(limit_request_body)s
 
 <Directory />
     AllowOverride None
+<IfVersion < 2.4>
     Order deny,allow
     Deny from all
+</IfVersion>
+<IfVersion >= 2.4>
+    Require all denied
+</IfVersion>
 </Directory>
 
 WSGIPythonHome '%(python_home)s'
@@ -304,6 +309,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    connect-timeout=%(connect_timeout)s \\
    request-timeout=%(request_timeout)s \\
    inactivity-timeout=%(inactivity_timeout)s \\
+   startup-timeout=%(startup_timeout)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
    eviction-timeout=%(eviction_timeout)s \\
@@ -330,6 +336,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    connect-timeout=%(connect_timeout)s \\
    request-timeout=%(request_timeout)s \\
    inactivity-timeout=%(inactivity_timeout)s \\
+   startup-timeout=%(startup_timeout)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
    eviction-timeout=%(eviction_timeout)s \\
@@ -361,9 +368,15 @@ WSGIServerMetrics %(server_metrics_flag)s
 <IfDefine MOD_WSGI_SERVER_STATUS>
 <Location /server-status>
     SetHandler server-status
+<IfVersion < 2.4>
     Order deny,allow
     Deny from all
     Allow from localhost
+</IfVersion>
+<IfVersion >= 2.4>
+    Require all denied
+    Require host localhost
+</IfVersion>
 </Location>
 </IfDefine>
 
@@ -510,8 +523,13 @@ NameVirtualHost *:%(port)s
 </IfVersion>
 <VirtualHost _default_:%(port)s>
 <Location />
+<IfVersion < 2.4>
 Order deny,allow
 Deny from all
+</IfVersion>
+<IfVersion >= 2.4>
+Require all denied
+</IfVersion>
 <IfDefine MOD_WSGI_ALLOW_LOCALHOST>
 Allow from localhost
 </IfDefine>
@@ -568,8 +586,13 @@ NameVirtualHost *:%(https_port)s
 </IfVersion>
 <VirtualHost _default_:%(https_port)s>
 <Location />
+<IfVersion < 2.4>
 Order deny,allow
 Deny from all
+</IfVersion>
+<IfVersion >= 2.4>
+Require all denied
+</IfVersion>
 <IfDefine MOD_WSGI_ALLOW_LOCALHOST>
 Allow from localhost
 </IfDefine>
@@ -633,8 +656,13 @@ DocumentRoot '%(document_root)s'
 
 <Directory '%(server_root)s'>
 <Files handler.wsgi>
+<IfVersion < 2.4>
     Order allow,deny
     Allow from all
+</IfVersion>
+<IfVersion >= 2.4>
+    Require all granted
+</IfVersion>
 </Files>
 </Directory>
 
@@ -663,8 +691,13 @@ DocumentRoot '%(document_root)s'
 </IfDefine>
     RewriteRule .* - [H=wsgi-handler]
 </IfDefine>
+<IfVersion < 2.4>
     Order allow,deny
     Allow from all
+</IfVersion>
+<IfVersion >= 2.4>
+    Require all granted
+</IfVersion>
 </Directory>
 
 <IfDefine MOD_WSGI_ERROR_OVERRIDE>
@@ -765,8 +798,13 @@ APACHE_ALIAS_DIRECTORY_CONFIG = """
 Alias '%(mount_point)s' '%(directory)s'
 
 <Directory '%(directory)s'>
+<IfVersion < 2.4>
     Order allow,deny
     Allow from all
+</IfVersion>
+<IfVersion >= 2.4>
+    Require all granted
+</IfVersion>
 </Directory>
 """
 
@@ -775,8 +813,13 @@ Alias '%(mount_point)s' '%(directory)s/%(filename)s'
 
 <Directory '%(directory)s'>
 <Files '%(filename)s'>
+<IfVersion < 2.4>
     Order allow,deny
     Allow from all
+</IfVersion>
+<IfVersion >= 2.4>
+    Require all granted
+</IfVersion>
 </Files>
 </Directory>
 """
@@ -787,13 +830,23 @@ Alias /__wsgi__/images '%(images_directory)s'
 
 <Directory '%(documentation_directory)s'>
     DirectoryIndex index.html
+<IfVersion < 2.4>
     Order allow,deny
     Allow from all
+</IfVersion>
+<IfVersion >= 2.4>
+    Require all granted
+</IfVersion>
 </Directory>
 
 <Directory '%(images_directory)s'>
+<IfVersion < 2.4>
     Order allow,deny
     Allow from all
+</IfVersion>
+<IfVersion >= 2.4>
+    Require all granted
+</IfVersion>
 </Directory>
 """
 
@@ -1919,6 +1972,14 @@ option_list = (
             'application reloaded. Defaults to 0, indicating that the '
             'worker process should never be restarted based on the number '
             'of requests received.'),
+
+    optparse.make_option('--startup-timeout', type='int', default=15,
+            metavar='SECONDS', help='Maximum number of seconds allowed '
+            'to pass waiting for the application to be successfully '
+            'loaded and started by a worker process. When this timeout '
+            'has been reached without the application having been '
+            'successfully loaded and started, the worker process will '
+            'be forced to restart. Defaults to 15 seconds.'),
 
     optparse.make_option('--shutdown-timeout', type='int', default=5,
             metavar='SECONDS', help='Maximum number of seconds allowed '
@@ -3128,6 +3189,9 @@ def _cmd_setup_server(command, args, options):
                 options['processes'], options['threads']))
 
     print('Request Timeout    : %s (seconds)' % options['request_timeout'])
+
+    if options['startup_timeout']:
+        print('Startup Timeout    : %s (seconds)' % options['startup_timeout'])
 
     print('Queue Backlog      : %s (connections)' % options['daemon_backlog'])
 

@@ -82,11 +82,13 @@ static int volatile wsgi_daemon_shutdown = 0;
 static int volatile wsgi_daemon_graceful = 0;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
+static apr_interval_time_t wsgi_startup_timeout = 0;
 static apr_interval_time_t wsgi_deadlock_timeout = 0;
 static apr_interval_time_t wsgi_idle_timeout = 0;
 static apr_interval_time_t wsgi_request_timeout = 0;
 static apr_interval_time_t wsgi_graceful_timeout = 0;
 static apr_interval_time_t wsgi_eviction_timeout = 0;
+static apr_time_t volatile wsgi_startup_shutdown_time = 0;
 static apr_time_t volatile wsgi_deadlock_shutdown_time = 0;
 static apr_time_t volatile wsgi_idle_shutdown_time = 0;
 static apr_time_t volatile wsgi_graceful_shutdown_time = 0;
@@ -1033,7 +1035,7 @@ static apr_status_t wsgi_strtoff(apr_off_t *offset, const char *nptr,
    return APR_FROM_OS_ERROR(errno);
 }
 
-static long Input_read_from_input(InputObject *self, char *buffer,
+static apr_int64_t Input_read_from_input(InputObject *self, char *buffer,
                                   apr_size_t bufsiz)
 {
     request_rec *r = self->r;
@@ -1214,7 +1216,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
     apr_size_t length = 0;
     int init = 0;
 
-    apr_size_t n;
+    apr_int64_t n;
 
     if (!self->r) {
         PyErr_SetString(PyExc_RuntimeError, "request object has expired");
@@ -1490,7 +1492,7 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
     char *buffer = NULL;
     apr_size_t length = 0;
 
-    apr_size_t n;
+    apr_int64_t n;
 
     if (!self->r) {
         PyErr_SetString(PyExc_RuntimeError, "request object has expired");
@@ -1938,6 +1940,7 @@ typedef struct {
         apr_bucket_brigade *bb;
         WSGIRequestConfig *config;
         InputObject *input;
+        PyObject *log_buffer;
         PyObject *log;
         int status;
         const char *status_line;
@@ -1983,7 +1986,9 @@ static AdapterObject *newAdapterObject(request_rec *r)
     self->output_time = 0;
 
     self->input = newInputObject(r);
-    self->log = newLogObject(r, APLOG_ERR, NULL);
+
+    self->log_buffer = newLogBufferObject(r, APLOG_ERR, "wsgi.errors", 0);
+    self->log = newLogWrapperObject(self->log_buffer);
 
     return self;
 }
@@ -1994,6 +1999,8 @@ static void Adapter_dealloc(AdapterObject *self)
     Py_XDECREF(self->sequence);
 
     Py_DECREF(self->input);
+
+    Py_DECREF(self->log_buffer);
     Py_DECREF(self->log);
 
     PyObject_Del(self);
@@ -3771,6 +3778,19 @@ static int wsgi_execute_script(request_rec *r)
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
+    /* Setup startup timeout if first request and specified. */
+
+    if (wsgi_daemon_process) {
+        if (wsgi_startup_shutdown_time == 0) {
+            if (wsgi_startup_timeout > 0) {
+                apr_thread_mutex_lock(wsgi_monitor_lock);
+                wsgi_startup_shutdown_time = apr_time_now();
+                wsgi_startup_shutdown_time += wsgi_startup_timeout;
+                apr_thread_mutex_unlock(wsgi_monitor_lock);
+            }
+        }
+    }
+
     /*
      * Use a lock around the check to see if the module is
      * already loaded and the import of the module to prevent
@@ -3997,8 +4017,8 @@ static int wsgi_execute_script(request_rec *r)
                 PyObject *method = NULL;
                 PyObject *args = NULL;
 
-                Py_INCREF(adapter->log);
-                thread_info->log = adapter->log;
+                Py_INCREF(adapter->log_buffer);
+                thread_info->log_buffer = adapter->log_buffer;
 
                 Py_INCREF(object);
                 status = Adapter_run(adapter, object);
@@ -4034,12 +4054,16 @@ static int wsgi_execute_script(request_rec *r)
                 Py_XDECREF(object);
                 Py_XDECREF(method);
 
-                Py_CLEAR(thread_info->log);
+                Py_CLEAR(thread_info->log_buffer);
 
                 adapter->bb = NULL;
             }
 
             Py_XDECREF((PyObject *)adapter);
+
+            /* Clear startup timeout and prevent from running again. */
+
+            wsgi_startup_shutdown_time = -1;
         }
         else {
             Py_BEGIN_ALLOW_THREADS
@@ -6103,7 +6127,7 @@ static DispatchObject *newDispatchObject(request_rec *r,
 
     self->r = r;
 
-    self->log = newLogObject(r, APLOG_ERR, NULL);
+    self->log = newLogObject(r, APLOG_ERR, NULL, 0);
 
     return self;
 }
@@ -7084,6 +7108,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     int stack_size = 0;
     int maximum_requests = 0;
+    int startup_timeout = 0;
     int shutdown_timeout = 5;
     int deadlock_timeout = 300;
     int inactivity_timeout = 0;
@@ -7261,6 +7286,14 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             maximum_requests = atoi(value);
             if (maximum_requests < 0)
                 return "Invalid request count for WSGI daemon process.";
+        }
+        else if (!strcmp(option, "startup-timeout")) {
+            if (!*value)
+                return "Invalid startup timeout for WSGI daemon process.";
+
+            startup_timeout = atoi(value);
+            if (startup_timeout < 0)
+                return "Invalid startup timeout for WSGI daemon process.";
         }
         else if (!strcmp(option, "shutdown-timeout")) {
             if (!*value)
@@ -7575,6 +7608,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->stack_size = stack_size;
     entry->maximum_requests = maximum_requests;
     entry->shutdown_timeout = shutdown_timeout;
+    entry->startup_timeout = apr_time_from_sec(startup_timeout);
     entry->deadlock_timeout = apr_time_from_sec(deadlock_timeout);
     entry->inactivity_timeout = apr_time_from_sec(inactivity_timeout);
     entry->request_timeout = apr_time_from_sec(request_timeout);
@@ -8780,6 +8814,9 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                      "process '%s'.", getpid(), group->name);
 
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Startup timeout is %d.",
+                     getpid(), (int)(apr_time_sec(wsgi_startup_timeout)));
+        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
                      "mod_wsgi (pid=%d): Deadlock timeout is %d.",
                      getpid(), (int)(apr_time_sec(wsgi_deadlock_timeout)));
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
@@ -8799,6 +8836,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
     while (1) {
         apr_time_t now;
 
+        apr_time_t startup_time;
         apr_time_t deadlock_time;
         apr_time_t idle_time;
         apr_time_t graceful_time;
@@ -8813,6 +8851,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
 
         apr_thread_mutex_lock(wsgi_monitor_lock);
 
+        startup_time = wsgi_startup_shutdown_time;
         deadlock_time = wsgi_deadlock_shutdown_time;
         idle_time = wsgi_idle_shutdown_time;
         graceful_time = wsgi_graceful_shutdown_time;
@@ -8841,6 +8880,22 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
             }
         }
 
+        if (!restart && wsgi_startup_timeout) {
+            if (startup_time > 0) {
+                if (startup_time <= now) {
+                    ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                                 "mod_wsgi (pid=%d): Application startup "
+                                 "timer expired, stopping process '%s'.",
+                                 getpid(), group->name);
+
+                    restart = 1;
+                }
+                else {
+                    period = startup_time - now;
+                }
+            }
+        }
+
         if (!restart && wsgi_deadlock_timeout) {
             if (deadlock_time) {
                 if (deadlock_time <= now) {
@@ -8852,11 +8907,13 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                     restart = 1;
                 }
                 else {
-                    period = deadlock_time - now;
+                    if (!period || ((deadlock_time - now) < period))
+                        period = deadlock_time - now;
                 }
             }
             else {
-                period = wsgi_deadlock_timeout;
+                if (!period || (wsgi_deadlock_timeout < period))
+                    period = wsgi_deadlock_timeout;
             }
         }
 
@@ -9094,6 +9151,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
     /* Start monitoring thread if required. */
 
+    wsgi_startup_timeout = daemon->group->startup_timeout;
     wsgi_deadlock_timeout = daemon->group->deadlock_timeout;
     wsgi_idle_timeout = daemon->group->inactivity_timeout;
     wsgi_request_timeout = daemon->group->request_timeout;
@@ -13455,7 +13513,7 @@ static AuthObject *newAuthObject(request_rec *r, WSGIRequestConfig *config)
 
     self->r = r;
 
-    self->log = newLogObject(r, APLOG_ERR, NULL);
+    self->log = newLogObject(r, APLOG_ERR, NULL, 0);
 
     return self;
 }
