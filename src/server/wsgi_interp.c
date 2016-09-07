@@ -2241,6 +2241,7 @@ void wsgi_python_init(apr_pool_t *p)
          * sub process.
          */
 
+#if 0
         if (python_home) {
             if (getenv("PYTHONHOME") == 0) {
                 char *envvar = apr_pstrcat(p, "PYTHONHOME=",
@@ -2251,6 +2252,7 @@ void wsgi_python_init(apr_pool_t *p)
                 putenv(envvar);
             }
         }
+#endif
 
         /*
          * Set environment variable PYTHONHASHSEED. We need to
@@ -2325,6 +2327,7 @@ void wsgi_python_init(apr_pool_t *p)
 
                     Py_DECREF(key);
 
+#if 0
                     if (override_python_home) {
 #if PY_MAJOR_VERSION >= 3
                         key = PyUnicode_FromString("PYTHONHOME");
@@ -2336,6 +2339,7 @@ void wsgi_python_init(apr_pool_t *p)
 
                         Py_DECREF(key);
                     }
+#endif
                 }
 
                 Py_DECREF(module);
