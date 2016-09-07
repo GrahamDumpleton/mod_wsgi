@@ -2019,6 +2019,7 @@ static apr_status_t wsgi_python_parent_cleanup(void *data)
 void wsgi_python_init(apr_pool_t *p)
 {
     const char *python_home = 0;
+    int override_python_home = 0;
 
     int is_pyvenv = 0;
 
@@ -2228,6 +2229,30 @@ void wsgi_python_init(apr_pool_t *p)
 #endif
 
         /*
+         * Set environment variable PYTHONHOME. Only do this if
+         * was defined as part of the configuration. Do not though
+         * override the environment variable if already set. We
+         * set the environment variable as the above attempts to
+         * set the location of a Python installation using the C
+         * API can break on Anaconda Python distribution. See how
+         * we go with setting both. We need to make sure we remove
+         * the environment variable later so that it doesn't remain
+         * in the process environment and be inherited by execd
+         * sub process.
+         */
+
+        if (python_home) {
+            if (getenv("PYTHONHOME") == 0) {
+                char *envvar = apr_pstrcat(p, "PYTHONHOME=",
+                        python_home, NULL);
+
+                override_python_home = 1;
+
+                putenv(envvar);
+            }
+        }
+
+        /*
          * Set environment variable PYTHONHASHSEED. We need to
          * make sure we remove the environment variable later
          * so that it doesn't remain in the process environment
@@ -2237,9 +2262,11 @@ void wsgi_python_init(apr_pool_t *p)
         if (wsgi_server_config->python_hash_seed != NULL) {
             char *envvar = apr_pstrcat(p, "PYTHONHASHSEED=",
                     wsgi_server_config->python_hash_seed, NULL);
+
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
                          "mod_wsgi (pid=%d): Setting hash seed to %s.",
                          getpid(), wsgi_server_config->python_hash_seed);
+
             putenv(envvar);
         }
 
@@ -2267,10 +2294,11 @@ void wsgi_python_init(apr_pool_t *p)
 
         /*
          * Remove the environment variable we set for the hash
-         * seed. This has to be done in os.environ, which will
-         * in turn remove it from process environ. This should
-         * only be necessary for the main interpreter. We need
-         * to do this before we release the GIL.
+         * seed and location of Python installation. This has
+         * to be done in os.environ, which will in turn remove
+         * it from process environ. This should only be
+         * necessary for the main interpreter. We need to do
+         * this before we release the GIL.
          */
 
         if (wsgi_server_config->python_hash_seed != NULL) {
@@ -2296,6 +2324,18 @@ void wsgi_python_init(apr_pool_t *p)
                     PyObject_DelItem(object, key);
 
                     Py_DECREF(key);
+
+                    if (override_python_home) {
+#if PY_MAJOR_VERSION >= 3
+                        key = PyUnicode_FromString("PYTHONHOME");
+#else
+                        key = PyString_FromString("PYTHONHOME");
+#endif
+
+                        PyObject_DelItem(object, key);
+
+                        Py_DECREF(key);
+                    }
                 }
 
                 Py_DECREF(module);
