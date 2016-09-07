@@ -12718,6 +12718,7 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
 
     /* Record Python version string with Apache. */
 
+#if 0
     if (!Py_IsInitialized()) {
         char buffer[256];
         const char *token = NULL;
@@ -12734,6 +12735,7 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
 
         ap_add_version_component(pconf, buffer);
     }
+#endif
 
     /* Retain reference to base server. */
 
@@ -12763,7 +12765,9 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
      * runtime is what was used at compilation.
      */
 
+#if 0
     wsgi_python_version();
+#endif
 
     /*
      * Initialise Python if required to be done in
