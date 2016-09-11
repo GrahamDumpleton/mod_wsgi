@@ -12647,6 +12647,7 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
     void *data = NULL;
     const char *userdata_key;
     char package[128];
+    char interpreter[256];
 
     int status = OK;
 
@@ -12718,24 +12719,8 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
 
     /* Record Python version string with Apache. */
 
-#if 0
-    if (!Py_IsInitialized()) {
-        char buffer[256];
-        const char *token = NULL;
-        const char *version = NULL;
-        
-        version = Py_GetVersion();
-
-        token = version;
-        while (*token && *token != ' ')
-            token++;
-
-        strcpy(buffer, "Python/");
-        strncat(buffer, version, token - version);
-
-        ap_add_version_component(pconf, buffer);
-    }
-#endif
+    sprintf(interpreter, "Python/%d.%d", PY_MAJOR_VERSION, PY_MINOR_VERSION);
+    ap_add_version_component(pconf, interpreter);
 
     /* Retain reference to base server. */
 
@@ -12763,6 +12748,12 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
     /*
      * Check that the version of Python found at
      * runtime is what was used at compilation.
+     *
+     * XXX Can't do this as will cause Anaconda
+     * Python to fail as not safe to call the
+     * Py_GetVersion() function before one calls
+     * the Py_Initialize() function when using
+     * Anaconda Python.
      */
 
 #if 0
