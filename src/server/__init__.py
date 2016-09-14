@@ -148,6 +148,10 @@ LoadModule mpm_prefork_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_mpm_prefork.so'
 </IfModule>
 </IfVersion>
 
+<IfDefine MOD_WSGI_WITH_HTTP2>
+LoadModule http2_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_http2.so'
+</IfDefine>
+
 <IfVersion >= 2.4>
 <IfModule !access_compat_module>
 LoadModule access_compat_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_access_compat.so'
@@ -267,6 +271,9 @@ MaxMemFree 64
 Timeout %(socket_timeout)s
 ListenBacklog %(server_backlog)s
 
+<IfDefine MOD_WSGI_WITH_HTTP2>
+Protocols h2 h2c http/1.1
+</IfDefine>
 
 <IfVersion >= 2.2.15>
 RequestReadTimeout %(request_read_timeout)s
@@ -1859,6 +1866,10 @@ option_list = (
             metavar='NUMBER', help='The specific port to bind to and '
             'on which requests are to be accepted. Defaults to port 8000.'),
 
+    optparse.make_option('--http2', action='store_true', default=False,
+            help='Flag indicating whether HTTP/2 should be enabled.'
+	    'Requires the mod_http2 module to be available.'),
+
     optparse.make_option('--https-port', type='int', metavar='NUMBER',
             help='The specific port to bind to and on which secure '
             'requests are to be accepted.'),
@@ -3042,6 +3053,8 @@ def _cmd_setup_server(command, args, options):
             options['httpd_arguments_list'].append('-DMOD_WSGI_REDIRECT_WWW')
             options['parent_domain'] = options['server_name'][4:]
 
+    if options['http2']: 
+        options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_HTTP2')
     if (options['https_port'] and options['ssl_certificate_file'] and
             options['ssl_certificate_key_file']):
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_HTTPS')
