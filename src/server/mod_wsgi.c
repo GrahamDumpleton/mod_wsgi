@@ -2444,6 +2444,8 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
     apr_status_t rv;
     apr_bucket_brigade *bb;
 
+    apr_file_t* dupfile = NULL;
+
     r = self->r;
 
     if (r->connection->aborted) {
@@ -2457,16 +2459,26 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t* tmpfile,
 
     bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 
+    apr_file_dup(&dupfile, tmpfile, r->pool);
+
     if (sizeof(apr_off_t) == sizeof(apr_size_t) || len < MAX_BUCKET_SIZE) {
         /* Can use a single bucket to send file. */
 
+#if 0
         b = apr_bucket_file_create(tmpfile, offset, (apr_size_t)len, r->pool,
+                                   r->connection->bucket_alloc);
+#endif
+        b = apr_bucket_file_create(dupfile, offset, (apr_size_t)len, r->pool,
                                    r->connection->bucket_alloc);
     }
     else {
         /* Need to create multiple buckets to send file. */
 
+#if 0
         b = apr_bucket_file_create(tmpfile, offset, MAX_BUCKET_SIZE, r->pool,
+                                   r->connection->bucket_alloc);
+#endif
+        b = apr_bucket_file_create(dupfile, offset, MAX_BUCKET_SIZE, r->pool,
                                    r->connection->bucket_alloc);
 
         while (len > MAX_BUCKET_SIZE) {
