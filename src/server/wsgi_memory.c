@@ -123,5 +123,7 @@ static size_t getCurrentRSS(void)
 #endif
 }
 
+#include "wsgi_memory.h"
+
 size_t wsgi_get_peak_memory_RSS(void) { return getPeakRSS(); }
 size_t wsgi_get_current_memory_RSS(void) { return getCurrentRSS(); }
