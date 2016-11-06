@@ -3792,6 +3792,7 @@ static int wsgi_execute_script(request_rec *r)
 
     /* Setup startup timeout if first request and specified. */
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process) {
         if (wsgi_startup_shutdown_time == 0) {
             if (wsgi_startup_timeout > 0) {
@@ -3802,6 +3803,7 @@ static int wsgi_execute_script(request_rec *r)
             }
         }
     }
+#endif
 
     /*
      * Use a lock around the check to see if the module is
@@ -4075,7 +4077,9 @@ static int wsgi_execute_script(request_rec *r)
 
             /* Clear startup timeout and prevent from running again. */
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
             wsgi_startup_shutdown_time = -1;
+#endif
         }
         else {
             Py_BEGIN_ALLOW_THREADS
