@@ -1708,7 +1708,7 @@ def generate_server_metrics_script(options):
         print(SERVER_METRICS_SCRIPT % options, file=fp)
 
 WSGI_CONTROL_SCRIPT = """
-#!/usr/bin/env bash
+#!/bin/sh
 
 # %(sys_argv)s
 
