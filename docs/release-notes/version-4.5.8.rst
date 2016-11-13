@@ -13,6 +13,9 @@ Bugs Fixed
   be truncated when ``mod_h2`` was deferring the sending of the response
   until after the WSGI request had been finalized.
 
+* Builds were failing on Windows. Insert appropriate ``#if`` conditional
+  around code which shouldn't have been getting included on Windows.
+
 New Features
 ------------
 
