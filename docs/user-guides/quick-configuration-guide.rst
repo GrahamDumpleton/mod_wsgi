@@ -28,7 +28,7 @@ examples in this document, is as follows::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = 'Hello World!'
+        output = b'Hello World!'
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
