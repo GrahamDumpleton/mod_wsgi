@@ -758,6 +758,12 @@ WSGIImportScript '%(server_root)s/handler.wsgi' \\
 </IfDefine>
 """
 
+APACHE_IGNORE_ACTIVITY_CONFIG = """
+<Location '%(url)s'>
+WSGIIgnoreActivity On
+</Location>
+"""
+
 APACHE_PROXY_PASS_MOUNT_POINT_CONFIG = """
 ProxyPass '%(mount_point)s' '%(url)s'
 ProxyPassReverse '%(mount_point)s' '%(url)s'
@@ -946,6 +952,10 @@ WSGIImportScript '%(script)s' \\
 def generate_apache_config(options):
     with open(options['httpd_conf'], 'w') as fp:
         print(APACHE_GENERAL_CONFIG % options, file=fp)
+
+        if options['ignore_activity']:
+            for url in options['ignore_activity']:
+                print(APACHE_IGNORE_ACTIVITY_CONFIG % dict(url=url), file=fp)
 
         if options['proxy_mount_points']:
             for mount_point, url in options['proxy_mount_points']:
@@ -2026,6 +2036,12 @@ option_list = (
             'to pass before the worker process is shutdown and restarted '
             'when the worker process has entered an idle state and is no '
             'longer receiving new requests. Not enabled by default.'),
+    optparse.make_option('--ignore-activity', action='append',
+            dest='ignore_activity', metavar='URL-PATH', help='Specify '
+            'the URL path for any location where activity should be '
+            'ignored when the \'--activity-timeout\' option is used. '
+            'This would be used on health check URLs so that health '
+            'checks do not prevent process restarts due to inactivity.'),
 
     optparse.make_option('--request-timeout', type='int', default=60,
             metavar='SECONDS', help='Maximum number of seconds allowed '

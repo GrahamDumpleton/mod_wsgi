@@ -187,6 +187,11 @@ static void *wsgi_merge_server_config(apr_pool_t *p, void *base_conf,
     else
         config->map_head_to_get = parent->map_head_to_get;
 
+    if (child->ignore_activity != -1)
+        config->ignore_activity = child->ignore_activity;
+    else
+        config->ignore_activity = parent->ignore_activity;
+
     if (child->trusted_proxy_headers)
         config->trusted_proxy_headers = child->trusted_proxy_headers;
     else
@@ -231,6 +236,7 @@ typedef struct {
     int error_override;
     int chunked_request;
     int map_head_to_get;
+    int ignore_activity;
 
     apr_array_header_t *trusted_proxy_headers;
     apr_array_header_t *trusted_proxies;
@@ -266,6 +272,7 @@ static WSGIDirectoryConfig *newWSGIDirectoryConfig(apr_pool_t *p)
     object->error_override = -1;
     object->chunked_request = -1;
     object->map_head_to_get = -1;
+    object->ignore_activity = -1;
 
     object->trusted_proxy_headers = NULL;
     object->trusted_proxies = NULL;
@@ -357,6 +364,11 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     else
         config->map_head_to_get = parent->map_head_to_get;
 
+    if (child->ignore_activity != -1)
+        config->ignore_activity = child->ignore_activity;
+    else
+        config->ignore_activity = parent->ignore_activity;
+
     if (child->trusted_proxy_headers)
         config->trusted_proxy_headers = child->trusted_proxy_headers;
     else
@@ -426,6 +438,7 @@ typedef struct {
     int error_override;
     int chunked_request;
     int map_head_to_get;
+    int ignore_activity;
 
     apr_array_header_t *trusted_proxy_headers;
     apr_array_header_t *trusted_proxies;
@@ -869,6 +882,14 @@ static WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
             config->map_head_to_get = 2;
     }
 
+    config->ignore_activity = dconfig->ignore_activity;
+
+    if (config->ignore_activity < 0) {
+        config->ignore_activity = sconfig->ignore_activity;
+        if (config->ignore_activity < 0)
+            config->ignore_activity = 0;
+    }
+
     config->trusted_proxy_headers = dconfig->trusted_proxy_headers;
 
     if (!config->trusted_proxy_headers)
@@ -957,11 +978,12 @@ typedef struct {
         apr_off_t bytes;
         apr_off_t reads;
         apr_time_t time;
+        int ignore_activity;
 } InputObject;
 
 static PyTypeObject Input_Type;
 
-static InputObject *newInputObject(request_rec *r)
+static InputObject *newInputObject(request_rec *r, int ignore_activity)
 {
     InputObject *self;
 
@@ -986,6 +1008,8 @@ static InputObject *newInputObject(request_rec *r)
     self->bytes = 0;
     self->reads = 0;
     self->time = 0;
+
+    self->ignore_activity = ignore_activity;
 
     return self;
 }
@@ -1227,7 +1251,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
         return NULL;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    if (wsgi_idle_timeout) {
+    if (wsgi_idle_timeout && !self->ignore_activity) {
         apr_thread_mutex_lock(wsgi_monitor_lock);
 
         if (wsgi_idle_timeout) {
@@ -1985,7 +2009,7 @@ static AdapterObject *newAdapterObject(request_rec *r)
 
     self->output_time = 0;
 
-    self->input = newInputObject(r);
+    self->input = newInputObject(r, self->config->ignore_activity);
 
     self->log_buffer = newLogBufferObject(r, APLOG_ERR, "wsgi.errors", 0);
     self->log = newLogWrapperObject(self->log_buffer);
@@ -2112,7 +2136,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
     apr_time_t output_finish = 0;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    if (wsgi_idle_timeout) {
+    if (wsgi_idle_timeout && !self->config->ignore_activity) {
         apr_thread_mutex_lock(wsgi_monitor_lock);
 
         if (wsgi_idle_timeout) {
@@ -2957,7 +2981,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     WSGIThreadCPUUsage end_usage;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    if (wsgi_idle_timeout) {
+    if (wsgi_idle_timeout && !self->config->ignore_activity) {
         apr_thread_mutex_lock(wsgi_monitor_lock);
 
         if (wsgi_idle_timeout) {
@@ -5317,6 +5341,36 @@ static const char *wsgi_set_map_head_to_get(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_ignore_activity(cmd_parms *cmd, void *mconfig,
+                                            const char *f)
+{
+    if (cmd->path) {
+        WSGIDirectoryConfig *dconfig = NULL;
+        dconfig = (WSGIDirectoryConfig *)mconfig;
+
+        if (strcasecmp(f, "Off") == 0)
+            dconfig->ignore_activity = 0;
+        else if (strcasecmp(f, "On") == 0)
+            dconfig->ignore_activity = 1;
+        else
+            return "WSGIIgnoreActivity must be one of: Off | On";
+    }
+    else {
+        WSGIServerConfig *sconfig = NULL;
+        sconfig = ap_get_module_config(cmd->server->module_config,
+                                       &wsgi_module);
+
+        if (strcasecmp(f, "Off") == 0)
+            sconfig->ignore_activity = 0;
+        else if (strcasecmp(f, "On") == 0)
+            sconfig->ignore_activity = 1;
+        else
+            return "WSGIIgnoreActivity must be one of: Off | On";
+    }
+
+    return NULL;
+}
+
 static char *wsgi_http2env(apr_pool_t *a, const char *w);
 
 static const char *wsgi_set_trusted_proxy_headers(cmd_parms *cmd,
@@ -6093,6 +6147,8 @@ static void wsgi_build_environment(request_rec *r)
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.enable_sendfile",
                    apr_psprintf(r->pool, "%d", config->enable_sendfile));
+    apr_table_setn(r->subprocess_env, "mod_wsgi.ignore_activity",
+                   apr_psprintf(r->pool, "%d", config->ignore_activity));
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.request_start",
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT, r->request_time));
@@ -12519,6 +12575,13 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     else
         config->enable_sendfile = 0;
 
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.ignore_activity");
+
+    if (item && !strcasecmp(item, "1"))
+        config->ignore_activity = 1;
+    else
+        config->ignore_activity = 0;
+
     config->daemon_connects = atoi(apr_table_get(r->subprocess_env,
                                                  "mod_wsgi.daemon_connects"));
     config->daemon_restarts = atoi(apr_table_get(r->subprocess_env,
@@ -15604,6 +15667,8 @@ static const command_rec wsgi_commands[] =
         NULL, OR_FILEINFO, "Enable/Disable support for chunked requests."),
     AP_INIT_TAKE1("WSGIMapHEADToGET", wsgi_set_map_head_to_get,
         NULL, OR_FILEINFO, "Enable/Disable mapping of HEAD to GET."),
+    AP_INIT_TAKE1("WSGIIgnoreActivity", wsgi_set_ignore_activity,
+        NULL, OR_FILEINFO, "Enable/Disable reset of inactvity timeout."),
 
     AP_INIT_RAW_ARGS("WSGITrustedProxyHeaders", wsgi_set_trusted_proxy_headers,
         NULL, OR_FILEINFO, "Specify a list of trusted proxy headers."),

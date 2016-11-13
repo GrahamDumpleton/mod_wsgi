@@ -123,6 +123,7 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->script_reloading = -1;
     object->error_override = -1;
     object->chunked_request = -1;
+    object->ignore_activity = -1;
 
     object->enable_sendfile = -1;
 
