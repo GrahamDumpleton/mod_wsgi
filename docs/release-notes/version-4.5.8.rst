@@ -16,6 +16,14 @@ Bugs Fixed
 * Builds were failing on Windows. Insert appropriate ``#if`` conditional
   around code which shouldn't have been getting included on Windows.
 
+* When ``mod_wsgi-express`` is run as ``root`` and ``--python-eggs``
+  option is used, if the directory for the Python eggs didn't exist, it
+  was created, but the ownership/group were not set to be the user and
+  group that Apache would run the WSGI application. As a result Python
+  eggs could not actually be unpacked into the directory. Now change
+  the ownership/group of the directory to user/group specified when
+  ``mod_wsgi-express`` was run.
+
 New Features
 ------------
 

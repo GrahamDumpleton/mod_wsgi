@@ -2757,6 +2757,10 @@ def _cmd_setup_server(command, args, options):
 
     try:
         os.mkdir(options['python_eggs'])
+        if os.getuid() == 0:
+            os.chown(options['python_eggs'],
+                    pwd.getpwnam(options['user']).pw_uid,
+                    grp.getgrnam(options['group']).gr_gid)
     except Exception:
         pass
 
