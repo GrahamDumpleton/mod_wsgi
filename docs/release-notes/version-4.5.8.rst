@@ -24,6 +24,10 @@ Bugs Fixed
   the ownership/group of the directory to user/group specified when
   ``mod_wsgi-express`` was run.
 
+* Compilation would fail on MacOS X Sierra as the API was changed for
+  obtaining task information. This was used to get memory used by the
+  process.
+
 New Features
 ------------
 
