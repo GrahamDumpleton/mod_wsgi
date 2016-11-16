@@ -244,8 +244,19 @@ EXTRA_CFLAGS = get_apxs_config('EXTRA_CFLAGS').split()
 APR_CONFIG = get_apxs_config('APR_CONFIG')
 APU_CONFIG = get_apxs_config('APU_CONFIG')
 
-APR_INCLUDES = get_apr_includes().split()
-APU_INCLUDES = get_apu_includes().split()
+# Make sure that 'apr-1-config' exists. If it doesn't we may be running
+# on MacOS X Sierra, which has decided to not provide either it or the
+# 'apu-1-config' script and otherwise completely broken 'apxs'. In that
+# case we manually set the locations of the Apache and APR header files.
+
+if (not os.path.exists(APR_CONFIG) and
+        os.path.exists('/Developer/SDKs/MacOSX10.6.sdk')):
+    INCLUDEDIR = '/Developer/SDKs/MacOSX10.6.sdk/usr/include/apache2'
+    APR_INCLUDES = ['-I/Developer/SDKs/MacOSX10.6.sdk/usr/include/apr-1']
+    APU_INCLUDES = []
+else:
+    APR_INCLUDES = get_apr_includes().split()
+    APU_INCLUDES = get_apu_includes().split()
 
 # Write out apxs_config.py which caches various configuration related to
 # Apache. For the case of using our own Apache build, this needs to
