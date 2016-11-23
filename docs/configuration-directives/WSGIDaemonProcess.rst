@@ -96,10 +96,17 @@ Options which can be supplied to the WSGIDaemonProcess directive are:
     the initial current working directory will be set to be the home
     directory of the user that the daemon process runs as.
 
+**python-home=directory**
+    This should be the top level directory of the Python virtual environment 
+    you wish to use. The value will only be used for this specific mod_wsgi daemon 
+    process group. This option is prefered to the old ``python-path`` option.
+    
 **python-path=directory | python-path=directory:directory**
     List of colon separated directories to add to the Python module search
     path, ie., ``sys.path``.
 
+    If unsure, use ``python-home`` instead of this option.
+    
     Note that this is not strictly the same as having set ``PYTHONPATH``
     environment variable when running normal command line Python. When this
     option is used, the directories are added by calling
