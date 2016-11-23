@@ -29,7 +29,7 @@ group name in different virtual hosts.
 
 Options which can be supplied to the WSGIDaemonProcess directive are:
 
-**user=name | user=#uid**.rst
+**user=name | user=#uid**
     Defines the UNIX user *name* or numeric user *uid* of the user that
     the daemon processes should be run as. If this option is not supplied
     the daemon processes will be run as the same user that Apache would
