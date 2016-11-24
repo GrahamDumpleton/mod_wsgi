@@ -6,11 +6,11 @@ WSGIDaemonProcess
 :Syntax: ``WSGIDaemonProcess`` *name* ``[`` *options* ``]``
 :Context: server config, virtual host
 
-The WSGIDaemonProcess directive can be used to specify that distinct daemon
-processes should be created to which the running of WSGI applications can
-be delegated. Where Apache has been started as the ``root`` user, the
-daemon processes can be run as a user different to that which the Apache
-child processes would normally be run as.
+The ``WSGIDaemonProcess`` directive can be used to specify that distinct
+daemon processes should be created to which the running of WSGI
+applications can be delegated. Where Apache has been started as the
+``root`` user, the daemon processes can be run as a user different to that
+which the Apache child processes would normally be run as.
 
 When distinct daemon processes are enabled and used, the process is
 dedicated to mod_wsgi and the only thing that the processes do is run the
@@ -18,36 +18,39 @@ WSGI applications assigned to that process group. Any other Apache modules
 such as PHP or activities such as serving up static files continue to be
 run in the standard Apache child processes.
 
-Note that having denoted that daemon processes should be created by using
-the WSGIDaemonProcess directive, the WSGIProcessGroup directive still needs
-to be used to delegate specific WSGI applications to execute within those
-daemon processes.
+Note that having denoted that daemon processes should be created by
+using the ``WSGIDaemonProcess`` directive, the ``WSGIProcessGroup``
+directive, or the ``process-group`` option of ``WSGIScriptAlias`` still
+needs to be used to delegate specific WSGI applications to execute within
+those daemon processes.
 
 Also note that the name of the daemon process group must be unique for the
 whole server. That is, it is not possible to use the same daemon process
 group name in different virtual hosts.
 
-Options which can be supplied to the WSGIDaemonProcess directive are:
+Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 
 **user=name | user=#uid**
     Defines the UNIX user *name* or numeric user *uid* of the user that
     the daemon processes should be run as. If this option is not supplied
     the daemon processes will be run as the same user that Apache would
-    run child processes and as defined by the `User`_ directive.
+    run child processes, as defined by the `User`_ directive, and it is
+    not necessary to set this to the Apache user yourself.
 
     Note that this option is ignored if Apache wasn't started as the root
     user, in which case no matter what the settings, the daemon processes
     will be run as the user that Apache was started as.
 
-	Also be aware that mod_wsgi will not allow you to run a daemon
-	process group as the root user due to the security risk of running
-	a web application as root.
+    Also be aware that mod_wsgi will not allow you to run a daemon process
+    group as the root user due to the security risk of running a web
+    application as root.
 
 **group=name | group=#gid**
     Defines the UNIX group *name* or numeric group *gid* of the primary
     group that the daemon processes should be run as. If this option is not
     supplied the daemon processes will be run as the same group that Apache
-    would run child processes and as defined by the `Group`_ directive.
+    would run child processes, as defined by the `Group`_ directive, and it
+    is not necessary to set this to the Apache group yourself.
 
     Note that this option is ignored if Apache wasn't started as the root
     user, in which case no matter what the settings, the daemon processes
@@ -58,16 +61,16 @@ Options which can be supplied to the WSGIDaemonProcess directive are:
     process group. If not defined then only one process will be run in this
     process group.
 
-    Note that if this option is defined as 'processes=1', then the WSGI
-    environment attribute called 'wsgi.multiprocess' will be set to be True
-    whereas not providing the option at all will result in the attribute
-    being set to be False. This distinction is to allow for where some form
-    of mapping mechanism might be used to distribute requests across
-    multiple process groups and thus in effect it is still a multiprocess
-    application. If you need to ensure that 'wsgi.multiprocess' is False so
-    that interactive debuggers will work, simply do not specify the
-    'processes' option and allow the default single daemon process to be
-    created in the process group.
+    Note that if this option is defined as ``processes=1``, then the WSGI
+    environment attribute called ``wsgi.multiprocess`` will be set to be
+    ``True`` whereas not providing the option at all will result in the
+    attribute being set to be ``False``. This distinction is to allow for
+    where some form of load balancing is used across process groups in the
+    same Apache instance, or separate Apache instances. If you need to
+    ensure that ``wsgi.multiprocess`` is ``False`` so that interactive
+    debuggers will work, simply do not specify the ``processes`` option and
+    allow the default single daemon process to be created in the process
+    group.
 
 **threads=num**
     Defines the number of threads to be created to handle requests in each
@@ -75,6 +78,12 @@ Options which can be supplied to the WSGIDaemonProcess directive are:
     
     If this option is not defined then the default will be to create 15
     threads in each daemon process within the process group.
+
+    Do not get carried away and set this to a very large number in the
+    belief that it will somehow magically enable you to handle many more
+    concurrent users. Any sort of increased value would only be appropriate
+    where your code is I/O bound. If you code is CPU bound, you are better
+    of using at most 3 to 5 threads per process and using more processes.
 
 **umask=0nnn**
     Defines a value to be used for the umask of the daemon processes within
@@ -89,28 +98,49 @@ Options which can be supplied to the WSGIDaemonProcess directive are:
     initial current working directory of the daemon processes within the
     process group.
     
-    If this option is not defined, in mod_wsgi 1.X the current working
-    directory of the Apache parent process will be inherited by the daemon
-    processes within the process group. Normally the current working directory
-    of the Apache parent process would be the root directory. In mod_wsgi 2.0+
-    the initial current working directory will be set to be the home
-    directory of the user that the daemon process runs as.
+    If this option is not defined the initial current working directory
+    will be set to be the home directory of the user that the daemon
+    process is configured to run as using the ``user`` option to the
+    ``WSGIDaemonProcess`` directive. Otherwise the current working
+    directory of Apache when started will be used, which if Apache is being
+    started from system init scripts, would usually be the system root
+    directory.
+
+**python-home=directory**
+    Set the location of the Python virtual environment to be used by the
+    daemon processes. The directory to use is that which ``sys.prefix`` is
+    set to for the Python virtual environment. The virtual environment can
+    have been created by ``virtualenv``, ``pyvenv`` or ``python -m venv``.
+
+    Note that the Python virtual environment must have been created using
+    the same base Python version as was used to compile the mod_wsgi
+    module. You can't use this to force mod_wsgi to somehow use a different
+    Python version than it was compiled for. If you want to use a different
+    version of Python, you will need to reinstall mod_wsgi, compiling it
+    for the version you want. It is not possible for the one mod_wsgi
+    instance to run applications for both Python 2 and 3 at the same time.
 
 **python-path=directory | python-path=directory:directory**
     List of colon separated directories to add to the Python module search
     path, ie., ``sys.path``.
 
-    Note that this is not strictly the same as having set ``PYTHONPATH``
+    Note that this is not strictly the same as having set the ``PYTHONPATH``
     environment variable when running normal command line Python. When this
     option is used, the directories are added by calling
     ``site.addsitedir()``. As well as adding the directory to
     ``sys.path`` this function has the effect of opening and interpreting
-    any '.pth' files located in the specified directories. The option
-    therefore can be used to point at the ``site-packages`` directory
-    corresponding to a Python virtual environment created by a tool such as
-    ``virtualenv``, with any additional directories corresponding to
-    Python eggs within that directory also being automatically added to
-    ``sys.path``.
+    any ``.pth`` files located in the specified directories.
+
+    If using a Python virtual environment, rather than use this option to
+    refer to the ``site-packages`` directory of the Python virtual
+    environment, you should use the ``python-home`` option to specify the
+    root of the Python virtual environment instead.
+
+    In all cases, if the directory contains Python packages which have C
+    extension components, those packages must have been installed using the
+    same base Python version as was used to compile the mod_wsgi module.
+    You should not mix packages from different Python versions or
+    installations.
 
 **python-eggs=directory**
     Directory to be used as the Python egg cache directory. This is
@@ -134,26 +164,48 @@ Options which can be supplied to the WSGIDaemonProcess directive are:
 
 **maximum-requests=nnn**
     Defines a limit on the number of requests a daemon process should
-    process before it is shutdown and restarted. Setting this to a non zero
-    value has the benefit of limiting the amount of memory that a process
-    can consume by (accidental) memory leakage.
+    process before it is shutdown and restarted.
+
+    This might be use to periodically force restart the WSGI application
+    processes when you have issues related to Python object reference count
+    cycles, or incorrect use of in memory caching, which causes constant
+    memory growth.
 
     If this option is not defined, or is defined to be 0, then the daemon
     process will be persistent and will continue to service requests until
     Apache itself is restarted or shutdown.
 
+    Avoid setting this to a low number of requests on a site which handles
+    a lot of traffic. This is because the constant restarting and reloading
+    of your WSGI application may cause unecessary load on your system and
+    affect performance. Only use this option if you have no other choice
+    due to a memory usage issue. Stop using it as soon as any memory issue
+    has been resolved.
+
 **inactivity-timeout=sss**
     Defines the maximum number of seconds allowed to pass before the
     daemon process is shutdown and restarted when the daemon process has
     entered an idle state. For the purposes of this option, being idle
-    means no new requests being received, or no attempts by current
-    requests to read request content or generate response content for the
-    defined period.
+    means there are no currently active requests and no new requests are
+    being received.
 
     This option exists to allow infrequently used applications running in
     a daemon process to be restarted, thus allowing memory being used to
     be reclaimed, with process size dropping back to the initial startup
     size before any application had been loaded or requests processed.
+
+    Note that after any restart of the WSGI application process, the WSGI
+    application will need to be reloaded. This can mean that the first
+    request received by a process after the process was restarted can be
+    slower. If you WSGI application has a very high startup cost on CPU and
+    time, it may not be a good idea to use the option.
+
+    See also the ``request-timeout`` option for forcing a process restart
+    when requests block for a specified period of time. Note that similar
+    functionality to that of the ``request-timeout`` option, for forcing a
+    restart when requests blocked, was part of what was implemented by the
+    ``inactivity-timeout`` option. The request timeout was broken out into
+    a separate feature in version 4.1.0 of mod_wsgi.
 
 **deadlock-timeout=sss**
     Defines the maximum number of seconds allowed to pass before the
@@ -182,17 +234,19 @@ Options which can be supplied to the WSGIDaemonProcess directive are:
 
 **display-name=value**
     Defines a different name to show for the daemon process when using the
-    'ps' command to list processes. If the value is '%{GROUP}' then the
-    name will be '(wsgi:group)' where 'group' is replaced with the name
+    ``ps`` command to list processes. If the value is ``%{GROUP}`` then the
+    name will be ``(wsgi:group)`` where ``group`` is replaced with the name
     of the daemon process group.
 
     Note that only as many characters of the supplied value can be displayed
-    as were originally taken up by 'argv0' of the executing process. Anything
-    in excess of this will be truncated.
+    as were originally taken up by ``argv0`` of the executing process.
+    Anything in excess of this will be truncated.
 
     This feature may not work as described on all platforms. Typically it
-    also requires a 'ps' program with BSD heritage. Thus on Solaris UNIX
-    the '/usr/bin/ps' program doesn't work, but '/usr/ucb/ps' does.
+    also requires a ``ps`` program with BSD heritage. Thus on some versions
+    of Solaris UNIX the ``/usr/bin/ps`` program doesn't work, but
+    ``/usr/ucb/ps`` does. Other programs which can display this value
+    include ``htop``.
 
 **receive-buffer-size=nnn**
     Defines the UNIX socket buffer size for data being received by the
@@ -200,11 +254,11 @@ Options which can be supplied to the WSGIDaemonProcess directive are:
 
     This option may need to be used to override small default values set by
     certain operating systems and would help avoid possibility of deadlock
-    between Apache child process and daemon process when WSGI application
-    generates large responses but doesn't consume request content. In
-    general such deadlock problems would not arise with well behaved WSGI
-    applications, but some spam bots attempting to post data to web sites
-    are known to trigger the problem.
+    between Apache child process and daemon process when the WSGI
+    application generates large responses but doesn't consume request
+    content. In general such deadlock problems would not arise with well
+    behaved WSGI applications, but some spam bots attempting to post data
+    to web sites are known to trigger the problem.
 
     The maximum possible value that can be set for the buffer size is
     operating system dependent and will need to be calculated through trial
@@ -216,29 +270,58 @@ Options which can be supplied to the WSGIDaemonProcess directive are:
 
     This option may need to be used to override small default values set by
     certain operating systems and would help avoid possibility of deadlock
-    between Apache child process and daemon process when WSGI application
-    generates large responses but doesn't consume request content. In
-    general such deadlock problems would not arise with well behaved WSGI
-    applications, but some spam bots attempting to post data to web sites
-    are known to trigger the problem.
+    between Apache child process and daemon process when the WSGI
+    application generates large responses but doesn't consume request
+    content. In general such deadlock problems would not arise with well
+    behaved WSGI applications, but some spam bots attempting to post data
+    to web sites are known to trigger the problem.
 
     The maximum possible value that can be set for the buffer size is
     operating system dependent and will need to be calculated through trial
     and error.
 
 To delegate a particular WSGI application to run in a named set of daemon
-processes, the WSGIProcessGroup directive should be specified in
-appropriate context for that application. If WSGIProcessGroup is not used,
-the application will be run within the standard Apache child processes.
+processes, the ``WSGIProcessGroup`` directive should be specified in
+appropriate context for that application, or the ``process-group`` option
+used on the ``WSGIScriptAlias`` directive. If neither is used to delegate
+the WSGI application to run in a daemon process group, the application will
+be run within the standard Apache child processes.
 
-If the WSGIDaemonProcess directive is specified outside of all virtual
+If the ``WSGIDaemonProcess`` directive is specified outside of all virtual
 host containers, any WSGI application can be delegated to be run within
-that daemon process group. If the WSGIDaemonProcess directive is specified
-within a virtual host container, only WSGI applications associated with
-virtual hosts with the same server name as that virtual host can be
-delegated to that set of daemon processes.
+that daemon process group. If the ``WSGIDaemonProcess`` directive is
+specified within a virtual host container, only WSGI applications
+associated with virtual hosts with the same server name as that virtual
+host can be delegated to that set of daemon processes.
 
-When WSGIDaemonProcess is associated with a virtual host, the error log
+In the case where you have two separate ``VirtualHost`` definitions for
+the same ``ServerName``, but where one is for port 80 and the other for
+port 443, specify the ``WSGIDaemonProcess`` directive in the
+first ``VirtualHost``. You can then refer to that daemon process group
+by name from the second ``VirtualHost``. Using one daemon process group
+across the two virtual hosts in this case is preferred as then you do not
+have two whole separate instances of your application for port 80 and 443.
+
+::
+
+  <VirtualHost *:80>
+  ServerName www.site1.com
+
+  WSGIDaemonProcess www.site1.com user=joe group=joe processes=2 threads=25
+  WSGIProcessGroup www.site1.com
+
+  ...
+  </VirtualHost>
+
+  <VirtualHost *:443>
+  ServerName www.site1.com
+
+  WSGIProcessGroup www.site1.com
+
+  ...
+  </VirtualHost>
+
+When ``WSGIDaemonProcess`` is associated with a virtual host, the error log
 associated with that virtual host will be used for all Apache error log
 output from mod_wsgi rather than it appear in the main Apache error log.
 
@@ -269,7 +352,7 @@ host, the following could be used::
   ...
   </VirtualHost>
 
-Note that the WSGIDaemonProcess directive and corresponding features are
+Note that the ``WSGIDaemonProcess`` directive and corresponding features are
 not available on Windows or when running Apache 1.3.
 
 .. _User: http://httpd.apache.org/docs/2.2/mod/mpm_common.html#user
