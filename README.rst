@@ -27,20 +27,24 @@ module for mod_wsgi, but will also install a Python module and admin script
 for starting up a standalone instance of Apache directly from the command
 line with an auto generated configuration.
 
-This later mechanism for installing mod_wsgi using Python 'pip' is a much
+This later mechanism for installing mod_wsgi using Python ``pip`` is a much
 simpler way of getting starting with hosting your Python web application.
 In particular, the new installation method makes it very easy to use
 Apache/mod_wsgi in a development environment without the need to perform
 any Apache configuration yourself.
 
-On some platforms, this latter method is the only option supported when
-using the operating system supplied Apache installation. For example, in
-MacOS X Sierra, Apple has completely broken the ability to install third
+The Apache module for mod_wsgi created when using the ``pip install``
+method can still be used with the main Apache installation, via manual
+configuration if necessary.
+
+On some platforms, this latter method is actually the only option supported
+when using the operating system supplied Apache installation. For example,
+in MacOS X Sierra, Apple has completely broken the ability to install third
 party Apache modules using the ``apxs`` tool normally used for this task.
 History suggests that Apple will never fix the problem as they have broken
 things in the past in other ways and workarounds were required as they
-never fixed those problems either. This time there is no easy workaround
-as they no longer supply certain tools which are required to perform the
+never fixed those problems either. This time there is no easy workaround as
+they no longer supply certain tools which are required to perform the
 installation.
 
 Note that neither of the above methods for installing mod_wsgi is supported
@@ -110,9 +114,8 @@ application.
 Installation into Python
 ------------------------
 
-To install the mod_wsgi express version directly into your Python
-installation, from within the source directory of the mod_wsgi package you
-can run::
+To install the mod_wsgi directly into your Python installation, from within
+the source directory of the mod_wsgi package you can run::
 
     python setup.py install
 
@@ -200,12 +203,13 @@ script is in turn executing.
 Running mod_wsgi-express as root
 --------------------------------
 
-The primary intention of mod_wsgi express is to make it easier for users
-to run up Apache on non privileged ports, especially during the development
-of a Python web application. If you want to be able to run Apache using
-mod_wsgi express on a privileged port such as the standard port 80 used by
-HTTP servers, then you will need to run ``mod_wsgi-express`` as root. In
-doing this, you will need to perform additional steps.
+The primary intention of ``mod_wsgi-express`` is to make it easier for
+users to run up Apache on non privileged ports, especially during the
+development of a Python web application. If you want to be able to run
+Apache using ``mod_wsgi-express`` on a privileged port such as the standard
+port 80 used by HTTP servers, then you will need to run
+``mod_wsgi-express`` as root. In doing this, you will need to perform
+additional steps.
 
 The first thing you must do is supply the ``--user`` and ``--group``
 options to say what user and group your Python web application should run
@@ -223,7 +227,7 @@ in the foreground and not daemonize.
 If however you are directly integrating into the system init scripts where
 separate start and stop commands are expected, with the executing process
 expected to be daemonized, then a different process is required to setup
-mod_wsgi express.
+``mod_wsgi-express``.
 
 In this case, instead of simply using the ``start-server`` command to
 ``mod_wsgi-express`` you should use ``setup-server``::
@@ -352,9 +356,10 @@ This would be placed in the Apache ``httpd.conf`` file, or if the Linux
 distribution separates out module configuration into a ``mods-available``
 directory, in the ``wsgi.load`` file within the ``mods-available``
 directory. In the latter case where a ``mods-available`` directory is used,
-the module would then be enabled by running ``a2enmod wsgi``. If necessary
-Apache can then be restarted to verify the module is loading correctly. You
-can then configure Apache as necessary for your specific WSGI application.
+the module would then be enabled by running ``a2enmod wsgi`` as ``root``.
+If necessary Apache can then be restarted to verify the module is loading
+correctly. You can then configure Apache as necessary for your specific
+WSGI application.
 
 Note that because in this scenario the mod_wsgi module for Apache could be
 located in a Python virtual environment, if you destroy the Python virtual
@@ -366,7 +371,7 @@ Apache before restarting Apache or it will fail to startup.
 Instead of referencing the mod_wsgi module from the Python installation,
 you can instead copy the mod_wsgi module into the Apache installation. To
 do that, run the ``mod_wsgi-express install-module`` command, running it as
-``root`` using ``sudo`` if necessary. This will output something like::
+``root`` if necessary. This will output something like::
 
     LoadModule wsgi_module modules/mod_wsgi-py27.so
     WSGIPythonHome /usr/local/lib
@@ -374,5 +379,5 @@ do that, run the ``mod_wsgi-express install-module`` command, running it as
 This is similar to above except that the mod_wsgi module was copied to the
 Apache modules directory first and the ``LoadModule`` directive references
 it from that location. You should take these lines and configure Apache in
-the same was as described above. Do note that copying the module like this
+the same way as described above. Do note that copying the module like this
 will not work on recent versions of MacOS X due to the SIP feature of MacOS X.
