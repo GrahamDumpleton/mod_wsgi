@@ -554,7 +554,7 @@ host, the following could be used::
 Note that the ``WSGIDaemonProcess`` directive and corresponding features are
 not available on Windows.
 
-.. _User: http://httpd.apache.org/docs/2.4/mod/mpm_common.html#user
-.. _Group: http://httpd.apache.org/docs/2.4/mod/mpm_common.html#group
+.. _User: http://httpd.apache.org/docs/2.4/mod/mod_unixd.html#user
+.. _Group: http://httpd.apache.org/docs/2.4/mod/mod_unixd.html#group
 .. _Timeout: http://httpd.apache.org/docs/2.4/mod/core.html#timeout
 .. _PrivilegesMode: https://httpd.apache.org/docs/2.4/mod/mod_privileges.html#privilegesmode
