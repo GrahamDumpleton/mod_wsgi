@@ -434,19 +434,22 @@ if (not get_python_config('Py_ENABLE_SHARED') and
 
 # Now finally run distutils.
 
+long_description = open('README.rst').read()
+
 setup(name = 'mod_wsgi',
     version = _version(),
     description = 'Installer for Apache/mod_wsgi.',
+    long_description = long_description,
     author = 'Graham Dumpleton',
     author_email = 'Graham.Dumpleton@gmail.com',
     maintainer = 'Graham Dumpleton',
     maintainer_email = 'Graham.Dumpleton@gmail.com',
     url = 'http://www.modwsgi.org/',
-    #bugtrack_url = 'https://github.com/GrahamDumpleton/mod_wsgi/issues',
+    bugtrack_url = 'https://github.com/GrahamDumpleton/mod_wsgi/issues',
     license = 'Apache License, Version 2.0',
     platforms = [],
     download_url = None,
-    classifiers= [
+    classifiers = [
         'Development Status :: 6 - Mature',
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: MacOS :: MacOS X',
@@ -460,9 +463,11 @@ setup(name = 'mod_wsgi',
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3.3',
         'Programming Language :: Python :: 3.4',
+        'Programming Language :: Python :: 3.5',
         'Topic :: Internet :: WWW/HTTP :: WSGI',
         'Topic :: Internet :: WWW/HTTP :: WSGI :: Server'
     ],
+    keywords = 'mod_wsgi wsgi apache',
     packages = ['mod_wsgi', 'mod_wsgi.server', 'mod_wsgi.server.management',
         'mod_wsgi.server.management.commands', 'mod_wsgi.docs',
         'mod_wsgi.images'],
