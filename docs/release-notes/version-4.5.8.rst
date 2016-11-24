@@ -44,3 +44,8 @@ New Features
   path passed as argument to the option. Any requests against the matching
   URL path will not trigger a reset of the inactivity timeout for a
   mod_wsgi daemon process.
+
+* Added the ``--module-config`` option to ``mod_wsgi-express`` to get the
+  Apache configuration snippet you would use to load the mod_wsgi module
+  from the Python installation direct into Apache, rather than installing
+  the module into the Apache modules directory.

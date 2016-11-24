@@ -3269,6 +3269,21 @@ def cmd_start_server(params):
     executable = os.path.join(config['server_root'], 'apachectl')
     os.execl(executable, executable, 'start', '-DFOREGROUND')
 
+def cmd_module_config(params):
+    formatter = optparse.IndentedHelpFormatter()
+    formatter.set_long_opt_delimiter(' ')
+
+    usage = '%prog module-config'
+    parser = optparse.OptionParser(usage=usage, formatter=formatter)
+
+    (options, args) = parser.parse_args(params)
+
+    if len(args) != 0:
+        parser.error('Incorrect number of arguments.')
+
+    print('LoadModule wsgi_module %s' % where())
+    print('WSGIPythonHome %s' % os.path.normpath(sys.prefix))
+
 def cmd_install_module(params):
     formatter = optparse.IndentedHelpFormatter()
     formatter.set_long_opt_delimiter(' ')
@@ -3311,6 +3326,7 @@ main_usage="""
 
 Commands:
     install-module
+    module-config
     module-location
     setup-server
     start-server
@@ -3330,6 +3346,8 @@ def main():
 
     if command == 'install-module':
         cmd_install_module(args)
+    elif command == 'module-config':
+        cmd_module_config(args)
     elif command == 'module-location':
         cmd_module_location(args)
     elif command == 'setup-server':
