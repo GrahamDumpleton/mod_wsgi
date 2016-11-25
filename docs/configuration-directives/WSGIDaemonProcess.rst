@@ -479,6 +479,20 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     operating system dependent and will need to be calculated through trial
     and error.
 
+**header-buffer-size=nnn**
+    Defines the maximum size that a response header/value can be that is
+    returned from a WSGI application. The default size is 32768 bytes. This
+    might need to be overridden where excessively large response headers
+    are returned, such as in custom authentication challenge schemes which
+    use the ``WWW-Authenticate`` header.
+
+**response-buffer-size=nnn**
+    Defines the maximum number of bytes that will be buffered for a
+    response in the Apache child processes when proxying the response body
+    from the WSGI application. The default size is 65536 bytes. Be careful
+    increasing this to provide extra buffering of responses as it
+    contributes to the runtime memory size of the Apache child processes.
+
 To delegate a particular WSGI application to run in a named set of daemon
 processes, the ``WSGIProcessGroup`` directive should be specified in
 appropriate context for that application, or the ``process-group`` option
