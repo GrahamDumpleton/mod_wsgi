@@ -426,6 +426,58 @@ Python packages in the main Python installation don't interfere with what
 packages are installed in the Python virtual environment for each WSGI
 application.
 
+Adding Additional Module Directories
+------------------------------------
+
+The ``python-home`` option to `WSGIDaemonProcess`_ and the
+`WSGIPythonHome`_ directive are the preferred way of specifying the
+location of the Python virtual environment to be used. If necessary,
+activation of the Python virtual environment can also be performed from the
+WSGI script file itself.
+
+If you need to add additional directories to search for Python packages or
+modules this can also be done. You may want to do this where you need to
+specify where the actual WSGI application is located, where a WSGI script
+file needs to import application specific modules.
+
+If you are using daemon mode and want to add additional directories to the
+Python module search path, you can use the ``python-path`` option to
+`WSGIDaemonProcess`_::
+
+    WSGIDaemonProcess myapp python-path=/some/path/project
+
+This option would be in addition to the ``python-home`` option used to
+specify where the Pythom virtual environment is located.
+
+If you are using embedded mode, you can use the `WSGIPythonPath`_
+directive::
+
+    WSGIPythonPath /some/path/project
+
+This directive is in addition to the `WSGIPythonHome`_ directive used to
+specify where the Python virtual environment is located.
+
+In either case, if you need to specify more than one directory, they can be
+separated using a ':' character.
+
+If you are having to activate the Python virtual enviromment from within a
+WSGI script and need to add additional directories to the Python module
+search path, you should modify ``sys.path`` directly from the WSGI script
+file.
+
+Note that prior practice was that these ways of setting the Python module
+search path were used to specify the location of the Python virtual
+environment. Specifically, they were used to add the ``site-packages``
+directory of the Python virtual environment. You should not do that.
+
+The better way to specify the location of the Python virtual environment is
+using the ``python-home`` option of the `WSGIDaemonProcess`_ directive for
+daemon mode, or the `WSGIPythonHome`_ directive for embedded mode. These
+ways of specifying the Python virtual environment have been available since
+mod_wsgi 3.0 and Linux distributions have not shipped such an old version
+of mod_wsgi for quite some time. If you are using the older way, please
+update your configurations.
+
 .. _virtualenv: http://pypi.python.org/pypi/virtualenv
 .. _virtualenvwrapper: https://pypi.python.org/pypi/virtualenvwrapper
 
@@ -433,3 +485,4 @@ application.
 .. _WSGIProcessGroup: ../configuration-directives/WSGIProcessGroup
 .. _WSGIApplicationGroup: ../configuration-directives/WSGIApplicationGroup
 .. _WSGIPythonHome: ../configuration-directives/WSGIPythonHome
+.. _WSGIPythonPath: ../configuration-directives/WSGIPythonPath
