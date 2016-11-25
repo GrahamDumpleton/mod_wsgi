@@ -447,7 +447,7 @@ Python module search path, you can use the ``python-path`` option to
     WSGIDaemonProcess myapp python-path=/some/path/project
 
 This option would be in addition to the ``python-home`` option used to
-specify where the Pythom virtual environment is located.
+specify where the Python virtual environment is located.
 
 If you are using embedded mode, you can use the ``WSGIPythonPath``
 directive::
