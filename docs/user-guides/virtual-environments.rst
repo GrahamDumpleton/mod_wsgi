@@ -219,7 +219,7 @@ differently for each WSGI script file, with it referring to the root
 directory of the respective Python virtual environments.
 
 This code should be placed in the WSGI script file before any other module
-imports in the WSGI script file, with the exception of ``from _future_``
+imports in the WSGI script file, with the exception of ``from __future__``
 imports used to enable Python feature flags.
 
 Important to note is that when the Python virtual environment is activated
@@ -237,8 +237,8 @@ existing ``sys.path``.
 The consequence of this is that the Python virtual environment isn't
 completely overriding the original Python installation the Python virtual
 environment was created from. This means that if the main Python
-installation had additional Python packages installed they will also be
-visible to the WSGI application.
+installation had additional Python packages installed they will also
+potentially be visible to the WSGI application.
 
 That this occurs could cause confusion as you might for example think you
 had all the packages you require listed in your ``requirements.txt`` file
@@ -253,7 +253,7 @@ To avoid such problems, when activating the Python virtual environment
 from within the WSGI script file, it is necessary to still set the
 ``python-home`` option of the `WSGIDaemonProcess`_ directive, but set it to
 an empty Python virtual environment which has had no additional packages
-installed.
+installed::
 
     WSGIDaemonProcess myapp python-home=/usr/local/venvs/empty
 
@@ -292,7 +292,7 @@ instead use the following code in the WSGI script file::
 
 As before this code should be placed in the WSGI script file before any
 other module imports in the WSGI script file, with the exception of ``from
-_future_`` imports used to enable Python feature flags.
+__future__`` imports used to enable Python feature flags.
 
 When using this method, do be aware that the additions to the Python module
 search path are made at the end of ``sys.path``. For that reason, you must
