@@ -131,14 +131,40 @@ if APXS is None:
 elif not os.path.isabs(APXS):
     APXS = find_program([APXS], APXS, ['/usr/sbin', os.getcwd()])
 
+WITHOUT_APXS = False
+WITH_WINDOWS_APACHE = None
+
 if not WITH_TARBALL_PACKAGE:
     if not os.path.isabs(APXS) or not os.access(APXS, os.X_OK):
-        raise RuntimeError('The %r command appears not to be installed or '
-                'is not executable. Please check the list of prerequisites '
-                'in the documentation for this package and install any '
-                'missing Apache httpd server packages.' % APXS)
+        WITHOUT_APXS = True
 
-if WITH_TARBALL_PACKAGE: 
+if WITHOUT_APXS and os.name == 'nt':
+    APACHE_ROOTDIR = os.environ.get('MOD_WSGI_APACHE_ROOTDIR', 'c:\\Apache24')
+    if os.path.exists(APACHE_ROOTDIR):
+        WITH_WINDOWS_APACHE = APACHE_ROOTDIR
+
+if WITHOUT_APXS and not WITH_WINDOWS_APACHE:
+    raise RuntimeError('The %r command appears not to be installed or '
+            'is not executable. Please check the list of prerequisites '
+            'in the documentation for this package and install any '
+            'missing Apache httpd server packages.' % APXS)
+
+if WITH_WINDOWS_APACHE:
+    def get_apxs_config(name):
+        if name == 'INCLUDEDIR':
+            return WITH_WINDOWS_APACHE + '/include'
+        elif name == 'LIBEXECDIR':
+            return WITH_WINDOWS_APACHE + '/lib'
+        else:
+            return ''
+
+    def get_apr_includes():
+        return ''
+
+    def get_apu_includes():
+        return ''
+
+elif WITH_TARBALL_PACKAGE:
     SCRIPT_DIR = os.path.join(os.path.dirname(__file__), 'src', 'packages')
 
     CONFIG_FILE = os.path.join(SCRIPT_DIR, 'apache/build/config_vars.mk')
@@ -187,10 +213,10 @@ if WITH_TARBALL_PACKAGE:
             sub_value = expand_vars(value)
         return sub_value.replace('/mod_wsgi-packages/', SCRIPT_DIR+'/')
 
-    def get_apr_includes(query):
+    def get_apr_includes():
         return ''
 
-    def get_apu_includes(query):
+    def get_apu_includes():
         return ''
 
     CONFIG['PREFIX'] = get_apxs_config('prefix')
@@ -334,24 +360,39 @@ with open(os.path.join(os.path.dirname(__file__),
 # Work out location of Python library and how to link it.
 
 PYTHON_VERSION = get_python_config('VERSION')
-PYTHON_LDVERSION = get_python_config('LDVERSION') or PYTHON_VERSION
 
-PYTHON_LIBDIR = get_python_config('LIBDIR')
-PYTHON_CFGDIR =  get_python_lib(plat_specific=1, standard_lib=1) + '/config'
+if os.name == 'nt':
+    if hasattr(sys, 'real_prefix'):
+        PYTHON_LIBDIR = sys.real_prefix
+    else:
+        PYTHON_LIBDIR = get_python_config('BINDIR')
 
-if PYTHON_LDVERSION and PYTHON_LDVERSION != PYTHON_VERSION:
-    PYTHON_CFGDIR = '%s-%s' % (PYTHON_CFGDIR, PYTHON_LDVERSION)
+    PYTHON_LDFLAGS = []
+    PYTHON_LDLIBS = ['%s/libs/python%s.lib' % (PYTHON_LIBDIR, PYTHON_VERSION),
+            '%s/lib/libhttpd.lib' % WITH_WINDOWS_APACHE,
+            '%s/lib/libapr-1.lib' % WITH_WINDOWS_APACHE,
+            '%s/lib/libaprutil-1.lib' % WITH_WINDOWS_APACHE,
+            '%s/lib/libapriconv-1.lib' % WITH_WINDOWS_APACHE]
 
-PYTHON_LDFLAGS = ['-L%s' % PYTHON_LIBDIR, '-L%s' % PYTHON_CFGDIR]
-PYTHON_LDLIBS = ['-lpython%s' % PYTHON_LDVERSION]
+else:
+    PYTHON_LDVERSION = get_python_config('LDVERSION') or PYTHON_VERSION
 
-if os.path.exists(os.path.join(PYTHON_LIBDIR,
-        'libpython%s.a' % PYTHON_VERSION)):
-    PYTHON_LDLIBS = ['-lpython%s' % PYTHON_VERSION]
+    PYTHON_LIBDIR = get_python_config('LIBDIR')
+    PYTHON_CFGDIR =  get_python_lib(plat_specific=1, standard_lib=1) + '/config'
 
-if os.path.exists(os.path.join(PYTHON_CFGDIR,
-        'libpython%s.a' % PYTHON_VERSION)):
-    PYTHON_LDLIBS = ['-lpython%s' % PYTHON_VERSION]
+    if PYTHON_LDVERSION and PYTHON_LDVERSION != PYTHON_VERSION:
+        PYTHON_CFGDIR = '%s-%s' % (PYTHON_CFGDIR, PYTHON_LDVERSION)
+
+    PYTHON_LDFLAGS = ['-L%s' % PYTHON_LIBDIR, '-L%s' % PYTHON_CFGDIR]
+    PYTHON_LDLIBS = ['-lpython%s' % PYTHON_LDVERSION]
+
+    if os.path.exists(os.path.join(PYTHON_LIBDIR,
+            'libpython%s.a' % PYTHON_VERSION)):
+        PYTHON_LDLIBS = ['-lpython%s' % PYTHON_VERSION]
+
+    if os.path.exists(os.path.join(PYTHON_CFGDIR,
+            'libpython%s.a' % PYTHON_VERSION)):
+        PYTHON_LDLIBS = ['-lpython%s' % PYTHON_VERSION]
 
 # Create the final set of compilation flags to be used.
 
@@ -362,11 +403,12 @@ EXTRA_LINK_ARGS = PYTHON_LDFLAGS + PYTHON_LDLIBS
 
 # Force adding of LD_RUN_PATH for platforms that may need it.
 
-LD_RUN_PATH = os.environ.get('LD_RUN_PATH', '')
-LD_RUN_PATH += ':%s:%s' % (PYTHON_LIBDIR, PYTHON_CFGDIR)
-LD_RUN_PATH = LD_RUN_PATH.lstrip(':')
+if os.name != 'nt':
+    LD_RUN_PATH = os.environ.get('LD_RUN_PATH', '')
+    LD_RUN_PATH += ':%s:%s' % (PYTHON_LIBDIR, PYTHON_CFGDIR)
+    LD_RUN_PATH = LD_RUN_PATH.lstrip(':')
 
-os.environ['LD_RUN_PATH'] = LD_RUN_PATH
+    os.environ['LD_RUN_PATH'] = LD_RUN_PATH
 
 # On MacOS X, recent versions of Apple's Apache do not support compiling
 # Apache modules with a target older than 10.8. This is because it
@@ -389,7 +431,10 @@ if sys.platform == 'darwin':
 
 # Now add the definitions to build everything.
 
-extension_name = 'mod_wsgi.server.mod_wsgi-py%s%s' % sys.version_info[:2]
+if os.name == 'nt':
+    extension_name = 'mod_wsgi.server.mod_wsgi'
+else:
+    extension_name = 'mod_wsgi.server.mod_wsgi-py%s%s' % sys.version_info[:2]
 
 extension = Extension(extension_name, source_files,
         include_dirs=INCLUDE_DIRS, extra_compile_args=EXTRA_COMPILE_FLAGS,
@@ -428,9 +473,10 @@ supplying the '--enable-shared' option to the 'configure' script when
 configuring the source code prior to building and installing it.
 """
 
-if (not get_python_config('Py_ENABLE_SHARED') and
-        not get_python_config('PYTHONFRAMEWORK')):
-    print(SHARED_LIBRARY_WARNING)
+if os.name != 'nt':
+    if (not get_python_config('Py_ENABLE_SHARED') and
+            not get_python_config('PYTHONFRAMEWORK')):
+        print(SHARED_LIBRARY_WARNING)
 
 # Now finally run distutils.
 

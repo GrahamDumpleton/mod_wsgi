@@ -15725,4 +15725,19 @@ module AP_MODULE_DECLARE_DATA wsgi_module = {
 
 /* ------------------------------------------------------------------------- */
 
+#if defined(_WIN32)
+#if PY_MAJOR_VERSION < 3
+PyMODINIT_FUNC initmod_wsgi(void)
+{
+}
+#else
+PyMODINIT_FUNC PyInit_mod_wsgi(void)
+{
+    return NULL;
+}
+#endif
+#endif
+
+/* ------------------------------------------------------------------------- */
+
 /* vi: set sw=4 expandtab : */

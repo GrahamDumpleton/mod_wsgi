@@ -6,6 +6,7 @@
  */
 
 #if defined(_WIN32)
+#include <winsock2.h>
 #include <windows.h>
 #define PSAPI_VERSION 1
 #include <psapi.h>
