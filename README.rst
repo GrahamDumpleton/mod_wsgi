@@ -47,9 +47,6 @@ never fixed those problems either. This time there is no easy workaround as
 they no longer supply certain tools which are required to perform the
 installation.
 
-Note that neither of the above methods for installing mod_wsgi is supported
-on Windows and that the Windows platform is no longer actively supported.
-
 System Requirements
 -------------------
 
