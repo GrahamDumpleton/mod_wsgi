@@ -26,7 +26,7 @@
 #define MOD_WSGI_MAJORVERSION_NUMBER 4
 #define MOD_WSGI_MINORVERSION_NUMBER 5
 #define MOD_WSGI_MICROVERSION_NUMBER 8
-#define MOD_WSGI_VERSION_STRING "4.5.8"
+#define MOD_WSGI_VERSION_STRING "4.5.9"
 
 /* ------------------------------------------------------------------------- */
 
