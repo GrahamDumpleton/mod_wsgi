@@ -49,3 +49,11 @@ New Features
   Apache configuration snippet you would use to load the mod_wsgi module
   from the Python installation direct into Apache, rather than installing
   the module into the Apache modules directory.
+
+* Added experimental support for installing mod_wsgi on Windows using ``pip``.
+  Is only tested with Apache 2.4 and Python 3.5. The Apache installation
+  must be installed in ``C:\Apache24`` directory. Run ``pip install mod_wsgi``.
+  The run ``mod_wsgi-express module-config`` and it will generate the
+  required configuration to add into the Apache configuration file to load
+  the mod_wsgi module. You still need to separately configure Apache for
+  your specific WSGI application.
