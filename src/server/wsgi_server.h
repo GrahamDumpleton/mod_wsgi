@@ -107,6 +107,7 @@ typedef struct {
     int error_override;
     int chunked_request;
     int map_head_to_get;
+    int ignore_activity;
 
     apr_array_header_t *trusted_proxy_headers;
     apr_array_header_t *trusted_proxies;

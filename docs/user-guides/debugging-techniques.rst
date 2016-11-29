@@ -74,7 +74,7 @@ below::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = 'Hello World!'
+        output = b'Hello World!'
 
         print >> environ['wsgi.errors'], "application debug #1"
 
@@ -487,7 +487,7 @@ application entry point::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = 'Hello World!\n\n'
+        output = b'Hello World!\n'
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
@@ -583,7 +583,7 @@ object::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = 'Hello World!\n\n'
+        output = b'Hello World!\n'
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
@@ -607,7 +607,7 @@ you can interactively debug your application from the window you ran the
      19
      20     def application(environ, start_response):
      21  ->     status = '200 OK'
-     22         output = 'Hello World!\n\n'
+     22         output = b'Hello World!\n'
      23
      24         response_headers = [('Content-type', 'text/plain'),
      25                             ('Content-Length', str(len(output)))]
@@ -653,7 +653,7 @@ a wrapper around the application you wish to debug::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = 'Hello World!\n\n'
+        output = b'Hello World!\n'
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]

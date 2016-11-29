@@ -35,6 +35,10 @@
 
 #define CORE_PRIVATE 1
 
+#if defined(_WIN32)
+#include <ws2tcpip.h>
+#endif
+
 #include "httpd.h"
 
 #if !defined(HTTPD_ROOT)

@@ -6,6 +6,7 @@
  */
 
 #if defined(_WIN32)
+#include <winsock2.h>
 #include <windows.h>
 #define PSAPI_VERSION 1
 #include <psapi.h>
@@ -96,13 +97,21 @@ static size_t getCurrentRSS(void)
 
 #elif defined(__APPLE__) && defined(__MACH__)
         /* OSX ------------------------------------------------------ */
+#if defined(MACH_TASK_BASIC_INFO)
         struct mach_task_basic_info info;
         mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
         if ( task_info( mach_task_self( ), MACH_TASK_BASIC_INFO,
                 (task_info_t)&info, &infoCount ) != KERN_SUCCESS )
                 return (size_t)0L;              /* Can't access? */
         return (size_t)info.resident_size;
-
+#else
+        struct task_basic_info info;
+        mach_msg_type_number_t infoCount = TASK_BASIC_INFO_COUNT;
+        if ( task_info( mach_task_self( ), TASK_BASIC_INFO,
+                (task_info_t)&info, &infoCount ) != KERN_SUCCESS )
+                return (size_t)0L;              /* Can't access? */
+        return (size_t)info.resident_size;
+#endif
 #elif defined(__linux__) || defined(__linux) || defined(linux) || defined(__gnu_linux__)
         /* Linux ---------------------------------------------------- */
         long rss = 0L;
@@ -122,6 +131,8 @@ static size_t getCurrentRSS(void)
         return (size_t)0L;                      /* Unsupported. */
 #endif
 }
+
+#include "wsgi_memory.h"
 
 size_t wsgi_get_peak_memory_RSS(void) { return getPeakRSS(); }
 size_t wsgi_get_current_memory_RSS(void) { return getCurrentRSS(); }

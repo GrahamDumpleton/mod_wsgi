@@ -10,8 +10,6 @@ import signal
 import threading
 import atexit
 import imp
-import pwd
-import grp
 import re
 import pprint
 import time
@@ -32,6 +30,7 @@ _py_soext = '.so'
 try:
     import imp
     import sysconfig
+    import distutils.sysconfig
 
     _py_soabi = sysconfig.get_config_var('SOABI')
     _py_soext = sysconfig.get_config_var('SO')
@@ -46,24 +45,37 @@ if not os.path.exists(MOD_WSGI_SO) and _py_soabi:
     MOD_WSGI_SO = 'mod_wsgi-py%s.%s%s' % (_py_version, _py_soabi, _py_soext)
     MOD_WSGI_SO = os.path.join(os.path.dirname(__file__), MOD_WSGI_SO)
 
+if not os.path.exists(MOD_WSGI_SO) and os.name == 'nt':
+    MOD_WSGI_SO = 'mod_wsgi%s' % distutils.sysconfig.get_config_var('EXT_SUFFIX')
+    MOD_WSGI_SO = os.path.join(os.path.dirname(__file__), MOD_WSGI_SO)
+
 def where():
     return MOD_WSGI_SO
 
 def default_run_user():
+    if os.name == 'nt':
+        return '#0'
+
     try:
+        import pwd
         uid = os.getuid()
         return pwd.getpwuid(uid).pw_name
     except KeyError:
         return '#%d' % uid
 
 def default_run_group():
+    if os.name == 'nt':
+        return '#0'
+
     try:
+        import pwd
         uid = os.getuid()
         entry = pwd.getpwuid(uid)
     except KeyError:
         return '#%d' % uid
 
     try:
+        import grp
         gid = entry.pw_gid
         return grp.getgrgid(gid).gr_name
     except KeyError:
@@ -758,6 +770,12 @@ WSGIImportScript '%(server_root)s/handler.wsgi' \\
 </IfDefine>
 """
 
+APACHE_IGNORE_ACTIVITY_CONFIG = """
+<Location '%(url)s'>
+WSGIIgnoreActivity On
+</Location>
+"""
+
 APACHE_PROXY_PASS_MOUNT_POINT_CONFIG = """
 ProxyPass '%(mount_point)s' '%(url)s'
 ProxyPassReverse '%(mount_point)s' '%(url)s'
@@ -946,6 +964,10 @@ WSGIImportScript '%(script)s' \\
 def generate_apache_config(options):
     with open(options['httpd_conf'], 'w') as fp:
         print(APACHE_GENERAL_CONFIG % options, file=fp)
+
+        if options['ignore_activity']:
+            for url in options['ignore_activity']:
+                print(APACHE_IGNORE_ACTIVITY_CONFIG % dict(url=url), file=fp)
 
         if options['proxy_mount_points']:
             for mount_point, url in options['proxy_mount_points']:
@@ -1698,7 +1720,7 @@ def generate_server_metrics_script(options):
         print(SERVER_METRICS_SCRIPT % options, file=fp)
 
 WSGI_CONTROL_SCRIPT = """
-#!/usr/bin/env bash
+#!/bin/sh
 
 # %(sys_argv)s
 
@@ -2026,6 +2048,12 @@ option_list = (
             'to pass before the worker process is shutdown and restarted '
             'when the worker process has entered an idle state and is no '
             'longer receiving new requests. Not enabled by default.'),
+    optparse.make_option('--ignore-activity', action='append',
+            dest='ignore_activity', metavar='URL-PATH', help='Specify '
+            'the URL path for any location where activity should be '
+            'ignored when the \'--activity-timeout\' option is used. '
+            'This would be used on health check URLs so that health '
+            'checks do not prevent process restarts due to inactivity.'),
 
     optparse.make_option('--request-timeout', type='int', default=60,
             metavar='SECONDS', help='Maximum number of seconds allowed '
@@ -2741,6 +2769,12 @@ def _cmd_setup_server(command, args, options):
 
     try:
         os.mkdir(options['python_eggs'])
+        if os.getuid() == 0:
+            import pwd
+            import grp
+            os.chown(options['python_eggs'],
+                    pwd.getpwnam(options['user']).pw_uid,
+                    grp.getgrnam(options['group']).gr_gid)
     except Exception:
         pass
 
@@ -3249,6 +3283,46 @@ def cmd_start_server(params):
     executable = os.path.join(config['server_root'], 'apachectl')
     os.execl(executable, executable, 'start', '-DFOREGROUND')
 
+def cmd_module_config(params):
+    formatter = optparse.IndentedHelpFormatter()
+    formatter.set_long_opt_delimiter(' ')
+
+    usage = '%prog module-config'
+    parser = optparse.OptionParser(usage=usage, formatter=formatter)
+
+    (options, args) = parser.parse_args(params)
+
+    if len(args) != 0:
+        parser.error('Incorrect number of arguments.')
+
+    if os.name == 'nt':
+        real_prefix = getattr(sys, 'real_prefix', None)
+        real_prefix = real_prefix or sys.prefix
+        library_name = 'python%s.dll' % sysconfig.get_config_var('VERSION')
+        library_path = os.path.join(real_prefix, library_name)
+        library_path = os.path.normpath(library_path)
+        library_path = library_path.replace('\\', '/')
+
+        module_path = where()
+        module_path = module_path.replace('\\', '/')
+
+        prefix = sys.prefix
+        prefix = os.path.normpath(prefix)
+        prefix = prefix.replace('\\', '/')
+
+        print('LoadFile "%s"' % library_path)
+        print('LoadModule wsgi_module "%s"' % module_path)
+        print('WSGIPythonHome "%s"' % prefix)
+
+    else:
+        module_path = where()
+
+        prefix = sys.prefix
+        prefix = os.path.normpath(prefix)
+
+        print('LoadModule wsgi_module "%s"' % module_path)
+        print('WSGIPythonHome "%s"' % prefix)
+
 def cmd_install_module(params):
     formatter = optparse.IndentedHelpFormatter()
     formatter.set_long_opt_delimiter(' ')
@@ -3269,8 +3343,8 @@ def cmd_install_module(params):
 
     shutil.copyfile(where(), target)
 
-    print('LoadModule wsgi_module %s' % target)
-    print('WSGIPythonHome %s' % os.path.normpath(sys.prefix))
+    print('LoadModule wsgi_module "%s"' % target)
+    print('WSGIPythonHome "%s"' % os.path.normpath(sys.prefix))
 
 def cmd_module_location(params):
     formatter = optparse.IndentedHelpFormatter()
@@ -3286,11 +3360,21 @@ def cmd_module_location(params):
 
     print(where())
 
-main_usage="""
-%prog command [params]
+if os.name == 'nt':
+    main_usage="""
+    %prog command [params]
+
+Commands:
+    module-config
+    module-location
+"""
+else:
+    main_usage="""
+    %prog command [params]
 
 Commands:
     install-module
+    module-config
     module-location
     setup-server
     start-server
@@ -3308,16 +3392,26 @@ def main():
 
     args = [os.path.expandvars(arg) for arg in args]
 
-    if command == 'install-module':
-        cmd_install_module(args)
-    elif command == 'module-location':
-        cmd_module_location(args)
-    elif command == 'setup-server':
-        cmd_setup_server(args)
-    elif command == 'start-server':
-        cmd_start_server(args)
+    if os.name == 'nt':
+        if command == 'module-config':
+            cmd_module_config(args)
+        elif command == 'module-location':
+            cmd_module_location(args)
+        else:
+            parser.error('Invalid command was specified.')
     else:
-        parser.error('Invalid command was specified.')
+        if command == 'install-module':
+            cmd_install_module(args)
+        elif command == 'module-config':
+            cmd_module_config(args)
+        elif command == 'module-location':
+            cmd_module_location(args)
+        elif command == 'setup-server':
+            cmd_setup_server(args)
+        elif command == 'start-server':
+            cmd_start_server(args)
+        else:
+            parser.error('Invalid command was specified.')
 
 def start(*args):
     cmd_start_server(list(args))
