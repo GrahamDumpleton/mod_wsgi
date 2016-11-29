@@ -24,6 +24,16 @@ Bugs Fixed
   the ownership/group of the directory to user/group specified when
   ``mod_wsgi-express`` was run.
 
+* Installation on MacOS X Sierra fails for both CMMI and ``pip install``
+  methods. This is because Apple removed ``apr-1-config`` and
+  ``apu-1-config`` tools needed by ``apxs`` to install third party
+  Apache module. A workaround has been incorporated so that installation
+  still works when using ``pip install``, but there is no workaround for
+  CMMI method. You will need to use ``pip install`` method and then use
+  ``mod_wsgi-express module-config`` to get the configuration to then
+  add into the Apache configuration so it knows how to load the mod_wsgi
+  module. Then configure Apache so it knows about your WSGI application.
+
 * Compilation would fail on MacOS X Sierra as the API was changed for
   obtaining task information. This was used to get memory used by the
   process.
