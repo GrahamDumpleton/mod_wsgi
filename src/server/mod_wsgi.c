@@ -29,6 +29,10 @@
 #include <pwd.h>
 #endif
 
+#if defined(_MSC_VER)
+#define strtoll     _strtoi64
+#endif
+
 static PyTypeObject Auth_Type;
 #if AP_SERVER_MINORVERSION_NUMBER >= 2
 #define MOD_WSGI_WITH_AUTHN_PROVIDER 1
@@ -2252,10 +2256,10 @@ static int Adapter_output(AdapterObject *self, const char *data,
             }
             else if (!strcasecmp(name, "Content-Length")) {
                 char *v = value;
-                long l = 0;
+                apr_off_t l = 0;
 
                 errno = 0;
-                l = strtol(v, &v, 10);
+                l = strtoll(v, &v, 10);
                 if (*v || errno == ERANGE || l < 0) {
                     PyErr_SetString(PyExc_ValueError,
                                     "invalid content length");
