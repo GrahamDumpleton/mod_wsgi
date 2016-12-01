@@ -2,7 +2,7 @@
 Contributing
 ============
 
-The mod_wsgi package is a solo effort by Graham Dumpletaon.
+The mod_wsgi package is a solo effort by Graham Dumpleton.
 
 The package is developed purely in the author's spare time and is not
 funded in any way by a company, nor is it developed for a specific
