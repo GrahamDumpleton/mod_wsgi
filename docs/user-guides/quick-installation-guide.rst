@@ -75,14 +75,14 @@ Which Python installation to use will be determined by looking for the
 
 If these programs are not in a standard location, they cannot be found in
 your PATH, or you wish to use alternate versions to those found, the
-"--with-apxs" and "--with-python" options can be used in conjunction with
+``--with-apxs`` and ``--with-python`` options can be used in conjunction with
 the "configure" script::
 
     ./configure --with-apxs=/usr/local/apache/bin/apxs \
       --with-python=/usr/local/bin/python
 
 On some Linux distributions, such as SUSE and CentOS, it will be necessary
-to use the "--with-apxs" option and specify either "/usr/sbin/apxs2-worker"
+to use the ``--with-apxs`` option and specify either "/usr/sbin/apxs2-worker"
 or "/usr/sbin/apxs2-prefork". This is necessary as the Linux distribtions
 allow installation of "dev" packages for both Apache MPM variants at the
 same time, whereas other Linux distributions do not.
