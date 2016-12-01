@@ -38,7 +38,7 @@ To remedy the problem, install the developer package for Python
 corresponding to the Python runtime package you have installed. What the
 name of the developer package is can vary from one Linux distribution to
 another. Normally it has the same name as the Python runtime package with
-'-dev' appended to the package name. You will need to lookup up list of
+``-dev`` appended to the package name. You will need to lookup up list of
 available packages in your packaging system to determine actual name of
 package to install.
 
@@ -406,9 +406,9 @@ The error encountered would be similar to::
      load /etc/httpd/modules/mod_wsgi.so into server: \
      /etc/httpd/modules/mod_wsgi.so: undefined symbol: forkpty 
 
-This problem can be fixed by adding '-lutil' to the list of libraries to
+This problem can be fixed by adding ``-lutil`` to the list of libraries to
 link mod_wsgi against when it is being built. This can be done by adding
-'-lutil' to the 'LDLIBS' variable in the mod_wsgi 'Makefile' after having
+``-lutil`` to the 'LDLIBS' variable in the mod_wsgi 'Makefile' after having
 run 'configure'.
 
 An alternative method which may work is to edit the 'envvars' file, if it
@@ -470,7 +470,7 @@ configured for maintainer mode::
 Specifically, whoever built the version of Apache being used supplied the
 option ``--enable-maintainer-mode`` when configuring Apache prior to
 installation. You would be able to tell at the time of compiling mod_wsgi
-if this has been done as the option '-DAP_DEBUG' would be supplied to the
+if this has been done as the option ``-DAP_DEBUG`` would be supplied to the
 compiler when mod_wsgi source code is compiled.
 
 These warnings can be ignored, but in general you shouldn't run Apache in

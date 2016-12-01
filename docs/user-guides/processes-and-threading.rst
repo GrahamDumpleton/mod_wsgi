@@ -82,7 +82,7 @@ running the 'configure' script for Apache. The main alternative to the
 'prefork' MPM which can be used on UNIX systems is the 'worker' MPM.
 
 If you are unsure which MPM is built into Apache, it can be determined
-by running the Apache web server executable with the '-V' option. The
+by running the Apache web server executable with the ``-V`` option. The
 output from running the web server executable with this option will be
 information about how it was configured when built::
 

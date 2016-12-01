@@ -338,8 +338,8 @@ If Apache is started automatically as 'root' when a machine is first booted
 it would inherit the user 'HOME' environment variable setting of the 'root'
 user. If however, Apache is started by a non privileged user via the 'sudo'
 command, it would inherit the 'HOME' environment variable of the user who
-started it, unless the '-H' option had been supplied to 'sudo'. In the case
-of the '-H' option being supplied, the 'HOME' environment variable of the
+started it, unless the ``-H`` option had been supplied to 'sudo'. In the case
+of the ``-H`` option being supplied, the 'HOME' environment variable of the
 'root' user would again be used.
 
 Because the value of the 'HOME' environment variable can vary based on how
@@ -866,7 +866,7 @@ directive should be used and the group set to '%{GLOBAL}'::
     WSGIApplicationGroup %{GLOBAL}
 
 Extension modules for which this is known to be necessary are any which
-have been developed using SWIG and for which the '-threads' option was
+have been developed using SWIG and for which the ``-threads`` option was
 supplied to 'swig' when the bindings were generated. One example of this is
 the 'dbxml' module, a Python wrapper for the Berkeley Database, previously
 developed by !SleepyCat Software, but now managed by Oracle. Another package
@@ -876,7 +876,7 @@ There is also a bit of a question mark over the Python Subversion bindings.
 This package also uses SWIG, however it is only some versions that appear
 to require that the very first sub interpreter created when Python is
 initialised be used. It is currently believed that this may be more to do
-with coding problems than with the '-threads' option being passed to the
+with coding problems than with the ``-threads`` option being passed to the
 'swig' command when the bindings were generated.
 
 For all the affected packages, as described above it is believed though
@@ -884,7 +884,7 @@ that they will work when application group is set to force the application
 to run in the first interpreter created by Python as described above.
 
 Another option for packages which use SWIG generated bindings is not to use
-the '-threads' option when 'swig' is used to generate the bindings. This
+the ``-threads`` option when 'swig' is used to generate the bindings. This
 will avoid any problems and allow the package to be used in any sub
 interpreter. Do be aware though that by disabling thread support in SWIG
 bindings, that the GIL isn't released when C code is entered. The
