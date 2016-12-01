@@ -101,7 +101,7 @@ On MacOS X, for the operating system supplied Apache this file is located at
     "$@"
 
 Not only does this indicate what features of Apache have been compiled in,
-it also indicates by way of the '--enable-layout' option what custom Apache
+it also indicates by way of the ``--enable-layout`` option what custom Apache
 installation layout has been used.
 
 Apache Modules Loaded
@@ -443,7 +443,7 @@ was used and what MacOS X operating system version. In this case, if
 multiple installations of same version of Python in different locations,
 may find the system installation rather than your custom installation.
 
-In that situation you may need to use the '--disable-framework' option to
+In that situation you may need to use the ``--disable-framework`` option to
 'configure' script for mod_wsgi. This doesn't actually disable use of the
 framework, but does change how it links to use a more traditional library
 style linking rather than framework linking. This seems to resolve the

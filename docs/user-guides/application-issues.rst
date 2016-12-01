@@ -736,7 +736,7 @@ module is not generally compiled and so the following error will occur::
     ImportError: No module named _md5
 
 To resolve this problem it would be necessary to rebuild Apache and use the
-'--with-ssl' option to 'configure' to specify the location of the distinct
+``--with-ssl`` option to 'configure' to specify the location of the distinct
 SSL library that is being used by the Python modules.
 
 Note that it has also been suggested that the !ImportError above can also

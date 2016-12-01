@@ -90,7 +90,7 @@ this is not present then mod_wsgi is using a static Python library.
 Although mod_wsgi will still work when compiled against a version of Python
 which only provides a static library, you are highly encouraged to ensure
 that your Python installation has been configured and compiled with the
-'--enable-shared' option to enable the production and use of a shared
+``--enable-shared`` option to enable the production and use of a shared
 library for Python.
 
 If rebuilding Python to generate a shared library, do make sure that the
@@ -143,7 +143,7 @@ Multiple Python Versions
 ------------------------
 
 Where there are multiple versions of Python installed on a system and it is
-necessary to ensure that a specific version is used, the '--with-python'
+necessary to ensure that a specific version is used, the ``--with-python``
 option can be supplied to 'configure' when installing mod_wsgi::
 
     ./configure --with-python=/usr/local/bin/python2.5
@@ -202,7 +202,7 @@ used, is located. This can be done using the WSGIPythonHome directive::
 
 The value given to the WSGIPythonHome directive should be a normalised
 path corresponding to that defined by the Python {{{sys.prefix}}} variable
-for the version of Python being used and passed to the '--with-python'
+for the version of Python being used and passed to the ``--with-python``
 option when configuring mod_wsgi::
 
     >>> import sys
@@ -258,12 +258,12 @@ The warning is indicating that a newer version of Python is now being
 used than what mod_wsgi was originally compiled for.
 
 This would generally not be a problem provided that both versions of Python
-were originally installed with the '--enable-shared' option supplied to
+were originally installed with the ``--enable-shared`` option supplied to
 'configure'. If this option is used then the Python library will be linked
 in dynamically at runtime and so an upgrade to the Python version will be
 automatically used.
 
-If '--enable-shared' was however not used and the Python library is
+If ``--enable-shared`` was however not used and the Python library is
 therefore embedded into the actual mod_wsgi Apache module, then there is a
 risk of undefined behaviour. This is because the version of the Python
 library embedded into the mod_wsgi Apache module will be older than the
@@ -304,7 +304,7 @@ bit static library in all cases.
 
 If the first issue, the only solution to this problem is to recompile
 Python for the X86 64 bit architecture. When doing this, it is preferable,
-and may actually be necessary, to ensure that the '--enable-shared' option
+and may actually be necessary, to ensure that the ``--enable-shared`` option
 is provided to the 'configure' script for Python when it is being compiled
 and installed.
 
@@ -440,7 +440,7 @@ are::
     apxs:Error: Command failed with rc=65536 
 
 To avoid this problem, when configuring mod_wsgi, it is necessary to use
-the "--with-apxs" option to designate that either "apxs2-worker" or
+the ``--with-apxs`` option to designate that either "apxs2-worker" or
 "apxs2-prefork" should be used. Thus::
 
     ./configure --with-apxs=/usr/sbin/apxs2-worker
@@ -468,7 +468,7 @@ configured for maintainer mode::
     qualifiers from pointer target type
 
 Specifically, whoever built the version of Apache being used supplied the
-option '--enable-maintainer-mode' when configuring Apache prior to
+option ``--enable-maintainer-mode`` when configuring Apache prior to
 installation. You would be able to tell at the time of compiling mod_wsgi
 if this has been done as the option '-DAP_DEBUG' would be supplied to the
 compiler when mod_wsgi source code is compiled.
