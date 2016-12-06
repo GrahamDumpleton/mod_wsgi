@@ -969,9 +969,9 @@ typedef struct {
         int init;
         int done;
         char *buffer;
-        apr_size_t size;
-        apr_size_t offset;
-        apr_size_t length;
+        apr_off_t size;
+        apr_off_t offset;
+        apr_off_t length;
         apr_bucket_brigade *bb;
         int seen_eos;
         int seen_error;
@@ -1233,11 +1233,11 @@ finally:
 
 static PyObject *Input_read(InputObject *self, PyObject *args)
 {
-    long size = -1;
+    apr_off_t size = -1;
 
     PyObject *result = NULL;
     char *buffer = NULL;
-    apr_size_t length = 0;
+    apr_off_t length = 0;
     int init = 0;
 
     apr_int64_t n;
@@ -1510,11 +1510,11 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
 static PyObject *Input_readline(InputObject *self, PyObject *args)
 {
-    long size = -1;
+    apr_off_t size = -1;
 
     PyObject *result = NULL;
     char *buffer = NULL;
-    apr_size_t length = 0;
+    apr_off_t length = 0;
 
     apr_int64_t n;
 
@@ -2251,12 +2251,12 @@ static int Adapter_output(AdapterObject *self, const char *data,
                     ap_set_content_type(r, apr_pstrdup(r->pool, value));
             }
             else if (!strcasecmp(name, "Content-Length")) {
-                char *v = value;
-                long l = 0;
+                char *endstr;
+                apr_off_t length;
 
-                errno = 0;
-                l = strtol(v, &v, 10);
-                if (*v || errno == ERANGE || l < 0) {
+                if (wsgi_strtoff(&length, value, &endstr, 10)
+                    || *endstr || length < 0) {
+
                     PyErr_SetString(PyExc_ValueError,
                                     "invalid content length");
 
@@ -2268,10 +2268,10 @@ static int Adapter_output(AdapterObject *self, const char *data,
                     return 0;
                 }
 
-                ap_set_content_length(r, l);
+                ap_set_content_length(r, length);
 
                 self->content_length_set = 1;
-                self->content_length = l;
+                self->content_length = length;
             }
             else if (!strcasecmp(name, "WWW-Authenticate")) {
                 apr_table_add(r->err_headers_out, name, value);
@@ -2971,7 +2971,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     PyObject *event = NULL;
 
     const char *msg = NULL;
-    long length = 0;
+    apr_off_t length = 0;
 
     WSGIThreadInfo *thread_handle = NULL;
 
@@ -10491,12 +10491,12 @@ static apr_status_t wsgi_socket_send(apr_socket_t *sock, const char *buf,
 }
 
 static apr_status_t wsgi_socket_sendv_limit(apr_socket_t *sock,
-        struct iovec *vec, int nvec)
+        struct iovec *vec, size_t nvec)
 {
     apr_status_t rv;
     apr_size_t written = 0;
     apr_size_t to_write = 0;
-    int i, offset;
+    size_t i, offset;
 
     /* Calculate how much has to be sent. */
 
@@ -10547,7 +10547,7 @@ static apr_status_t wsgi_socket_sendv_limit(apr_socket_t *sock,
 }
 
 static apr_status_t wsgi_socket_sendv(apr_socket_t *sock, struct iovec *vec,
-                                      int nvec)
+                                      size_t nvec)
 {
 #if defined(_SC_IOV_MAX)
     static size_t iov_max = 0;

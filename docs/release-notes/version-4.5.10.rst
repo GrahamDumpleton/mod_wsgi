@@ -26,3 +26,6 @@ Bugs Fixed
   script file and instead was only being done after first request had
   finished. This meant that if first request took longer than the startup
   timeout the process would be wrongly restarted.
+
+* Fix parsing of ``Content-Length`` header returned in daemon mode so that
+  responses greater than 2GB in size could be returned.
