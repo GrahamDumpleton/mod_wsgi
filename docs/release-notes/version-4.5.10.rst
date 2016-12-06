@@ -1,6 +1,6 @@
-=============
+==============
 Version 4.5.10
-=============
+==============
 
 Version 4.5.10 of mod_wsgi can be obtained from:
 
@@ -21,3 +21,8 @@ Bugs Fixed
   to add before the ``LoadModule`` line for ``wsgi_module``, a ``LoadFile``
   directive which loads the Ananconda Python shared library by its full
   path from where it is located in the Anaconda Python ``lib`` directory.
+
+* Startup timeout wasn't being cancelled after succesful load of the WSGI
+  script file and instead was only being done after first request had
+  finished. This meant that if first request took longer than the startup
+  timeout the process would be wrongly restarted.

@@ -4034,6 +4034,12 @@ static int wsgi_execute_script(request_rec *r)
     apr_thread_mutex_unlock(wsgi_module_lock);
 #endif
 
+    /* Clear startup timeout and prevent from running again. */
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    wsgi_startup_shutdown_time = -1;
+#endif
+
     /* Assume an internal server error unless everything okay. */
 
     status = HTTP_INTERNAL_SERVER_ERROR;
@@ -4098,12 +4104,6 @@ static int wsgi_execute_script(request_rec *r)
             }
 
             Py_XDECREF((PyObject *)adapter);
-
-            /* Clear startup timeout and prevent from running again. */
-
-#if defined(MOD_WSGI_WITH_DAEMONS)
-            wsgi_startup_shutdown_time = -1;
-#endif
         }
         else {
             Py_BEGIN_ALLOW_THREADS
