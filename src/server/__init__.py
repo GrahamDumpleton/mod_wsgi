@@ -3338,6 +3338,8 @@ def cmd_module_config(params):
         prefix = sys.prefix
         prefix = os.path.normpath(prefix)
 
+        if _py_dylib:
+            print('LoadFile "%s"' % _py_dylib)
         print('LoadModule wsgi_module "%s"' % module_path)
         print('WSGIPythonHome "%s"' % prefix)
 
@@ -3361,6 +3363,8 @@ def cmd_install_module(params):
 
     shutil.copyfile(where(), target)
 
+    if _py_dylib:
+        print('LoadFile "%s"' % _py_dylib)
     print('LoadModule wsgi_module "%s"' % target)
     print('WSGIPythonHome "%s"' % os.path.normpath(sys.prefix))
 
