@@ -276,9 +276,9 @@ APU_CONFIG = get_apxs_config('APU_CONFIG')
 # case we manually set the locations of the Apache and APR header files.
 
 if (not os.path.exists(APR_CONFIG) and
-        os.path.exists('/Developer/SDKs/MacOSX10.6.sdk')):
-    INCLUDEDIR = '/Developer/SDKs/MacOSX10.6.sdk/usr/include/apache2'
-    APR_INCLUDES = ['-I/Developer/SDKs/MacOSX10.6.sdk/usr/include/apr-1']
+        os.path.exists('/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-migrator/sdks/MacOSX.sdk')):
+    INCLUDEDIR = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-migrator/sdks/MacOSX.sdk/usr/include/apache2'
+    APR_INCLUDES = ['-I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-migrator/sdks/MacOSX.sdk/usr/include/apr-1']
     APU_INCLUDES = []
 else:
     APR_INCLUDES = get_apr_includes().split()

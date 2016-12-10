@@ -26,6 +26,7 @@ from . import apxs_config
 _py_version = '%s%s' % sys.version_info[:2]
 _py_soabi = ''
 _py_soext = '.so'
+_py_dylib = ''
 
 try:
     import imp
@@ -34,6 +35,14 @@ try:
 
     _py_soabi = sysconfig.get_config_var('SOABI')
     _py_soext = sysconfig.get_config_var('SO')
+
+    if (sysconfig.get_config_var('WITH_DYLD') and
+            sysconfig.get_config_var('LIBDIR') and
+            sysconfig.get_config_var('LDLIBRARY')):
+        _py_dylib = os.path.join(sysconfig.get_config_var('LIBDIR'),
+                sysconfig.get_config_var('LDLIBRARY'))
+        if not os.path.exists(_py_dylib):
+            _py_dylib = ''
 
 except ImportError:
     pass
@@ -251,6 +260,10 @@ Loadmodule php5_module '${MOD_WSGI_MODULES_DIRECTORY}/libphp5.so'
 AddHandler application/x-httpd-php .php
 </IfDefine>
 </IfModule>
+
+<IfDefine MOD_WSGI_LOAD_PYTHON_DYLIB>
+LoadFile '%(python_dylib)s'
+</IfDefine>
 
 LoadModule wsgi_module '%(mod_wsgi_so)s'
 
@@ -3170,13 +3183,18 @@ def _cmd_setup_server(command, args, options):
             _mpm_module_defines(options['modules_directory'],
             options['server_mpm_variables']))
 
-    options['httpd_arguments'] = '-f %s %s' % (options['httpd_conf'],
-            ' '.join(options['httpd_arguments_list']))
-
     options['python_executable'] = sys.executable
 
     options['shlibpath_var'] = apxs_config.SHLIBPATH_VAR
     options['shlibpath'] = apxs_config.SHLIBPATH
+
+    if _py_dylib:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_LOAD_PYTHON_DYLIB')
+
+    options['python_dylib'] = _py_dylib
+
+    options['httpd_arguments'] = '-f %s %s' % (options['httpd_conf'],
+            ' '.join(options['httpd_arguments_list']))
 
     generate_wsgi_handler_script(options)
 
@@ -3320,6 +3338,8 @@ def cmd_module_config(params):
         prefix = sys.prefix
         prefix = os.path.normpath(prefix)
 
+        if _py_dylib:
+            print('LoadFile "%s"' % _py_dylib)
         print('LoadModule wsgi_module "%s"' % module_path)
         print('WSGIPythonHome "%s"' % prefix)
 
@@ -3343,6 +3363,8 @@ def cmd_install_module(params):
 
     shutil.copyfile(where(), target)
 
+    if _py_dylib:
+        print('LoadFile "%s"' % _py_dylib)
     print('LoadModule wsgi_module "%s"' % target)
     print('WSGIPythonHome "%s"' % os.path.normpath(sys.prefix))
 
