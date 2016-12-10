@@ -29,3 +29,9 @@ Bugs Fixed
 
 * Fix parsing of ``Content-Length`` header returned in daemon mode so that
   responses greater than 2GB in size could be returned.
+
+* Using incorrect header files in workaround to be able to compile mod_wsgi
+  on MacOSX Sierra when using ``pip install``. Was using old MacOS X 10.6
+  SDK which are header files for Apache 2.2. Was running, but should not
+  have worked at all. Possibility this still may not work or might break.
+  No choice until Apple fixes their broken Xcode and Apache installation.
