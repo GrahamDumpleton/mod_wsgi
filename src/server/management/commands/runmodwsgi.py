@@ -18,7 +18,7 @@ class Command(BaseCommand):
     args = ''
     help = 'Starts Apache/mod_wsgi web server.'
 
-    if hasattr('BaseCommand', 'option_list'):
+    if hasattr(BaseCommand, 'option_list'):
         # Used prior to Django 1.10.
 
         option_list = BaseCommand.option_list + mod_wsgi.server.option_list
