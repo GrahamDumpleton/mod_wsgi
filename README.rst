@@ -83,6 +83,7 @@ If you are using the Software Collections Library (SCL) packages with
 RHEL, CentOS or Fedora, you would need:
 
 * httpd24
+* httpd24-httpd-devel
 
 If you are running MacOS X, you will need to have the Xcode command line
 tools installed. These can be installed by running ``xcode-select --install``.
