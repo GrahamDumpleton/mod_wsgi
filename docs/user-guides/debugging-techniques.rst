@@ -747,7 +747,7 @@ interpreter created when Python is initialised.
 In this latter issue, the sub interpreter problems can often be solved by
 forcing the WSGI application using the Python Subversion modules to run in
 the '%{GLOBAL}' application group. This solution often also resolves issues
-with SWIG generated bindings, especially where the '-thread' option was
+with SWIG generated bindings, especially where the ``-thread`` option was
 supplied to 'swig' when the bindings were generated.
 
 Whatever the reason, in some cases the only way to determine why Apache or

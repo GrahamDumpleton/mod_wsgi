@@ -381,7 +381,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     and not simply cause the daemon process to become even more backlogged.
     When this occurs the user will recieve a 504 Gateway Time Out response.
 
-**listen-backlog**
+**listen-backlog=nnn**
     Defines the depth of the daemon process socket listener queue. By
     default the limit is 100, although this is actually a hint, as
     different operating systems can have different limits on the maximum
