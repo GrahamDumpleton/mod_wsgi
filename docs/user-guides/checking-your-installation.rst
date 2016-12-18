@@ -25,7 +25,7 @@ Apache Build Information
 Information related to what version of Apache is being used and how it is
 built is obtained in a number of ways. The primary means is from the
 Apache 'httpd' executable itself using command line options. The main such
-option is the '-V' option.
+option is the ``-V`` option.
 
 On most systems the standard Apache executable supplied with the operating
 system is located at '/usr/sbin/httpd'. On MacOS X, for the operating system
@@ -101,7 +101,7 @@ On MacOS X, for the operating system supplied Apache this file is located at
     "$@"
 
 Not only does this indicate what features of Apache have been compiled in,
-it also indicates by way of the '--enable-layout' option what custom Apache
+it also indicates by way of the ``--enable-layout`` option what custom Apache
 installation layout has been used.
 
 Apache Modules Loaded
@@ -112,11 +112,11 @@ at run time based on Apache configuration files.
 
 If modules have been statically compiled into Apache, usually it would be
 evident by what 'configure' arguments have been used when Apache was built.
-To verify what exactly what is compiled in statically, you can use the '-l'
+To verify what exactly what is compiled in statically, you can use the ``-l``
 option to the Apache executable.
 
 On MacOS X, for the operating system supplied Apache the output from
-running '-l' option is::
+running ``-l`` option is::
 
     $ /usr/sbin/httpd -l
     Compiled in modules:
@@ -130,10 +130,10 @@ This is actually the Apache module that handles the task of dynamically
 loading other Apache modules.
 
 For a specific Apache configuration, you can determine what Apache modules
-will be loaded dynamically by using the '-M' option for the Apache executable.
+will be loaded dynamically by using the ``-M`` option for the Apache executable.
 
 On MacOS X, for the operating system supplied Apache the output from
-running '-M' option, where the only additional module added is mod_wsgi,
+running ``-M`` option, where the only additional module added is mod_wsgi,
 is::
 
     $ /usr/sbin/httpd -M
@@ -249,7 +249,7 @@ checks about what is the prefered mechanism for a particular operating
 system.
 
 Which mechanism is used by default can be determined from the build
-information displayed by the '-V' option to the Apache executable described
+information displayed by the ``-V`` option to the Apache executable described
 previously. The particular entries of interest are those with 'SERIALIZE'
 in the name of the macro.
 
@@ -321,7 +321,7 @@ and::
 
     WSGIAcceptMutex xxx
 
-For each run the '-t' option on the Apache program executable.
+For each run the ``-t`` option on the Apache program executable.
 
 On MacOS X, with the operating system supplied APR library, this yields::
 
@@ -443,7 +443,7 @@ was used and what MacOS X operating system version. In this case, if
 multiple installations of same version of Python in different locations,
 may find the system installation rather than your custom installation.
 
-In that situation you may need to use the '--disable-framework' option to
+In that situation you may need to use the ``--disable-framework`` option to
 'configure' script for mod_wsgi. This doesn't actually disable use of the
 framework, but does change how it links to use a more traditional library
 style linking rather than framework linking. This seems to resolve the

@@ -77,12 +77,12 @@ choice of MPM will dictate whether or not multithreading is available.
 On UNIX based systems, Apache defaults to being built with the 'prefork'
 MPM. If Apache 1.3 is being used this is actually the only choice, but for
 later versions of Apache, this can be overridden at build time by supplying
-an appropriate value in conjunction with the '--with-mpm' option when
+an appropriate value in conjunction with the ``--with-mpm`` option when
 running the 'configure' script for Apache. The main alternative to the
 'prefork' MPM which can be used on UNIX systems is the 'worker' MPM.
 
 If you are unsure which MPM is built into Apache, it can be determined
-by running the Apache web server executable with the '-V' option. The
+by running the Apache web server executable with the ``-V`` option. The
 output from running the web server executable with this option will be
 information about how it was configured when built::
 
