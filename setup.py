@@ -139,9 +139,23 @@ if not WITH_TARBALL_PACKAGE:
         WITHOUT_APXS = True
 
 if WITHOUT_APXS and os.name == 'nt':
-    APACHE_ROOTDIR = os.environ.get('MOD_WSGI_APACHE_ROOTDIR', 'c:\\Apache24')
-    if os.path.exists(APACHE_ROOTDIR):
-        WITH_WINDOWS_APACHE = APACHE_ROOTDIR
+    APACHE_ROOTDIR = os.environ.get('MOD_WSGI_APACHE_ROOTDIR')
+    if APACHE_ROOTDIR:
+        if os.path.exists(APACHE_ROOTDIR):
+            WITH_WINDOWS_APACHE = APACHE_ROOTDIR
+        else:
+            raise RuntimeError('The Apache directory %r does not exist.' %
+                    APACHE_ROOTDIR)
+    else:
+        if os.path.exists('c:\\Apache24'):
+            WITH_WINDOWS_APACHE = 'c:\\Apache24'
+        elif os.path.exists('c:\\Apache22'):
+            WITH_WINDOWS_APACHE = 'c:\\Apache22'
+        elif os.path.exists('c:\\Apache2'):
+            WITH_WINDOWS_APACHE = 'c:\\Apache2'
+        else:
+            raise RuntimeError('No Apache installation can be found. Set the '
+                    'MOD_WSGI_APACHE_ROOTDIR environment to its location.')
 
 if WITHOUT_APXS and not WITH_WINDOWS_APACHE:
     raise RuntimeError('The %r command appears not to be installed or '
