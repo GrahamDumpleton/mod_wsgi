@@ -3316,8 +3316,14 @@ def cmd_module_config(params):
     if os.name == 'nt':
         real_prefix = getattr(sys, 'real_prefix', None)
         real_prefix = real_prefix or sys.prefix
+
         library_name = 'python%s.dll' % sysconfig.get_config_var('VERSION')
+
         library_path = os.path.join(real_prefix, library_name)
+
+        if not os.path.exists(library_path):
+            library_path = os.path.join(real_prefix, 'DLLs', library_name)
+
         library_path = os.path.normpath(library_path)
         library_path = library_path.replace('\\', '/')
 

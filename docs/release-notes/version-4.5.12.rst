@@ -6,6 +6,14 @@ Version 4.5.12 of mod_wsgi can be obtained from:
 
   https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/4.5.12
 
+Bugs Fixed
+----------
+
+* When the ``pip install`` method is used to compile the module for
+  Windows, the ``mod_wsgi-express module-config`` command was generating
+  the wrong DLL path for ``LoadFile`` directive for Python 3.4, as well as
+  possibly older Python versions.
+
 New Features
 ------------
 
