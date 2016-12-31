@@ -345,6 +345,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
    eviction-timeout=%(eviction_timeout)s \\
+   restart-interval=%(restart_interval)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
@@ -372,6 +373,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
    eviction-timeout=%(eviction_timeout)s \\
+   restart-interval=%(restart_interval)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
@@ -2037,11 +2039,19 @@ option_list = (
             'still active requests or it is still running Python exit '
             'functions. Defaults to 5 seconds.'),
 
+    optparse.make_option('--restart-interval', type='int', default='0',
+            metavar='SECONDS', help='Number of seconds between worker '
+            'process restarts. If graceful timeout is also specified, '
+            'active requests will be given a chance to complete before '
+            'the process is forced to exit and restart. Not enabled by '
+            'default.'),
+
     optparse.make_option('--graceful-timeout', type='int', default=15,
             metavar='SECONDS', help='Grace period for requests to complete '
             'normally, while still accepting new requests, when worker '
             'processes are being shutdown and restarted due to maximum '
-            'requests being reached. Defaults to 15 seconds.'),
+            'requests being reached or restart interval having expired. '
+            'Defaults to 15 seconds.'),
     optparse.make_option('--eviction-timeout', type='int', default=0,
             metavar='SECONDS', help='Grace period for requests to complete '
             'normally, while still accepting new requests, when the WSGI '

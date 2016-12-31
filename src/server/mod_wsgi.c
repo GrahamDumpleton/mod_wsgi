@@ -88,10 +88,12 @@ static apr_interval_time_t wsgi_idle_timeout = 0;
 static apr_interval_time_t wsgi_request_timeout = 0;
 static apr_interval_time_t wsgi_graceful_timeout = 0;
 static apr_interval_time_t wsgi_eviction_timeout = 0;
+static apr_interval_time_t wsgi_restart_interval = 0;
 static apr_time_t volatile wsgi_startup_shutdown_time = 0;
 static apr_time_t volatile wsgi_deadlock_shutdown_time = 0;
 static apr_time_t volatile wsgi_idle_shutdown_time = 0;
 static apr_time_t volatile wsgi_graceful_shutdown_time = 0;
+static apr_time_t volatile wsgi_restart_shutdown_time = 0;
 #endif
 
 /* Script information. */
@@ -7187,6 +7189,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int request_timeout = 0;
     int graceful_timeout = 0;
     int eviction_timeout = 0;
+    int restart_interval = 0;
     int connect_timeout = 15;
     int socket_timeout = 0;
     int queue_timeout = 0;
@@ -7414,6 +7417,14 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             eviction_timeout = atoi(value);
             if (eviction_timeout < 0)
                 return "Invalid eviction timeout for WSGI daemon process.";
+        }
+        else if (!strcmp(option, "restart-interval")) {
+            if (!*value)
+                return "Invalid restart interval for WSGI daemon process.";
+
+            restart_interval = atoi(value);
+            if (restart_interval < 0)
+                return "Invalid restart interval for WSGI daemon process.";
         }
         else if (!strcmp(option, "connect-timeout")) {
             if (!*value)
@@ -7686,6 +7697,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->request_timeout = apr_time_from_sec(request_timeout);
     entry->graceful_timeout = apr_time_from_sec(graceful_timeout);
     entry->eviction_timeout = apr_time_from_sec(eviction_timeout);
+    entry->restart_interval = apr_time_from_sec(restart_interval);
     entry->connect_timeout = apr_time_from_sec(connect_timeout);
     entry->socket_timeout = apr_time_from_sec(socket_timeout);
     entry->queue_timeout = apr_time_from_sec(queue_timeout);
@@ -8903,6 +8915,19 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
                      "mod_wsgi (pid=%d): Eviction timeout is %d.",
                      getpid(), (int)(apr_time_sec(wsgi_eviction_timeout)));
+        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Restart interval is %d.",
+                     getpid(), (int)(apr_time_sec(wsgi_restart_interval)));
+    }
+
+    /*
+     * If a restart interval was specified then set up the time for
+     * when the restart should occur.
+     */
+
+    if (wsgi_restart_interval) {
+        wsgi_restart_shutdown_time = apr_time_now();
+        wsgi_restart_shutdown_time += wsgi_restart_interval;
     }
 
     while (1) {
@@ -8912,6 +8937,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
         apr_time_t deadlock_time;
         apr_time_t idle_time;
         apr_time_t graceful_time;
+        apr_time_t restart_time;
 
         apr_time_t request_time = 0;
 
@@ -8927,6 +8953,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
         deadlock_time = wsgi_deadlock_shutdown_time;
         idle_time = wsgi_idle_shutdown_time;
         graceful_time = wsgi_graceful_shutdown_time;
+        restart_time = wsgi_restart_shutdown_time;
 
         if (wsgi_request_timeout && wsgi_worker_threads) {
             for (i = 0; i<wsgi_daemon_process->group->threads; i++) {
@@ -8964,6 +8991,42 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                 }
                 else {
                     period = startup_time - now;
+                }
+            }
+        }
+
+        if (!restart && wsgi_restart_interval) {
+            if (restart_time > 0) {
+                if (restart_time <= now) {
+                    if (!wsgi_daemon_graceful) {
+                        if (wsgi_active_requests) {
+                            wsgi_daemon_graceful++;
+
+                            apr_thread_mutex_lock(wsgi_monitor_lock);
+                            wsgi_graceful_shutdown_time = apr_time_now();
+                            wsgi_graceful_shutdown_time += wsgi_graceful_timeout;
+                            apr_thread_mutex_unlock(wsgi_monitor_lock);
+
+                            ap_log_error(APLOG_MARK, APLOG_INFO, 0,
+                                         wsgi_server, "mod_wsgi (pid=%d): "
+                                         "Application restart timer expired, "
+                                         "waiting for requests to complete "
+                                         "'%s'.", getpid(),
+                                         daemon->group->name);
+                        }
+                        else {
+                            ap_log_error(APLOG_MARK, APLOG_INFO, 0,
+                                         wsgi_server, "mod_wsgi (pid=%d): "
+                                         "Application restart timer expired, "
+                                         "stopping process '%s'.", getpid(),
+                                         daemon->group->name);
+
+                            restart = 1;
+                        }
+                    }
+                }
+                else {
+                    period = restart_time - now;
                 }
             }
         }
@@ -9229,6 +9292,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     wsgi_request_timeout = daemon->group->request_timeout;
     wsgi_graceful_timeout = daemon->group->graceful_timeout;
     wsgi_eviction_timeout = daemon->group->eviction_timeout;
+    wsgi_restart_interval = daemon->group->restart_interval;
 
     if (wsgi_deadlock_timeout || wsgi_idle_timeout) {
         rv = apr_thread_create(&reaper, thread_attr, wsgi_monitor_thread,

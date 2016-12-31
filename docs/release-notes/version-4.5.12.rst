@@ -25,3 +25,12 @@ New Features
   location. The environment variable should be set in your shell before
   running ``pip install mod_wsgi`` and should be set in a way that exports
   it to child processes run from the shell.
+
+* Added ``restart-interval`` option to ``WSGIDaemonProcess`` for restarting
+  daemon mode processes after a set time. If ``graceful-timeout`` option is
+  also specified, active requests will be given a chance to complete, while
+  still accepting new requests. If within the grace period the process
+  becomes idle, a shutdown will occur immediately. In the case of no grace
+  period being specified, or the grace period expiring, the normal shutdown
+  sequence will occur. The option is also available in ``mod_wsgi-express``
+  as ``--restart-interval``.
