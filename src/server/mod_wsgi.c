@@ -9365,10 +9365,6 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
         }
 
         if (buf[0] == 'C') {
-            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Exceeded CPU time limit '%s'.",
-                         getpid(), daemon->group->name);
-
             if (!wsgi_daemon_graceful) {
                 if (wsgi_active_requests) {
                     wsgi_daemon_graceful++;
@@ -9392,6 +9388,11 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                     wsgi_daemon_shutdown++;
                     kill(getpid(), SIGINT);
                 }
+            }
+            else {
+                ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                             "mod_wsgi (pid=%d): Exceeded CPU time limit "
+                             "'%s'.", getpid(), daemon->group->name);
             }
         }
         else if (buf[0] == 'G') {
