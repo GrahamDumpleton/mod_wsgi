@@ -3327,15 +3327,23 @@ def cmd_module_config(params):
         real_prefix = getattr(sys, 'real_prefix', None)
         real_prefix = real_prefix or sys.prefix
 
-        library_name = 'python%s.dll' % sysconfig.get_config_var('VERSION')
+        library_version = sysconfig.get_config_var('VERSION')
 
+        library_name = 'python%s.dll' % library_version
         library_path = os.path.join(real_prefix, library_name)
 
         if not os.path.exists(library_path):
+            library_name = 'python%s.dll' % library_version[0]
             library_path = os.path.join(real_prefix, 'DLLs', library_name)
 
-        library_path = os.path.normpath(library_path)
-        library_path = library_path.replace('\\', '/')
+        if not os.path.exists(library_path):
+            library_path = None
+
+        if library_path:
+            library_path = os.path.normpath(library_path)
+            library_path = library_path.replace('\\', '/')
+
+            print('LoadFile "%s"' % library_path)
 
         module_path = where()
         module_path = module_path.replace('\\', '/')
@@ -3344,7 +3352,6 @@ def cmd_module_config(params):
         prefix = os.path.normpath(prefix)
         prefix = prefix.replace('\\', '/')
 
-        print('LoadFile "%s"' % library_path)
         print('LoadModule wsgi_module "%s"' % module_path)
         print('WSGIPythonHome "%s"' % prefix)
 
@@ -3356,6 +3363,7 @@ def cmd_module_config(params):
 
         if _py_dylib:
             print('LoadFile "%s"' % _py_dylib)
+
         print('LoadModule wsgi_module "%s"' % module_path)
         print('WSGIPythonHome "%s"' % prefix)
 
