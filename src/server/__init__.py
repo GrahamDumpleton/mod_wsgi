@@ -345,6 +345,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
    eviction-timeout=%(eviction_timeout)s \\
+   restart-interval=%(restart_interval)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
@@ -372,6 +373,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
    graceful-timeout=%(graceful_timeout)s \\
    eviction-timeout=%(eviction_timeout)s \\
+   restart-interval=%(restart_interval)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
@@ -2037,11 +2039,19 @@ option_list = (
             'still active requests or it is still running Python exit '
             'functions. Defaults to 5 seconds.'),
 
+    optparse.make_option('--restart-interval', type='int', default='0',
+            metavar='SECONDS', help='Number of seconds between worker '
+            'process restarts. If graceful timeout is also specified, '
+            'active requests will be given a chance to complete before '
+            'the process is forced to exit and restart. Not enabled by '
+            'default.'),
+
     optparse.make_option('--graceful-timeout', type='int', default=15,
             metavar='SECONDS', help='Grace period for requests to complete '
             'normally, while still accepting new requests, when worker '
             'processes are being shutdown and restarted due to maximum '
-            'requests being reached. Defaults to 15 seconds.'),
+            'requests being reached or restart interval having expired. '
+            'Defaults to 15 seconds.'),
     optparse.make_option('--eviction-timeout', type='int', default=0,
             metavar='SECONDS', help='Grace period for requests to complete '
             'normally, while still accepting new requests, when the WSGI '
@@ -3316,10 +3326,24 @@ def cmd_module_config(params):
     if os.name == 'nt':
         real_prefix = getattr(sys, 'real_prefix', None)
         real_prefix = real_prefix or sys.prefix
-        library_name = 'python%s.dll' % sysconfig.get_config_var('VERSION')
+
+        library_version = sysconfig.get_config_var('VERSION')
+
+        library_name = 'python%s.dll' % library_version
         library_path = os.path.join(real_prefix, library_name)
-        library_path = os.path.normpath(library_path)
-        library_path = library_path.replace('\\', '/')
+
+        if not os.path.exists(library_path):
+            library_name = 'python%s.dll' % library_version[0]
+            library_path = os.path.join(real_prefix, 'DLLs', library_name)
+
+        if not os.path.exists(library_path):
+            library_path = None
+
+        if library_path:
+            library_path = os.path.normpath(library_path)
+            library_path = library_path.replace('\\', '/')
+
+            print('LoadFile "%s"' % library_path)
 
         module_path = where()
         module_path = module_path.replace('\\', '/')
@@ -3328,7 +3352,6 @@ def cmd_module_config(params):
         prefix = os.path.normpath(prefix)
         prefix = prefix.replace('\\', '/')
 
-        print('LoadFile "%s"' % library_path)
         print('LoadModule wsgi_module "%s"' % module_path)
         print('WSGIPythonHome "%s"' % prefix)
 
@@ -3340,6 +3363,7 @@ def cmd_module_config(params):
 
         if _py_dylib:
             print('LoadFile "%s"' % _py_dylib)
+
         print('LoadModule wsgi_module "%s"' % module_path)
         print('WSGIPythonHome "%s"' % prefix)
 

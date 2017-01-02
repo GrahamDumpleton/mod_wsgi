@@ -226,6 +226,27 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Note that the directory specified must exist and be writable by the
     user that the daemon process run as.
 
+**restart-interval=nnn**
+    Defines a time limit on how long a daemon process should run before
+    being restarted.
+
+    This might be use to periodically force restart the WSGI application
+    processes when you have issues related to Python object reference count
+    cycles, or incorrect use of in memory caching, which causes constant
+    memory growth.
+
+    If this option is not defined, or is defined to be 0, then the daemon
+    process will be persistent and will continue to service requests until
+    Apache itself is restarted or shutdown.
+
+    Avoid setting this too low. This is because the constant restarting and
+    reloading of your WSGI application may cause unecessary load on your
+    system and affect performance.
+
+    You can use the ``graceful-timeout`` option in conjunction with this
+    option to reduce the chances that an active request will be interrupted
+    when a restart occurs due to the use of this option.
+
 **maximum-requests=nnn**
     Defines a limit on the number of requests a daemon process should
     process before it is shutdown and restarted.
@@ -245,6 +266,10 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     affect performance. Only use this option if you have no other choice
     due to a memory usage issue. Stop using it as soon as any memory issue
     has been resolved.
+
+    You can use the ``graceful-timeout`` option in conjunction with this
+    option to reduce the chances that an active request will be interrupted
+    when a restart occurs due to the use of this option.
 
 **inactivity-timeout=sss**
     Defines the maximum number of seconds allowed to pass before the
@@ -321,12 +346,13 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 
 **graceful-timeout=sss**
     When ``maximum-requests`` is used and the maximum has been reached,
-    or ``cpu-time-limit`` is used and the CPU limit reached, if
+    or ``cpu-time-limit`` is used and the CPU limit reached, or
+    ``restart-interval`` is used and the time limit reached, if
     ``graceful-timeout`` is set, then the process will continue to run for
     the number of second specified by this option, while still accepting
     new requests, to see if the process reaches an idle state. If the
-    process reaches an idle state, it will then be resarted immediately.
-    If the process doesn't reach an idle state and the graceful restart
+    process reaches an idle state, it will then be resarted immediately. If
+    the process doesn't reach an idle state and the graceful restart
     timeout expires, the process will be restarted, even if it means that
     requests may be interrupted.
 
