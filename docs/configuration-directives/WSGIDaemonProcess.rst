@@ -519,6 +519,13 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     increasing this to provide extra buffering of responses as it
     contributes to the runtime memory size of the Apache child processes.
 
+**response-socket-timeout=nnn**
+    Defines the maximum number of seconds allowed to pass before timing out
+    on a write operation back to the HTTP client when the response buffer
+    has filled and data is being forcibly flushed. Defaults to 0 seconds
+    indicating that it will default to the value of the ``socket-timeout``
+    option.
+
 To delegate a particular WSGI application to run in a named set of daemon
 processes, the ``WSGIProcessGroup`` directive should be specified in
 appropriate context for that application, or the ``process-group`` option

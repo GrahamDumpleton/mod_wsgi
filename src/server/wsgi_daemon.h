@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2016 GRAHAM DUMPLETON
+ * Copyright 2007-2017 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -126,6 +126,7 @@ typedef struct {
     int recv_buffer_size;
     int header_buffer_size;
     int response_buffer_size;
+    apr_time_t response_socket_timeout;
     const char *script_user;
     const char *script_group;
     int cpu_time_limit;
