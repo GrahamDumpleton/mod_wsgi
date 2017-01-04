@@ -7205,6 +7205,8 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int header_buffer_size = 0;
     int response_buffer_size = 0;
 
+    int response_socket_timeout = 0;
+
     const char *script_user = NULL;
     const char *script_group = NULL;
 
@@ -7501,6 +7503,14 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                        "or 0 for default.";
             }
         }
+        else if (!strcmp(option, "response-socket-timeout")) {
+            if (!*value)
+                return "Invalid response socket timeout for WSGI daemon process.";
+
+            response_socket_timeout = atoi(value);
+            if (response_socket_timeout < 0)
+                return "Invalid response socket timeout for WSGI daemon process.";
+        }
         else if (!strcmp(option, "socket-user")) {
             uid_t socket_uid;
 
@@ -7712,6 +7722,11 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->recv_buffer_size = recv_buffer_size;
     entry->header_buffer_size = header_buffer_size;
     entry->response_buffer_size = response_buffer_size;
+
+    if (response_socket_timeout == 0)
+        response_socket_timeout = socket_timeout;
+
+    entry->response_socket_timeout = apr_time_from_sec(response_socket_timeout);
 
     entry->script_user = script_user;
     entry->script_group = script_group;
@@ -11047,7 +11062,7 @@ static int wsgi_scan_headers_brigade(request_rec *r,
 }
 
 static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
-                                  apr_size_t buffer_size)
+                                  apr_size_t buffer_size, apr_time_t timeout)
 {
     apr_bucket *e;
     apr_read_type_e mode = APR_NONBLOCK_READ;
@@ -11061,8 +11076,40 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
     int bucket_count = 0;
 
+    apr_status_t rv;
+
+#if AP_MODULE_MAGIC_AT_LEAST(20110605, 2)
+    apr_socket_t *sock;
+    apr_interval_time_t existing_timeout = 0;
+#endif
+
     if (buffer_size == 0)
         buffer_size = 65536;
+
+    /*
+     * Override the socket timeout for writing back data to the
+     * client. If that wasn't defined this will be the same as
+     * the timeout for the socket used in communicating with the
+     * daemon, or left as the overall server timeout if that
+     * isn't specified. Just to be safe we remember the existing
+     * timeout and restore it at the end of a successful request
+     * in case the same connection if kept alive and used for a
+     * subsequent request with a different handler.
+     */
+
+#if AP_MODULE_MAGIC_AT_LEAST(20110605, 2)
+    sock = ap_get_conn_socket(r->connection);
+
+    rv = apr_socket_timeout_get(sock, &existing_timeout);
+
+    if (rv != APR_SUCCESS) {
+        existing_timeout = 0;
+    }
+    else {
+        if (timeout)
+            apr_socket_timeout_set(sock, timeout);
+    }
+#endif
 
     /*
      * Transfer any response content. We want to avoid the
@@ -11079,8 +11126,6 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
     tmpbb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 
     while ((e = APR_BRIGADE_FIRST(bb)) != APR_BRIGADE_SENTINEL(bb)) {
-        apr_status_t rv;
-
         /* If we have reached end of stream, we need to pass it on */
 
         if (APR_BUCKET_IS_EOS(e)) {
@@ -11138,6 +11183,12 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
             rv = ap_pass_brigade(r->output_filters, tmpbb);
 
             apr_brigade_cleanup(tmpbb);
+
+            if (rv == APR_TIMEUP) {
+                ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
+                             "mod_wsgi (pid=%d): Failed to proxy response "
+                             "to client.", getpid());
+            }
 
             if (rv != APR_SUCCESS) {
                 apr_brigade_destroy(bb);
@@ -11225,12 +11276,23 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
         apr_brigade_cleanup(tmpbb);
 
+        if (rv == APR_TIMEUP) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
+                         "mod_wsgi (pid=%d): Failed to proxy response "
+                         "to client.", getpid());
+        }
+
         if (rv != APR_SUCCESS) {
             apr_brigade_destroy(bb);
 
             return HTTP_INTERNAL_SERVER_ERROR;
         }
     }
+
+#if AP_MODULE_MAGIC_AT_LEAST(20110605, 2)
+    if (existing_timeout)
+        apr_socket_timeout_set(sock, existing_timeout);
+#endif
 
     apr_brigade_destroy(bb);
 
@@ -11971,7 +12033,8 @@ static int wsgi_execute_remote(request_rec *r)
 
     /* Transfer any response content. */
 
-    return wsgi_transfer_response(r, bbin, group->response_buffer_size);
+    return wsgi_transfer_response(r, bbin, group->response_buffer_size,
+                                  group->response_socket_timeout);
 }
 
 static apr_status_t wsgi_socket_read(apr_socket_t *sock, void *vbuf,
