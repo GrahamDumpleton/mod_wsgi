@@ -6,6 +6,15 @@ Version 4.5.14 of mod_wsgi can be obtained from:
 
   https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/4.5.14
 
+Bugs Fixed
+----------
+
+* Using the ``--url-alias`` option to the ``runmodwsgi`` management
+  command when integrating ``mod_wsgi-express`` with Django could fail
+  with Python 3. This is because the type of the items passed in an
+  option list could be tuple or list depending on Python version. It
+  was necessary to add items with same type else sorting would break.
+
 New Features
 ------------
 
