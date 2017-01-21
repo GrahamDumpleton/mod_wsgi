@@ -51,6 +51,9 @@ PyObject *newLogBufferObject(request_rec *r, int level, const char *name,
     if (self == NULL)
         return NULL;
 
+    if (!name)
+        name = "<log>";
+
     self->name = name;
     self->proxy = proxy;
     self->r = r;
@@ -437,6 +440,15 @@ static PyObject *Log_fileno(LogObject *self, PyObject *args)
 }
 #endif
 
+static PyObject *Log_name(LogObject *self, void *closure)
+{
+#if PY_MAJOR_VERSION >= 3
+    return PyUnicode_FromString(self->name);
+#else
+    return PyString_FromString(self->name);
+#endif
+}
+
 static PyObject *Log_closed(LogObject *self, void *closure)
 {
     Py_INCREF(Py_False);
@@ -512,6 +524,7 @@ static PyMethodDef Log_methods[] = {
 };
 
 static PyGetSetDef Log_getset[] = {
+    { "name", (getter)Log_name, NULL, 0 },
     { "closed", (getter)Log_closed, NULL, 0 },
 #if PY_MAJOR_VERSION < 3
     { "softspace", (getter)Log_get_softspace, (setter)Log_set_softspace, 0 },

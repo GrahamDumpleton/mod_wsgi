@@ -37,6 +37,11 @@ def application(environ, start_response):
         print('CWD: %s' % os.getcwd(), file=output)
         print(file=output)
 
+    print('STDOUT:', sys.stdout.name, file=output)
+    print('STDERR:', sys.stderr.name, file=output)
+    print('ERRORS:', environ['wsgi.errors'].name, file=output)
+    print(file=output)
+
     print('python.version: %r' % (sys.version,), file=output)
     print('python.prefix: %r' % (sys.prefix,), file=output)
     print('python.path: %r' % (sys.path,), file=output)
