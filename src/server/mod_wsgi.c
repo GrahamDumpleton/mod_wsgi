@@ -2013,7 +2013,7 @@ static AdapterObject *newAdapterObject(request_rec *r)
 
     self->input = newInputObject(r, self->config->ignore_activity);
 
-    self->log_buffer = newLogBufferObject(r, APLOG_ERR, "wsgi.errors", 0);
+    self->log_buffer = newLogBufferObject(r, APLOG_ERR, "<wsgi.errors>", 0);
     self->log = newLogWrapperObject(self->log_buffer);
 
     return self;

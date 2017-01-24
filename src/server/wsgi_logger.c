@@ -51,6 +51,9 @@ PyObject *newLogBufferObject(request_rec *r, int level, const char *name,
     if (self == NULL)
         return NULL;
 
+    if (!name)
+        name = "<log>";
+
     self->name = name;
     self->proxy = proxy;
     self->r = r;
@@ -123,90 +126,6 @@ PyObject *newLogObject(request_rec *r, int level, const char *name,
 
     return wrapper;
 }
-
-#if 0
-static void Log_file(LogObject *self, const char *s, int l)
-{
-    /*
-     * XXX This function is not currently being used.
-     * The intention was that it be called instead of
-     * Log_call() when 'name' is non zero. This would
-     * be the case for 'stdout' and 'stderr'. Doing
-     * this bypasses normally Apache logging mechanisms
-     * though. May reawaken this code in mod_wsgi 4.0
-     * by way of a mechanism to divert logging from a
-     * daemon process to specfic log file or pipe using
-     * an option to WSGIDaemonProcess.
-     */
-
-    char errstr[MAX_STRING_LEN];
-
-    int plen = 0;
-    int slen = 0;
-
-    apr_file_t *logf = NULL;
-
-    if (self->r)
-        logf = self->r->server->error_log;
-    else
-        logf = wsgi_server->error_log;
-
-    errstr[0] = '[';
-    ap_recent_ctime(errstr + 1, apr_time_now());
-    errstr[1 + APR_CTIME_LEN - 1] = ']';
-    errstr[1 + APR_CTIME_LEN    ] = ' ';
-    plen = 1 + APR_CTIME_LEN + 1;
-
-    if (self->name) {
-        int len;
-
-        errstr[plen++] = '[';
-
-        len = strlen(self->name);
-        memcpy(errstr+plen, self->name, len);
-
-        plen += len;
-
-        errstr[plen++] = ']';
-        errstr[plen++] = ' ';
-    }
-
-    slen = MAX_STRING_LEN - plen - 1;
-
-    Py_BEGIN_ALLOW_THREADS
-
-    /*
-     * We actually break long lines up into segments
-     * of around 8192 characters, with the date/time
-     * and target information prefixing each line.
-     * This is just to avoid having to allocate more
-     * memory just to format the line with prefix.
-     * We want to avoid writing the prefix separately
-     * so at least try and write line in one atomic
-     * operation.
-     */
-
-    while (1) {
-        if (l > slen) {
-            memcpy(errstr+plen, s, slen);
-            errstr[plen+slen] = '\n';
-            apr_file_write_full(logf, errstr, plen+slen+1, NULL);
-            apr_file_flush(logf);
-            s += slen;
-            l -= slen;
-        }
-        else {
-            memcpy(errstr+plen, s, l);
-            errstr[plen+l] = '\n';
-            apr_file_write_full(logf, errstr, plen+l+1, NULL);
-            apr_file_flush(logf);
-            break;
-        }
-    }
-
-    Py_END_ALLOW_THREADS
-}
-#endif
 
 static void Log_call(LogObject *self, const char *s, long l)
 {
@@ -521,6 +440,15 @@ static PyObject *Log_fileno(LogObject *self, PyObject *args)
 }
 #endif
 
+static PyObject *Log_name(LogObject *self, void *closure)
+{
+#if PY_MAJOR_VERSION >= 3
+    return PyUnicode_FromString(self->name);
+#else
+    return PyString_FromString(self->name);
+#endif
+}
+
 static PyObject *Log_closed(LogObject *self, void *closure)
 {
     Py_INCREF(Py_False);
@@ -596,6 +524,7 @@ static PyMethodDef Log_methods[] = {
 };
 
 static PyGetSetDef Log_getset[] = {
+    { "name", (getter)Log_name, NULL, 0 },
     { "closed", (getter)Log_closed, NULL, 0 },
 #if PY_MAJOR_VERSION < 3
     { "softspace", (getter)Log_get_softspace, (setter)Log_set_softspace, 0 },

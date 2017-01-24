@@ -516,7 +516,7 @@ InterpreterObject *newInterpreterObject(const char *name)
      * the 'pdb' module.
      */
 
-    object = newLogObject(NULL, APLOG_ERR, "stderr", 1);
+    object = newLogObject(NULL, APLOG_ERR, "<stderr>", 1);
     PySys_SetObject("stderr", object);
     Py_DECREF(object);
 
@@ -529,7 +529,7 @@ InterpreterObject *newInterpreterObject(const char *name)
             Py_DECREF(object);
         }
         else {
-            object = newLogObject(NULL, APLOG_ERR, "stdout", 1);
+            object = newLogObject(NULL, APLOG_ERR, "<stdout>", 1);
             PySys_SetObject("stdout", object);
             Py_DECREF(object);
         }

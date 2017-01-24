@@ -96,9 +96,21 @@ class Command(BaseCommand):
         try:
             if settings.STATIC_URL and settings.STATIC_URL.startswith('/'):
                 if settings.STATIC_ROOT:
-                    url_aliases.insert(0,
-                            (settings.STATIC_URL.rstrip('/') or '/',
-                            settings.STATIC_ROOT))
+                    # We need a fiddle here as depending on the Python
+                    # version used, the list of URL aliases we are
+                    # passed could be either list of tuples or list of
+                    # lists. We need to ensure we use the same type so
+                    # that sorting of items in the lists works later.
+
+                    if not url_aliases:
+                        url_aliases.insert(0, (
+                                settings.STATIC_URL.rstrip('/') or '/',
+                                settings.STATIC_ROOT))
+                    else:
+                        url_aliases.insert(0, type(url_aliases[0])((
+                                settings.STATIC_URL.rstrip('/') or '/',
+                                settings.STATIC_ROOT)))
+
         except AttributeError:
             pass
 
