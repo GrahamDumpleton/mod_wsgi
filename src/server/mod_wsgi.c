@@ -1238,7 +1238,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 #if defined(HAVE_LONG_LONG)
     PY_LONG_LONG size = -1;
 #else
-    int size = -1;
+    long size = -1;
 #endif
 
     PyObject *result = NULL;
