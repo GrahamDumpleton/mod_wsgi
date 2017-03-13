@@ -1235,7 +1235,11 @@ finally:
 
 static PyObject *Input_read(InputObject *self, PyObject *args)
 {
-    apr_off_t size = -1;
+#if defined(HAVE_LONG_LONG)
+    PY_LONG_LONG size = -1;
+#else
+    long size = -1;
+#endif
 
     PyObject *result = NULL;
     char *buffer = NULL;
@@ -1249,8 +1253,13 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
         return NULL;
     }
 
+#if defined(HAVE_LONG_LONG)
+    if (!PyArg_ParseTuple(args, "|L:read", &size))
+        return NULL;
+#else
     if (!PyArg_ParseTuple(args, "|l:read", &size))
         return NULL;
+#endif
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_idle_timeout && !self->ignore_activity) {
@@ -1512,7 +1521,11 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
 static PyObject *Input_readline(InputObject *self, PyObject *args)
 {
-    apr_off_t size = -1;
+#if defined(HAVE_LONG_LONG)
+    PY_LONG_LONG size = -1;
+#else
+    long size = -1;
+#endif
 
     PyObject *result = NULL;
     char *buffer = NULL;
@@ -1525,8 +1538,13 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
         return NULL;
     }
 
+#if defined(HAVE_LONG_LONG)
+    if (!PyArg_ParseTuple(args, "|L:readline", &size))
+        return NULL;
+#else
     if (!PyArg_ParseTuple(args, "|l:readline", &size))
         return NULL;
+#endif
 
     if (self->seen_error) {
         PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi request data read "
