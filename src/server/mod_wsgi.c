@@ -12272,7 +12272,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     int queue_timeout_occurred = 0;
 
-#if ! (AP_MODULE_MAGIC_AT_LEAST(20120211, 37) || \
+#if ! (AP_MODULE_MAGIC_AT_LEAST(20120211, 41) || \
     (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
      AP_SERVER_MINORVERSION_NUMBER <= 2 && \
      AP_MODULE_MAGIC_AT_LEAST(20051115, 36)))
@@ -12371,7 +12371,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     r->proto_input_filters = c->input_filters;
     r->input_filters = r->proto_input_filters;
 
-#if AP_MODULE_MAGIC_AT_LEAST(20120211, 37) || \
+#if AP_MODULE_MAGIC_AT_LEAST(20120211, 41) || \
     (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
      AP_SERVER_MINORVERSION_NUMBER <= 2 && \
      AP_MODULE_MAGIC_AT_LEAST(20051115, 36))
