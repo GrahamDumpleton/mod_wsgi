@@ -36,6 +36,13 @@ examples in this document, is as follows::
 
         return [output]
 
+If you are using Python 3.0+, by default it uses unicode strings and the WSGI
+is expecting bytes (Python 2.x default str implementation). To fix this,
+when using Python 3.0+ change strings from
+    output = 'Hello World!'
+To the following, which marks them to be interpreted as byte strings.
+    output = b'Hello World!'
+
 This sample application will need to be placed into what will be referred
 to as the WSGI application script file. For the examples presented here,
 the WSGI application will be run as the user that Apache runs as. As such,
