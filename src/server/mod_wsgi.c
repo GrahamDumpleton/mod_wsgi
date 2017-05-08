@@ -4713,7 +4713,10 @@ static const char *wsgi_set_py3k_warning_flag(cmd_parms *cmd, void *mconfig,
 
     return NULL;
 }
+#endif
 
+#if (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 3) || \
+    (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6)
 static const char *wsgi_set_dont_write_bytecode(cmd_parms *cmd, void *mconfig,
                                                 const char *f)
 {
@@ -15752,6 +15755,10 @@ static const command_rec wsgi_commands[] =
 #if PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6
     AP_INIT_TAKE1("WSGIPy3kWarningFlag", wsgi_set_py3k_warning_flag,
         NULL, RSRC_CONF, "Enable/Disable Python 3.0 warnings."),
+#endif
+
+#if (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 3) || \
+    (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6)
     AP_INIT_TAKE1("WSGIDontWriteBytecode", wsgi_set_dont_write_bytecode,
         NULL, RSRC_CONF, "Enable/Disable writing of byte code."),
 #endif
