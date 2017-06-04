@@ -37,16 +37,16 @@ then substitute your WSGI application entry point with::
         status = '200 OK'
 
         if not environ['mod_wsgi.process_group']:
-          output = 'EMBEDDED MODE'
+          output = u'EMBEDDED MODE'
         else:
-          output = 'DAEMON MODE'
+          output = u'DAEMON MODE'
 
         response_headers = [('Content-Type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
 
         start_response(status, response_headers)
 
-        return [output]
+        return [output.encode('UTF-8')]
 
 If your WSGI application is running in embedded mode, this will output to
 the browser 'EMBEDDED MODE'. If your WSGI application is running in daemon
@@ -264,27 +264,33 @@ a restart if they have.
 Example code for such an automatic restart mechanism which is compatible
 with how mod_wsgi works is shown below::
 
+    from __future__ import print_function
+
     import os
     import sys
     import time
     import signal
     import threading
     import atexit
-    import Queue
+
+    try:
+        import Queue as queue
+    except ImportError:
+        import queue
 
     _interval = 1.0
     _times = {}
     _files = []
 
     _running = False
-    _queue = Queue.Queue()
+    _queue = queue.Queue()
     _lock = threading.Lock()
 
     def _restart(path):
         _queue.put(True)
         prefix = 'monitor (pid=%d):' % os.getpid()
-        print >> sys.stderr, '%s Change detected to \'%s\'.' % (prefix, path)
-        print >> sys.stderr, '%s Triggering process restart.' % prefix
+        print('%s Change detected to \'%s\'.' % (prefix, path), file=sys.stderr)
+        print('%s Triggering process restart.' % prefix, file=sys.stderr)
         os.kill(os.getpid(), signal.SIGINT)
 
     def _modified(path):
@@ -373,7 +379,7 @@ with how mod_wsgi works is shown below::
         _lock.acquire()
         if not _running:
             prefix = 'monitor (pid=%d):' % os.getpid()
-            print >> sys.stderr, '%s Starting change monitor.' % prefix
+            print('%s Starting change monitor.' % prefix, file=sys.stderr)
             _running = True
             _thread.start()
         _lock.release()
@@ -470,8 +476,8 @@ function in the previous code with the following::
     def _restart(path):
         _queue.put(True)
         prefix = 'monitor (pid=%d):' % os.getpid()
-        print >> sys.stderr, '%s Change detected to \'%s\'.' % (prefix, path)
-        print >> sys.stderr, '%s Triggering Apache restart.' % prefix
+        print('%s Change detected to \'%s\'.' % (prefix, path), file=sys.stderr)
+        print('%s Triggering Apache restart.' % prefix, file=sys.stderr)
         import ctypes
         ctypes.windll.libhttpd.ap_signal_parent(1)
 
