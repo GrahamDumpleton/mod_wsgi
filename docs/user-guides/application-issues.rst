@@ -169,8 +169,9 @@ check out:
   * http://www.globalherald.net/jb01/weblog/21.html
   * http://blog.endpoint.com/2010/02/selinux-httpd-modwsgi-26-rhel-centos-5.html
 
-Overall, if you don't have a specific need for SELinux, it is suggested
-you consider disabling it if it gives you problems.
+If you suspect that an issue may be caused by SELinux, you could
+temporarily try disabling it and doing a restart to verify whether it is
+the cause, but always re-enable it and do not disable it completely.
 
 Application Working Directory
 -----------------------------
