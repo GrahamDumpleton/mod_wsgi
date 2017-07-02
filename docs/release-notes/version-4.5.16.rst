@@ -17,3 +17,14 @@ Bugs Fixed
   was broken by prior fix related to feature in 4.5.10. This meant the option
   was not resulting in daemon processes being restarted when the WSGI script
   file could not be loaded successfully by the specified timeout.
+
+New Features
+------------
+
+* Added ``--allow-override`` option to ``mod_wsgi-express`` to allow use of
+  a ``.htaccess`` in document root directory and any directories mapped
+  using a URL alias. The argument to the directive should be the directive
+  type which can be overridden in the ``.htaccess`` file. The option can be
+  used more than once if needing to allow overriding of more than one
+  directive type. Argument can be anything allowed by ``AllowOverride``
+  directive.
