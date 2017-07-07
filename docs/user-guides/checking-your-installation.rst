@@ -483,15 +483,15 @@ use a test WSGI script to output the value of 'sys.prefix'::
     def application(environ, start_response):
         status = '200 OK'
 
-        output = ''
-        output += 'sys.version = %s\n' % repr(sys.version)
-        output += 'sys.prefix = %s\n' % repr(sys.prefix)
+        output = u''
+        output += u'sys.version = %s\n' % repr(sys.version)
+        output += u'sys.prefix = %s\n' % repr(sys.prefix)
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
         start_response(status, response_headers)
 
-        return [output]
+        return [output.encode('UTF-8')]
 
 For standard Python installation on a Linux system, this would produce
 something like::
@@ -511,13 +511,13 @@ value of 'sys.path'::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = 'sys.path = %s' % repr(sys.path)
+        output = u'sys.path = %s' % repr(sys.path)
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
         start_response(status, response_headers)
 
-        return [output]
+        return [output.encode('UTF-8')]
 
 In both cases, even if incorrect location is being used for Python
 installation and even if there is no actual Python installation of the
@@ -557,12 +557,12 @@ WSGI script with the test WSGI script as follows::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = 'mod_wsgi.process_group = %s' % repr(environ['mod_wsgi.process_group']) 
+        output = u'mod_wsgi.process_group = %s' % repr(environ['mod_wsgi.process_group']) 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
         start_response(status, response_headers)
 
-        return [output]
+        return [output.encode('UTF-8')]
 
 If the configuration is such that the WSGI application is running in embedded
 mode, then you will see::
@@ -595,13 +595,13 @@ the WSGI application is being run use the test WSGI script of::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = 'mod_wsgi.application_group = %s' % repr(environ['mod_wsgi.application_group'])
+        output = u'mod_wsgi.application_group = %s' % repr(environ['mod_wsgi.application_group'])
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
         start_response(status, response_headers)
 
-        return [output]
+        return [output.encode('UTF-8')]
 
 If being run in the main interpreter, ie., the first interpreter created by
 Python, this will output::
@@ -652,13 +652,13 @@ multithread configuration is as follows::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = 'wsgi.multithread = %s' % repr(environ['wsgi.multithread'])
+        output = u'wsgi.multithread = %s' % repr(environ['wsgi.multithread'])
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
         start_response(status, response_headers)
 
-        return [output]
+        return [output.encode('UTF-8')]
 
 If multithreaded, this will yield::
 

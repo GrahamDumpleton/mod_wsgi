@@ -2035,7 +2035,8 @@ void wsgi_python_init(apr_pool_t *p)
 
         /* Disable writing of byte code files. */
 
-#if PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6
+#if (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 3) || \
+    (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6)
         if (wsgi_server_config->dont_write_bytecode == 1)
             Py_DontWriteBytecodeFlag++;
 #endif

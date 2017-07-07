@@ -690,7 +690,10 @@ SSLCertificateChainFile %(ssl_certificate_chain_file)s
 
 DocumentRoot '%(document_root)s'
 
+AccessFileName .htaccess
+
 <Directory '%(server_root)s'>
+    AllowOverride %(allow_override)s
 <Files handler.wsgi>
 <IfVersion < 2.4>
     Order allow,deny
@@ -703,6 +706,7 @@ DocumentRoot '%(document_root)s'
 </Directory>
 
 <Directory '%(document_root)s%(mount_point)s'>
+    AllowOverride %(allow_override)s
 <IfDefine MOD_WSGI_DIRECTORY_INDEX>
     DirectoryIndex %(directory_index)s
 </IfDefine>
@@ -840,6 +844,7 @@ APACHE_ALIAS_DIRECTORY_CONFIG = """
 Alias '%(mount_point)s' '%(directory)s'
 
 <Directory '%(directory)s'>
+    AllowOverride %(allow_override)s
 <IfVersion < 2.4>
     Order allow,deny
     Allow from all
@@ -2225,6 +2230,12 @@ option_list = (
             'should be enabled where static file application type is '
             'being used and no directory index file has been specified.'),
 
+    optparse.make_option('--allow-override', metavar='DIRECTIVE-TYPE',
+            action='append', help='Allow directives to be overridden from a '
+            '\'.htaccess\' file. Defaults to \'None\', indicating that any '
+            '\'.htaccess\' file will be ignored with override directives '
+            'not being permitted.'),
+
     optparse.make_option('--mount-point', metavar='URL-PATH', default='/',
             help='The URL path at which the WSGI application will be '
             'mounted. Defaults to being mounted at the root URL of the '
@@ -2706,6 +2717,11 @@ def _cmd_setup_server(command, args, options):
         os.mkdir(options['document_root'])
     except Exception:
         pass
+
+    if not options['allow_override']:
+        options['allow_override'] = 'None'
+    else:
+        options['allow_override'] = ' '.join(options['allow_override'])
 
     if not options['mount_point'].startswith('/'):
         options['mount_point'] = os.path.normpath('/' + options['mount_point'])

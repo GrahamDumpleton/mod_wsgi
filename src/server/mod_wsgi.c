@@ -4054,10 +4054,15 @@ static int wsgi_execute_script(request_rec *r)
     apr_thread_mutex_unlock(wsgi_module_lock);
 #endif
 
-    /* Clear startup timeout and prevent from running again. */
+    /*
+     * Clear startup timeout and prevent from running again if the
+     * module was successfully loaded.
+     */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    wsgi_startup_shutdown_time = -1;
+    if (module && wsgi_startup_shutdown_time > 0) {
+        wsgi_startup_shutdown_time = -1;
+    }
 #endif
 
     /* Assume an internal server error unless everything okay. */
@@ -4616,8 +4621,28 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
             if (!group)
                 return "WSGI process group not yet configured.";
 
-            if (group->server != cmd->server && group->server->is_virtual)
+            if (cmd->server->server_hostname &&
+                group->server->server_hostname &&
+                strcmp(cmd->server->server_hostname,
+                group->server->server_hostname) &&
+                group->server->is_virtual) {
+
                 return "WSGI process group not accessible.";
+            }
+
+            if (!cmd->server->server_hostname &&
+                group->server->server_hostname &&
+                group->server->is_virtual) {
+
+                return "WSGI process group not matchable.";
+            }
+
+            if (cmd->server->server_hostname &&
+                !group->server->server_hostname &&
+                group->server->is_virtual) {
+
+                return "WSGI process group not matchable.";
+            }
         }
 #endif
     }
@@ -4713,7 +4738,10 @@ static const char *wsgi_set_py3k_warning_flag(cmd_parms *cmd, void *mconfig,
 
     return NULL;
 }
+#endif
 
+#if (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 3) || \
+    (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6)
 static const char *wsgi_set_dont_write_bytecode(cmd_parms *cmd, void *mconfig,
                                                 const char *f)
 {
@@ -5120,8 +5148,28 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
         if (!group)
             return "WSGI process group not yet configured.";
 
-        if (group->server != cmd->server && group->server->is_virtual)
+        if (cmd->server->server_hostname &&
+            group->server->server_hostname &&
+            strcmp(cmd->server->server_hostname,
+            group->server->server_hostname) &&
+            group->server->is_virtual) {
+
             return "WSGI process group not accessible.";
+        }
+
+        if (!cmd->server->server_hostname &&
+            group->server->server_hostname &&
+            group->server->is_virtual) {
+
+            return "WSGI process group not matchable.";
+        }
+
+        if (cmd->server->server_hostname &&
+            !group->server->server_hostname &&
+            group->server->is_virtual) {
+
+            return "WSGI process group not matchable.";
+        }
     }
 #else
     object->process_group = "";
@@ -15752,6 +15800,10 @@ static const command_rec wsgi_commands[] =
 #if PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6
     AP_INIT_TAKE1("WSGIPy3kWarningFlag", wsgi_set_py3k_warning_flag,
         NULL, RSRC_CONF, "Enable/Disable Python 3.0 warnings."),
+#endif
+
+#if (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 3) || \
+    (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6)
     AP_INIT_TAKE1("WSGIDontWriteBytecode", wsgi_set_dont_write_bytecode,
         NULL, RSRC_CONF, "Enable/Disable writing of byte code."),
 #endif
