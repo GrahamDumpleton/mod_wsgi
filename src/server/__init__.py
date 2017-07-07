@@ -1018,7 +1018,8 @@ def generate_apache_config(options):
                         directory = path
 
                     print(APACHE_ALIAS_DIRECTORY_CONFIG % dict(
-                            mount_point=mount_point, directory=directory),
+                            mount_point=mount_point, directory=directory,
+                            allow_override=options['allow_override']),
                             file=fp)
 
                 else:
