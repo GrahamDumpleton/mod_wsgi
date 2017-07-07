@@ -15,3 +15,5 @@ a daemon mode process will fail with a HTTP internal server error response.
 
 This option does not exist on Windows, or Apache 1.3 or any other
 configuration where daemon mode is not available.
+
+The default value "off" exists for backward compatibility. If unsure use "on".
