@@ -4621,8 +4621,28 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
             if (!group)
                 return "WSGI process group not yet configured.";
 
-            if (group->server != cmd->server && group->server->is_virtual)
+            if (cmd->server->server_hostname &&
+                group->server->server_hostname &&
+                strcmp(cmd->server->server_hostname,
+                group->server->server_hostname) &&
+                group->server->is_virtual) {
+
                 return "WSGI process group not accessible.";
+            }
+
+            if (!cmd->server->server_hostname &&
+                group->server->server_hostname &&
+                group->server->is_virtual) {
+
+                return "WSGI process group not matchable.";
+            }
+
+            if (cmd->server->server_hostname &&
+                !group->server->server_hostname &&
+                group->server->is_virtual) {
+
+                return "WSGI process group not matchable.";
+            }
         }
 #endif
     }
@@ -5128,8 +5148,28 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
         if (!group)
             return "WSGI process group not yet configured.";
 
-        if (group->server != cmd->server && group->server->is_virtual)
+        if (cmd->server->server_hostname &&
+            group->server->server_hostname &&
+            strcmp(cmd->server->server_hostname,
+            group->server->server_hostname) &&
+            group->server->is_virtual) {
+
             return "WSGI process group not accessible.";
+        }
+
+        if (!cmd->server->server_hostname &&
+            group->server->server_hostname &&
+            group->server->is_virtual) {
+
+            return "WSGI process group not matchable.";
+        }
+
+        if (cmd->server->server_hostname &&
+            !group->server->server_hostname &&
+            group->server->is_virtual) {
+
+            return "WSGI process group not matchable.";
+        }
     }
 #else
     object->process_group = "";

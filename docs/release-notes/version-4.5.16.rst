@@ -18,6 +18,13 @@ Bugs Fixed
   was not resulting in daemon processes being restarted when the WSGI script
   file could not be loaded successfully by the specified timeout.
 
+* When using ``WSGIImportScript``, or ``WSGIScriptAlias`` with both the
+  ``process-group`` and ``application-group`` options, with the intent of
+  preloading a WSGI script file, the ability to reach across to a daemon
+  process defined in a different virtual host with same ``ServerName`` was
+  always failing and the target daemon process group would be flagged as
+  not accessible when instead it should have been.
+
 New Features
 ------------
 
