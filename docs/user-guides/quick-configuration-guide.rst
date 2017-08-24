@@ -312,7 +312,7 @@ script files are loaded and/or reloaded. This information can be quite
 valuable in determining what problem may be occuring.
 
 Note that where the LogLevel directive may have been defined both in and
-outside of a VirualHost directive, due to the VirtualHost declaring its
+outside of a VirtualHost directive, due to the VirtualHost declaring its
 own error logs, both instances of the LogLevel directive should be changed.
 
 This is because although the virtual host may have its own error log, some
