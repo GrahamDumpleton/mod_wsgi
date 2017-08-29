@@ -12,36 +12,45 @@ The first way of installing mod_wsgi is the traditional way that has been
 used by many software packages. This is where it is installed as a module
 directly into your Apache installation using the commands ``configure``,
 ``make`` and ``make install``, a method sometimes referred to by the
-acyronym CMMI.
+acyronym CMMI. This method works with most UNIX type systems. It cannot
+be used on Windows.
 
-The second and newest way of installing mod_wsgi is to install it as a
-Python package into your Python installation using the Python ``pip
-install`` command.
+The second way of installing mod_wsgi is to install it as a Python package
+into your Python installation using the Python ``pip install`` command.
+This can be used on all platforms, including Windows.
 
-This newer way of installing mod_wsgi will compile not only the Apache
-module for mod_wsgi, but will also install a Python module and admin script
-for starting up a standalone instance of Apache directly from the command
-line with an auto generated configuration.
+This second way of installing mod_wsgi will compile not only the Apache
+module for mod_wsgi, but will also install a Python module and admin
+script, which on UNIX type systems can be used to start up a standalone
+instance of Apache directly from the command line with an auto generated
+configuration.
 
 This later mechanism for installing mod_wsgi using Python ``pip`` is a much
 simpler way of getting starting with hosting your Python web application.
-In particular, the new installation method makes it very easy to use
+In particular, this installation method makes it very easy to use
 Apache/mod_wsgi in a development environment without the need to perform
 any Apache configuration yourself.
 
 The Apache module for mod_wsgi created when using the ``pip install``
 method can still be used with the main Apache installation, via manual
-configuration if necessary.
+configuration if necessary. As detailed later in these instructions, the
+admin script installed when you use ``pip install`` can be used to generate
+the configuration to manually add to the Apache configuration to load
+mod_wsgi.
 
-On some platforms, this latter method is actually the only option supported
-when using the operating system supplied Apache installation. For example,
-in MacOS X Sierra, Apple has completely broken the ability to install third
-party Apache modules using the ``apxs`` tool normally used for this task.
-History suggests that Apple will never fix the problem as they have broken
-things in the past in other ways and workarounds were required as they
-never fixed those problems either. This time there is no easy workaround as
-they no longer supply certain tools which are required to perform the
-installation.
+Note that although MacOS X is a UNIX type system, the ``pip install``
+method is the only supported way for installing mod_wsgi.
+
+Since MacOS X Sierra, Apple has completely broken the ability to install
+third party Apache modules using the ``apxs`` tool normally used for this
+task. History suggests that Apple will never fix the problem as they have
+broken things in the past in other ways and workarounds were required as
+they never fixed those problems either. This time there is no easy
+workaround as they no longer supply certain tools which are required to
+perform the installation.
+
+The ``pip install`` method along with manual configuration of Apache
+is also the method you need to use on Windows.
 
 System Requirements
 -------------------
@@ -85,8 +94,19 @@ RHEL, CentOS or Fedora, you would need:
 * httpd24
 * httpd24-httpd-devel
 
-If you are running MacOS X, you will need to have the Xcode command line
-tools installed. These can be installed by running ``xcode-select --install``.
+If you are running MacOS X, Apache is supplied with the operating system.
+If running a recent MacOS X version, you will though need to have the Xcode
+command line tools installed as well as the Xcode application. The command
+line tools can be installed by running ``xcode-select --install``. The
+Xcode application can be installed from the MacOS X App Store. If you are
+using older MacOS X versions, you may be able to get away with having just
+the command line tools.
+
+If you are running Windows, it is recommended you use the Apache
+distribution from Apache Lounge (www.apachelounge.com). Other Apache
+distributions for Windows aren't always complete and are missing the files
+needed to compile additional Apache modules. By default, it is expected
+that Apache is installed in the directory ``C:/Apache24`` on Windows.
 
 Installation into Apache
 ------------------------
@@ -108,8 +128,8 @@ application.
 Installation into Python
 ------------------------
 
-To install the mod_wsgi directly into your Python installation, from within
-the source directory of the mod_wsgi package you can run::
+To install mod_wsgi directly into your Python installation, from within the
+source directory of the mod_wsgi package you can run::
 
     python setup.py install
 
@@ -126,6 +146,12 @@ standard location, you can set and export the ``APXS`` environment variable
 to the location of the Apache ``apxs`` script for your Apache installation
 before performing the installation.
 
+If you are on Windows and your Apache distribution is not installed into
+the directory ``C:/Apache24``, first set the environment variable
+``MOD_WSGI_APACHE_ROOTDIR`` to the directory containing the Apache
+distribution. Ensure you use forward slashes in the directory path. The
+directory path should not include path components with spaces in the name.
+
 Note that nothing will be copied into your Apache installation at this
 point. As a result, you do not need to run this as the root user unless
 installing it into a site wide Python installation rather than a Python
@@ -133,8 +159,8 @@ virtual environment. It is recommended you always use Python virtual
 environments and never install any Python package direct into the system
 Python installation.
 
-To verify that the installation was successful, run the ``mod_wsgi-express``
-script with the ``start-server`` command::
+On a UNIX type system, to verify that the installation was successful, run
+the ``mod_wsgi-express`` script with the ``start-server`` command::
 
     mod_wsgi-express start-server
 
@@ -265,6 +291,11 @@ allowed to access, don't match where the directory specified using the
 SELinux or move the directory used with ``--server-root`` to an allowed
 location.
 
+In all cases, any error messages will be logged to a file under the server
+root directory. If you are using ``mod_wsgi-express`` with a process
+supervisor, or in a container, where log messages are expected to be sent
+to the terminal, you can use the ``--log-to-terminal`` option.
+
 Using mod_wsgi-express with Django
 ----------------------------------
 
@@ -321,10 +352,14 @@ Connecting into Apache installation
 
 If you want to use mod_wsgi in combination with your system Apache
 installation, the CMMI method for installing mod_wsgi would normally be
-used. If you are on MacOS X Sierra that is no longer possible. Even prior
-to MacOS X Sierra, the System Integrity Protection (SIP) system of MacOS X,
-prevented installing the mod_wsgi module into the Apache modules
-directory.
+used.
+
+If you are on MacOS X Sierra that is no longer possible. Even prior to
+MacOS X Sierra, the System Integrity Protection (SIP) system of MacOS X,
+prevented installing the mod_wsgi module into the Apache modules directory.
+
+If you are using Windows, the CMMI method was never supported as Windows
+doesn't supply the required tools tools to make it work.
 
 The CMMI installation method also involves a bit more work as you need to
 separately download the mod_wsgi source code, run the ``configure`` tool
@@ -346,21 +381,21 @@ These are the directives needed to configure Apache to load the mod_wsgi
 module and tell mod_wsgi where the Python installation directory or virtual
 environment was located.
 
-This would be placed in the Apache ``httpd.conf`` file, or if the Linux
-distribution separates out module configuration into a ``mods-available``
-directory, in the ``wsgi.load`` file within the ``mods-available``
-directory. In the latter case where a ``mods-available`` directory is used,
-the module would then be enabled by running ``a2enmod wsgi`` as ``root``.
-If necessary Apache can then be restarted to verify the module is loading
-correctly. You can then configure Apache as necessary for your specific
-WSGI application.
+This would be placed in the Apache ``httpd.conf`` file, or if using a Linux
+distribution which separates out module configuration into a
+``mods-available`` directory, in the ``wsgi.load`` file within the
+``mods-available`` directory. In the latter case where a ``mods-available``
+directory is used, the module would then be enabled by running
+``a2enmod wsgi`` as ``root``. If necessary Apache can then be restarted to
+verify the module is loading correctly. You can then configure Apache as
+necessary for your specific WSGI application.
 
 Note that because in this scenario the mod_wsgi module for Apache could be
 located in a Python virtual environment, if you destroy the Python virtual
 environment the module will also be deleted. In that case you would need to
-ensure you recreated the Python virtual environment and reinstalled the
-mod_wsgi package using ``pip``, or take out the mod_wsgi configuration from
-Apache before restarting Apache or it will fail to startup.
+ensure you recreate the Python virtual environment and reinstall the
+mod_wsgi package using ``pip``, or, take out the mod_wsgi configuration
+from Apache before restarting Apache, else it will fail to startup.
 
 Instead of referencing the mod_wsgi module from the Python installation,
 you can instead copy the mod_wsgi module into the Apache installation. To
@@ -373,5 +408,7 @@ do that, run the ``mod_wsgi-express install-module`` command, running it as
 This is similar to above except that the mod_wsgi module was copied to the
 Apache modules directory first and the ``LoadModule`` directive references
 it from that location. You should take these lines and configure Apache in
-the same way as described above. Do note that copying the module like this
-will not work on recent versions of MacOS X due to the SIP feature of MacOS X.
+the same way as described above.
+
+Do note that copying the module like this will not work on recent versions
+of MacOS X due to the SIP feature of MacOS X.
