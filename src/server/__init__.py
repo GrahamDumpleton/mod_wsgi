@@ -1011,7 +1011,7 @@ def generate_apache_config(options):
                     reverse=True):
                 path = os.path.abspath(target)
 
-                if os.path.isdir(path):
+                if os.path.isdir(path) or not os.path.exists(path):
                     if target.endswith('/') and path != '/':
                         directory = path + '/'
                     else:
