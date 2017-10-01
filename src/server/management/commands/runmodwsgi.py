@@ -78,18 +78,21 @@ class Command(BaseCommand):
         args = [script_file]
         options['callable_object'] = callable_object
 
-        # If there is no BASE_DIR in Django settings, assume that
-        # the current working directory is the parent directory of
-        # the directory the settings module is in.
+        # If there is no BASE_DIR in Django settings, assume that the
+        # current working directory is the parent directory of the
+        # directory the settings module is in. Either way, allow the
+        # --working-directory option to override it to deal with where
+        # meaning of BASE_DIR in the Django settings was changed.
 
-        if hasattr(settings, 'BASE_DIR'):
-            options['working_directory'] = settings.BASE_DIR
-        else:
-            settings_module_path = os.environ['DJANGO_SETTINGS_MODULE']
-            root_module_path = settings_module_path.split('.')[0]
-            root_module = sys.modules[root_module_path]
-            parent = os.path.dirname(os.path.dirname(root_module.__file__))
-            options['working_directory'] = parent
+        if options.get('working_directory') is None:
+            if hasattr(settings, 'BASE_DIR'):
+                options['working_directory'] = settings.BASE_DIR
+            else:
+                settings_module_path = os.environ['DJANGO_SETTINGS_MODULE']
+                root_module_path = settings_module_path.split('.')[0]
+                root_module = sys.modules[root_module_path]
+                parent = os.path.dirname(os.path.dirname(root_module.__file__))
+                options['working_directory'] = parent
 
         url_aliases = options.setdefault('url_aliases') or []
 
