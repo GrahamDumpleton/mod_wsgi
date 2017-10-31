@@ -359,7 +359,7 @@ MacOS X Sierra, the System Integrity Protection (SIP) system of MacOS X,
 prevented installing the mod_wsgi module into the Apache modules directory.
 
 If you are using Windows, the CMMI method was never supported as Windows
-doesn't supply the required tools tools to make it work.
+doesn't supply the required tools to make it work.
 
 The CMMI installation method also involves a bit more work as you need to
 separately download the mod_wsgi source code, run the ``configure`` tool
