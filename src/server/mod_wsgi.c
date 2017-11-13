@@ -2708,6 +2708,8 @@ static PyObject *Adapter_environ(AdapterObject *self)
     object = (PyObject *)self->input;
     PyDict_SetItemString(vars, "wsgi.input", object);
 
+    PyDict_SetItemString(vars, "wsgi.input_terminated", Py_True);
+
     /* Setup file wrapper object for efficient file responses. */
 
     PyDict_SetItemString(vars, "wsgi.file_wrapper", (PyObject *)&Stream_Type);
