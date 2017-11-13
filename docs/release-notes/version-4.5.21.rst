@@ -6,6 +6,17 @@ Version 4.5.21 of mod_wsgi can be obtained from:
 
   https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/4.5.21
 
+Bugs Fixed
+----------
+
+* Installation using ``pip`` or ``setup.py`` install was failing on
+  MacOS X High Sierra with latest Xcode as Apple doesn't even include
+  the ``apxs`` program at all.
+
+  Note you still cannot use the configure/make/make install method of
+  deploying mod_wsgi to MacOS X. You need to use the ``pip install``
+  method.
+
 Features Changed
 ----------------
 

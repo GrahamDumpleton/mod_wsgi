@@ -133,6 +133,7 @@ elif not os.path.isabs(APXS):
 
 WITHOUT_APXS = False
 WITH_WINDOWS_APACHE = None
+WITH_MACOSX_APACHE = None
 
 if not WITH_TARBALL_PACKAGE:
     if not os.path.isabs(APXS) or not os.access(APXS, os.X_OK):
@@ -157,7 +158,10 @@ if WITHOUT_APXS and os.name == 'nt':
             raise RuntimeError('No Apache installation can be found. Set the '
                     'MOD_WSGI_APACHE_ROOTDIR environment to its location.')
 
-if WITHOUT_APXS and not WITH_WINDOWS_APACHE:
+elif WITHOUT_APXS and os.name == 'darwin':
+    WITH_MACOSX_APACHE = '/Applications/Xcode.app'
+
+if WITHOUT_APXS and not WITH_WINDOWS_APACHE and not WITHOUT_APXS:
     raise RuntimeError('The %r command appears not to be installed or '
             'is not executable. Please check the list of prerequisites '
             'in the documentation for this package and install any '
@@ -171,6 +175,16 @@ if WITH_WINDOWS_APACHE:
             return WITH_WINDOWS_APACHE + '/lib'
         else:
             return ''
+
+    def get_apr_includes():
+        return ''
+
+    def get_apu_includes():
+        return ''
+
+elif WITH_MACOSX_APACHE:
+    def get_apxs_config(name):
+        return ''
 
     def get_apr_includes():
         return ''
