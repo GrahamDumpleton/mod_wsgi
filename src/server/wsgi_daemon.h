@@ -185,6 +185,8 @@ extern WSGIDaemonThread *wsgi_worker_threads;
 
 extern WSGIThreadStack *wsgi_worker_stack;
 
+extern int volatile wsgi_daemon_shutdown;
+
 #endif
 
 /* ------------------------------------------------------------------------- */

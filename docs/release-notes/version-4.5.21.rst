@@ -17,6 +17,14 @@ Bugs Fixed
   deploying mod_wsgi to MacOS X. You need to use the ``pip install``
   method.
 
+* Speculated that crashes on daemon process shutdown were being caused
+  by a race condition around accessing Python C API when interpreter
+  was being destroyed. There was a check in place to avoid this but may
+  not have been robust enough depending on how memory cache worked
+  for threads running across multi core machine. Now use a dedicated
+  thread mutex to avoid race condition between main process thread and
+  Python interpreter deadlock detection thread.
+
 Features Changed
 ----------------
 

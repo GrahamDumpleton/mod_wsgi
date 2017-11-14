@@ -1986,9 +1986,21 @@ apr_status_t wsgi_python_term(void)
     if (!PyImport_AddModule("dummy_threading"))
         PyErr_Clear();
 
-    /* Shutdown Python interpreter completely. */
+    /*
+     * Shutdown Python interpreter completely. Just to be safe
+     * flag daemon shutdown here again and do it within a lock
+     * which is then shared with deadlock thread used for the
+     * daemon. This is just to avoid any risk there is a race
+     * condition.
+     */
+
+    apr_thread_mutex_lock(wsgi_shutdown_lock);
+
+    wsgi_daemon_shutdown++;
 
     Py_Finalize();
+
+    apr_thread_mutex_unlock(wsgi_shutdown_lock);
 
     wsgi_python_initialized = 0;
 
@@ -2336,6 +2348,7 @@ void wsgi_python_init(apr_pool_t *p)
 
 #if APR_HAS_THREADS
 apr_thread_mutex_t* wsgi_interp_lock = NULL;
+apr_thread_mutex_t* wsgi_shutdown_lock = NULL;
 #endif
 
 PyObject *wsgi_interpreters = NULL;
