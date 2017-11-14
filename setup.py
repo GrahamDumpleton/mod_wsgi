@@ -184,7 +184,18 @@ if WITH_WINDOWS_APACHE:
 
 elif WITH_MACOSX_APACHE:
     def get_apxs_config(name):
-        return ''
+        if name == 'BINDIR':
+            return '/usr/bin'
+        elif name == 'SBINDIR':
+            return '/usr/sbin'
+        elif name == 'LIBEXECDIR':
+            return '/usr/libexec/apache2'
+        elif name == 'PROGNAME':
+            return 'httpd'
+        elif name == 'SHLIBPATH_VAR':
+            return 'DYLD_LIBRARY_PATH'
+        else:
+            return ''
 
     def get_apr_includes():
         return ''
