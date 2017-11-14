@@ -158,7 +158,7 @@ if WITHOUT_APXS and os.name == 'nt':
             raise RuntimeError('No Apache installation can be found. Set the '
                     'MOD_WSGI_APACHE_ROOTDIR environment to its location.')
 
-elif WITHOUT_APXS and os.name == 'darwin':
+elif WITHOUT_APXS and sys.platform == 'darwin':
     WITH_MACOSX_APACHE = '/Applications/Xcode.app'
 
 if WITHOUT_APXS and not WITH_WINDOWS_APACHE and not WITHOUT_APXS:
