@@ -70,6 +70,7 @@ extern PyObject *wsgi_interpreters;
 
 #if APR_HAS_THREADS
 extern apr_thread_mutex_t *wsgi_interp_lock;
+extern apr_thread_mutex_t* wsgi_shutdown_lock;
 #endif
 
 extern void wsgi_python_version(void);

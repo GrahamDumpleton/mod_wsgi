@@ -78,7 +78,7 @@ static apr_array_header_t *wsgi_daemon_list = NULL;
 
 static apr_pool_t *wsgi_parent_pool = NULL;
 
-static int volatile wsgi_daemon_shutdown = 0;
+int volatile wsgi_daemon_shutdown = 0;
 static int volatile wsgi_daemon_graceful = 0;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
@@ -2708,6 +2708,8 @@ static PyObject *Adapter_environ(AdapterObject *self)
     object = (PyObject *)self->input;
     PyDict_SetItemString(vars, "wsgi.input", object);
 
+    PyDict_SetItemString(vars, "wsgi.input_terminated", Py_True);
+
     /* Setup file wrapper object for efficient file responses. */
 
     PyDict_SetItemString(vars, "wsgi.file_wrapper", (PyObject *)&Stream_Type);
@@ -4286,6 +4288,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
 #if APR_HAS_THREADS
     apr_thread_mutex_create(&wsgi_interp_lock, APR_THREAD_MUTEX_UNNESTED, p);
     apr_thread_mutex_create(&wsgi_module_lock, APR_THREAD_MUTEX_UNNESTED, p);
+    apr_thread_mutex_create(&wsgi_shutdown_lock, APR_THREAD_MUTEX_UNNESTED, p);
 #endif
 
     /*
@@ -8952,10 +8955,14 @@ static void *wsgi_deadlock_thread(apr_thread_t *thd, void *data)
     while (1) {
         apr_sleep(apr_time_from_sec(1));
 
+        apr_thread_mutex_lock(wsgi_shutdown_lock);
+
         if (!wsgi_daemon_shutdown) {
             gilstate = PyGILState_Ensure();
             PyGILState_Release(gilstate);
         }
+
+        apr_thread_mutex_unlock(wsgi_shutdown_lock);
 
         apr_thread_mutex_lock(wsgi_monitor_lock);
         wsgi_deadlock_shutdown_time = apr_time_now();
