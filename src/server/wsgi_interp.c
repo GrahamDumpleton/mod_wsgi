@@ -1996,7 +1996,9 @@ apr_status_t wsgi_python_term(void)
 
     apr_thread_mutex_lock(wsgi_shutdown_lock);
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
     wsgi_daemon_shutdown++;
+#endif
 
     Py_Finalize();
 
