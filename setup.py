@@ -161,7 +161,7 @@ if WITHOUT_APXS and os.name == 'nt':
 elif WITHOUT_APXS and sys.platform == 'darwin':
     WITH_MACOSX_APACHE = '/Applications/Xcode.app'
 
-if WITHOUT_APXS and not WITH_WINDOWS_APACHE and not WITHOUT_APXS:
+if WITHOUT_APXS and not WITH_WINDOWS_APACHE and not WITH_MACOSX_APACHE:
     raise RuntimeError('The %r command appears not to be installed or '
             'is not executable. Please check the list of prerequisites '
             'in the documentation for this package and install any '

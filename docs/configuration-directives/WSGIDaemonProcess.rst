@@ -327,7 +327,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     the Python GIL has been detected. The default is 300 seconds.
 
     This option exists to combat the problem of a daemon process freezing
-    as the result of a rouge Python C extension module which doesn't
+    as the result of a rogue Python C extension module which doesn't
     properly release the Python GIL when entering into a blocking or long
     running operation.
 
