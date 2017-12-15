@@ -10717,6 +10717,7 @@ static apr_status_t wsgi_socket_sendv(apr_socket_t *sock, struct iovec *vec,
 
             if (rv != APR_SUCCESS)
                 return rv;
+
             if (nvec > iov_max) {
                 nvec -= iov_max;
                 offset += iov_max;
