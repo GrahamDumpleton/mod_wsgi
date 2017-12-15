@@ -10709,7 +10709,7 @@ static apr_status_t wsgi_socket_sendv(apr_socket_t *sock, struct iovec *vec,
     if (nvec > iov_max) {
         int offset = 0;
 
-        while (nvec > 0) {
+        while (nvec != 0) {
             apr_status_t rv;
 
             rv = wsgi_socket_sendv_limit(sock, &vec[offset],
@@ -10717,9 +10717,12 @@ static apr_status_t wsgi_socket_sendv(apr_socket_t *sock, struct iovec *vec,
 
             if (rv != APR_SUCCESS)
                 return rv;
-
-            nvec -= iov_max;
-            offset += iov_max;
+            if (nvec > iov_max) {
+                nvec -= iov_max;
+                offset += iov_max;
+            } else {
+                nvec = 0;
+            }
         }
 
         return APR_SUCCESS;
