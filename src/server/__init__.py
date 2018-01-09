@@ -432,6 +432,7 @@ AddOutputFilterByType DEFLATE text/css
 AddOutputFilterByType DEFLATE text/javascript
 AddOutputFilterByType DEFLATE application/xhtml+xml
 AddOutputFilterByType DEFLATE application/javascript
+AddOutputFilterByType DEFLATE application/json
 </IfDefine>
 
 <IfDefine MOD_WSGI_ROTATE_LOGS>
