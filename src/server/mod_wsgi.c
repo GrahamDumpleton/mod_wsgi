@@ -4522,7 +4522,7 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
             return "Invalid option to WSGI script alias definition.";
         }
 
-        if (!cmd->info && !strcmp(option, "application-group")) {
+        if (!strcmp(option, "application-group")) {
             if (!*value)
                 return "Invalid name for WSGI application group.";
 
@@ -4532,7 +4532,7 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
             application_group = value;
         }
 #if defined(MOD_WSGI_WITH_DAEMONS)
-        else if (!cmd->info && !strcmp(option, "process-group")) {
+        else if (!strcmp(option, "process-group")) {
             if (!*value)
                 return "Invalid name for WSGI process group.";
 
@@ -4579,9 +4579,17 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
     entry->callable_object = callable_object;
     entry->pass_authorization = pass_authorization;
 
+    /*
+     * Only add to import list if both process group and application
+     * group are specified, that they don't include substitution values,
+     * and in the case of WSGIScriptAliasMatch, that the WSGI script
+     * target path doesn't include substitutions from URL pattern.
+     */
+
     if (process_group && application_group &&
         !strstr(process_group, "%{") &&
-        !strstr(application_group, "%{")) {
+        !strstr(application_group, "%{") &&
+        (!cmd->info || !strstr(a, "$"))) {
 
         WSGIScriptFile *object = NULL;
 

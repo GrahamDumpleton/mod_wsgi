@@ -66,6 +66,8 @@ Options which can be supplied to the ``WSGIScriptAlias`` directive are:
     thus will not run correctly within any additional sub interpreters
     created by Python.
 
-If both ``process-group`` and ``application-group`` options are set, the
-WSGI script file will be pre-loaded when the process it is to run in is
-started, rather than being lazily loaded on the first request.
+If both ``process-group`` and ``application-group`` options are set, and
+the WSGI script file doesn't include substiutions values to be supplied
+from the matched URL pattern, the WSGI script file will be pre-loaded when
+the process it is to run in is started, rather than being lazily loaded on
+the first request.

@@ -44,3 +44,14 @@ New Features
   Although socket rotation still defaults to ``On`` for mod_wsgi, this is
   overridden for ``mod_wsgi-express`` where it is always now set to ``Off``.
   This is okay as is not possible for configuration to change when using it.
+
+* The ``process-group`` and ``application-group`` options can now be used
+  with the ``WSGIScriptAliasMatch`` directive. If substitutions are not used
+  in the value for the WSGI script file target path, then the WSGI script
+  file will be pre-loaded if both ``process-group`` and ``application-group``
+  options are used at the same time.
+
+  Note that the documentation was wrongly updated recently to suggest that
+  these options were already supported by ``WSGIScriptAliaMatch``. This was
+  done in error. Instead of removing the documentation, the ability to use
+  the options with the directive was instead added with this release.
