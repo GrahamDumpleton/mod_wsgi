@@ -330,6 +330,20 @@ else:
     APR_INCLUDES = get_apr_includes().split()
     APU_INCLUDES = get_apu_includes().split()
 
+if not os.path.exists(APR_CONFIG) and not INCLUDEDIR:
+    if sys.platform == 'darwin':
+        # Likely no Xcode application installed or location of SDK in
+        # Xcode has changed with a new release of Xcode application.
+
+        raise RuntimeError('No Apache installation can be found, do you '
+                'have the full Apple Xcode installed. It is not enough to '
+                'have just the xcode command line tools installed.')
+    else:
+        # Set INCLUDEDIR just to avoid having an empty path. Probably
+        # should raise an exception here.
+
+        INCLUDEDIR = '/usr/include'
+
 # Write out apxs_config.py which caches various configuration related to
 # Apache. For the case of using our own Apache build, this needs to
 # calculate values dynamically based on where binaries were installed.

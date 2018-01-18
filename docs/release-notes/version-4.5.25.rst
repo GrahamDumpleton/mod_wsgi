@@ -55,3 +55,8 @@ New Features
   these options were already supported by ``WSGIScriptAliaMatch``. This was
   done in error. Instead of removing the documentation, the ability to use
   the options with the directive was instead added with this release.
+
+* Raise an actual exception when installing using ``pip`` or using the
+  ``setup.py`` file on MacOS and it doesn't appear that Xcode application
+  has been installed. Lack of Xcode application will mean that cannot find
+  the SDK which has the Apache include files.
