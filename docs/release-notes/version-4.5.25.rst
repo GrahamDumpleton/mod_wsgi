@@ -11,3 +11,28 @@ New Features
 
 * When using ``--compress-responses`` option of ``mod_wsgi-express``,
   content of type ``application/json`` will now be compressed.
+
+* Added directive ``WSGISocketRotation`` to allow the rotation of the daemon
+  socket file path on restarts of Apache to be disabled. By default it is
+  ``On`` to preserve existing behaviour but can be set to ``Off`` to have
+  the same socket file path always be used for lifetime of that Apache
+  instance.
+
+  Rotation should only be disabled where the Apache configuration for the
+  mod_wsgi application stays constant over time. The rotation was
+  originally done to prevent a request received and handled by an Apache
+  worker process being proxied through to a daemon process created under a
+  newer configuration. This was done to avoid the possibility of an error,
+  or a security issue, due to the old and new configurations being
+  incompatible or out of sync.
+
+  By setting rotation to ``Off``, when a graceful restart is done and the
+  Apache worker process survives for a period of time due to keep alive
+  connections, those subsequent requests on the keep alive connection will
+  now be proxied to the newer daemon processes rather than being failed as
+  occurred before due to no instances of daemon process existing under the
+  older configuration.
+
+  Although socket rotation still defaults to ``On`` for mod_wsgi, this is
+  overridden for ``mod_wsgi-express`` where it is always now set to ``Off``.
+  This is okay as is not possible for configuration to change when using it.

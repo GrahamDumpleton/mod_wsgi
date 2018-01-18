@@ -7838,6 +7838,28 @@ static const char *wsgi_set_socket_prefix(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+static const char *wsgi_set_socket_rotation(cmd_parms *cmd, void *mconfig,
+                                            const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (strcasecmp(f, "Off") == 0)
+        sconfig->socket_rotation = 0;
+    else if (strcasecmp(f, "On") == 0)
+        sconfig->socket_rotation = 1;
+    else
+        return "WSGISocketRotation must be one of: Off | On";
+
+    return NULL;
+}
+
 static const char wsgi_valid_accept_mutex_string[] =
     "Valid accept mutex mechanisms for this platform are: default"
 #if APR_HAS_FLOCK_SERIALIZE
@@ -10325,9 +10347,18 @@ static int wsgi_start_daemons(apr_pool_t *p)
          * create the socket.
          */
 
-        entry->socket_path = apr_psprintf(p, "%s.%d.%d.%d.sock",
-                                     wsgi_server_config->socket_prefix,
-                                     getpid(), mpm_generation, entry->id);
+        entry->socket_rotation = wsgi_server_config->socket_rotation;
+
+        if (entry->socket_rotation) {
+            entry->socket_path = apr_psprintf(p, "%s.%d.%d.%d.sock",
+                                         wsgi_server_config->socket_prefix,
+                                         getpid(), mpm_generation, entry->id);
+        }
+        else {
+            entry->socket_path = apr_psprintf(p, "%s.%d.u%d.%d.sock",
+                                         wsgi_server_config->socket_prefix,
+                                         getpid(), entry->uid, entry->id);
+        }
 
         apr_hash_set(wsgi_daemon_index, entry->name, APR_HASH_KEY_STRING,
                      entry);
@@ -15798,6 +15829,8 @@ static const command_rec wsgi_commands[] =
         NULL, RSRC_CONF, "Specify details of daemon processes to start."),
     AP_INIT_TAKE1("WSGISocketPrefix", wsgi_set_socket_prefix,
         NULL, RSRC_CONF, "Path prefix for the daemon process sockets."),
+    AP_INIT_TAKE1("WSGISocketRotation", wsgi_set_socket_rotation,
+        NULL, RSRC_CONF, "Enable/Disable rotation of daemon process sockets."),
     AP_INIT_TAKE1("WSGIAcceptMutex", wsgi_set_accept_mutex,
         NULL, RSRC_CONF, "Set accept mutex type for daemon processes."),
 

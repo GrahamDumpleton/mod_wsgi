@@ -67,6 +67,7 @@ typedef struct {
     apr_array_header_t *alias_list;
 
     const char *socket_prefix;
+    int socket_rotation;
     apr_lockmech_e lock_mechanism;
 
     int verbose_debugging;

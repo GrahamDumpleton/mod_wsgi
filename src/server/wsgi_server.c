@@ -82,6 +82,8 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->socket_prefix = ap_server_root_relative(p, object->socket_prefix);
 #endif
 
+    object->socket_rotation = 1;
+
     object->verbose_debugging = 0;
 
     object->python_warnings = NULL;

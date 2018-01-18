@@ -134,6 +134,7 @@ typedef struct {
     rlim_t memory_limit;
     rlim_t virtual_memory_limit;
     const char *socket_path;
+    int socket_rotation;
     int listener_fd;
     const char* mutex_path;
     apr_proc_mutex_t* mutex;
