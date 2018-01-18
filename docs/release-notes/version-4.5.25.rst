@@ -6,6 +6,14 @@ Version 4.5.25 of mod_wsgi can be obtained from:
 
   https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/4.5.25
 
+Features Changed
+----------------
+
+* Now flagging mod_wsgi package when installing using ``setup.py`` as
+  being not ``zip_safe``. This is to workaround an apparent bug with
+  ``setuptools`` when using Python 3.7 alpha versions. Believe this will
+  disable use of egg file in certain cases.
+
 New Features
 ------------
 

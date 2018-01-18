@@ -570,4 +570,5 @@ setup(name = 'mod_wsgi',
     ext_modules = [extension],
     entry_points = { 'console_scripts':
         ['mod_wsgi-express = mod_wsgi.server:main'],},
+    zip_safe = False,
 )
