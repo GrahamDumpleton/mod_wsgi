@@ -324,7 +324,7 @@ WSGIVerboseDebugging '%(verbose_debugging_flag)s'
 <IfDefine !ONE_PROCESS>
 WSGIRestrictEmbedded On
 WSGISocketPrefix %(server_root)s/wsgi
-#WSGISocketRotation Off
+WSGISocketRotation Off
 <IfDefine MOD_WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
    display-name='%(daemon_name)s' \\
