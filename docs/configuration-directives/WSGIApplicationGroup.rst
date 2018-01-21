@@ -17,6 +17,17 @@ to. All WSGI applications within the same application group will execute
 within the context of the same Python sub interpreter of the process
 handling the request.
 
+Setting ``WSGIApplicationGroup`` doesn't control what processes a request
+is handled by, that is what the ``WSGIProcessGroup`` directive does. In
+other words, the ``WSGIProcessGroup`` directive operates distinct from the
+``WSGIApplicationGroup`` directive, with ``WSGIProcessGroup`` dictating
+what named group of processes a request is handled by, and
+``WSGIApplicationGroup`` dictating which named Python sub interpreter
+context (application group) of those processes is used. In each distinct
+process of a named group of processes, there will be a separate sub
+interpreter instance of same name, for handling the requests accepted by
+that process.
+
 The argument to the ``WSGIApplicationGroup`` can be either one of four
 special expanding variables or an explicit name of your own choosing.
 The meaning of the special variables are:
