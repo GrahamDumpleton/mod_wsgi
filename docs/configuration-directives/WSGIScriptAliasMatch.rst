@@ -59,12 +59,12 @@ Options which can be supplied to the ``WSGIScriptAlias`` directive are:
     If the name is set to be ``%{GLOBAL}`` the application group will be
     set to the empty string. Any WSGI applications in the global
     application group will always be executed within the context of the
-    first interpreter created by Python when it is initialised. Forcing
-    a WSGI application to run within the first interpreter can be
-    necessary when a third party C extension module for Python has used
-    the simplified threading API for manipulation of the Python GIL and
-    thus will not run correctly within any additional sub interpreters
-    created by Python.
+    first interpreter created by Python when it is initialised, of the
+    process handling the request. Forcing a WSGI application to run within
+    the first interpreter can be necessary when a third party C extension
+    module for Python has used the simplified threading API for
+    manipulation of the Python GIL and thus will not run correctly within
+    any additional sub interpreters created by Python.
 
 If both ``process-group`` and ``application-group`` options are set, and
 the WSGI script file doesn't include substiutions values to be supplied

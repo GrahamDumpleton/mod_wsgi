@@ -27,11 +27,12 @@ The meaning of the special variables are:
 
     Any WSGI applications in the global application group will always be
     executed within the context of the first interpreter created by Python
-    when it is initialised. Forcing a WSGI application to run within the
-    first interpreter can be necessary when a third party C extension
-    module for Python has used the simplified threading API for
-    manipulation of the Python GIL and thus will not run correctly within
-    any additional sub interpreters created by Python.
+    when it is initialised, of the process handling the request. Forcing a
+    WSGI application to run within the first interpreter can be necessary
+    when a third party C extension module for Python has used the
+    simplified threading API for manipulation of the Python GIL and thus
+    will not run correctly within any additional sub interpreters created
+    by Python.
 
 **%{SERVER}**
 
