@@ -323,7 +323,12 @@ WSGIVerboseDebugging '%(verbose_debugging_flag)s'
 
 <IfDefine !ONE_PROCESS>
 WSGIRestrictEmbedded On
+<IfDefine MOD_WSGI_WITH_SOCKET_PREFIX>
+WSGISocketPrefix %(socket_prefix)s/wsgi
+</IfDefine>
+<IfDefine !MOD_WSGI_WITH_SOCKET_PREFIX>
 WSGISocketPrefix %(server_root)s/wsgi
+</IfDefine>
 WSGISocketRotation Off
 <IfDefine MOD_WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
@@ -2459,6 +2464,11 @@ option_list = (
             metavar='FILE-PATH', help='Override the path to the mime types '
             'file used by the web server.'),
 
+    optparse.make_option('--socket-prefix', metavar='DIRECTORY-PATH',
+            help='Specify an alternate directory name prefix to be used '
+            'for the UNIX domain sockets used by mod_wsgi to communicate '
+            'between the Apache child processes and the daemon processes.'),
+
     optparse.make_option('--add-handler', action='append', nargs=2,
             dest='handler_scripts', metavar='EXTENSION SCRIPT-PATH',
             help='Specify a WSGI application to be used as a special '
@@ -3209,6 +3219,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_TRUSTED_PROXIES')
     if options['python_path']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PYTHON_PATH')
+    if options['socket_prefix']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_SOCKET_PREFIX')
 
     if options['with_cgi']:
         if os.path.exists(os.path.join(options['modules_directory'],

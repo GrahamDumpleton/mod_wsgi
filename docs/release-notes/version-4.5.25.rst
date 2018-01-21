@@ -80,3 +80,8 @@ New Features
 * An explicit error message is now logged when the calculated daemon socket
   path is too long and would be truncated, causing potential failures. A
   shorter directory path should be set with the ``WSGISocketPrefix`` option.
+
+* Added the ``--socket-path`` option to mod_wsgi-express so you can set the
+  daemon socket prefix via the ``WSGISocketPrefix`` directive to an
+  alternate directory if the calculated path would be too long based on
+  where server root is set for mod_wsgi-express.
