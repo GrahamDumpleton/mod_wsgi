@@ -14,6 +14,22 @@ Features Changed
   ``setuptools`` when using Python 3.7 alpha versions. Believe this will
   disable use of egg file in certain cases.
 
+* When the connection to a client is lost when writing back the response,
+  the HTTP response code logged in the Apache access log will be that for
+  the original response from the WSGI application rather than a 500 error.
+
+  This is done to avoid confusion where a 500 error is recorded in the
+  access log, making you think your WSGI application is at fault when it
+  wasn't, but there is no actual error recorded in the error log as to why
+  the 500 error was recorded in the access log.
+  
+  The reason no error is logged in the case of the connection to a client
+  being lost is that doing so would create a lot of noise due to the
+  regularity which it can happen. The only time an error is logged is when
+  a timeout occurs rather than connection being lost. That is done to
+  highlight that connections are hanging due to the effect it can have on
+  available server capacity when connections are kept open for long times.
+
 New Features
 ------------
 
