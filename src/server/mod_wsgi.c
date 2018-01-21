@@ -8384,6 +8384,14 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
     }
 #endif
 
+    if (strlen(process->socket_path) > sizeof(addr.sun_path)) {
+        ap_log_error(APLOG_MARK, APLOG_ALERT, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Length of path for daemon process "
+                     "socket exceeds maxmimum allowed value and will be "
+                     "truncated, resulting in likely failure to bind the "
+                     "socket, or other later related failure.", getpid());
+    }
+
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     apr_cpystrn(addr.sun_path, process->socket_path, sizeof(addr.sun_path));
@@ -10655,8 +10663,9 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
                                  "mod_wsgi (pid=%d): Unable to connect to "
                                  "WSGI daemon process '%s' on '%s' after "
                                  "multiple attempts as listener backlog "
-                                 "limit was exceeded.", getpid(),
-                                 daemon->name, daemon->socket_path);
+                                 "limit was exceeded or the socket does "
+                                 "not exist.", getpid(), daemon->name,
+                                 daemon->socket_path);
 
                     apr_socket_close(daemon->socket);
 

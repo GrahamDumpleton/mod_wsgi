@@ -76,3 +76,7 @@ New Features
   ``setup.py`` file on MacOS and it doesn't appear that Xcode application
   has been installed. Lack of Xcode application will mean that cannot find
   the SDK which has the Apache include files.
+
+* An explicit error message is now logged when the calculated daemon socket
+  path is too long and would be truncated, causing potential failures. A
+  shorter directory path should be set with the ``WSGISocketPrefix`` option.
