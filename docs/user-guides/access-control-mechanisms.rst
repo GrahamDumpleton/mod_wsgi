@@ -217,7 +217,7 @@ configuration would be used::
     AuthBasicProvider dbm
     AuthDBMUserFile /usr/local/wsgi/accounts.dbm
     WSGIAuthGroupScript /usr/local/wsgi/scripts/auth.wsgi
-    Require group secret-agents
+    Require wsgi-group secret-agents
     Require valid-user
 
 The 'auth.wsgi' script would then need to contain a 'groups_for_user()'
