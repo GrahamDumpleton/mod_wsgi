@@ -1,3 +1,7 @@
+def allow_access(environ, host):
+    print('HOST', host, environ['REQUEST_URI'])
+    return True
+
 def check_password(environ, user, password):
     print('USER', user, environ['REQUEST_URI'])
     if user == 'spy':
