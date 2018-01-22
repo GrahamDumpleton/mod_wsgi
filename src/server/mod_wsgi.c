@@ -6667,6 +6667,11 @@ static int wsgi_execute_dispatch(request_rec *r)
     apr_thread_mutex_unlock(wsgi_module_lock);
 #endif
 
+    /* Log any details of exceptions if import failed. */
+
+    if (PyErr_Occurred())
+        wsgi_log_python_error(r, NULL, script, 0);
+
     /* Assume everything will be okay for now. */
 
     status = OK;
@@ -6760,9 +6765,12 @@ static int wsgi_execute_dispatch(request_rec *r)
                     }
                     else
                         status = HTTP_INTERNAL_SERVER_ERROR;
+
+                    /* Log any details of exceptions if execution failed. */
+
+                    if (PyErr_Occurred())
+                        wsgi_log_python_error(r, NULL, script, 0);
                 }
-                else
-                    Py_DECREF(object);
 
                 object = NULL;
             }
@@ -6840,9 +6848,12 @@ static int wsgi_execute_dispatch(request_rec *r)
                     }
                     else
                         status = HTTP_INTERNAL_SERVER_ERROR;
+
+                    /* Log any details of exceptions if execution failed. */
+
+                    if (PyErr_Occurred())
+                        wsgi_log_python_error(r, NULL, script, 0);
                 }
-                else
-                    Py_DECREF(object);
 
                 object = NULL;
             }
@@ -6919,9 +6930,12 @@ static int wsgi_execute_dispatch(request_rec *r)
                     }
                     else
                         status = HTTP_INTERNAL_SERVER_ERROR;
+
+                    /* Log any details of exceptions if execution failed. */
+
+                    if (PyErr_Occurred())
+                        wsgi_log_python_error(r, NULL, script, 0);
                 }
-                else
-                    Py_DECREF(object);
 
                 object = NULL;
             }
@@ -14532,6 +14546,11 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
     apr_thread_mutex_unlock(wsgi_module_lock);
 #endif
 
+    /* Log any details of exceptions if import failed. */
+
+    if (PyErr_Occurred())
+        wsgi_log_python_error(r, NULL, script, 0);
+
     /* Assume an internal server error unless everything okay. */
 
     status = AUTH_GENERAL_ERROR;
@@ -14615,6 +14634,11 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
                 adapter->r = NULL;
 
+                /* Log any details of exceptions if execution failed. */
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
+
                 /* Close the log object so data is flushed. */
 
                 method = PyObject_GetAttrString(adapter->log, "close");
@@ -14626,19 +14650,22 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                 }
                 else {
                     args = PyTuple_New(0);
-                    object = PyEval_CallObject(method, args);
+                    result = PyEval_CallObject(method, args);
+                    Py_XDECREF(result);
                     Py_DECREF(args);
                 }
 
-                Py_XDECREF(object);
+                /* Log any details of exceptions if execution failed. */
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
+
                 Py_XDECREF(method);
 
                 /* No longer need adapter object. */
 
                 Py_DECREF((PyObject *)adapter);
             }
-            else
-                Py_DECREF(object);
         }
         else {
             Py_BEGIN_ALLOW_THREADS
@@ -14648,11 +14675,6 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                           "'Basic' auth provider.", getpid(), script);
             Py_END_ALLOW_THREADS
         }
-
-        /* Log any details of exceptions if execution failed. */
-
-        if (PyErr_Occurred())
-            wsgi_log_python_error(r, NULL, script, 0);
     }
 
     /* Cleanup and release interpreter, */
@@ -14768,6 +14790,11 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
     apr_thread_mutex_unlock(wsgi_module_lock);
 #endif
 
+    /* Log any details of exceptions if import failed. */
+
+    if (PyErr_Occurred())
+        wsgi_log_python_error(r, NULL, script, 0);
+
     /* Assume an internal server error unless everything okay. */
 
     status = AUTH_GENERAL_ERROR;
@@ -14852,6 +14879,11 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
                 adapter->r = NULL;
 
+                /* Log any details of exceptions if execution failed. */
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
+
                 /* Close the log object so data is flushed. */
 
                 method = PyObject_GetAttrString(adapter->log, "close");
@@ -14863,19 +14895,22 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                 }
                 else {
                     args = PyTuple_New(0);
-                    object = PyEval_CallObject(method, args);
+                    result = PyEval_CallObject(method, args);
+                    Py_XDECREF(result);
                     Py_DECREF(args);
                 }
 
-                Py_XDECREF(object);
+                /* Log any details of exceptions if execution failed. */
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
+
                 Py_XDECREF(method);
 
                 /* No longer need adapter object. */
 
                 Py_DECREF((PyObject *)adapter);
             }
-            else
-                Py_DECREF(object);
         }
         else {
             Py_BEGIN_ALLOW_THREADS
@@ -14885,11 +14920,6 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                           "'Digest' auth provider.", getpid(), script);
             Py_END_ALLOW_THREADS
         }
-
-        /* Log any details of exceptions if execution failed. */
-
-        if (PyErr_Occurred())
-            wsgi_log_python_error(r, NULL, script, 0);
     }
 
     /* Cleanup and release interpreter, */
@@ -15010,6 +15040,11 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
     apr_thread_mutex_unlock(wsgi_module_lock);
 #endif
 
+    /* Log any details of exceptions if import failed. */
+
+    if (PyErr_Occurred())
+        wsgi_log_python_error(r, NULL, script, 0);
+
     /* Assume an internal server error unless everything okay. */
 
     status = HTTP_INTERNAL_SERVER_ERROR;
@@ -15026,7 +15061,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
         if (object) {
             PyObject *vars = NULL;
             PyObject *args = NULL;
-            PyObject *sequence = NULL;
+            PyObject *result = NULL;
             PyObject *method = NULL;
 
             AuthObject *adapter = NULL;
@@ -15038,15 +15073,15 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Os)", vars, r->user);
-                sequence = PyEval_CallObject(object, args);
+                result = PyEval_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
 
-                if (sequence) {
+                if (result) {
                     PyObject *iterator;
 
-                    iterator = PyObject_GetIter(sequence);
+                    iterator = PyObject_GetIter(result);
 
                     if (iterator) {
                         PyObject *item;
@@ -15122,7 +15157,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                         Py_END_ALLOW_THREADS
                     }
 
-                    Py_DECREF(sequence);
+                    Py_DECREF(result);
                 }
 
                 /*
@@ -15135,6 +15170,11 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
                 adapter->r = NULL;
 
+                /* Log any details of exceptions if execution failed. */
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
+
                 /* Close the log object so data is flushed. */
 
                 method = PyObject_GetAttrString(adapter->log, "close");
@@ -15146,19 +15186,22 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                 }
                 else {
                     args = PyTuple_New(0);
-                    object = PyEval_CallObject(method, args);
+                    result = PyEval_CallObject(method, args);
+                    Py_XDECREF(result);
                     Py_DECREF(args);
                 }
 
-                Py_XDECREF(object);
+                /* Log any details of exceptions if execution failed. */
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
+
                 Py_XDECREF(method);
 
                 /* No longer need adapter object. */
 
                 Py_DECREF((PyObject *)adapter);
             }
-            else
-                Py_DECREF(object);
         }
         else {
             Py_BEGIN_ALLOW_THREADS
@@ -15168,11 +15211,6 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                           "group provider.", getpid(), script);
             Py_END_ALLOW_THREADS
         }
-
-        /* Log any details of exceptions if execution failed. */
-
-        if (PyErr_Occurred())
-            wsgi_log_python_error(r, NULL, script, 0);
     }
 
     /* Cleanup and release interpreter, */
@@ -15199,7 +15237,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
     const char *script;
     const char *group;
 
-    int result = 0;
+    int allow = 0;
 
     if (!config->access_script) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
@@ -15287,9 +15325,14 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
     apr_thread_mutex_unlock(wsgi_module_lock);
 #endif
 
+    /* Log any details of exceptions if import failed. */
+
+    if (PyErr_Occurred())
+        wsgi_log_python_error(r, NULL, script, 0);
+
     /* Assume not allowed unless everything okay. */
 
-    result = 0;
+    allow = 0;
 
     /* Determine if script exists and execute it. */
 
@@ -15303,7 +15346,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
         if (object) {
             PyObject *vars = NULL;
             PyObject *args = NULL;
-            PyObject *flag = NULL;
+            PyObject *result = NULL;
             PyObject *method = NULL;
 
             AuthObject *adapter = NULL;
@@ -15315,18 +15358,18 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Oz)", vars, host);
-                flag = PyEval_CallObject(object, args);
+                result = PyEval_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
 
-                if (flag) {
-                    if (flag == Py_None) {
-                        result = -1;
+                if (result) {
+                    if (result == Py_None) {
+                        allow = -1;
                     }
-                    else if (PyBool_Check(flag)) {
-                        if (flag == Py_True)
-                            result = 1;
+                    else if (PyBool_Check(result)) {
+                        if (result == Py_True)
+                            allow = 1;
                     }
                     else {
                         Py_BEGIN_ALLOW_THREADS
@@ -15338,7 +15381,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
                         Py_END_ALLOW_THREADS
                     }
 
-                    Py_DECREF(flag);
+                    Py_DECREF(result);
                 }
 
                 /*
@@ -15351,6 +15394,11 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
                 adapter->r = NULL;
 
+                /* Log any details of exceptions if execution failed. */
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
+
                 /* Close the log object so data is flushed. */
 
                 method = PyObject_GetAttrString(adapter->log, "close");
@@ -15362,19 +15410,22 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
                 }
                 else {
                     args = PyTuple_New(0);
-                    object = PyEval_CallObject(method, args);
+                    result = PyEval_CallObject(method, args);
+                    Py_XDECREF(result);
                     Py_DECREF(args);
                 }
 
-                Py_XDECREF(object);
+                /* Log any details of exceptions if execution failed. */
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
+
                 Py_XDECREF(method);
 
                 /* No longer need adapter object. */
 
                 Py_DECREF((PyObject *)adapter);
             }
-            else
-                Py_DECREF(object);
         }
         else {
             Py_BEGIN_ALLOW_THREADS
@@ -15384,11 +15435,6 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
                           "host validator.", getpid(), script);
             Py_END_ALLOW_THREADS
         }
-
-        /* Log any details of exceptions if execution failed. */
-
-        if (PyErr_Occurred())
-            wsgi_log_python_error(r, NULL, script, 0);
     }
 
     /* Cleanup and release interpreter, */
@@ -15397,7 +15443,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
     wsgi_release_interpreter(interp);
 
-    return result;
+    return allow;
 }
 
 static int wsgi_hook_access_checker(request_rec *r)
@@ -15543,6 +15589,11 @@ static int wsgi_hook_check_user_id(request_rec *r)
     apr_thread_mutex_unlock(wsgi_module_lock);
 #endif
 
+    /* Log any details of exceptions if import failed. */
+
+    if (PyErr_Occurred())
+        wsgi_log_python_error(r, NULL, script, 0);
+
     /* Assume an internal server error unless everything okay. */
 
     status = HTTP_INTERNAL_SERVER_ERROR;
@@ -15624,6 +15675,11 @@ static int wsgi_hook_check_user_id(request_rec *r)
 
                 adapter->r = NULL;
 
+                /* Log any details of exceptions if execution failed. */
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
+
                 /* Close the log object so data is flushed. */
 
                 method = PyObject_GetAttrString(adapter->log, "close");
@@ -15635,19 +15691,22 @@ static int wsgi_hook_check_user_id(request_rec *r)
                 }
                 else {
                     args = PyTuple_New(0);
-                    object = PyEval_CallObject(method, args);
+                    result = PyEval_CallObject(method, args);
+                    Py_XDECREF(result);
                     Py_DECREF(args);
                 }
 
-                Py_XDECREF(object);
+                /* Log any details of exceptions if execution failed. */
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
+
                 Py_XDECREF(method);
 
                 /* No longer need adapter object. */
 
                 Py_DECREF((PyObject *)adapter);
             }
-            else
-                Py_DECREF(object);
         }
         else {
             Py_BEGIN_ALLOW_THREADS
@@ -15657,11 +15716,6 @@ static int wsgi_hook_check_user_id(request_rec *r)
                           "'Basic' auth provider.", getpid(), script);
             Py_END_ALLOW_THREADS
         }
-
-        /* Log any details of exceptions if execution failed. */
-
-        if (PyErr_Occurred())
-            wsgi_log_python_error(r, NULL, script, 0);
     }
 
     /* Cleanup and release interpreter, */

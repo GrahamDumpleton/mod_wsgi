@@ -6,6 +6,22 @@ Version 4.5.25 of mod_wsgi can be obtained from:
 
   https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/4.5.25
 
+Bugs Fixed
+----------
+
+* Management of reference counting on Python objects in the access,
+  authentication, authorization and dispatch hooks wasn't correct for
+  certain error cases. The error cases shouldn't have ever occurred, but
+  still fixed.
+
+* Point at which details of Python exceptions occuring during access,
+  authentication, authorization and dispatch hooks was incorrect and not
+  done, with exception cleared, before trying to close per callback error
+  log. That the exception hadn't been cleared would result in the call to
+  close the per callback error log to itself fail as it believed an
+  exception occurred in that call when it hadn't. The result was confusing
+  error messages in the Apache error log.
+
 Features Changed
 ----------------
 
