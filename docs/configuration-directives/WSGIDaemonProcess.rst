@@ -598,6 +598,37 @@ host, the following could be used::
   ...
   </VirtualHost>
 
+For historical reasons and the inability to change existing behaviour when
+adding or changing features, many of the options to ``WSGIDaemonProcess``,
+especially those related to timeouts are not enabled by default. It is
+strongly recommended you explicitly set these options yourself as this will
+give you a system which is better able to recover from backlogging due to
+overloading when you have too many long running requests or hanging
+requests. As a starting point you can see what ``mod_wsgi-express`` uses as
+defaults, adjusting them as necessary to suit your specific application
+after you research what each option does. For example, consider starting
+out with:
+
+* ``display-name='%{GROUP}'``
+
+* ``lang='en_US.UTF-8'``
+* ``locale='en_US.UTF-8'``
+
+* ``threads=5``
+
+* ``queue-timeout=45``
+* ``socket-timeout=60``
+* ``connect-timeout=15``
+* ``request-timeout=60``
+* ``inactivity-timeout=0``
+* ``startup-timeout=15``
+* ``deadlock-timeout=60``
+* ``graceful-timeout=15``
+* ``eviction-timeout=0``
+* ``restart-interval=0``
+* ``shutdown-timeout=5``
+* ``maximum-requests=0``
+
 Note that the ``WSGIDaemonProcess`` directive and corresponding features are
 not available on Windows.
 
