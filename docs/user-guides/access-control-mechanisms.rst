@@ -95,13 +95,16 @@ is 'get_realm_hash()'. The result of the function must be 'None' if the
 user doesn't exist, or a hash string encoding the user name, authentication
 realm and password::
 
-    import md5
+    import hashlib
 
     def get_realm_hash(environ, user, realm):
         if user == 'spy':
-            value = md5.new()
+            value = hashlib.md5()
             # user:realm:password
-            value.update('%s:%s:%s' % (user, realm, 'secret'))
+            input = '%s:%s:%s' % (user, realm, 'secret')
+            if not isinstance(input, bytes):
+                input = input.encode('UTF-8')
+            value.update(input)
             hash = value.hexdigest()
             return hash
         return None

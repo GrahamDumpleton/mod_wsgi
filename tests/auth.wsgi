@@ -10,14 +10,17 @@ def check_password(environ, user, password):
         return False
     return None
 
-import md5
+import hashlib
 
 def get_realm_hash(environ, user, realm):
     print('USER', user, environ['REQUEST_URI'])
     if user == 'spy':
-        value = md5.new()
+        value = hashlib.md5()
         # user:realm:password
-        value.update('%s:%s:%s' % (user, realm, 'secret'))
+        input = '%s:%s:%s' % (user, realm, 'secret')
+        if not isinstance(input, bytes):
+            input = input.encode('UTF-8')
+        value.update(input)
         hash = value.hexdigest()
         return hash
     return None
