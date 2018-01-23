@@ -22,6 +22,16 @@ Bugs Fixed
   exception occurred in that call when it hadn't. The result was confusing
   error messages in the Apache error log.
 
+* The deprecated backwards compatability mode enabled by setting the
+  directive ``WSGILazyInitialization Off``, to have Python initialised
+  in the Apache parent process before forking, was resulting in the Apache
+  parent process crashing on Apache shutdown or restart. This resulted in
+  Apache child processes and daemon process being orphaned. Issue has been
+  fixed, but you should never use this mode and it will be removed in a
+  future update. The reason it shouldn't be used is due to memory leaks
+  in Python interpreter re-initialisation in same process and also the risks
+  due to Python code potentially being run as root.
+
 Features Changed
 ----------------
 

@@ -1994,7 +1994,8 @@ apr_status_t wsgi_python_term(void)
      * condition.
      */
 
-    apr_thread_mutex_lock(wsgi_shutdown_lock);
+    if (wsgi_daemon_process)
+        apr_thread_mutex_lock(wsgi_shutdown_lock);
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     wsgi_daemon_shutdown++;
@@ -2002,7 +2003,8 @@ apr_status_t wsgi_python_term(void)
 
     Py_Finalize();
 
-    apr_thread_mutex_unlock(wsgi_shutdown_lock);
+    if (wsgi_daemon_process)
+        apr_thread_mutex_unlock(wsgi_shutdown_lock);
 
     wsgi_python_initialized = 0;
 
