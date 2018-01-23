@@ -1,6 +1,8 @@
 import os
 import sys
 import inspect
+import signal
+import subprocess
 
 from django.core.management.base import BaseCommand
 
@@ -133,4 +135,28 @@ class Command(BaseCommand):
 
         executable = os.path.join(options['server_root'], 'apachectl')
         name = executable.ljust(len(options['process_name']))
-        os.execl(executable, name, 'start', '-DFOREGROUND')
+
+        if options['isatty']:
+            process = None
+
+            def handler(signum, frame):
+                if process is None:
+                    sys.exit(1)
+
+                else:
+                    if signum not in [signal.SIGWINCH]:
+                        os.kill(process.pid, signum)
+
+            signal.signal(signal.SIGINT, handler)
+            signal.signal(signal.SIGTERM, handler)
+            signal.signal(signal.SIGHUP, handler)
+            signal.signal(signal.SIGUSR1, handler)
+            signal.signal(signal.SIGWINCH, handler)
+
+            process = subprocess.Popen([executable, 'start', '-DFOREGROUND'],
+                    preexec_fn=os.setpgrp)
+
+            process.wait()
+
+        else:
+            os.execl(executable, name, 'start', '-DFOREGROUND')

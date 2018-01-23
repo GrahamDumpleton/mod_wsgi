@@ -1920,7 +1920,7 @@ option_list = (
 
     optparse.make_option('--http2', action='store_true', default=False,
             help='Flag indicating whether HTTP/2 should be enabled.'
-	    'Requires the mod_http2 module to be available.'),
+            'Requires the mod_http2 module to be available.'),
 
     optparse.make_option('--https-port', type='int', metavar='NUMBER',
             help='The specific port to bind to and on which secure '
@@ -1971,7 +1971,7 @@ option_list = (
 
     optparse.make_option('--https-only', action='store_true',
             default=False, help='Flag indicating whether any requests '
-	    'made using a HTTP request over the non secure connection '
+            'made using a HTTP request over the non secure connection '
             'should be redirected automatically to use a HTTPS request '
             'over the secure connection.'),
 
@@ -2591,6 +2591,17 @@ option_list = (
             'the generation of the configuration with Apache then later '
             'being started separately using the generated \'apachectl\' '
             'script.'),
+
+    optparse.make_option('--isatty', action='store_true', default=False,
+            help='Flag indicating whether should assume being run in an '
+            'interactive terminal session. In this case Apache will not '
+            'replace this wrapper script, but will be run as a sub process.'
+            'Signals such as SIGINT, SIGTERM, SIGHUP and SIGUSR1 will be '
+            'forwarded onto Apache, but SIGWINCH will be blocked so that '
+            'resizing of a terminal session window will not cause Apache '
+            'to shutdown. This is a separate option at this time rather '
+            'than being determined automatically while the reliability of '
+            'intercepting and forwarding signals is verified.'),
 )
 
 def cmd_setup_server(params):
@@ -3349,7 +3360,31 @@ def cmd_start_server(params):
         return
 
     executable = os.path.join(config['server_root'], 'apachectl')
-    os.execl(executable, executable, 'start', '-DFOREGROUND')
+
+    if config['isatty']:
+        process = None
+
+        def handler(signum, frame):
+            if process is None:
+                sys.exit(1)
+
+            else:
+                if signum not in [signal.SIGWINCH]:
+                    os.kill(process.pid, signum)
+
+        signal.signal(signal.SIGINT, handler)
+        signal.signal(signal.SIGTERM, handler)
+        signal.signal(signal.SIGHUP, handler)
+        signal.signal(signal.SIGUSR1, handler)
+        signal.signal(signal.SIGWINCH, handler)
+
+        process = subprocess.Popen([executable, 'start', '-DFOREGROUND'],
+                preexec_fn=os.setpgrp)
+
+        process.wait()
+
+    else:
+        os.execl(executable, executable, 'start', '-DFOREGROUND')
 
 def cmd_module_config(params):
     formatter = optparse.IndentedHelpFormatter()

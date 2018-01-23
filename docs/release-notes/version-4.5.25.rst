@@ -110,7 +110,22 @@ New Features
   path is too long and would be truncated, causing potential failures. A
   shorter directory path should be set with the ``WSGISocketPrefix`` option.
 
-* Added the ``--socket-path`` option to mod_wsgi-express so you can set the
-  daemon socket prefix via the ``WSGISocketPrefix`` directive to an
+* Added the ``--socket-path`` option to ``mod_wsgi-express`` so you can set
+  the daemon socket prefix via the ``WSGISocketPrefix`` directive to an
   alternate directory if the calculated path would be too long based on
-  where server root is set for mod_wsgi-express.
+  where server root is set for ``mod_wsgi-express``.
+
+* Added the ``--isatty`` option to ``mod_wsgi-express`` to indicate that
+  running the command in an interactive terminal session. In this case
+  Apache will be run as a sub process rather than it replacing the current
+  script. Signals such as SIGINT, SIGTERM, SIGHUP and SIGUSR1 will be
+  intercepted and forwarded onto Apache, but the signal SIGWINCH will be
+  ignored. This will avoid the problems of Apache shutting down when the
+  terminal session Apache is run in is resized.
+  
+  Technically this could be done automatically by working out if the
+  attached terminal is a tty, but is being done using an option at this
+  point so the reliability of the mechanism used to run Apache as a sub
+  process and the handling of the signals, can be verified. If everything
+  checks out, it is likely that this will become the default behaviour
+  when the attached terminal is a tty.
