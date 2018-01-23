@@ -46,6 +46,19 @@ Features Changed
   highlight that connections are hanging due to the effect it can have on
   available server capacity when connections are kept open for long times.
 
+* When using the Django integration for ``mod_wsgi-express``, if the
+  ``whitenoise.middleware.WhiteNoiseMiddleware`` middleware is listed in
+  ``MIDDLEWARE`` or ``MIDDLEWARE_CLASSES`` of the Django settings file,
+  Apache will now not be used to host Django's static files. This is being
+  done to allow WhiteNoise middleware to be used in conjunction with front
+  end content delivery networks or other caching systems. If you aren't
+  using such a front end and do want Apache to still host the static files,
+  either don't list the WhiteNoise middleware in the list of middleware
+  classes when using ``mod_wsgi-express``, or pass the ``--url-alias``
+  option explictly, along with the URL mount point for static files and the
+  directory where they have been placed by the ``collectstatic`` management
+  command of Django.
+
 New Features
 ------------
 
