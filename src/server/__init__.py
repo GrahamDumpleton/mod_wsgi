@@ -2379,7 +2379,8 @@ option_list = (
     optparse.make_option('--server-root', metavar='DIRECTORY-PATH',
             help='Specify an alternate directory for where the generated '
             'web server configuration, startup files and logs will be '
-            'stored. Defaults to a sub directory of /tmp.'),
+            'stored. Defaults to the sub directory specified by the '
+            'TMPDIR environment variable, or /tmp if not specified.'),
 
     optparse.make_option('--server-mpm', action='append',
             dest='server_mpm_variables', metavar='NAME', help='Specify '
@@ -2648,8 +2649,11 @@ def _cmd_setup_server(command, args, options):
             options['port'], os.getuid())
 
     if not options['server_root']:
-        options['server_root'] = '/tmp/mod_wsgi-%s:%s:%s' % (options['host'],
-                options['port'], os.getuid())
+        tmpdir = os.environ.get('TMPDIR')
+        tmpdir = tmpdir or '/tmp'
+        tmpdir = tmpdir.rstrip('/')
+        options['server_root'] = '%s/mod_wsgi-%s:%s:%s' % (tmpdir,
+                options['host'], options['port'], os.getuid())
 
     try:
         os.mkdir(options['server_root'])

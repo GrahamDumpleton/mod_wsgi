@@ -59,6 +59,18 @@ Features Changed
   directory where they have been placed by the ``collectstatic`` management
   command of Django.
 
+* When running ``mod_wsgi-express`` if the ``TMPDIR`` environment variable
+  is specified, it will be used as the directory under which the default
+  server root directory for generated files will be created. If ``TMPDIR``
+  is not specified, then ``/tmp`` will be used.
+  
+  This allows ``TMPDIR`` to be used to control the directory used as a
+  default. On MacOS where ``TMPDIR`` is set to a unique directory for the
+  login session under ``/var/tmp``, this also avoids a problem where a
+  system cron job in MacOS will delete files under ``/tmp`` which are older
+  than a certain date, which can cause a long running instance of
+  ``mod_wsgi-express`` to start failing.
+
 New Features
 ------------
 
