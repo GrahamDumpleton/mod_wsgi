@@ -159,6 +159,24 @@ PyTypeObject SignalIntercept_Type = {
     0,                      /*tp_is_gc*/
 };
 
+/* ------------------------------------------------------------------------- */
+
+static PyObject *wsgi_system_exit(PyObject *self, PyObject *args)
+{
+    PyErr_SetObject(PyExc_SystemExit, 0);
+
+    return NULL;
+}
+
+/* ------------------------------------------------------------------------- */
+
+static PyMethodDef wsgi_system_exit_method[] = {
+    { "system_exit",        (PyCFunction)wsgi_system_exit, METH_VARARGS, 0 },
+    { NULL },
+};
+
+/* ------------------------------------------------------------------------- */
+
 /* Wrapper around Python interpreter instances. */
 
 const char *wsgi_python_path = NULL;
@@ -562,11 +580,64 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     /*
      * Install intercept for signal handler registration
-     * if appropriate.
+     * if appropriate. Don't do this though if number of
+     * threads for daemon process was set as 0, indicating
+     * a potential daemon process which is running a
+     * service script.
      */
 
-    if (wsgi_server_config->restrict_signal != 0) {
+    /*
+     * If running in daemon mode and there are no threads
+     * specified, must be running with service script, in
+     * which case we register default signal handler for
+     * SIGINT which throws a SystemExit exception. If
+     * instead restricting signals, replace function for
+     * registering signal handlers so they are ignored.
+     */
 
+    if (wsgi_daemon_process && wsgi_daemon_process->group->threads == 0) {
+        module = PyImport_ImportModule("signal");
+
+        if (module) {
+            PyObject *dict = NULL;
+            PyObject *func = NULL;
+
+            dict = PyModule_GetDict(module);
+            func = PyDict_GetItemString(dict, "signal");
+
+            if (func) {
+                PyObject *res = NULL;
+                PyObject *args = NULL;
+                PyObject *callback = NULL;
+
+                Py_INCREF(func);
+
+                callback = PyCFunction_New(&wsgi_system_exit_method[0], NULL);
+
+                args = Py_BuildValue("(iO)", SIGTERM, callback);
+                res = PyEval_CallObject(func, args);
+
+                if (!res) {
+                    Py_BEGIN_ALLOW_THREADS
+                    ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+                                 "mod_wsgi (pid=%d): Call to "
+                                 "'signal.signal()' to register exit "
+                                 "function failed, ignoring.", getpid());
+                    Py_END_ALLOW_THREADS
+                }
+
+                Py_XDECREF(res);
+                Py_XDECREF(args);
+
+                Py_XDECREF(callback);
+
+                Py_DECREF(func);
+            }
+        }
+
+        Py_XDECREF(module);
+    }
+    else if (wsgi_server_config->restrict_signal != 0) {
         module = PyImport_ImportModule("signal");
 
         if (module) {

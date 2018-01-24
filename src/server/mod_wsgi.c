@@ -3575,7 +3575,8 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
                                   const char *name, int exists,
                                   const char* filename,
                                   const char *process_group,
-                                  const char *application_group)
+                                  const char *application_group,
+                                  int ignore_system_exit)
 {
     FILE *fp = NULL;
     PyObject *m = NULL;
@@ -3607,13 +3608,13 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         if (r) {
             ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
                           "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Loading WSGI script '%s'.", getpid(),
+                          "Loading Python script file '%s'.", getpid(),
                           process_group, application_group, filename);
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Loading WSGI script '%s'.", getpid(),
+                         "Loading Python script file '%s'.", getpid(),
                          process_group, application_group, filename);
         }
         Py_END_ALLOW_THREADS
@@ -3674,13 +3675,13 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         if (r) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                           "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Failed to parse WSGI script file '%s'.", getpid(),
+                          "Failed to parse Python script file '%s'.", getpid(),
                           process_group, application_group, filename);
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Failed to parse WSGI script file '%s'.", getpid(),
+                         "Failed to parse Python script file '%s'.", getpid(),
                          process_group, application_group, filename);
         }
         Py_END_ALLOW_THREADS
@@ -3714,20 +3715,40 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         PyModule_AddObject(m, "__mtime__", object);
     }
     else {
-        Py_BEGIN_ALLOW_THREADS
-        if (r) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d): Target WSGI script '%s' cannot "
-                          "be loaded as Python module.", getpid(), filename);
+        if (PyErr_ExceptionMatches(PyExc_SystemExit)) {
+            if (!ignore_system_exit) {
+                Py_BEGIN_ALLOW_THREADS
+                if (r) {
+                    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                                  "mod_wsgi (pid=%d): SystemExit exception "
+                                  "raised when doing exec of Python script "
+                                  "file '%s'.", getpid(), filename);
+                }
+                else {
+                    ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+                                 "mod_wsgi (pid=%d): SystemExit exception "
+                                 "raised when doing exec of Python script "
+                                 "file '%s'.", getpid(), filename);
+                }
+                Py_END_ALLOW_THREADS
+            }
         }
         else {
-            ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Target WSGI script '%s' cannot "
-                         "be loaded as Python module.", getpid(), filename);
-        }
-        Py_END_ALLOW_THREADS
+            Py_BEGIN_ALLOW_THREADS
+            if (r) {
+                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                              "mod_wsgi (pid=%d): Failed to exec Python script "
+                              "file '%s'.", getpid(), filename);
+            }
+            else {
+                ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+                             "mod_wsgi (pid=%d): Failed to exec Python script "
+                             "file '%s'.", getpid(), filename);
+            }
+            Py_END_ALLOW_THREADS
 
-        wsgi_log_python_error(r, NULL, filename, 0);
+            wsgi_log_python_error(r, NULL, filename, 0);
+        }
     }
 
     return m;
@@ -4074,7 +4095,7 @@ static int wsgi_execute_script(request_rec *r)
     if (!module) {
         module = wsgi_load_source(r->pool, r, name, exists, script,
                                   config->process_group,
-                                  config->application_group);
+                                  config->application_group, 0);
     }
 
     /* Safe now to release the module lock. */
@@ -4276,6 +4297,8 @@ static void wsgi_python_child_init(apr_pool_t *p)
     PyGILState_STATE state;
     PyObject *object = NULL;
 
+    int ignore_system_exit = 0;
+
     /* Working with Python, so must acquire GIL. */
 
     state = PyGILState_Ensure();
@@ -4352,6 +4375,9 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
     /* Loop through import scripts for this process and load them. */
 
+    if (wsgi_daemon_process && wsgi_daemon_process->group->threads == 0)
+        ignore_system_exit = 1;
+
     if (wsgi_import_list) {
         apr_array_header_t *scripts = NULL;
 
@@ -4365,6 +4391,14 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
         for (i = 0; i < scripts->nelts; ++i) {
             entry = &entries[i];
+
+            /*
+             * Stop loading scripts if this is a daemon process and
+             * we have already been flagged to be shutdown.
+             */
+
+            if (wsgi_daemon_shutdown)
+                break;
 
             if (!strcmp(wsgi_daemon_group, entry->process_group)) {
                 InterpreterObject *interp = NULL;
@@ -4436,7 +4470,8 @@ static void wsgi_python_child_init(apr_pool_t *p)
                     module = wsgi_load_source(p, NULL, name, exists,
                                               entry->handler_script,
                                               entry->process_group,
-                                              entry->application_group);
+                                              entry->application_group,
+                                              ignore_system_exit);
 
                     if (PyErr_Occurred()) 
                         PyErr_Clear(); 
@@ -6658,7 +6693,8 @@ static int wsgi_execute_dispatch(request_rec *r)
     }
 
     if (!module) {
-        module = wsgi_load_source(r->pool, r, name, exists, script, "", group);
+        module = wsgi_load_source(r->pool, r, name, exists, script,
+                                  "", group, 0);
     }
 
     /* Safe now to release the module lock. */
@@ -7421,7 +7457,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                 return "Invalid thread count for WSGI daemon process.";
 
             threads = atoi(value);
-            if (threads < 1 || threads >= WSGI_STACK_LAST-1)
+            if (threads < 0 || threads >= WSGI_STACK_LAST-1)
                 return "Invalid thread count for WSGI daemon process.";
         }
         else if (!strcmp(option, "umask")) {
@@ -10296,9 +10332,14 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         apr_os_sock_put(&daemon->listener, &daemon->group->listener_fd, p);
 
-        /* Run the main routine for the daemon process. */
+        /*
+         * Run the main routine for the daemon process if there
+         * is a non zero number of threads. When number of threads
+         * is zero we actually go on and shutdown immediately.
+         */
 
-        wsgi_daemon_main(p, daemon);
+        if (daemon->group->threads != 0)
+            wsgi_daemon_main(p, daemon);
 
         /*
          * Destroy the pool for the daemon process. This will
@@ -14537,7 +14578,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
     }
 
     if (!module) {
-        module = wsgi_load_source(r->pool, r, name, exists, script, "", group);
+        module = wsgi_load_source(r->pool, r, name, exists, script,
+                                  "", group, 0);
     }
 
     /* Safe now to release the module lock. */
@@ -14781,7 +14823,8 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
     }
 
     if (!module) {
-        module = wsgi_load_source(r->pool, r, name, exists, script, "", group);
+        module = wsgi_load_source(r->pool, r, name, exists, script,
+                                  "", group, 0);
     }
 
     /* Safe now to release the module lock. */
@@ -15031,7 +15074,8 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
     }
 
     if (!module) {
-        module = wsgi_load_source(r->pool, r, name, exists, script, "", group);
+        module = wsgi_load_source(r->pool, r, name, exists, script,
+                                  "", group, 0);
     }
 
     /* Safe now to release the module lock. */
@@ -15316,7 +15360,8 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
     }
 
     if (!module) {
-        module = wsgi_load_source(r->pool, r, name, exists, script, "", group);
+        module = wsgi_load_source(r->pool, r, name, exists, script,
+                                  "", group, 0);
     }
 
     /* Safe now to release the module lock. */
@@ -15580,7 +15625,8 @@ static int wsgi_hook_check_user_id(request_rec *r)
     }
 
     if (!module) {
-        module = wsgi_load_source(r->pool, r, name, exists, script, "", group);
+        module = wsgi_load_source(r->pool, r, name, exists, script,
+                                  "", group, 0);
     }
 
     /* Safe now to release the module lock. */

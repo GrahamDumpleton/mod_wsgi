@@ -59,6 +59,20 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     where your code is I/O bound. If you code is CPU bound, you are better
     of using at most 3 to 5 threads per process and using more processes.
 
+    If you set the number of threads to 0 you will enable a special mode
+    intended for using a daemon process to run a managed set of processes.
+    You will need to use ``WSGIImportScript`` to pre-load a Python script
+    into the main application group specified by ``%{GLOBAL}`` where the
+    script runs a never ending task, or does an exec to run an external
+    program. If the script or external program exits, the process is
+    shutdown and replaced with a new one. For the case of using a Python
+    script to run a never ending task, a ``SystemExit`` exception will be
+    injected when a signal is received to shutdown the process. You can
+    use ``signal.signal()`` to register a signal handler for ``SIGTERM``
+    if needing to run special actions before then exiting the process using
+    ``sys.exit()``, or to signal your own threads to exit any processing
+    so you can shutdown in an orderly manner.
+
 **display-name=value**
     Defines a different name to show for the daemon process when using the
     ``ps`` command to list processes. If the value is ``%{GROUP}`` then the

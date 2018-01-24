@@ -151,3 +151,27 @@ New Features
   process and the handling of the signals, can be verified. If everything
   checks out, it is likely that this will become the default behaviour
   when the attached terminal is a tty.
+
+* When using ``WSGIDaemonProcess``, if you set the number of threads to zero
+  you will enable a special mode intended for using a daemon process to run
+  a managed task or program. You will need to use ``WSGIImportScript`` to
+  pre-load a Python script into the main application group specified by
+  ``%{GLOBAL}`` where the script runs a never ending task, or does an exec
+  to run an external program. If the script or external program exits, the
+  process is shutdown and replaced with a new one. For the case of using a
+  Python script to run a never ending task, a ``SystemExit`` exception will
+  be injected when a signal is received to shutdown the process. You can
+  use ``signal.signal()`` to register a signal handler for ``SIGTERM`` if
+  needing to run special actions before then exiting the process using
+  ``sys.exit()``, or to signal your own threads to exit any processing so
+  you can shutdown in an orderly manner.
+
+  The ability to do something very similar did previously exist in that
+  you could use ``WSGIImportScript`` to run a never ending task even when
+  the number of threads was non zero. This was used by ``--service-script``
+  option of ``mod_wsgi-express``. The difference in setting ``threads=0``
+  is that signals will work correctly and be able to interupt the script.
+  Also once the script exits, the process will shutdown, to be replaced,
+  where as previously the process would stay running until Apache was
+  restart or shutdown. The ``--service-script`` option of ``mod_wsgi-express``
+  has been updated to set the number of threads to zero.

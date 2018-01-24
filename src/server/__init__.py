@@ -321,15 +321,17 @@ WSGIPythonHome '%(python_home)s'
 
 WSGIVerboseDebugging '%(verbose_debugging_flag)s'
 
-<IfDefine !ONE_PROCESS>
-WSGIRestrictEmbedded On
 <IfDefine MOD_WSGI_WITH_SOCKET_PREFIX>
 WSGISocketPrefix %(socket_prefix)s/wsgi
 </IfDefine>
 <IfDefine !MOD_WSGI_WITH_SOCKET_PREFIX>
 WSGISocketPrefix %(server_root)s/wsgi
 </IfDefine>
+
 WSGISocketRotation Off
+
+<IfDefine !ONE_PROCESS>
+WSGIRestrictEmbedded On
 <IfDefine MOD_WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
    display-name='%(daemon_name)s' \\
@@ -953,7 +955,7 @@ WSGIDaemonProcess 'service:%(name)s' \\
     user='%(user)s' \\
     group='%(group)s' \\
     home='%(working_directory)s' \\
-    threads=1 \\
+    threads=0 \\
     python-path='%(python_path)s' \\
     python-eggs='%(python_eggs)s' \\
     lang='%(lang)s' \\
@@ -978,7 +980,7 @@ WSGIDaemonProcess 'service:%(name)s' \\
     user='%(user)s' \\
     group='%(group)s' \\
     home='%(working_directory)s' \\
-    threads=1 \\
+    threads=0 \\
     python-path='%(python_path)s' \\
     python-eggs='%(python_eggs)s' \\
     lang='%(lang)s' \\
