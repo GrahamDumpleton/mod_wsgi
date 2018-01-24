@@ -1,10 +1,10 @@
-==============
-Version 4.5.25
-==============
+=============
+Version 4.6.0
+=============
 
-Version 4.5.25 of mod_wsgi can be obtained from:
+Version 4.6.0 of mod_wsgi can be obtained from:
 
-  https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/4.5.25
+  https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/4.6.0
 
 Bugs Fixed
 ----------
