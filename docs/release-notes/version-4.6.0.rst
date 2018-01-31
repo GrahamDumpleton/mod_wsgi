@@ -56,6 +56,10 @@ Features Changed
   highlight that connections are hanging due to the effect it can have on
   available server capacity when connections are kept open for long times.
 
+  Thanks to Jesús Cea Avión for identifying how using the Apache C API it
+  could be identified that the connection had been aborted and in that
+  case the original HTTP response code could safely be used.
+
 * When using the Django integration for ``mod_wsgi-express``, if the
   ``whitenoise.middleware.WhiteNoiseMiddleware`` middleware is listed in
   ``MIDDLEWARE`` or ``MIDDLEWARE_CLASSES`` of the Django settings file,
