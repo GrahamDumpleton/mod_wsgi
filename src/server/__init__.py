@@ -3367,7 +3367,7 @@ def cmd_start_server(params):
 
     executable = os.path.join(config['server_root'], 'apachectl')
 
-    if config['isatty']:
+    if config['isatty'] and sys.stdout.isatty():
         process = None
 
         def handler(signum, frame):
