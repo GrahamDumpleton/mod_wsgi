@@ -32,6 +32,11 @@ Bugs Fixed
   in Python interpreter re-initialisation in same process and also the risks
   due to Python code potentially being run as root.
 
+* When stack traces were being dumped upon request timeout expiring, the
+  line numbers of the definition of each function in the stack trace was
+  being displayed, instead of the actual line number within the body of the
+  function that was executing at the time.
+
 Features Changed
 ----------------
 
