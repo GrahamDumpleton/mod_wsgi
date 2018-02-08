@@ -2106,11 +2106,17 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     /* Publish event for the start of the response. */
 
     if (wsgi_event_subscribers()) {
+        WSGIThreadInfo *thread_info;
+
+        thread_info = wsgi_thread_info(0, 0);
+
         event = PyDict_New();
 
         PyDict_SetItemString(event, "response_status", status_line);
         PyDict_SetItemString(event, "response_headers", headers);
         PyDict_SetItemString(event, "exception_info", exc_info);
+
+        PyDict_SetItemString(event, "request_data", thread_info->request_data);
 
         wsgi_publish_event("response_started", event);
 
@@ -3118,6 +3124,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         PyDict_SetItemString(event, "application_start", value);
         Py_DECREF(value);
 
+        PyDict_SetItemString(event, "request_data", thread_handle->request_data);
+
         wsgi_publish_event("request_started", event);
 
         evwrapper = PyDict_GetItemString(event, "application_object");
@@ -3363,6 +3371,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         value = PyFloat_FromDouble(application_time);
         PyDict_SetItemString(event, "application_time", value);
         Py_DECREF(value);
+
+        PyDict_SetItemString(event, "request_data", thread_handle->request_data);
 
         wsgi_publish_event("request_finished", event);
 

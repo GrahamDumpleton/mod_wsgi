@@ -694,11 +694,18 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
             PyObject *object = NULL;
 
             if (wsgi_event_subscribers()) {
+                WSGIThreadInfo *thread_info;
+
+                thread_info = wsgi_thread_info(0, 0);
+
                 event = PyDict_New();
 
                 object = Py_BuildValue("(OOO)", type, value, traceback);
                 PyDict_SetItemString(event, "exception_info", object);
                 Py_DECREF(object);
+
+                PyDict_SetItemString(event, "request_data",
+                                     thread_info->request_data);
 
                 wsgi_publish_event("request_exception", event);
 
