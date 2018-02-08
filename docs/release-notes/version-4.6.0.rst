@@ -203,3 +203,7 @@ New Features
 
 * Added ``mod_wsgi.active_requests`` dictionary. This is populated with the
   per request data object for active requests, keyed by the Apache request ID.
+
+* Add ``--cpu-time-limit`` option to ``mod_wsgi-express`` so that limit can
+  be imposed on daemon process group as to how much CPU can be used for
+  process is restarted automatically.

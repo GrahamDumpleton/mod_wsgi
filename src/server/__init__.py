@@ -354,6 +354,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    graceful-timeout=%(graceful_timeout)s \\
    eviction-timeout=%(eviction_timeout)s \\
    restart-interval=%(restart_interval)s \\
+   cpu-time-limit=%(cpu_time_limit)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
@@ -383,6 +384,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    graceful-timeout=%(graceful_timeout)s \\
    eviction-timeout=%(eviction_timeout)s \\
    restart-interval=%(restart_interval)s \\
+   cpu-time-limit=%(cpu_time_limit)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
@@ -2062,6 +2064,13 @@ option_list = (
             'active requests will be given a chance to complete before '
             'the process is forced to exit and restart. Not enabled by '
             'default.'),
+
+    optparse.make_option('--cpu-time-limit', type='int', default='0',
+            metavar='SECONDS', help='Number of seconds of CPU time the '
+            'process can use before it will be restarted. If graceful '
+            'timeout is also specified, active requests will be given '
+            'a chance to complete before the process is forced to exit '
+            'and restart. Not enabled by default.'),
 
     optparse.make_option('--graceful-timeout', type='int', default=15,
             metavar='SECONDS', help='Grace period for requests to complete '
