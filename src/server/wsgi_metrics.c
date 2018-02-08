@@ -663,11 +663,11 @@ static PyObject *wsgi_subscribe_events(PyObject *self, PyObject *args)
             PyList_Append(list, callback);
         else
             return NULL;
+
+        Py_DECREF(module);
     }
     else
         return NULL;
-
-    Py_DECREF(module);
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -691,7 +691,7 @@ long wsgi_event_subscribers(void)
         if (list)
             result = PyList_Size(list);
 
-        Py_XDECREF(module);
+        Py_DECREF(module);
 
         return result;
     }
@@ -715,6 +715,8 @@ void wsgi_publish_event(const char *name, PyObject *event)
         list = PyDict_GetItemString(dict, "event_callbacks");
 
         Py_INCREF(list);
+
+        Py_DECREF(module);
     }
     else {
         Py_BEGIN_ALLOW_THREADS
@@ -727,8 +729,6 @@ void wsgi_publish_event(const char *name, PyObject *event)
 
         return;
     }
-
-    Py_XDECREF(module);
 
     if (!list) {
         Py_BEGIN_ALLOW_THREADS
