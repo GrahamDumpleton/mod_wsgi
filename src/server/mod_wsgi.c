@@ -80,6 +80,7 @@ static apr_pool_t *wsgi_parent_pool = NULL;
 
 int volatile wsgi_daemon_shutdown = 0;
 static int volatile wsgi_daemon_graceful = 0;
+static int wsgi_dump_stack_traces = 0;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
 static apr_interval_time_t wsgi_startup_timeout = 0;

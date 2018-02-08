@@ -40,7 +40,6 @@ apr_uint64_t wsgi_total_requests = 0;
 int wsgi_active_requests = 0;
 static double wsgi_thread_utilization = 0.0;
 static apr_time_t wsgi_utilization_last = 0;
-int wsgi_dump_stack_traces = 0;
 
 /* Request tracking and timing. */
 

@@ -30,7 +30,6 @@
 
 extern apr_uint64_t wsgi_total_requests;
 extern int wsgi_active_requests;
-extern int wsgi_dump_stack_traces;
 
 extern apr_thread_mutex_t* wsgi_monitor_lock;
 
