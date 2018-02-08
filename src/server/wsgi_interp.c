@@ -1514,8 +1514,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
     PyObject *exitfunc = NULL;
 #endif
 
-    PyObject *event = NULL;
-
     /*
      * We should always enter here with the Python GIL
      * held and an active thread state. This should only
@@ -1581,14 +1579,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
                      getpid(), self->name);
         Py_END_ALLOW_THREADS
     }
-
-    /* Publish event that process is being stopped. */
-
-    event = PyDict_New();
-
-    wsgi_publish_event("process_stopping", event);
-
-    Py_DECREF(event);
 
     /*
      * Because the thread state we are using was created outside
@@ -2430,6 +2420,8 @@ apr_thread_mutex_t* wsgi_shutdown_lock = NULL;
 
 PyObject *wsgi_interpreters = NULL;
 
+apr_hash_t *wsgi_interpreters_index = NULL;
+
 InterpreterObject *wsgi_acquire_interpreter(const char *name)
 {
     PyThreadState *tstate = NULL;
@@ -2489,6 +2481,16 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
         }
 
         PyDict_SetItemString(wsgi_interpreters, name, (PyObject *)handle);
+
+        /*
+         * Add interpreter name to index kept in Apache data
+         * strcuture as well. Make a copy of the name just in
+         * case we have been given temporary value.
+         */
+
+        apr_hash_set(wsgi_interpreters_index, apr_pstrdup(
+                     apr_hash_pool_get(wsgi_interpreters_index), name),
+                     APR_HASH_KEY_STRING, "");
     }
     else
         Py_INCREF(handle);
@@ -2596,6 +2598,32 @@ void wsgi_release_interpreter(InterpreterObject *handle)
     Py_DECREF(handle);
 
     PyGILState_Release(state);
+}
+
+/* ------------------------------------------------------------------------- */
+
+void wsgi_publish_process_stopping(void)
+{
+    InterpreterObject *interp = NULL;
+    apr_hash_index_t *hi;
+
+    hi = apr_hash_first(NULL, wsgi_interpreters_index);
+
+    while (hi) {
+        PyObject *event = NULL;
+
+        interp = wsgi_acquire_interpreter((char *)apr_hash_this_key(hi));
+
+	event = PyDict_New();
+
+	wsgi_publish_event("process_stopping", event);
+
+	Py_DECREF(event);
+
+        wsgi_release_interpreter(interp);
+
+        hi = apr_hash_next(hi);
+    }
 }
 
 /* ------------------------------------------------------------------------- */

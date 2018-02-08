@@ -4232,6 +4232,15 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
 {
     PyObject *interp = NULL;
 
+    /*
+     * If not a daemon process need to publish that process
+     * is shutting down here. For daemon we did it earlier
+     * before trying to wait on request threads.
+     */
+
+    if (!wsgi_daemon_process)
+        wsgi_publish_process_stopping();
+
     /* In a multithreaded MPM must protect table. */
 
 #if APR_HAS_THREADS
@@ -4353,6 +4362,13 @@ static void wsgi_python_child_init(apr_pool_t *p)
 #endif
 
     /*
+     * Create an interpreters index using Apache data structure so
+     * can iterate over interpreter names without needing Python GIL.
+     */
+
+    wsgi_interpreters_index = apr_hash_make(p);
+
+    /*
      * Initialise the key for data related to a thread and force
      * creation of thread info.
      */
@@ -4374,6 +4390,8 @@ static void wsgi_python_child_init(apr_pool_t *p)
     object = (PyObject *)newInterpreterObject(NULL);
     PyDict_SetItemString(wsgi_interpreters, "", object);
     Py_DECREF(object);
+
+    apr_hash_set(wsgi_interpreters_index, "", APR_HASH_KEY_STRING, "");
 
     /* Restore the prior thread state and release the GIL. */
 
@@ -9728,6 +9746,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
      * limit, then try and dump out stack traces of any threads
      * which are running as a debugging aid.
      */
+
+    wsgi_publish_process_stopping();
 
 #if (PY_MAJOR_VERSION >= 3) || (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 5)
     if (wsgi_dump_stack_traces)

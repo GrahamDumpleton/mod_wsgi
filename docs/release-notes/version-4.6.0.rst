@@ -94,6 +94,13 @@ Features Changed
   than a certain date, which can cause a long running instance of
   ``mod_wsgi-express`` to start failing.
 
+* The "process_stopping" event previously would not be delivered when the
+  process was being shutdown and there were still active requests, such as
+  when a request timeout occurred. Seen as better to always deliver the
+  event if can, even if there were still requests that hadn't been completed.
+  This will allow the event handler to dump out details on what the active
+  requests were, helping to identify long running or stuck requests.
+
 New Features
 ------------
 
