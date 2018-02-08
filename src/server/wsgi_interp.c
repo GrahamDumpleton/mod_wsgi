@@ -2602,7 +2602,7 @@ void wsgi_release_interpreter(InterpreterObject *handle)
 
 /* ------------------------------------------------------------------------- */
 
-void wsgi_publish_process_stopping(void)
+void wsgi_publish_process_stopping(char *reason)
 {
     InterpreterObject *interp = NULL;
     apr_hash_index_t *hi;
@@ -2611,10 +2611,19 @@ void wsgi_publish_process_stopping(void)
 
     while (hi) {
         PyObject *event = NULL;
+        PyObject *object = NULL;
 
         interp = wsgi_acquire_interpreter((char *)apr_hash_this_key(hi));
 
 	event = PyDict_New();
+
+#if PY_MAJOR_VERSION >= 3
+	object = PyUnicode_DecodeLatin1(reason, strlen(reason), NULL);
+#else
+	object = PyString_FromString(reason);
+#endif
+	PyDict_SetItemString(event, "shutdown_reason", object);
+	Py_DECREF(object);
 
 	wsgi_publish_event("process_stopping", event);
 

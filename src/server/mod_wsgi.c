@@ -81,6 +81,7 @@ static apr_pool_t *wsgi_parent_pool = NULL;
 int volatile wsgi_daemon_shutdown = 0;
 static int volatile wsgi_daemon_graceful = 0;
 static int wsgi_dump_stack_traces = 0;
+static char *wsgi_shutdown_reason = "";
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
 static apr_interval_time_t wsgi_startup_timeout = 0;
@@ -4239,7 +4240,7 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
      */
 
     if (!wsgi_daemon_process)
-        wsgi_publish_process_stopping();
+        wsgi_publish_process_stopping(wsgi_shutdown_reason);
 
     /* In a multithreaded MPM must protect table. */
 
@@ -9205,6 +9206,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                              "time limit exceeded, stopping process "
                              "'%s'.", getpid(), group->name);
 
+                wsgi_shutdown_reason = "request_timeout";
+
                 wsgi_dump_stack_traces = 1;
 
                 restart = 1;
@@ -9218,6 +9221,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                                  "mod_wsgi (pid=%d): Application startup "
                                  "timer expired, stopping process '%s'.",
                                  getpid(), group->name);
+
+                    wsgi_shutdown_reason = "startup_timeout";
 
                     restart = 1;
                 }
@@ -9252,6 +9257,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                                          "Application restart timer expired, "
                                          "stopping process '%s'.", getpid(),
                                          daemon->group->name);
+
+                            wsgi_shutdown_reason = "restart_interval";
 
                             restart = 1;
                         }
@@ -9293,6 +9300,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                                      "idle inactivity timer expired, "
                                      "stopping process '%s'.", getpid(),
                                      group->name);
+
+                        wsgi_shutdown_reason = "inactivity_timeout";
 
                         restart = 1;
                     }
@@ -9662,6 +9671,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (buf[0] == 'C') {
             if (!wsgi_daemon_graceful) {
+                wsgi_shutdown_reason = "cpu_time_limit";
+
                 if (wsgi_active_requests) {
                     wsgi_daemon_graceful++;
 
@@ -9688,6 +9699,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
         }
         else if (buf[0] == 'G') {
             if (!wsgi_daemon_graceful) {
+                wsgi_shutdown_reason = "graceful_signal";
+
                 if (wsgi_active_requests) {
                     wsgi_daemon_graceful++;
 
@@ -9747,7 +9760,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
      * which are running as a debugging aid.
      */
 
-    wsgi_publish_process_stopping();
+    wsgi_publish_process_stopping(wsgi_shutdown_reason);
 
 #if (PY_MAJOR_VERSION >= 3) || (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 5)
     if (wsgi_dump_stack_traces)

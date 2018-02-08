@@ -83,7 +83,7 @@ extern apr_status_t wsgi_python_term(void);
 extern InterpreterObject *wsgi_acquire_interpreter(const char *name);
 extern void wsgi_release_interpreter(InterpreterObject *handle);
 
-extern void wsgi_publish_process_stopping(void);
+extern void wsgi_publish_process_stopping(char *reason);
 
 /* ------------------------------------------------------------------------- */
 

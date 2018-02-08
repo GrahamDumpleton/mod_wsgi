@@ -207,3 +207,6 @@ New Features
 * Add ``--cpu-time-limit`` option to ``mod_wsgi-express`` so that limit can
   be imposed on daemon process group as to how much CPU can be used for
   process is restarted automatically.
+
+* Pass a "shutdown_reason" argument with "process_stopping" event so event
+  handler knows the reason the process is being shutdown.
