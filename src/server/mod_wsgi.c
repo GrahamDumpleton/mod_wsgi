@@ -9377,7 +9377,7 @@ static void wsgi_log_stack_traces(void)
                           "active Python threads.", getpid());
 
             while (PyDict_Next(threads, &i, &id, &frame)) {
-                long thread_id = 0;
+                apr_int64_t thread_id = 0;
 
                 PyFrameObject *current = NULL;
 
@@ -9403,9 +9403,9 @@ static void wsgi_log_stack_traces(void)
 
                     if (current == (PyFrameObject *)frame) {
                         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                "mod_wsgi (pid=%d): Thread %ld executing "
-                                "file \"%s\", line %d, in %s", getpid(),
-                                thread_id, filename, lineno, name);
+                                "mod_wsgi (pid=%d): Thread %" APR_INT64_T_FMT
+                                " executing file \"%s\", line %d, in %s",
+                                getpid(), thread_id, filename, lineno, name);
                     }
                     else {
                         if (current->f_back) {

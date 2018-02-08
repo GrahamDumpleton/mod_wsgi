@@ -37,6 +37,10 @@ Bugs Fixed
   being displayed, instead of the actual line number within the body of the
   function that was executing at the time.
 
+* When stack traces were being dumped upon request timeout expiring, the
+  thread ID was being truncated to 32 bits when displayed, meaning it
+  wouldn't match the actual Python thread ID on 64 bit systems.
+
 Features Changed
 ----------------
 
