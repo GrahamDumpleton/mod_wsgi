@@ -2118,7 +2118,9 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
         PyDict_SetItemString(event, "response_headers", headers);
         PyDict_SetItemString(event, "exception_info", exc_info);
 
+#if 0
         PyDict_SetItemString(event, "request_data", thread_info->request_data);
+#endif
 
         wsgi_publish_event("response_started", event);
 
@@ -3126,7 +3128,9 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         PyDict_SetItemString(event, "application_start", value);
         Py_DECREF(value);
 
+#if 0
         PyDict_SetItemString(event, "request_data", thread_handle->request_data);
+#endif
 
         wsgi_publish_event("request_started", event);
 
@@ -3374,7 +3378,9 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         PyDict_SetItemString(event, "application_time", value);
         Py_DECREF(value);
 
+#if 0
         PyDict_SetItemString(event, "request_data", thread_handle->request_data);
+#endif
 
         wsgi_publish_event("request_finished", event);
 

@@ -704,8 +704,10 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
                 PyDict_SetItemString(event, "exception_info", object);
                 Py_DECREF(object);
 
+#if 0
                 PyDict_SetItemString(event, "request_data",
                                      thread_info->request_data);
+#endif
 
                 wsgi_publish_event("request_exception", event);
 

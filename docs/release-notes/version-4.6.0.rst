@@ -196,11 +196,6 @@ New Features
   restart or shutdown. The ``--service-script`` option of ``mod_wsgi-express``
   has been updated to set the number of threads to zero.
 
-* The globally accessible per request data object accessible by calling
-  ``mod_wsgi.request_data()``, useful for tracking request metrics etc,
-  is also now explicitly passed as a keyword argument to subscribed event
-  handlers for requests.
-
 * Added ``mod_wsgi.active_requests`` dictionary. This is populated with the
   per request data object for active requests, keyed by the Apache request ID.
 
