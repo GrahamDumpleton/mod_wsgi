@@ -4098,7 +4098,7 @@ static int wsgi_execute_script(request_rec *r)
 
     /* Setup metrics for start of request. */
 
-    thread_info = wsgi_start_request();
+    thread_info = wsgi_start_request(r);
 
     /* Load module if not already loaded. */
 

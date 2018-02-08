@@ -77,12 +77,42 @@ static double wsgi_utilization_time(int adjustment)
     return utilization;
 }
 
-WSGIThreadInfo *wsgi_start_request(void)
+WSGIThreadInfo *wsgi_start_request(request_rec *r)
 {
     WSGIThreadInfo *thread_info;
 
+    PyObject *module = NULL;
+
     thread_info = wsgi_thread_info(1, 1);
+
     thread_info->request_data = PyDict_New();
+
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+#if PY_MAJOR_VERSION >= 3
+    thread_info->request_id = PyUnicode_DecodeLatin1(r->log_id,
+                                                strlen(r->log_id), NULL);
+#else
+    thread_info->request_id = PyString_FromString(r->log_id);
+#endif
+
+    module = PyImport_ImportModule("mod_wsgi");
+
+    if (module) {
+        PyObject *dict = NULL;
+        PyObject *requests = NULL;
+
+        dict = PyModule_GetDict(module);
+        requests = PyDict_GetItemString(dict, "active_requests");
+
+        if (requests)
+            PyDict_SetItem(requests, thread_info->request_id,
+                           thread_info->request_data);
+
+        Py_DECREF(module);
+    }
+    else
+        PyErr_Clear();
+#endif
 
     wsgi_utilization_time(1);
 
@@ -93,11 +123,33 @@ void wsgi_end_request(void)
 {
     WSGIThreadInfo *thread_info;
 
+    PyObject *module = NULL;
+
     thread_info = wsgi_thread_info(0, 1);
 
     if (thread_info) {
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+        module = PyImport_ImportModule("mod_wsgi");
+
+        if (module) {
+            PyObject *dict = NULL;
+            PyObject *requests = NULL;
+
+            dict = PyModule_GetDict(module);
+            requests = PyDict_GetItemString(dict, "active_requests");
+
+            PyDict_DelItem(requests, thread_info->request_id);
+
+            Py_DECREF(module);
+        }
+        else
+            PyErr_Clear();
+#endif
         if (thread_info->log_buffer)
             Py_CLEAR(thread_info->log_buffer);
+
+        if (thread_info->request_id)
+            Py_CLEAR(thread_info->request_id);
 
         if (thread_info->request_data)
             Py_CLEAR(thread_info->request_data);

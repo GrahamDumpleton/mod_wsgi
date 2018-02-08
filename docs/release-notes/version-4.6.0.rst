@@ -193,3 +193,6 @@ New Features
   ``mod_wsgi.request_data()``, useful for tracking request metrics etc,
   is also now explicitly passed as a keyword argument to subscribed event
   handlers for requests.
+
+* Added ``mod_wsgi.active_requests`` dictionary. This is populated with the
+  per request data object for active requests, keyed by the Apache request ID.

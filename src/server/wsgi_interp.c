@@ -1239,6 +1239,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     PyModule_AddObject(module, "event_callbacks", PyList_New(0));
 
+    PyModule_AddObject(module, "active_requests", PyDict_New());
+
     PyModule_AddObject(module, "request_data", PyCFunction_New(
                        &wsgi_request_data_method[0], NULL));
 

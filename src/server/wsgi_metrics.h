@@ -36,7 +36,7 @@ extern apr_thread_mutex_t* wsgi_monitor_lock;
 
 extern PyMethodDef wsgi_process_metrics_method[];
 
-extern WSGIThreadInfo *wsgi_start_request(void);
+extern WSGIThreadInfo *wsgi_start_request(request_rec *r);
 extern void wsgi_end_request(void);
 
 extern PyMethodDef wsgi_server_metrics_method[];
