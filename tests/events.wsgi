@@ -20,7 +20,7 @@ def wrapper(application):
 def event_handler(name, **kwargs):
     print('EVENT', name, kwargs, os.getpid(), mod_wsgi.application_group)
     if name == 'request_started':
-        request = kwargs['request_data']
+        request = mod_wsgi.request_data()
         print('REQUEST', request)
         environ = kwargs['request_environ']
         start_time = time.time()
@@ -34,7 +34,7 @@ def event_handler(name, **kwargs):
         print('CONTENT', request)
         print('ACTIVE', mod_wsgi.active_requests)
     elif name == 'request_finished':
-        request = kwargs['request_data']
+        request = mod_wsgi.request_data()
         print('REQUEST', request)
         print('FINISH', time.time()-request['start_time'])
         print('PROCESS', mod_wsgi.process_metrics()) 
