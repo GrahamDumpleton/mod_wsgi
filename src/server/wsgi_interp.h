@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2017 GRAHAM DUMPLETON
+ * Copyright 2007-2018 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,6 +68,8 @@ extern const char *wsgi_python_eggs;
 
 extern PyObject *wsgi_interpreters;
 
+extern apr_hash_t *wsgi_interpreters_index;
+
 #if APR_HAS_THREADS
 extern apr_thread_mutex_t *wsgi_interp_lock;
 extern apr_thread_mutex_t* wsgi_shutdown_lock;
@@ -80,6 +82,8 @@ extern apr_status_t wsgi_python_term(void);
 
 extern InterpreterObject *wsgi_acquire_interpreter(const char *name);
 extern void wsgi_release_interpreter(InterpreterObject *handle);
+
+extern void wsgi_publish_process_stopping(char *reason);
 
 /* ------------------------------------------------------------------------- */
 

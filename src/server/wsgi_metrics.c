@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2017 GRAHAM DUMPLETON
+ * Copyright 2007-2018 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,6 @@ apr_uint64_t wsgi_total_requests = 0;
 int wsgi_active_requests = 0;
 static double wsgi_thread_utilization = 0.0;
 static apr_time_t wsgi_utilization_last = 0;
-int wsgi_dump_stack_traces = 0;
 
 /* Request tracking and timing. */
 
@@ -77,12 +76,42 @@ static double wsgi_utilization_time(int adjustment)
     return utilization;
 }
 
-WSGIThreadInfo *wsgi_start_request(void)
+WSGIThreadInfo *wsgi_start_request(request_rec *r)
 {
     WSGIThreadInfo *thread_info;
 
+    PyObject *module = NULL;
+
     thread_info = wsgi_thread_info(1, 1);
+
     thread_info->request_data = PyDict_New();
+
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+#if PY_MAJOR_VERSION >= 3
+    thread_info->request_id = PyUnicode_DecodeLatin1(r->log_id,
+                                                strlen(r->log_id), NULL);
+#else
+    thread_info->request_id = PyString_FromString(r->log_id);
+#endif
+
+    module = PyImport_ImportModule("mod_wsgi");
+
+    if (module) {
+        PyObject *dict = NULL;
+        PyObject *requests = NULL;
+
+        dict = PyModule_GetDict(module);
+        requests = PyDict_GetItemString(dict, "active_requests");
+
+        if (requests)
+            PyDict_SetItem(requests, thread_info->request_id,
+                           thread_info->request_data);
+
+        Py_DECREF(module);
+    }
+    else
+        PyErr_Clear();
+#endif
 
     wsgi_utilization_time(1);
 
@@ -93,11 +122,33 @@ void wsgi_end_request(void)
 {
     WSGIThreadInfo *thread_info;
 
+    PyObject *module = NULL;
+
     thread_info = wsgi_thread_info(0, 1);
 
     if (thread_info) {
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+        module = PyImport_ImportModule("mod_wsgi");
+
+        if (module) {
+            PyObject *dict = NULL;
+            PyObject *requests = NULL;
+
+            dict = PyModule_GetDict(module);
+            requests = PyDict_GetItemString(dict, "active_requests");
+
+            PyDict_DelItem(requests, thread_info->request_id);
+
+            Py_DECREF(module);
+        }
+        else
+            PyErr_Clear();
+#endif
         if (thread_info->log_buffer)
             Py_CLEAR(thread_info->log_buffer);
+
+        if (thread_info->request_id)
+            Py_CLEAR(thread_info->request_id);
 
         if (thread_info->request_data)
             Py_CLEAR(thread_info->request_data);
@@ -611,11 +662,11 @@ static PyObject *wsgi_subscribe_events(PyObject *self, PyObject *args)
             PyList_Append(list, callback);
         else
             return NULL;
+
+        Py_DECREF(module);
     }
     else
         return NULL;
-
-    Py_DECREF(module);
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -639,7 +690,7 @@ long wsgi_event_subscribers(void)
         if (list)
             result = PyList_Size(list);
 
-        Py_XDECREF(module);
+        Py_DECREF(module);
 
         return result;
     }
@@ -663,6 +714,8 @@ void wsgi_publish_event(const char *name, PyObject *event)
         list = PyDict_GetItemString(dict, "event_callbacks");
 
         Py_INCREF(list);
+
+        Py_DECREF(module);
     }
     else {
         Py_BEGIN_ALLOW_THREADS
@@ -675,8 +728,6 @@ void wsgi_publish_event(const char *name, PyObject *event)
 
         return;
     }
-
-    Py_XDECREF(module);
 
     if (!list) {
         Py_BEGIN_ALLOW_THREADS

@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2017 GRAHAM DUMPLETON
+ * Copyright 2007-2018 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -158,6 +158,24 @@ PyTypeObject SignalIntercept_Type = {
     0,                      /*tp_free*/
     0,                      /*tp_is_gc*/
 };
+
+/* ------------------------------------------------------------------------- */
+
+static PyObject *wsgi_system_exit(PyObject *self, PyObject *args)
+{
+    PyErr_SetObject(PyExc_SystemExit, 0);
+
+    return NULL;
+}
+
+/* ------------------------------------------------------------------------- */
+
+static PyMethodDef wsgi_system_exit_method[] = {
+    { "system_exit",        (PyCFunction)wsgi_system_exit, METH_VARARGS, 0 },
+    { NULL },
+};
+
+/* ------------------------------------------------------------------------- */
 
 /* Wrapper around Python interpreter instances. */
 
@@ -562,11 +580,64 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     /*
      * Install intercept for signal handler registration
-     * if appropriate.
+     * if appropriate. Don't do this though if number of
+     * threads for daemon process was set as 0, indicating
+     * a potential daemon process which is running a
+     * service script.
      */
 
-    if (wsgi_server_config->restrict_signal != 0) {
+    /*
+     * If running in daemon mode and there are no threads
+     * specified, must be running with service script, in
+     * which case we register default signal handler for
+     * SIGINT which throws a SystemExit exception. If
+     * instead restricting signals, replace function for
+     * registering signal handlers so they are ignored.
+     */
 
+    if (wsgi_daemon_process && wsgi_daemon_process->group->threads == 0) {
+        module = PyImport_ImportModule("signal");
+
+        if (module) {
+            PyObject *dict = NULL;
+            PyObject *func = NULL;
+
+            dict = PyModule_GetDict(module);
+            func = PyDict_GetItemString(dict, "signal");
+
+            if (func) {
+                PyObject *res = NULL;
+                PyObject *args = NULL;
+                PyObject *callback = NULL;
+
+                Py_INCREF(func);
+
+                callback = PyCFunction_New(&wsgi_system_exit_method[0], NULL);
+
+                args = Py_BuildValue("(iO)", SIGTERM, callback);
+                res = PyEval_CallObject(func, args);
+
+                if (!res) {
+                    Py_BEGIN_ALLOW_THREADS
+                    ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+                                 "mod_wsgi (pid=%d): Call to "
+                                 "'signal.signal()' to register exit "
+                                 "function failed, ignoring.", getpid());
+                    Py_END_ALLOW_THREADS
+                }
+
+                Py_XDECREF(res);
+                Py_XDECREF(args);
+
+                Py_XDECREF(callback);
+
+                Py_DECREF(func);
+            }
+        }
+
+        Py_XDECREF(module);
+    }
+    else if (wsgi_server_config->restrict_signal != 0) {
         module = PyImport_ImportModule("signal");
 
         if (module) {
@@ -1168,6 +1239,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     PyModule_AddObject(module, "event_callbacks", PyList_New(0));
 
+    PyModule_AddObject(module, "active_requests", PyDict_New());
+
     PyModule_AddObject(module, "request_data", PyCFunction_New(
                        &wsgi_request_data_method[0], NULL));
 
@@ -1441,8 +1514,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
     PyObject *exitfunc = NULL;
 #endif
 
-    PyObject *event = NULL;
-
     /*
      * We should always enter here with the Python GIL
      * held and an active thread state. This should only
@@ -1508,14 +1579,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
                      getpid(), self->name);
         Py_END_ALLOW_THREADS
     }
-
-    /* Publish event that process is being stopped. */
-
-    event = PyDict_New();
-
-    wsgi_publish_event("process_stopping", event);
-
-    Py_DECREF(event);
 
     /*
      * Because the thread state we are using was created outside
@@ -1994,7 +2057,8 @@ apr_status_t wsgi_python_term(void)
      * condition.
      */
 
-    apr_thread_mutex_lock(wsgi_shutdown_lock);
+    if (wsgi_daemon_process)
+        apr_thread_mutex_lock(wsgi_shutdown_lock);
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     wsgi_daemon_shutdown++;
@@ -2002,7 +2066,8 @@ apr_status_t wsgi_python_term(void)
 
     Py_Finalize();
 
-    apr_thread_mutex_unlock(wsgi_shutdown_lock);
+    if (wsgi_daemon_process)
+        apr_thread_mutex_unlock(wsgi_shutdown_lock);
 
     wsgi_python_initialized = 0;
 
@@ -2355,6 +2420,8 @@ apr_thread_mutex_t* wsgi_shutdown_lock = NULL;
 
 PyObject *wsgi_interpreters = NULL;
 
+apr_hash_t *wsgi_interpreters_index = NULL;
+
 InterpreterObject *wsgi_acquire_interpreter(const char *name)
 {
     PyThreadState *tstate = NULL;
@@ -2414,6 +2481,16 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
         }
 
         PyDict_SetItemString(wsgi_interpreters, name, (PyObject *)handle);
+
+        /*
+         * Add interpreter name to index kept in Apache data
+         * strcuture as well. Make a copy of the name just in
+         * case we have been given temporary value.
+         */
+
+        apr_hash_set(wsgi_interpreters_index, apr_pstrdup(
+                     apr_hash_pool_get(wsgi_interpreters_index), name),
+                     APR_HASH_KEY_STRING, "");
     }
     else
         Py_INCREF(handle);
@@ -2521,6 +2598,41 @@ void wsgi_release_interpreter(InterpreterObject *handle)
     Py_DECREF(handle);
 
     PyGILState_Release(state);
+}
+
+/* ------------------------------------------------------------------------- */
+
+void wsgi_publish_process_stopping(char *reason)
+{
+    InterpreterObject *interp = NULL;
+    apr_hash_index_t *hi;
+
+    hi = apr_hash_first(NULL, wsgi_interpreters_index);
+
+    while (hi) {
+        PyObject *event = NULL;
+        PyObject *object = NULL;
+
+        interp = wsgi_acquire_interpreter((char *)apr_hash_this_key(hi));
+
+	event = PyDict_New();
+
+#if PY_MAJOR_VERSION >= 3
+	object = PyUnicode_DecodeLatin1(reason, strlen(reason), NULL);
+#else
+	object = PyString_FromString(reason);
+#endif
+	PyDict_SetItemString(event, "shutdown_reason", object);
+	Py_DECREF(object);
+
+	wsgi_publish_event("process_stopping", event);
+
+	Py_DECREF(event);
+
+        wsgi_release_interpreter(interp);
+
+        hi = apr_hash_next(hi);
+    }
 }
 
 /* ------------------------------------------------------------------------- */

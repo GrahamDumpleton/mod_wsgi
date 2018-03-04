@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2017 GRAHAM DUMPLETON
+ * Copyright 2007-2018 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ typedef struct {
     int thread_id;
     int request_thread;
     apr_int64_t request_count;
+    PyObject *request_id;
     PyObject *request_data;
     PyObject *log_buffer;
 } WSGIThreadInfo;

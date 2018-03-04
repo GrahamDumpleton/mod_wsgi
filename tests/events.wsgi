@@ -4,6 +4,7 @@ import mod_wsgi
 import traceback
 import time
 import os
+import threading
 
 try:
     mod_wsgi.request_data()
@@ -24,15 +25,24 @@ def event_handler(name, **kwargs):
         environ = kwargs['request_environ']
         start_time = time.time()
         request['start_time'] = start_time
+        thread = threading.current_thread()
+        request['thread_name'] = thread.name
+        request['thread_id'] = thread.ident
         return dict(application_object=wrapper(kwargs['application_object']))
+    elif name == 'response_started':
+        request = mod_wsgi.request_data()
+        print('CONTENT', request)
+        print('ACTIVE', mod_wsgi.active_requests)
     elif name == 'request_finished':
         request = mod_wsgi.request_data()
         print('REQUEST', request)
         print('FINISH', time.time()-request['start_time'])
         print('PROCESS', mod_wsgi.process_metrics()) 
     elif name == 'request_exception':
-        exc_info = kwargs['exc_info']
-        traceback.print_exception(*exc_info)
+        exception_info = kwargs['exception_info']
+        traceback.print_exception(*exception_info)
+    elif name == 'process_stopping':
+        print('SHUTDOWN', mod_wsgi.active_requests)
 
 print('EVENTS', mod_wsgi.event_callbacks)
 
@@ -42,8 +52,10 @@ print('CALLBACKS', mod_wsgi.event_callbacks)
 
 def application(environ, start_response):
     failure_mode = environ.get('HTTP_X_FAILURE_MODE', '')
-
     failure_mode = failure_mode.split()
+
+    sleep_duration = environ.get('HTTP_X_SLEEP_DURATION', 0)
+    sleep_duration = float(sleep_duration or 0)
 
     if 'application' in failure_mode:
         raise RuntimeError('application')
@@ -56,6 +68,9 @@ def application(environ, start_response):
     start_response(status, response_headers)
 
     environ['wsgi.input'].read()
+
+    if sleep_duration:
+        time.sleep(sleep_duration)
 
     try:
         yield output

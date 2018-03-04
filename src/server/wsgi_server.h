@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2017 GRAHAM DUMPLETON
+ * Copyright 2007-2018 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,6 +67,7 @@ typedef struct {
     apr_array_header_t *alias_list;
 
     const char *socket_prefix;
+    int socket_rotation;
     apr_lockmech_e lock_mechanism;
 
     int verbose_debugging;

@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2017 GRAHAM DUMPLETON
+ * Copyright 2007-2018 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,6 +81,8 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->socket_prefix = DEFAULT_REL_RUNTIMEDIR "/wsgi";
     object->socket_prefix = ap_server_root_relative(p, object->socket_prefix);
 #endif
+
+    object->socket_rotation = 1;
 
     object->verbose_debugging = 0;
 

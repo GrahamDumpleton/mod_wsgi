@@ -321,9 +321,17 @@ WSGIPythonHome '%(python_home)s'
 
 WSGIVerboseDebugging '%(verbose_debugging_flag)s'
 
+<IfDefine MOD_WSGI_WITH_SOCKET_PREFIX>
+WSGISocketPrefix %(socket_prefix)s/wsgi
+</IfDefine>
+<IfDefine !MOD_WSGI_WITH_SOCKET_PREFIX>
+WSGISocketPrefix %(server_root)s/wsgi
+</IfDefine>
+
+WSGISocketRotation Off
+
 <IfDefine !ONE_PROCESS>
 WSGIRestrictEmbedded On
-WSGISocketPrefix %(server_root)s/wsgi
 <IfDefine MOD_WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
    display-name='%(daemon_name)s' \\
@@ -346,6 +354,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    graceful-timeout=%(graceful_timeout)s \\
    eviction-timeout=%(eviction_timeout)s \\
    restart-interval=%(restart_interval)s \\
+   cpu-time-limit=%(cpu_time_limit)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
@@ -375,6 +384,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    graceful-timeout=%(graceful_timeout)s \\
    eviction-timeout=%(eviction_timeout)s \\
    restart-interval=%(restart_interval)s \\
+   cpu-time-limit=%(cpu_time_limit)s \\
    shutdown-timeout=%(shutdown_timeout)s \\
    send-buffer-size=%(send_buffer_size)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
@@ -432,6 +442,7 @@ AddOutputFilterByType DEFLATE text/css
 AddOutputFilterByType DEFLATE text/javascript
 AddOutputFilterByType DEFLATE application/xhtml+xml
 AddOutputFilterByType DEFLATE application/javascript
+AddOutputFilterByType DEFLATE application/json
 </IfDefine>
 
 <IfDefine MOD_WSGI_ROTATE_LOGS>
@@ -946,7 +957,7 @@ WSGIDaemonProcess 'service:%(name)s' \\
     user='%(user)s' \\
     group='%(group)s' \\
     home='%(working_directory)s' \\
-    threads=1 \\
+    threads=0 \\
     python-path='%(python_path)s' \\
     python-eggs='%(python_eggs)s' \\
     lang='%(lang)s' \\
@@ -971,7 +982,7 @@ WSGIDaemonProcess 'service:%(name)s' \\
     user='%(user)s' \\
     group='%(group)s' \\
     home='%(working_directory)s' \\
-    threads=1 \\
+    threads=0 \\
     python-path='%(python_path)s' \\
     python-eggs='%(python_eggs)s' \\
     lang='%(lang)s' \\
@@ -1913,7 +1924,7 @@ option_list = (
 
     optparse.make_option('--http2', action='store_true', default=False,
             help='Flag indicating whether HTTP/2 should be enabled.'
-	    'Requires the mod_http2 module to be available.'),
+            'Requires the mod_http2 module to be available.'),
 
     optparse.make_option('--https-port', type='int', metavar='NUMBER',
             help='The specific port to bind to and on which secure '
@@ -1964,7 +1975,7 @@ option_list = (
 
     optparse.make_option('--https-only', action='store_true',
             default=False, help='Flag indicating whether any requests '
-	    'made using a HTTP request over the non secure connection '
+            'made using a HTTP request over the non secure connection '
             'should be redirected automatically to use a HTTPS request '
             'over the secure connection.'),
 
@@ -2053,6 +2064,13 @@ option_list = (
             'active requests will be given a chance to complete before '
             'the process is forced to exit and restart. Not enabled by '
             'default.'),
+
+    optparse.make_option('--cpu-time-limit', type='int', default='0',
+            metavar='SECONDS', help='Number of seconds of CPU time the '
+            'process can use before it will be restarted. If graceful '
+            'timeout is also specified, active requests will be given '
+            'a chance to complete before the process is forced to exit '
+            'and restart. Not enabled by default.'),
 
     optparse.make_option('--graceful-timeout', type='int', default=15,
             metavar='SECONDS', help='Grace period for requests to complete '
@@ -2372,7 +2390,8 @@ option_list = (
     optparse.make_option('--server-root', metavar='DIRECTORY-PATH',
             help='Specify an alternate directory for where the generated '
             'web server configuration, startup files and logs will be '
-            'stored. Defaults to a sub directory of /tmp.'),
+            'stored. Defaults to the sub directory specified by the '
+            'TMPDIR environment variable, or /tmp if not specified.'),
 
     optparse.make_option('--server-mpm', action='append',
             dest='server_mpm_variables', metavar='NAME', help='Specify '
@@ -2456,6 +2475,11 @@ option_list = (
     optparse.make_option('--mime-types', default=find_mimetypes(),
             metavar='FILE-PATH', help='Override the path to the mime types '
             'file used by the web server.'),
+
+    optparse.make_option('--socket-prefix', metavar='DIRECTORY-PATH',
+            help='Specify an alternate directory name prefix to be used '
+            'for the UNIX domain sockets used by mod_wsgi to communicate '
+            'between the Apache child processes and the daemon processes.'),
 
     optparse.make_option('--add-handler', action='append', nargs=2,
             dest='handler_scripts', metavar='EXTENSION SCRIPT-PATH',
@@ -2579,6 +2603,17 @@ option_list = (
             'the generation of the configuration with Apache then later '
             'being started separately using the generated \'apachectl\' '
             'script.'),
+
+    optparse.make_option('--isatty', action='store_true', default=False,
+            help='Flag indicating whether should assume being run in an '
+            'interactive terminal session. In this case Apache will not '
+            'replace this wrapper script, but will be run as a sub process.'
+            'Signals such as SIGINT, SIGTERM, SIGHUP and SIGUSR1 will be '
+            'forwarded onto Apache, but SIGWINCH will be blocked so that '
+            'resizing of a terminal session window will not cause Apache '
+            'to shutdown. This is a separate option at this time rather '
+            'than being determined automatically while the reliability of '
+            'intercepting and forwarding signals is verified.'),
 )
 
 def cmd_setup_server(params):
@@ -2625,8 +2660,11 @@ def _cmd_setup_server(command, args, options):
             options['port'], os.getuid())
 
     if not options['server_root']:
-        options['server_root'] = '/tmp/mod_wsgi-%s:%s:%s' % (options['host'],
-                options['port'], os.getuid())
+        tmpdir = os.environ.get('TMPDIR')
+        tmpdir = tmpdir or '/tmp'
+        tmpdir = tmpdir.rstrip('/')
+        options['server_root'] = '%s/mod_wsgi-%s:%s:%s' % (tmpdir,
+                options['host'], options['port'], os.getuid())
 
     try:
         os.mkdir(options['server_root'])
@@ -3207,6 +3245,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_TRUSTED_PROXIES')
     if options['python_path']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PYTHON_PATH')
+    if options['socket_prefix']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_SOCKET_PREFIX')
 
     if options['with_cgi']:
         if os.path.exists(os.path.join(options['modules_directory'],
@@ -3335,7 +3375,31 @@ def cmd_start_server(params):
         return
 
     executable = os.path.join(config['server_root'], 'apachectl')
-    os.execl(executable, executable, 'start', '-DFOREGROUND')
+
+    if config['isatty'] and sys.stdout.isatty():
+        process = None
+
+        def handler(signum, frame):
+            if process is None:
+                sys.exit(1)
+
+            else:
+                if signum not in [signal.SIGWINCH]:
+                    os.kill(process.pid, signum)
+
+        signal.signal(signal.SIGINT, handler)
+        signal.signal(signal.SIGTERM, handler)
+        signal.signal(signal.SIGHUP, handler)
+        signal.signal(signal.SIGUSR1, handler)
+        signal.signal(signal.SIGWINCH, handler)
+
+        process = subprocess.Popen([executable, 'start', '-DFOREGROUND'],
+                preexec_fn=os.setpgrp)
+
+        process.wait()
+
+    else:
+        os.execl(executable, executable, 'start', '-DFOREGROUND')
 
 def cmd_module_config(params):
     formatter = optparse.IndentedHelpFormatter()

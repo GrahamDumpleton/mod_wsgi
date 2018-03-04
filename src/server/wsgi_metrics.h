@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2017 GRAHAM DUMPLETON
+ * Copyright 2007-2018 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,13 +30,12 @@
 
 extern apr_uint64_t wsgi_total_requests;
 extern int wsgi_active_requests;
-extern int wsgi_dump_stack_traces;
 
 extern apr_thread_mutex_t* wsgi_monitor_lock;
 
 extern PyMethodDef wsgi_process_metrics_method[];
 
-extern WSGIThreadInfo *wsgi_start_request(void);
+extern WSGIThreadInfo *wsgi_start_request(request_rec *r);
 extern void wsgi_end_request(void);
 
 extern PyMethodDef wsgi_server_metrics_method[];

@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2017 GRAHAM DUMPLETON
+ * Copyright 2007-2018 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -134,6 +134,7 @@ typedef struct {
     rlim_t memory_limit;
     rlim_t virtual_memory_limit;
     const char *socket_path;
+    int socket_rotation;
     int listener_fd;
     const char* mutex_path;
     apr_proc_mutex_t* mutex;

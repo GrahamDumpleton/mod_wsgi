@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2017 GRAHAM DUMPLETON
+ * Copyright 2007-2018 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -694,11 +694,20 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
             PyObject *object = NULL;
 
             if (wsgi_event_subscribers()) {
+                WSGIThreadInfo *thread_info;
+
+                thread_info = wsgi_thread_info(0, 0);
+
                 event = PyDict_New();
 
                 object = Py_BuildValue("(OOO)", type, value, traceback);
                 PyDict_SetItemString(event, "exception_info", object);
                 Py_DECREF(object);
+
+#if 0
+                PyDict_SetItemString(event, "request_data",
+                                     thread_info->request_data);
+#endif
 
                 wsgi_publish_event("request_exception", event);
 
