@@ -3703,6 +3703,9 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
                          process_group, application_group, filename);
         }
         Py_END_ALLOW_THREADS
+
+        wsgi_log_python_error(r, NULL, filename, 0);
+
         return NULL;
     }
 
