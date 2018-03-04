@@ -12,7 +12,7 @@ The first way of installing mod_wsgi is the traditional way that has been
 used by many software packages. This is where it is installed as a module
 directly into your Apache installation using the commands ``configure``,
 ``make`` and ``make install``, a method sometimes referred to by the
-acyronym CMMI. This method works with most UNIX type systems. It cannot
+acronym CMMI. This method works with most UNIX type systems. It cannot
 be used on Windows.
 
 The second way of installing mod_wsgi is to install it as a Python package
@@ -49,7 +49,7 @@ they never fixed those problems either. This time there is no easy
 workaround as they no longer supply certain tools which are required to
 perform the installation.
 
-The ``pip install`` method along with manual configuration of Apache
+The ``pip install`` method along with the manual configuration of Apache
 is also the method you need to use on Windows.
 
 System Requirements
@@ -59,7 +59,7 @@ With either installation method for mod_wsgi, you must have Apache
 installed. This must be a complete Apache installation. It is not enough to
 have only the runtime packages for Apache installed. You must have the
 corresponding development package for Apache installed, which contains the
-Apache header files, as these are required to be able compile and install
+Apache header files, as these are required to be able to compile and install
 third party Apache modules.
 
 Similarly with Python, you must have a complete Python installation which
@@ -156,7 +156,7 @@ Note that nothing will be copied into your Apache installation at this
 point. As a result, you do not need to run this as the root user unless
 installing it into a site wide Python installation rather than a Python
 virtual environment. It is recommended you always use Python virtual
-environments and never install any Python package direct into the system
+environments and never install any Python package directly into the system
 Python installation.
 
 On a UNIX type system, to verify that the installation was successful, run
@@ -233,7 +233,7 @@ additional steps.
 
 The first thing you must do is supply the ``--user`` and ``--group``
 options to say what user and group your Python web application should run
-as. Most Linux distributions will pre define a special user for Apache to
+as. Most Linux distributions will predefine a special user for Apache to
 run as, so you can use that. Alternatively you can use any other special
 user account you have created for running the Python web application::
 
@@ -344,7 +344,7 @@ use the ``--setup-only`` option to the ``runmodwsgi`` management command.
         --user www-data --group www-data \
         --server-root=/etc/mod_wsgi-express-80
  
-This will setup all the required files and you can use ``apachectl`` to
+This will set up all the required files and you can use ``apachectl`` to
 start and stop the Apache instance as explained previously.
 
 Connecting into Apache installation
