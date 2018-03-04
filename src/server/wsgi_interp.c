@@ -2613,21 +2613,25 @@ void wsgi_publish_process_stopping(char *reason)
         PyObject *event = NULL;
         PyObject *object = NULL;
 
-        interp = wsgi_acquire_interpreter((char *)apr_hash_this_key(hi));
+        const void *key;
 
-	event = PyDict_New();
+        apr_hash_this(hi, &key, NULL, NULL);
+
+        interp = wsgi_acquire_interpreter((char *)key);
+
+        event = PyDict_New();
 
 #if PY_MAJOR_VERSION >= 3
-	object = PyUnicode_DecodeLatin1(reason, strlen(reason), NULL);
+        object = PyUnicode_DecodeLatin1(reason, strlen(reason), NULL);
 #else
-	object = PyString_FromString(reason);
+        object = PyString_FromString(reason);
 #endif
-	PyDict_SetItemString(event, "shutdown_reason", object);
-	Py_DECREF(object);
+        PyDict_SetItemString(event, "shutdown_reason", object);
+        Py_DECREF(object);
 
-	wsgi_publish_event("process_stopping", event);
+        wsgi_publish_event("process_stopping", event);
 
-	Py_DECREF(event);
+        Py_DECREF(event);
 
         wsgi_release_interpreter(interp);
 
