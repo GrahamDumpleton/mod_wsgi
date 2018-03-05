@@ -9438,7 +9438,13 @@ static void wsgi_log_stack_traces(void)
                     char *filename = NULL;
                     char *name = NULL;
 
-                    lineno = PyFrame_GetLineNumber(current);
+                    if (current->f_trace) {
+                        lineno = current->f_lineno;
+                    }
+                    else {
+                        lineno = PyCode_Addr2Line(current->f_code,
+                                                  current->f_lasti);
+                    }
 
 #if PY_MAJOR_VERSION >= 3
                     filename = PyUnicode_AsUTF8(current->f_code->co_filename);
