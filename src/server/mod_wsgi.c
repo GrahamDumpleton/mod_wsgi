@@ -4414,8 +4414,10 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
     /* Loop through import scripts for this process and load them. */
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process && wsgi_daemon_process->group->threads == 0)
         ignore_system_exit = 1;
+#endif
 
     if (wsgi_import_list) {
         apr_array_header_t *scripts = NULL;

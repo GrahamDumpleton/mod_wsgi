@@ -15,3 +15,8 @@ Bugs Fixed
   still yields correct answer. This issue was introduced in mod_wsgi
   version 4.6.0 in fix to have correct line numbers generated for stack
   traces on shutdown due to request timeout.
+
+* Installing mod_wsgi on Windows would fail as hadn't exclude mod_wsgi
+  daemon mode specific code from Windows build. This would result in compile
+  time error about ``wsgi_daemon_process`` being undefined. This problem
+  was introduced to Windows in version 4.6.0.
