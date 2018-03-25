@@ -4414,8 +4414,10 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
     /* Loop through import scripts for this process and load them. */
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process && wsgi_daemon_process->group->threads == 0)
         ignore_system_exit = 1;
+#endif
 
     if (wsgi_import_list) {
         apr_array_header_t *scripts = NULL;
@@ -9438,7 +9440,13 @@ static void wsgi_log_stack_traces(void)
                     char *filename = NULL;
                     char *name = NULL;
 
-                    lineno = PyFrame_GetLineNumber(current);
+                    if (current->f_trace) {
+                        lineno = current->f_lineno;
+                    }
+                    else {
+                        lineno = PyCode_Addr2Line(current->f_code,
+                                                  current->f_lasti);
+                    }
 
 #if PY_MAJOR_VERSION >= 3
                     filename = PyUnicode_AsUTF8(current->f_code->co_filename);

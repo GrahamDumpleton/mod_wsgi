@@ -2128,7 +2128,7 @@ option_list = (
             metavar='SECONDS', help='Maximum number of seconds allowed '
             'for a request to be accepted by a worker process to be '
             'handled, taken from the time when the Apache child process '
-            'originally accepted the request. Defaults to 30 seconds.'),
+            'originally accepted the request. Defaults to 45 seconds.'),
 
     optparse.make_option('--header-timeout', type='int', default=15,
             metavar='SECONDS', help='The number of seconds allowed for '
