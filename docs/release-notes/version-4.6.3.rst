@@ -20,3 +20,11 @@ Bugs Fixed
   daemon mode specific code from Windows build. This would result in compile
   time error about ``wsgi_daemon_process`` being undefined. This problem
   was introduced to Windows in version 4.6.0.
+
+* When using ``runmodwsgi`` management command integration for Django, the
+  file containing the WSGI application entry point was specified via a full
+  filesystem path, rather than by module import path. This meant that relative
+  imports from that file would fail. The file is now imported as a module
+  path based on what ``WSGI_APPLICATION`` is set to in the Django settings
+  module. This means the file is imported as part of package for the project
+  and relative imports will work.

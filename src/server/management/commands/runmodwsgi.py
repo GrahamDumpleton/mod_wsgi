@@ -75,10 +75,13 @@ class Command(BaseCommand):
 
         __import__(module_name)
 
-        script_file = inspect.getsourcefile(sys.modules[module_name])
+        # script_file = inspect.getsourcefile(sys.modules[module_name])
+        # args = [script_file]
 
-        args = [script_file]
+        options['application_type'] = 'module'
         options['callable_object'] = callable_object
+
+        args = [module_name]
 
         # If there is no BASE_DIR in Django settings, assume that the
         # current working directory is the parent directory of the
