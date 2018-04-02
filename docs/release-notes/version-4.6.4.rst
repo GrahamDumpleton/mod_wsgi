@@ -17,3 +17,9 @@ Bugs Fixed
   versions. The only issue arising from the wrong directory, not incorporating
   the platform name, being used, was a linker warning about the directory
   not being present.
+
+* Installing mod_wsgi on Windows would fail as hadn't exclude mod_wsgi
+  daemon mode specific code from Windows build. This would result in compile
+  time error about ``wsgi_daemon_process`` being undefined. This problem
+  was introduced to Windows in version 4.6.0. A prior attempt to fix this
+  in 4.6.3 missed one place in the code which needed to be changed.
