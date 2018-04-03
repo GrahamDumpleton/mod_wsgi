@@ -419,6 +419,8 @@ InterpreterObject *newInterpreterObject(const char *name)
     int is_threaded = 0;
     int is_forked = 0;
 
+    int is_service_script = 0;
+
     const char *str = NULL;
 
     /* Create handle for interpreter and local data. */
@@ -595,7 +597,10 @@ InterpreterObject *newInterpreterObject(const char *name)
      * registering signal handlers so they are ignored.
      */
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process && wsgi_daemon_process->group->threads == 0) {
+        is_service_script = 1;
+
         module = PyImport_ImportModule("signal");
 
         if (module) {
@@ -637,7 +642,9 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         Py_XDECREF(module);
     }
-    else if (wsgi_server_config->restrict_signal != 0) {
+#endif
+
+    if (!is_service_script && wsgi_server_config->restrict_signal != 0) {
         module = PyImport_ImportModule("signal");
 
         if (module) {
@@ -2057,17 +2064,19 @@ apr_status_t wsgi_python_term(void)
      * condition.
      */
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process)
         apr_thread_mutex_lock(wsgi_shutdown_lock);
 
-#if defined(MOD_WSGI_WITH_DAEMONS)
     wsgi_daemon_shutdown++;
 #endif
 
     Py_Finalize();
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process)
         apr_thread_mutex_unlock(wsgi_shutdown_lock);
+#endif
 
     wsgi_python_initialized = 0;
 
