@@ -442,6 +442,8 @@ else:
 
     if PYTHON_LDVERSION and PYTHON_LDVERSION != PYTHON_VERSION:
         PYTHON_CFGDIR = '%s-%s' % (PYTHON_CFGDIR, PYTHON_LDVERSION)
+        if not os.path.exists(PYTHON_CFGDIR):
+            PYTHON_CFGDIR = '%s-%s' % (PYTHON_CFGDIR, sys.platform)
 
     PYTHON_LDFLAGS = ['-L%s' % PYTHON_LIBDIR, '-L%s' % PYTHON_CFGDIR]
     PYTHON_LDLIBS = ['-lpython%s' % PYTHON_LDVERSION]

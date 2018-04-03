@@ -4248,8 +4248,12 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
      * before trying to wait on request threads.
      */
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
     if (!wsgi_daemon_process)
         wsgi_publish_process_stopping(wsgi_shutdown_reason);
+#else
+    wsgi_publish_process_stopping(wsgi_shutdown_reason);
+#endif
 
     /* In a multithreaded MPM must protect table. */
 
