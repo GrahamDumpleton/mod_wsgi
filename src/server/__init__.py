@@ -716,7 +716,7 @@ AccessFileName .htaccess
 </Files>
 </Directory>
 
-<Directory '%(document_root)s%(mount_point)s'>
+<Directory '%(document_root)s'>
     AllowOverride %(allow_override)s
 <IfDefine MOD_WSGI_DIRECTORY_INDEX>
     DirectoryIndex %(directory_index)s
@@ -732,6 +732,16 @@ AccessFileName .htaccess
 </IfDefine>
     RewriteEngine On
     Include %(rewrite_rules)s
+<IfVersion < 2.4>
+    Order allow,deny
+    Allow from all
+</IfVersion>
+<IfVersion >= 2.4>
+    Require all granted
+</IfVersion>
+</Directory>
+
+<Directory '%(document_root)s%(mount_point)s'>
 <IfDefine !MOD_WSGI_STATIC_ONLY>
     RewriteCond %%{REQUEST_FILENAME} !-f
 <IfDefine MOD_WSGI_DIRECTORY_INDEX>
@@ -742,13 +752,6 @@ AccessFileName .htaccess
 </IfDefine>
     RewriteRule .* - [H=wsgi-handler]
 </IfDefine>
-<IfVersion < 2.4>
-    Order allow,deny
-    Allow from all
-</IfVersion>
-<IfVersion >= 2.4>
-    Require all granted
-</IfVersion>
 </Directory>
 
 <IfDefine MOD_WSGI_ERROR_OVERRIDE>
