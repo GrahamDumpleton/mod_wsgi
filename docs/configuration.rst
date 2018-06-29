@@ -12,6 +12,7 @@ Configuration
    configuration-directives/WSGIAuthUserScript
    configuration-directives/WSGICallableObject
    configuration-directives/WSGICaseSensitivity
+   configuration-directives/WSGIChunkedRequest
    configuration-directives/WSGIDaemonProcess
    configuration-directives/WSGIImportScript
    configuration-directives/WSGILazyInitialization
