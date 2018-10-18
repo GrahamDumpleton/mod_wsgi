@@ -13751,8 +13751,8 @@ static void wsgi_process_proxy_headers(request_rec *r)
 
     if (trusted_proxy) {
         for (i=0; i<trusted_proxy_headers->nelts; i++) {
-            const char *name = NULL;
-            const char *value = NULL;
+            const char *name;
+            const char *value;
 
             name = ((const char**)trusted_proxy_headers->elts)[i];
             value = apr_table_get(r->subprocess_env, name);
@@ -13879,11 +13879,9 @@ static void wsgi_process_proxy_headers(request_rec *r)
          */
 
         for (i=0; i<trusted_proxy_headers->nelts; i++) {
-            const char *name = NULL;
-            const char *value = NULL;
+            const char *name;
 
             name = ((const char**)trusted_proxy_headers->elts)[i];
-            value = apr_table_get(r->subprocess_env, name);
 
             if (!strcmp(name, "HTTP_X_FORWARDED_FOR") ||
                      !strcmp(name, "HTTP_X_REAL_IP")) {
