@@ -13340,8 +13340,10 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
         for (i = 0; i < wsgi_daemon_list->nelts; ++i) {
             entry = &entries[i];
 
-            close(entry->listener_fd);
-            entry->listener_fd = -1;
+            if (entry->listener_fd != -1) {
+                close(entry->listener_fd);
+                entry->listener_fd = -1;
+            }
         }
     }
 #endif
