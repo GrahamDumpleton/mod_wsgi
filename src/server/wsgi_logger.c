@@ -694,9 +694,11 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
             PyObject *object = NULL;
 
             if (wsgi_event_subscribers()) {
+#if 0
                 WSGIThreadInfo *thread_info;
 
                 thread_info = wsgi_thread_info(0, 0);
+#endif
 
                 event = PyDict_New();
 
