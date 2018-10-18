@@ -2108,9 +2108,11 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     /* Publish event for the start of the response. */
 
     if (wsgi_event_subscribers()) {
+#if 0
         WSGIThreadInfo *thread_info;
 
         thread_info = wsgi_thread_info(0, 0);
+#endif
 
         event = PyDict_New();
 
