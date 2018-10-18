@@ -8510,6 +8510,7 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
         ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                      "mod_wsgi (pid=%d): Couldn't bind unix domain "
                      "socket '%s'.", getpid(), process->socket_path);
+        close(sockfd);
         return -1;
     }
 
@@ -8521,6 +8522,7 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
         ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                      "mod_wsgi (pid=%d): Couldn't listen on unix domain "
                      "socket.", getpid());
+        close(sockfd);
         return -1;
     }
 
@@ -8555,6 +8557,7 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
                          "mod_wsgi (pid=%d): Couldn't change owner of unix "
                          "domain socket '%s' to uid=%ld.", getpid(),
                          process->socket_path, (long)socket_uid);
+            close(sockfd);
             return -1;
         }
     }
