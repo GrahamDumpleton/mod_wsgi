@@ -50,15 +50,20 @@ within that directory can be used. To do this the Directory directive must
 be used::
 
     <Directory /usr/local/wsgi/scripts>
-    Order allow,deny
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
     </Directory>
 
-Note that Apache access control directives such as Order and Allow should
-nearly always be applied to Directory and never to a Location. Adding them
-to a Location would not be regarded as best practice and would potentially
-weaken the security of your Apache server, especially where the Location
-was for '/'.
+Note that Apache access control directives such as Order and Allow, or
+Require in the case of Apache 2.4 or newer, should nearly always be applied
+to Directory and never to a Location. Adding them to a Location would not
+be regarded as best practice and would potentially weaken the security of
+your Apache server, especially where the Location was for '/'.
 
 As for CGI scripts and the ScriptAlias directive, it is not necessary to
 have used the Options directive to enable the ExecCGI directive. This is
@@ -117,8 +122,13 @@ specific URLs. The equivalent such configuration for::
     WSGIScriptAlias /wsgi/ /usr/local/wsgi/scripts/
 
     <Directory /usr/local/wsgi/scripts>
-    Order allow,deny
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
     </Directory>
 
 using the Alias directive would be::
@@ -130,8 +140,13 @@ using the Alias directive would be::
 
     SetHandler wsgi-script
 
-    Order allow,deny
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
     </Directory>
 
 The additional steps required in this case are to enable the ability to
@@ -151,8 +166,13 @@ resource types based on resource extension::
     AddHandler cgi-script .cgi
     AddHandler wsgi-script .wsgi
 
-    Order allow,deny
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
     </Directory>
 
 For whatever extension you use to identify a WSGI script file, ensure that
@@ -177,8 +197,13 @@ option and MultiviewsMatch directive::
     AddHandler cgi-script .cgi
     AddHandler wsgi-script .wsgi
 
-    Order allow,deny
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
     </Directory>
 
 Adding of MultiViews in this instance and allowing multiviews to match
@@ -201,8 +226,13 @@ the directory. To enable directory browsing add the Indexes option::
     AddHandler cgi-script .cgi
     AddHandler wsgi-script .wsgi
 
-    Order allow,deny
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
     </Directory>
 
 If a directory index page is enabled, it may refer to either a static file,
@@ -219,8 +249,13 @@ designate what should be used for the index page::
     AddHandler cgi-script .cgi
     AddHandler wsgi-script .wsgi
 
-    Order allow,deny
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
     </Directory>
 
 Using AddHandler or SetHandler to configure a WSGI application can also
@@ -238,8 +273,13 @@ Options directive by listing ExecCGI::
     Options ExecCGI MultiViews Indexes
     MultiviewsMatch Handlers
 
-    Order allow,deny
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
     </Directory>
 
 This done, the '.htaccess' file could then contain::
@@ -388,15 +428,25 @@ which should be served in this way::
     Alias /media/ /usr/local/wsgi/static/media/
 
     <Directory /usr/local/wsgi/static>
-    Order deny,allow
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
     </Directory>
 
     WSGIScriptAlias / /usr/local/wsgi/scripts/myapp.wsgi
 
     <Directory /usr/local/wsgi/scripts>
-    Order allow,deny
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
     </Directory>
 
 When listing the directives, list those for more specific URLs first. In
@@ -465,8 +515,13 @@ the WSGIApplicationGroup directive::
     <Directory /usr/local/wsgi/scripts>
     WSGIApplicationGroup admin-scripts
 
-    Order allow,deny
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
     </Directory>
 
 The argument to the WSGIApplicationGroup directive can in general be any
@@ -560,8 +615,13 @@ specific WSGI applications to execute within that daemon process::
     Alias /media/ /usr/local/wsgi/static/media/
 
     <Directory /usr/local/wsgi/static>
-    Order deny,allow
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
     </Directory>
 
     WSGIScriptAlias / /usr/local/wsgi/scripts/myapp.wsgi
@@ -569,8 +629,13 @@ specific WSGI applications to execute within that daemon process::
 
     <Directory /usr/local/wsgi/scripts>
 
-    Order allow,deny
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
     </Directory>
 
 Where Apache has been started as the ``root`` user, the daemon processes

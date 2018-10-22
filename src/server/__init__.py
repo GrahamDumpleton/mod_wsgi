@@ -15,6 +15,7 @@ import pprint
 import time
 import traceback
 import locale
+import inspect
 
 try:
     import Queue as queue
@@ -105,7 +106,7 @@ def find_mimetypes():
             return name
             break
     else:
-        return name
+        return '/dev/null'
 
 APACHE_GENERAL_CONFIG = """
 <IfModule !version_module>
@@ -716,7 +717,7 @@ AccessFileName .htaccess
 </Files>
 </Directory>
 
-<Directory '%(document_root)s%(mount_point)s'>
+<Directory '%(document_root)s'>
     AllowOverride %(allow_override)s
 <IfDefine MOD_WSGI_DIRECTORY_INDEX>
     DirectoryIndex %(directory_index)s
@@ -732,6 +733,16 @@ AccessFileName .htaccess
 </IfDefine>
     RewriteEngine On
     Include %(rewrite_rules)s
+<IfVersion < 2.4>
+    Order allow,deny
+    Allow from all
+</IfVersion>
+<IfVersion >= 2.4>
+    Require all granted
+</IfVersion>
+</Directory>
+
+<Directory '%(document_root)s%(mount_point)s'>
 <IfDefine !MOD_WSGI_STATIC_ONLY>
     RewriteCond %%{REQUEST_FILENAME} !-f
 <IfDefine MOD_WSGI_DIRECTORY_INDEX>
@@ -742,13 +753,6 @@ AccessFileName .htaccess
 </IfDefine>
     RewriteRule .* - [H=wsgi-handler]
 </IfDefine>
-<IfVersion < 2.4>
-    Order allow,deny
-    Allow from all
-</IfVersion>
-<IfVersion >= 2.4>
-    Require all granted
-</IfVersion>
 </Directory>
 
 <IfDefine MOD_WSGI_ERROR_OVERRIDE>
@@ -2390,8 +2394,9 @@ option_list = (
     optparse.make_option('--server-root', metavar='DIRECTORY-PATH',
             help='Specify an alternate directory for where the generated '
             'web server configuration, startup files and logs will be '
-            'stored. Defaults to the sub directory specified by the '
-            'TMPDIR environment variable, or /tmp if not specified.'),
+            'stored. On Linux defaults to the sub directory specified by '
+            'the TMPDIR environment variable, or /tmp if not specified. '
+            'On macOS, defaults to the /var/tmp directory.'),
 
     optparse.make_option('--server-mpm', action='append',
             dest='server_mpm_variables', metavar='NAME', help='Specify '
@@ -2660,9 +2665,12 @@ def _cmd_setup_server(command, args, options):
             options['port'], os.getuid())
 
     if not options['server_root']:
-        tmpdir = os.environ.get('TMPDIR')
-        tmpdir = tmpdir or '/tmp'
-        tmpdir = tmpdir.rstrip('/')
+        if sys.platform == 'darwin':
+            tmpdir = '/var/tmp'
+        else:
+            tmpdir = os.environ.get('TMPDIR')
+            tmpdir = tmpdir or '/tmp'
+            tmpdir = tmpdir.rstrip('/')
         options['server_root'] = '%s/mod_wsgi-%s:%s:%s' % (tmpdir,
                 options['host'], options['port'], os.getuid())
 
@@ -2867,6 +2875,28 @@ def _cmd_setup_server(command, args, options):
 
     if options['python_paths'] is None:
         options['python_paths'] = []
+
+    # Special case to check for when being executed from shiv variant
+    # of a zipapp application bundle. We need to work out where the
+    # site packages directory is and pass it with Python module search
+    # path so is known about by the Apache sub process when executed.
+
+    site_packages = []
+
+    if '_bootstrap' in sys.modules:
+        bootstrap = sys.modules['_bootstrap']
+        if 'bootstrap' in dir(bootstrap):
+            frame = inspect.currentframe()
+            while frame is not None:
+                code = frame.f_code
+                if (code and code.co_filename == bootstrap.__file__ and
+                        code.co_name == 'bootstrap' and
+                        'site_packages' in frame.f_locals):
+                    site_packages.append(str(frame.f_locals['site_packages']))
+                    break
+                frame = frame.f_back
+
+    options['python_paths'].extend(site_packages)
 
     options['python_path'] = ':'.join(options['python_paths'])
 

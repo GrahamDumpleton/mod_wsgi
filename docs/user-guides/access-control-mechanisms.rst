@@ -126,7 +126,7 @@ only one small part of them. This will result in a lot of memory being used
 in the Apache child processes just to support the auth provider.
 
 If mod_authn_alias is being loaded into Apache, then an aliased auth
-%rovider can also be defined::
+provider can also be defined::
 
     <AuthnProviderAlias wsgi django>
     WSGIAuthUserScript /usr/local/django/mysite/apache/auth.wsgi \
@@ -136,8 +136,13 @@ If mod_authn_alias is being loaded into Apache, then an aliased auth
     WSGIScriptAlias / /usr/local/django/mysite/apache/django.wsgi
 
     <Directory /usr/local/django/mysite/apache>
-    Order deny,allow
-    Allow from all
+    <IfVersion < 2.4>
+	Order allow,deny
+	Allow from all
+    </IfVersion>
+    <IfVersion >= 2.4>
+	Require all granted
+    </IfVersion>
 
     WSGIApplicationGroup django
 
