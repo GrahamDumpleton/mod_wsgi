@@ -14,6 +14,13 @@ Bugs Fixed
   ``--mount-point``, the static files in the document root outside of the
   mount point for the WSGI application would no longer be accessible.
 
+Features Changed
+----------------
+
+* On macOS, use ``/var/tmp`` as default parent directory for server root
+  directory rather than value of ``$TMPDIR``. The latter can produce a
+  path which is too long and UNIX socket cannot be written there.
+
 New Features
 ------------
 

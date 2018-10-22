@@ -2394,8 +2394,9 @@ option_list = (
     optparse.make_option('--server-root', metavar='DIRECTORY-PATH',
             help='Specify an alternate directory for where the generated '
             'web server configuration, startup files and logs will be '
-            'stored. Defaults to the sub directory specified by the '
-            'TMPDIR environment variable, or /tmp if not specified.'),
+            'stored. On Linux defaults to the sub directory specified by '
+            'the TMPDIR environment variable, or /tmp if not specified. '
+            'On macOS, defaults to the /var/tmp directory.'),
 
     optparse.make_option('--server-mpm', action='append',
             dest='server_mpm_variables', metavar='NAME', help='Specify '
@@ -2664,9 +2665,12 @@ def _cmd_setup_server(command, args, options):
             options['port'], os.getuid())
 
     if not options['server_root']:
-        tmpdir = os.environ.get('TMPDIR')
-        tmpdir = tmpdir or '/tmp'
-        tmpdir = tmpdir.rstrip('/')
+        if sys.platform == 'darwin':
+            tmpdir = '/var/tmp'
+        else:
+            tmpdir = os.environ.get('TMPDIR')
+            tmpdir = tmpdir or '/tmp'
+            tmpdir = tmpdir.rstrip('/')
         options['server_root'] = '%s/mod_wsgi-%s:%s:%s' % (tmpdir,
                 options['host'], options['port'], os.getuid())
 
