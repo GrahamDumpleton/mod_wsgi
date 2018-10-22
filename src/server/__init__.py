@@ -15,6 +15,7 @@ import pprint
 import time
 import traceback
 import locale
+import inspect
 
 try:
     import Queue as queue
@@ -2870,6 +2871,28 @@ def _cmd_setup_server(command, args, options):
 
     if options['python_paths'] is None:
         options['python_paths'] = []
+
+    # Special case to check for when being executed from shiv variant
+    # of a zipapp application bundle. We need to work out where the
+    # site packages directory is and pass it with Python module search
+    # path so is known about by the Apache sub process when executed.
+
+    site_packages = []
+
+    if '_bootstrap' in sys.modules:
+        bootstrap = sys.modules['_bootstrap']
+        if 'bootstrap' in dir(bootstrap):
+            frame = inspect.currentframe()
+            while frame is not None:
+                code = frame.f_code
+                if (code and code.co_filename == bootstrap.__file__ and
+                        code.co_name == 'bootstrap' and
+                        'site_packages' in frame.f_locals):
+                    site_packages.append(str(frame.f_locals['site_packages']))
+                    break
+                frame = frame.f_back
+
+    options['python_paths'].extend(site_packages)
 
     options['python_path'] = ':'.join(options['python_paths'])
 

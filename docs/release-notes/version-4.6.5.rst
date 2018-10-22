@@ -13,3 +13,11 @@ Bugs Fixed
   document root, and the WSGI application was mounted at a sub URL using
   ``--mount-point``, the static files in the document root outside of the
   mount point for the WSGI application would no longer be accessible.
+
+New Features
+------------
+
+* Now possible to use ``mod_wsgi-express`` in an a ``zipapp`` created using
+  ``shiv``. This entailed a special workaround to detect when ``shiv`` was
+  used, so that the unpacked ``site-packages`` directory could be added to
+  the Python module search path for ``mod_wsgi-express``.
