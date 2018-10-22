@@ -14,6 +14,9 @@ Bugs Fixed
   ``--mount-point``, the static files in the document root outside of the
   mount point for the WSGI application would no longer be accessible.
 
+* If no system mime types file can be found, fall back to ``/dev/null``
+  so that Apache can still at least start up.
+
 Features Changed
 ----------------
 

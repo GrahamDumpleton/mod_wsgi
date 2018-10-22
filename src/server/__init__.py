@@ -106,7 +106,7 @@ def find_mimetypes():
             return name
             break
     else:
-        return name
+        return '/dev/null'
 
 APACHE_GENERAL_CONFIG = """
 <IfModule !version_module>
