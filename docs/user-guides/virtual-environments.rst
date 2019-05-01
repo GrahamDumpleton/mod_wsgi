@@ -2,27 +2,17 @@
 Virtual Environments
 ====================
 
-This document contains information about how to use Python virtual
-environments with mod_wsgi. You can use a Python virtual environment
-created using `virtualenv`_ and `virtualenvwrapper`_, or if using Python 3,
-the ``pyvenv`` or ``python -m venv`` commands.
+The mod_wsgi package works with `virtualenv`_, `virtualenvwrapper`_,
+``pyvenv`` and ``python -m venv``.
 
-The purpose of a Python virtual environments is to allow one to create
-multiple distinct Python environments for the same version of Python, but
-with different sets of Python modules and packages installed. It is
-recommended that you always use Python virtual environments and not install
-additional Python packages direct into your Python installation.
-
-A Python virtual environment is also required where it is necessary to run
+A Python virtual environment is required when it is necessary to run
 multiple WSGI applications which have conflicting requirements as to what
 version of a Python module or package needs to be installed. They can also
 be used when distinct mod_wsgi daemon process groups are used to host WSGI
 applications for different users and each user needs to be able to
 separately install their own Python modules and packages.
 
-How you configure mod_wsgi or setup your WSGI application script file for a
-Python virtual environment will depend on your specific requirements. The
-more common scenarios are explained below.
+The more common scenarios for configuration are explained below.
 
 Location of the Virtual Environment
 -----------------------------------
