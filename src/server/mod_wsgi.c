@@ -9446,8 +9446,8 @@ static void wsgi_log_stack_traces(void)
                 while (current) {
                     int lineno;
 
-                    char *filename = NULL;
-                    char *name = NULL;
+                    const char *filename = NULL;
+                    const char *name = NULL;
 
                     if (current->f_trace) {
                         lineno = current->f_lineno;
