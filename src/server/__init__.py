@@ -1513,7 +1513,7 @@ class ResourceHandler(object):
         self.resources = {}
 
         for extension, script in resources:
-            extension_name = re.sub('[^\w]{1}', '_', extension)
+            extension_name = re.sub(r'[^\w]{1}', '_', extension)
             module_name = '__wsgi_resource%s__' % extension_name
             module = imp.new_module(module_name)
             module.__file__ = script
