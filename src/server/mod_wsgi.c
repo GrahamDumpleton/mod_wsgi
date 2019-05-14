@@ -4345,8 +4345,13 @@ static void wsgi_python_child_init(apr_pool_t *p)
      * do it if Python was initialised in parent process.
      */
 
-    if (wsgi_python_initialized && !wsgi_python_after_fork)
+    if (wsgi_python_initialized && !wsgi_python_after_fork) {
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 7)
+        PyOS_AfterFork_Child();
+#else
         PyOS_AfterFork();
+#endif
+    }
 
     /* Finalise any Python objects required by child process. */
 
@@ -10420,6 +10425,12 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         /* Exit the daemon process when being shutdown. */
 
         wsgi_exit_daemon_process(0);
+    }
+
+    if (wsgi_python_initialized) {
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 7)
+        PyOS_AfterFork_Parent();
+#endif
     }
 
     apr_pool_note_subprocess(p, &daemon->process, APR_KILL_AFTER_TIMEOUT);
