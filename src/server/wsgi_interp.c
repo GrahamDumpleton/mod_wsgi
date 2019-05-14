@@ -338,9 +338,10 @@ static PyObject *ShutdownInterpreter_call(
 
         PyThreadState_Swap(NULL);
 
-        tstate = tstate->interp->tstate_head;
+        tstate = PyInterpreterState_ThreadHead(tstate->interp);
+
         while (tstate) {
-            tstate_next = tstate->next;
+            tstate_next = PyThreadState_Next(tstate);
             if (tstate != tstate_save) {
                 PyThreadState_Swap(tstate);
                 PyThreadState_Clear(tstate);
@@ -436,9 +437,13 @@ InterpreterObject *newInterpreterObject(const char *name)
      */
 
     if (!name) {
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 7)
+        interp = PyInterpreterState_Main();
+#else
         interp = PyInterpreterState_Head();
-        while (interp->next)
-            interp = interp->next;
+        while (PyInterpreterState_Next(interp))
+            interp = PyInterpreterState_Next(interp);
+#endif
 
         name = "";
     }
@@ -1883,9 +1888,10 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
         PyThreadState_Swap(NULL);
 
-        tstate = tstate->interp->tstate_head;
+        tstate = PyInterpreterState_ThreadHead(tstate->interp);
+
         while (tstate) {
-            tstate_next = tstate->next;
+            tstate_next = PyThreadState_Next(tstate);
             if (tstate != tstate_save) {
                 PyThreadState_Swap(tstate);
                 PyThreadState_Clear(tstate);
