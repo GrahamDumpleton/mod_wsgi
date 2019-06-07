@@ -6,6 +6,11 @@ Version 4.6.6 of mod_wsgi can be obtained from:
 
   https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/4.6.6
 
+Bugs Fixed
+----------
+
+* Fix compilation failures when using Python 3.8.
+
 Features Changed
 ----------------
 
