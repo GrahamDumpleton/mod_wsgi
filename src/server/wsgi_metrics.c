@@ -713,7 +713,7 @@ void wsgi_publish_event(const char *name, PyObject *event)
         dict = PyModule_GetDict(module);
         list = PyDict_GetItemString(dict, "event_callbacks");
 
-        Py_INCREF(list);
+        Py_XINCREF(list);
 
         Py_DECREF(module);
     }
