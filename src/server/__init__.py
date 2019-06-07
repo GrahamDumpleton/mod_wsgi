@@ -104,7 +104,6 @@ def find_mimetypes():
     for name in mimetypes.knownfiles:
         if os.path.exists(name):
             return name
-            break
     else:
         return '/dev/null'
 
