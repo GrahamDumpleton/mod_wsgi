@@ -2063,8 +2063,6 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     PyObject *status_line_as_bytes = NULL;
     PyObject *headers_as_bytes = NULL;
 
-    PyObject *event = NULL;
-
     if (!self->r) {
         PyErr_SetString(PyExc_RuntimeError, "request object has expired");
         return NULL;
@@ -2110,17 +2108,31 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     if (wsgi_event_subscribers()) {
         WSGIThreadInfo *thread_info;
 
+        PyObject *event = NULL;
+        PyObject *value = NULL;
+
         thread_info = wsgi_thread_info(0, 0);
 
         event = PyDict_New();
+
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+        if (self->r->log_id) {
+#if PY_MAJOR_VERSION >= 3
+	    value = PyUnicode_DecodeLatin1(self->r->log_id,
+                                           strlen(self->r->log_id), NULL);
+#else
+	    value = PyString_FromString(self->r->log_id);
+#endif
+            PyDict_SetItemString(event, "request_id", value);
+            Py_DECREF(value);
+        }
+#endif
 
         PyDict_SetItemString(event, "response_status", status_line);
         PyDict_SetItemString(event, "response_headers", headers);
         PyDict_SetItemString(event, "exception_info", exc_info);
 
-#if 0
         PyDict_SetItemString(event, "request_data", thread_info->request_data);
-#endif
 
         wsgi_publish_event("response_started", event);
 
@@ -3093,6 +3105,19 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         event = PyDict_New();
 
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+        if (self->r->log_id) {
+#if PY_MAJOR_VERSION >= 3
+	    value = PyUnicode_DecodeLatin1(self->r->log_id,
+                                           strlen(self->r->log_id), NULL);
+#else
+	    value = PyString_FromString(self->r->log_id);
+#endif
+            PyDict_SetItemString(event, "request_id", value);
+            Py_DECREF(value);
+        }
+#endif
+
         value = wsgi_PyInt_FromLong(thread_handle->thread_id);
         PyDict_SetItemString(event, "thread_id", value);
         Py_DECREF(value);
@@ -3128,9 +3153,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         PyDict_SetItemString(event, "application_start", value);
         Py_DECREF(value);
 
-#if 0
         PyDict_SetItemString(event, "request_data", thread_handle->request_data);
-#endif
 
         wsgi_publish_event("request_started", event);
 
@@ -3299,6 +3322,19 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         event = PyDict_New();
 
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+        if (self->r->log_id) {
+#if PY_MAJOR_VERSION >= 3
+	    value = PyUnicode_DecodeLatin1(self->r->log_id,
+                                           strlen(self->r->log_id), NULL);
+#else
+	    value = PyString_FromString(self->r->log_id);
+#endif
+            PyDict_SetItemString(event, "request_id", value);
+            Py_DECREF(value);
+        }
+#endif
+
         value = wsgi_PyInt_FromLongLong(self->input->reads);
         PyDict_SetItemString(event, "input_reads", value);
         Py_DECREF(value);
@@ -3378,9 +3414,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         PyDict_SetItemString(event, "application_time", value);
         Py_DECREF(value);
 
-#if 0
         PyDict_SetItemString(event, "request_data", thread_handle->request_data);
-#endif
 
         wsgi_publish_event("request_finished", event);
 

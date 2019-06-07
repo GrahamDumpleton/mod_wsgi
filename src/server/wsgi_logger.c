@@ -700,14 +700,25 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
 
                 event = PyDict_New();
 
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+                if (r->log_id) {
+#if PY_MAJOR_VERSION >= 3
+                    object = PyUnicode_DecodeLatin1(r->log_id,
+                                                    strlen(r->log_id), NULL);
+#else
+                    object = PyString_FromString(r->log_id);
+#endif
+                    PyDict_SetItemString(event, "request_id", object);
+                    Py_DECREF(object);
+                }
+#endif
+
                 object = Py_BuildValue("(OOO)", type, value, traceback);
                 PyDict_SetItemString(event, "exception_info", object);
                 Py_DECREF(object);
 
-#if 0
                 PyDict_SetItemString(event, "request_data",
                                      thread_info->request_data);
-#endif
 
                 wsgi_publish_event("request_exception", event);
 
