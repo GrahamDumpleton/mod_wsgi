@@ -6349,7 +6349,7 @@ static void wsgi_build_environment(request_rec *r)
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT, r->request_time));
 
 #if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
-    if (!r->log_id || !r->connection->log_id) {
+    if (!r->log_id) {
         const char **id;
 
         /* Need to cast const away. */
