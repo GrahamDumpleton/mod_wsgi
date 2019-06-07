@@ -240,9 +240,9 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Note that the directory specified must exist and be writable by the
     user that the daemon process run as.
 
-**restart-interval=nnn**
-    Defines a time limit on how long a daemon process should run before
-    being restarted.
+**restart-interval=sss**
+    Defines a time limit in seconds for how long a daemon process should
+    run before being restarted.
 
     This might be use to periodically force restart the WSGI application
     processes when you have issues related to Python object reference count

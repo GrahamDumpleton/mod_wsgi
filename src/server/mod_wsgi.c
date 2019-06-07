@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2018 GRAHAM DUMPLETON
+ * Copyright 2007-2019 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2063,8 +2063,6 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     PyObject *status_line_as_bytes = NULL;
     PyObject *headers_as_bytes = NULL;
 
-    PyObject *event = NULL;
-
     if (!self->r) {
         PyErr_SetString(PyExc_RuntimeError, "request object has expired");
         return NULL;
@@ -2110,17 +2108,31 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     if (wsgi_event_subscribers()) {
         WSGIThreadInfo *thread_info;
 
+        PyObject *event = NULL;
+        PyObject *value = NULL;
+
         thread_info = wsgi_thread_info(0, 0);
 
         event = PyDict_New();
+
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+        if (self->r->log_id) {
+#if PY_MAJOR_VERSION >= 3
+	    value = PyUnicode_DecodeLatin1(self->r->log_id,
+                                           strlen(self->r->log_id), NULL);
+#else
+	    value = PyString_FromString(self->r->log_id);
+#endif
+            PyDict_SetItemString(event, "request_id", value);
+            Py_DECREF(value);
+        }
+#endif
 
         PyDict_SetItemString(event, "response_status", status_line);
         PyDict_SetItemString(event, "response_headers", headers);
         PyDict_SetItemString(event, "exception_info", exc_info);
 
-#if 0
         PyDict_SetItemString(event, "request_data", thread_info->request_data);
-#endif
 
         wsgi_publish_event("response_started", event);
 
@@ -3093,6 +3105,19 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         event = PyDict_New();
 
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+        if (self->r->log_id) {
+#if PY_MAJOR_VERSION >= 3
+	    value = PyUnicode_DecodeLatin1(self->r->log_id,
+                                           strlen(self->r->log_id), NULL);
+#else
+	    value = PyString_FromString(self->r->log_id);
+#endif
+            PyDict_SetItemString(event, "request_id", value);
+            Py_DECREF(value);
+        }
+#endif
+
         value = wsgi_PyInt_FromLong(thread_handle->thread_id);
         PyDict_SetItemString(event, "thread_id", value);
         Py_DECREF(value);
@@ -3128,9 +3153,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         PyDict_SetItemString(event, "application_start", value);
         Py_DECREF(value);
 
-#if 0
         PyDict_SetItemString(event, "request_data", thread_handle->request_data);
-#endif
 
         wsgi_publish_event("request_started", event);
 
@@ -3299,6 +3322,19 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         event = PyDict_New();
 
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+        if (self->r->log_id) {
+#if PY_MAJOR_VERSION >= 3
+	    value = PyUnicode_DecodeLatin1(self->r->log_id,
+                                           strlen(self->r->log_id), NULL);
+#else
+	    value = PyString_FromString(self->r->log_id);
+#endif
+            PyDict_SetItemString(event, "request_id", value);
+            Py_DECREF(value);
+        }
+#endif
+
         value = wsgi_PyInt_FromLongLong(self->input->reads);
         PyDict_SetItemString(event, "input_reads", value);
         Py_DECREF(value);
@@ -3378,9 +3414,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         PyDict_SetItemString(event, "application_time", value);
         Py_DECREF(value);
 
-#if 0
         PyDict_SetItemString(event, "request_data", thread_handle->request_data);
-#endif
 
         wsgi_publish_event("request_finished", event);
 
@@ -4345,8 +4379,13 @@ static void wsgi_python_child_init(apr_pool_t *p)
      * do it if Python was initialised in parent process.
      */
 
-    if (wsgi_python_initialized && !wsgi_python_after_fork)
+    if (wsgi_python_initialized && !wsgi_python_after_fork) {
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 7)
+        PyOS_AfterFork_Child();
+#else
         PyOS_AfterFork();
+#endif
+    }
 
     /* Finalise any Python objects required by child process. */
 
@@ -6344,15 +6383,12 @@ static void wsgi_build_environment(request_rec *r)
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT, r->request_time));
 
 #if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
-    if (!r->log_id || !r->connection->log_id) {
+    if (!r->log_id) {
         const char **id;
 
         /* Need to cast const away. */
 
-        if (r)
-            id = &((request_rec *)r)->log_id;
-        else
-            id = &((conn_rec *)c)->log_id;
+        id = &((request_rec *)r)->log_id;
 
         ap_run_generate_log_id(c, r, id);
     }
@@ -8510,6 +8546,9 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
         ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                      "mod_wsgi (pid=%d): Couldn't bind unix domain "
                      "socket '%s'.", getpid(), process->socket_path);
+
+        close(sockfd);
+
         return -1;
     }
 
@@ -8521,6 +8560,9 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
         ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
                      "mod_wsgi (pid=%d): Couldn't listen on unix domain "
                      "socket.", getpid());
+
+        close(sockfd);
+
         return -1;
     }
 
@@ -8555,6 +8597,9 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
                          "mod_wsgi (pid=%d): Couldn't change owner of unix "
                          "domain socket '%s' to uid=%ld.", getpid(),
                          process->socket_path, (long)socket_uid);
+
+            close(sockfd);
+
             return -1;
         }
     }
@@ -9441,8 +9486,8 @@ static void wsgi_log_stack_traces(void)
                 while (current) {
                     int lineno;
 
-                    char *filename = NULL;
-                    char *name = NULL;
+                    const char *filename = NULL;
+                    const char *name = NULL;
 
                     if (current->f_trace) {
                         lineno = current->f_lineno;
@@ -10420,6 +10465,12 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         /* Exit the daemon process when being shutdown. */
 
         wsgi_exit_daemon_process(0);
+    }
+
+    if (wsgi_python_initialized) {
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 7)
+        PyOS_AfterFork_Parent();
+#endif
     }
 
     apr_pool_note_subprocess(p, &daemon->process, APR_KILL_AFTER_TIMEOUT);
@@ -13338,8 +13389,10 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
         for (i = 0; i < wsgi_daemon_list->nelts; ++i) {
             entry = &entries[i];
 
-            close(entry->listener_fd);
-            entry->listener_fd = -1;
+            if (entry->listener_fd != -1) {
+                close(entry->listener_fd);
+                entry->listener_fd = -1;
+            }
         }
     }
 #endif
@@ -13751,8 +13804,8 @@ static void wsgi_process_proxy_headers(request_rec *r)
 
     if (trusted_proxy) {
         for (i=0; i<trusted_proxy_headers->nelts; i++) {
-            const char *name = NULL;
-            const char *value = NULL;
+            const char *name;
+            const char *value;
 
             name = ((const char**)trusted_proxy_headers->elts)[i];
             value = apr_table_get(r->subprocess_env, name);
@@ -13879,11 +13932,9 @@ static void wsgi_process_proxy_headers(request_rec *r)
          */
 
         for (i=0; i<trusted_proxy_headers->nelts; i++) {
-            const char *name = NULL;
-            const char *value = NULL;
+            const char *name;
 
             name = ((const char**)trusted_proxy_headers->elts)[i];
-            value = apr_table_get(r->subprocess_env, name);
 
             if (!strcmp(name, "HTTP_X_FORWARDED_FOR") ||
                      !strcmp(name, "HTTP_X_REAL_IP")) {

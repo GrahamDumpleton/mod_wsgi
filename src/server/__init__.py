@@ -104,9 +104,10 @@ def find_mimetypes():
     for name in mimetypes.knownfiles:
         if os.path.exists(name):
             return name
-            break
     else:
         return '/dev/null'
+
+SHELL = find_program(['bash', 'sh'], ['/usr/local/bin'])
 
 APACHE_GENERAL_CONFIG = """
 <IfModule !version_module>
@@ -1513,7 +1514,7 @@ class ResourceHandler(object):
         self.resources = {}
 
         for extension, script in resources:
-            extension_name = re.sub('[^\w]{1}', '_', extension)
+            extension_name = re.sub(r'[^\w]{1}', '_', extension)
             module_name = '__wsgi_resource%s__' % extension_name
             module = imp.new_module(module_name)
             module.__file__ = script
@@ -1758,7 +1759,7 @@ def generate_server_metrics_script(options):
         print(SERVER_METRICS_SCRIPT % options, file=fp)
 
 WSGI_CONTROL_SCRIPT = """
-#!/bin/bash
+#!%(shell_executable)s
 
 # %(sys_argv)s
 
@@ -2464,6 +2465,11 @@ option_list = (
             help='Specify an alternate directory which should be used for '
             'unpacking of Python eggs. Defaults to a sub directory of '
             'the server root directory.'),
+
+    optparse.make_option('--shell-executable', default=SHELL,
+            metavar='FILE-PATH', help='Override the path to the shell '
+            'used in the \'apachectl\' script. The \'bash\' shell will '
+            'be used if available.'),
 
     optparse.make_option('--httpd-executable', default=apxs_config.HTTPD,
             metavar='FILE-PATH', help='Override the path to the Apache web '
