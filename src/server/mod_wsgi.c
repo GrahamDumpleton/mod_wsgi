@@ -6354,10 +6354,7 @@ static void wsgi_build_environment(request_rec *r)
 
         /* Need to cast const away. */
 
-        if (r)
-            id = &((request_rec *)r)->log_id;
-        else
-            id = &((conn_rec *)c)->log_id;
+        id = &((request_rec *)r)->log_id;
 
         ap_run_generate_log_id(c, r, id);
     }
