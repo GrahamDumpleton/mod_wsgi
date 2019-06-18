@@ -9,7 +9,7 @@ import math
 import signal
 import threading
 import atexit
-import imp
+import types
 import re
 import pprint
 import time
@@ -30,7 +30,6 @@ _py_soext = '.so'
 _py_dylib = ''
 
 try:
-    import imp
     import sysconfig
     import distutils.sysconfig
 
@@ -1412,7 +1411,7 @@ class ApplicationHandler(object):
             self.target = entry_point
 
         elif application_type != 'static':
-            self.module = imp.new_module('__wsgi__')
+            self.module = types.ModuleType('__wsgi__')
             self.module.__file__ = entry_point
 
             with open(entry_point, 'r') as fp:
@@ -1521,7 +1520,7 @@ class ResourceHandler(object):
         for extension, script in resources:
             extension_name = re.sub(r'[^\w]{1}', '_', extension)
             module_name = '__wsgi_resource%s__' % extension_name
-            module = imp.new_module(module_name)
+            module = types.ModuleType(module_name)
             module.__file__ = script
 
             with open(script, 'r') as fp:
