@@ -4379,6 +4379,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
      * do it if Python was initialised in parent process.
      */
 
+#ifdef HAVE_FORK
     if (wsgi_python_initialized && !wsgi_python_after_fork) {
 #if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 7)
         PyOS_AfterFork_Child();
@@ -4386,6 +4387,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
         PyOS_AfterFork();
 #endif
     }
+#endif
 
     /* Finalise any Python objects required by child process. */
 
@@ -10467,11 +10469,13 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         wsgi_exit_daemon_process(0);
     }
 
+#ifdef HAVE_FORK
     if (wsgi_python_initialized) {
 #if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 7)
         PyOS_AfterFork_Parent();
 #endif
     }
+#endif
 
     apr_pool_note_subprocess(p, &daemon->process, APR_KILL_AFTER_TIMEOUT);
     apr_proc_other_child_register(&daemon->process, wsgi_manage_process,
