@@ -34,7 +34,11 @@ try:
     import distutils.sysconfig
 
     _py_soabi = sysconfig.get_config_var('SOABI')
-    _py_soext = sysconfig.get_config_var('SO')
+
+    _py_soext = sysconfig.get_config_var('EXT_SUFFIX')
+
+    if _py_soext is None:
+        _py_soext = sysconfig.get_config_var('SO')
 
     if (sysconfig.get_config_var('WITH_DYLD') and
             sysconfig.get_config_var('LIBDIR') and
