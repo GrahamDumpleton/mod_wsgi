@@ -436,6 +436,11 @@ KeepAliveTimeout %(keep_alive_timeout)s
 KeepAlive Off
 </IfDefine>
 
+<IfDefine MOD_WSGI_ENABLE_SENDFILE>
+EnableSendfile On
+WSGIEnableSendfile On
+</IfDefine>
+
 <IfDefine MOD_WSGI_COMPRESS_RESPONSES>
 AddOutputFilterByType DEFLATE text/plain
 AddOutputFilterByType DEFLATE text/html
@@ -2213,6 +2218,12 @@ option_list = (
             'being forcibly flushed. Defaults to 0 seconds indicating that '
             'it will default to the value of the \'socket-timeout\' option.'),
 
+    optparse.make_option('--enable-sendfile', action='store_true',
+            default=False, help='Flag indicating whether sendfile() support '
+            'should be enabled. Defaults to being disabled. This should '
+            'only be enabled if the operating system kernel and file system '
+            'type where files are hosted supports it.'),
+
     optparse.make_option('--reload-on-changes', action='store_true',
             default=False, help='Flag indicating whether worker processes '
             'should be automatically restarted when any Python code file '
@@ -3237,6 +3248,9 @@ def _cmd_setup_server(command, args, options):
 
     if options['application_type'] == 'static':
         options['httpd_arguments_list'].append('-DMOD_WSGI_STATIC_ONLY')
+
+    if options['enable_sendfile']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_ENABLE_SENDFILE')
 
     if options['server_metrics']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_SERVER_METRICS')
