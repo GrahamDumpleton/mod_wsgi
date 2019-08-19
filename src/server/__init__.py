@@ -602,7 +602,7 @@ ServerAlias %(server_aliases)s
 <IfDefine MOD_WSGI_REDIRECT_WWW>
 <VirtualHost *:%(port)s>
 ServerName %(parent_domain)s
-Redirect permanent / http://%(server_name)s:%(port)s/
+Redirect permanent / http://%(server_name)s:%(redirect_port)s/
 </VirtualHost>
 </IfDefine>
 </IfDefine>
@@ -615,14 +615,14 @@ ServerAlias %(server_aliases)s
 </IfDefine>
 RewriteEngine On
 RewriteCond %%{HTTPS} off
-RewriteRule (.*) https://%(server_name)s:%(https_port)s%%{REQUEST_URI}
+RewriteRule (.*) https://%(server_name)s:%(https_redirect_port)s%%{REQUEST_URI}
 </VirtualHost>
 <IfDefine MOD_WSGI_REDIRECT_WWW>
 <VirtualHost *:%(port)s>
 ServerName %(parent_domain)s
 RewriteEngine On
 RewriteCond %%{HTTPS} off
-RewriteRule (.*) https://%(server_name)s:%(https_port)s%%{REQUEST_URI}
+RewriteRule (.*) https://%(server_name)s:%(https_redirect_port)s%%{REQUEST_URI}
 </VirtualHost>
 </IfDefine>
 </IfDefine>
@@ -692,7 +692,7 @@ SSLOptions +StdEnvVars
 <IfDefine MOD_WSGI_REDIRECT_WWW>
 <VirtualHost *:%(https_port)s>
 ServerName %(parent_domain)s
-Redirect permanent / https://%(server_name)s:%(https_port)s/
+Redirect permanent / https://%(server_name)s:%(https_redirect_port)s/
 SSLEngine On
 SSLCertificateFile %(ssl_certificate_file)s
 SSLCertificateKeyFile %(ssl_certificate_key_file)s
@@ -1935,6 +1935,10 @@ option_list = (
             metavar='NUMBER', help='The specific port to bind to and '
             'on which requests are to be accepted. Defaults to port 8000.'),
 
+    optparse.make_option('--port-redirect-standard', action='store_true', default=False,
+             help='If you bind to a port other than port 80 but have port 80 forwarded to '
+            'that port, set this so that redirected traffic will not have the port in the URL. Optional'),
+
     optparse.make_option('--http2', action='store_true', default=False,
             help='Flag indicating whether HTTP/2 should be enabled.'
             'Requires the mod_http2 module to be available.'),
@@ -1944,6 +1948,11 @@ option_list = (
             'requests are to be accepted.'),
     optparse.make_option('--ssl-port', type='int', metavar='NUMBER',
             dest='https_port', help=optparse.SUPPRESS_HELP),
+
+    optparse.make_option('--https-redirect-standard', action='store_true', default=False,
+            help='If you are binding on a non-standard port but have port 443 forwarded '
+            'to the port you\'re listening to, then set this flag to have the redirect '
+            'go to the standard port so it doesn\'t show up in the url. Optional'),
 
     optparse.make_option('--ssl-certificate-file', default=None,
             metavar='FILE-PATH', help='Specify the path to the SSL '
@@ -3149,17 +3158,22 @@ def _cmd_setup_server(command, args, options):
 
     options['server_host'] = host
 
-    if options['port'] == 80:
+    if options['port'] == 80 or options['port_redirect_standard']:
         options['url'] = 'http://%s/' % host
+        options['redirect_port'] = 80
     else:
         options['url'] = 'http://%s:%s/' % (host, options['port'])
+        options['redirect_port'] = options['port']
 
-    if options['https_port'] == 443:
+    if options['https_port'] == 443 or options['https_redirect_standard']:
         options['https_url'] = 'https://%s/' % host
+        options['https_redirect_port'] = 443 
     elif options['https_port'] is not None:
         options['https_url'] = 'https://%s:%s/' % (host, options['https_port'])
+        options['https_redirect_port'] = options['https_port']
     else:
         options['https_url'] = None
+        options['https_redirect_port'] = None 
 
     if any((options['enable_debugger'], options['enable_coverage'],
             options['enable_profiler'], options['enable_recorder'],
