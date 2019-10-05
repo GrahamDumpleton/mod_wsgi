@@ -9,7 +9,7 @@ import math
 import signal
 import threading
 import atexit
-import imp
+import types
 import re
 import pprint
 import time
@@ -30,12 +30,15 @@ _py_soext = '.so'
 _py_dylib = ''
 
 try:
-    import imp
     import sysconfig
     import distutils.sysconfig
 
     _py_soabi = sysconfig.get_config_var('SOABI')
-    _py_soext = sysconfig.get_config_var('SO')
+
+    _py_soext = sysconfig.get_config_var('EXT_SUFFIX')
+
+    if _py_soext is None:
+        _py_soext = sysconfig.get_config_var('SO')
 
     if (sysconfig.get_config_var('WITH_DYLD') and
             sysconfig.get_config_var('LIBDIR') and
@@ -434,6 +437,11 @@ KeepAliveTimeout %(keep_alive_timeout)s
 </IfDefine>
 <IfDefine !MOD_WSGI_KEEP_ALIVE>
 KeepAlive Off
+</IfDefine>
+
+<IfDefine MOD_WSGI_ENABLE_SENDFILE>
+EnableSendfile On
+WSGIEnableSendfile On
 </IfDefine>
 
 <IfDefine MOD_WSGI_COMPRESS_RESPONSES>
@@ -1407,7 +1415,7 @@ class ApplicationHandler(object):
             self.target = entry_point
 
         elif application_type != 'static':
-            self.module = imp.new_module('__wsgi__')
+            self.module = types.ModuleType('__wsgi__')
             self.module.__file__ = entry_point
 
             with open(entry_point, 'r') as fp:
@@ -1516,7 +1524,7 @@ class ResourceHandler(object):
         for extension, script in resources:
             extension_name = re.sub(r'[^\w]{1}', '_', extension)
             module_name = '__wsgi_resource%s__' % extension_name
-            module = imp.new_module(module_name)
+            module = types.ModuleType(module_name)
             module.__file__ = script
 
             with open(script, 'r') as fp:
@@ -2212,6 +2220,12 @@ option_list = (
             'HTTP client when the response buffer has filled and data is '
             'being forcibly flushed. Defaults to 0 seconds indicating that '
             'it will default to the value of the \'socket-timeout\' option.'),
+
+    optparse.make_option('--enable-sendfile', action='store_true',
+            default=False, help='Flag indicating whether sendfile() support '
+            'should be enabled. Defaults to being disabled. This should '
+            'only be enabled if the operating system kernel and file system '
+            'type where files are hosted supports it.'),
 
     optparse.make_option('--reload-on-changes', action='store_true',
             default=False, help='Flag indicating whether worker processes '
@@ -3237,6 +3251,9 @@ def _cmd_setup_server(command, args, options):
 
     if options['application_type'] == 'static':
         options['httpd_arguments_list'].append('-DMOD_WSGI_STATIC_ONLY')
+
+    if options['enable_sendfile']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_ENABLE_SENDFILE')
 
     if options['server_metrics']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_SERVER_METRICS')
