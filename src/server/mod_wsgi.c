@@ -13148,6 +13148,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
             if (queue_time > wsgi_daemon_process->group->queue_timeout) {
                 queue_timeout_occurred = 1;
 
+                r->status = HTTP_INTERNAL_SERVER_ERROR;
                 r->status_line = "200 Timeout";
 
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
