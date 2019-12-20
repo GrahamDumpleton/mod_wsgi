@@ -544,7 +544,9 @@ if os.name != 'nt':
 
 long_description = open('README.rst').read()
 
-setup(name = 'mod_wsgi',
+standalone = os.path.exists('pyproject.toml')
+
+setup(name = standalone and 'mod_wsgi-standalone' or 'mod_wsgi',
     version = _version(),
     description = 'Installer for Apache/mod_wsgi.',
     long_description = long_description,
@@ -590,4 +592,5 @@ setup(name = 'mod_wsgi',
     entry_points = { 'console_scripts':
         ['mod_wsgi-express = mod_wsgi.server:main'],},
     zip_safe = False,
+    install_requires = standalone and ['mod_wsgi-httpd==2.4.41.1'] or [],
 )

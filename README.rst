@@ -108,6 +108,11 @@ distributions for Windows aren't always complete and are missing the files
 needed to compile additional Apache modules. By default, it is expected
 that Apache is installed in the directory ``C:/Apache24`` on Windows.
 
+If you are on Linux, macOS or other UNIX type operating system and can't
+or don't want to use the system package for Apache, you can use ``pip``
+to install mod_wsgi, but you should use use the ``mod_wsgi-standalone``
+package on PyPi instead of the ``mod_wsgi`` package.
+
 Installation into Apache
 ------------------------
 
@@ -145,6 +150,16 @@ If you wish to use a version of Apache which is installed into a non
 standard location, you can set and export the ``APXS`` environment variable
 to the location of the Apache ``apxs`` script for your Apache installation
 before performing the installation.
+
+If you are using Linux, macOS or other UNIX type operating system, and you
+don't have Apache available, you can instead install mod_wsgi using::
+
+    pip install mod_wsgi-standalone
+
+When installing ``mod_wsgi-standalone``, it will also install a version
+of Apache into your Python distribution. You can only use ``mod_wsgi-express``
+when using this variant of the package. The ``mod_wsgi-standalone`` package
+follows the same version numbering as the ``mod_wsgi`` package on PyPi.
 
 If you are on Windows and your Apache distribution is not installed into
 the directory ``C:/Apache24``, first set the environment variable
