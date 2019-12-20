@@ -15,3 +15,4 @@ include docs/_build/html/_static/css/*
 include docs/_build/html/_static/font/*
 include docs/_build/html/_static/js/*
 include docs/_build/html/_sources/*
+include pyproject.toml
