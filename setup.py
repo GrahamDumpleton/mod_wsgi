@@ -422,7 +422,12 @@ with open(os.path.join(os.path.dirname(__file__),
 PYTHON_VERSION = get_python_config('VERSION')
 
 if os.name == 'nt':
-    PYTHON_LIBDIR = sys.base_prefix
+    if hasattr(sys, 'real_prefix'):
+        PYTHON_LIBDIR = sys.real_prefix
+    elif hasattr(sys, 'base_prefix'):
+        PYTHON_LIBDIR = sys.base_prefix
+    else:
+        PYTHON_LIBDIR = get_python_config('BINDIR')
     PYTHON_LDFLAGS = []
     PYTHON_LDLIBS = ['%s/libs/python%s.lib' % (PYTHON_LIBDIR, PYTHON_VERSION),
             '%s/lib/libhttpd.lib' % WITH_WINDOWS_APACHE,
