@@ -424,6 +424,8 @@ PYTHON_VERSION = get_python_config('VERSION')
 if os.name == 'nt':
     if hasattr(sys, 'real_prefix'):
         PYTHON_LIBDIR = sys.real_prefix
+    elif hasattr(sys, 'base_prefix'):
+        PYTHON_LIBDIR = sys.base_prefix
     else:
         PYTHON_LIBDIR = get_python_config('BINDIR')
 
