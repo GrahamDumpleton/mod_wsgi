@@ -29,7 +29,7 @@ block size passed as argument and do this until ``read()`` returns an empty
 string.
 
 Because both calling methods are not allowed under WSGI specification, in
-using these your code will not technically be portable to other WSGI hosting
+using these, your code will not technically be portable to other WSGI hosting
 mechanisms, although if those other WSGI servers support it, you will be
 okay.
 
@@ -43,6 +43,6 @@ request WSGI ``environ`` dictionary. When this is done the web frameworks
 will always read all available input and ignore ``CONTENT_LENGTH``.
 
 Because mod_wsgi guarantees that an empty string is returned when all input
-is exhausted, it will will always set this flag.
+is exhausted, it will always set this flag.
 
 It is known that Flask/Werkzeug supports the ``wsgi.input_terminated`` flag.
