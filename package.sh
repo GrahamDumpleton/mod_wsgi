@@ -2,7 +2,7 @@
 
 set -eo pipefail
 
-rm -rf dist
+rm -rf build dist
 
 rm -f pyproject.toml
 

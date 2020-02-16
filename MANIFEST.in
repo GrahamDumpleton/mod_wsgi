@@ -3,6 +3,7 @@ include configure
 include LICENSE
 include Makefile.in
 include README.rst
+include README-standalone.rst
 include CREDITS.rst
 include src/server/*.h
 include src/server/*.c
