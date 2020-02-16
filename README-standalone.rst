@@ -20,7 +20,7 @@ installed, with it using the version of Apache installed by the
 ``mod_wsgi-httpd`` package rather than any system package for Apache.
 
 Note that this method of installation is only suitable for where you want
-to use ``mod_wsgi-expres``. It cannot be used to build mod_wsgi for use
+to use ``mod_wsgi-express``. It cannot be used to build mod_wsgi for use
 with your system Apache installation. This installation method will also
 not work on Windows.
 
