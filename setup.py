@@ -544,11 +544,16 @@ if os.name != 'nt':
 
 # Now finally run distutils.
 
+package_name = 'mod_wsgi'
 long_description = open('README.rst').read()
 
 standalone = os.path.exists('pyproject.toml')
 
-setup(name = standalone and 'mod_wsgi-standalone' or 'mod_wsgi',
+if standalone:
+    package_name = 'mod_wsgi-standalone'
+    long_description = open('README-standalone.rst').read()
+
+setup(name = package_name,
     version = _version(),
     description = 'Installer for Apache/mod_wsgi.',
     long_description = long_description,
