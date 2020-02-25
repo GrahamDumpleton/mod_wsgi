@@ -3468,7 +3468,9 @@ def cmd_module_config(params):
 
     if os.name == 'nt':
         real_prefix = getattr(sys, 'real_prefix', None)
-        real_prefix = real_prefix or sys.prefix
+        base_prefix = getattr(sys, 'base_prefix', None)
+
+        real_prefix = real_prefix or base_prefix or sys.prefix
 
         library_version = sysconfig.get_config_var('VERSION')
 
