@@ -2172,7 +2172,7 @@ void wsgi_python_init(apr_pool_t *p)
             }
         }
 
-#if defined(WIN32)
+#if defined(WIN32_OBSOLETE_VENV_SETUP)
         /*
          * Check for Python HOME being overridden. This is only being
          * used on Windows for now. For UNIX systems we actually do
@@ -2301,7 +2301,11 @@ void wsgi_python_init(apr_pool_t *p)
 #if PY_MAJOR_VERSION >= 3
                 len = strlen(python_exe)+1;
                 s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
+#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
+                wsgi_utf8_to_unicode_path(s, len, python_exe);
+#else
                 mbstowcs(s, python_exe, len);
+#endif
 
                 Py_SetProgramName(s);
 #else
@@ -2312,7 +2316,11 @@ void wsgi_python_init(apr_pool_t *p)
 #if PY_MAJOR_VERSION >= 3
                 len = strlen(python_home)+1;
                 s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
+#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
+                wsgi_utf8_to_unicode_path(s, len, python_home);
+#else
                 mbstowcs(s, python_home, len);
+#endif
 
                 Py_SetPythonHome(s);
 #else
