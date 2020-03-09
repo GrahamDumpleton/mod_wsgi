@@ -2272,6 +2272,7 @@ void wsgi_python_init(apr_pool_t *p)
                                  "Verify the supplied path.", getpid(),
                                  python_home);
                 }
+#if !defined(WIN32)
                 else if (access(python_home, X_OK) == -1) {
                     ap_log_error(APLOG_MARK, APLOG_WARNING, rv, wsgi_server,
                                  "mod_wsgi (pid=%d): Python home %s is not "
@@ -2281,14 +2282,20 @@ void wsgi_python_init(apr_pool_t *p)
                                  "permissions on the directory.", getpid(),
                                  python_home);
                 }
+#endif
             }
 
             /* Now detect whether have a pyvenv with Python 3.3+. */
 
             pyvenv_cfg = apr_pstrcat(p, python_home, "/pyvenv.cfg", NULL);
 
+#if defined(WIN32)
+            if (access(pyvenv_cfg, 0) == 0)
+                is_pyvenv = 1;
+#else
             if (access(pyvenv_cfg, R_OK) == 0)
                 is_pyvenv = 1;
+#endif
 
             if (is_pyvenv) {
                 /*
