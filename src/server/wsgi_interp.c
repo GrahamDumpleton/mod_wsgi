@@ -2253,6 +2253,7 @@ void wsgi_python_init(apr_pool_t *p)
                          "mod_wsgi (pid=%d): Python home %s.", getpid(),
                          python_home);
 
+#if !defined(WIN32)
             rv = apr_stat(&finfo, python_home, APR_FINFO_NORM, p);
 
             if (rv != APR_SUCCESS) {
@@ -2272,7 +2273,6 @@ void wsgi_python_init(apr_pool_t *p)
                                  "Verify the supplied path.", getpid(),
                                  python_home);
                 }
-#if !defined(WIN32)
                 else if (access(python_home, X_OK) == -1) {
                     ap_log_error(APLOG_MARK, APLOG_WARNING, rv, wsgi_server,
                                  "mod_wsgi (pid=%d): Python home %s is not "
@@ -2282,8 +2282,8 @@ void wsgi_python_init(apr_pool_t *p)
                                  "permissions on the directory.", getpid(),
                                  python_home);
                 }
-#endif
             }
+#endif
 
             /* Now detect whether have a pyvenv with Python 3.3+. */
 
