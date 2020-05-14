@@ -2202,15 +2202,16 @@ void wsgi_python_init(apr_pool_t *p)
             }
         }
 
-#if defined(WIN32_OBSOLETE_VENV_SETUP)
+#if defined(WIN32)
         /*
-         * Check for Python HOME being overridden. This is only being
-         * used on Windows for now. For UNIX systems we actually do
-         * a fiddle and work out where the Python executable would be
-         * and set its location instead. This is to get around some
-         * brokeness in pyvenv in Python 3.X. We don't know if that
-         * workaround works for Windows yet, but since not supporting
-         * Windows for mod_wsgi 4.X as yet, doesn't matter.
+         * Check for Python home being overridden. This is only being
+         * used on Windows. For UNIX systems we actually do a fiddle
+         * and work out where the Python executable would be and set
+         * its location instead. This is to get around some brokeness
+         * in pyvenv in Python 3.X. That fiddle doesn't work on Windows
+         * so for Windows with pyvenv, and also virtualenv 20.X and
+         * later, we do a later fiddle where add the virtual environment
+         * site-packages directory to the Python module search path.
          */
 
         python_home = wsgi_server_config->python_home;
