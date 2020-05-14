@@ -85,7 +85,7 @@ def application(environ, start_response):
             file=output)
     print(file=output)
 
-    print('PATH: %s' % sys.path, file=output)
+    print('PATH: %s' % os.environ.get('PATH'), file=output)
     print(file=output)
 
     print('LANG: %s' % os.environ.get('LANG'), file=output)
