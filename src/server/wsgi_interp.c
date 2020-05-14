@@ -424,6 +424,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     const char *str = NULL;
 
+    const char *python_home = 0;
+
     /* Create handle for interpreter and local data. */
 
     self = PyObject_New(InterpreterObject, &Interpreter_Type);
@@ -881,6 +883,34 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     if (!wsgi_daemon_pool)
         wsgi_python_path = wsgi_server_config->python_path;
+
+    /*
+     * We use a hack here on Windows to add the site-packages
+     * directory into the Python module search path as well
+     * as use of Python virtual environments doesn't work
+     * otherwise if using 'python -m venv' or any released of
+     * 'virtualenv' from 20.x onwards.
+     */
+
+#if defined(WIN32)
+    python_home = wsgi_server_config->python_home;
+
+    if (python_home && *python_home) {
+        if (wsgi_python_path && *wsgi_python_path) {
+            char delim[2];
+            delim[0] = DELIM;
+            delim[1] = '\0';
+
+            wsgi_python_path = apr_pstrcat(wsgi_server->process->pool,
+                    python_home, "/Lib/site-packages", delim,
+                    wsgi_python_path, NULL);
+        }
+        else {
+            wsgi_python_path = apr_pstrcat(wsgi_server->process->pool,
+                    python_home, "/Lib/site-packages", NULL);
+        }
+    }
+#endif
 
     module = PyImport_ImportModule("site");
 
