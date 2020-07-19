@@ -2203,6 +2203,17 @@ void wsgi_python_init(apr_pool_t *p)
         }
 
 #if defined(WIN32)
+#if defined(WIN32_PYTHON_VENV_IS_BROKEN)
+        /*
+         * XXX Python new style virtual environments break Python embedding
+         * API for Python initialisation on Windows. So disable this code as
+         * any attempt to call Py_SetPythonHome() with location of the
+         * virtual environment will not work and will break initialization
+         * of the Python interpreter. Instead manually add the directory
+         * Lib/site-packages to the Python module search path later if
+         * WSGIPythonHome has been set.
+         */
+
         /*
          * Check for Python home being overridden. This is only being
          * used on Windows. For UNIX systems we actually do a fiddle
@@ -2239,7 +2250,7 @@ void wsgi_python_init(apr_pool_t *p)
             Py_SetPythonHome((char *)python_home);
 #endif
         }
-
+#endif
 #else
         /*
          * Now for the UNIX version of the code to set the Python HOME.
