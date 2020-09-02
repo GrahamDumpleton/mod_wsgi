@@ -365,7 +365,7 @@ static PyObject *wsgi_request_metrics(void)
     Py_DECREF(object);
 
     request_busy_time = stop_request_busy_time - start_request_busy_time;
-    capacity_utilization = (request_busy_time / wsgi_request_threads);
+    capacity_utilization = (request_busy_time / max_threads);
 
     object = PyFloat_FromDouble(capacity_utilization);
     PyDict_SetItem(result,
