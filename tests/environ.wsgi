@@ -61,6 +61,8 @@ def application(environ, start_response):
             file=output)
     print('mod_wsgi.threads_per_process: %s' % mod_wsgi.threads_per_process,
             file=output)
+    print('mod_wsgi.request_metrics: %s' % mod_wsgi.request_metrics(),
+            file=output)
     print('mod_wsgi.process_metrics: %s' % mod_wsgi.process_metrics(),
             file=output)
     print('mod_wsgi.server_metrics: %s' % mod_wsgi.server_metrics(),

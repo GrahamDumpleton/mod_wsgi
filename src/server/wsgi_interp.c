@@ -1276,6 +1276,9 @@ InterpreterObject *newInterpreterObject(const char *name)
     PyModule_AddObject(module, "process_metrics", PyCFunction_New(
                        &wsgi_process_metrics_method[0], NULL));
 
+    PyModule_AddObject(module, "request_metrics", PyCFunction_New(
+                       &wsgi_request_metrics_method[0], NULL));
+
     PyModule_AddObject(module, "subscribe_events", PyCFunction_New(
                        &wsgi_process_events_method[0], NULL));
 

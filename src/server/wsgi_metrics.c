@@ -195,6 +195,11 @@ WSGI_STATIC_INTERNED_STRING(active_requests);
 WSGI_STATIC_INTERNED_STRING(threads);
 WSGI_STATIC_INTERNED_STRING(thread_id);
 
+WSGI_STATIC_INTERNED_STRING(max_threads);
+WSGI_STATIC_INTERNED_STRING(time_interval);
+WSGI_STATIC_INTERNED_STRING(utilization);
+WSGI_STATIC_INTERNED_STRING(requests_per_sec);
+
 static PyObject *wsgi_status_flags[SERVER_NUM_STATUS];
 
 #define WSGI_CREATE_STATUS_FLAG(name, val) \
@@ -239,6 +244,11 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(threads);
         WSGI_CREATE_INTERNED_STRING_ID(thread_id);
 
+        WSGI_CREATE_INTERNED_STRING_ID(max_threads);
+        WSGI_CREATE_INTERNED_STRING_ID(time_interval);
+        WSGI_CREATE_INTERNED_STRING_ID(utilization);
+        WSGI_CREATE_INTERNED_STRING_ID(requests_per_sec);
+
         WSGI_CREATE_STATUS_FLAG(SERVER_DEAD, "."); 
         WSGI_CREATE_STATUS_FLAG(SERVER_READY, "_");
         WSGI_CREATE_STATUS_FLAG(SERVER_STARTING, "S");
@@ -254,6 +264,140 @@ static void wsgi_initialize_interned_strings(void)
         wsgi_interns_initialized = 1;
     }
 }
+
+/* ------------------------------------------------------------------------- */
+
+static PyObject *wsgi_request_metrics(void)
+{
+    PyObject *result = NULL;
+
+    PyObject *object = NULL;
+
+    apr_time_t stop_time;
+    double stop_request_busy_time = 0.0;
+    apr_uint64_t stop_request_count = 0.0;
+
+    double request_busy_time = 0.0;
+    double capacity_utilization = 0.0;
+
+    static double start_time = 0.0;
+    static double start_request_busy_time = 0.0;
+    static apr_uint64_t start_request_count = 0;
+
+    double time_interval = 0.0;
+    apr_uint64_t request_count = 0;
+    double requests_per_sec = 0.0;
+
+    static int max_threads = 0;
+
+    if (!wsgi_interns_initialized)
+        wsgi_initialize_interned_strings();
+
+    if (!max_threads) {
+        int is_threaded = 0;
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+        if (wsgi_daemon_process) {
+            max_threads = wsgi_daemon_process->group->threads;
+        }
+        else {
+            ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
+            if (is_threaded != AP_MPMQ_NOT_SUPPORTED) {
+                ap_mpm_query(AP_MPMQ_MAX_THREADS, &max_threads);
+            }
+        }
+#else
+        ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
+        if (is_threaded != AP_MPMQ_NOT_SUPPORTED) {
+            ap_mpm_query(AP_MPMQ_MAX_THREADS, &max_threads);
+        }
+#endif
+
+    max_threads = (max_threads <= 0) ? 1 : max_threads;
+    }
+
+
+    result = PyDict_New();
+
+    stop_time = apr_time_now();
+    stop_request_busy_time = wsgi_utilization_time(0);
+    stop_request_count = wsgi_total_requests;
+
+    if (!start_time) {
+        start_time = stop_time;
+        start_request_busy_time = stop_request_busy_time;
+        start_request_count = stop_request_count;
+
+        return result;
+    }
+
+    object = PyFloat_FromDouble(apr_time_sec((double)start_time));
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(start_time), object);
+    Py_DECREF(object);
+
+    object = PyFloat_FromDouble(apr_time_sec((double)stop_time));
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(stop_time), object);
+    Py_DECREF(object);
+
+    time_interval = (apr_time_sec((double)stop_time) -
+            apr_time_sec((double)start_time));
+
+    object = PyFloat_FromDouble(time_interval);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(time_interval), object);
+    Py_DECREF(object);
+
+    object = wsgi_PyInt_FromLong(max_threads);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(max_threads), object);
+    Py_DECREF(object);
+
+    object = wsgi_PyInt_FromLong(wsgi_request_threads);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(request_threads), object);
+    Py_DECREF(object);
+
+    object = wsgi_PyInt_FromLong(wsgi_active_requests);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(active_requests), object);
+    Py_DECREF(object);
+
+    request_busy_time = stop_request_busy_time - start_request_busy_time;
+    capacity_utilization = (request_busy_time / wsgi_request_threads);
+
+    object = PyFloat_FromDouble(capacity_utilization);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(utilization), object);
+    Py_DECREF(object);
+
+    request_count = stop_request_count - start_request_count;
+
+    object = wsgi_PyInt_FromLongLong(request_count);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(request_count), object);
+    Py_DECREF(object);
+
+    requests_per_sec = time_interval ? request_count / time_interval : 0;
+
+    object = PyFloat_FromDouble(requests_per_sec);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(requests_per_sec), object);
+    Py_DECREF(object);
+
+    start_time = stop_time;
+    start_request_busy_time = stop_request_busy_time;
+    start_request_count = stop_request_count;
+
+    return result;
+}
+
+PyMethodDef wsgi_request_metrics_method[] = {
+    { "request_metrics",    (PyCFunction)wsgi_request_metrics,
+                            METH_NOARGS, 0 },
+    { NULL },
+};
 
 /* ------------------------------------------------------------------------- */
 
@@ -278,25 +422,6 @@ static PyObject *wsgi_process_metrics(void)
 
     if (!wsgi_interns_initialized)
         wsgi_initialize_interned_strings();
-
-#if 0
-    if (!wsgi_daemon_pool) {
-        if (!wsgi_server_config->server_metrics) {
-            Py_INCREF(Py_None);
-
-            return Py_None;
-        }
-    }
-#if defined(MOD_WSGI_WITH_DAEMONS)
-    else {
-        if (!wsgi_daemon_process->group->server_metrics) {
-            Py_INCREF(Py_None);
-
-            return Py_None;
-        }
-    }
-#endif
-#endif
 
     result = PyDict_New();
 
