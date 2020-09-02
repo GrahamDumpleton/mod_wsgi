@@ -45,7 +45,8 @@ static apr_time_t wsgi_utilization_last = 0;
 
 apr_thread_mutex_t* wsgi_monitor_lock = NULL;
 
-static double wsgi_utilization_time(int adjustment)
+static double wsgi_utilization_time(int adjustment,
+        apr_uint64_t* request_count)
 {
     apr_time_t now;
     double utilization = wsgi_thread_utilization;
@@ -70,6 +71,9 @@ static double wsgi_utilization_time(int adjustment)
 
     if (adjustment < 0)
         wsgi_total_requests += -adjustment;
+
+    if (request_count)
+        *request_count = wsgi_total_requests;
 
     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
@@ -113,7 +117,7 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
         PyErr_Clear();
 #endif
 
-    wsgi_utilization_time(1);
+    wsgi_utilization_time(1, NULL);
 
     return thread_info;
 }
@@ -154,7 +158,7 @@ void wsgi_end_request(void)
             Py_CLEAR(thread_info->request_data);
     }
 
-    wsgi_utilization_time(-1);
+    wsgi_utilization_time(-1, NULL);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -320,8 +324,7 @@ static PyObject *wsgi_request_metrics(void)
     result = PyDict_New();
 
     stop_time = apr_time_now();
-    stop_request_busy_time = wsgi_utilization_time(0);
-    stop_request_count = wsgi_total_requests;
+    stop_request_busy_time = wsgi_utilization_time(0, &stop_request_count);
 
     if (!start_time) {
         start_time = stop_time;
@@ -410,6 +413,8 @@ static PyObject *wsgi_process_metrics(void)
     PyObject *thread_list = NULL;
     WSGIThreadInfo **thread_info = NULL;
 
+    apr_uint64_t request_count = 0;
+
     int i;
 
 #ifdef HAVE_TIMES
@@ -430,14 +435,14 @@ static PyObject *wsgi_process_metrics(void)
             WSGI_INTERNED_STRING(pid), object);
     Py_DECREF(object);
 
-    object = wsgi_PyInt_FromLongLong(wsgi_total_requests);
-    PyDict_SetItem(result,
-            WSGI_INTERNED_STRING(request_count), object);
-    Py_DECREF(object);
-
-    object = PyFloat_FromDouble(wsgi_utilization_time(0));
+    object = PyFloat_FromDouble(wsgi_utilization_time(0, &request_count));
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(request_busy_time), object);
+    Py_DECREF(object);
+
+    object = wsgi_PyInt_FromLongLong(request_count);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(request_count), object);
     Py_DECREF(object);
 
     object = wsgi_PyInt_FromLongLong(wsgi_get_peak_memory_RSS());
