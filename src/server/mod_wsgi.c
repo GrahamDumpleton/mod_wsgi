@@ -3316,6 +3316,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
     /* Publish event for the end of the request. */
 
+    finish_time = apr_time_now();
+
     if (wsgi_event_subscribers()) {
         double application_time = 0.0;
         double output_time = 0.0;
@@ -3359,8 +3361,6 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         if (output_time < 0.0)
             output_time = 0.0;
-
-        finish_time = apr_time_now();
 
         application_time = apr_time_sec((double)finish_time-self->start_time);
 
@@ -3420,6 +3420,17 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         Py_DECREF(event);
     }
+
+    /*
+     * Record server and application time for metrics. Values
+     * are the time request first accepted by child workers,
+     * the time that the WSGI application started processing
+     * the request, and when the WSGI application finished the
+     * request.
+     */
+
+    wsgi_record_request_times(self->config->request_start,
+            self->start_time, finish_time);
 
     /*
      * If result indicates an internal server error, then

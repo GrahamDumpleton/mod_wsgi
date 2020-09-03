@@ -40,6 +40,9 @@ extern PyMethodDef wsgi_process_metrics_method[];
 extern WSGIThreadInfo *wsgi_start_request(request_rec *r);
 extern void wsgi_end_request(void);
 
+extern void wsgi_record_request_times(apr_time_t request_start,
+        apr_time_t application_start, apr_time_t application_finish);
+
 extern PyMethodDef wsgi_server_metrics_method[];
 
 extern long wsgi_event_subscribers(void);
