@@ -90,9 +90,9 @@ void wsgi_record_request_times(apr_time_t request_start,
     double server_time = 0.0;
     double application_time = 0.0;
 
-    server_time = apr_time_sec((double)application_start-request_start);
-    application_time = (
-            apr_time_sec((double)application_finish-application_start));
+    server_time = apr_time_sec((double)(application_start-request_start));
+    application_time = (apr_time_sec((double)(application_finish-
+            application_start)));
 
     apr_thread_mutex_lock(wsgi_monitor_lock);
 
