@@ -227,8 +227,8 @@ WSGI_STATIC_INTERNED_STRING(max_threads);
 WSGI_STATIC_INTERNED_STRING(time_interval);
 WSGI_STATIC_INTERNED_STRING(utilization);
 WSGI_STATIC_INTERNED_STRING(request_rate);
-WSGI_STATIC_INTERNED_STRING(server_time_avg);
-WSGI_STATIC_INTERNED_STRING(application_time_avg);
+WSGI_STATIC_INTERNED_STRING(server_time);
+WSGI_STATIC_INTERNED_STRING(application_time);
 
 static PyObject *wsgi_status_flags[SERVER_NUM_STATUS];
 
@@ -278,8 +278,8 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(time_interval);
         WSGI_CREATE_INTERNED_STRING_ID(utilization);
         WSGI_CREATE_INTERNED_STRING_ID(request_rate);
-        WSGI_CREATE_INTERNED_STRING_ID(server_time_avg);
-        WSGI_CREATE_INTERNED_STRING_ID(application_time_avg);
+        WSGI_CREATE_INTERNED_STRING_ID(server_time);
+        WSGI_CREATE_INTERNED_STRING_ID(application_time);
 
         WSGI_CREATE_STATUS_FLAG(SERVER_DEAD, "."); 
         WSGI_CREATE_STATUS_FLAG(SERVER_READY, "_");
@@ -450,12 +450,12 @@ static PyObject *wsgi_request_metrics(void)
 
     object = PyFloat_FromDouble(server_time_avg);
     PyDict_SetItem(result,
-            WSGI_INTERNED_STRING(server_time_avg), object);
+            WSGI_INTERNED_STRING(server_time), object);
     Py_DECREF(object);
 
     object = PyFloat_FromDouble(application_time_avg);
     PyDict_SetItem(result,
-            WSGI_INTERNED_STRING(application_time_avg), object);
+            WSGI_INTERNED_STRING(application_time), object);
     Py_DECREF(object);
 
     return result;
