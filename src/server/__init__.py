@@ -2629,16 +2629,16 @@ option_list = (
             'being started separately using the generated \'apachectl\' '
             'script.'),
 
-    optparse.make_option('--isatty', action='store_true', default=False,
-            help='Flag indicating whether should assume being run in an '
-            'interactive terminal session. In this case Apache will not '
-            'replace this wrapper script, but will be run as a sub process.'
-            'Signals such as SIGINT, SIGTERM, SIGHUP and SIGUSR1 will be '
-            'forwarded onto Apache, but SIGWINCH will be blocked so that '
-            'resizing of a terminal session window will not cause Apache '
-            'to shutdown. This is a separate option at this time rather '
-            'than being determined automatically while the reliability of '
-            'intercepting and forwarding signals is verified.'),
+    # optparse.make_option('--isatty', action='store_true', default=False,
+    #         help='Flag indicating whether should assume being run in an '
+    #         'interactive terminal session. In this case Apache will not '
+    #         'replace this wrapper script, but will be run as a sub process.'
+    #         'Signals such as SIGINT, SIGTERM, SIGHUP and SIGUSR1 will be '
+    #         'forwarded onto Apache, but SIGWINCH will be blocked so that '
+    #         'resizing of a terminal session window will not cause Apache '
+    #         'to shutdown. This is a separate option at this time rather '
+    #         'than being determined automatically while the reliability of '
+    #         'intercepting and forwarding signals is verified.'),
 )
 
 def cmd_setup_server(params):
@@ -3429,7 +3429,8 @@ def cmd_start_server(params):
 
     executable = os.path.join(config['server_root'], 'apachectl')
 
-    if config['isatty'] and sys.stdout.isatty():
+    #if config['isatty'] and sys.stdout.isatty():
+    if sys.stdout.isatty():
         process = None
 
         def handler(signum, frame):
