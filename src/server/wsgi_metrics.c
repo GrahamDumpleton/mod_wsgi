@@ -329,6 +329,10 @@ static PyObject *wsgi_request_metrics(void)
     double stop_cpu_system_time = 0.0;
     double stop_cpu_user_time = 0.0;
 
+    double cpu_system_time = 0.0;
+    double cpu_user_time = 0.0;
+    double total_cpu_time = 0.0;
+
     static int threads_maximum = 0;
 
     apr_uint64_t interval_requests = 0;
@@ -423,6 +427,23 @@ static PyObject *wsgi_request_metrics(void)
 
     stop_cpu_user_time = tmsbuf.tms_utime / tick;
     stop_cpu_system_time = tmsbuf.tms_stime / tick;
+
+    cpu_user_time = (stop_cpu_user_time-start_cpu_user_time)/time_interval;
+    cpu_system_time = (stop_cpu_system_time-start_cpu_system_time)/time_interval;
+
+    total_cpu_time += cpu_user_time;
+    total_cpu_time += cpu_system_time;
+
+    /*
+     * This can add up to just over 1.0 because of time do things. In
+     * this case force it back into range 0 to 1.0. The chart will be
+     * capped at 1.0 anyway.
+     */
+
+    if (total_cpu_time > 1.0) {
+        cpu_user_time = cpu_user_time / total_cpu_time;
+        cpu_system_time = cpu_system_time / total_cpu_time;
+    }
 
     object = PyFloat_FromDouble(
             (stop_cpu_user_time-start_cpu_user_time)/time_interval);
