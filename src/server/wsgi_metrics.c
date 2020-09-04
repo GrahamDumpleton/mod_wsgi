@@ -223,7 +223,8 @@ WSGI_STATIC_INTERNED_STRING(active_requests);
 WSGI_STATIC_INTERNED_STRING(threads);
 WSGI_STATIC_INTERNED_STRING(thread_id);
 
-WSGI_STATIC_INTERNED_STRING(max_threads);
+WSGI_STATIC_INTERNED_STRING(threads_maximum);
+WSGI_STATIC_INTERNED_STRING(threads_enabled);
 WSGI_STATIC_INTERNED_STRING(time_interval);
 WSGI_STATIC_INTERNED_STRING(utilization);
 WSGI_STATIC_INTERNED_STRING(request_rate);
@@ -274,7 +275,8 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(threads);
         WSGI_CREATE_INTERNED_STRING_ID(thread_id);
 
-        WSGI_CREATE_INTERNED_STRING_ID(max_threads);
+        WSGI_CREATE_INTERNED_STRING_ID(threads_maximum);
+        WSGI_CREATE_INTERNED_STRING_ID(threads_enabled);
         WSGI_CREATE_INTERNED_STRING_ID(time_interval);
         WSGI_CREATE_INTERNED_STRING_ID(utilization);
         WSGI_CREATE_INTERNED_STRING_ID(request_rate);
@@ -324,7 +326,7 @@ static PyObject *wsgi_request_metrics(void)
     double stop_cpu_system_time = 0.0;
     double stop_cpu_user_time = 0.0;
 
-    static int max_threads = 0;
+    static int threads_maximum = 0;
 
     apr_uint64_t interval_requests = 0;
     double server_time_total = 0;
@@ -348,27 +350,27 @@ static PyObject *wsgi_request_metrics(void)
     if (!wsgi_interns_initialized)
         wsgi_initialize_interned_strings();
 
-    if (!max_threads) {
+    if (!threads_maximum) {
         int is_threaded = 0;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
         if (wsgi_daemon_process) {
-            max_threads = wsgi_daemon_process->group->threads;
+            threads_maximum = wsgi_daemon_process->group->threads;
         }
         else {
             ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
             if (is_threaded != AP_MPMQ_NOT_SUPPORTED) {
-                ap_mpm_query(AP_MPMQ_MAX_THREADS, &max_threads);
+                ap_mpm_query(AP_MPMQ_MAX_THREADS, &threads_maximum);
             }
         }
 #else
         ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
         if (is_threaded != AP_MPMQ_NOT_SUPPORTED) {
-            ap_mpm_query(AP_MPMQ_MAX_THREADS, &max_threads);
+            ap_mpm_query(AP_MPMQ_MAX_THREADS, &threads_maximum);
         }
 #endif
 
-        max_threads = (max_threads <= 0) ? 1 : max_threads;
+        threads_maximum = (threads_maximum <= 0) ? 1 : threads_maximum;
     }
 
 
@@ -437,14 +439,14 @@ static PyObject *wsgi_request_metrics(void)
     Py_DECREF(object);
 #endif
 
-    object = wsgi_PyInt_FromLong(max_threads);
+    object = wsgi_PyInt_FromLong(threads_maximum);
     PyDict_SetItem(result,
-            WSGI_INTERNED_STRING(max_threads), object);
+            WSGI_INTERNED_STRING(threads_maximum), object);
     Py_DECREF(object);
 
     object = wsgi_PyInt_FromLong(wsgi_request_threads);
     PyDict_SetItem(result,
-            WSGI_INTERNED_STRING(request_threads), object);
+            WSGI_INTERNED_STRING(threads_enabled), object);
     Py_DECREF(object);
 
     object = wsgi_PyInt_FromLong(wsgi_active_requests);
@@ -454,7 +456,7 @@ static PyObject *wsgi_request_metrics(void)
 
     request_busy_time = stop_request_busy_time - start_request_busy_time;
 
-    capacity_utilization = request_busy_time / time_interval / max_threads;
+    capacity_utilization = request_busy_time / time_interval / threads_maximum;
 
     object = PyFloat_FromDouble(capacity_utilization);
     PyDict_SetItem(result,
