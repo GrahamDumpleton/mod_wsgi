@@ -414,12 +414,14 @@ static PyObject *wsgi_request_metrics(void)
     stop_cpu_user_time = tmsbuf.tms_utime / tick;
     stop_cpu_system_time = tmsbuf.tms_stime / tick;
 
-    object = PyFloat_FromDouble(stop_cpu_user_time-start_cpu_user_time);
+    object = PyFloat_FromDouble(
+            (stop_cpu_user_time-start_cpu_user_time)/time_interval);
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(cpu_user_time), object);
     Py_DECREF(object);
 
-    object = PyFloat_FromDouble(stop_cpu_system_time-start_cpu_system_time);
+    object = PyFloat_FromDouble(
+            (stop_cpu_system_time-start_cpu_system_time)/time_interval);
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(cpu_system_time), object);
     Py_DECREF(object);
