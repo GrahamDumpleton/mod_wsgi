@@ -112,6 +112,7 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
     thread_info = wsgi_thread_info(1, 1);
 
     thread_info->request_data = PyDict_New();
+    thread_info->interval_request_count += 1;
 
 #if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
 #if PY_MAJOR_VERSION >= 3
@@ -225,6 +226,7 @@ WSGI_STATIC_INTERNED_STRING(thread_id);
 
 WSGI_STATIC_INTERNED_STRING(threads_maximum);
 WSGI_STATIC_INTERNED_STRING(threads_enabled);
+WSGI_STATIC_INTERNED_STRING(active_threads);
 WSGI_STATIC_INTERNED_STRING(time_interval);
 WSGI_STATIC_INTERNED_STRING(utilization);
 WSGI_STATIC_INTERNED_STRING(request_rate);
@@ -277,6 +279,7 @@ static void wsgi_initialize_interned_strings(void)
 
         WSGI_CREATE_INTERNED_STRING_ID(threads_maximum);
         WSGI_CREATE_INTERNED_STRING_ID(threads_enabled);
+        WSGI_CREATE_INTERNED_STRING_ID(active_threads);
         WSGI_CREATE_INTERNED_STRING_ID(time_interval);
         WSGI_CREATE_INTERNED_STRING_ID(utilization);
         WSGI_CREATE_INTERNED_STRING_ID(request_rate);
@@ -333,6 +336,11 @@ static PyObject *wsgi_request_metrics(void)
     double application_time_total = 0;
     double server_time_avg = 0;
     double application_time_avg = 0;
+
+    WSGIThreadInfo **thread_info = NULL;
+    int active_threads = 0;
+
+    int i;
 
 #ifdef HAVE_TIMES
     struct tms tmsbuf; 
@@ -452,6 +460,19 @@ static PyObject *wsgi_request_metrics(void)
     object = wsgi_PyInt_FromLong(wsgi_active_requests);
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(active_requests), object);
+    Py_DECREF(object);
+
+    thread_info = (WSGIThreadInfo **)wsgi_thread_details->elts;
+
+    for (i=0; i<wsgi_thread_details->nelts; i++) {
+        if (thread_info[i]->interval_request_count)
+            active_threads++;
+        thread_info[i]->interval_request_count = 0;
+    }
+
+    object = wsgi_PyInt_FromLong(active_threads);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(active_threads), object);
     Py_DECREF(object);
 
     request_busy_time = stop_request_busy_time - start_request_busy_time;

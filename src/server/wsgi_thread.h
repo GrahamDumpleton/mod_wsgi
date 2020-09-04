@@ -30,6 +30,7 @@ typedef struct {
     int thread_id;
     int request_thread;
     apr_int64_t request_count;
+    apr_int64_t interval_request_count;
     PyObject *request_id;
     PyObject *request_data;
     PyObject *log_buffer;
