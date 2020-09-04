@@ -225,7 +225,7 @@ WSGI_STATIC_INTERNED_STRING(threads);
 WSGI_STATIC_INTERNED_STRING(thread_id);
 
 WSGI_STATIC_INTERNED_STRING(threads_maximum);
-WSGI_STATIC_INTERNED_STRING(threads_enabled);
+WSGI_STATIC_INTERNED_STRING(threads_initialized);
 WSGI_STATIC_INTERNED_STRING(active_threads);
 WSGI_STATIC_INTERNED_STRING(time_interval);
 WSGI_STATIC_INTERNED_STRING(utilization);
@@ -278,7 +278,7 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(thread_id);
 
         WSGI_CREATE_INTERNED_STRING_ID(threads_maximum);
-        WSGI_CREATE_INTERNED_STRING_ID(threads_enabled);
+        WSGI_CREATE_INTERNED_STRING_ID(threads_initialized);
         WSGI_CREATE_INTERNED_STRING_ID(active_threads);
         WSGI_CREATE_INTERNED_STRING_ID(time_interval);
         WSGI_CREATE_INTERNED_STRING_ID(utilization);
@@ -473,7 +473,7 @@ static PyObject *wsgi_request_metrics(void)
 
     object = wsgi_PyInt_FromLong(wsgi_request_threads);
     PyDict_SetItem(result,
-            WSGI_INTERNED_STRING(threads_enabled), object);
+            WSGI_INTERNED_STRING(threads_initialized), object);
     Py_DECREF(object);
 
     object = wsgi_PyInt_FromLong(wsgi_active_requests);
