@@ -313,12 +313,16 @@ static PyObject *wsgi_request_metrics(void)
     double capacity_utilization = 0.0;
 
     static double start_time = 0.0;
+    static double start_cpu_system_time = 0.0;
+    static double start_cpu_user_time = 0.0;
     static double start_request_busy_time = 0.0;
     static apr_uint64_t start_request_count = 0;
 
     double time_interval = 0.0;
     apr_uint64_t request_count = 0;
     double request_rate = 0.0;
+    double stop_cpu_system_time = 0.0;
+    double stop_cpu_user_time = 0.0;
 
     static int max_threads = 0;
 
@@ -327,6 +331,19 @@ static PyObject *wsgi_request_metrics(void)
     double application_time_total = 0;
     double server_time_avg = 0;
     double application_time_avg = 0;
+
+#ifdef HAVE_TIMES
+    struct tms tmsbuf; 
+    static float tick = 0.0;
+
+    if (!tick) {
+#ifdef _SC_CLK_TCK
+        tick = sysconf(_SC_CLK_TCK);
+#else
+        tick = HZ;
+#endif
+    }
+#endif
 
     if (!wsgi_interns_initialized)
         wsgi_initialize_interned_strings();
@@ -351,7 +368,7 @@ static PyObject *wsgi_request_metrics(void)
         }
 #endif
 
-    max_threads = (max_threads <= 0) ? 1 : max_threads;
+        max_threads = (max_threads <= 0) ? 1 : max_threads;
     }
 
 
@@ -364,6 +381,11 @@ static PyObject *wsgi_request_metrics(void)
         start_time = stop_time;
         start_request_busy_time = stop_request_busy_time;
         start_request_count = stop_request_count;
+
+        times(&tmsbuf);
+
+        start_cpu_user_time = tmsbuf.tms_utime / tick;
+        start_cpu_system_time = tmsbuf.tms_stime / tick;
 
         return result;
     }
@@ -385,6 +407,33 @@ static PyObject *wsgi_request_metrics(void)
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(time_interval), object);
     Py_DECREF(object);
+
+#ifdef HAVE_TIMES
+    times(&tmsbuf);
+
+    stop_cpu_user_time = tmsbuf.tms_utime / tick;
+    stop_cpu_system_time = tmsbuf.tms_stime / tick;
+
+    object = PyFloat_FromDouble(stop_cpu_user_time-start_cpu_user_time);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(cpu_user_time), object);
+    Py_DECREF(object);
+
+    object = PyFloat_FromDouble(stop_cpu_system_time-start_cpu_system_time);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(cpu_system_time), object);
+    Py_DECREF(object);
+#else
+    object = PyFloat_FromDouble(0.0);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(cpu_user_time), object);
+    Py_DECREF(object);
+
+    object = PyFloat_FromDouble(0.0);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(cpu_system_time), object);
+    Py_DECREF(object);
+#endif
 
     object = wsgi_PyInt_FromLong(max_threads);
     PyDict_SetItem(result,
@@ -427,6 +476,8 @@ static PyObject *wsgi_request_metrics(void)
     start_time = stop_time;
     start_request_busy_time = stop_request_busy_time;
     start_request_count = stop_request_count;
+    start_cpu_user_time = stop_cpu_user_time;
+    start_cpu_system_time = stop_cpu_system_time;
 
     apr_thread_mutex_lock(wsgi_monitor_lock);
 
