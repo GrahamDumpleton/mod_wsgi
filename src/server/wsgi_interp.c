@@ -1280,9 +1280,14 @@ InterpreterObject *newInterpreterObject(const char *name)
                        &wsgi_request_metrics_method[0], NULL));
 
     PyModule_AddObject(module, "subscribe_events", PyCFunction_New(
-                       &wsgi_process_events_method[0], NULL));
+                       &wsgi_subscribe_events_method[0], NULL));
+
+    PyModule_AddObject(module, "subscribe_shutdown", PyCFunction_New(
+                       &wsgi_subscribe_shutdown_method[0], NULL));
 
     PyModule_AddObject(module, "event_callbacks", PyList_New(0));
+
+    PyModule_AddObject(module, "shutdown_callbacks", PyList_New(0));
 
     PyModule_AddObject(module, "active_requests", PyDict_New());
 

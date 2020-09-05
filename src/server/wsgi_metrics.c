@@ -957,6 +957,38 @@ static PyObject *wsgi_subscribe_events(PyObject *self, PyObject *args)
     return Py_None;
 }
 
+static PyObject *wsgi_subscribe_shutdown(PyObject *self, PyObject *args)
+{
+    PyObject *callback = NULL;
+
+    PyObject *module = NULL;
+
+    if (!PyArg_ParseTuple(args, "O", &callback))
+        return NULL;
+
+    module = PyImport_ImportModule("mod_wsgi");
+
+    if (module) {
+        PyObject *dict = NULL;
+        PyObject *list = NULL;
+
+        dict = PyModule_GetDict(module);
+        list = PyDict_GetItemString(dict, "shutdown_callbacks");
+
+        if (list)
+            PyList_Append(list, callback);
+        else
+            return NULL;
+
+        Py_DECREF(module);
+    }
+    else
+        return NULL;
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
 long wsgi_event_subscribers(void)
 {
     PyObject *module = NULL;
@@ -983,56 +1015,18 @@ long wsgi_event_subscribers(void)
         return 0;
 }
 
-void wsgi_publish_event(const char *name, PyObject *event)
+void wsgi_call_callbacks(const char *name, PyObject *callbacks,
+        PyObject *event)
 {
     int i;
 
-    PyObject *module = NULL;
-    PyObject *list = NULL;
-
-    module = PyImport_ImportModule("mod_wsgi");
-
-    if (module) {
-        PyObject *dict = NULL;
-
-        dict = PyModule_GetDict(module);
-        list = PyDict_GetItemString(dict, "event_callbacks");
-
-        Py_XINCREF(list);
-
-        Py_DECREF(module);
-    }
-    else {
-        Py_BEGIN_ALLOW_THREADS
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Unable to import mod_wsgi when "
-                     "publishing events.", getpid());
-        Py_END_ALLOW_THREADS
-
-        PyErr_Clear();
-
-        return;
-    }
-
-    if (!list) {
-        Py_BEGIN_ALLOW_THREADS
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Unable to find event subscribers.",
-                     getpid());
-        Py_END_ALLOW_THREADS
-
-        PyErr_Clear();
-
-        return;
-    }
-
-    for (i=0; i<PyList_Size(list); i++) {
+    for (i=0; i<PyList_Size(callbacks); i++) {
         PyObject *callback = NULL;
 
         PyObject *res = NULL;
         PyObject *args = NULL;
 
-        callback = PyList_GetItem(list, i);
+        callback = PyList_GetItem(callbacks, i);
 
         Py_INCREF(callback);
 
@@ -1127,14 +1121,76 @@ void wsgi_publish_event(const char *name, PyObject *event)
         Py_DECREF(callback);
         Py_DECREF(args);
     }
+}
 
-    Py_DECREF(list);
+void wsgi_publish_event(const char *name, PyObject *event)
+{
+    PyObject *module = NULL;
+
+    PyObject *event_callbacks = NULL;
+    PyObject *shutdown_callbacks = NULL;
+
+    module = PyImport_ImportModule("mod_wsgi");
+
+    if (module) {
+        PyObject *dict = NULL;
+
+        dict = PyModule_GetDict(module);
+
+        event_callbacks = PyDict_GetItemString(dict, "event_callbacks");
+        Py_XINCREF(event_callbacks);
+
+        shutdown_callbacks = PyDict_GetItemString(dict, "shutdown_callbacks");
+        Py_XINCREF(shutdown_callbacks);
+
+        Py_DECREF(module);
+    }
+    else {
+        Py_BEGIN_ALLOW_THREADS
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Unable to import mod_wsgi when "
+                     "publishing events.", getpid());
+        Py_END_ALLOW_THREADS
+
+        PyErr_Clear();
+
+        return;
+    }
+
+    if (!event_callbacks || !shutdown_callbacks) {
+        Py_BEGIN_ALLOW_THREADS
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Unable to find event subscribers.",
+                     getpid());
+        Py_END_ALLOW_THREADS
+
+        PyErr_Clear();
+
+        Py_XDECREF(event_callbacks);
+        Py_XDECREF(shutdown_callbacks);
+
+        return;
+    }
+
+    wsgi_call_callbacks(name, event_callbacks, event);
+
+    if (strcmp(name, "process_stopping") == 0)
+        wsgi_call_callbacks(name, shutdown_callbacks, event);
+
+    Py_DECREF(event_callbacks);
+    Py_DECREF(shutdown_callbacks);
 }
 
 /* ------------------------------------------------------------------------- */
 
-PyMethodDef wsgi_process_events_method[] = {
+PyMethodDef wsgi_subscribe_events_method[] = {
     { "subscribe_events",   (PyCFunction)wsgi_subscribe_events,
+                            METH_VARARGS, 0 },
+    { NULL },
+};
+
+PyMethodDef wsgi_subscribe_shutdown_method[] = {
+    { "subscribe_shutdown", (PyCFunction)wsgi_subscribe_shutdown,
                             METH_VARARGS, 0 },
     { NULL },
 };
