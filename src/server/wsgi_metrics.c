@@ -82,23 +82,23 @@ static double wsgi_utilization_time(int adjustment,
 
 static apr_uint64_t wsgi_interval_requests = 0;
 static double wsgi_server_queue_time_total = 0;
-static double wsgi_response_time_total = 0;
+static double wsgi_application_time_total = 0;
 
 void wsgi_record_request_times(apr_time_t request_start,
         apr_time_t application_start, apr_time_t application_finish) {
 
     double server_queue_time = 0.0;
-    double response_time = 0.0;
+    double application_time = 0.0;
 
     server_queue_time = apr_time_sec((double)(application_start-request_start));
-    response_time = (apr_time_sec((double)(application_finish-
+    application_time = (apr_time_sec((double)(application_finish-
             application_start)));
 
     apr_thread_mutex_lock(wsgi_monitor_lock);
 
     wsgi_interval_requests += 1;
     wsgi_server_queue_time_total += server_queue_time;
-    wsgi_response_time_total += response_time;
+    wsgi_application_time_total += application_time;
 
     apr_thread_mutex_unlock(wsgi_monitor_lock);
 }
@@ -231,7 +231,7 @@ WSGI_STATIC_INTERNED_STRING(request_threads_active);
 WSGI_STATIC_INTERNED_STRING(capacity_utilization);
 WSGI_STATIC_INTERNED_STRING(request_throughput);
 WSGI_STATIC_INTERNED_STRING(server_queue_time);
-WSGI_STATIC_INTERNED_STRING(response_time);
+WSGI_STATIC_INTERNED_STRING(application_time);
 
 static PyObject *wsgi_status_flags[SERVER_NUM_STATUS];
 
@@ -284,7 +284,7 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(capacity_utilization);
         WSGI_CREATE_INTERNED_STRING_ID(request_throughput);
         WSGI_CREATE_INTERNED_STRING_ID(server_queue_time);
-        WSGI_CREATE_INTERNED_STRING_ID(response_time);
+        WSGI_CREATE_INTERNED_STRING_ID(application_time);
 
         WSGI_CREATE_STATUS_FLAG(SERVER_DEAD, "."); 
         WSGI_CREATE_STATUS_FLAG(SERVER_READY, "_");
@@ -337,9 +337,9 @@ static PyObject *wsgi_request_metrics(void)
 
     apr_uint64_t interval_requests = 0;
     double server_queue_time_total = 0;
-    double response_time_total = 0;
+    double application_time_total = 0;
     double server_queue_time_avg = 0;
-    double response_time_avg = 0;
+    double application_time_avg = 0;
 
     WSGIThreadInfo **thread_info = NULL;
     int request_threads_active = 0;
@@ -526,20 +526,20 @@ static PyObject *wsgi_request_metrics(void)
 
     interval_requests = wsgi_interval_requests;
     server_queue_time_total = wsgi_server_queue_time_total;
-    response_time_total = wsgi_response_time_total;
+    application_time_total = wsgi_application_time_total;
 
     wsgi_interval_requests = 0;
     wsgi_server_queue_time_total = 0.0;
-    wsgi_response_time_total = 0.0;
+    wsgi_application_time_total = 0.0;
 
     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
     server_queue_time_avg = 0;
-    response_time_avg = 0;
+    application_time_avg = 0;
 
     if (interval_requests) {
         server_queue_time_avg = server_queue_time_total / interval_requests;
-        response_time_avg = response_time_total / interval_requests;
+        application_time_avg = application_time_total / interval_requests;
     }
 
     object = PyFloat_FromDouble(server_queue_time_avg);
@@ -547,9 +547,9 @@ static PyObject *wsgi_request_metrics(void)
             WSGI_INTERNED_STRING(server_queue_time), object);
     Py_DECREF(object);
 
-    object = PyFloat_FromDouble(response_time_avg);
+    object = PyFloat_FromDouble(application_time_avg);
     PyDict_SetItem(result,
-            WSGI_INTERNED_STRING(response_time), object);
+            WSGI_INTERNED_STRING(application_time), object);
     Py_DECREF(object);
 
     return result;
