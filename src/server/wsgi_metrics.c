@@ -88,22 +88,21 @@ static double wsgi_application_time_total = 0;
 static int wsgi_application_time_buckets[16];
 
 void wsgi_record_time_in_buckets(int* buckets, double duration) {
-    buckets[15] += 1;
-    if (duration <= 81.92) buckets[14] += 1; else return;
-    if (duration <= 40.96) buckets[13] += 1; else return;
-    if (duration <= 20.48) buckets[12] += 1; else return;
-    if (duration <= 10.24) buckets[11] += 1; else return;
-    if (duration <= 5.12) buckets[10] += 1; else return;
-    if (duration <= 2.56) buckets[9] += 1; else return;
-    if (duration <= 1.28) buckets[8] += 1; else return;
-    if (duration <= 0.64) buckets[7] += 1; else return;
-    if (duration <= 0.32) buckets[6] += 1; else return;
-    if (duration <= 0.16) buckets[5] += 1; else return;
-    if (duration <= 0.08) buckets[4] += 1; else return;
-    if (duration <= 0.04) buckets[3] += 1; else return;
-    if (duration <= 0.02) buckets[2] += 1; else return;
-    if (duration <= 0.01) buckets[1] += 1; else return;
-    if (duration <= 0.005) buckets[0] += 1;
+    int index = 0;
+    double threshold = 0.005;
+
+    while (index < 14) {
+        if (duration <= threshold)
+        {
+            buckets[index] += 1;
+            return;
+        }
+
+        threshold *= 2;
+        index += 1;
+    }
+
+    buckets[index] += 1;
 }
 
 void wsgi_record_request_times(apr_time_t request_start,
