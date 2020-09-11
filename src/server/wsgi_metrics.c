@@ -120,13 +120,6 @@ void wsgi_record_request_times(apr_time_t request_start,
 
     apr_thread_mutex_lock(wsgi_monitor_lock);
 
-    if (wsgi_sample_requests == 0) {
-        memset(&wsgi_server_time_buckets, 0,
-                sizeof(wsgi_server_time_buckets));
-        memset(&wsgi_application_time_buckets, 0,
-                sizeof(wsgi_application_time_buckets));
-    }
-
     wsgi_sample_requests += 1;
     wsgi_server_time_total += server_time;
     wsgi_application_time_total += application_time;
@@ -599,6 +592,11 @@ static PyObject *wsgi_request_metrics(void)
     wsgi_sample_requests = 0;
     wsgi_server_time_total = 0.0;
     wsgi_application_time_total = 0.0;
+
+    memset(&wsgi_server_time_buckets, 0,
+            sizeof(wsgi_server_time_buckets));
+    memset(&wsgi_application_time_buckets, 0,
+            sizeof(wsgi_application_time_buckets));
 
     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
