@@ -480,17 +480,6 @@ static PyObject *wsgi_request_metrics(void)
     total_cpu_time += cpu_user_time;
     total_cpu_time += cpu_system_time;
 
-    /*
-     * This can add up to just over 1.0 because of time do things. In
-     * this case force it back into range 0 to 1.0. The chart will be
-     * capped at 1.0 anyway.
-     */
-
-    if (total_cpu_time > 1.0) {
-        cpu_user_time = cpu_user_time / total_cpu_time;
-        cpu_system_time = cpu_system_time / total_cpu_time;
-    }
-
     object = PyFloat_FromDouble(cpu_user_time);
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(cpu_user_time), object);
