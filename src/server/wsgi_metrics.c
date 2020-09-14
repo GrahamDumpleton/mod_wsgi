@@ -501,6 +501,16 @@ static PyObject *wsgi_request_metrics(void)
     Py_DECREF(object);
 #endif
 
+    object = wsgi_PyInt_FromLongLong(wsgi_get_peak_memory_RSS());
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(memory_max_rss), object);
+    Py_DECREF(object);
+
+    object = wsgi_PyInt_FromLongLong(wsgi_get_current_memory_RSS());
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(memory_rss), object);
+    Py_DECREF(object);
+
     object = wsgi_PyInt_FromLong(request_threads_maximum);
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(request_threads_maximum), object);
