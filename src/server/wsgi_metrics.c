@@ -448,6 +448,11 @@ static PyObject *wsgi_request_metrics(void)
         return result;
     }
 
+    object = wsgi_PyInt_FromLong(getpid());
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(pid), object);
+    Py_DECREF(object);
+
     object = PyFloat_FromDouble(apr_time_sec((double)start_time));
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(start_time), object);
