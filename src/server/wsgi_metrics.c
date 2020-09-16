@@ -430,10 +430,15 @@ static PyObject *wsgi_request_metrics(void)
         start_request_busy_time = stop_request_busy_time;
         start_request_count = stop_request_count;
 
+#ifdef HAVE_TIMES
         times(&tmsbuf);
 
         start_cpu_user_time = tmsbuf.tms_utime / tick;
         start_cpu_system_time = tmsbuf.tms_stime / tick;
+#else
+        start_cpu_user_time = 0.0;
+        start_cpu_system_time = 0.0;
+#endif
 
         apr_thread_mutex_lock(wsgi_monitor_lock);
 
