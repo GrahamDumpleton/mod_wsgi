@@ -73,10 +73,11 @@ class Command(BaseCommand):
         module_name = '.'.join(fields[:-1])
         callable_object = fields[-1]
 
-        __import__(module_name)
-
-        # script_file = inspect.getsourcefile(sys.modules[module_name])
-        # args = [script_file]
+        # XXX Can't test import as loading the WSGI module may have
+        # side effects and run things that should only be run inside
+        # of the mod_wsgi process.
+        #
+        #     __import__(module_name)
 
         options['application_type'] = 'module'
         options['callable_object'] = callable_object
