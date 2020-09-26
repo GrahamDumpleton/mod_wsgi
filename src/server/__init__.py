@@ -2314,11 +2314,12 @@ option_list = (
             help='The IP address or subnet corresponding to any trusted '
             'proxy.'),
 
-    optparse.make_option('--keep-alive-timeout', type='int', default=0,
+    optparse.make_option('--keep-alive-timeout', type='int', default=2,
             metavar='SECONDS', help='The number of seconds which a client '
             'connection will be kept alive to allow subsequent requests '
-            'to be made over the same connection. Defaults to 0, indicating '
-            'that keep alive connections are disabled.'),
+            'to be made over the same connection when a keep alive '
+            'connection is requested. Defaults to 2, indicating that keep '
+            'alive connections are set for 2 seconds.'),
 
     optparse.make_option('--compress-responses', action='store_true',
             default=False, help='Flag indicating whether responses for '
