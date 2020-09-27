@@ -2926,6 +2926,10 @@ def _cmd_setup_server(command, args, options):
     if options['python_paths'] is None:
         options['python_paths'] = []
 
+    if options['debug_mode'] or options['embedded_mode']:
+        if options['working_directory'] not in options['python_paths']:
+            options['python_paths'].insert(0, options['working_directory'])
+
     # Special case to check for when being executed from shiv variant
     # of a zipapp application bundle. We need to work out where the
     # site packages directory is and pass it with Python module search
