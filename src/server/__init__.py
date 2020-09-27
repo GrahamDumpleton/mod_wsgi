@@ -3407,13 +3407,6 @@ def _cmd_setup_server(command, args, options):
     if options['startup_log']:
         print('Startup Log File   :', options['startup_log_file'])
 
-    if options['debug_mode']:
-        print('Operating Mode     : debug')
-    elif options['embedded_mode']:
-        print('Operating Mode     : embedded')
-    else:
-        print('Operating Mode     : daemon')
-
     if options['enable_coverage']:
         print('Coverage Output    :', os.path.join(
                 options['coverage_directory'], 'index.html'))
@@ -3436,6 +3429,13 @@ def _cmd_setup_server(command, args, options):
         if not options['envvars_script']:
             print('Environ Variables  :', options['server_root'] + '/envvars')
         print('Control Script     :', options['server_root'] + '/apachectl')
+
+    if options['debug_mode']:
+        print('Operating Mode     : debug')
+    elif options['embedded_mode']:
+        print('Operating Mode     : embedded')
+    else:
+        print('Operating Mode     : daemon')
 
     if options['processes'] == 1:
         print('Request Capacity   : %s (%s process * %s threads)' % (
