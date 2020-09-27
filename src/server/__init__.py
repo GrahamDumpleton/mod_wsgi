@@ -336,6 +336,7 @@ WSGISocketPrefix %(server_root)s/wsgi
 WSGISocketRotation Off
 
 <IfDefine !ONE_PROCESS>
+<IfDefine !EMBEDDED_MODE>
 WSGIRestrictEmbedded On
 <IfDefine MOD_WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
@@ -398,10 +399,17 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    server-metrics=%(server_metrics_flag)s
 </IfDefine>
 </IfDefine>
+</IfDefine>
 
 WSGICallableObject '%(callable_object)s'
 WSGIPassAuthorization On
 WSGIMapHEADToGET %(map_head_to_get)s
+
+<IfDefine EMBEDDED_MODE>
+<IfDefine MOD_WSGI_WITH_PYTHON_PATH>
+WSGIPythonPath '%(python_path)s'
+</IfDefine>
+</IfDefine>
 
 <IfDefine ONE_PROCESS>
 WSGIRestrictStdin Off
@@ -801,10 +809,19 @@ WSGIErrorOverride On
 </IfDefine>
 
 <IfDefine !ONE_PROCESS>
+<IfDefine !EMBEDDED_MODE>
 WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
 WSGIImportScript '%(server_root)s/handler.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
+</IfDefine>
+</IfDefine>
+
+<IfDefine EMBEDDED_MODE>
+WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
+    process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
+WSGIImportScript '%(server_root)s/handler.wsgi' \\
+    process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
 </IfDefine>
 
 <IfDefine ONE_PROCESS>
@@ -1852,6 +1869,8 @@ ENABLE_GDB="%(enable_gdb)s"
 
 PROCESS_NAME="%(process_name)s"
 
+cd $MOD_WSGI_WORKING_DIRECTORY
+
 case $ACMD in
 start|stop|restart|graceful|graceful-stop)
     if [ "x$ENABLE_GDB" != "xTrue" ]; then
@@ -2015,32 +2034,37 @@ option_list = (
     optparse.make_option('--threads', type='int', default=5, metavar='NUMBER',
             help='The number of threads in the request thread pool of '
             'each process for handling requests. Defaults to 5 in each '
-            'process.'),
+            'process. Note that if embedded mode and only prefork MPM '
+            'is available, then processes will instead be used.'),
 
     optparse.make_option('--max-clients', type='int', default=None,
             metavar='NUMBER', help='The maximum number of simultaneous '
             'client connections that will be accepted. This will default '
             'to being 1.5 times the total number of threads in the '
-            'request thread pools across all process handling requests.'),
+            'request thread pools across all process handling requests. '
+            'Note that if embedded mode is used this will be ignored.'),
 
     optparse.make_option('--initial-workers', type='float', default=None,
             metavar='NUMBER', action='callback', callback=check_percentage,
             help='The initial number of workers to create on startup '
             'expressed as a percentage of the maximum number of clients. '
             'The value provided should be between 0 and 1. The default is '
-            'dependent on the type of MPM being used.'),
+            'dependent on the type of MPM being used. Note that if '
+            'embedded mode is used, this will be ignored.'),
     optparse.make_option('--minimum-spare-workers', type='float',
             default=None, metavar='NUMBER', action='callback',
             callback=check_percentage, help='The minimum number of spare '
             'workers to maintain expressed as a percentage of the maximum '
             'number of clients. The value provided should be between 0 and '
-            '1. The default is dependent on the type of MPM being used.'),
+            '1. The default is dependent on the type of MPM being used. '
+            'Note that if embedded mode is used, this will be ignored.'),
     optparse.make_option('--maximum-spare-workers', type='float',
             default=None, metavar='NUMBER', action='callback',
             callback=check_percentage, help='The maximum number of spare '
             'workers to maintain expressed as a percentage of the maximum '
             'number of clients. The value provided should be between 0 and '
-            '1. The default is dependent on the type of MPM being used.'),
+            '1. The default is dependent on the type of MPM being used. '
+            'Note that if embedded mode is used, this will be ignored.'),
 
     optparse.make_option('--limit-request-body', type='int', default=10485760,
             metavar='NUMBER', help='The maximum number of bytes which are '
@@ -2566,6 +2590,11 @@ option_list = (
             help='Specify the name of a separate log file to be used for '
             'the managed service.'),
 
+    optparse.make_option('--embedded-mode', action='store_true', default=False,
+            help='Flag indicating whether to run in embedded mode rather '
+            'than the default daemon mode. Numerous daemon mode specific '
+            'features will not operate when this mode is used.'),
+
     optparse.make_option('--enable-docs', action='store_true', default=False,
             help='Flag indicating whether the mod_wsgi documentation should '
             'be made available at the /__wsgi__/docs sub URL.'),
@@ -2978,6 +3007,9 @@ def _cmd_setup_server(command, args, options):
             service_scripts.append((name, script))
         options['service_scripts'] = service_scripts
 
+    # Node that all the below calculations are overridden if are using
+    # embedded mode.
+
     max_clients = options['processes'] * options['threads']
 
     if options['max_clients'] is not None:
@@ -3056,6 +3088,23 @@ def _cmd_setup_server(command, args, options):
             options['worker_threads_per_child'],
             int(worker_max_spare_workers * options['worker_server_limit']) *
             options['worker_threads_per_child'])
+
+    if options['embedded_mode']:
+        max_clients = options['processes'] * options['threads']
+
+        options['prefork_max_clients'] = max_clients
+        options['prefork_server_limit'] = max_clients
+        options['prefork_start_servers'] = max_clients
+        options['prefork_min_spare_servers'] = max_clients
+        options['prefork_max_spare_servers'] = max_clients
+
+        options['worker_max_clients'] = max_clients
+        options['worker_server_limit'] = options['processes']
+        options['worker_thread_limit'] = options['threads']
+        options['worker_threads_per_child'] = options['threads']
+        options['worker_start_servers'] = options['processes']
+        options['worker_min_spare_threads'] = max_clients
+        options['worker_max_spare_threads'] = max_clients
 
     options['httpd_conf'] = os.path.join(options['server_root'], 'httpd.conf')
 
@@ -3161,6 +3210,9 @@ def _cmd_setup_server(command, args, options):
         options['https_url'] = 'https://%s:%s/' % (host, options['https_port'])
     else:
         options['https_url'] = None
+
+    if options['embedded_mode']:
+        options['httpd_arguments_list'].append('-DEMBEDDED_MODE')
 
     if any((options['enable_debugger'], options['enable_coverage'],
             options['enable_profiler'], options['enable_recorder'],
@@ -3351,6 +3403,13 @@ def _cmd_setup_server(command, args, options):
     if options['startup_log']:
         print('Startup Log File   :', options['startup_log_file'])
 
+    if options['debug_mode']:
+        print('Operating Mode     : debug')
+    elif options['embedded_mode']:
+        print('Operating Mode     : embedded')
+    else:
+        print('Operating Mode     : daemon')
+
     if options['enable_coverage']:
         print('Coverage Output    :', os.path.join(
                 options['coverage_directory'], 'index.html'))
@@ -3383,17 +3442,18 @@ def _cmd_setup_server(command, args, options):
                 options['processes']*options['threads'],
                 options['processes'], options['threads']))
 
-    print('Request Timeout    : %s (seconds)' % options['request_timeout'])
+    if not options['debug_mode'] and not options['embedded_mode']:
+        print('Request Timeout    : %s (seconds)' % options['request_timeout'])
 
-    if options['startup_timeout']:
-        print('Startup Timeout    : %s (seconds)' % options['startup_timeout'])
+        if options['startup_timeout']:
+            print('Startup Timeout    : %s (seconds)' % options['startup_timeout'])
 
-    print('Queue Backlog      : %s (connections)' % options['daemon_backlog'])
+        print('Queue Backlog      : %s (connections)' % options['daemon_backlog'])
 
-    print('Queue Timeout      : %s (seconds)' % options['queue_timeout'])
+        print('Queue Timeout      : %s (seconds)' % options['queue_timeout'])
 
-    print('Server Capacity    : %s (event/worker), %s (prefork)' % (
-            options['worker_max_clients'], options['prefork_max_clients']))
+        print('Server Capacity    : %s (event/worker), %s (prefork)' % (
+                options['worker_max_clients'], options['prefork_max_clients']))
 
     print('Server Backlog     : %s (connections)' % options['server_backlog'])
 
