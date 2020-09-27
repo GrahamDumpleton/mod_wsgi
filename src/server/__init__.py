@@ -2931,7 +2931,11 @@ def _cmd_setup_server(command, args, options):
             options['python_paths'].insert(0, options['working_directory'])
 
     if options['debug_mode']:
-        options['server_mpm_variables'] = ['prefork', 'worker']
+        options['server_mpm_variables'] = ['worker', 'prefork']
+
+    elif options['embedded_mode']:
+        if not options['server_mpm_variables']:
+            options['server_mpm_variables'] = ['worker', 'prefork']
 
     # Special case to check for when being executed from shiv variant
     # of a zipapp application bundle. We need to work out where the
