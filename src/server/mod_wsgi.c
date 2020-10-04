@@ -3430,7 +3430,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
      */
 
     wsgi_record_request_times(self->config->request_start,
-            self->config->queue_start, self->start_time, finish_time);
+            self->config->queue_start, self->config->daemon_start,
+            self->start_time, finish_time);
 
     /*
      * If result indicates an internal server error, then
@@ -12638,6 +12639,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     int queue_timeout_occurred = 0;
 
+    apr_time_t daemon_start = 0;
+
 #if ! (AP_MODULE_MAGIC_AT_LEAST(20120211, 37) || \
     (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
      AP_SERVER_MINORVERSION_NUMBER <= 2 && \
@@ -12649,6 +12652,14 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (!wsgi_daemon_pool)
         return DECLINED;
+
+    /*
+     * Mark this as start of daemon process even though connection
+     * setup has already been done. Otherwise need to carry through
+     * a time value somehow.
+     */
+
+    daemon_start = apr_time_now();
 
     /*
      * Remove all input/output filters except the core filters.
@@ -13120,7 +13131,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
             config->queue_start = 0.0;
     }
 
-    config->daemon_start = apr_time_now();
+    config->daemon_start = daemon_start;
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_start",
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT,

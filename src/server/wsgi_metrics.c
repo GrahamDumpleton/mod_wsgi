@@ -86,6 +86,8 @@ static double wsgi_server_time_total = 0;
 static int wsgi_server_time_buckets[16];
 static double wsgi_queue_time_total = 0;
 static int wsgi_queue_time_buckets[16];
+static double wsgi_daemon_time_total = 0;
+static int wsgi_daemon_time_buckets[16];
 static double wsgi_application_time_total = 0;
 static int wsgi_application_time_buckets[16];
 static int* wsgi_request_threads_buckets = NULL; 
@@ -109,11 +111,12 @@ void wsgi_record_time_in_buckets(int* buckets, double duration) {
 }
 
 void wsgi_record_request_times(apr_time_t request_start,
-        apr_time_t queue_start, apr_time_t application_start,
-        apr_time_t application_finish) {
+        apr_time_t queue_start, apr_time_t daemon_start,
+        apr_time_t application_start, apr_time_t application_finish) {
 
     double server_time = 0.0;
     double queue_time = 0.0;
+    double daemon_time = 0.0;
     double application_time = 0.0;
 
     if (wsgi_request_metrics_enabled == 0)
@@ -121,10 +124,12 @@ void wsgi_record_request_times(apr_time_t request_start,
 
     if (queue_start) {
         server_time = apr_time_sec((double)(queue_start-request_start));
-        queue_time = apr_time_sec((double)(application_start-queue_start));
+        queue_time = apr_time_sec((double)(daemon_start-queue_start));
+        daemon_time = apr_time_sec((double)(application_start-daemon_start));
     }
     else {
         server_time = apr_time_sec((double)(application_start-request_start));
+        daemon_time = 0;
         queue_time = 0;
     }
 
@@ -136,12 +141,15 @@ void wsgi_record_request_times(apr_time_t request_start,
     wsgi_sample_requests += 1;
     wsgi_server_time_total += server_time;
     wsgi_queue_time_total += queue_time;
+    wsgi_daemon_time_total += daemon_time;
     wsgi_application_time_total += application_time;
 
     wsgi_record_time_in_buckets(&wsgi_server_time_buckets,
             server_time);
     wsgi_record_time_in_buckets(&wsgi_queue_time_buckets,
             queue_time);
+    wsgi_record_time_in_buckets(&wsgi_daemon_time_buckets,
+            daemon_time);
     wsgi_record_time_in_buckets(&wsgi_application_time_buckets,
             application_time);
 
@@ -279,9 +287,11 @@ WSGI_STATIC_INTERNED_STRING(capacity_utilization);
 WSGI_STATIC_INTERNED_STRING(request_throughput);
 WSGI_STATIC_INTERNED_STRING(server_time);
 WSGI_STATIC_INTERNED_STRING(queue_time);
+WSGI_STATIC_INTERNED_STRING(daemon_time);
 WSGI_STATIC_INTERNED_STRING(application_time);
 WSGI_STATIC_INTERNED_STRING(server_time_buckets);
 WSGI_STATIC_INTERNED_STRING(queue_time_buckets);
+WSGI_STATIC_INTERNED_STRING(daemon_time_buckets);
 WSGI_STATIC_INTERNED_STRING(application_time_buckets);
 WSGI_STATIC_INTERNED_STRING(request_threads_buckets);
 
@@ -337,8 +347,10 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(request_throughput);
         WSGI_CREATE_INTERNED_STRING_ID(server_time);
         WSGI_CREATE_INTERNED_STRING_ID(queue_time);
+        WSGI_CREATE_INTERNED_STRING_ID(daemon_time);
         WSGI_CREATE_INTERNED_STRING_ID(application_time);
         WSGI_CREATE_INTERNED_STRING_ID(server_time_buckets);
+        WSGI_CREATE_INTERNED_STRING_ID(daemon_time_buckets);
         WSGI_CREATE_INTERNED_STRING_ID(queue_time_buckets);
         WSGI_CREATE_INTERNED_STRING_ID(application_time_buckets);
         WSGI_CREATE_INTERNED_STRING_ID(request_threads_buckets);
@@ -397,6 +409,8 @@ static PyObject *wsgi_request_metrics(void)
     double server_time_avg = 0;
     double queue_time_total = 0;
     double queue_time_avg = 0;
+    double daemon_time_total = 0;
+    double daemon_time_avg = 0;
     double application_time_total = 0;
     double application_time_avg = 0;
 
@@ -475,6 +489,7 @@ static PyObject *wsgi_request_metrics(void)
         wsgi_sample_requests = 0;
         wsgi_server_time_total = 0.0;
         wsgi_queue_time_total = 0.0;
+        wsgi_daemon_time_total = 0.0;
         wsgi_application_time_total = 0.0;
 
         wsgi_request_metrics_enabled = 1;
@@ -599,6 +614,7 @@ static PyObject *wsgi_request_metrics(void)
     interval_requests = wsgi_sample_requests;
     server_time_total = wsgi_server_time_total;
     queue_time_total = wsgi_queue_time_total;
+    daemon_time_total = wsgi_daemon_time_total;
     application_time_total = wsgi_application_time_total;
 
     object = PyList_New(16);
@@ -617,6 +633,15 @@ static PyObject *wsgi_request_metrics(void)
     }
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(queue_time_buckets), object);
+    Py_DECREF(object);
+
+    object = PyList_New(16);
+    for (i=0; i<16; i++) {
+        PyList_SET_ITEM(object, i, wsgi_PyInt_FromLong(
+                    wsgi_daemon_time_buckets[i]));
+    }
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(daemon_time_buckets), object);
     Py_DECREF(object);
 
     object = PyList_New(16);
@@ -647,12 +672,15 @@ static PyObject *wsgi_request_metrics(void)
     wsgi_sample_requests = 0;
     wsgi_server_time_total = 0.0;
     wsgi_queue_time_total = 0.0;
+    wsgi_daemon_time_total = 0.0;
     wsgi_application_time_total = 0.0;
 
     memset(&wsgi_server_time_buckets, 0,
             sizeof(wsgi_server_time_buckets));
     memset(&wsgi_queue_time_buckets, 0,
             sizeof(wsgi_queue_time_buckets));
+    memset(&wsgi_daemon_time_buckets, 0,
+            sizeof(wsgi_daemon_time_buckets));
     memset(&wsgi_application_time_buckets, 0,
             sizeof(wsgi_application_time_buckets));
 
@@ -663,11 +691,13 @@ static PyObject *wsgi_request_metrics(void)
 
     server_time_avg = 0;
     queue_time_avg = 0;
+    daemon_time_avg = 0;
     application_time_avg = 0;
 
     if (interval_requests) {
         server_time_avg = server_time_total / interval_requests;
         queue_time_avg = queue_time_total / interval_requests;
+        daemon_time_avg = daemon_time_total / interval_requests;
         application_time_avg = application_time_total / interval_requests;
     }
 
@@ -679,6 +709,11 @@ static PyObject *wsgi_request_metrics(void)
     object = PyFloat_FromDouble(queue_time_avg);
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(queue_time), object);
+    Py_DECREF(object);
+
+    object = PyFloat_FromDouble(daemon_time_avg);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(daemon_time), object);
     Py_DECREF(object);
 
     object = PyFloat_FromDouble(application_time_avg);
