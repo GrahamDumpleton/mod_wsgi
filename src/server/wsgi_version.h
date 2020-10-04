@@ -24,9 +24,9 @@
 /* Module version information. */
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 4
-#define MOD_WSGI_MINORVERSION_NUMBER 7
-#define MOD_WSGI_MICROVERSION_NUMBER 1
-#define MOD_WSGI_VERSION_STRING "4.7.1"
+#define MOD_WSGI_MINORVERSION_NUMBER 8
+#define MOD_WSGI_MICROVERSION_NUMBER 0
+#define MOD_WSGI_VERSION_STRING "4.8.0"
 
 /* ------------------------------------------------------------------------- */
 
