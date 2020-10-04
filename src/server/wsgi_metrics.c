@@ -142,7 +142,6 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
     thread_info = wsgi_thread_info(1, 1);
 
     thread_info->request_data = PyDict_New();
-    thread_info->interval_request_count += 1;
 
 #if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
 #if PY_MAJOR_VERSION >= 3
@@ -543,17 +542,6 @@ static PyObject *wsgi_request_metrics(void)
 
     thread_info = (WSGIThreadInfo **)wsgi_thread_details->elts;
 
-    for (i=0; i<wsgi_thread_details->nelts; i++) {
-        if (thread_info[i]->interval_request_count)
-            request_threads_active++;
-        thread_info[i]->interval_request_count = 0;
-    }
-
-    object = wsgi_PyInt_FromLong(request_threads_active);
-    PyDict_SetItem(result,
-            WSGI_INTERNED_STRING(request_threads_active), object);
-    Py_DECREF(object);
-
     request_busy_time = stop_request_busy_time - start_request_busy_time;
 
     capacity_utilization = (request_busy_time / sample_period /
@@ -612,9 +600,16 @@ static PyObject *wsgi_request_metrics(void)
     for (i=0; i<request_threads_maximum; i++) {
         PyList_SET_ITEM(object, i, wsgi_PyInt_FromLong(
                     wsgi_request_threads_buckets[i]));
+        if (wsgi_request_threads_buckets[i])
+            request_threads_active++;
     }
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(request_threads_buckets), object);
+    Py_DECREF(object);
+
+    object = wsgi_PyInt_FromLong(request_threads_active);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(request_threads_active), object);
     Py_DECREF(object);
 
     wsgi_sample_requests = 0;
