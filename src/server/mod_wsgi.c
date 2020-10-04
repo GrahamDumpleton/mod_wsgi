@@ -4753,8 +4753,11 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
         WSGIScriptFile *object = NULL;
 
         if (!wsgi_import_list) {
-            wsgi_import_list = apr_array_make(sconfig->pool, 20,
+            wsgi_import_list = apr_array_make(cmd->pool, 20,
                                               sizeof(WSGIScriptFile));
+            apr_pool_cleanup_register(cmd->pool, &wsgi_import_list,
+                              ap_pool_cleanup_set_null,
+                              apr_pool_cleanup_null);
         }
 
         object = (WSGIScriptFile *)apr_array_push(wsgi_import_list);
@@ -5247,6 +5250,9 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
     if (!wsgi_import_list) {
         wsgi_import_list = apr_array_make(cmd->pool, 20,
                                           sizeof(WSGIScriptFile));
+        apr_pool_cleanup_register(cmd->pool, &wsgi_import_list,
+                              ap_pool_cleanup_set_null,
+                              apr_pool_cleanup_null);
     }
 
     object = (WSGIScriptFile *)apr_array_push(wsgi_import_list);
@@ -7900,6 +7906,9 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     if (!wsgi_daemon_list) {
         wsgi_daemon_list = apr_array_make(cmd->pool, 20,
                                           sizeof(WSGIProcessGroup));
+        apr_pool_cleanup_register(cmd->pool, &wsgi_daemon_list,
+                              ap_pool_cleanup_set_null,
+                              apr_pool_cleanup_null);
     }
 
     entries = (WSGIProcessGroup *)wsgi_daemon_list->elts;
