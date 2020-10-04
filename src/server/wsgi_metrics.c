@@ -86,6 +86,7 @@ static double wsgi_server_time_total = 0;
 static int wsgi_server_time_buckets[16];
 static double wsgi_application_time_total = 0;
 static int wsgi_application_time_buckets[16];
+static int* wsgi_request_threads_buckets = NULL; 
 
 void wsgi_record_time_in_buckets(int* buckets, double duration) {
     int index = 0;
@@ -184,6 +185,9 @@ void wsgi_end_request(void)
     thread_info = wsgi_thread_info(0, 1);
 
     if (thread_info) {
+        if (wsgi_request_threads_buckets)
+            wsgi_request_threads_buckets[thread_info->thread_id-1] += 1;
+
 #if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
         module = PyImport_ImportModule("mod_wsgi");
 
@@ -263,6 +267,7 @@ WSGI_STATIC_INTERNED_STRING(server_time);
 WSGI_STATIC_INTERNED_STRING(application_time);
 WSGI_STATIC_INTERNED_STRING(server_time_buckets);
 WSGI_STATIC_INTERNED_STRING(application_time_buckets);
+WSGI_STATIC_INTERNED_STRING(request_threads_buckets);
 
 static PyObject *wsgi_status_flags[SERVER_NUM_STATUS];
 
@@ -318,6 +323,7 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(application_time);
         WSGI_CREATE_INTERNED_STRING_ID(server_time_buckets);
         WSGI_CREATE_INTERNED_STRING_ID(application_time_buckets);
+        WSGI_CREATE_INTERNED_STRING_ID(request_threads_buckets);
 
         WSGI_CREATE_STATUS_FLAG(SERVER_DEAD, "."); 
         WSGI_CREATE_STATUS_FLAG(SERVER_READY, "_");
@@ -417,6 +423,10 @@ static PyObject *wsgi_request_metrics(void)
 
         request_threads_maximum = ((request_threads_maximum <= 0) ? 1 :
                 request_threads_maximum);
+
+        wsgi_request_threads_buckets = (int *)apr_pcalloc(
+                wsgi_server_config->pool, request_threads_maximum*sizeof(
+                wsgi_request_threads_buckets[0]));
     }
 
 
@@ -598,6 +608,15 @@ static PyObject *wsgi_request_metrics(void)
             WSGI_INTERNED_STRING(application_time_buckets), object);
     Py_DECREF(object);
 
+    object = PyList_New(request_threads_maximum);
+    for (i=0; i<request_threads_maximum; i++) {
+        PyList_SET_ITEM(object, i, wsgi_PyInt_FromLong(
+                    wsgi_request_threads_buckets[i]));
+    }
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(request_threads_buckets), object);
+    Py_DECREF(object);
+
     wsgi_sample_requests = 0;
     wsgi_server_time_total = 0.0;
     wsgi_application_time_total = 0.0;
@@ -606,6 +625,9 @@ static PyObject *wsgi_request_metrics(void)
             sizeof(wsgi_server_time_buckets));
     memset(&wsgi_application_time_buckets, 0,
             sizeof(wsgi_application_time_buckets));
+
+    memset(wsgi_request_threads_buckets, 0, request_threads_maximum*
+            sizeof(wsgi_request_threads_buckets[0]));
 
     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
