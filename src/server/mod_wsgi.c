@@ -3837,13 +3837,16 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
 
         if (!r || strcmp(r->filename, filename)) {
             apr_finfo_t finfo;
-            if (apr_stat(&finfo, filename, APR_FINFO_NORM,
-                         pool) != APR_SUCCESS) {
+            apr_status_t status;
+
+            Py_BEGIN_ALLOW_THREADS
+            status = apr_stat(&finfo, filename, APR_FINFO_NORM, pool);
+            Py_END_ALLOW_THREADS
+
+            if (status != APR_SUCCESS)
                 return 1;
-            }
-            else if (mtime != finfo.mtime) {
+            else if (mtime != finfo.mtime)
                 return 1;
-            }
         }
         else {
             if (mtime != r->finfo.mtime)
