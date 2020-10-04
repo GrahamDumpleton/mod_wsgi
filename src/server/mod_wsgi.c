@@ -3768,13 +3768,16 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
 
         if (!r || strcmp(r->filename, filename)) {
             apr_finfo_t finfo;
-            if (apr_stat(&finfo, filename, APR_FINFO_NORM,
-                         pool) != APR_SUCCESS) {
+            apr_status_t status;
+
+            Py_BEGIN_ALLOW_THREADS
+            status = apr_stat(&finfo, filename, APR_FINFO_NORM, pool);
+            Py_END_ALLOW_THREADS
+
+            if (status != APR_SUCCESS)
                 object = PyLong_FromLongLong(0);
-            }
-            else {
+            else
                 object = PyLong_FromLongLong(finfo.mtime);
-            }
         }
         else {
             object = PyLong_FromLongLong(r->finfo.mtime);
