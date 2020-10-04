@@ -4130,6 +4130,8 @@ static int wsgi_execute_script(request_rec *r)
         const char *data = "Status: 200 Continue\r\n\r\n";
         long length = strlen(data);
 
+        Py_BEGIN_ALLOW_THREADS
+
         filters = r->output_filters;
         while (filters && filters->frec->ftype != AP_FTYPE_NETWORK) {
             filters = filters->next;
@@ -4153,6 +4155,8 @@ static int wsgi_execute_script(request_rec *r)
          */
 
         ap_pass_brigade(filters, bb);
+
+        Py_END_ALLOW_THREADS
     }
 #endif
 
