@@ -3430,7 +3430,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
      */
 
     wsgi_record_request_times(self->config->request_start,
-            self->start_time, finish_time);
+            self->config->queue_start, self->start_time, finish_time);
 
     /*
      * If result indicates an internal server error, then
