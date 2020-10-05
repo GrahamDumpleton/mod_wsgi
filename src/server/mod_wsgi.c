@@ -3942,21 +3942,6 @@ static int wsgi_execute_script(request_rec *r)
     config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
                                                        &wsgi_module);
 
-    /*
-     * Acquire the desired python interpreter. Once this is done
-     * it is safe to start manipulating python objects.
-     */
-
-    interp = wsgi_acquire_interpreter(config->application_group);
-
-    if (!interp) {
-        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), config->application_group);
-
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-
     /* Setup startup timeout if first request and specified. */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
@@ -3971,6 +3956,21 @@ static int wsgi_execute_script(request_rec *r)
         }
     }
 #endif
+
+    /*
+     * Acquire the desired python interpreter. Once this is done
+     * it is safe to start manipulating python objects.
+     */
+
+    interp = wsgi_acquire_interpreter(config->application_group);
+
+    if (!interp) {
+        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
+                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
+                      getpid(), config->application_group);
+
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
 
     /*
      * Use a lock around the check to see if the module is
