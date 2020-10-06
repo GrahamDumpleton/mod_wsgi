@@ -4116,16 +4116,18 @@ static int wsgi_execute_script(request_rec *r)
     }
 
     /*
-     * When process reloading is in use need to indicate
-     * that request content should now be sent through.
-     * This is done by writing a special response header
-     * directly out onto the appropriate network output
-     * filter. The special response is picked up by
-     * remote end and data will then be sent.
+     * When process reloading is in use, or a queue timeout is
+     * set, need to indicate that request content should now be
+     * sent through. This is done by writing a special response
+     * header directly out onto the appropriate network output
+     * filter. The special response is picked up by remote end
+     * and data will then be sent.
      */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    if (*config->process_group) {
+    if (*config->process_group && (config->script_reloading ||
+                wsgi_daemon_process->group->queue_timeout != 0)) {
+
         ap_filter_t *filters;
         apr_bucket_brigade *bb;
         apr_bucket *b;
@@ -12055,13 +12057,16 @@ static int wsgi_execute_remote(request_rec *r)
     }
 
     /*
-     * If process reload mechanism enabled, then we need to look
-     * for marker indicating it is okay to transfer content, or
-     * whether process is being restarted and that we should
-     * therefore create a connection to daemon process again.
+     * If process reload mechanism enabled, or a queue timeout is
+     * specified, then we need to look for marker indicating it
+     * is okay to transfer content, or whether process is being
+     * restarted and that we should therefore create a
+     * connection to daemon process again.
      */
 
-    if (*config->process_group) {
+    if (*config->process_group && (config->script_reloading ||
+            group->queue_timeout != 0)) {
+
         int retries = 0;
         int maximum = (2*group->processes)+1;
 

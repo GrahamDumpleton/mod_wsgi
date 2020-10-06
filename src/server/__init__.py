@@ -405,6 +405,10 @@ WSGICallableObject '%(callable_object)s'
 WSGIPassAuthorization On
 WSGIMapHEADToGET %(map_head_to_get)s
 
+<IfDefine MOD_WSGI_DISABLE_RELOADING>
+WSGIScriptReloading Off
+</IfDefine>
+
 <IfDefine EMBEDDED_MODE>
 <IfDefine MOD_WSGI_WITH_PYTHON_PATH>
 WSGIPythonPath '%(python_path)s'
@@ -1592,6 +1596,7 @@ mount_point = '%(mount_point)s'
 with_newrelic_agent = %(with_newrelic_agent)s
 newrelic_config_file = '%(newrelic_config_file)s'
 newrelic_environment = '%(newrelic_environment)s'
+disable_reloading = %(disable_reloading)s
 reload_on_changes = %(reload_on_changes)s
 debug_mode = %(debug_mode)s
 enable_debugger = %(enable_debugger)s
@@ -1670,10 +1675,12 @@ handler = mod_wsgi.server.ApplicationHandler(entry_point,
         debugger_startup=debugger_startup, enable_recorder=enable_recorder,
         recorder_directory=recorder_directory)
 
-reload_required = handler.reload_required
+if not disable_reloading:
+    reload_required = handler.reload_required
+
 handle_request = handler.handle_request
 
-if reload_on_changes and not debug_mode:
+if not disable_reloading and reload_on_changes and not debug_mode:
     mod_wsgi.server.start_reloader()
 """
 
@@ -2251,13 +2258,19 @@ option_list = (
             'only be enabled if the operating system kernel and file system '
             'type where files are hosted supports it.'),
 
+    optparse.make_option('--disable-reloading', action='store_true',
+            default=False, help='Disables all reloading of worker processes '
+            'due to changes to the file containing the WSGI application '
+            'entrypoint, or any other loaded source files.'),
+
     optparse.make_option('--reload-on-changes', action='store_true',
             default=False, help='Flag indicating whether worker processes '
             'should be automatically restarted when any Python code file '
             'loaded by the WSGI application has been modified. Defaults to '
             'being disabled. When reloading on any code changes is disabled, '
-            'the worker processes will still though be reloaded if the '
-            'WSGI script file itself is modified.'),
+            'unless all reloading is also disabled, the worker processes '
+            'will still though be reloaded if the file containing the WSGI '
+            'application entrypoint is modified.'),
 
     optparse.make_option('--user', default=default_run_user(),
             metavar='USERNAME', help='When being run by the root user, '
@@ -3364,6 +3377,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PYTHON_PATH')
     if options['socket_prefix']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_SOCKET_PREFIX')
+    if options['disable_reloading']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_DISABLE_RELOADING')
 
     if options['with_cgi']:
         if os.path.exists(os.path.join(options['modules_directory'],
