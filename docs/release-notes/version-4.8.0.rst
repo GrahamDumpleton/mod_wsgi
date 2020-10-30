@@ -106,3 +106,7 @@ New Features
   giving access to aggregrated metrics over the time of a reporting period.
   This includes bucketed time data on requests so can calculate distribution
   of server, queue and application time.
+
+  Note that the new request metrics is still a work in progress and may be
+  modified or enhanced, causing breaking changes in the format of data
+  returned.
