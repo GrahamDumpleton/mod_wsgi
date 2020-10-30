@@ -78,6 +78,20 @@ New Features
   function can thus be used where only interested in the event for the
   process being shutdown.
 
+* Added an ``--embedded-mode`` option to mod_wsgi-express to make it easier
+  to force it into embedded mode for high throughput, CPU bound applications
+  with minimal response times. In this case the number of Apache child
+  worker processes used for embedded mode will be dictated by the
+  ``--processes`` and ``--threads`` option, completely overriding any
+  automatic mechanism to set those parameters. Any auto scaling done by
+  Apache for the child worker processes will also be disabled.
+
+  This gives preference to using Apache worker MPM instead of event MPM,
+  as event MPM doesn't work correctly when told to run with less than
+  three threads per process. You can switch back to using event MPM by
+  using the ``--server-mpm`` option, but will need to ensure that have
+  three threads per process or more.
+
 * Locking of the Python global interpreter lock has been reviewed with
   changes resulting in a reduction in overhead, or otherwise changing
   the interaction between threads such that at high request rate with a
