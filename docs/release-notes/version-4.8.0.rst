@@ -48,3 +48,47 @@ Bugs Fixed
   This issue was causing the ``asgiref`` module used in Django to fail when
   using ``signal.set_wakeup_fd()`` as code was thinking it was in the main
   thread when it wasn't. See https://github.com/django/asgiref/issues/143.
+
+Features Changed
+----------------
+
+* The ``--isatty`` option of mod_wsgi-express has been removed and the
+  behaviour enabled by the option is now the default. The default behaviour
+  is now that if mod_wsgi-express is run in an interactive terminal, then
+  Apache will be started within a sub process of the mod_wsgi-express script
+  and the ``SIGWINCH`` signal will be blocked and not passed through to
+  Apache. This means that a window resizing event will no longer cause
+  mod_wsgi-express to shutdown unexpectedly.
+
+New Features
+------------
+
+* Added the ``mod_wsgi.subscribe_shutdown()`` function for registering a
+  callback to be called when the process is being shutdown. This is needed
+  because ``atexit.register()`` doesn't work as required for the main
+  Python interpreter, specifically the ``atexit`` callback isn't called
+  before the main interpreter thread attempts to wait on threads on
+  shutdown, thus preventing one from shutting down daemon threads and
+  waiting on them.
+
+  This feature to get a callback on process shutdown was previously
+  available by using ``mod_wsgi.subscribe_events()``, but that would also
+  reports events to the callback on requests as they happen, thus adding
+  extra overhead if not using the request events. The new registration
+  function can thus be used where only interested in the event for the
+  process being shutdown.
+
+* Locking of the Python global interpreter lock has been reviewed with
+  changes resulting in a reduction in overhead, or otherwise changing
+  the interaction between threads such that at high request rate with a
+  hello world application, a greater request throughput can be achieved.
+  How much improvement you see with your own applications will depend on
+  what your application does and whether you have short response times
+  to begin with. If you have an I/O bound application with long response
+  times you likely aren't going to see any difference.
+
+* Internal metrics collection has been improved with additional information
+  provided in process metrics and a new request metrics feature added
+  giving access to aggregrated metrics over the time of a reporting period.
+  This includes bucketed time data on requests so can calculate distribution
+  of server, queue and application time.
