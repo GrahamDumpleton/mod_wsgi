@@ -37,3 +37,14 @@ Bugs Fixed
   For non Window systems a workaround had been used to resolve the problem,
   but the same workaround has never worked on Windows. The change in this
   version tries a different workaround for Windows environments.
+
+* Added a workaround for the fact that Python doesn't actually set the
+  ``_main_thread`` attribute of the ``threading`` module to the main thread
+  which initialized the main interpreter or sub interpreter, but the first
+  thread that imports the ``threading`` module. In an embedded system such
+  as mod_wsgi it could be a request thread, not the main thread, that would
+  import the ``threading`` module.
+
+  This issue was causing the ``asgiref`` module used in Django to fail when
+  using ``signal.set_wakeup_fd()`` as code was thinking it was in the main
+  thread when it wasn't. See https://github.com/django/asgiref/issues/143.
