@@ -2259,9 +2259,11 @@ option_list = (
             'type where files are hosted supports it.'),
 
     optparse.make_option('--disable-reloading', action='store_true',
-            default=False, help='Disables all reloading of worker processes '
+            default=False, help='Disables all reloading of daemon processes '
             'due to changes to the file containing the WSGI application '
-            'entrypoint, or any other loaded source files.'),
+            'entrypoint, or any other loaded source files. This has no '
+            'effect when embedded mode is used as reloading is automatically '
+            'disabled for embedded mode.'),
 
     optparse.make_option('--reload-on-changes', action='store_true',
             default=False, help='Flag indicating whether worker processes '
@@ -3237,6 +3239,7 @@ def _cmd_setup_server(command, args, options):
 
     if options['embedded_mode']:
         options['httpd_arguments_list'].append('-DEMBEDDED_MODE')
+        options['disable_reloading'] = True
 
     if any((options['enable_debugger'], options['enable_coverage'],
             options['enable_profiler'], options['enable_recorder'],
