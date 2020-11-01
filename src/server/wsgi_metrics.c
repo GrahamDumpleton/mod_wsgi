@@ -146,10 +146,16 @@ void wsgi_record_request_times(apr_time_t request_start,
 
     wsgi_record_time_in_buckets(&wsgi_server_time_buckets,
             server_time);
-    wsgi_record_time_in_buckets(&wsgi_queue_time_buckets,
-            queue_time);
-    wsgi_record_time_in_buckets(&wsgi_daemon_time_buckets,
-            daemon_time);
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_daemon_process) {
+        wsgi_record_time_in_buckets(&wsgi_queue_time_buckets,
+                queue_time);
+        wsgi_record_time_in_buckets(&wsgi_daemon_time_buckets,
+                daemon_time);
+    }
+#endif
+
     wsgi_record_time_in_buckets(&wsgi_application_time_buckets,
             application_time);
 
@@ -706,15 +712,30 @@ static PyObject *wsgi_request_metrics(void)
             WSGI_INTERNED_STRING(server_time), object);
     Py_DECREF(object);
 
-    object = PyFloat_FromDouble(queue_time_avg);
-    PyDict_SetItem(result,
-            WSGI_INTERNED_STRING(queue_time), object);
-    Py_DECREF(object);
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_daemon_process) {
+        object = PyFloat_FromDouble(queue_time_avg);
+        PyDict_SetItem(result,
+                WSGI_INTERNED_STRING(queue_time), object);
+        Py_DECREF(object);
 
-    object = PyFloat_FromDouble(daemon_time_avg);
+        object = PyFloat_FromDouble(daemon_time_avg);
+        PyDict_SetItem(result,
+                WSGI_INTERNED_STRING(daemon_time), object);
+        Py_DECREF(object);
+    }
+    else {
+        PyDict_SetItem(result,
+                WSGI_INTERNED_STRING(queue_time), Py_None);
+        PyDict_SetItem(result,
+                WSGI_INTERNED_STRING(daemon_time), Py_None);
+    }
+#else
     PyDict_SetItem(result,
-            WSGI_INTERNED_STRING(daemon_time), object);
-    Py_DECREF(object);
+            WSGI_INTERNED_STRING(queue_time), Py_None);
+    PyDict_SetItem(result,
+            WSGI_INTERNED_STRING(daemon_time), Py_None);
+#endif
 
     object = PyFloat_FromDouble(application_time_avg);
     PyDict_SetItem(result,
