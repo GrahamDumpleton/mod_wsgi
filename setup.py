@@ -171,8 +171,12 @@ if WITH_WINDOWS_APACHE:
     def get_apxs_config(name):
         if name == 'INCLUDEDIR':
             return WITH_WINDOWS_APACHE + '/include'
+        elif name == 'BINDIR':
+            return WITH_WINDOWS_APACHE + '/bin'
         elif name == 'LIBEXECDIR':
-            return WITH_WINDOWS_APACHE + '/lib'
+            return WITH_WINDOWS_APACHE + '/modules'
+        elif name == 'PROGNAME':
+            return 'httpd.exe'
         else:
             return ''
 
