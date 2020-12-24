@@ -394,17 +394,17 @@ MPM_NAME = '%(MPM_NAME)s'
 PROGNAME = '%(PROGNAME)s'
 SHLIBPATH_VAR = '%(SHLIBPATH_VAR)s'
 
-if os.path.exists(os.path.join(SBINDIR, PROGNAME)):
-    HTTPD = os.path.join(SBINDIR, PROGNAME)
-elif os.path.exists(os.path.join(BINDIR, PROGNAME)):
-    HTTPD = os.path.join(BINDIR, PROGNAME)
+if os.path.exists(posixpath.join(SBINDIR, PROGNAME)):
+    HTTPD = posixpath.join(SBINDIR, PROGNAME)
+elif os.path.exists(posixpath.join(BINDIR, PROGNAME)):
+    HTTPD = posixpath.join(BINDIR, PROGNAME)
 else:
     HTTPD = PROGNAME
 
-if os.path.exists(os.path.join(SBINDIR, 'rotatelogs')):
-    ROTATELOGS = os.path.join(SBINDIR, 'rotatelogs')
-elif os.path.exists(os.path.join(BINDIR, 'rotatelogs')):
-    ROTATELOGS = os.path.join(BINDIR, 'rotatelogs')
+if os.path.exists(posixpath.join(SBINDIR, 'rotatelogs')):
+    ROTATELOGS = posixpath.join(SBINDIR, 'rotatelogs')
+elif os.path.exists(posixpath.join(BINDIR, 'rotatelogs')):
+    ROTATELOGS = posixpath.join(BINDIR, 'rotatelogs')
 else:
     ROTATELOGS = 'rotatelogs'
 """
