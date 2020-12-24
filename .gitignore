@@ -24,3 +24,4 @@ libtool
 docs/_build
 newrelic.ini
 src/packages
+venv
