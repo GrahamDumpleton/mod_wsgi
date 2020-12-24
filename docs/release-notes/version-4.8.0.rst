@@ -49,6 +49,12 @@ Bugs Fixed
   using ``signal.set_wakeup_fd()`` as code was thinking it was in the main
   thread when it wasn't. See https://github.com/django/asgiref/issues/143.
 
+* Using ``WSGILazyInitialization Off`` would cause Python to abort the
+  Apache parent process. The issue has been resolved, but you are warned
+  that you should not be using this option anyway as it is dangerous and
+  opens up security holes with the potential for user code to run as the
+  ``root`` user when Python is initialized.
+
 Features Changed
 ----------------
 

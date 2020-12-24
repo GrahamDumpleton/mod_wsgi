@@ -10505,7 +10505,16 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 #ifdef HAVE_FORK
     if (wsgi_python_initialized) {
 #if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 7)
+#if 0
+        /*
+         * XXX Appears to be wrong to call this at this point especially
+         * since we haven't acquired the GIL. It wouldn't have been possible
+         * for any user code to have registered a Python callback to run
+         * in parent after fork either. Leave in code for now but disabled.
+         */
+
         PyOS_AfterFork_Parent();
+#endif
 #endif
     }
 #endif
