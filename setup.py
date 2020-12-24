@@ -362,26 +362,27 @@ SHLIBPATH_VAR = get_apxs_config('SHLIBPATH_VAR')
 
 APXS_CONFIG_TEMPLATE = """
 import os
+import posixpath
 
 WITH_TARBALL_PACKAGE = %(WITH_TARBALL_PACKAGE)r
 WITH_HTTPD_PACKAGE = %(WITH_HTTPD_PACKAGE)r
 
 if WITH_HTTPD_PACKAGE:
     from mod_wsgi_packages.httpd import __file__ as PACKAGES_ROOTDIR
-    PACKAGES_ROOTDIR = os.path.dirname(PACKAGES_ROOTDIR)
-    BINDIR = os.path.join(PACKAGES_ROOTDIR, 'bin')
+    PACKAGES_ROOTDIR = posixpath.dirname(PACKAGES_ROOTDIR)
+    BINDIR = posixpath.join(PACKAGES_ROOTDIR, 'bin')
     SBINDIR = BINDIR
-    LIBEXECDIR = os.path.join(PACKAGES_ROOTDIR, 'modules')
-    SHLIBPATH = os.path.join(PACKAGES_ROOTDIR, 'lib')
+    LIBEXECDIR = posixpath.join(PACKAGES_ROOTDIR, 'modules')
+    SHLIBPATH = posixpath.join(PACKAGES_ROOTDIR, 'lib')
 elif WITH_TARBALL_PACKAGE:
     from mod_wsgi.packages import __file__ as PACKAGES_ROOTDIR
-    PACKAGES_ROOTDIR = os.path.dirname(PACKAGES_ROOTDIR)
-    BINDIR = os.path.join(PACKAGES_ROOTDIR, 'apache', 'bin')
+    PACKAGES_ROOTDIR = posixpath.dirname(PACKAGES_ROOTDIR)
+    BINDIR = posixpath.join(PACKAGES_ROOTDIR, 'apache', 'bin')
     SBINDIR = BINDIR
-    LIBEXECDIR = os.path.join(PACKAGES_ROOTDIR, 'apache', 'modules')
+    LIBEXECDIR = posixpath.join(PACKAGES_ROOTDIR, 'apache', 'modules')
     SHLIBPATH = []
-    SHLIBPATH.append(os.path.join(PACKAGES_ROOTDIR, 'apr-util', 'lib'))
-    SHLIBPATH.append(os.path.join(PACKAGES_ROOTDIR, 'apr', 'lib'))
+    SHLIBPATH.append(posixpath.join(PACKAGES_ROOTDIR, 'apr-util', 'lib'))
+    SHLIBPATH.append(posixpath.join(PACKAGES_ROOTDIR, 'apr', 'lib'))
     SHLIBPATH = ':'.join(SHLIBPATH)
 else:
     BINDIR = '%(BINDIR)s'
