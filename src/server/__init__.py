@@ -350,6 +350,7 @@ WSGISocketRotation Off
 </IfDefine>
 
 <IfDefine !ONE_PROCESS>
+<IfDefine !EMBEDDED_MODE>
 WSGIRestrictEmbedded On
 <IfDefine MOD_WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
@@ -412,10 +413,21 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    server-metrics=%(server_metrics_flag)s
 </IfDefine>
 </IfDefine>
+</IfDefine>
 
 WSGICallableObject '%(callable_object)s'
 WSGIPassAuthorization On
 WSGIMapHEADToGET %(map_head_to_get)s
+
+<IfDefine MOD_WSGI_DISABLE_RELOADING>
+WSGIScriptReloading Off
+</IfDefine>
+
+<IfDefine EMBEDDED_MODE>
+<IfDefine MOD_WSGI_WITH_PYTHON_PATH>
+WSGIPythonPath '%(python_path)s'
+</IfDefine>
+</IfDefine>
 
 <IfDefine ONE_PROCESS>
 WSGIRestrictStdin Off
@@ -815,10 +827,19 @@ WSGIErrorOverride On
 </IfDefine>
 
 <IfDefine !ONE_PROCESS>
+<IfDefine !EMBEDDED_MODE>
 WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
 WSGIImportScript '%(server_root)s/handler.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
+</IfDefine>
+</IfDefine>
+
+<IfDefine EMBEDDED_MODE>
+WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
+    process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
+WSGIImportScript '%(server_root)s/handler.wsgi' \\
+    process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
 </IfDefine>
 
 <IfDefine ONE_PROCESS>
@@ -1597,6 +1618,7 @@ mount_point = '%(mount_point)s'
 with_newrelic_agent = %(with_newrelic_agent)s
 newrelic_config_file = '%(newrelic_config_file)s'
 newrelic_environment = '%(newrelic_environment)s'
+disable_reloading = %(disable_reloading)s
 reload_on_changes = %(reload_on_changes)s
 debug_mode = %(debug_mode)s
 enable_debugger = %(enable_debugger)s
@@ -1675,10 +1697,12 @@ handler = mod_wsgi.server.ApplicationHandler(entry_point,
         debugger_startup=debugger_startup, enable_recorder=enable_recorder,
         recorder_directory=recorder_directory)
 
-reload_required = handler.reload_required
+if not disable_reloading:
+    reload_required = handler.reload_required
+
 handle_request = handler.handle_request
 
-if reload_on_changes and not debug_mode:
+if not disable_reloading and reload_on_changes and not debug_mode:
     mod_wsgi.server.start_reloader()
 """
 
@@ -1874,6 +1898,8 @@ ENABLE_GDB="%(enable_gdb)s"
 
 PROCESS_NAME="%(process_name)s"
 
+cd $MOD_WSGI_WORKING_DIRECTORY
+
 case $ACMD in
 start|stop|restart|graceful|graceful-stop)
     if [ "x$ENABLE_GDB" != "xTrue" ]; then
@@ -2037,32 +2063,37 @@ option_list = (
     optparse.make_option('--threads', type='int', default=5, metavar='NUMBER',
             help='The number of threads in the request thread pool of '
             'each process for handling requests. Defaults to 5 in each '
-            'process.'),
+            'process. Note that if embedded mode and only prefork MPM '
+            'is available, then processes will instead be used.'),
 
     optparse.make_option('--max-clients', type='int', default=None,
             metavar='NUMBER', help='The maximum number of simultaneous '
             'client connections that will be accepted. This will default '
             'to being 1.5 times the total number of threads in the '
-            'request thread pools across all process handling requests.'),
+            'request thread pools across all process handling requests. '
+            'Note that if embedded mode is used this will be ignored.'),
 
     optparse.make_option('--initial-workers', type='float', default=None,
             metavar='NUMBER', action='callback', callback=check_percentage,
             help='The initial number of workers to create on startup '
             'expressed as a percentage of the maximum number of clients. '
             'The value provided should be between 0 and 1. The default is '
-            'dependent on the type of MPM being used.'),
+            'dependent on the type of MPM being used. Note that if '
+            'embedded mode is used, this will be ignored.'),
     optparse.make_option('--minimum-spare-workers', type='float',
             default=None, metavar='NUMBER', action='callback',
             callback=check_percentage, help='The minimum number of spare '
             'workers to maintain expressed as a percentage of the maximum '
             'number of clients. The value provided should be between 0 and '
-            '1. The default is dependent on the type of MPM being used.'),
+            '1. The default is dependent on the type of MPM being used. '
+            'Note that if embedded mode is used, this will be ignored.'),
     optparse.make_option('--maximum-spare-workers', type='float',
             default=None, metavar='NUMBER', action='callback',
             callback=check_percentage, help='The maximum number of spare '
             'workers to maintain expressed as a percentage of the maximum '
             'number of clients. The value provided should be between 0 and '
-            '1. The default is dependent on the type of MPM being used.'),
+            '1. The default is dependent on the type of MPM being used. '
+            'Note that if embedded mode is used, this will be ignored.'),
 
     optparse.make_option('--limit-request-body', type='int', default=10485760,
             metavar='NUMBER', help='The maximum number of bytes which are '
@@ -2249,13 +2280,21 @@ option_list = (
             'only be enabled if the operating system kernel and file system '
             'type where files are hosted supports it.'),
 
+    optparse.make_option('--disable-reloading', action='store_true',
+            default=False, help='Disables all reloading of daemon processes '
+            'due to changes to the file containing the WSGI application '
+            'entrypoint, or any other loaded source files. This has no '
+            'effect when embedded mode is used as reloading is automatically '
+            'disabled for embedded mode.'),
+
     optparse.make_option('--reload-on-changes', action='store_true',
             default=False, help='Flag indicating whether worker processes '
             'should be automatically restarted when any Python code file '
             'loaded by the WSGI application has been modified. Defaults to '
             'being disabled. When reloading on any code changes is disabled, '
-            'the worker processes will still though be reloaded if the '
-            'WSGI script file itself is modified.'),
+            'unless all reloading is also disabled, the worker processes '
+            'will still though be reloaded if the file containing the WSGI '
+            'application entrypoint is modified.'),
 
     optparse.make_option('--user', default=default_run_user(),
             metavar='USERNAME', help='When being run by the root user, '
@@ -2336,11 +2375,12 @@ option_list = (
             help='The IP address or subnet corresponding to any trusted '
             'proxy.'),
 
-    optparse.make_option('--keep-alive-timeout', type='int', default=0,
+    optparse.make_option('--keep-alive-timeout', type='int', default=2,
             metavar='SECONDS', help='The number of seconds which a client '
             'connection will be kept alive to allow subsequent requests '
-            'to be made over the same connection. Defaults to 0, indicating '
-            'that keep alive connections are disabled.'),
+            'to be made over the same connection when a keep alive '
+            'connection is requested. Defaults to 2, indicating that keep '
+            'alive connections are set for 2 seconds.'),
 
     optparse.make_option('--compress-responses', action='store_true',
             default=False, help='Flag indicating whether responses for '
@@ -2587,6 +2627,11 @@ option_list = (
             help='Specify the name of a separate log file to be used for '
             'the managed service.'),
 
+    optparse.make_option('--embedded-mode', action='store_true', default=False,
+            help='Flag indicating whether to run in embedded mode rather '
+            'than the default daemon mode. Numerous daemon mode specific '
+            'features will not operate when this mode is used.'),
+
     optparse.make_option('--enable-docs', action='store_true', default=False,
             help='Flag indicating whether the mod_wsgi documentation should '
             'be made available at the /__wsgi__/docs sub URL.'),
@@ -2651,16 +2696,16 @@ option_list = (
             'being started separately using the generated \'apachectl\' '
             'script.'),
 
-    optparse.make_option('--isatty', action='store_true', default=False,
-            help='Flag indicating whether should assume being run in an '
-            'interactive terminal session. In this case Apache will not '
-            'replace this wrapper script, but will be run as a sub process.'
-            'Signals such as SIGINT, SIGTERM, SIGHUP and SIGUSR1 will be '
-            'forwarded onto Apache, but SIGWINCH will be blocked so that '
-            'resizing of a terminal session window will not cause Apache '
-            'to shutdown. This is a separate option at this time rather '
-            'than being determined automatically while the reliability of '
-            'intercepting and forwarding signals is verified.'),
+    # optparse.make_option('--isatty', action='store_true', default=False,
+    #         help='Flag indicating whether should assume being run in an '
+    #         'interactive terminal session. In this case Apache will not '
+    #         'replace this wrapper script, but will be run as a sub process.'
+    #         'Signals such as SIGINT, SIGTERM, SIGHUP and SIGUSR1 will be '
+    #         'forwarded onto Apache, but SIGWINCH will be blocked so that '
+    #         'resizing of a terminal session window will not cause Apache '
+    #         'to shutdown. This is a separate option at this time rather '
+    #         'than being determined automatically while the reliability of '
+    #         'intercepting and forwarding signals is verified.'),
 )
 
 def cmd_setup_server(params):
@@ -2797,10 +2842,10 @@ def _cmd_setup_server(command, args, options):
         options['auth_group_script'] = posixpath.abspath(
                 options['auth_group_script'])
 
-    options['documentation_directory'] = posixpath.join(os.path.dirname(
-            posixpath.dirname(__file__)), 'docs')
+    options['documentation_directory'] = os.path.join(os.path.dirname(
+            os.path.dirname(__file__)), 'docs')
     options['images_directory'] = os.path.join(os.path.dirname(
-            posixpath.dirname(__file__)), 'images')
+            os.path.dirname(__file__)), 'images')
 
     if os.path.exists(posixpath.join(options['documentation_directory'],
             'index.html')):
@@ -2934,6 +2979,17 @@ def _cmd_setup_server(command, args, options):
     if options['python_paths'] is None:
         options['python_paths'] = []
 
+    if options['debug_mode'] or options['embedded_mode']:
+        if options['working_directory'] not in options['python_paths']:
+            options['python_paths'].insert(0, options['working_directory'])
+
+    if options['debug_mode']:
+        options['server_mpm_variables'] = ['worker', 'prefork']
+
+    elif options['embedded_mode']:
+        if not options['server_mpm_variables']:
+            options['server_mpm_variables'] = ['worker', 'prefork']
+
     # Special case to check for when being executed from shiv variant
     # of a zipapp application bundle. We need to work out where the
     # site packages directory is and pass it with Python module search
@@ -3015,6 +3071,9 @@ def _cmd_setup_server(command, args, options):
             service_scripts.append((name, script))
         options['service_scripts'] = service_scripts
 
+    # Node that all the below calculations are overridden if are using
+    # embedded mode.
+
     max_clients = options['processes'] * options['threads']
 
     if options['max_clients'] is not None:
@@ -3093,6 +3152,23 @@ def _cmd_setup_server(command, args, options):
             options['worker_threads_per_child'],
             int(worker_max_spare_workers * options['worker_server_limit']) *
             options['worker_threads_per_child'])
+
+    if options['embedded_mode']:
+        max_clients = options['processes'] * options['threads']
+
+        options['prefork_max_clients'] = max_clients
+        options['prefork_server_limit'] = max_clients
+        options['prefork_start_servers'] = max_clients
+        options['prefork_min_spare_servers'] = max_clients
+        options['prefork_max_spare_servers'] = max_clients
+
+        options['worker_max_clients'] = max_clients
+        options['worker_server_limit'] = options['processes']
+        options['worker_thread_limit'] = options['threads']
+        options['worker_threads_per_child'] = options['threads']
+        options['worker_start_servers'] = options['processes']
+        options['worker_min_spare_threads'] = max_clients
+        options['worker_max_spare_threads'] = max_clients
 
     options['httpd_conf'] = posixpath.join(options['server_root'], 'httpd.conf')
 
@@ -3202,6 +3278,10 @@ def _cmd_setup_server(command, args, options):
         options['https_url'] = 'https://%s:%s/' % (host, options['https_port'])
     else:
         options['https_url'] = None
+
+    if options['embedded_mode']:
+        options['httpd_arguments_list'].append('-DEMBEDDED_MODE')
+        options['disable_reloading'] = True
 
     if any((options['enable_debugger'], options['enable_coverage'],
             options['enable_profiler'], options['enable_recorder'],
@@ -3342,6 +3422,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PYTHON_PATH')
     if options['socket_prefix']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_SOCKET_PREFIX')
+    if options['disable_reloading']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_DISABLE_RELOADING')
 
     if options['with_cgi']:
         if os.path.exists(posixpath.join(options['modules_directory'],
@@ -3417,6 +3499,13 @@ def _cmd_setup_server(command, args, options):
                 print('Environ Variables  :', options['server_root'] + '/envvars')
             print('Control Script     :', options['server_root'] + '/apachectl')
 
+    if options['debug_mode']:
+        print('Operating Mode     : debug')
+    elif options['embedded_mode']:
+        print('Operating Mode     : embedded')
+    else:
+        print('Operating Mode     : daemon')
+
     if options['processes'] == 1:
         print('Request Capacity   : %s (%s process * %s threads)' % (
                 options['processes']*options['threads'],
@@ -3426,17 +3515,18 @@ def _cmd_setup_server(command, args, options):
                 options['processes']*options['threads'],
                 options['processes'], options['threads']))
 
-    print('Request Timeout    : %s (seconds)' % options['request_timeout'])
+    if not options['debug_mode'] and not options['embedded_mode']:
+        print('Request Timeout    : %s (seconds)' % options['request_timeout'])
 
-    if options['startup_timeout']:
-        print('Startup Timeout    : %s (seconds)' % options['startup_timeout'])
+        if options['startup_timeout']:
+            print('Startup Timeout    : %s (seconds)' % options['startup_timeout'])
 
-    print('Queue Backlog      : %s (connections)' % options['daemon_backlog'])
+        print('Queue Backlog      : %s (connections)' % options['daemon_backlog'])
 
-    print('Queue Timeout      : %s (seconds)' % options['queue_timeout'])
+        print('Queue Timeout      : %s (seconds)' % options['queue_timeout'])
 
-    print('Server Capacity    : %s (event/worker), %s (prefork)' % (
-            options['worker_max_clients'], options['prefork_max_clients']))
+        print('Server Capacity    : %s (event/worker), %s (prefork)' % (
+                options['worker_max_clients'], options['prefork_max_clients']))
 
     print('Server Backlog     : %s (connections)' % options['server_backlog'])
 
@@ -3493,7 +3583,7 @@ def cmd_start_server(params):
     else:
         executable = posixpath.join(config['server_root'], 'apachectl')
 
-        if config['isatty'] and sys.stdout.isatty():
+        if sys.stdout.isatty():
             process = None
 
             def handler(signum, frame):
@@ -3652,7 +3742,7 @@ def main():
             cmd_module_config(args)
         elif command == 'module-location':
             cmd_module_location(args)
-        elif command == 'start-server':
+        elif command == 'x-start-server':
             cmd_start_server(args)
         else:
             parser.error('Invalid command was specified.')

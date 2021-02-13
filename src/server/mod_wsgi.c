@@ -3316,6 +3316,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
     /* Publish event for the end of the request. */
 
+    finish_time = apr_time_now();
+
     if (wsgi_event_subscribers()) {
         double application_time = 0.0;
         double output_time = 0.0;
@@ -3359,8 +3361,6 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         if (output_time < 0.0)
             output_time = 0.0;
-
-        finish_time = apr_time_now();
 
         application_time = apr_time_sec((double)finish_time-self->start_time);
 
@@ -3420,6 +3420,18 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         Py_DECREF(event);
     }
+
+    /*
+     * Record server and application time for metrics. Values
+     * are the time request first accepted by child workers,
+     * the time that the WSGI application started processing
+     * the request, and when the WSGI application finished the
+     * request.
+     */
+
+    wsgi_record_request_times(self->config->request_start,
+            self->config->queue_start, self->config->daemon_start,
+            self->start_time, finish_time);
 
     /*
      * If result indicates an internal server error, then
@@ -3756,13 +3768,16 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
 
         if (!r || strcmp(r->filename, filename)) {
             apr_finfo_t finfo;
-            if (apr_stat(&finfo, filename, APR_FINFO_NORM,
-                         pool) != APR_SUCCESS) {
+            apr_status_t status;
+
+            Py_BEGIN_ALLOW_THREADS
+            status = apr_stat(&finfo, filename, APR_FINFO_NORM, pool);
+            Py_END_ALLOW_THREADS
+
+            if (status != APR_SUCCESS)
                 object = PyLong_FromLongLong(0);
-            }
-            else {
+            else
                 object = PyLong_FromLongLong(finfo.mtime);
-            }
         }
         else {
             object = PyLong_FromLongLong(r->finfo.mtime);
@@ -3825,13 +3840,16 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
 
         if (!r || strcmp(r->filename, filename)) {
             apr_finfo_t finfo;
-            if (apr_stat(&finfo, filename, APR_FINFO_NORM,
-                         pool) != APR_SUCCESS) {
+            apr_status_t status;
+
+            Py_BEGIN_ALLOW_THREADS
+            status = apr_stat(&finfo, filename, APR_FINFO_NORM, pool);
+            Py_END_ALLOW_THREADS
+
+            if (status != APR_SUCCESS)
                 return 1;
-            }
-            else if (mtime != finfo.mtime) {
+            else if (mtime != finfo.mtime)
                 return 1;
-            }
         }
         else {
             if (mtime != r->finfo.mtime)
@@ -3924,21 +3942,6 @@ static int wsgi_execute_script(request_rec *r)
     config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
                                                        &wsgi_module);
 
-    /*
-     * Acquire the desired python interpreter. Once this is done
-     * it is safe to start manipulating python objects.
-     */
-
-    interp = wsgi_acquire_interpreter(config->application_group);
-
-    if (!interp) {
-        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), config->application_group);
-
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-
     /* Setup startup timeout if first request and specified. */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
@@ -3953,6 +3956,21 @@ static int wsgi_execute_script(request_rec *r)
         }
     }
 #endif
+
+    /*
+     * Acquire the desired python interpreter. Once this is done
+     * it is safe to start manipulating python objects.
+     */
+
+    interp = wsgi_acquire_interpreter(config->application_group);
+
+    if (!interp) {
+        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
+                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
+                      getpid(), config->application_group);
+
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
 
     /*
      * Use a lock around the check to see if the module is
@@ -4098,22 +4116,26 @@ static int wsgi_execute_script(request_rec *r)
     }
 
     /*
-     * When process reloading is in use need to indicate
-     * that request content should now be sent through.
-     * This is done by writing a special response header
-     * directly out onto the appropriate network output
-     * filter. The special response is picked up by
-     * remote end and data will then be sent.
+     * When process reloading is in use, or a queue timeout is
+     * set, need to indicate that request content should now be
+     * sent through. This is done by writing a special response
+     * header directly out onto the appropriate network output
+     * filter. The special response is picked up by remote end
+     * and data will then be sent.
      */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    if (*config->process_group) {
+    if (*config->process_group && (config->script_reloading ||
+                wsgi_daemon_process->group->queue_timeout != 0)) {
+
         ap_filter_t *filters;
         apr_bucket_brigade *bb;
         apr_bucket *b;
 
         const char *data = "Status: 200 Continue\r\n\r\n";
         long length = strlen(data);
+
+        Py_BEGIN_ALLOW_THREADS
 
         filters = r->output_filters;
         while (filters && filters->frec->ftype != AP_FTYPE_NETWORK) {
@@ -4138,6 +4160,8 @@ static int wsgi_execute_script(request_rec *r)
          */
 
         ap_pass_brigade(filters, bb);
+
+        Py_END_ALLOW_THREADS
     }
 #endif
 
@@ -4742,8 +4766,11 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
         WSGIScriptFile *object = NULL;
 
         if (!wsgi_import_list) {
-            wsgi_import_list = apr_array_make(sconfig->pool, 20,
+            wsgi_import_list = apr_array_make(cmd->pool, 20,
                                               sizeof(WSGIScriptFile));
+            apr_pool_cleanup_register(cmd->pool, &wsgi_import_list,
+                              ap_pool_cleanup_set_null,
+                              apr_pool_cleanup_null);
         }
 
         object = (WSGIScriptFile *)apr_array_push(wsgi_import_list);
@@ -5236,6 +5263,9 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
     if (!wsgi_import_list) {
         wsgi_import_list = apr_array_make(cmd->pool, 20,
                                           sizeof(WSGIScriptFile));
+        apr_pool_cleanup_register(cmd->pool, &wsgi_import_list,
+                              ap_pool_cleanup_set_null,
+                              apr_pool_cleanup_null);
     }
 
     object = (WSGIScriptFile *)apr_array_push(wsgi_import_list);
@@ -7889,6 +7919,9 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     if (!wsgi_daemon_list) {
         wsgi_daemon_list = apr_array_make(cmd->pool, 20,
                                           sizeof(WSGIProcessGroup));
+        apr_pool_cleanup_register(cmd->pool, &wsgi_daemon_list,
+                              ap_pool_cleanup_set_null,
+                              apr_pool_cleanup_null);
     }
 
     entries = (WSGIProcessGroup *)wsgi_daemon_list->elts;
@@ -10472,7 +10505,16 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 #ifdef HAVE_FORK
     if (wsgi_python_initialized) {
 #if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 7)
+#if 0
+        /*
+         * XXX Appears to be wrong to call this at this point especially
+         * since we haven't acquired the GIL. It wouldn't have been possible
+         * for any user code to have registered a Python callback to run
+         * in parent after fork either. Leave in code for now but disabled.
+         */
+
         PyOS_AfterFork_Parent();
+#endif
 #endif
     }
 #endif
@@ -12024,13 +12066,16 @@ static int wsgi_execute_remote(request_rec *r)
     }
 
     /*
-     * If process reload mechanism enabled, then we need to look
-     * for marker indicating it is okay to transfer content, or
-     * whether process is being restarted and that we should
-     * therefore create a connection to daemon process again.
+     * If process reload mechanism enabled, or a queue timeout is
+     * specified, then we need to look for marker indicating it
+     * is okay to transfer content, or whether process is being
+     * restarted and that we should therefore create a
+     * connection to daemon process again.
      */
 
-    if (*config->process_group) {
+    if (*config->process_group && (config->script_reloading ||
+            group->queue_timeout != 0)) {
+
         int retries = 0;
         int maximum = (2*group->processes)+1;
 
@@ -12618,6 +12663,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     int queue_timeout_occurred = 0;
 
+    apr_time_t daemon_start = 0;
+
 #if ! (AP_MODULE_MAGIC_AT_LEAST(20120211, 37) || \
     (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
      AP_SERVER_MINORVERSION_NUMBER <= 2 && \
@@ -12629,6 +12676,14 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (!wsgi_daemon_pool)
         return DECLINED;
+
+    /*
+     * Mark this as start of daemon process even though connection
+     * setup has already been done. Otherwise need to carry through
+     * a time value somehow.
+     */
+
+    daemon_start = apr_time_now();
 
     /*
      * Remove all input/output filters except the core filters.
@@ -13100,7 +13155,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
             config->queue_start = 0.0;
     }
 
-    config->daemon_start = apr_time_now();
+    config->daemon_start = daemon_start;
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_start",
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT,
@@ -14660,9 +14715,11 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
      */
 
 #if APR_HAS_THREADS
-    Py_BEGIN_ALLOW_THREADS
-    apr_thread_mutex_lock(wsgi_module_lock);
-    Py_END_ALLOW_THREADS
+    if (config->script_reloading) {
+        Py_BEGIN_ALLOW_THREADS
+        apr_thread_mutex_lock(wsgi_module_lock);
+        Py_END_ALLOW_THREADS
+    }
 #endif
 
     modules = PyImport_GetModuleDict();
@@ -14706,7 +14763,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
     /* Safe now to release the module lock. */
 
 #if APR_HAS_THREADS
-    apr_thread_mutex_unlock(wsgi_module_lock);
+    if (config->script_reloading)
+        apr_thread_mutex_unlock(wsgi_module_lock);
 #endif
 
     /* Log any details of exceptions if import failed. */

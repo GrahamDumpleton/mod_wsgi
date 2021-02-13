@@ -21,6 +21,8 @@
 
 /* ------------------------------------------------------------------------- */
 
+#define PY_SSIZE_T_CLEAN 1
+
 #include <Python.h>
 
 #if !defined(PY_VERSION_HEX)

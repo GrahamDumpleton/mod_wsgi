@@ -467,6 +467,16 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         self->interp = interp;
         self->owner = 0;
+
+        /* Force import of threading module so that main
+         * thread attribute of module is correctly set to
+         * the main thread and not a secondary request
+         * thread.
+         */
+
+        module = PyImport_ImportModule("threading");
+
+        Py_XDECREF(module);
     }
     else {
         /*
@@ -511,9 +521,9 @@ InterpreterObject *newInterpreterObject(const char *name)
          * interpreters.
          */
 
-#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 4)
         module = PyImport_ImportModule("threading");
 
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 4)
         if (module) {
             PyObject *dict = NULL;
             PyObject *func = NULL;
@@ -529,9 +539,9 @@ InterpreterObject *newInterpreterObject(const char *name)
                 Py_DECREF(wrapper);
             }
         }
+#endif
 
         Py_XDECREF(module);
-#endif
     }
 
     /*
@@ -1276,10 +1286,18 @@ InterpreterObject *newInterpreterObject(const char *name)
     PyModule_AddObject(module, "process_metrics", PyCFunction_New(
                        &wsgi_process_metrics_method[0], NULL));
 
+    PyModule_AddObject(module, "request_metrics", PyCFunction_New(
+                       &wsgi_request_metrics_method[0], NULL));
+
     PyModule_AddObject(module, "subscribe_events", PyCFunction_New(
-                       &wsgi_process_events_method[0], NULL));
+                       &wsgi_subscribe_events_method[0], NULL));
+
+    PyModule_AddObject(module, "subscribe_shutdown", PyCFunction_New(
+                       &wsgi_subscribe_shutdown_method[0], NULL));
 
     PyModule_AddObject(module, "event_callbacks", PyList_New(0));
+
+    PyModule_AddObject(module, "shutdown_callbacks", PyList_New(0));
 
     PyModule_AddObject(module, "active_requests", PyDict_New());
 

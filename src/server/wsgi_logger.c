@@ -223,7 +223,7 @@ static PyObject *Log_isatty(LogObject *self, PyObject *args)
     return Py_False;
 }
 
-static void Log_queue(LogObject *self, const char *msg, int len)
+static void Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
 {
     const char *p = NULL;
     const char *q = NULL;
@@ -330,7 +330,7 @@ static void Log_queue(LogObject *self, const char *msg, int len)
 static PyObject *Log_write(LogObject *self, PyObject *args)
 {
     const char *msg = NULL;
-    int len = -1;
+    Py_ssize_t len = -1;
 
     WSGIThreadInfo *thread_info = NULL;
 
