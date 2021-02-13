@@ -31,11 +31,9 @@ question, or ServerFault, if an administration issue. These sites allow a
 broad range of questions about many topics with quite a large user base of
 sometimes knowledgeable people.
 
-Do be aware though that the only forum that is guaranteed to be monitored
-is the mod_wsgi mailing list. Questions are not gauranteed to be answered
-on sites such as StackOverflow and ServerFault. So, it is much preferable
-to use the mod_wsgi mailing list if you want an informed answer for a
-mod_wsgi specific question.
+Do be aware though that the only general forum that is monitored is the
+mod_wsgi mailing list, so use it if you want an informed answer for a mod_wsgi
+specific question.
 
 Remember that people on the mailing list are volunteering their time to
 help and don't get paid for answering questions. Thus, it is in your
