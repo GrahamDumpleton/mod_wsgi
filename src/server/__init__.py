@@ -16,6 +16,10 @@ import time
 import traceback
 import locale
 import inspect
+import getpass
+import tempfile
+import copy
+import posixpath
 
 try:
     import Queue as queue
@@ -43,7 +47,7 @@ try:
     if (sysconfig.get_config_var('WITH_DYLD') and
             sysconfig.get_config_var('LIBDIR') and
             sysconfig.get_config_var('LDLIBRARY')):
-        _py_dylib = os.path.join(sysconfig.get_config_var('LIBDIR'),
+        _py_dylib = posixpath.join(sysconfig.get_config_var('LIBDIR'),
                 sysconfig.get_config_var('LDLIBRARY'))
         if not os.path.exists(_py_dylib):
             _py_dylib = ''
@@ -52,15 +56,16 @@ except ImportError:
     pass
 
 MOD_WSGI_SO = 'mod_wsgi-py%s%s' % (_py_version, _py_soext)
-MOD_WSGI_SO = os.path.join(os.path.dirname(__file__), MOD_WSGI_SO)
+MOD_WSGI_SO = posixpath.join(posixpath.dirname(__file__), MOD_WSGI_SO)
 
 if not os.path.exists(MOD_WSGI_SO) and _py_soabi:
     MOD_WSGI_SO = 'mod_wsgi-py%s.%s%s' % (_py_version, _py_soabi, _py_soext)
-    MOD_WSGI_SO = os.path.join(os.path.dirname(__file__), MOD_WSGI_SO)
+    MOD_WSGI_SO = posixpath.join(posixpath.dirname(__file__), MOD_WSGI_SO)
 
 if not os.path.exists(MOD_WSGI_SO) and os.name == 'nt':
     MOD_WSGI_SO = 'mod_wsgi%s' % distutils.sysconfig.get_config_var('EXT_SUFFIX')
     MOD_WSGI_SO = os.path.join(os.path.dirname(__file__), MOD_WSGI_SO)
+    MOD_WSGI_SO = MOD_WSGI_SO.replace('\\', '/')
 
 def where():
     return MOD_WSGI_SO
@@ -97,18 +102,22 @@ def default_run_group():
 def find_program(names, default=None, paths=[]):
     for name in names:
         for path in os.environ['PATH'].split(':') + paths:
-            program = os.path.join(path, name)
+            program = posixpath.join(path, name)
             if os.path.exists(program):
                 return program
     return default
 
 def find_mimetypes():
-    import mimetypes
-    for name in mimetypes.knownfiles:
-        if os.path.exists(name):
-            return name
+    if os.name == 'nt':
+        return posixpath.join(posixpath.dirname(posixpath.dirname(
+                apxs_config.HTTPD)), 'conf', 'mime.types')
     else:
-        return '/dev/null'
+        import mimetypes
+        for name in mimetypes.knownfiles:
+            if os.path.exists(name):
+                return name
+        else:
+            return '/dev/null'
 
 SHELL = find_program(['bash', 'sh'], ['/usr/local/bin'])
 
@@ -128,8 +137,10 @@ DefaultRuntimeDir '%(server_root)s'
 ServerTokens ProductOnly
 ServerSignature Off
 
+<IfDefine !MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
 User ${MOD_WSGI_USER}
 Group ${MOD_WSGI_GROUP}
+</IfDefine>
 
 <IfDefine MOD_WSGI_WITH_LISTENER_HOST>
 Listen %(host)s:%(port)s
@@ -182,9 +193,11 @@ LoadModule http2_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_http2.so'
 <IfModule !access_compat_module>
 LoadModule access_compat_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_access_compat.so'
 </IfModule>
+<IfDefine !MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
 <IfModule !unixd_module>
 LoadModule unixd_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_unixd.so'
 </IfModule>
+</IfDefine>
 <IfModule !authn_core_module>
 LoadModule authn_core_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_authn_core.so'
 </IfModule>
@@ -326,14 +339,15 @@ WSGIPythonHome '%(python_home)s'
 
 WSGIVerboseDebugging '%(verbose_debugging_flag)s'
 
+<IfDefine !MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
 <IfDefine MOD_WSGI_WITH_SOCKET_PREFIX>
 WSGISocketPrefix %(socket_prefix)s/wsgi
 </IfDefine>
 <IfDefine !MOD_WSGI_WITH_SOCKET_PREFIX>
 WSGISocketPrefix %(server_root)s/wsgi
 </IfDefine>
-
 WSGISocketRotation Off
+</IfDefine>
 
 <IfDefine !ONE_PROCESS>
 WSGIRestrictEmbedded On
@@ -808,10 +822,18 @@ WSGIImportScript '%(server_root)s/handler.wsgi' \\
 </IfDefine>
 
 <IfDefine ONE_PROCESS>
+<IfDefine !MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
 WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
     process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
 WSGIImportScript '%(server_root)s/handler.wsgi' \\
     process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
+</IfDefine>
+<IfDefine MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
+WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
+    application-group=%%{GLOBAL}
+WSGIImportScript '%(server_root)s/handler.wsgi' \\
+    application-group=%%{GLOBAL}
+</IfDefine>
 </IfDefine>
 """
 
@@ -1033,7 +1055,7 @@ def generate_apache_config(options):
         if options['url_aliases']:
             for mount_point, target in sorted(options['url_aliases'],
                     reverse=True):
-                path = os.path.abspath(target)
+                path = posixpath.abspath(target)
 
                 if os.path.isdir(path) or not os.path.exists(path):
                     if target.endswith('/') and path != '/':
@@ -1047,8 +1069,8 @@ def generate_apache_config(options):
                             file=fp)
 
                 else:
-                    directory = os.path.dirname(path)
-                    filename = os.path.basename(path)
+                    directory = posixpath.dirname(path)
+                    filename = posixpath.basename(path)
 
                     print(APACHE_ALIAS_FILENAME_CONFIG % dict(
                             mount_point=mount_point, directory=directory,
@@ -1124,7 +1146,7 @@ def generate_apache_config(options):
 
         if options['include_files']:
             for filename in options['include_files']:
-                filename = os.path.abspath(filename)
+                filename = posixpath.abspath(filename)
                 print(APACHE_INCLUDE_CONFIG % dict(filename=filename),
                         file=fp)
 
@@ -1566,9 +1588,9 @@ import time
 
 import mod_wsgi.server
 
-working_directory = '%(working_directory)s'
+working_directory = r'%(working_directory)s'
 
-entry_point = '%(entry_point)s'
+entry_point = r'%(entry_point)s'
 application_type = '%(application_type)s'
 callable_object = '%(callable_object)s'
 mount_point = '%(mount_point)s'
@@ -2654,6 +2676,9 @@ def cmd_setup_server(params):
     _cmd_setup_server('setup-server', args, vars(options))
 
 def _mpm_module_defines(modules_directory, preferred=None):
+    if os.name == 'nt':
+        return ['-DMOD_WSGI_MPM_ENABLE_WINNT_MODULE']
+
     result = []
     workers = ['event', 'worker', 'prefork']
     found = False
@@ -2681,23 +2706,33 @@ def _cmd_setup_server(command, args, options):
     else:
         options['listener_host'] = options['host']
 
-    options['daemon_name'] = '(wsgi:%s:%s:%s)' % (options['host'],
+    if os.name == 'nt':
+        options['daemon_name'] = '(wsgi:%s:%s:%s)' % (options['host'],
+            options['port'], getpass.getuser())
+    else:
+        options['daemon_name'] = '(wsgi:%s:%s:%s)' % (options['host'],
             options['port'], os.getuid())
 
     if not options['server_root']:
-        if sys.platform == 'darwin':
+        if os.name == 'nt':
+            tmpdir = tempfile.gettempdir()
+        elif sys.platform == 'darwin':
             tmpdir = '/var/tmp'
         else:
             tmpdir = os.environ.get('TMPDIR')
             tmpdir = tmpdir or '/tmp'
             tmpdir = tmpdir.rstrip('/')
-        options['server_root'] = '%s/mod_wsgi-%s:%s:%s' % (tmpdir,
-                options['host'], options['port'], os.getuid())
 
-    try:
+        if os.name == 'nt':
+            options['server_root'] = ('%s/mod_wsgi-%s-%s-%s' % (tmpdir,
+                    options['host'], options['port'], getpass.getuser())
+                    ).replace('\\','/')
+        else:
+            options['server_root'] = '%s/mod_wsgi-%s:%s:%s' % (tmpdir,
+                    options['host'], options['port'], os.getuid())
+
+    if not os.path.isdir(options['server_root']):
         os.mkdir(options['server_root'])
-    except Exception:
-        pass
 
     if options['ssl_certificate_file']:
         options['ssl_certificate_file'] = os.path.abspath(
@@ -2730,7 +2765,7 @@ def _cmd_setup_server(command, args, options):
 
     if not args:
         if options['application_type'] != 'static':
-            options['entry_point'] = os.path.join(
+            options['entry_point'] = posixpath.join(
                     options['server_root'], 'default.wsgi')
             options['application_type'] = 'script'
             options['enable_docs'] = True
@@ -2740,10 +2775,10 @@ def _cmd_setup_server(command, args, options):
             options['entry_point'] = '(static)'
     else:
         if options['application_type'] in ('script', 'paste'):
-            options['entry_point'] = os.path.abspath(args[0])
+            options['entry_point'] = posixpath.abspath(args[0])
         elif options['application_type'] == 'static':
             if not options['document_root']:
-                options['document_root'] = os.path.abspath(args[0])
+                options['document_root'] = posixpath.abspath(args[0])
                 options['entry_point'] = 'ignored'
             else:
                 options['entry_point'] = 'overridden'
@@ -2751,33 +2786,33 @@ def _cmd_setup_server(command, args, options):
             options['entry_point'] = args[0]
 
     if options['host_access_script']:
-        options['host_access_script'] = os.path.abspath(
+        options['host_access_script'] = posixpath.abspath(
                 options['host_access_script'])
 
     if options['auth_user_script']:
-        options['auth_user_script'] = os.path.abspath(
+        options['auth_user_script'] = posixpath.abspath(
                 options['auth_user_script'])
 
     if options['auth_group_script']:
-        options['auth_group_script'] = os.path.abspath(
+        options['auth_group_script'] = posixpath.abspath(
                 options['auth_group_script'])
 
-    options['documentation_directory'] = os.path.join(os.path.dirname(
-            os.path.dirname(__file__)), 'docs')
+    options['documentation_directory'] = posixpath.join(os.path.dirname(
+            posixpath.dirname(__file__)), 'docs')
     options['images_directory'] = os.path.join(os.path.dirname(
-            os.path.dirname(__file__)), 'images')
+            posixpath.dirname(__file__)), 'images')
 
-    if os.path.exists(os.path.join(options['documentation_directory'],
+    if os.path.exists(posixpath.join(options['documentation_directory'],
             'index.html')):
         options['documentation_url'] = '/__wsgi__/docs/'
     else:
         options['documentation_url'] = 'http://www.modwsgi.org/'
 
     if not os.path.isabs(options['server_root']):
-        options['server_root'] = os.path.abspath(options['server_root'])
+        options['server_root'] = posixpath.abspath(options['server_root'])
 
     if not options['document_root']:
-        options['document_root'] = os.path.join(options['server_root'],
+        options['document_root'] = posixpath.join(options['server_root'],
                 'htdocs')
 
     try:
@@ -2791,7 +2826,7 @@ def _cmd_setup_server(command, args, options):
         options['allow_override'] = ' '.join(options['allow_override'])
 
     if not options['mount_point'].startswith('/'):
-        options['mount_point'] = os.path.normpath('/' + options['mount_point'])
+        options['mount_point'] = posixpath.normpath('/' + options['mount_point'])
 
     # Create subdirectories for mount points in document directory
     # so that fallback resource rewrite rule will work.
@@ -2801,14 +2836,14 @@ def _cmd_setup_server(command, args, options):
         subdir = options['document_root']
         try:
             for part in parts:
-                subdir = os.path.join(subdir, part)
+                subdir = posixpath.join(subdir, part)
                 if not os.path.exists(subdir):
                     os.mkdir(subdir)
         except Exception:
             raise
 
     if not os.path.isabs(options['document_root']):
-        options['document_root'] = os.path.abspath(options['document_root'])
+        options['document_root'] = posixpath.abspath(options['document_root'])
 
     if not options['log_directory']:
         options['log_directory'] = options['server_root']
@@ -2826,23 +2861,26 @@ def _cmd_setup_server(command, args, options):
         pass
 
     if not os.path.isabs(options['log_directory']):
-        options['log_directory'] = os.path.abspath(options['log_directory'])
+        options['log_directory'] = posixpath.abspath(options['log_directory'])
 
     if not options['log_to_terminal']:
-        options['error_log_file'] = os.path.join(options['log_directory'],
+        options['error_log_file'] = posixpath.join(options['log_directory'],
                 options['error_log_name'])
     else:
-        try:
-            with open('/dev/stderr', 'w'):
-                pass
-        except IOError:
-            options['error_log_file'] = '|%s' % find_program(
-                    ['tee'], default='tee')
+        if os.name == 'nt':
+            options['error_log_file'] = 'CON'
         else:
-            options['error_log_file'] = '/dev/stderr'
+            try:
+                with open('/dev/stderr', 'w'):
+                    pass
+            except IOError:
+                options['error_log_file'] = '|%s' % find_program(
+                        ['tee'], default='tee')
+            else:
+                options['error_log_file'] = '/dev/stderr'
 
     if not options['log_to_terminal']:
-        options['access_log_file'] = os.path.join(
+        options['access_log_file'] = posixpath.join(
                 options['log_directory'], options['access_log_name'])
     else:
         try:
@@ -2871,20 +2909,20 @@ def _cmd_setup_server(command, args, options):
         options['error_log_format'] = options['error_log_format'].replace(
                 '\"', '\\"')
 
-    options['pid_file'] = ((options['pid_file'] and os.path.abspath(
-            options['pid_file'])) or os.path.join(options['server_root'],
+    options['pid_file'] = ((options['pid_file'] and posixpath.abspath(
+            options['pid_file'])) or posixpath.join(options['server_root'],
             'httpd.pid'))
 
-    options['python_eggs'] = (os.path.abspath(options['python_eggs']) if
+    options['python_eggs'] = (posixpath.abspath(options['python_eggs']) if
             options['python_eggs'] is not None else None)
 
     if options['python_eggs'] is None:
-        options['python_eggs'] = os.path.join(options['server_root'],
+        options['python_eggs'] = posixpath.join(options['server_root'],
                 'python-eggs')
 
     try:
         os.mkdir(options['python_eggs'])
-        if os.getuid() == 0:
+        if os.name != 'nt' and os.getuid() == 0:
             import pwd
             import grp
             os.chown(options['python_eggs'],
@@ -2923,7 +2961,7 @@ def _cmd_setup_server(command, args, options):
     options['multiprocess'] = options['processes'] is not None
     options['processes'] = options['processes'] or 1
 
-    options['python_home'] = sys.prefix
+    options['python_home'] = sys.prefix.replace('\\','/')
 
     options['keep_alive'] = options['keep_alive_timeout'] != 0
 
@@ -2954,12 +2992,12 @@ def _cmd_setup_server(command, args, options):
         handler_scripts = []
         for extension, script in options['handler_scripts']:
             if not os.path.isabs(script):
-                script = os.path.abspath(script)
+                script = posixpath.abspath(script)
             handler_scripts.append((extension, script))
         options['handler_scripts'] = handler_scripts
 
     if options['newrelic_config_file']:
-        options['newrelic_config_file'] = os.path.abspath(
+        options['newrelic_config_file'] = posixpath.abspath(
                 options['newrelic_config_file'])
 
     if options['with_newrelic']:
@@ -2973,7 +3011,7 @@ def _cmd_setup_server(command, args, options):
         service_scripts = []
         for name, script in options['service_scripts']:
             if not os.path.isabs(script):
-                script = os.path.abspath(script)
+                script = posixpath.abspath(script)
             service_scripts.append((name, script))
         options['service_scripts'] = service_scripts
 
@@ -3056,27 +3094,28 @@ def _cmd_setup_server(command, args, options):
             int(worker_max_spare_workers * options['worker_server_limit']) *
             options['worker_threads_per_child'])
 
-    options['httpd_conf'] = os.path.join(options['server_root'], 'httpd.conf')
+    options['httpd_conf'] = posixpath.join(options['server_root'], 'httpd.conf')
 
     options['httpd_executable'] = os.environ.get('HTTPD',
             options['httpd_executable'])
 
-    if not os.path.isabs(options['httpd_executable']):
-         options['httpd_executable'] = find_program(
-                 [options['httpd_executable']], 'httpd', ['/usr/sbin'])
+    if os.name != 'nt':
+        if not os.path.isabs(options['httpd_executable']):
+            options['httpd_executable'] = find_program(
+                    [options['httpd_executable']], 'httpd', ['/usr/sbin'])
 
     if not options['process_name']:
-        options['process_name'] = os.path.basename(
+        options['process_name'] = posixpath.basename(
                 options['httpd_executable']) + ' (mod_wsgi-express)'
 
     options['process_name'] = options['process_name'].ljust(
             len(options['daemon_name']))
 
-    options['rewrite_rules'] = (os.path.abspath(
+    options['rewrite_rules'] = (posixpath.abspath(
             options['rewrite_rules']) if options['rewrite_rules'] is
             not None else None)
 
-    options['envvars_script'] = (os.path.abspath(
+    options['envvars_script'] = (posixpath.abspath(
             options['envvars_script']) if options['envvars_script'] is
             not None else None)
 
@@ -3116,22 +3155,25 @@ def _cmd_setup_server(command, args, options):
 
     if options['startup_log']:
         if not options['log_to_terminal']:
-            options['startup_log_file'] = os.path.join(
+            options['startup_log_file'] = posixpath.join(
                     options['log_directory'], options['startup_log_name'])
         else:
-            try:
-                with open('/dev/stderr', 'w'):
-                    pass
-            except IOError:
+            if os.name == 'nt':
+                options['startup_log_file'] = 'CON'
+            else:
                 try:
-                    with open('/dev/tty', 'w'):
+                    with open('/dev/stderr', 'w'):
                         pass
                 except IOError:
-                    options['startup_log_file'] = None
+                    try:
+                        with open('/dev/tty', 'w'):
+                            pass
+                    except IOError:
+                        options['startup_log_file'] = None
+                    else:
+                        options['startup_log_file'] = '/dev/tty'
                 else:
-                    options['startup_log_file'] = '/dev/tty'
-            else:
-                options['startup_log_file'] = '/dev/stderr'
+                    options['startup_log_file'] = '/dev/stderr'
 
         if options['startup_log_file']:
             options['httpd_arguments_list'].append('-E')
@@ -3172,10 +3214,10 @@ def _cmd_setup_server(command, args, options):
     if options['debug_mode']:
         if options['enable_coverage']:
             if not options['coverage_directory']:
-                options['coverage_directory'] = os.path.join(
+                options['coverage_directory'] = posixpath.join(
                         options['server_root'], 'htmlcov')
             else:
-                options['coverage_directory'] = os.path.abspath(
+                options['coverage_directory'] = posixpath.abspath(
                         options['coverage_directory'])
 
             try:
@@ -3185,10 +3227,10 @@ def _cmd_setup_server(command, args, options):
 
         if options['enable_profiler']:
             if not options['profiler_directory']:
-                options['profiler_directory'] = os.path.join(
+                options['profiler_directory'] = posixpath.join(
                         options['server_root'], 'pstats')
             else:
-                options['profiler_directory'] = os.path.abspath(
+                options['profiler_directory'] = posixpath.abspath(
                         options['profiler_directory'])
 
             try:
@@ -3198,10 +3240,10 @@ def _cmd_setup_server(command, args, options):
 
         if options['enable_recorder']:
             if not options['recorder_directory']:
-                options['recorder_directory'] = os.path.join(
+                options['recorder_directory'] = posixpath.join(
                         options['server_root'], 'archive')
             else:
-                options['recorder_directory'] = os.path.abspath(
+                options['recorder_directory'] = posixpath.abspath(
                         options['recorder_directory'])
 
             try:
@@ -3302,7 +3344,7 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_SOCKET_PREFIX')
 
     if options['with_cgi']:
-        if os.path.exists(os.path.join(options['modules_directory'],
+        if os.path.exists(posixpath.join(options['modules_directory'],
                 'mod_cgid.so')):
             options['httpd_arguments_list'].append('-DMOD_WSGI_CGID_SCRIPT')
         else:
@@ -3351,7 +3393,7 @@ def _cmd_setup_server(command, args, options):
         print('Startup Log File   :', options['startup_log_file'])
 
     if options['enable_coverage']:
-        print('Coverage Output    :', os.path.join(
+        print('Coverage Output    :', posixpath.join(
                 options['coverage_directory'], 'index.html'))
 
     if options['enable_profiler']:
@@ -3363,15 +3405,17 @@ def _cmd_setup_server(command, args, options):
     if options['rewrite_rules']:
         print('Rewrite Rules      :', options['rewrite_rules'])
 
-    if options['envvars_script']:
-        print('Environ Variables  :', options['envvars_script'])
+    if os.name != 'nt':
+        if options['envvars_script']:
+            print('Environ Variables  :', options['envvars_script'])
 
     if command == 'setup-server' or options['setup_only']:
         if not options['rewrite_rules']:
             print('Rewrite Rules      :', options['server_root'] + '/rewrite.conf')
-        if not options['envvars_script']:
-            print('Environ Variables  :', options['server_root'] + '/envvars')
-        print('Control Script     :', options['server_root'] + '/apachectl')
+        if os.name != 'nt':
+            if not options['envvars_script']:
+                print('Environ Variables  :', options['server_root'] + '/envvars')
+            print('Control Script     :', options['server_root'] + '/apachectl')
 
     if options['processes'] == 1:
         print('Request Capacity   : %s (%s process * %s threads)' % (
@@ -3408,7 +3452,9 @@ def _cmd_setup_server(command, args, options):
                 pass
 
     generate_apache_config(options)
-    generate_control_scripts(options)
+
+    if os.name != 'nt':
+        generate_control_scripts(options)
 
     return options
 
@@ -3427,32 +3473,50 @@ def cmd_start_server(params):
     if config['setup_only']:
         return
 
-    executable = os.path.join(config['server_root'], 'apachectl')
+    if os.name == 'nt':
+        executable = config['httpd_executable']
 
-    if config['isatty'] and sys.stdout.isatty():
-        process = None
+        environ = copy.deepcopy(os.environ)
 
-        def handler(signum, frame):
-            if process is None:
-                sys.exit(1)
+        environ['MOD_WSGI_MODULES_DIRECTORY'] = config['modules_directory']
 
-            else:
-                if signum not in [signal.SIGWINCH]:
-                    os.kill(process.pid, signum)
+        httpd_arguments = list(config['httpd_arguments_list'])
+        httpd_arguments.extend(['-f', config['httpd_conf']])
+        httpd_arguments.extend(['-DONE_PROCESS'])
 
-        signal.signal(signal.SIGINT, handler)
-        signal.signal(signal.SIGTERM, handler)
-        signal.signal(signal.SIGHUP, handler)
-        signal.signal(signal.SIGUSR1, handler)
-        signal.signal(signal.SIGWINCH, handler)
+        os.environ['MOD_WSGI_MODULES_DIRECTORY'] = config['modules_directory']
 
-        process = subprocess.Popen([executable, 'start', '-DFOREGROUND'],
-                preexec_fn=os.setpgrp)
+        subprocess.call([executable]+httpd_arguments)
 
-        process.wait()
+        sys.exit(0)
 
     else:
-        os.execl(executable, executable, 'start', '-DFOREGROUND')
+        executable = posixpath.join(config['server_root'], 'apachectl')
+
+        if config['isatty'] and sys.stdout.isatty():
+            process = None
+
+            def handler(signum, frame):
+                if process is None:
+                    sys.exit(1)
+
+                else:
+                    if signum not in [signal.SIGWINCH]:
+                        os.kill(process.pid, signum)
+
+            signal.signal(signal.SIGINT, handler)
+            signal.signal(signal.SIGTERM, handler)
+            signal.signal(signal.SIGHUP, handler)
+            signal.signal(signal.SIGUSR1, handler)
+            signal.signal(signal.SIGWINCH, handler)
+
+            process = subprocess.Popen([executable, 'start', '-DFOREGROUND'],
+                    preexec_fn=os.setpgrp)
+
+            process.wait()
+
+        else:
+            os.execl(executable, executable, 'start', '-DFOREGROUND')
 
 def cmd_module_config(params):
     formatter = optparse.IndentedHelpFormatter()
@@ -3475,17 +3539,17 @@ def cmd_module_config(params):
         library_version = sysconfig.get_config_var('VERSION')
 
         library_name = 'python%s.dll' % library_version
-        library_path = os.path.join(real_prefix, library_name)
+        library_path = posixpath.join(real_prefix, library_name)
 
         if not os.path.exists(library_path):
             library_name = 'python%s.dll' % library_version[0]
-            library_path = os.path.join(real_prefix, 'DLLs', library_name)
+            library_path = posixpath.join(real_prefix, 'DLLs', library_name)
 
         if not os.path.exists(library_path):
             library_path = None
 
         if library_path:
-            library_path = os.path.normpath(library_path)
+            library_path = posixpath.normpath(library_path)
             library_path = library_path.replace('\\', '/')
 
             print('LoadFile "%s"' % library_path)
@@ -3494,7 +3558,7 @@ def cmd_module_config(params):
         module_path = module_path.replace('\\', '/')
 
         prefix = sys.prefix
-        prefix = os.path.normpath(prefix)
+        prefix = posixpath.normpath(prefix)
         prefix = prefix.replace('\\', '/')
 
         print('LoadModule wsgi_module "%s"' % module_path)
@@ -3504,7 +3568,7 @@ def cmd_module_config(params):
         module_path = where()
 
         prefix = sys.prefix
-        prefix = os.path.normpath(prefix)
+        prefix = posixpath.normpath(prefix)
 
         if _py_dylib:
             print('LoadFile "%s"' % _py_dylib)
@@ -3527,15 +3591,15 @@ def cmd_install_module(params):
     if len(args) != 0:
         parser.error('Incorrect number of arguments.')
 
-    target = os.path.abspath(os.path.join(options.modules_directory,
-            os.path.basename(MOD_WSGI_SO)))
+    target = posixpath.abspath(posixpath.join(options.modules_directory,
+            posixpath.basename(MOD_WSGI_SO)))
 
     shutil.copyfile(where(), target)
 
     if _py_dylib:
         print('LoadFile "%s"' % _py_dylib)
     print('LoadModule wsgi_module "%s"' % target)
-    print('WSGIPythonHome "%s"' % os.path.normpath(sys.prefix))
+    print('WSGIPythonHome "%s"' % posixpath.normpath(sys.prefix))
 
 def cmd_module_location(params):
     formatter = optparse.IndentedHelpFormatter()
@@ -3588,6 +3652,8 @@ def main():
             cmd_module_config(args)
         elif command == 'module-location':
             cmd_module_location(args)
+        elif command == 'start-server':
+            cmd_start_server(args)
         else:
             parser.error('Invalid command was specified.')
     else:

@@ -171,8 +171,12 @@ if WITH_WINDOWS_APACHE:
     def get_apxs_config(name):
         if name == 'INCLUDEDIR':
             return WITH_WINDOWS_APACHE + '/include'
+        elif name == 'BINDIR':
+            return WITH_WINDOWS_APACHE + '/bin'
         elif name == 'LIBEXECDIR':
-            return WITH_WINDOWS_APACHE + '/lib'
+            return WITH_WINDOWS_APACHE + '/modules'
+        elif name == 'PROGNAME':
+            return 'httpd.exe'
         else:
             return ''
 
@@ -362,26 +366,27 @@ SHLIBPATH_VAR = get_apxs_config('SHLIBPATH_VAR')
 
 APXS_CONFIG_TEMPLATE = """
 import os
+import posixpath
 
 WITH_TARBALL_PACKAGE = %(WITH_TARBALL_PACKAGE)r
 WITH_HTTPD_PACKAGE = %(WITH_HTTPD_PACKAGE)r
 
 if WITH_HTTPD_PACKAGE:
     from mod_wsgi_packages.httpd import __file__ as PACKAGES_ROOTDIR
-    PACKAGES_ROOTDIR = os.path.dirname(PACKAGES_ROOTDIR)
-    BINDIR = os.path.join(PACKAGES_ROOTDIR, 'bin')
+    PACKAGES_ROOTDIR = posixpath.dirname(PACKAGES_ROOTDIR)
+    BINDIR = posixpath.join(PACKAGES_ROOTDIR, 'bin')
     SBINDIR = BINDIR
-    LIBEXECDIR = os.path.join(PACKAGES_ROOTDIR, 'modules')
-    SHLIBPATH = os.path.join(PACKAGES_ROOTDIR, 'lib')
+    LIBEXECDIR = posixpath.join(PACKAGES_ROOTDIR, 'modules')
+    SHLIBPATH = posixpath.join(PACKAGES_ROOTDIR, 'lib')
 elif WITH_TARBALL_PACKAGE:
     from mod_wsgi.packages import __file__ as PACKAGES_ROOTDIR
-    PACKAGES_ROOTDIR = os.path.dirname(PACKAGES_ROOTDIR)
-    BINDIR = os.path.join(PACKAGES_ROOTDIR, 'apache', 'bin')
+    PACKAGES_ROOTDIR = posixpath.dirname(PACKAGES_ROOTDIR)
+    BINDIR = posixpath.join(PACKAGES_ROOTDIR, 'apache', 'bin')
     SBINDIR = BINDIR
-    LIBEXECDIR = os.path.join(PACKAGES_ROOTDIR, 'apache', 'modules')
+    LIBEXECDIR = posixpath.join(PACKAGES_ROOTDIR, 'apache', 'modules')
     SHLIBPATH = []
-    SHLIBPATH.append(os.path.join(PACKAGES_ROOTDIR, 'apr-util', 'lib'))
-    SHLIBPATH.append(os.path.join(PACKAGES_ROOTDIR, 'apr', 'lib'))
+    SHLIBPATH.append(posixpath.join(PACKAGES_ROOTDIR, 'apr-util', 'lib'))
+    SHLIBPATH.append(posixpath.join(PACKAGES_ROOTDIR, 'apr', 'lib'))
     SHLIBPATH = ':'.join(SHLIBPATH)
 else:
     BINDIR = '%(BINDIR)s'
@@ -393,17 +398,17 @@ MPM_NAME = '%(MPM_NAME)s'
 PROGNAME = '%(PROGNAME)s'
 SHLIBPATH_VAR = '%(SHLIBPATH_VAR)s'
 
-if os.path.exists(os.path.join(SBINDIR, PROGNAME)):
-    HTTPD = os.path.join(SBINDIR, PROGNAME)
-elif os.path.exists(os.path.join(BINDIR, PROGNAME)):
-    HTTPD = os.path.join(BINDIR, PROGNAME)
+if os.path.exists(posixpath.join(SBINDIR, PROGNAME)):
+    HTTPD = posixpath.join(SBINDIR, PROGNAME)
+elif os.path.exists(posixpath.join(BINDIR, PROGNAME)):
+    HTTPD = posixpath.join(BINDIR, PROGNAME)
 else:
     HTTPD = PROGNAME
 
-if os.path.exists(os.path.join(SBINDIR, 'rotatelogs')):
-    ROTATELOGS = os.path.join(SBINDIR, 'rotatelogs')
-elif os.path.exists(os.path.join(BINDIR, 'rotatelogs')):
-    ROTATELOGS = os.path.join(BINDIR, 'rotatelogs')
+if os.path.exists(posixpath.join(SBINDIR, 'rotatelogs')):
+    ROTATELOGS = posixpath.join(SBINDIR, 'rotatelogs')
+elif os.path.exists(posixpath.join(BINDIR, 'rotatelogs')):
+    ROTATELOGS = posixpath.join(BINDIR, 'rotatelogs')
 else:
     ROTATELOGS = 'rotatelogs'
 """
