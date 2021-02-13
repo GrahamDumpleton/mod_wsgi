@@ -55,6 +55,11 @@ Bugs Fixed
   opens up security holes with the potential for user code to run as the
   ``root`` user when Python is initialized.
 
+* Fix a Python deprecation warning for ``PyArg_ParseTuple()`` which would
+  cause the process to crash when deprecation warnings were turned on
+  globally for an application. Crash was occuring whenever anything was
+  output to Apache error log via ``print()``.
+
 Features Changed
 ----------------
 
