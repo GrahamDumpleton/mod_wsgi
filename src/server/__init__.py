@@ -349,6 +349,10 @@ WSGISocketPrefix %(server_root)s/wsgi
 WSGISocketRotation Off
 </IfDefine>
 
+<IfDefine EMBEDDED_MODE>
+MaxConnectionsPerChild %(maximum_requests)s
+</IfDefine>
+
 <IfDefine !ONE_PROCESS>
 <IfDefine !EMBEDDED_MODE>
 WSGIRestrictEmbedded On
