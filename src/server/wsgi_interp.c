@@ -424,7 +424,9 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     const char *str = NULL;
 
+#if defined(WIN32)
     const char *python_home = 0;
+#endif
 
     /* Create handle for interpreter and local data. */
 
