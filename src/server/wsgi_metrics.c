@@ -144,19 +144,19 @@ void wsgi_record_request_times(apr_time_t request_start,
     wsgi_daemon_time_total += daemon_time;
     wsgi_application_time_total += application_time;
 
-    wsgi_record_time_in_buckets(&wsgi_server_time_buckets,
+    wsgi_record_time_in_buckets(&wsgi_server_time_buckets[0],
             server_time);
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process) {
-        wsgi_record_time_in_buckets(&wsgi_queue_time_buckets,
+        wsgi_record_time_in_buckets(&wsgi_queue_time_buckets[0],
                 queue_time);
-        wsgi_record_time_in_buckets(&wsgi_daemon_time_buckets,
+        wsgi_record_time_in_buckets(&wsgi_daemon_time_buckets[0],
                 daemon_time);
     }
 #endif
 
-    wsgi_record_time_in_buckets(&wsgi_application_time_buckets,
+    wsgi_record_time_in_buckets(&wsgi_application_time_buckets[0],
             application_time);
 
     apr_thread_mutex_unlock(wsgi_monitor_lock);
