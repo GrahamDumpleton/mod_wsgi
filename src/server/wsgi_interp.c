@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2019 GRAHAM DUMPLETON
+ * Copyright 2007-2020 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -424,6 +424,10 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     const char *str = NULL;
 
+#if defined(WIN32)
+    const char *python_home = 0;
+#endif
+
     /* Create handle for interpreter and local data. */
 
     self = PyObject_New(InterpreterObject, &Interpreter_Type);
@@ -465,6 +469,16 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         self->interp = interp;
         self->owner = 0;
+
+        /* Force import of threading module so that main
+         * thread attribute of module is correctly set to
+         * the main thread and not a secondary request
+         * thread.
+         */
+
+        module = PyImport_ImportModule("threading");
+
+        Py_XDECREF(module);
     }
     else {
         /*
@@ -509,9 +523,9 @@ InterpreterObject *newInterpreterObject(const char *name)
          * interpreters.
          */
 
-#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 4)
         module = PyImport_ImportModule("threading");
 
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 4)
         if (module) {
             PyObject *dict = NULL;
             PyObject *func = NULL;
@@ -527,9 +541,9 @@ InterpreterObject *newInterpreterObject(const char *name)
                 Py_DECREF(wrapper);
             }
         }
+#endif
 
         Py_XDECREF(module);
-#endif
     }
 
     /*
@@ -881,6 +895,34 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     if (!wsgi_daemon_pool)
         wsgi_python_path = wsgi_server_config->python_path;
+
+    /*
+     * We use a hack here on Windows to add the site-packages
+     * directory into the Python module search path as well
+     * as use of Python virtual environments doesn't work
+     * otherwise if using 'python -m venv' or any released of
+     * 'virtualenv' from 20.x onwards.
+     */
+
+#if defined(WIN32)
+    python_home = wsgi_server_config->python_home;
+
+    if (python_home && *python_home) {
+        if (wsgi_python_path && *wsgi_python_path) {
+            char delim[2];
+            delim[0] = DELIM;
+            delim[1] = '\0';
+
+            wsgi_python_path = apr_pstrcat(wsgi_server->process->pool,
+                    python_home, "/Lib/site-packages", delim,
+                    wsgi_python_path, NULL);
+        }
+        else {
+            wsgi_python_path = apr_pstrcat(wsgi_server->process->pool,
+                    python_home, "/Lib/site-packages", NULL);
+        }
+    }
+#endif
 
     module = PyImport_ImportModule("site");
 
@@ -1246,10 +1288,18 @@ InterpreterObject *newInterpreterObject(const char *name)
     PyModule_AddObject(module, "process_metrics", PyCFunction_New(
                        &wsgi_process_metrics_method[0], NULL));
 
+    PyModule_AddObject(module, "request_metrics", PyCFunction_New(
+                       &wsgi_request_metrics_method[0], NULL));
+
     PyModule_AddObject(module, "subscribe_events", PyCFunction_New(
-                       &wsgi_process_events_method[0], NULL));
+                       &wsgi_subscribe_events_method[0], NULL));
+
+    PyModule_AddObject(module, "subscribe_shutdown", PyCFunction_New(
+                       &wsgi_subscribe_shutdown_method[0], NULL));
 
     PyModule_AddObject(module, "event_callbacks", PyList_New(0));
+
+    PyModule_AddObject(module, "shutdown_callbacks", PyList_New(0));
 
     PyModule_AddObject(module, "active_requests", PyDict_New());
 
@@ -2173,14 +2223,26 @@ void wsgi_python_init(apr_pool_t *p)
         }
 
 #if defined(WIN32)
+#if defined(WIN32_PYTHON_VENV_IS_BROKEN)
         /*
-         * Check for Python HOME being overridden. This is only being
-         * used on Windows for now. For UNIX systems we actually do
-         * a fiddle and work out where the Python executable would be
-         * and set its location instead. This is to get around some
-         * brokeness in pyvenv in Python 3.X. We don't know if that
-         * workaround works for Windows yet, but since not supporting
-         * Windows for mod_wsgi 4.X as yet, doesn't matter.
+         * XXX Python new style virtual environments break Python embedding
+         * API for Python initialisation on Windows. So disable this code as
+         * any attempt to call Py_SetPythonHome() with location of the
+         * virtual environment will not work and will break initialization
+         * of the Python interpreter. Instead manually add the directory
+         * Lib/site-packages to the Python module search path later if
+         * WSGIPythonHome has been set.
+         */
+
+        /*
+         * Check for Python home being overridden. This is only being
+         * used on Windows. For UNIX systems we actually do a fiddle
+         * and work out where the Python executable would be and set
+         * its location instead. This is to get around some brokeness
+         * in pyvenv in Python 3.X. That fiddle doesn't work on Windows
+         * so for Windows with pyvenv, and also virtualenv 20.X and
+         * later, we do a later fiddle where add the virtual environment
+         * site-packages directory to the Python module search path.
          */
 
         python_home = wsgi_server_config->python_home;
@@ -2208,7 +2270,7 @@ void wsgi_python_init(apr_pool_t *p)
             Py_SetPythonHome((char *)python_home);
 #endif
         }
-
+#endif
 #else
         /*
          * Now for the UNIX version of the code to set the Python HOME.
@@ -2253,6 +2315,7 @@ void wsgi_python_init(apr_pool_t *p)
                          "mod_wsgi (pid=%d): Python home %s.", getpid(),
                          python_home);
 
+#if !defined(WIN32)
             rv = apr_stat(&finfo, python_home, APR_FINFO_NORM, p);
 
             if (rv != APR_SUCCESS) {
@@ -2282,13 +2345,19 @@ void wsgi_python_init(apr_pool_t *p)
                                  python_home);
                 }
             }
+#endif
 
             /* Now detect whether have a pyvenv with Python 3.3+. */
 
             pyvenv_cfg = apr_pstrcat(p, python_home, "/pyvenv.cfg", NULL);
 
+#if defined(WIN32)
+            if (access(pyvenv_cfg, 0) == 0)
+                is_pyvenv = 1;
+#else
             if (access(pyvenv_cfg, R_OK) == 0)
                 is_pyvenv = 1;
+#endif
 
             if (is_pyvenv) {
                 /*
@@ -2301,7 +2370,11 @@ void wsgi_python_init(apr_pool_t *p)
 #if PY_MAJOR_VERSION >= 3
                 len = strlen(python_exe)+1;
                 s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
+#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
+                wsgi_utf8_to_unicode_path(s, len, python_exe);
+#else
                 mbstowcs(s, python_exe, len);
+#endif
 
                 Py_SetProgramName(s);
 #else
@@ -2312,7 +2385,11 @@ void wsgi_python_init(apr_pool_t *p)
 #if PY_MAJOR_VERSION >= 3
                 len = strlen(python_home)+1;
                 s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
+#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
+                wsgi_utf8_to_unicode_path(s, len, python_home);
+#else
                 mbstowcs(s, python_home, len);
+#endif
 
                 Py_SetPythonHome(s);
 #else

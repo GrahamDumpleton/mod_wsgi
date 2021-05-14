@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2019 GRAHAM DUMPLETON
+ * Copyright 2007-2020 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,9 @@
 /* Module version information. */
 
 #define MOD_WSGI_MAJORVERSION_NUMBER 4
-#define MOD_WSGI_MINORVERSION_NUMBER 6
-#define MOD_WSGI_MICROVERSION_NUMBER 6
-#define MOD_WSGI_VERSION_STRING "4.6.6"
+#define MOD_WSGI_MINORVERSION_NUMBER 8
+#define MOD_WSGI_MICROVERSION_NUMBER 0
+#define MOD_WSGI_VERSION_STRING "4.8.0"
 
 /* ------------------------------------------------------------------------- */
 

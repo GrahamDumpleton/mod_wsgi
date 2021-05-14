@@ -9,13 +9,17 @@ import math
 import signal
 import threading
 import atexit
-import imp
+import types
 import re
 import pprint
 import time
 import traceback
 import locale
 import inspect
+import getpass
+import tempfile
+import copy
+import posixpath
 
 try:
     import Queue as queue
@@ -30,17 +34,20 @@ _py_soext = '.so'
 _py_dylib = ''
 
 try:
-    import imp
     import sysconfig
     import distutils.sysconfig
 
     _py_soabi = sysconfig.get_config_var('SOABI')
-    _py_soext = sysconfig.get_config_var('SO')
+
+    _py_soext = sysconfig.get_config_var('EXT_SUFFIX')
+
+    if _py_soext is None:
+        _py_soext = sysconfig.get_config_var('SO')
 
     if (sysconfig.get_config_var('WITH_DYLD') and
             sysconfig.get_config_var('LIBDIR') and
             sysconfig.get_config_var('LDLIBRARY')):
-        _py_dylib = os.path.join(sysconfig.get_config_var('LIBDIR'),
+        _py_dylib = posixpath.join(sysconfig.get_config_var('LIBDIR'),
                 sysconfig.get_config_var('LDLIBRARY'))
         if not os.path.exists(_py_dylib):
             _py_dylib = ''
@@ -49,15 +56,16 @@ except ImportError:
     pass
 
 MOD_WSGI_SO = 'mod_wsgi-py%s%s' % (_py_version, _py_soext)
-MOD_WSGI_SO = os.path.join(os.path.dirname(__file__), MOD_WSGI_SO)
+MOD_WSGI_SO = posixpath.join(posixpath.dirname(__file__), MOD_WSGI_SO)
 
 if not os.path.exists(MOD_WSGI_SO) and _py_soabi:
     MOD_WSGI_SO = 'mod_wsgi-py%s.%s%s' % (_py_version, _py_soabi, _py_soext)
-    MOD_WSGI_SO = os.path.join(os.path.dirname(__file__), MOD_WSGI_SO)
+    MOD_WSGI_SO = posixpath.join(posixpath.dirname(__file__), MOD_WSGI_SO)
 
 if not os.path.exists(MOD_WSGI_SO) and os.name == 'nt':
     MOD_WSGI_SO = 'mod_wsgi%s' % distutils.sysconfig.get_config_var('EXT_SUFFIX')
     MOD_WSGI_SO = os.path.join(os.path.dirname(__file__), MOD_WSGI_SO)
+    MOD_WSGI_SO = MOD_WSGI_SO.replace('\\', '/')
 
 def where():
     return MOD_WSGI_SO
@@ -94,19 +102,22 @@ def default_run_group():
 def find_program(names, default=None, paths=[]):
     for name in names:
         for path in os.environ['PATH'].split(':') + paths:
-            program = os.path.join(path, name)
+            program = posixpath.join(path, name)
             if os.path.exists(program):
                 return program
     return default
 
 def find_mimetypes():
-    import mimetypes
-    for name in mimetypes.knownfiles:
-        if os.path.exists(name):
-            return name
-            break
+    if os.name == 'nt':
+        return posixpath.join(posixpath.dirname(posixpath.dirname(
+                apxs_config.HTTPD)), 'conf', 'mime.types')
     else:
-        return '/dev/null'
+        import mimetypes
+        for name in mimetypes.knownfiles:
+            if os.path.exists(name):
+                return name
+        else:
+            return '/dev/null'
 
 SHELL = find_program(['bash', 'sh'], ['/usr/local/bin'])
 
@@ -126,8 +137,10 @@ DefaultRuntimeDir '%(server_root)s'
 ServerTokens ProductOnly
 ServerSignature Off
 
+<IfDefine !MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
 User ${MOD_WSGI_USER}
 Group ${MOD_WSGI_GROUP}
+</IfDefine>
 
 <IfDefine MOD_WSGI_WITH_LISTENER_HOST>
 Listen %(host)s:%(port)s
@@ -180,9 +193,11 @@ LoadModule http2_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_http2.so'
 <IfModule !access_compat_module>
 LoadModule access_compat_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_access_compat.so'
 </IfModule>
+<IfDefine !MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
 <IfModule !unixd_module>
 LoadModule unixd_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_unixd.so'
 </IfModule>
+</IfDefine>
 <IfModule !authn_core_module>
 LoadModule authn_core_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_authn_core.so'
 </IfModule>
@@ -324,16 +339,22 @@ WSGIPythonHome '%(python_home)s'
 
 WSGIVerboseDebugging '%(verbose_debugging_flag)s'
 
+<IfDefine !MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
 <IfDefine MOD_WSGI_WITH_SOCKET_PREFIX>
 WSGISocketPrefix %(socket_prefix)s/wsgi
 </IfDefine>
 <IfDefine !MOD_WSGI_WITH_SOCKET_PREFIX>
 WSGISocketPrefix %(server_root)s/wsgi
 </IfDefine>
-
 WSGISocketRotation Off
+</IfDefine>
+
+<IfDefine EMBEDDED_MODE>
+MaxConnectionsPerChild %(maximum_requests)s
+</IfDefine>
 
 <IfDefine !ONE_PROCESS>
+<IfDefine !EMBEDDED_MODE>
 WSGIRestrictEmbedded On
 <IfDefine MOD_WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
@@ -396,10 +417,21 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    server-metrics=%(server_metrics_flag)s
 </IfDefine>
 </IfDefine>
+</IfDefine>
 
 WSGICallableObject '%(callable_object)s'
 WSGIPassAuthorization On
 WSGIMapHEADToGET %(map_head_to_get)s
+
+<IfDefine MOD_WSGI_DISABLE_RELOADING>
+WSGIScriptReloading Off
+</IfDefine>
+
+<IfDefine EMBEDDED_MODE>
+<IfDefine MOD_WSGI_WITH_PYTHON_PATH>
+WSGIPythonPath '%(python_path)s'
+</IfDefine>
+</IfDefine>
 
 <IfDefine ONE_PROCESS>
 WSGIRestrictStdin Off
@@ -435,6 +467,11 @@ KeepAliveTimeout %(keep_alive_timeout)s
 </IfDefine>
 <IfDefine !MOD_WSGI_KEEP_ALIVE>
 KeepAlive Off
+</IfDefine>
+
+<IfDefine MOD_WSGI_ENABLE_SENDFILE>
+EnableSendfile On
+WSGIEnableSendfile On
 </IfDefine>
 
 <IfDefine MOD_WSGI_COMPRESS_RESPONSES>
@@ -794,17 +831,34 @@ WSGIErrorOverride On
 </IfDefine>
 
 <IfDefine !ONE_PROCESS>
+<IfDefine !EMBEDDED_MODE>
 WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
 WSGIImportScript '%(server_root)s/handler.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
 </IfDefine>
+</IfDefine>
 
-<IfDefine ONE_PROCESS>
+<IfDefine EMBEDDED_MODE>
 WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
     process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
 WSGIImportScript '%(server_root)s/handler.wsgi' \\
     process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
+</IfDefine>
+
+<IfDefine ONE_PROCESS>
+<IfDefine !MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
+WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
+    process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
+WSGIImportScript '%(server_root)s/handler.wsgi' \\
+    process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
+</IfDefine>
+<IfDefine MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
+WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
+    application-group=%%{GLOBAL}
+WSGIImportScript '%(server_root)s/handler.wsgi' \\
+    application-group=%%{GLOBAL}
+</IfDefine>
 </IfDefine>
 """
 
@@ -1026,7 +1080,7 @@ def generate_apache_config(options):
         if options['url_aliases']:
             for mount_point, target in sorted(options['url_aliases'],
                     reverse=True):
-                path = os.path.abspath(target)
+                path = posixpath.abspath(target)
 
                 if os.path.isdir(path) or not os.path.exists(path):
                     if target.endswith('/') and path != '/':
@@ -1040,8 +1094,8 @@ def generate_apache_config(options):
                             file=fp)
 
                 else:
-                    directory = os.path.dirname(path)
-                    filename = os.path.basename(path)
+                    directory = posixpath.dirname(path)
+                    filename = posixpath.basename(path)
 
                     print(APACHE_ALIAS_FILENAME_CONFIG % dict(
                             mount_point=mount_point, directory=directory,
@@ -1117,7 +1171,7 @@ def generate_apache_config(options):
 
         if options['include_files']:
             for filename in options['include_files']:
-                filename = os.path.abspath(filename)
+                filename = posixpath.abspath(filename)
                 print(APACHE_INCLUDE_CONFIG % dict(filename=filename),
                         file=fp)
 
@@ -1408,7 +1462,7 @@ class ApplicationHandler(object):
             self.target = entry_point
 
         elif application_type != 'static':
-            self.module = imp.new_module('__wsgi__')
+            self.module = types.ModuleType('__wsgi__')
             self.module.__file__ = entry_point
 
             with open(entry_point, 'r') as fp:
@@ -1517,7 +1571,7 @@ class ResourceHandler(object):
         for extension, script in resources:
             extension_name = re.sub(r'[^\w]{1}', '_', extension)
             module_name = '__wsgi_resource%s__' % extension_name
-            module = imp.new_module(module_name)
+            module = types.ModuleType(module_name)
             module.__file__ = script
 
             with open(script, 'r') as fp:
@@ -1559,15 +1613,16 @@ import time
 
 import mod_wsgi.server
 
-working_directory = '%(working_directory)s'
+working_directory = r'%(working_directory)s'
 
-entry_point = '%(entry_point)s'
+entry_point = r'%(entry_point)s'
 application_type = '%(application_type)s'
 callable_object = '%(callable_object)s'
 mount_point = '%(mount_point)s'
 with_newrelic_agent = %(with_newrelic_agent)s
 newrelic_config_file = '%(newrelic_config_file)s'
 newrelic_environment = '%(newrelic_environment)s'
+disable_reloading = %(disable_reloading)s
 reload_on_changes = %(reload_on_changes)s
 debug_mode = %(debug_mode)s
 enable_debugger = %(enable_debugger)s
@@ -1646,10 +1701,12 @@ handler = mod_wsgi.server.ApplicationHandler(entry_point,
         debugger_startup=debugger_startup, enable_recorder=enable_recorder,
         recorder_directory=recorder_directory)
 
-reload_required = handler.reload_required
+if not disable_reloading:
+    reload_required = handler.reload_required
+
 handle_request = handler.handle_request
 
-if reload_on_changes and not debug_mode:
+if not disable_reloading and reload_on_changes and not debug_mode:
     mod_wsgi.server.start_reloader()
 """
 
@@ -1845,6 +1902,8 @@ ENABLE_GDB="%(enable_gdb)s"
 
 PROCESS_NAME="%(process_name)s"
 
+cd $MOD_WSGI_WORKING_DIRECTORY
+
 case $ACMD in
 start|stop|restart|graceful|graceful-stop)
     if [ "x$ENABLE_GDB" != "xTrue" ]; then
@@ -1893,740 +1952,830 @@ def check_percentage(option, opt_str, value, parser):
                 'the range 0 to 1.' % opt_str)
     setattr(parser.values, option.dest, value)
 
-option_list = (
-    optparse.make_option('--application-type', default='script',
-            metavar='TYPE', help='The type of WSGI application entry point '
-            'that was provided. Defaults to \'script\', indicating the '
-            'traditional mod_wsgi style WSGI script file specified by a '
-            'filesystem path. Alternatively one can supply \'module\', '
-            'indicating that the provided entry point is a Python module '
-            'which should be imported using the standard Python import '
-            'mechanism, or \'paste\' indicating that the provided entry '
-            'point is a Paste deployment configuration file. If you want '
-            'to just use the server to host static files only, then you '
-            'can also instead supply \'static\' with the target being '
-            'the directory containing the files to server or the current '
-            'directory if none is supplied.'),
-
-    optparse.make_option('--entry-point', default=None,
-            metavar='FILE-PATH|MODULE', help='The file system path or '
-            'module name identifying the file which contains the WSGI '
-            'application entry point. How the value given is interpreted '
-            'depends on the corresponding type identified using the '
-            '\'--application-type\' option. Use of this option is the '
-            'same as if the value had been given as argument but without '
-            'any option specifier. A named option is also provided so '
-            'as to make it clearer in a long option list what the entry '
-            'point actually is. If both methods are used, that specified '
-            'by this option will take precedence.'),
-
-    optparse.make_option('--host', default=None, metavar='IP-ADDRESS',
-            help='The specific host (IP address) interface on which '
-            'requests are to be accepted. Defaults to listening on '
-            'all host interfaces.'),
-    optparse.make_option('--port', default=8000, type='int',
-            metavar='NUMBER', help='The specific port to bind to and '
-            'on which requests are to be accepted. Defaults to port 8000.'),
-
-    optparse.make_option('--http2', action='store_true', default=False,
-            help='Flag indicating whether HTTP/2 should be enabled.'
-            'Requires the mod_http2 module to be available.'),
-
-    optparse.make_option('--https-port', type='int', metavar='NUMBER',
-            help='The specific port to bind to and on which secure '
-            'requests are to be accepted.'),
-    optparse.make_option('--ssl-port', type='int', metavar='NUMBER',
-            dest='https_port', help=optparse.SUPPRESS_HELP),
-
-    optparse.make_option('--ssl-certificate-file', default=None,
-            metavar='FILE-PATH', help='Specify the path to the SSL '
-            'certificate file.'),
-    optparse.make_option('--ssl-certificate-key-file', default=None,
-            metavar='FILE-PATH', help='Specify the path to the private '
-            'key file corresponding to the SSL certificate file.'),
-
-    optparse.make_option('--ssl-certificate', default=None,
-            metavar='FILE-PATH', help='Specify the common path to the SSL '
-            'certificate files. This is a convenience function so that '
-            'only one option is required to specify the location of the '
-            'certificate file and the private key file. It is expected that '
-            'the files have \'.crt\' and \'.key\' extensions. This option '
-            'should refer to the common part of the names for both files '
-            'which appears before the extension.'),
-
-    optparse.make_option('--ssl-ca-certificate-file', default=None,
-            metavar='FILE-PATH', help='Specify the path to the file with '
-            'the CA certificates to be used for client authentication. When '
-            'specified, access to the whole site will by default require '
-            'client authentication. To require client authentication for '
-            'only parts of the site, use the --ssl-verify-client option.'),
-
-    optparse.make_option('--ssl-verify-client', action='append',
-            metavar='URL-PATH', dest='ssl_verify_client_urls',
-            help='Specify a sub URL of the site for which client '
-            'authentication is required. When this option is specified, '
-            'the default of client authentication being required for the '
-            'whole site will be disabled and verification will only be '
-            'required for the specified sub URL.'),
-
-    optparse.make_option('--ssl-certificate-chain-file', default=None,
-            metavar='FILE-PATH', help='Specify the path to a file '
-            'containing the certificates of Certification Authorities (CA) '
-            'which form the certificate chain of the server certificate.'),
-
-    optparse.make_option('--ssl-environment', action='store_true',
-            default=False, help='Flag indicating whether the standard set '
-            'of SSL related variables are passed in the per request '
-            'environment passed to a handler.'),
-
-    optparse.make_option('--https-only', action='store_true',
-            default=False, help='Flag indicating whether any requests '
-            'made using a HTTP request over the non secure connection '
-            'should be redirected automatically to use a HTTPS request '
-            'over the secure connection.'),
-
-    optparse.make_option('--hsts-policy', default=None, metavar='PARAMS',
-            help='Specify the HSTS policy that should be applied when '
-            'HTTPS only connections are being enforced.'),
-
-    optparse.make_option('--server-name', default=None, metavar='HOSTNAME',
-            help='The primary host name of the web server. If this name '
-            'starts with \'www.\' then an automatic redirection from the '
-            'parent domain name to the \'www.\' server name will created.'),
-    optparse.make_option('--server-alias', action='append',
-            dest='server_aliases', metavar='HOSTNAME', help='A secondary '
-            'host name for the web server. May include wildcard patterns.'),
-    optparse.make_option('--allow-localhost', action='store_true',
-            default=False, help='Flag indicating whether access via '
-            'localhost should still be allowed when a server name has been '
-            'specified and a name based virtual host has been configured.'),
-
-    optparse.make_option('--processes', type='int', metavar='NUMBER',
-            help='The number of worker processes (instances of the WSGI '
-            'application) to be started up and which will handle requests '
-            'concurrently. Defaults to a single process.'),
-    optparse.make_option('--threads', type='int', default=5, metavar='NUMBER',
-            help='The number of threads in the request thread pool of '
-            'each process for handling requests. Defaults to 5 in each '
-            'process.'),
-
-    optparse.make_option('--max-clients', type='int', default=None,
-            metavar='NUMBER', help='The maximum number of simultaneous '
-            'client connections that will be accepted. This will default '
-            'to being 1.5 times the total number of threads in the '
-            'request thread pools across all process handling requests.'),
-
-    optparse.make_option('--initial-workers', type='float', default=None,
-            metavar='NUMBER', action='callback', callback=check_percentage,
-            help='The initial number of workers to create on startup '
-            'expressed as a percentage of the maximum number of clients. '
-            'The value provided should be between 0 and 1. The default is '
-            'dependent on the type of MPM being used.'),
-    optparse.make_option('--minimum-spare-workers', type='float',
-            default=None, metavar='NUMBER', action='callback',
-            callback=check_percentage, help='The minimum number of spare '
-            'workers to maintain expressed as a percentage of the maximum '
-            'number of clients. The value provided should be between 0 and '
-            '1. The default is dependent on the type of MPM being used.'),
-    optparse.make_option('--maximum-spare-workers', type='float',
-            default=None, metavar='NUMBER', action='callback',
-            callback=check_percentage, help='The maximum number of spare '
-            'workers to maintain expressed as a percentage of the maximum '
-            'number of clients. The value provided should be between 0 and '
-            '1. The default is dependent on the type of MPM being used.'),
-
-    optparse.make_option('--limit-request-body', type='int', default=10485760,
-            metavar='NUMBER', help='The maximum number of bytes which are '
-            'allowed in a request body. Defaults to 10485760 (10MB).'),
-
-    optparse.make_option('--maximum-requests', type='int', default=0,
-            metavar='NUMBER', help='The number of requests after which '
-            'any one worker process will be restarted and the WSGI '
-            'application reloaded. Defaults to 0, indicating that the '
-            'worker process should never be restarted based on the number '
-            'of requests received.'),
-
-    optparse.make_option('--startup-timeout', type='int', default=15,
-            metavar='SECONDS', help='Maximum number of seconds allowed '
-            'to pass waiting for the application to be successfully '
-            'loaded and started by a worker process. When this timeout '
-            'has been reached without the application having been '
-            'successfully loaded and started, the worker process will '
-            'be forced to restart. Defaults to 15 seconds.'),
-
-    optparse.make_option('--shutdown-timeout', type='int', default=5,
-            metavar='SECONDS', help='Maximum number of seconds allowed '
-            'to pass when waiting for a worker process to shutdown as a '
-            'result of the maximum number of requests or inactivity timeout '
-            'being reached, or when a user initiated SIGINT signal is sent '
-            'to a worker process. When this timeout has been reached the '
-            'worker process will be forced to exit even if there are '
-            'still active requests or it is still running Python exit '
-            'functions. Defaults to 5 seconds.'),
-
-    optparse.make_option('--restart-interval', type='int', default='0',
-            metavar='SECONDS', help='Number of seconds between worker '
-            'process restarts. If graceful timeout is also specified, '
-            'active requests will be given a chance to complete before '
-            'the process is forced to exit and restart. Not enabled by '
-            'default.'),
-
-    optparse.make_option('--cpu-time-limit', type='int', default='0',
-            metavar='SECONDS', help='Number of seconds of CPU time the '
-            'process can use before it will be restarted. If graceful '
-            'timeout is also specified, active requests will be given '
-            'a chance to complete before the process is forced to exit '
-            'and restart. Not enabled by default.'),
-
-    optparse.make_option('--graceful-timeout', type='int', default=15,
-            metavar='SECONDS', help='Grace period for requests to complete '
-            'normally, while still accepting new requests, when worker '
-            'processes are being shutdown and restarted due to maximum '
-            'requests being reached or restart interval having expired. '
-            'Defaults to 15 seconds.'),
-    optparse.make_option('--eviction-timeout', type='int', default=0,
-            metavar='SECONDS', help='Grace period for requests to complete '
-            'normally, while still accepting new requests, when the WSGI '
-            'application is being evicted from the worker processes, and '
-            'the process restarted, due to forced graceful restart signal. '
-            'Defaults to timeout specified by \'--graceful-timeout\' '
-            'option.'),
-
-    optparse.make_option('--deadlock-timeout', type='int', default=60,
-            metavar='SECONDS', help='Maximum number of seconds allowed '
-            'to pass before the worker process is forcibly shutdown and '
-            'restarted after a potential deadlock on the Python GIL has '
-            'been detected. Defaults to 60 seconds.'),
-
-    optparse.make_option('--inactivity-timeout', type='int', default=0,
-            metavar='SECONDS', help='Maximum number of seconds allowed '
-            'to pass before the worker process is shutdown and restarted '
-            'when the worker process has entered an idle state and is no '
-            'longer receiving new requests. Not enabled by default.'),
-    optparse.make_option('--ignore-activity', action='append',
-            dest='ignore_activity', metavar='URL-PATH', help='Specify '
-            'the URL path for any location where activity should be '
-            'ignored when the \'--activity-timeout\' option is used. '
-            'This would be used on health check URLs so that health '
-            'checks do not prevent process restarts due to inactivity.'),
-
-    optparse.make_option('--request-timeout', type='int', default=60,
-            metavar='SECONDS', help='Maximum number of seconds allowed '
-            'to pass before the worker process is forcibly shutdown and '
-            'restarted when a request does not complete in the expected '
-            'time. In a multi threaded worker, the request time is '
-            'calculated as an average across all request threads. Defaults '
-            'to 60 seconds.'),
-
-    optparse.make_option('--connect-timeout', type='int', default=15,
-            metavar='SECONDS', help='Maximum number of seconds allowed '
-            'to pass before giving up on attempting to get a connection '
-            'to the worker process from the Apache child process which '
-            'accepted the request. This comes into play when the worker '
-            'listener backlog limit is exceeded. Defaults to 15 seconds.'),
-
-    optparse.make_option('--socket-timeout', type='int', default=60,
-            metavar='SECONDS', help='Maximum number of seconds allowed '
-            'to pass before timing out on a read or write operation on '
-            'a socket and aborting the request. Defaults to 60 seconds.'),
-
-    optparse.make_option('--queue-timeout', type='int', default=45,
-            metavar='SECONDS', help='Maximum number of seconds allowed '
-            'for a request to be accepted by a worker process to be '
-            'handled, taken from the time when the Apache child process '
-            'originally accepted the request. Defaults to 45 seconds.'),
-
-    optparse.make_option('--header-timeout', type='int', default=15,
-            metavar='SECONDS', help='The number of seconds allowed for '
-            'receiving the request including the headers. This may be '
-            'dynamically increased if a minimum rate for reading the '
-            'request and headers is also specified, up to any limit '
-            'imposed by a maximum header timeout. Defaults to 15 seconds.'),
-
-    optparse.make_option('--header-max-timeout', type='int', default=30,
-            metavar='SECONDS', help='Maximum number of seconds allowed for '
-            'receiving the request including the headers. This is the hard '
-            'limit after taking into consideration and increases to the '
-            'basic timeout due to minimum rate for reading the request and '
-            'headers which may be specified. Defaults to 30 seconds.'),
-
-    optparse.make_option('--header-min-rate', type='int', default=500,
-            metavar='BYTES', help='The number of bytes required to be sent '
-            'as part of the request and headers to trigger a dynamic '
-            'increase in the timeout on receiving the request including '
-            'headers. Each time this number of bytes is received the timeout '
-            'will be increased by 1 second up to any maximum specified by '
-            'the maximum header timeout. Defaults to 500 bytes.'),
-
-    optparse.make_option('--body-timeout', type='int', default=15,
-            metavar='SECONDS', help='The number of seconds allowed for '
-            'receiving the request body. This may be dynamically increased '
-            'if a minimum rate for reading the request body is also '
-            'specified, up to any limit imposed by a maximum body timeout. '
-            'Defaults to 15 seconds.'),
-
-    optparse.make_option('--body-max-timeout', type='int', default=0,
-            metavar='SECONDS', help='Maximum number of seconds allowed for '
-            'receiving the request body. This is the hard limit after '
-            'taking into consideration and increases to the basic timeout '
-            'due to minimum rate for reading the request body which may be '
-            'specified. Defaults to 0 indicating there is no maximum.'),
-
-    optparse.make_option('--body-min-rate', type='int', default=500,
-            metavar='BYTES', help='The number of bytes required to be sent '
-            'as part of the request body to trigger a dynamic increase in '
-            'the timeout on receiving the request body. Each time this '
-            'number of bytes is received the timeout will be increased '
-            'by 1 second up to any maximum specified by the maximum body '
-            'timeout. Defaults to 500 bytes.'),
-
-    optparse.make_option('--server-backlog', type='int', default=500,
-            metavar='NUMBER', help='Depth of server socket listener '
-            'backlog for Apache child processes. Defaults to 500.'),
-
-    optparse.make_option('--daemon-backlog', type='int', default=100,
-            metavar='NUMBER', help='Depth of server socket listener '
-            'backlog for daemon processes. Defaults to 100.'),
-
-    optparse.make_option('--send-buffer-size', type='int', default=0,
-            metavar='NUMBER', help='Size of socket buffer for sending '
-            'data to daemon processes. Defaults to 0, indicating '
-            'the system default socket buffer size is used.'),
-    optparse.make_option('--receive-buffer-size', type='int', default=0,
-            metavar='NUMBER', help='Size of socket buffer for receiving '
-            'data from daemon processes. Defaults to 0, indicating '
-            'the system default socket buffer size is used.'),
-    optparse.make_option('--header-buffer-size', type='int', default=0,
-            metavar='NUMBER', help='Size of buffer used for reading '
-            'response headers from daemon processes. Defaults to 0, '
-            'indicating internal default of 32768 bytes is used.'),
-
-    optparse.make_option('--response-buffer-size', type='int', default=0,
-            metavar='NUMBER', help='Maximum amount of response content '
-            'that will be allowed to be buffered in the Apache child '
-            'worker process when proxying the response from a daemon '
-            'process. Defaults to 0, indicating internal default of '
-            '65536 bytes is used.'),
-    optparse.make_option('--response-socket-timeout', type='int', default=0,
-            metavar='SECONDS', help='Maximum number of seconds allowed '
-            'to pass before timing out on a write operation back to the '
-            'HTTP client when the response buffer has filled and data is '
-            'being forcibly flushed. Defaults to 0 seconds indicating that '
-            'it will default to the value of the \'socket-timeout\' option.'),
-
-    optparse.make_option('--reload-on-changes', action='store_true',
-            default=False, help='Flag indicating whether worker processes '
-            'should be automatically restarted when any Python code file '
-            'loaded by the WSGI application has been modified. Defaults to '
-            'being disabled. When reloading on any code changes is disabled, '
-            'the worker processes will still though be reloaded if the '
-            'WSGI script file itself is modified.'),
-
-    optparse.make_option('--user', default=default_run_user(),
-            metavar='USERNAME', help='When being run by the root user, '
-            'the user that the WSGI application should be run as.'),
-    optparse.make_option('--group', default=default_run_group(),
-            metavar='GROUP', help='When being run by the root user, the '
-            'group that the WSGI application should be run as.'),
-
-    optparse.make_option('--callable-object', default='application',
-            metavar='NAME', help='The name of the entry point for the WSGI '
-            'application within the WSGI script file. Defaults to '
-            'the name \'application\'.'),
-
-    optparse.make_option('--map-head-to-get', default='Auto',
-            metavar='OFF|ON|AUTO', help='Flag indicating whether HEAD '
-            'requests should be mapped to a GET request. By default a HEAD '
-            'request will be automatically mapped to a GET request when an '
-            'Apache output filter is detected that may want to see the '
-            'entire response in order to set up response headers correctly '
-            'for a HEAD request. This can be disable by setting to \'Off\'.'),
-
-    optparse.make_option('--document-root', metavar='DIRECTORY-PATH',
-            help='The directory which should be used as the document root '
-            'and which contains any static files.'),
-    optparse.make_option('--directory-index', metavar='FILE-NAME',
-            help='The name of a directory index resource to be found in the '
-            'document root directory. Requests mapping to the directory '
-            'will be mapped to this resource rather than being passed '
-            'through to the WSGI application.'),
-    optparse.make_option('--directory-listing', action='store_true',
-            default=False, help='Flag indicating if directory listing '
-            'should be enabled where static file application type is '
-            'being used and no directory index file has been specified.'),
-
-    optparse.make_option('--allow-override', metavar='DIRECTIVE-TYPE',
-            action='append', help='Allow directives to be overridden from a '
-            '\'.htaccess\' file. Defaults to \'None\', indicating that any '
-            '\'.htaccess\' file will be ignored with override directives '
-            'not being permitted.'),
-
-    optparse.make_option('--mount-point', metavar='URL-PATH', default='/',
-            help='The URL path at which the WSGI application will be '
-            'mounted. Defaults to being mounted at the root URL of the '
-            'site.'),
-
-    optparse.make_option('--url-alias', action='append', nargs=2,
-            dest='url_aliases', metavar='URL-PATH FILE-PATH|DIRECTORY-PATH',
-            help='Map a single static file or a directory of static files '
-            'to a sub URL.'),
-    optparse.make_option('--error-document', action='append', nargs=2,
-            dest='error_documents', metavar='STATUS URL-PATH', help='Map '
-            'a specific sub URL as the handler for HTTP errors generated '
-            'by the web server.'),
-    optparse.make_option('--error-override', action='store_true',
-            default=False, help='Flag indicating whether Apache error '
-            'documents will override application error responses.'),
-
-    optparse.make_option('--proxy-mount-point', action='append', nargs=2,
-            dest='proxy_mount_points', metavar='URL-PATH URL',
-            help='Map a sub URL such that any requests against it will be '
-            'proxied to the specified URL. This is only for proxying to a '
-            'site as a whole, or a sub site, not individual resources.'),
-    optparse.make_option('--proxy-url-alias', action='append', nargs=2,
-            dest='proxy_mount_points', metavar='URL-PATH URL',
-            help=optparse.SUPPRESS_HELP),
-
-    optparse.make_option('--proxy-virtual-host', action='append', nargs=2,
-            dest='proxy_virtual_hosts', metavar='HOSTNAME URL',
-            help='Proxy any requests for the specified host name to the '
-            'remote URL.'),
-
-    optparse.make_option('--trust-proxy-header', action='append', default=[],
-            dest='trusted_proxy_headers', metavar='HEADER-NAME',
-            help='The name of any trusted HTTP header providing details '
-            'of the front end client request when proxying.'),
-    optparse.make_option('--trust-proxy', action='append', default=[],
-            dest='trusted_proxies', metavar='IP-ADDRESS/SUBNET',
-            help='The IP address or subnet corresponding to any trusted '
-            'proxy.'),
-
-    optparse.make_option('--keep-alive-timeout', type='int', default=0,
-            metavar='SECONDS', help='The number of seconds which a client '
-            'connection will be kept alive to allow subsequent requests '
-            'to be made over the same connection. Defaults to 0, indicating '
-            'that keep alive connections are disabled.'),
-
-    optparse.make_option('--compress-responses', action='store_true',
-            default=False, help='Flag indicating whether responses for '
-            'common text based responses, such as plain text, HTML, XML, '
-            'CSS and Javascript should be compressed.'),
-
-    optparse.make_option('--server-metrics', action='store_true',
-            default=False, help='Flag indicating whether internal server '
-            'metrics will be available within the WSGI application. '
-            'Defaults to being disabled.'),
-    optparse.make_option('--server-status', action='store_true',
-            default=False, help='Flag indicating whether web server status '
-            'will be available at the /server-status sub URL. Defaults to '
-            'being disabled.'),
-
-    optparse.make_option('--host-access-script', metavar='SCRIPT-PATH',
-            default=None, help='Specify a Python script file for '
-            'performing host access checks.'),
-    optparse.make_option('--auth-user-script', metavar='SCRIPT-PATH',
-            default=None, help='Specify a Python script file for '
-            'performing user authentication.'),
-    optparse.make_option('--auth-type', metavar='TYPE',
-            default='Basic', help='Specify the type of authentication '
-            'scheme used when authenticating users. Defaults to using '
-            '\'Basic\'. Alternate schemes available are \'Digest\'.'),
-
-    optparse.make_option('--auth-group-script', metavar='SCRIPT-PATH',
-            default=None, help='Specify a Python script file for '
-            'performing group based authorization in conjunction with '
-            'a user authentication script.'),
-    optparse.make_option('--auth-group', metavar='NAME',
-            default='wsgi', help='Specify the group which users should '
-            'be a member of when using a group based authorization script. '
-            'Defaults to \'wsgi\' as a place holder but should be '
-            'overridden to be the actual group you use rather than '
-            'making your group name match the default.'),
-
-    optparse.make_option('--include-file', action='append',
-            dest='include_files', metavar='FILE-PATH', help='Specify the '
-            'path to an additional web server configuration file to be '
-            'included at the end of the generated web server configuration '
-            'file.'),
-
-    optparse.make_option('--rewrite-rules', metavar='FILE-PATH',
-            help='Specify an alternate server configuration file which '
-            'contains rewrite rules. Defaults to using the '
-            '\'rewrite.conf\' stored under the server root directory.'),
-
-    optparse.make_option('--envvars-script', metavar='FILE-PATH',
-            help='Specify an alternate script file for user defined web '
-            'server environment variables. Defaults to using the '
-            '\'envvars\' stored under the server root directory.'),
-
-    optparse.make_option('--lang', default=None, metavar='NAME',
-            help=optparse.SUPPRESS_HELP),
-    optparse.make_option('--locale', default=None, metavar='NAME',
-            help='Specify the natural language locale for the process '
-            'as normally defined by the \'LC_ALL\' environment variable. '
-            'If not specified, then the default locale for this process '
-            'will be used. If the default locale is however \'C\' or '
-            '\'POSIX\' then an attempt will be made to use either the '
-            '\'en_US.UTF-8\' or \'C.UTF-8\' locales and if that is not '
-            'possible only then fallback to the default locale of this '
-            'process.'),
-
-    optparse.make_option('--setenv', action='append', nargs=2,
-            dest='setenv_variables', metavar='KEY VALUE', help='Specify '
-            'a name/value pairs to be added to the per request WSGI environ '
-            'dictionary'),
-    optparse.make_option('--passenv', action='append',
-            dest='passenv_variables', metavar='KEY', help='Specify the '
-            'names of any process level environment variables which should '
-            'be passed as a name/value pair in the per request WSGI '
-            'environ dictionary.'),
-
-    optparse.make_option('--working-directory', metavar='DIRECTORY-PATH',
-            help='Specify the directory which should be used as the '
-            'current working directory of the WSGI application. This '
-            'directory will be searched when importing Python modules '
-            'so long as the WSGI application doesn\'t subsequently '
-            'change the current working directory. Defaults to the '
-            'directory this script is run from.'),
-
-    optparse.make_option('--pid-file', metavar='FILE-PATH',
-            help='Specify an alternate file to be used to store the '
-            'process ID for the root process of the web server.'),
-
-    optparse.make_option('--server-root', metavar='DIRECTORY-PATH',
-            help='Specify an alternate directory for where the generated '
-            'web server configuration, startup files and logs will be '
-            'stored. On Linux defaults to the sub directory specified by '
-            'the TMPDIR environment variable, or /tmp if not specified. '
-            'On macOS, defaults to the /var/tmp directory.'),
-
-    optparse.make_option('--server-mpm', action='append',
-            dest='server_mpm_variables', metavar='NAME', help='Specify '
-            'preferred MPM to use when using Apache 2.4 with dynamically '
-            'loadable MPMs and more than one is available. By default '
-            'the MPM precedence order when no preference is given is '
-            '\"event\", \"worker" and \"prefork\".'),
-
-    optparse.make_option('--log-directory', metavar='DIRECTORY-PATH',
-            help='Specify an alternate directory for where the log files '
-            'will be stored. Defaults to the server root directory.'),
-    optparse.make_option('--log-level', default='warn', metavar='NAME',
-            help='Specify the log level for logging. Defaults to \'warn\'.'),
-    optparse.make_option('--access-log', action='store_true', default=False,
-            help='Flag indicating whether the web server access log '
-            'should be enabled. Defaults to being disabled.'),
-    optparse.make_option('--startup-log', action='store_true', default=False,
-            help='Flag indicating whether the web server startup log should '
-            'be enabled. Defaults to being disabled.'),
-
-    optparse.make_option('--verbose-debugging', action='store_true',
-            dest='verbose_debugging', help=optparse.SUPPRESS_HELP),
-
-    optparse.make_option('--log-to-terminal', action='store_true',
-            default=False, help='Flag indicating whether logs should '
-            'be directed back to the terminal. Defaults to being disabled. '
-            'If --log-directory is set explicitly, it will override this '
-            'option. If logging to the terminal is carried out, any '
-            'rotating of log files will be disabled.'),
-
-    optparse.make_option('--access-log-format', metavar='FORMAT',
-            help='Specify the format of the access log records.'),
-    optparse.make_option('--error-log-format', metavar='FORMAT',
-            help='Specify the format of the error log records.'),
-
-    optparse.make_option('--error-log-name', metavar='FILE-NAME',
-            default='error_log', help='Specify the name of the error '
-            'log file when it is being written to the log directory.'),
-    optparse.make_option('--access-log-name', metavar='FILE-NAME',
-            default='access_log', help='Specify the name of the access '
-            'log file when it is being written to the log directory.'),
-    optparse.make_option('--startup-log-name', metavar='FILE-NAME',
-            default='startup_log', help='Specify the name of the startup '
-            'log file when it is being written to the log directory.'),
-
-    optparse.make_option('--rotate-logs', action='store_true', default=False,
-            help='Flag indicating whether log rotation should be performed.'),
-    optparse.make_option('--max-log-size', default=5, type='int',
-            metavar='MB', help='The maximum size in MB the log file should '
-            'be allowed to reach before log file rotation is performed.'),
-
-    optparse.make_option('--rotatelogs-executable',
-            default=apxs_config.ROTATELOGS, metavar='FILE-PATH',
-            help='Override the path to the rotatelogs executable.'),
-
-    optparse.make_option('--python-path', action='append',
-            dest='python_paths', metavar='DIRECTORY-PATH', help='Specify '
-            'the path to any additional directory that should be added to '
-            'the Python module search path. Note that these directories will '
-            'not be processed for \'.pth\' files. If processing of \'.pth\' '
-            'files is required, set the \'PYTHONPATH\' environment variable '
-            'in a script specified by the \'--envvars-script\' option.'),
-
-    optparse.make_option('--python-eggs', metavar='DIRECTORY-PATH',
-            help='Specify an alternate directory which should be used for '
-            'unpacking of Python eggs. Defaults to a sub directory of '
-            'the server root directory.'),
-
-    optparse.make_option('--shell-executable', default=SHELL,
-            metavar='FILE-PATH', help='Override the path to the shell '
-            'used in the \'apachectl\' script. The \'bash\' shell will '
-            'be used if available.'),
-
-    optparse.make_option('--httpd-executable', default=apxs_config.HTTPD,
-            metavar='FILE-PATH', help='Override the path to the Apache web '
-            'server executable.'),
-    optparse.make_option('--process-name', metavar='NAME', help='Override '
-            'the name given to the Apache parent process. This might be '
-            'needed when a process manager expects the process to be named '
-            'a certain way but due to a sequence of exec calls the name '
-            'changed.'),
-
-    optparse.make_option('--modules-directory', default=apxs_config.LIBEXECDIR,
-            metavar='DIRECTORY-PATH', help='Override the path to the Apache '
-            'web server modules directory.'),
-    optparse.make_option('--mime-types', default=find_mimetypes(),
-            metavar='FILE-PATH', help='Override the path to the mime types '
-            'file used by the web server.'),
-
-    optparse.make_option('--socket-prefix', metavar='DIRECTORY-PATH',
-            help='Specify an alternate directory name prefix to be used '
-            'for the UNIX domain sockets used by mod_wsgi to communicate '
-            'between the Apache child processes and the daemon processes.'),
-
-    optparse.make_option('--add-handler', action='append', nargs=2,
-            dest='handler_scripts', metavar='EXTENSION SCRIPT-PATH',
-            help='Specify a WSGI application to be used as a special '
-            'handler for any resources matched from the document root '
-            'directory with a specific extension type.'),
-
-    optparse.make_option('--chunked-request', action='store_true',
-            default=False, help='Flag indicating whether requests which '
-            'use chunked transfer encoding will be accepted.'),
-
-    optparse.make_option('--with-newrelic', action='store_true',
-            default=False, help='Flag indicating whether all New Relic '
-            'performance monitoring features should be enabled.'),
-
-    optparse.make_option('--with-newrelic-agent', action='store_true',
-            default=False, help='Flag indicating whether the New Relic '
-            'Python agent should be enabled for reporting application server '
-            'metrics.'),
-    optparse.make_option('--with-newrelic-platform', action='store_true',
-            default=False, help='Flag indicating whether the New Relic '
-            'platform plugin should be enabled for reporting server level '
-            'metrics.'),
-
-    optparse.make_option('--newrelic-config-file', metavar='FILE-PATH',
-            default='', help='Specify the location of the New Relic agent '
-            'configuration file.'),
-    optparse.make_option('--newrelic-environment', metavar='NAME',
-            default='', help='Specify the name of the environment section '
-            'that should be used from New Relic agent configuration file.'),
-
-    optparse.make_option('--with-php5', action='store_true', default=False,
-            help='Flag indicating whether PHP 5 support should be enabled. '
-            'PHP code files must use the \'.php\' extension.'),
-
-    optparse.make_option('--with-cgi', action='store_true', default=False,
-            help='Flag indicating whether CGI script support should be '
-            'enabled. CGI scripts must use the \'.cgi\' extension and be '
-            'executable'),
-
-    optparse.make_option('--service-script', action='append', nargs=2,
-            dest='service_scripts', metavar='SERVICE SCRIPT-PATH',
-            help='Specify the name of a Python script to be loaded and '
-            'executed in the context of a distinct daemon process. Used '
-            'for running a managed service.'),
-    optparse.make_option('--service-user', action='append', nargs=2,
-            dest='service_users', metavar='SERVICE USERNAME',
-            help='When being run by the root user, the user that the '
-            'distinct daemon process started to run the managed service '
-            'should be run as.'),
-    optparse.make_option('--service-group', action='append', nargs=2,
-            dest='service_groups', metavar='SERVICE GROUP',
-            help='When being run by the root user, the group that the '
-            'distinct daemon process started to run the managed service '
-            'should be run as.'),
-    optparse.make_option('--service-log-file', action='append', nargs=2,
-            dest='service_log_files', metavar='SERVICE FILE-NAME',
-            help='Specify the name of a separate log file to be used for '
-            'the managed service.'),
-
-    optparse.make_option('--enable-docs', action='store_true', default=False,
-            help='Flag indicating whether the mod_wsgi documentation should '
-            'be made available at the /__wsgi__/docs sub URL.'),
-
-    optparse.make_option('--debug-mode', action='store_true', default=False,
-            help='Flag indicating whether to run in single process mode '
-            'to allow the running of an interactive Python debugger. This '
-            'will override all options related to processes, threads and '
-            'communication with workers. All forms of source code reloading '
-            'will also be disabled. Both stdin and stdout will be attached '
-            'to the console to allow interaction with the Python debugger.'),
-
-    optparse.make_option('--enable-debugger', action='store_true',
-            default=False, help='Flag indicating whether post mortem '
-            'debugging of any exceptions which propagate out from the '
-            'WSGI application when running in debug mode should be '
-            'performed. Post mortem debugging is performed using the '
-            'Python debugger (pdb).'),
-    optparse.make_option('--debugger-startup', action='store_true',
-            default=False, help='Flag indicating whether when post '
-            'mortem debugging is enabled, that the debugger should '
-            'also be thrown into the interactive console on initial '
-            'startup of the server to allow breakpoints to be setup.'),
-
-    optparse.make_option('--enable-coverage', action='store_true',
-            default=False, help='Flag indicating whether coverage analysis '
-            'is enabled when running in debug mode.'),
-    optparse.make_option('--coverage-directory', metavar='DIRECTORY-PATH',
-            default='', help='Override the path to the directory into '
-            'which coverage analysis will be generated when enabled under '
-            'debug mode.'),
-
-    optparse.make_option('--enable-profiler', action='store_true',
-            default=False, help='Flag indicating whether code profiling '
-            'is enabled when running in debug mode.'),
-    optparse.make_option('--profiler-directory', metavar='DIRECTORY-PATH',
-            default='', help='Override the path to the directory into '
-            'which profiler data will be written when enabled under debug '
-            'mode.'),
-
-    optparse.make_option('--enable-recorder', action='store_true',
-            default=False, help='Flag indicating whether recording of '
-            'requests is enabled when running in debug mode.'),
-    optparse.make_option('--recorder-directory', metavar='DIRECTORY-PATH',
-            default='', help='Override the path to the directory into '
-            'which recorder data will be written when enabled under debug '
-            'mode.'),
-
-    optparse.make_option('--enable-gdb', action='store_true',
-            default=False, help='Flag indicating whether Apache should '
-            'be run under \'gdb\' when running in debug mode. This '
-            'would be use to debug process crashes.'),
-    optparse.make_option('--gdb-executable', default='gdb',
-            metavar='FILE-PATH', help='Override the path to the gdb '
-            'executable.'),
-
-    optparse.make_option('--setup-only', action='store_true', default=False,
-            help='Flag indicating that after the configuration files have '
-            'been setup, that the command should then exit and not go on '
-            'to actually run up the Apache server. This is to allow for '
-            'the generation of the configuration with Apache then later '
-            'being started separately using the generated \'apachectl\' '
-            'script.'),
-
-    optparse.make_option('--isatty', action='store_true', default=False,
-            help='Flag indicating whether should assume being run in an '
-            'interactive terminal session. In this case Apache will not '
-            'replace this wrapper script, but will be run as a sub process.'
-            'Signals such as SIGINT, SIGTERM, SIGHUP and SIGUSR1 will be '
-            'forwarded onto Apache, but SIGWINCH will be blocked so that '
-            'resizing of a terminal session window will not cause Apache '
-            'to shutdown. This is a separate option at this time rather '
-            'than being determined automatically while the reliability of '
-            'intercepting and forwarding signals is verified.'),
-)
+option_list = []
+
+def add_option(platforms, *args, **kwargs):
+    targets = platforms.split('|')
+
+    suppress = False
+
+    if os.name == 'nt':
+        if 'all' not in targets and 'windows' not in targets:
+            suppress = True
+    else:
+        if 'all' not in targets and 'unix' not in targets:
+            suppress = True
+
+    if suppress:
+        kwargs['help'] = optparse.SUPPRESS_HELP
+
+    if 'hidden' in targets:
+        kwargs['help'] = optparse.SUPPRESS_HELP
+
+    option_list.append(optparse.make_option(*args, **kwargs))
+
+add_option('all', '--application-type', default='script',
+        metavar='TYPE', help='The type of WSGI application entry point '
+        'that was provided. Defaults to \'script\', indicating the '
+        'traditional mod_wsgi style WSGI script file specified by a '
+        'filesystem path. Alternatively one can supply \'module\', '
+        'indicating that the provided entry point is a Python module '
+        'which should be imported using the standard Python import '
+        'mechanism, or \'paste\' indicating that the provided entry '
+        'point is a Paste deployment configuration file. If you want '
+        'to just use the server to host static files only, then you '
+        'can also instead supply \'static\' with the target being '
+        'the directory containing the files to server or the current '
+        'directory if none is supplied.')
+
+add_option('all', '--entry-point', default=None,
+        metavar='FILE-PATH|MODULE', help='The file system path or '
+        'module name identifying the file which contains the WSGI '
+        'application entry point. How the value given is interpreted '
+        'depends on the corresponding type identified using the '
+        '\'--application-type\' option. Use of this option is the '
+        'same as if the value had been given as argument but without '
+        'any option specifier. A named option is also provided so '
+        'as to make it clearer in a long option list what the entry '
+        'point actually is. If both methods are used, that specified '
+        'by this option will take precedence.')
+
+add_option('all', '--host', default=None, metavar='IP-ADDRESS',
+        help='The specific host (IP address) interface on which '
+        'requests are to be accepted. Defaults to listening on '
+        'all host interfaces.')
+
+add_option('all', '--port', default=8000, type='int',
+        metavar='NUMBER', help='The specific port to bind to and '
+        'on which requests are to be accepted. Defaults to port 8000.')
+
+add_option('all', '--http2', action='store_true', default=False,
+        help='Flag indicating whether HTTP/2 should be enabled.'
+        'Requires the mod_http2 module to be available.')
+
+add_option('all', '--https-port', type='int', metavar='NUMBER',
+        help='The specific port to bind to and on which secure '
+        'requests are to be accepted.')
+
+add_option('all', '--ssl-port', type='int', metavar='NUMBER',
+        dest='https_port', help=optparse.SUPPRESS_HELP)
+
+add_option('all', '--ssl-certificate-file', default=None,
+        metavar='FILE-PATH', help='Specify the path to the SSL '
+        'certificate file.')
+
+add_option('all', '--ssl-certificate-key-file', default=None,
+        metavar='FILE-PATH', help='Specify the path to the private '
+        'key file corresponding to the SSL certificate file.')
+
+add_option('all', '--ssl-certificate', default=None,
+        metavar='FILE-PATH', help='Specify the common path to the SSL '
+        'certificate files. This is a convenience function so that '
+        'only one option is required to specify the location of the '
+        'certificate file and the private key file. It is expected that '
+        'the files have \'.crt\' and \'.key\' extensions. This option '
+        'should refer to the common part of the names for both files '
+        'which appears before the extension.')
+
+add_option('all', '--ssl-ca-certificate-file', default=None,
+        metavar='FILE-PATH', help='Specify the path to the file with '
+        'the CA certificates to be used for client authentication. When '
+        'specified, access to the whole site will by default require '
+        'client authentication. To require client authentication for '
+        'only parts of the site, use the --ssl-verify-client option.')
+
+add_option('all', '--ssl-verify-client', action='append',
+        metavar='URL-PATH', dest='ssl_verify_client_urls',
+        help='Specify a sub URL of the site for which client '
+        'authentication is required. When this option is specified, '
+        'the default of client authentication being required for the '
+        'whole site will be disabled and verification will only be '
+        'required for the specified sub URL.')
+
+add_option('all', '--ssl-certificate-chain-file', default=None,
+        metavar='FILE-PATH', help='Specify the path to a file '
+        'containing the certificates of Certification Authorities (CA) '
+        'which form the certificate chain of the server certificate.')
+
+add_option('all', '--ssl-environment', action='store_true',
+        default=False, help='Flag indicating whether the standard set '
+        'of SSL related variables are passed in the per request '
+        'environment passed to a handler.')
+
+add_option('all', '--https-only', action='store_true',
+        default=False, help='Flag indicating whether any requests '
+        'made using a HTTP request over the non secure connection '
+        'should be redirected automatically to use a HTTPS request '
+        'over the secure connection.')
+
+add_option('all', '--hsts-policy', default=None, metavar='PARAMS',
+        help='Specify the HSTS policy that should be applied when '
+        'HTTPS only connections are being enforced.')
+
+add_option('all', '--server-name', default=None, metavar='HOSTNAME',
+        help='The primary host name of the web server. If this name '
+        'starts with \'www.\' then an automatic redirection from the '
+        'parent domain name to the \'www.\' server name will created.')
+
+add_option('all', '--server-alias', action='append',
+        dest='server_aliases', metavar='HOSTNAME', help='A secondary '
+        'host name for the web server. May include wildcard patterns.')
+
+add_option('all', '--allow-localhost', action='store_true',
+        default=False, help='Flag indicating whether access via '
+        'localhost should still be allowed when a server name has been '
+        'specified and a name based virtual host has been configured.')
+
+add_option('unix', '--processes', type='int', metavar='NUMBER',
+        help='The number of worker processes (instances of the WSGI '
+        'application) to be started up and which will handle requests '
+        'concurrently. Defaults to a single process.')
+
+add_option('all', '--threads', type='int', default=5, metavar='NUMBER',
+        help='The number of threads in the request thread pool of '
+        'each process for handling requests. Defaults to 5 in each '
+        'process. Note that if embedded mode and only prefork MPM '
+        'is available, then processes will instead be used.')
+
+add_option('unix', '--max-clients', type='int', default=None,
+        metavar='NUMBER', help='The maximum number of simultaneous '
+        'client connections that will be accepted. This will default '
+        'to being 1.5 times the total number of threads in the '
+        'request thread pools across all process handling requests. '
+        'Note that if embedded mode is used this will be ignored.')
+
+add_option('unix', '--initial-workers', type='float', default=None,
+        metavar='NUMBER', action='callback', callback=check_percentage,
+        help='The initial number of workers to create on startup '
+        'expressed as a percentage of the maximum number of clients. '
+        'The value provided should be between 0 and 1. The default is '
+        'dependent on the type of MPM being used. Note that if '
+        'embedded mode is used, this will be ignored.'),
+
+add_option('unix', '--minimum-spare-workers', type='float',
+        default=None, metavar='NUMBER', action='callback',
+        callback=check_percentage, help='The minimum number of spare '
+        'workers to maintain expressed as a percentage of the maximum '
+        'number of clients. The value provided should be between 0 and '
+        '1. The default is dependent on the type of MPM being used. '
+        'Note that if embedded mode is used, this will be ignored.')
+
+add_option('unix', '--maximum-spare-workers', type='float',
+        default=None, metavar='NUMBER', action='callback',
+        callback=check_percentage, help='The maximum number of spare '
+        'workers to maintain expressed as a percentage of the maximum '
+        'number of clients. The value provided should be between 0 and '
+        '1. The default is dependent on the type of MPM being used. '
+        'Note that if embedded mode is used, this will be ignored.')
+
+add_option('all', '--limit-request-body', type='int', default=10485760,
+        metavar='NUMBER', help='The maximum number of bytes which are '
+        'allowed in a request body. Defaults to 10485760 (10MB).')
+
+add_option('all', '--maximum-requests', type='int', default=0,
+        metavar='NUMBER', help='The number of requests after which '
+        'any one worker process will be restarted and the WSGI '
+        'application reloaded. Defaults to 0, indicating that the '
+        'worker process should never be restarted based on the number '
+        'of requests received.')
+
+add_option('unix', '--startup-timeout', type='int', default=15,
+        metavar='SECONDS', help='Maximum number of seconds allowed '
+        'to pass waiting for the application to be successfully '
+        'loaded and started by a worker process. When this timeout '
+        'has been reached without the application having been '
+        'successfully loaded and started, the worker process will '
+        'be forced to restart. Defaults to 15 seconds.')
+
+add_option('unix', '--shutdown-timeout', type='int', default=5,
+        metavar='SECONDS', help='Maximum number of seconds allowed '
+        'to pass when waiting for a worker process to shutdown as a '
+        'result of the maximum number of requests or inactivity timeout '
+        'being reached, or when a user initiated SIGINT signal is sent '
+        'to a worker process. When this timeout has been reached the '
+        'worker process will be forced to exit even if there are '
+        'still active requests or it is still running Python exit '
+        'functions. Defaults to 5 seconds.')
+
+add_option('unix', '--restart-interval', type='int', default='0',
+        metavar='SECONDS', help='Number of seconds between worker '
+        'process restarts. If graceful timeout is also specified, '
+        'active requests will be given a chance to complete before '
+        'the process is forced to exit and restart. Not enabled by '
+        'default.')
+
+add_option('unix', '--cpu-time-limit', type='int', default='0',
+        metavar='SECONDS', help='Number of seconds of CPU time the '
+        'process can use before it will be restarted. If graceful '
+        'timeout is also specified, active requests will be given '
+        'a chance to complete before the process is forced to exit '
+        'and restart. Not enabled by default.')
+
+add_option('unix', '--graceful-timeout', type='int', default=15,
+        metavar='SECONDS', help='Grace period for requests to complete '
+        'normally, while still accepting new requests, when worker '
+        'processes are being shutdown and restarted due to maximum '
+        'requests being reached or restart interval having expired. '
+        'Defaults to 15 seconds.')
+
+add_option('unix', '--eviction-timeout', type='int', default=0,
+        metavar='SECONDS', help='Grace period for requests to complete '
+        'normally, while still accepting new requests, when the WSGI '
+        'application is being evicted from the worker processes, and '
+        'the process restarted, due to forced graceful restart signal. '
+        'Defaults to timeout specified by \'--graceful-timeout\' '
+        'option.')
+
+add_option('unix', '--deadlock-timeout', type='int', default=60,
+        metavar='SECONDS', help='Maximum number of seconds allowed '
+        'to pass before the worker process is forcibly shutdown and '
+        'restarted after a potential deadlock on the Python GIL has '
+        'been detected. Defaults to 60 seconds.')
+
+add_option('unix', '--inactivity-timeout', type='int', default=0,
+        metavar='SECONDS', help='Maximum number of seconds allowed '
+        'to pass before the worker process is shutdown and restarted '
+        'when the worker process has entered an idle state and is no '
+        'longer receiving new requests. Not enabled by default.')
+
+add_option('unix', '--ignore-activity', action='append',
+        dest='ignore_activity', metavar='URL-PATH', help='Specify '
+        'the URL path for any location where activity should be '
+        'ignored when the \'--activity-timeout\' option is used. '
+        'This would be used on health check URLs so that health '
+        'checks do not prevent process restarts due to inactivity.')
+
+add_option('unix', '--request-timeout', type='int', default=60,
+        metavar='SECONDS', help='Maximum number of seconds allowed '
+        'to pass before the worker process is forcibly shutdown and '
+        'restarted when a request does not complete in the expected '
+        'time. In a multi threaded worker, the request time is '
+        'calculated as an average across all request threads. Defaults '
+        'to 60 seconds.')
+
+add_option('unix', '--connect-timeout', type='int', default=15,
+        metavar='SECONDS', help='Maximum number of seconds allowed '
+        'to pass before giving up on attempting to get a connection '
+        'to the worker process from the Apache child process which '
+        'accepted the request. This comes into play when the worker '
+        'listener backlog limit is exceeded. Defaults to 15 seconds.')
+
+add_option('all', '--socket-timeout', type='int', default=60,
+        metavar='SECONDS', help='Maximum number of seconds allowed '
+        'to pass before timing out on a read or write operation on '
+        'a socket and aborting the request. Defaults to 60 seconds.')
+
+add_option('all', '--queue-timeout', type='int', default=45,
+        metavar='SECONDS', help='Maximum number of seconds allowed '
+        'for a request to be accepted by a worker process to be '
+        'handled, taken from the time when the Apache child process '
+        'originally accepted the request. Defaults to 45 seconds.')
+
+add_option('all', '--header-timeout', type='int', default=15,
+        metavar='SECONDS', help='The number of seconds allowed for '
+        'receiving the request including the headers. This may be '
+        'dynamically increased if a minimum rate for reading the '
+        'request and headers is also specified, up to any limit '
+        'imposed by a maximum header timeout. Defaults to 15 seconds.')
+
+add_option('all', '--header-max-timeout', type='int', default=30,
+        metavar='SECONDS', help='Maximum number of seconds allowed for '
+        'receiving the request including the headers. This is the hard '
+        'limit after taking into consideration and increases to the '
+        'basic timeout due to minimum rate for reading the request and '
+        'headers which may be specified. Defaults to 30 seconds.')
+
+add_option('all', '--header-min-rate', type='int', default=500,
+        metavar='BYTES', help='The number of bytes required to be sent '
+        'as part of the request and headers to trigger a dynamic '
+        'increase in the timeout on receiving the request including '
+        'headers. Each time this number of bytes is received the timeout '
+        'will be increased by 1 second up to any maximum specified by '
+        'the maximum header timeout. Defaults to 500 bytes.')
+
+add_option('all', '--body-timeout', type='int', default=15,
+        metavar='SECONDS', help='The number of seconds allowed for '
+        'receiving the request body. This may be dynamically increased '
+        'if a minimum rate for reading the request body is also '
+        'specified, up to any limit imposed by a maximum body timeout. '
+        'Defaults to 15 seconds.')
+
+add_option('all', '--body-max-timeout', type='int', default=0,
+        metavar='SECONDS', help='Maximum number of seconds allowed for '
+        'receiving the request body. This is the hard limit after '
+        'taking into consideration and increases to the basic timeout '
+        'due to minimum rate for reading the request body which may be '
+        'specified. Defaults to 0 indicating there is no maximum.')
+
+add_option('all', '--body-min-rate', type='int', default=500,
+        metavar='BYTES', help='The number of bytes required to be sent '
+        'as part of the request body to trigger a dynamic increase in '
+        'the timeout on receiving the request body. Each time this '
+        'number of bytes is received the timeout will be increased '
+        'by 1 second up to any maximum specified by the maximum body '
+        'timeout. Defaults to 500 bytes.')
+
+add_option('all', '--server-backlog', type='int', default=500,
+        metavar='NUMBER', help='Depth of server socket listener '
+        'backlog for Apache child processes. Defaults to 500.')
+
+add_option('unix', '--daemon-backlog', type='int', default=100,
+        metavar='NUMBER', help='Depth of server socket listener '
+        'backlog for daemon processes. Defaults to 100.')
+
+add_option('unix', '--send-buffer-size', type='int', default=0,
+        metavar='NUMBER', help='Size of socket buffer for sending '
+        'data to daemon processes. Defaults to 0, indicating '
+        'the system default socket buffer size is used.')
+
+add_option('unix', '--receive-buffer-size', type='int', default=0,
+        metavar='NUMBER', help='Size of socket buffer for receiving '
+        'data from daemon processes. Defaults to 0, indicating '
+        'the system default socket buffer size is used.')
+
+add_option('unix', '--header-buffer-size', type='int', default=0,
+        metavar='NUMBER', help='Size of buffer used for reading '
+        'response headers from daemon processes. Defaults to 0, '
+        'indicating internal default of 32768 bytes is used.')
+
+add_option('unix', '--response-buffer-size', type='int', default=0,
+        metavar='NUMBER', help='Maximum amount of response content '
+        'that will be allowed to be buffered in the Apache child '
+        'worker process when proxying the response from a daemon '
+        'process. Defaults to 0, indicating internal default of '
+        '65536 bytes is used.')
+
+add_option('unix', '--response-socket-timeout', type='int', default=0,
+        metavar='SECONDS', help='Maximum number of seconds allowed '
+        'to pass before timing out on a write operation back to the '
+        'HTTP client when the response buffer has filled and data is '
+        'being forcibly flushed. Defaults to 0 seconds indicating that '
+        'it will default to the value of the \'socket-timeout\' option.')
+
+add_option('all', '--enable-sendfile', action='store_true',
+        default=False, help='Flag indicating whether sendfile() support '
+        'should be enabled. Defaults to being disabled. This should '
+        'only be enabled if the operating system kernel and file system '
+        'type where files are hosted supports it.')
+
+add_option('unix', '--disable-reloading', action='store_true',
+        default=False, help='Disables all reloading of daemon processes '
+        'due to changes to the file containing the WSGI application '
+        'entrypoint, or any other loaded source files. This has no '
+        'effect when embedded mode is used as reloading is automatically '
+        'disabled for embedded mode.')
+
+add_option('unix', '--reload-on-changes', action='store_true',
+        default=False, help='Flag indicating whether worker processes '
+        'should be automatically restarted when any Python code file '
+        'loaded by the WSGI application has been modified. Defaults to '
+        'being disabled. When reloading on any code changes is disabled, '
+        'unless all reloading is also disabled, the worker processes '
+        'will still though be reloaded if the file containing the WSGI '
+        'application entrypoint is modified.')
+
+add_option('unix', '--user', default=default_run_user(),
+        metavar='USERNAME', help='When being run by the root user, '
+        'the user that the WSGI application should be run as.')
+
+add_option('unix', '--group', default=default_run_group(),
+        metavar='GROUP', help='When being run by the root user, the '
+        'group that the WSGI application should be run as.')
+
+add_option('all', '--callable-object', default='application',
+        metavar='NAME', help='The name of the entry point for the WSGI '
+        'application within the WSGI script file. Defaults to '
+        'the name \'application\'.')
+
+add_option('all', '--map-head-to-get', default='Auto',
+        metavar='OFF|ON|AUTO', help='Flag indicating whether HEAD '
+        'requests should be mapped to a GET request. By default a HEAD '
+        'request will be automatically mapped to a GET request when an '
+        'Apache output filter is detected that may want to see the '
+        'entire response in order to set up response headers correctly '
+        'for a HEAD request. This can be disable by setting to \'Off\'.')
+
+add_option('all', '--document-root', metavar='DIRECTORY-PATH',
+        help='The directory which should be used as the document root '
+        'and which contains any static files.')
+
+add_option('all', '--directory-index', metavar='FILE-NAME',
+        help='The name of a directory index resource to be found in the '
+        'document root directory. Requests mapping to the directory '
+        'will be mapped to this resource rather than being passed '
+        'through to the WSGI application.')
+
+add_option('all', '--directory-listing', action='store_true',
+        default=False, help='Flag indicating if directory listing '
+        'should be enabled where static file application type is '
+        'being used and no directory index file has been specified.')
+
+add_option('all', '--allow-override', metavar='DIRECTIVE-TYPE',
+        action='append', help='Allow directives to be overridden from a '
+        '\'.htaccess\' file. Defaults to \'None\', indicating that any '
+        '\'.htaccess\' file will be ignored with override directives '
+        'not being permitted.')
+
+add_option('all', '--mount-point', metavar='URL-PATH', default='/',
+        help='The URL path at which the WSGI application will be '
+        'mounted. Defaults to being mounted at the root URL of the '
+        'site.')
+
+add_option('all', '--url-alias', action='append', nargs=2,
+        dest='url_aliases', metavar='URL-PATH FILE-PATH|DIRECTORY-PATH',
+        help='Map a single static file or a directory of static files '
+        'to a sub URL.')
+
+add_option('all', '--error-document', action='append', nargs=2,
+        dest='error_documents', metavar='STATUS URL-PATH', help='Map '
+        'a specific sub URL as the handler for HTTP errors generated '
+        'by the web server.')
+
+add_option('all', '--error-override', action='store_true',
+        default=False, help='Flag indicating whether Apache error '
+        'documents will override application error responses.')
+
+add_option('all', '--proxy-mount-point', action='append', nargs=2,
+        dest='proxy_mount_points', metavar='URL-PATH URL',
+        help='Map a sub URL such that any requests against it will be '
+        'proxied to the specified URL. This is only for proxying to a '
+        'site as a whole, or a sub site, not individual resources.')
+
+add_option('all', '--proxy-url-alias', action='append', nargs=2,
+        dest='proxy_mount_points', metavar='URL-PATH URL',
+        help=optparse.SUPPRESS_HELP)
+
+add_option('all', '--proxy-virtual-host', action='append', nargs=2,
+        dest='proxy_virtual_hosts', metavar='HOSTNAME URL',
+        help='Proxy any requests for the specified host name to the '
+        'remote URL.')
+
+add_option('all', '--trust-proxy-header', action='append', default=[],
+        dest='trusted_proxy_headers', metavar='HEADER-NAME',
+        help='The name of any trusted HTTP header providing details '
+        'of the front end client request when proxying.')
+
+add_option('all', '--trust-proxy', action='append', default=[],
+        dest='trusted_proxies', metavar='IP-ADDRESS/SUBNET',
+        help='The IP address or subnet corresponding to any trusted '
+        'proxy.')
+
+add_option('all', '--keep-alive-timeout', type='int', default=2,
+        metavar='SECONDS', help='The number of seconds which a client '
+        'connection will be kept alive to allow subsequent requests '
+        'to be made over the same connection when a keep alive '
+        'connection is requested. Defaults to 2, indicating that keep '
+        'alive connections are set for 2 seconds.')
+
+add_option('all', '--compress-responses', action='store_true',
+        default=False, help='Flag indicating whether responses for '
+        'common text based responses, such as plain text, HTML, XML, '
+        'CSS and Javascript should be compressed.')
+
+add_option('all', '--server-metrics', action='store_true',
+        default=False, help='Flag indicating whether internal server '
+        'metrics will be available within the WSGI application. '
+        'Defaults to being disabled.')
+
+add_option('all', '--server-status', action='store_true',
+        default=False, help='Flag indicating whether web server status '
+        'will be available at the /server-status sub URL. Defaults to '
+        'being disabled.')
+
+add_option('all', '--host-access-script', metavar='SCRIPT-PATH',
+        default=None, help='Specify a Python script file for '
+        'performing host access checks.')
+
+add_option('all', '--auth-user-script', metavar='SCRIPT-PATH',
+        default=None, help='Specify a Python script file for '
+        'performing user authentication.')
+
+add_option('all', '--auth-type', metavar='TYPE',
+        default='Basic', help='Specify the type of authentication '
+        'scheme used when authenticating users. Defaults to using '
+        '\'Basic\'. Alternate schemes available are \'Digest\'.')
+
+add_option('all', '--auth-group-script', metavar='SCRIPT-PATH',
+        default=None, help='Specify a Python script file for '
+        'performing group based authorization in conjunction with '
+        'a user authentication script.')
+
+add_option('all', '--auth-group', metavar='NAME',
+        default='wsgi', help='Specify the group which users should '
+        'be a member of when using a group based authorization script. '
+        'Defaults to \'wsgi\' as a place holder but should be '
+        'overridden to be the actual group you use rather than '
+        'making your group name match the default.')
+
+add_option('all', '--include-file', action='append',
+        dest='include_files', metavar='FILE-PATH', help='Specify the '
+        'path to an additional web server configuration file to be '
+        'included at the end of the generated web server configuration '
+        'file.')
+
+add_option('all', '--rewrite-rules', metavar='FILE-PATH',
+        help='Specify an alternate server configuration file which '
+        'contains rewrite rules. Defaults to using the '
+        '\'rewrite.conf\' stored under the server root directory.')
+
+add_option('unix', '--envvars-script', metavar='FILE-PATH',
+        help='Specify an alternate script file for user defined web '
+        'server environment variables. Defaults to using the '
+        '\'envvars\' stored under the server root directory.')
+
+add_option('unix', '--lang', default=None, metavar='NAME',
+        help=optparse.SUPPRESS_HELP)
+
+add_option('all', '--locale', default=None, metavar='NAME',
+        help='Specify the natural language locale for the process '
+        'as normally defined by the \'LC_ALL\' environment variable. '
+        'If not specified, then the default locale for this process '
+        'will be used. If the default locale is however \'C\' or '
+        '\'POSIX\' then an attempt will be made to use either the '
+        '\'en_US.UTF-8\' or \'C.UTF-8\' locales and if that is not '
+        'possible only then fallback to the default locale of this '
+        'process.')
+
+add_option('all', '--setenv', action='append', nargs=2,
+        dest='setenv_variables', metavar='KEY VALUE', help='Specify '
+        'a name/value pairs to be added to the per request WSGI environ '
+        'dictionary')
+
+add_option('all', '--passenv', action='append',
+        dest='passenv_variables', metavar='KEY', help='Specify the '
+        'names of any process level environment variables which should '
+        'be passed as a name/value pair in the per request WSGI '
+        'environ dictionary.')
+
+add_option('all', '--working-directory', metavar='DIRECTORY-PATH',
+        help='Specify the directory which should be used as the '
+        'current working directory of the WSGI application. This '
+        'directory will be searched when importing Python modules '
+        'so long as the WSGI application doesn\'t subsequently '
+        'change the current working directory. Defaults to the '
+        'directory this script is run from.')
+
+add_option('all', '--pid-file', metavar='FILE-PATH',
+        help='Specify an alternate file to be used to store the '
+        'process ID for the root process of the web server.')
+
+add_option('all', '--server-root', metavar='DIRECTORY-PATH',
+        help='Specify an alternate directory for where the generated '
+        'web server configuration, startup files and logs will be '
+        'stored. On Linux defaults to the sub directory specified by '
+        'the TMPDIR environment variable, or /tmp if not specified. '
+        'On macOS, defaults to the /var/tmp directory.')
+
+add_option('unix', '--server-mpm', action='append',
+        dest='server_mpm_variables', metavar='NAME', help='Specify '
+        'preferred MPM to use when using Apache 2.4 with dynamically '
+        'loadable MPMs and more than one is available. By default '
+        'the MPM precedence order when no preference is given is '
+        '\"event\", \"worker" and \"prefork\".')
+
+add_option('all', '--log-directory', metavar='DIRECTORY-PATH',
+        help='Specify an alternate directory for where the log files '
+        'will be stored. Defaults to the server root directory.')
+
+add_option('all', '--log-level', default='warn', metavar='NAME',
+        help='Specify the log level for logging. Defaults to \'warn\'.')
+
+add_option('all', '--access-log', action='store_true', default=False,
+        help='Flag indicating whether the web server access log '
+        'should be enabled. Defaults to being disabled.')
+
+add_option('unix', '--startup-log', action='store_true', default=False,
+        help='Flag indicating whether the web server startup log should '
+        'be enabled. Defaults to being disabled.')
+
+add_option('all', '--verbose-debugging', action='store_true',
+        dest='verbose_debugging', help=optparse.SUPPRESS_HELP)
+
+add_option('unix', '--log-to-terminal', action='store_true',
+        default=False, help='Flag indicating whether logs should '
+        'be directed back to the terminal. Defaults to being disabled. '
+        'If --log-directory is set explicitly, it will override this '
+        'option. If logging to the terminal is carried out, any '
+        'rotating of log files will be disabled.')
+
+add_option('all', '--access-log-format', metavar='FORMAT',
+        help='Specify the format of the access log records.'),
+
+add_option('all', '--error-log-format', metavar='FORMAT',
+        help='Specify the format of the error log records.'),
+
+add_option('all', '--error-log-name', metavar='FILE-NAME',
+        default='error_log', help='Specify the name of the error '
+        'log file when it is being written to the log directory.'),
+
+add_option('all', '--access-log-name', metavar='FILE-NAME',
+        default='access_log', help='Specify the name of the access '
+        'log file when it is being written to the log directory.'),
+
+add_option('unix', '--startup-log-name', metavar='FILE-NAME',
+        default='startup_log', help='Specify the name of the startup '
+        'log file when it is being written to the log directory.'),
+
+add_option('unix', '--rotate-logs', action='store_true', default=False,
+        help='Flag indicating whether log rotation should be performed.'),
+
+add_option('unix', '--max-log-size', default=5, type='int',
+        metavar='MB', help='The maximum size in MB the log file should '
+        'be allowed to reach before log file rotation is performed.'),
+
+add_option('unix', '--rotatelogs-executable',
+        default=apxs_config.ROTATELOGS, metavar='FILE-PATH',
+        help='Override the path to the rotatelogs executable.'),
+
+add_option('all', '--python-path', action='append',
+        dest='python_paths', metavar='DIRECTORY-PATH', help='Specify '
+        'the path to any additional directory that should be added to '
+        'the Python module search path. Note that these directories will '
+        'not be processed for \'.pth\' files. If processing of \'.pth\' '
+        'files is required, set the \'PYTHONPATH\' environment variable '
+        'in a script specified by the \'--envvars-script\' option.')
+
+add_option('all', '--python-eggs', metavar='DIRECTORY-PATH',
+        help='Specify an alternate directory which should be used for '
+        'unpacking of Python eggs. Defaults to a sub directory of '
+        'the server root directory.')
+
+add_option('unix', '--shell-executable', default=SHELL,
+        metavar='FILE-PATH', help='Override the path to the shell '
+        'used in the \'apachectl\' script. The \'bash\' shell will '
+        'be used if available.')
+
+add_option('unix', '--httpd-executable', default=apxs_config.HTTPD,
+        metavar='FILE-PATH', help='Override the path to the Apache web '
+        'server executable.')
+
+add_option('unix', '--process-name', metavar='NAME', help='Override '
+        'the name given to the Apache parent process. This might be '
+        'needed when a process manager expects the process to be named '
+        'a certain way but due to a sequence of exec calls the name '
+        'changed.')
+
+add_option('all', '--modules-directory', default=apxs_config.LIBEXECDIR,
+        metavar='DIRECTORY-PATH', help='Override the path to the Apache '
+        'web server modules directory.')
+
+add_option('unix', '--mime-types', default=find_mimetypes(),
+        metavar='FILE-PATH', help='Override the path to the mime types '
+        'file used by the web server.')
+
+add_option('unix', '--socket-prefix', metavar='DIRECTORY-PATH',
+        help='Specify an alternate directory name prefix to be used '
+        'for the UNIX domain sockets used by mod_wsgi to communicate '
+        'between the Apache child processes and the daemon processes.')
+
+add_option('all', '--add-handler', action='append', nargs=2,
+        dest='handler_scripts', metavar='EXTENSION SCRIPT-PATH',
+        help='Specify a WSGI application to be used as a special '
+        'handler for any resources matched from the document root '
+        'directory with a specific extension type.')
+
+add_option('all', '--chunked-request', action='store_true',
+        default=False, help='Flag indicating whether requests which '
+        'use chunked transfer encoding will be accepted.')
+
+add_option('hidden', '--with-newrelic', action='store_true',
+        default=False, help='Flag indicating whether all New Relic '
+        'performance monitoring features should be enabled.')
+
+add_option('hidden', '--with-newrelic-agent', action='store_true',
+        default=False, help='Flag indicating whether the New Relic '
+        'Python agent should be enabled for reporting application server '
+        'metrics.')
+
+add_option('hidden', '--with-newrelic-platform', action='store_true',
+        default=False, help='Flag indicating whether the New Relic '
+        'platform plugin should be enabled for reporting server level '
+        'metrics.')
+
+add_option('hidden', '--newrelic-config-file', metavar='FILE-PATH',
+        default='', help='Specify the location of the New Relic agent '
+        'configuration file.')
+
+add_option('hidden', '--newrelic-environment', metavar='NAME',
+        default='', help='Specify the name of the environment section '
+        'that should be used from New Relic agent configuration file.')
+
+add_option('hidden', '--with-php5', action='store_true', default=False,
+        help='Flag indicating whether PHP 5 support should be enabled. '
+        'PHP code files must use the \'.php\' extension.')
+
+add_option('all', '--with-cgi', action='store_true', default=False,
+        help='Flag indicating whether CGI script support should be '
+        'enabled. CGI scripts must use the \'.cgi\' extension and be '
+        'executable')
+
+add_option('unix', '--service-script', action='append', nargs=2,
+        dest='service_scripts', metavar='SERVICE SCRIPT-PATH',
+        help='Specify the name of a Python script to be loaded and '
+        'executed in the context of a distinct daemon process. Used '
+        'for running a managed service.')
+
+add_option('unix', '--service-user', action='append', nargs=2,
+        dest='service_users', metavar='SERVICE USERNAME',
+        help='When being run by the root user, the user that the '
+        'distinct daemon process started to run the managed service '
+        'should be run as.')
+
+add_option('unix', '--service-group', action='append', nargs=2,
+        dest='service_groups', metavar='SERVICE GROUP',
+        help='When being run by the root user, the group that the '
+        'distinct daemon process started to run the managed service '
+        'should be run as.')
+
+add_option('unix', '--service-log-file', action='append', nargs=2,
+        dest='service_log_files', metavar='SERVICE FILE-NAME',
+        help='Specify the name of a separate log file to be used for '
+        'the managed service.')
+
+add_option('unix', '--embedded-mode', action='store_true', default=False,
+        help='Flag indicating whether to run in embedded mode rather '
+        'than the default daemon mode. Numerous daemon mode specific '
+        'features will not operate when this mode is used.')
+
+add_option('all', '--enable-docs', action='store_true', default=False,
+        help='Flag indicating whether the mod_wsgi documentation should '
+        'be made available at the /__wsgi__/docs sub URL.')
+
+add_option('unix', '--debug-mode', action='store_true', default=False,
+        help='Flag indicating whether to run in single process mode '
+        'to allow the running of an interactive Python debugger. This '
+        'will override all options related to processes, threads and '
+        'communication with workers. All forms of source code reloading '
+        'will also be disabled. Both stdin and stdout will be attached '
+        'to the console to allow interaction with the Python debugger.')
+
+add_option('unix', '--enable-debugger', action='store_true',
+        default=False, help='Flag indicating whether post mortem '
+        'debugging of any exceptions which propagate out from the '
+        'WSGI application when running in debug mode should be '
+        'performed. Post mortem debugging is performed using the '
+        'Python debugger (pdb).'),
+
+add_option('unix', '--debugger-startup', action='store_true',
+        default=False, help='Flag indicating whether when post '
+        'mortem debugging is enabled, that the debugger should '
+        'also be thrown into the interactive console on initial '
+        'startup of the server to allow breakpoints to be setup.'),
+
+add_option('unix', '--enable-coverage', action='store_true',
+        default=False, help='Flag indicating whether coverage analysis '
+        'is enabled when running in debug mode.')
+
+add_option('unix', '--coverage-directory', metavar='DIRECTORY-PATH',
+        default='', help='Override the path to the directory into '
+        'which coverage analysis will be generated when enabled under '
+        'debug mode.')
+
+add_option('unix', '--enable-profiler', action='store_true',
+        default=False, help='Flag indicating whether code profiling '
+        'is enabled when running in debug mode.')
+
+add_option('unix', '--profiler-directory', metavar='DIRECTORY-PATH',
+        default='', help='Override the path to the directory into '
+        'which profiler data will be written when enabled under debug '
+        'mode.')
+
+add_option('unix', '--enable-recorder', action='store_true',
+        default=False, help='Flag indicating whether recording of '
+        'requests is enabled when running in debug mode.')
+
+add_option('unix', '--recorder-directory', metavar='DIRECTORY-PATH',
+        default='', help='Override the path to the directory into '
+        'which recorder data will be written when enabled under debug '
+        'mode.')
+
+add_option('unix', '--enable-gdb', action='store_true',
+        default=False, help='Flag indicating whether Apache should '
+        'be run under \'gdb\' when running in debug mode. This '
+        'would be use to debug process crashes.')
+
+add_option('unix', '--gdb-executable', default='gdb',
+        metavar='FILE-PATH', help='Override the path to the gdb '
+        'executable.')
+
+add_option('unix', '--setup-only', action='store_true', default=False,
+        help='Flag indicating that after the configuration files have '
+        'been setup, that the command should then exit and not go on '
+        'to actually run up the Apache server. This is to allow for '
+        'the generation of the configuration with Apache then later '
+        'being started separately using the generated \'apachectl\' '
+        'script.')
+
+# add_option('unix', '--isatty', action='store_true', default=False,
+#         help='Flag indicating whether should assume being run in an '
+#         'interactive terminal session. In this case Apache will not '
+#         'replace this wrapper script, but will be run as a sub process.'
+#         'Signals such as SIGINT, SIGTERM, SIGHUP and SIGUSR1 will be '
+#         'forwarded onto Apache, but SIGWINCH will be blocked so that '
+#         'resizing of a terminal session window will not cause Apache '
+#         'to shutdown. This is a separate option at this time rather '
+#         'than being determined automatically while the reliability of '
+#         'intercepting and forwarding signals is verified.')
 
 def cmd_setup_server(params):
     formatter = optparse.IndentedHelpFormatter()
@@ -2641,6 +2790,9 @@ def cmd_setup_server(params):
     _cmd_setup_server('setup-server', args, vars(options))
 
 def _mpm_module_defines(modules_directory, preferred=None):
+    if os.name == 'nt':
+        return ['-DMOD_WSGI_MPM_ENABLE_WINNT_MODULE']
+
     result = []
     workers = ['event', 'worker', 'prefork']
     found = False
@@ -2668,23 +2820,33 @@ def _cmd_setup_server(command, args, options):
     else:
         options['listener_host'] = options['host']
 
-    options['daemon_name'] = '(wsgi:%s:%s:%s)' % (options['host'],
+    if os.name == 'nt':
+        options['daemon_name'] = '(wsgi:%s:%s:%s)' % (options['host'],
+            options['port'], getpass.getuser())
+    else:
+        options['daemon_name'] = '(wsgi:%s:%s:%s)' % (options['host'],
             options['port'], os.getuid())
 
     if not options['server_root']:
-        if sys.platform == 'darwin':
+        if os.name == 'nt':
+            tmpdir = tempfile.gettempdir()
+        elif sys.platform == 'darwin':
             tmpdir = '/var/tmp'
         else:
             tmpdir = os.environ.get('TMPDIR')
             tmpdir = tmpdir or '/tmp'
             tmpdir = tmpdir.rstrip('/')
-        options['server_root'] = '%s/mod_wsgi-%s:%s:%s' % (tmpdir,
-                options['host'], options['port'], os.getuid())
 
-    try:
+        if os.name == 'nt':
+            options['server_root'] = ('%s/mod_wsgi-%s-%s-%s' % (tmpdir,
+                    options['host'], options['port'], getpass.getuser())
+                    ).replace('\\','/')
+        else:
+            options['server_root'] = '%s/mod_wsgi-%s:%s:%s' % (tmpdir,
+                    options['host'], options['port'], os.getuid())
+
+    if not os.path.isdir(options['server_root']):
         os.mkdir(options['server_root'])
-    except Exception:
-        pass
 
     if options['ssl_certificate_file']:
         options['ssl_certificate_file'] = os.path.abspath(
@@ -2717,7 +2879,7 @@ def _cmd_setup_server(command, args, options):
 
     if not args:
         if options['application_type'] != 'static':
-            options['entry_point'] = os.path.join(
+            options['entry_point'] = posixpath.join(
                     options['server_root'], 'default.wsgi')
             options['application_type'] = 'script'
             options['enable_docs'] = True
@@ -2727,10 +2889,10 @@ def _cmd_setup_server(command, args, options):
             options['entry_point'] = '(static)'
     else:
         if options['application_type'] in ('script', 'paste'):
-            options['entry_point'] = os.path.abspath(args[0])
+            options['entry_point'] = posixpath.abspath(args[0])
         elif options['application_type'] == 'static':
             if not options['document_root']:
-                options['document_root'] = os.path.abspath(args[0])
+                options['document_root'] = posixpath.abspath(args[0])
                 options['entry_point'] = 'ignored'
             else:
                 options['entry_point'] = 'overridden'
@@ -2738,15 +2900,15 @@ def _cmd_setup_server(command, args, options):
             options['entry_point'] = args[0]
 
     if options['host_access_script']:
-        options['host_access_script'] = os.path.abspath(
+        options['host_access_script'] = posixpath.abspath(
                 options['host_access_script'])
 
     if options['auth_user_script']:
-        options['auth_user_script'] = os.path.abspath(
+        options['auth_user_script'] = posixpath.abspath(
                 options['auth_user_script'])
 
     if options['auth_group_script']:
-        options['auth_group_script'] = os.path.abspath(
+        options['auth_group_script'] = posixpath.abspath(
                 options['auth_group_script'])
 
     options['documentation_directory'] = os.path.join(os.path.dirname(
@@ -2754,17 +2916,17 @@ def _cmd_setup_server(command, args, options):
     options['images_directory'] = os.path.join(os.path.dirname(
             os.path.dirname(__file__)), 'images')
 
-    if os.path.exists(os.path.join(options['documentation_directory'],
+    if os.path.exists(posixpath.join(options['documentation_directory'],
             'index.html')):
         options['documentation_url'] = '/__wsgi__/docs/'
     else:
         options['documentation_url'] = 'http://www.modwsgi.org/'
 
     if not os.path.isabs(options['server_root']):
-        options['server_root'] = os.path.abspath(options['server_root'])
+        options['server_root'] = posixpath.abspath(options['server_root'])
 
     if not options['document_root']:
-        options['document_root'] = os.path.join(options['server_root'],
+        options['document_root'] = posixpath.join(options['server_root'],
                 'htdocs')
 
     try:
@@ -2778,7 +2940,7 @@ def _cmd_setup_server(command, args, options):
         options['allow_override'] = ' '.join(options['allow_override'])
 
     if not options['mount_point'].startswith('/'):
-        options['mount_point'] = os.path.normpath('/' + options['mount_point'])
+        options['mount_point'] = posixpath.normpath('/' + options['mount_point'])
 
     # Create subdirectories for mount points in document directory
     # so that fallback resource rewrite rule will work.
@@ -2788,14 +2950,14 @@ def _cmd_setup_server(command, args, options):
         subdir = options['document_root']
         try:
             for part in parts:
-                subdir = os.path.join(subdir, part)
+                subdir = posixpath.join(subdir, part)
                 if not os.path.exists(subdir):
                     os.mkdir(subdir)
         except Exception:
             raise
 
     if not os.path.isabs(options['document_root']):
-        options['document_root'] = os.path.abspath(options['document_root'])
+        options['document_root'] = posixpath.abspath(options['document_root'])
 
     if not options['log_directory']:
         options['log_directory'] = options['server_root']
@@ -2813,23 +2975,26 @@ def _cmd_setup_server(command, args, options):
         pass
 
     if not os.path.isabs(options['log_directory']):
-        options['log_directory'] = os.path.abspath(options['log_directory'])
+        options['log_directory'] = posixpath.abspath(options['log_directory'])
 
     if not options['log_to_terminal']:
-        options['error_log_file'] = os.path.join(options['log_directory'],
+        options['error_log_file'] = posixpath.join(options['log_directory'],
                 options['error_log_name'])
     else:
-        try:
-            with open('/dev/stderr', 'w'):
-                pass
-        except IOError:
-            options['error_log_file'] = '|%s' % find_program(
-                    ['tee'], default='tee')
+        if os.name == 'nt':
+            options['error_log_file'] = 'CON'
         else:
-            options['error_log_file'] = '/dev/stderr'
+            try:
+                with open('/dev/stderr', 'w'):
+                    pass
+            except IOError:
+                options['error_log_file'] = '|%s' % find_program(
+                        ['tee'], default='tee')
+            else:
+                options['error_log_file'] = '/dev/stderr'
 
     if not options['log_to_terminal']:
-        options['access_log_file'] = os.path.join(
+        options['access_log_file'] = posixpath.join(
                 options['log_directory'], options['access_log_name'])
     else:
         try:
@@ -2858,20 +3023,20 @@ def _cmd_setup_server(command, args, options):
         options['error_log_format'] = options['error_log_format'].replace(
                 '\"', '\\"')
 
-    options['pid_file'] = ((options['pid_file'] and os.path.abspath(
-            options['pid_file'])) or os.path.join(options['server_root'],
+    options['pid_file'] = ((options['pid_file'] and posixpath.abspath(
+            options['pid_file'])) or posixpath.join(options['server_root'],
             'httpd.pid'))
 
-    options['python_eggs'] = (os.path.abspath(options['python_eggs']) if
+    options['python_eggs'] = (posixpath.abspath(options['python_eggs']) if
             options['python_eggs'] is not None else None)
 
     if options['python_eggs'] is None:
-        options['python_eggs'] = os.path.join(options['server_root'],
+        options['python_eggs'] = posixpath.join(options['server_root'],
                 'python-eggs')
 
     try:
         os.mkdir(options['python_eggs'])
-        if os.getuid() == 0:
+        if os.name != 'nt' and os.getuid() == 0:
             import pwd
             import grp
             os.chown(options['python_eggs'],
@@ -2882,6 +3047,17 @@ def _cmd_setup_server(command, args, options):
 
     if options['python_paths'] is None:
         options['python_paths'] = []
+
+    if options['debug_mode'] or options['embedded_mode']:
+        if options['working_directory'] not in options['python_paths']:
+            options['python_paths'].insert(0, options['working_directory'])
+
+    if options['debug_mode']:
+        options['server_mpm_variables'] = ['worker', 'prefork']
+
+    elif options['embedded_mode']:
+        if not options['server_mpm_variables']:
+            options['server_mpm_variables'] = ['worker', 'prefork']
 
     # Special case to check for when being executed from shiv variant
     # of a zipapp application bundle. We need to work out where the
@@ -2910,7 +3086,7 @@ def _cmd_setup_server(command, args, options):
     options['multiprocess'] = options['processes'] is not None
     options['processes'] = options['processes'] or 1
 
-    options['python_home'] = sys.prefix
+    options['python_home'] = sys.prefix.replace('\\','/')
 
     options['keep_alive'] = options['keep_alive_timeout'] != 0
 
@@ -2941,12 +3117,12 @@ def _cmd_setup_server(command, args, options):
         handler_scripts = []
         for extension, script in options['handler_scripts']:
             if not os.path.isabs(script):
-                script = os.path.abspath(script)
+                script = posixpath.abspath(script)
             handler_scripts.append((extension, script))
         options['handler_scripts'] = handler_scripts
 
     if options['newrelic_config_file']:
-        options['newrelic_config_file'] = os.path.abspath(
+        options['newrelic_config_file'] = posixpath.abspath(
                 options['newrelic_config_file'])
 
     if options['with_newrelic']:
@@ -2960,9 +3136,12 @@ def _cmd_setup_server(command, args, options):
         service_scripts = []
         for name, script in options['service_scripts']:
             if not os.path.isabs(script):
-                script = os.path.abspath(script)
+                script = posixpath.abspath(script)
             service_scripts.append((name, script))
         options['service_scripts'] = service_scripts
+
+    # Node that all the below calculations are overridden if are using
+    # embedded mode.
 
     max_clients = options['processes'] * options['threads']
 
@@ -3043,27 +3222,45 @@ def _cmd_setup_server(command, args, options):
             int(worker_max_spare_workers * options['worker_server_limit']) *
             options['worker_threads_per_child'])
 
-    options['httpd_conf'] = os.path.join(options['server_root'], 'httpd.conf')
+    if options['embedded_mode']:
+        max_clients = options['processes'] * options['threads']
+
+        options['prefork_max_clients'] = max_clients
+        options['prefork_server_limit'] = max_clients
+        options['prefork_start_servers'] = max_clients
+        options['prefork_min_spare_servers'] = max_clients
+        options['prefork_max_spare_servers'] = max_clients
+
+        options['worker_max_clients'] = max_clients
+        options['worker_server_limit'] = options['processes']
+        options['worker_thread_limit'] = options['threads']
+        options['worker_threads_per_child'] = options['threads']
+        options['worker_start_servers'] = options['processes']
+        options['worker_min_spare_threads'] = max_clients
+        options['worker_max_spare_threads'] = max_clients
+
+    options['httpd_conf'] = posixpath.join(options['server_root'], 'httpd.conf')
 
     options['httpd_executable'] = os.environ.get('HTTPD',
             options['httpd_executable'])
 
-    if not os.path.isabs(options['httpd_executable']):
-         options['httpd_executable'] = find_program(
-                 [options['httpd_executable']], 'httpd', ['/usr/sbin'])
+    if os.name != 'nt':
+        if not os.path.isabs(options['httpd_executable']):
+            options['httpd_executable'] = find_program(
+                    [options['httpd_executable']], 'httpd', ['/usr/sbin'])
 
     if not options['process_name']:
-        options['process_name'] = os.path.basename(
+        options['process_name'] = posixpath.basename(
                 options['httpd_executable']) + ' (mod_wsgi-express)'
 
     options['process_name'] = options['process_name'].ljust(
             len(options['daemon_name']))
 
-    options['rewrite_rules'] = (os.path.abspath(
+    options['rewrite_rules'] = (posixpath.abspath(
             options['rewrite_rules']) if options['rewrite_rules'] is
             not None else None)
 
-    options['envvars_script'] = (os.path.abspath(
+    options['envvars_script'] = (posixpath.abspath(
             options['envvars_script']) if options['envvars_script'] is
             not None else None)
 
@@ -3103,22 +3300,25 @@ def _cmd_setup_server(command, args, options):
 
     if options['startup_log']:
         if not options['log_to_terminal']:
-            options['startup_log_file'] = os.path.join(
+            options['startup_log_file'] = posixpath.join(
                     options['log_directory'], options['startup_log_name'])
         else:
-            try:
-                with open('/dev/stderr', 'w'):
-                    pass
-            except IOError:
+            if os.name == 'nt':
+                options['startup_log_file'] = 'CON'
+            else:
                 try:
-                    with open('/dev/tty', 'w'):
+                    with open('/dev/stderr', 'w'):
                         pass
                 except IOError:
-                    options['startup_log_file'] = None
+                    try:
+                        with open('/dev/tty', 'w'):
+                            pass
+                    except IOError:
+                        options['startup_log_file'] = None
+                    else:
+                        options['startup_log_file'] = '/dev/tty'
                 else:
-                    options['startup_log_file'] = '/dev/tty'
-            else:
-                options['startup_log_file'] = '/dev/stderr'
+                    options['startup_log_file'] = '/dev/stderr'
 
         if options['startup_log_file']:
             options['httpd_arguments_list'].append('-E')
@@ -3148,6 +3348,10 @@ def _cmd_setup_server(command, args, options):
     else:
         options['https_url'] = None
 
+    if options['embedded_mode']:
+        options['httpd_arguments_list'].append('-DEMBEDDED_MODE')
+        options['disable_reloading'] = True
+
     if any((options['enable_debugger'], options['enable_coverage'],
             options['enable_profiler'], options['enable_recorder'],
             options['enable_gdb'])):
@@ -3159,10 +3363,10 @@ def _cmd_setup_server(command, args, options):
     if options['debug_mode']:
         if options['enable_coverage']:
             if not options['coverage_directory']:
-                options['coverage_directory'] = os.path.join(
+                options['coverage_directory'] = posixpath.join(
                         options['server_root'], 'htmlcov')
             else:
-                options['coverage_directory'] = os.path.abspath(
+                options['coverage_directory'] = posixpath.abspath(
                         options['coverage_directory'])
 
             try:
@@ -3172,10 +3376,10 @@ def _cmd_setup_server(command, args, options):
 
         if options['enable_profiler']:
             if not options['profiler_directory']:
-                options['profiler_directory'] = os.path.join(
+                options['profiler_directory'] = posixpath.join(
                         options['server_root'], 'pstats')
             else:
-                options['profiler_directory'] = os.path.abspath(
+                options['profiler_directory'] = posixpath.abspath(
                         options['profiler_directory'])
 
             try:
@@ -3185,10 +3389,10 @@ def _cmd_setup_server(command, args, options):
 
         if options['enable_recorder']:
             if not options['recorder_directory']:
-                options['recorder_directory'] = os.path.join(
+                options['recorder_directory'] = posixpath.join(
                         options['server_root'], 'archive')
             else:
-                options['recorder_directory'] = os.path.abspath(
+                options['recorder_directory'] = posixpath.abspath(
                         options['recorder_directory'])
 
             try:
@@ -3239,6 +3443,9 @@ def _cmd_setup_server(command, args, options):
     if options['application_type'] == 'static':
         options['httpd_arguments_list'].append('-DMOD_WSGI_STATIC_ONLY')
 
+    if options['enable_sendfile']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_ENABLE_SENDFILE')
+
     if options['server_metrics']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_SERVER_METRICS')
     if options['server_status']:
@@ -3284,9 +3491,11 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_PYTHON_PATH')
     if options['socket_prefix']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_WITH_SOCKET_PREFIX')
+    if options['disable_reloading']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_DISABLE_RELOADING')
 
     if options['with_cgi']:
-        if os.path.exists(os.path.join(options['modules_directory'],
+        if os.path.exists(posixpath.join(options['modules_directory'],
                 'mod_cgid.so')):
             options['httpd_arguments_list'].append('-DMOD_WSGI_CGID_SCRIPT')
         else:
@@ -3335,7 +3544,7 @@ def _cmd_setup_server(command, args, options):
         print('Startup Log File   :', options['startup_log_file'])
 
     if options['enable_coverage']:
-        print('Coverage Output    :', os.path.join(
+        print('Coverage Output    :', posixpath.join(
                 options['coverage_directory'], 'index.html'))
 
     if options['enable_profiler']:
@@ -3347,15 +3556,24 @@ def _cmd_setup_server(command, args, options):
     if options['rewrite_rules']:
         print('Rewrite Rules      :', options['rewrite_rules'])
 
-    if options['envvars_script']:
-        print('Environ Variables  :', options['envvars_script'])
+    if os.name != 'nt':
+        if options['envvars_script']:
+            print('Environ Variables  :', options['envvars_script'])
 
     if command == 'setup-server' or options['setup_only']:
         if not options['rewrite_rules']:
             print('Rewrite Rules      :', options['server_root'] + '/rewrite.conf')
-        if not options['envvars_script']:
-            print('Environ Variables  :', options['server_root'] + '/envvars')
-        print('Control Script     :', options['server_root'] + '/apachectl')
+        if os.name != 'nt':
+            if not options['envvars_script']:
+                print('Environ Variables  :', options['server_root'] + '/envvars')
+            print('Control Script     :', options['server_root'] + '/apachectl')
+
+    if options['debug_mode']:
+        print('Operating Mode     : debug')
+    elif options['embedded_mode']:
+        print('Operating Mode     : embedded')
+    else:
+        print('Operating Mode     : daemon')
 
     if options['processes'] == 1:
         print('Request Capacity   : %s (%s process * %s threads)' % (
@@ -3366,17 +3584,18 @@ def _cmd_setup_server(command, args, options):
                 options['processes']*options['threads'],
                 options['processes'], options['threads']))
 
-    print('Request Timeout    : %s (seconds)' % options['request_timeout'])
+    if not options['debug_mode'] and not options['embedded_mode']:
+        print('Request Timeout    : %s (seconds)' % options['request_timeout'])
 
-    if options['startup_timeout']:
-        print('Startup Timeout    : %s (seconds)' % options['startup_timeout'])
+        if options['startup_timeout']:
+            print('Startup Timeout    : %s (seconds)' % options['startup_timeout'])
 
-    print('Queue Backlog      : %s (connections)' % options['daemon_backlog'])
+        print('Queue Backlog      : %s (connections)' % options['daemon_backlog'])
 
-    print('Queue Timeout      : %s (seconds)' % options['queue_timeout'])
+        print('Queue Timeout      : %s (seconds)' % options['queue_timeout'])
 
-    print('Server Capacity    : %s (event/worker), %s (prefork)' % (
-            options['worker_max_clients'], options['prefork_max_clients']))
+        print('Server Capacity    : %s (event/worker), %s (prefork)' % (
+                options['worker_max_clients'], options['prefork_max_clients']))
 
     print('Server Backlog     : %s (connections)' % options['server_backlog'])
 
@@ -3392,7 +3611,9 @@ def _cmd_setup_server(command, args, options):
                 pass
 
     generate_apache_config(options)
-    generate_control_scripts(options)
+
+    if os.name != 'nt':
+        generate_control_scripts(options)
 
     return options
 
@@ -3411,32 +3632,60 @@ def cmd_start_server(params):
     if config['setup_only']:
         return
 
-    executable = os.path.join(config['server_root'], 'apachectl')
+    if os.name == 'nt':
+        print()
+        print("WARNING: The ability to use the start-server option on Windows")
+        print("WARNING: is highly experimental and various things don't quite")
+        print("WARNING: work properly. If you understand a lot about using")
+        print("WARNING: Python on Windows and Windows programming in general,")
+        print("WARNING: and would like to help to get it working properly, then")
+        print("WARNING: you can ask about Windows support for the start-server")
+        print("WARNING: option on the mod_wsgi mailing list.")
+        print()
 
-    if config['isatty'] and sys.stdout.isatty():
-        process = None
+        executable = config['httpd_executable']
 
-        def handler(signum, frame):
-            if process is None:
-                sys.exit(1)
+        environ = copy.deepcopy(os.environ)
 
-            else:
-                if signum not in [signal.SIGWINCH]:
-                    os.kill(process.pid, signum)
+        environ['MOD_WSGI_MODULES_DIRECTORY'] = config['modules_directory']
 
-        signal.signal(signal.SIGINT, handler)
-        signal.signal(signal.SIGTERM, handler)
-        signal.signal(signal.SIGHUP, handler)
-        signal.signal(signal.SIGUSR1, handler)
-        signal.signal(signal.SIGWINCH, handler)
+        httpd_arguments = list(config['httpd_arguments_list'])
+        httpd_arguments.extend(['-f', config['httpd_conf']])
+        httpd_arguments.extend(['-DONE_PROCESS'])
 
-        process = subprocess.Popen([executable, 'start', '-DFOREGROUND'],
-                preexec_fn=os.setpgrp)
+        os.environ['MOD_WSGI_MODULES_DIRECTORY'] = config['modules_directory']
 
-        process.wait()
+        subprocess.call([executable]+httpd_arguments)
+
+        sys.exit(0)
 
     else:
-        os.execl(executable, executable, 'start', '-DFOREGROUND')
+        executable = posixpath.join(config['server_root'], 'apachectl')
+
+        if sys.stdout.isatty():
+            process = None
+
+            def handler(signum, frame):
+                if process is None:
+                    sys.exit(1)
+
+                else:
+                    if signum not in [signal.SIGWINCH]:
+                        os.kill(process.pid, signum)
+
+            signal.signal(signal.SIGINT, handler)
+            signal.signal(signal.SIGTERM, handler)
+            signal.signal(signal.SIGHUP, handler)
+            signal.signal(signal.SIGUSR1, handler)
+            signal.signal(signal.SIGWINCH, handler)
+
+            process = subprocess.Popen([executable, 'start', '-DFOREGROUND'],
+                    preexec_fn=os.setpgrp)
+
+            process.wait()
+
+        else:
+            os.execl(executable, executable, 'start', '-DFOREGROUND')
 
 def cmd_module_config(params):
     formatter = optparse.IndentedHelpFormatter()
@@ -3452,22 +3701,24 @@ def cmd_module_config(params):
 
     if os.name == 'nt':
         real_prefix = getattr(sys, 'real_prefix', None)
-        real_prefix = real_prefix or sys.prefix
+        base_prefix = getattr(sys, 'base_prefix', None)
+
+        real_prefix = real_prefix or base_prefix or sys.prefix
 
         library_version = sysconfig.get_config_var('VERSION')
 
         library_name = 'python%s.dll' % library_version
-        library_path = os.path.join(real_prefix, library_name)
+        library_path = posixpath.join(real_prefix, library_name)
 
         if not os.path.exists(library_path):
             library_name = 'python%s.dll' % library_version[0]
-            library_path = os.path.join(real_prefix, 'DLLs', library_name)
+            library_path = posixpath.join(real_prefix, 'DLLs', library_name)
 
         if not os.path.exists(library_path):
             library_path = None
 
         if library_path:
-            library_path = os.path.normpath(library_path)
+            library_path = posixpath.normpath(library_path)
             library_path = library_path.replace('\\', '/')
 
             print('LoadFile "%s"' % library_path)
@@ -3476,7 +3727,7 @@ def cmd_module_config(params):
         module_path = module_path.replace('\\', '/')
 
         prefix = sys.prefix
-        prefix = os.path.normpath(prefix)
+        prefix = posixpath.normpath(prefix)
         prefix = prefix.replace('\\', '/')
 
         print('LoadModule wsgi_module "%s"' % module_path)
@@ -3486,7 +3737,7 @@ def cmd_module_config(params):
         module_path = where()
 
         prefix = sys.prefix
-        prefix = os.path.normpath(prefix)
+        prefix = posixpath.normpath(prefix)
 
         if _py_dylib:
             print('LoadFile "%s"' % _py_dylib)
@@ -3509,15 +3760,15 @@ def cmd_install_module(params):
     if len(args) != 0:
         parser.error('Incorrect number of arguments.')
 
-    target = os.path.abspath(os.path.join(options.modules_directory,
-            os.path.basename(MOD_WSGI_SO)))
+    target = posixpath.abspath(posixpath.join(options.modules_directory,
+            posixpath.basename(MOD_WSGI_SO)))
 
     shutil.copyfile(where(), target)
 
     if _py_dylib:
         print('LoadFile "%s"' % _py_dylib)
     print('LoadModule wsgi_module "%s"' % target)
-    print('WSGIPythonHome "%s"' % os.path.normpath(sys.prefix))
+    print('WSGIPythonHome "%s"' % posixpath.normpath(sys.prefix))
 
 def cmd_module_location(params):
     formatter = optparse.IndentedHelpFormatter()
@@ -3570,6 +3821,8 @@ def main():
             cmd_module_config(args)
         elif command == 'module-location':
             cmd_module_location(args)
+        elif command == 'start-server':
+            cmd_start_server(args)
         else:
             parser.error('Invalid command was specified.')
     else:

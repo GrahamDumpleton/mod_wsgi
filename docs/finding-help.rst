@@ -26,30 +26,14 @@ If the problem is potentially more an issue with a third party package or
 the operating system rather than mod_wsgi, you might also consider asking
 on any mailing list related to the third party package instead.
 
-A further option is to ask your question on StackOverflow, if a programming
+A final option is to ask your question on StackOverflow, if a programming
 question, or ServerFault, if an administration issue. These sites allow a
 broad range of questions about many topics with quite a large user base of
 sometimes knowledgeable people.
 
-A final option you might try is any IRC channels related to any third party
-package or the more general #wsgi.
-
-Do be aware though that the only forum that is guaranteed to be monitored
-is the mod_wsgi mailing list. Questions are not gauranteed to be answered
-on sites such as StackOverflow and ServerFault, on IRC, or mailing lists
-for other packages. So, it is much preferable to use the mod_wsgi mailing
-list if you want an informed answer for a mod_wsgi specific question.
-
-As a general rule, if you have never participated in public forums
-previously to seek answers to technical questions, including about Open
-Source software, it is highly recommended you have a read of.
-
-* http://www.catb.org/esr/faqs/smart-questions.html
-
-This will help you to ensure you have exhausted all possibilities as to
-where to find information and try and solve the problem yourself, as well
-as assist you in framing your question the best way so as to get the best
-response possible.
+Do be aware though that the only general forum that is monitored is the
+mod_wsgi mailing list, so use it if you want an informed answer for a mod_wsgi
+specific question.
 
 Remember that people on the mailing list are volunteering their time to
 help and don't get paid for answering questions. Thus, it is in your
@@ -71,8 +55,7 @@ to detail the following:
    distribution, who provided the distribution.
 
    If not using latest version of Apache available, then consider upgrading
-   and trying again. If at all possible, avoid using Apache 2.0 or 2.2. You
-   definitely shouldn't still be using Apache 1.3
+   and trying again.
 
 4. What operating system you are using.
 

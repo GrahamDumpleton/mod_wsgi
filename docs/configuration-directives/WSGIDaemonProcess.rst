@@ -210,7 +210,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 
 .. _script-group:
 
-**script-group=name | scrip-group=#gid**
+**script-group=name | script-group=#gid**
     Sets the group that must be the group of any WSGI script file delegated
     to be run in the daemon process group. If the group doesn't match a
     HTTP Forbidden response will be returned for any request.

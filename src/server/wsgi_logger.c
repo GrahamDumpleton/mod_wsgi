@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2019 GRAHAM DUMPLETON
+ * Copyright 2007-2020 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -223,7 +223,7 @@ static PyObject *Log_isatty(LogObject *self, PyObject *args)
     return Py_False;
 }
 
-static void Log_queue(LogObject *self, const char *msg, int len)
+static void Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
 {
     const char *p = NULL;
     const char *q = NULL;
@@ -330,7 +330,7 @@ static void Log_queue(LogObject *self, const char *msg, int len)
 static PyObject *Log_write(LogObject *self, PyObject *args)
 {
     const char *msg = NULL;
-    int len = -1;
+    Py_ssize_t len = -1;
 
     WSGIThreadInfo *thread_info = NULL;
 
@@ -700,14 +700,25 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
 
                 event = PyDict_New();
 
+#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
+                if (r->log_id) {
+#if PY_MAJOR_VERSION >= 3
+                    object = PyUnicode_DecodeLatin1(r->log_id,
+                                                    strlen(r->log_id), NULL);
+#else
+                    object = PyString_FromString(r->log_id);
+#endif
+                    PyDict_SetItemString(event, "request_id", object);
+                    Py_DECREF(object);
+                }
+#endif
+
                 object = Py_BuildValue("(OOO)", type, value, traceback);
                 PyDict_SetItemString(event, "exception_info", object);
                 Py_DECREF(object);
 
-#if 0
                 PyDict_SetItemString(event, "request_data",
                                      thread_info->request_data);
-#endif
 
                 wsgi_publish_event("request_exception", event);
 

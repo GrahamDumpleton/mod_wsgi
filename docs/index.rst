@@ -12,7 +12,7 @@ Apache installation. Following this path you will need to manually
 configure Apache to load mod_wsgi and pass through web requests to your
 WSGI application.
 
-The second way of installing mod_wsgi is to install it from PyPi_ using the
+The second way of installing mod_wsgi is to install it from PyPI_ using the
 Python ``pip`` command. This builds and installs mod_wsgi into your Python
 installation or virtual environment. The program ``mod_wsgi-express`` will
 then be available, allowing you to run up Apache with mod_wsgi from the
@@ -28,7 +28,7 @@ your Python web application as you will be able to run it directly from
 your terminal.
 
 .. _WSGI: http://www.python.org/dev/peps/pep-3333/
-.. _PyPi: http://pypi.python.org/pypi/mod_wsgi
+.. _PyPI: http://pypi.python.org/pypi/mod_wsgi
 
 .. toctree::
    :maxdepth: 1

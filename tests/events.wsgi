@@ -20,23 +20,14 @@ def wrapper(application):
 def event_handler(name, **kwargs):
     print('EVENT', name, kwargs, os.getpid(), mod_wsgi.application_group)
     if name == 'request_started':
-        request = mod_wsgi.request_data()
-        print('REQUEST', request)
-        environ = kwargs['request_environ']
-        start_time = time.time()
-        request['start_time'] = start_time
         thread = threading.current_thread()
-        request['thread_name'] = thread.name
-        request['thread_id'] = thread.ident
+        request_data = kwargs['request_data']
+        request_data['thread_name'] = thread.name
+        request_data['thread_id'] = thread.ident
         return dict(application_object=wrapper(kwargs['application_object']))
     elif name == 'response_started':
-        request = mod_wsgi.request_data()
-        print('CONTENT', request)
-        print('ACTIVE', mod_wsgi.active_requests)
+        print('REQUESTS', mod_wsgi.active_requests)
     elif name == 'request_finished':
-        request = mod_wsgi.request_data()
-        print('REQUEST', request)
-        print('FINISH', time.time()-request['start_time'])
         print('PROCESS', mod_wsgi.process_metrics()) 
     elif name == 'request_exception':
         exception_info = kwargs['exception_info']

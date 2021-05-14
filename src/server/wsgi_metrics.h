@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2019 GRAHAM DUMPLETON
+ * Copyright 2007-2020 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,17 +33,24 @@ extern int wsgi_active_requests;
 
 extern apr_thread_mutex_t* wsgi_monitor_lock;
 
+extern PyMethodDef wsgi_request_metrics_method[];
+
 extern PyMethodDef wsgi_process_metrics_method[];
 
 extern WSGIThreadInfo *wsgi_start_request(request_rec *r);
 extern void wsgi_end_request(void);
+
+extern void wsgi_record_request_times(apr_time_t request_start,
+        apr_time_t queue_start, apr_time_t daemon_start,
+        apr_time_t application_start, apr_time_t application_finish);
 
 extern PyMethodDef wsgi_server_metrics_method[];
 
 extern long wsgi_event_subscribers(void);
 extern void wsgi_publish_event(const char *name, PyObject *event);
 
-extern PyMethodDef wsgi_process_events_method[];
+extern PyMethodDef wsgi_subscribe_events_method[];
+extern PyMethodDef wsgi_subscribe_shutdown_method[];
 
 extern PyMethodDef wsgi_request_data_method[];
 

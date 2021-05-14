@@ -171,8 +171,12 @@ if WITH_WINDOWS_APACHE:
     def get_apxs_config(name):
         if name == 'INCLUDEDIR':
             return WITH_WINDOWS_APACHE + '/include'
+        elif name == 'BINDIR':
+            return WITH_WINDOWS_APACHE + '/bin'
         elif name == 'LIBEXECDIR':
-            return WITH_WINDOWS_APACHE + '/lib'
+            return WITH_WINDOWS_APACHE + '/modules'
+        elif name == 'PROGNAME':
+            return 'httpd.exe'
         else:
             return ''
 
@@ -362,26 +366,27 @@ SHLIBPATH_VAR = get_apxs_config('SHLIBPATH_VAR')
 
 APXS_CONFIG_TEMPLATE = """
 import os
+import posixpath
 
 WITH_TARBALL_PACKAGE = %(WITH_TARBALL_PACKAGE)r
 WITH_HTTPD_PACKAGE = %(WITH_HTTPD_PACKAGE)r
 
 if WITH_HTTPD_PACKAGE:
     from mod_wsgi_packages.httpd import __file__ as PACKAGES_ROOTDIR
-    PACKAGES_ROOTDIR = os.path.dirname(PACKAGES_ROOTDIR)
-    BINDIR = os.path.join(PACKAGES_ROOTDIR, 'bin')
+    PACKAGES_ROOTDIR = posixpath.dirname(PACKAGES_ROOTDIR)
+    BINDIR = posixpath.join(PACKAGES_ROOTDIR, 'bin')
     SBINDIR = BINDIR
-    LIBEXECDIR = os.path.join(PACKAGES_ROOTDIR, 'modules')
-    SHLIBPATH = os.path.join(PACKAGES_ROOTDIR, 'lib')
+    LIBEXECDIR = posixpath.join(PACKAGES_ROOTDIR, 'modules')
+    SHLIBPATH = posixpath.join(PACKAGES_ROOTDIR, 'lib')
 elif WITH_TARBALL_PACKAGE:
     from mod_wsgi.packages import __file__ as PACKAGES_ROOTDIR
-    PACKAGES_ROOTDIR = os.path.dirname(PACKAGES_ROOTDIR)
-    BINDIR = os.path.join(PACKAGES_ROOTDIR, 'apache', 'bin')
+    PACKAGES_ROOTDIR = posixpath.dirname(PACKAGES_ROOTDIR)
+    BINDIR = posixpath.join(PACKAGES_ROOTDIR, 'apache', 'bin')
     SBINDIR = BINDIR
-    LIBEXECDIR = os.path.join(PACKAGES_ROOTDIR, 'apache', 'modules')
+    LIBEXECDIR = posixpath.join(PACKAGES_ROOTDIR, 'apache', 'modules')
     SHLIBPATH = []
-    SHLIBPATH.append(os.path.join(PACKAGES_ROOTDIR, 'apr-util', 'lib'))
-    SHLIBPATH.append(os.path.join(PACKAGES_ROOTDIR, 'apr', 'lib'))
+    SHLIBPATH.append(posixpath.join(PACKAGES_ROOTDIR, 'apr-util', 'lib'))
+    SHLIBPATH.append(posixpath.join(PACKAGES_ROOTDIR, 'apr', 'lib'))
     SHLIBPATH = ':'.join(SHLIBPATH)
 else:
     BINDIR = '%(BINDIR)s'
@@ -393,17 +398,17 @@ MPM_NAME = '%(MPM_NAME)s'
 PROGNAME = '%(PROGNAME)s'
 SHLIBPATH_VAR = '%(SHLIBPATH_VAR)s'
 
-if os.path.exists(os.path.join(SBINDIR, PROGNAME)):
-    HTTPD = os.path.join(SBINDIR, PROGNAME)
-elif os.path.exists(os.path.join(BINDIR, PROGNAME)):
-    HTTPD = os.path.join(BINDIR, PROGNAME)
+if os.path.exists(posixpath.join(SBINDIR, PROGNAME)):
+    HTTPD = posixpath.join(SBINDIR, PROGNAME)
+elif os.path.exists(posixpath.join(BINDIR, PROGNAME)):
+    HTTPD = posixpath.join(BINDIR, PROGNAME)
 else:
     HTTPD = PROGNAME
 
-if os.path.exists(os.path.join(SBINDIR, 'rotatelogs')):
-    ROTATELOGS = os.path.join(SBINDIR, 'rotatelogs')
-elif os.path.exists(os.path.join(BINDIR, 'rotatelogs')):
-    ROTATELOGS = os.path.join(BINDIR, 'rotatelogs')
+if os.path.exists(posixpath.join(SBINDIR, 'rotatelogs')):
+    ROTATELOGS = posixpath.join(SBINDIR, 'rotatelogs')
+elif os.path.exists(posixpath.join(BINDIR, 'rotatelogs')):
+    ROTATELOGS = posixpath.join(BINDIR, 'rotatelogs')
 else:
     ROTATELOGS = 'rotatelogs'
 """
@@ -424,6 +429,8 @@ PYTHON_VERSION = get_python_config('VERSION')
 if os.name == 'nt':
     if hasattr(sys, 'real_prefix'):
         PYTHON_LIBDIR = sys.real_prefix
+    elif hasattr(sys, 'base_prefix'):
+        PYTHON_LIBDIR = sys.base_prefix
     else:
         PYTHON_LIBDIR = get_python_config('BINDIR')
 
@@ -542,9 +549,16 @@ if os.name != 'nt':
 
 # Now finally run distutils.
 
+package_name = 'mod_wsgi'
 long_description = open('README.rst').read()
 
-setup(name = 'mod_wsgi',
+standalone = os.path.exists('pyproject.toml')
+
+if standalone:
+    package_name = 'mod_wsgi-standalone'
+    long_description = open('README-standalone.rst').read()
+
+setup(name = package_name,
     version = _version(),
     description = 'Installer for Apache/mod_wsgi.',
     long_description = long_description,
@@ -552,8 +566,12 @@ setup(name = 'mod_wsgi',
     author_email = 'Graham.Dumpleton@gmail.com',
     maintainer = 'Graham Dumpleton',
     maintainer_email = 'Graham.Dumpleton@gmail.com',
-    url = 'http://www.modwsgi.org/',
-    bugtrack_url = 'https://github.com/GrahamDumpleton/mod_wsgi/issues',
+    url = 'https://www.modwsgi.org/',
+    project_urls = {
+        'Documentation': 'https://modwsgi.readthedocs.io/',
+        'Source': 'https://github.com/GrahamDumpleton/mod_wsgi',
+        'Tracker': 'https://github.com/GrahamDumpleton/mod_wsgi/issues',
+    },
     license = 'Apache License, Version 2.0',
     platforms = [],
     download_url = None,
@@ -573,6 +591,8 @@ setup(name = 'mod_wsgi',
         'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
         'Topic :: Internet :: WWW/HTTP :: WSGI',
         'Topic :: Internet :: WWW/HTTP :: WSGI :: Server'
     ],
@@ -588,4 +608,5 @@ setup(name = 'mod_wsgi',
     entry_points = { 'console_scripts':
         ['mod_wsgi-express = mod_wsgi.server:main'],},
     zip_safe = False,
+    install_requires = standalone and ['mod_wsgi-httpd==2.4.41.1'] or [],
 )
