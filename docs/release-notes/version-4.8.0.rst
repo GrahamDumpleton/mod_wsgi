@@ -71,6 +71,9 @@ Features Changed
   Apache. This means that a window resizing event will no longer cause
   mod_wsgi-express to shutdown unexpectedly.
 
+* When trying to set resource limits and they can't be set, the system error
+  number will now be included in the error message.
+
 New Features
 ------------
 
