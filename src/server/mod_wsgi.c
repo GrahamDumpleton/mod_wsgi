@@ -10152,6 +10152,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         if (daemon->group->cpu_time_limit > 0) {
             struct rlimit limit;
             int result = -1;
+            errno = ENOSYS;
 
             limit.rlim_cur = daemon->group->cpu_time_limit;
 
@@ -10163,7 +10164,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 #endif
 
             if (result == -1) {
-                ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
+                ap_log_error(APLOG_MARK, APLOG_CRIT, errno, wsgi_server,
                              "mod_wsgi (pid=%d): Couldn't set CPU time "
                              "limit of %d seconds for process '%s'.", getpid(),
                              daemon->group->cpu_time_limit,
@@ -10180,6 +10181,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         if (daemon->group->memory_limit > 0) {
             struct rlimit limit;
             int result = -1;
+            errno = ENOSYS;
 
             limit.rlim_cur = daemon->group->memory_limit;
 
@@ -10190,7 +10192,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 #endif
 
             if (result == -1) {
-                ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
+                ap_log_error(APLOG_MARK, APLOG_CRIT, errno, wsgi_server,
                              "mod_wsgi (pid=%d): Couldn't set memory "
                              "limit of %ld for process '%s'.", getpid(),
                              (long)daemon->group->memory_limit,
@@ -10207,6 +10209,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         if (daemon->group->virtual_memory_limit > 0) {
             struct rlimit limit;
             int result = -1;
+            errno = ENOSYS;
 
             limit.rlim_cur = daemon->group->virtual_memory_limit;
 
@@ -10219,7 +10222,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 #endif
 
             if (result == -1) {
-                ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
+                ap_log_error(APLOG_MARK, APLOG_CRIT, errno, wsgi_server,
                              "mod_wsgi (pid=%d): Couldn't set virtual memory "
                              "limit of %ld for process '%s'.", getpid(),
                              (long)daemon->group->virtual_memory_limit,
