@@ -121,3 +121,11 @@ New Features
   Note that the new request metrics is still a work in progress and may be
   modified or enhanced, causing breaking changes in the format of data
   returned.
+
+* Hidden experimental support for running ``mod_wsgi-express start-server``
+  on Windows. It will not show in list of sub commands ``mod_wsgi-express``
+  accepts on Windows, but it is there. There are still various issues that
+  need to be sorted out but need assistance from someone who knows more
+  about programming Python on Windows and Windows programming in general to
+  get it all working properly. If you are interested in helping, reach out
+  on the mod_wsgi mailing list.
