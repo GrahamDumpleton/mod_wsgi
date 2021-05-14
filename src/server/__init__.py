@@ -3633,6 +3633,16 @@ def cmd_start_server(params):
         return
 
     if os.name == 'nt':
+        print()
+        print("WARNING: The ability to use the start-server option on Windows")
+        print("WARNING: is highly experimental and various things don't quite")
+        print("WARNING: work properly. If you understand a lot about using")
+        print("WARNING: Python on Windows and Windows programming in general,")
+        print("WARNING: and would like to help to get it working properly, then")
+        print("WARNING: you can ask about Windows support for the start-server")
+        print("WARNING: option on the mod_wsgi mailing list.")
+        print()
+
         executable = config['httpd_executable']
 
         environ = copy.deepcopy(os.environ)
@@ -3811,7 +3821,7 @@ def main():
             cmd_module_config(args)
         elif command == 'module-location':
             cmd_module_location(args)
-        elif command == 'x-start-server':
+        elif command == 'start-server':
             cmd_start_server(args)
         else:
             parser.error('Invalid command was specified.')
