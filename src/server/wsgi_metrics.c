@@ -420,7 +420,6 @@ static PyObject *wsgi_request_metrics(void)
     double application_time_total = 0;
     double application_time_avg = 0;
 
-    WSGIThreadInfo **thread_info = NULL;
     int request_threads_active = 0;
 
     int i;
@@ -582,8 +581,6 @@ static PyObject *wsgi_request_metrics(void)
     PyDict_SetItem(result,
             WSGI_INTERNED_STRING(request_threads_started), object);
     Py_DECREF(object);
-
-    thread_info = (WSGIThreadInfo **)wsgi_thread_details->elts;
 
     request_busy_time = stop_request_busy_time - start_request_busy_time;
 
