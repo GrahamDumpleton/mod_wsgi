@@ -2433,10 +2433,10 @@ void wsgi_python_init(apr_pool_t *p)
 
         Py_Initialize();
 
+#if PY_VERSION_HEX < 0x03090000
         /* Initialise threading. */
-
         PyEval_InitThreads();
-
+#endif
         /*
          * Remove the environment variable we set for the hash
          * seed. This has to be done in os.environ, which will
