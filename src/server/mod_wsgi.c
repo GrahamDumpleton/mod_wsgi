@@ -2897,7 +2897,7 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
     if (!method)
         return 0;
 
-    object = PyEval_CallObject(method, NULL);
+    object = PyObject_CallObject(method, NULL);
     Py_DECREF(method);
 
     if (!object) {
@@ -3179,7 +3179,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
     args = Py_BuildValue("(OO)", vars, start);
 
-    self->sequence = PyEval_CallObject(object, args);
+    self->sequence = PyObject_CallObject(object, args);
 
     if (self->sequence != NULL) {
         if (!Adapter_process_file_wrapper(self)) {
@@ -3301,7 +3301,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
             close = PyObject_GetAttrString(self->sequence, "close");
 
             args = Py_BuildValue("()");
-            data = PyEval_CallObject(close, args);
+            data = PyObject_CallObject(close, args);
 
             Py_DECREF(args);
             Py_XDECREF(data);
@@ -3910,7 +3910,7 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
 
             Py_INCREF(object);
             args = Py_BuildValue("(s)", resource);
-            result = PyEval_CallObject(object, args);
+            result = PyObject_CallObject(object, args);
             Py_DECREF(args);
             Py_DECREF(object);
 
@@ -4283,7 +4283,7 @@ static int wsgi_execute_script(request_rec *r)
                 }
                 else {
                     args = PyTuple_New(0);
-                    object = PyEval_CallObject(method, args);
+                    object = PyObject_CallObject(method, args);
                     Py_DECREF(args);
                 }
 
@@ -6892,7 +6892,7 @@ static int wsgi_execute_dispatch(request_rec *r)
                 if (adapter) {
                     Py_INCREF(object);
                     args = Py_BuildValue("(O)", vars);
-                    result = PyEval_CallObject(object, args);
+                    result = PyObject_CallObject(object, args);
                     Py_DECREF(args);
                     Py_DECREF(object);
 
@@ -6974,7 +6974,7 @@ static int wsgi_execute_dispatch(request_rec *r)
                 if (adapter) {
                     Py_INCREF(object);
                     args = Py_BuildValue("(O)", vars);
-                    result = PyEval_CallObject(object, args);
+                    result = PyObject_CallObject(object, args);
                     Py_DECREF(args);
                     Py_DECREF(object);
 
@@ -7056,7 +7056,7 @@ static int wsgi_execute_dispatch(request_rec *r)
                 if (adapter) {
                     Py_INCREF(object);
                     args = Py_BuildValue("(O)", vars);
-                    result = PyEval_CallObject(object, args);
+                    result = PyObject_CallObject(object, args);
                     Py_DECREF(args);
                     Py_DECREF(object);
 
@@ -7147,9 +7147,7 @@ static int wsgi_execute_dispatch(request_rec *r)
                              adapter->log->ob_type->tp_name);
             }
             else {
-                args = PyTuple_New(0);
-                object = PyEval_CallObject(method, args);
-                Py_DECREF(args);
+                object = PyObject_CallObject(method, NULL);
             }
 
             Py_XDECREF(object);
@@ -14841,7 +14839,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Oss)", vars, user, password);
-                result = PyEval_CallObject(object, args);
+                result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
@@ -14911,10 +14909,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                                  adapter->log->ob_type->tp_name);
                 }
                 else {
-                    args = PyTuple_New(0);
-                    result = PyEval_CallObject(method, args);
+                    result = PyObject_CallObject(method, NULL);
                     Py_XDECREF(result);
-                    Py_DECREF(args);
                 }
 
                 /* Log any details of exceptions if execution failed. */
@@ -15086,7 +15082,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Oss)", vars, user, realm);
-                result = PyEval_CallObject(object, args);
+                result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
@@ -15158,7 +15154,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                 }
                 else {
                     args = PyTuple_New(0);
-                    result = PyEval_CallObject(method, args);
+                    result = PyObject_CallObject(method, args);
                     Py_XDECREF(result);
                     Py_DECREF(args);
                 }
@@ -15337,7 +15333,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Os)", vars, r->user);
-                result = PyEval_CallObject(object, args);
+                result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
@@ -15450,7 +15446,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                 }
                 else {
                     args = PyTuple_New(0);
-                    result = PyEval_CallObject(method, args);
+                    result = PyObject_CallObject(method, args);
                     Py_XDECREF(result);
                     Py_DECREF(args);
                 }
@@ -15623,7 +15619,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Oz)", vars, host);
-                result = PyEval_CallObject(object, args);
+                result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
@@ -15675,7 +15671,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
                 }
                 else {
                     args = PyTuple_New(0);
-                    result = PyEval_CallObject(method, args);
+                    result = PyObject_CallObject(method, args);
                     Py_XDECREF(result);
                     Py_DECREF(args);
                 }
@@ -15888,7 +15884,7 @@ static int wsgi_hook_check_user_id(request_rec *r)
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Oss)", vars, r->user, password);
-                result = PyEval_CallObject(object, args);
+                result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
@@ -15956,10 +15952,8 @@ static int wsgi_hook_check_user_id(request_rec *r)
                                  adapter->log->ob_type->tp_name);
                 }
                 else {
-                    args = PyTuple_New(0);
-                    result = PyEval_CallObject(method, args);
+                    result = PyObject_CallObject(method, NULL);
                     Py_XDECREF(result);
-                    Py_DECREF(args);
                 }
 
                 /* Log any details of exceptions if execution failed. */

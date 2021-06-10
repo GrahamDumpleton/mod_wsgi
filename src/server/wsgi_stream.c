@@ -124,7 +124,7 @@ static PyObject *Stream_iternext(StreamObject *self)
     }
 
     args = Py_BuildValue("(O)", attribute);
-    result = PyEval_CallObject(method, args);
+    result = PyObject_CallObject(method, args);
 
     Py_DECREF(args);
     Py_DECREF(method);
@@ -164,7 +164,7 @@ static PyObject *Stream_close(StreamObject *self, PyObject *args)
     method = PyObject_GetAttrString(self->filelike, "close");
 
     if (method) {
-        result = PyEval_CallObject(method, (PyObject *)NULL);
+        result = PyObject_CallObject(method, (PyObject *)NULL);
         if (!result)
             PyErr_Clear();
         Py_DECREF(method);
