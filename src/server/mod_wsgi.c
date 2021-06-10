@@ -3645,7 +3645,10 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
     FILE *fp = NULL;
     PyObject *m = NULL;
     PyObject *co = NULL;
-    struct _node *n = NULL;
+    char *source;
+    size_t pos = 0;
+    size_t allocated = 1024;
+    size_t nread;
 
 #if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
     apr_wchar_t wfilename[APR_PATH_MAX];
@@ -3730,36 +3733,71 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         return NULL;
     }
 
-    n = PyParser_SimpleParseFile(fp, filename, Py_file_input);
-
+    source = malloc(allocated);
+    if (source != NULL) {
+        do {
+            nread = fread(source + pos, 1, allocated - pos, fp);
+            pos += nread;
+            if (nread == 0) {
+                if (ferror(fp)) {
+                    free(source);
+                    source = NULL;
+                }
+                break;
+            }
+            if (pos == allocated) {
+                allocated *= 2;
+                char *reallocated_source = realloc(source, allocated);
+                if (reallocated_source == NULL) {
+                    free(source);
+                    source = NULL;
+                    break;
+                }
+                source = reallocated_source;
+            }
+        } while (!feof(fp));
+    }
     fclose(fp);
-
-    if (!n) {
+    if (source == NULL) {
         Py_BEGIN_ALLOW_THREADS
         if (r) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
                           "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Failed to parse Python script file '%s'.", getpid(),
+                          "Could not read source file '%s'.", getpid(),
                           process_group, application_group, filename);
         }
         else {
-            ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+            ap_log_error(APLOG_MARK, APLOG_ERR, errno, wsgi_server,
                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Failed to parse Python script file '%s'.", getpid(),
+                         "Could not read source file '%s'.", getpid(),
                          process_group, application_group, filename);
         }
         Py_END_ALLOW_THREADS
-
-        wsgi_log_python_error(r, NULL, filename, 0);
-
         return NULL;
     }
 
-    co = (PyObject *)PyNode_Compile(n, filename);
-    PyNode_Free(n);
+    co = Py_CompileString(filename, source, 0);
+    free(source);
 
-    if (co)
-        m = PyImport_ExecCodeModuleEx((char *)name, co, (char *)filename);
+    if (!co) {
+        Py_BEGIN_ALLOW_THREADS
+        if (r) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
+                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
+                          "Could not compile source file '%s'.", getpid(),
+                          process_group, application_group, filename);
+        }
+        else {
+            ap_log_error(APLOG_MARK, APLOG_ERR, errno, wsgi_server,
+                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
+                         "Could not compile source file '%s'.", getpid(),
+                         process_group, application_group, filename);
+        }
+        Py_END_ALLOW_THREADS
+        return NULL;
+    }
+
+    m = PyImport_ExecCodeModuleEx((char *)name, co, (char *)filename);
 
     Py_XDECREF(co);
 
