@@ -3776,7 +3776,7 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         return NULL;
     }
 
-    co = Py_CompileString(filename, source, 0);
+    co = Py_CompileString(source, filename, Py_file_input);
     free(source);
 
     if (!co) {
