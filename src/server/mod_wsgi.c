@@ -3642,155 +3642,58 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
                                   const char *application_group,
                                   int ignore_system_exit)
 {
-    FILE *fp = NULL;
     PyObject *m = NULL;
     PyObject *co = NULL;
-    char *source;
-    size_t pos = 0;
-    size_t allocated = 1024;
-    size_t nread;
+    PyObject *io_module = NULL;
+    PyObject *fileobject = NULL;
+    PyObject *source_bytes_object = NULL;
+    PyObject *result = NULL;
+    char *source_buf = NULL;
 
-#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
-    apr_wchar_t wfilename[APR_PATH_MAX];
-#endif
-
-    if (exists) {
-        Py_BEGIN_ALLOW_THREADS
-        if (r) {
-            ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
-                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Reloading WSGI script '%s'.", getpid(),
-                          process_group, application_group, filename);
-        }
-        else {
-            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Reloading WSGI script '%s'.", getpid(),
-                         process_group, application_group, filename);
-        }
-        Py_END_ALLOW_THREADS
-    }
-    else {
-        Py_BEGIN_ALLOW_THREADS
-        if (r) {
-            ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
-                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Loading Python script file '%s'.", getpid(),
-                          process_group, application_group, filename);
-        }
-        else {
-            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Loading Python script file '%s'.", getpid(),
-                         process_group, application_group, filename);
-        }
-        Py_END_ALLOW_THREADS
+    io_module = PyImport_AddModule("io");
+    if (!io_module) {
+        goto load_source_finally;
     }
 
-#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
-    if (wsgi_utf8_to_unicode_path(wfilename, sizeof(wfilename) /
-                                  sizeof(apr_wchar_t), filename)) {
-
-        Py_BEGIN_ALLOW_THREADS
-        if (r) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d, process='%s', "
-                          "application='%s'): Failed to convert '%s' "
-                          "to UCS2 filename.", getpid(),
-                          process_group, application_group, filename);
-        }
-        else {
-            ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                         "mod_wsgi (pid=%d, process='%s', "
-                         "application='%s'): Failed to convert '%s' "
-                         "to UCS2 filename.", getpid(),
-                         process_group, application_group, filename);
-        }
-        Py_END_ALLOW_THREADS
-        return NULL;
+    fileobject = PyObject_CallMethod(io_module, "open", "ss", filename, "rb");
+    if (!fileobject) {
+        goto load_source_finally;
     }
 
-    fp = _wfopen(wfilename, L"r");
-#else
-    fp = fopen(filename, "r");
-#endif
-
-    if (!fp) {
-        Py_BEGIN_ALLOW_THREADS
-        if (r) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
-                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Call to fopen() failed for '%s'.", getpid(),
-                          process_group, application_group, filename);
-        }
-        else {
-            ap_log_error(APLOG_MARK, APLOG_ERR, errno, wsgi_server,
-                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Call to fopen() failed for '%s'.", getpid(),
-                         process_group, application_group, filename);
-        }
-        Py_END_ALLOW_THREADS
-        return NULL;
+    source_bytes_object = PyObject_CallMethod(fileobject, "read", "");
+    if (!source_bytes_object) {
+        goto load_source_finally;
     }
 
-    source = malloc(allocated);
-    if (source != NULL) {
-        do {
-            nread = fread(source + pos, 1, allocated - pos, fp);
-            pos += nread;
-            if (nread == 0) {
-                if (ferror(fp)) {
-                    free(source);
-                    source = NULL;
-                }
-                break;
-            }
-            if (pos == allocated) {
-                allocated *= 2;
-                char *reallocated_source = realloc(source, allocated);
-                if (reallocated_source == NULL) {
-                    free(source);
-                    source = NULL;
-                    break;
-                }
-                source = reallocated_source;
-            }
-        } while (!feof(fp));
-    }
-    fclose(fp);
-    if (source == NULL) {
-        Py_BEGIN_ALLOW_THREADS
-        if (r) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
-                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Could not read source file '%s'.", getpid(),
-                          process_group, application_group, filename);
-        }
-        else {
-            ap_log_error(APLOG_MARK, APLOG_ERR, errno, wsgi_server,
-                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Could not read source file '%s'.", getpid(),
-                         process_group, application_group, filename);
-        }
-        Py_END_ALLOW_THREADS
-        return NULL;
+    result = PyObject_CallMethod(fileobject, "close", "");
+    if (!result) {
+        goto load_source_finally;
     }
 
-    co = Py_CompileString(source, filename, Py_file_input);
-    free(source);
+    source_buf = PyBytes_AsString(source_bytes_object);
+    if (!source_buf) {
+        goto load_source_finally;
+    }
 
+    co = Py_CompileString(source_buf, filename, Py_file_input);
+
+load_source_finally:
+    Py_XDECREF(io_module);
+    Py_XDECREF(fileobject);
+    Py_XDECREF(source_bytes_object);
+    Py_XDECREF(result);
     if (!co) {
         Py_BEGIN_ALLOW_THREADS
         if (r) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
                           "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Could not compile source file '%s'.", getpid(),
+                          "Could not read/compile source file '%s'.", getpid(),
                           process_group, application_group, filename);
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_ERR, errno, wsgi_server,
                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Could not compile source file '%s'.", getpid(),
+                         "Could not read/compile source file '%s'.", getpid(),
                          process_group, application_group, filename);
         }
         Py_END_ALLOW_THREADS
