@@ -106,11 +106,11 @@ fi
 AC_SUBST(PYTHON)
 
 PYTHON_VERSION=`${PYTHON} -c 'from sys import stdout; \
-    from distutils import sysconfig; \
+    import sysconfig; \
     stdout.write(sysconfig.get_config_var("VERSION"))'`
 
 PYTHON_LDVERSION=`${PYTHON} -c 'from sys import stdout; \
-    from distutils import sysconfig; \
+    import sysconfig; \
     stdout.write(sysconfig.get_config_var("LDVERSION") or "")'`
 
 if test x"${PYTHON_LDVERSION}" = x""; then
@@ -118,11 +118,11 @@ if test x"${PYTHON_LDVERSION}" = x""; then
 fi
 
 CPPFLAGS1=`${PYTHON} -c 'from sys import stdout; \
-    from distutils import sysconfig; \
+    import sysconfig; \
     stdout.write("-I" + sysconfig.get_config_var("INCLUDEPY"))'`
 
 CPPFLAGS2=`${PYTHON} -c 'from sys import stdout; \
-    from distutils import sysconfig; \
+    import sysconfig; \
     stdout.write(" ".join(filter(lambda x: x.startswith("-D"), \
     sysconfig.get_config_var("CFLAGS").split())))'`
 
@@ -137,20 +137,20 @@ CPPFLAGS="${CPPFLAGS} ${CPPFLAGS1} ${CPPFLAGS2} ${CPPFLAGS3}"
 AC_SUBST(CPPFLAGS)
 
 PYTHONLIBDIR=`${PYTHON} -c 'from sys import stdout; \
-    from distutils import sysconfig; \
+    import sysconfig; \
     stdout.write(sysconfig.get_config_var("LIBDIR"))'`
 PYTHONCFGDIR=`${PYTHON} -c 'from sys import stdout; \
     import distutils.sysconfig; \
     stdout.write(distutils.sysconfig.get_python_lib(plat_specific=1, \
     standard_lib=1) +"/config")'`
 PYTHONFRAMEWORKDIR=`${PYTHON} -c 'from sys import stdout; \
-    from distutils import sysconfig; \
+    import sysconfig; \
     stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORKDIR"))'`
 PYTHONFRAMEWORKPREFIX=`${PYTHON} -c 'from sys import stdout; \
-    from distutils import sysconfig; \
+    import sysconfig; \
     stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORKPREFIX"))'`
 PYTHONFRAMEWORK=`${PYTHON} -c 'from sys import stdout; \
-    from distutils import sysconfig; \
+    import sysconfig; \
     stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORK"))'`
 
 if test "${PYTHON_LDVERSION}" != "${PYTHON_VERSION}"; then
@@ -176,10 +176,10 @@ if test "${PYTHONFRAMEWORKDIR}" = "no-framework" -o \
     fi
 
     LDLIBS2=`${PYTHON} -c 'from sys import stdout; \
-        from distutils import sysconfig; \
+        import sysconfig; \
         stdout.write(sysconfig.get_config_var("LIBS"))'`
     LDLIBS3=`${PYTHON} -c 'from sys import stdout; \
-        from distutils import sysconfig; \
+        import sysconfig; \
         stdout.write(sysconfig.get_config_var("SYSLIBS"))'`
 else
     LDFLAGS1="-Wl,-F${PYTHONFRAMEWORKPREFIX} -framework ${PYTHONFRAMEWORK}"
@@ -187,13 +187,13 @@ else
     VERSION="${PYTHON_VERSION}"
     STRING="${PYTHONFRAMEWORKDIR}/Versions/${VERSION}/${PYTHONFRAMEWORK}"
     LDFLAGS2=`${PYTHON} -c "from sys import stdout; \
-        from distutils import sysconfig; \
+        import sysconfig; \
         stdout.write(sysconfig.get_config_var(
         \"LINKFORSHARED\").replace(\"${STRING}\", ''))" | \
         sed -e 's/-Wl,-stack_size,[[0-9]]*//'`
 
     LDLIBS1=`${PYTHON} -c 'from sys import stdout; \
-        from distutils import sysconfig; \
+        import sysconfig; \
         stdout.write(sysconfig.get_config_var("LIBS"))'`
 fi
 
