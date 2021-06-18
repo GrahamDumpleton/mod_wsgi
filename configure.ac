@@ -44,6 +44,7 @@ XCODE_BIN_PATTERN="${XCODE_PREFIX}.*/usr/bin/"
 if test -x "${APXS}"; then
     APXS_CC=`${APXS} -q CC`
     APXS_LIBTOOL=`${APXS} -q LIBTOOL | sed -e "s/ .*$//"`
+    APXS_LIBDIR=`${APXS} -q LIBDIR | sed -e "s/ .*$//"`
     case ${APXS_CC} in
         ${XCODE_PREFIX}*)
             if test ! -x ${XCODE_CC}; then
@@ -159,8 +160,12 @@ fi
 
 if test "${PYTHONFRAMEWORKDIR}" = "no-framework" -o \
         "${ENABLE_FRAMEWORK}" != "yes"; then
-    LDFLAGS1="-L${PYTHONLIBDIR}"
-    LDFLAGS2="-L${PYTHONCFGDIR}"
+    if test "${PYTHONLIBDIR}" != "${APXS_LIBDIR}" ; then
+        LDFLAGS1="-L${PYTHONLIBDIR}"
+    fi
+    if test "${PYTHONCFGDIR}" != "${APXS_LIBDIR}" ; then
+        LDFLAGS2="-L${PYTHONCFGDIR}"
+    fi
 
     LDLIBS1="-lpython${PYTHON_LDVERSION}"
 
