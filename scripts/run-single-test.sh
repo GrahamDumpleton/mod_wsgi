@@ -25,4 +25,4 @@ done
 
 sleep 2
 
-curl --verbose --fail --show-error http://localhost:8000
+curl --silent --verbose --fail --show-error http://localhost:8000
