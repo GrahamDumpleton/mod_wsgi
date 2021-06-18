@@ -26,8 +26,10 @@ jobs:
         run: python -m pip install --upgrade pip setuptools
       - name: "Install tox dependencies"
         run: python -m pip install --upgrade tox tox-gh-actions
-      - name: "Run tox for ${{ matrix.python-version }}"
-        run: "python -m tox -vvv"
+      #- name: "Run tox for ${{ matrix.python-version }}"
+      #  run: "python -m tox -vvv"
+      - name: "Install mod_wsgi-express"
+        run: python -m pip install .
       - name: "Start up mod_wsgi-express"
         run: "mod_wsgi-express start-server tests/hello.wsgi --port 8080 --log-to-terminal --pid-file httpd.pid &"
       - name: "Wait for server to start"
