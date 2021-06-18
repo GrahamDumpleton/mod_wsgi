@@ -3650,6 +3650,39 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
     PyObject *result = NULL;
     char *source_buf = NULL;
 
+    if (exists) {
+        Py_BEGIN_ALLOW_THREADS
+        if (r) {
+            ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
+                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
+                          "Reloading WSGI script '%s'.", getpid(),
+                          process_group, application_group, filename);
+        }
+        else {
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
+                         "Reloading WSGI script '%s'.", getpid(),
+                         process_group, application_group, filename);
+        }
+        Py_END_ALLOW_THREADS
+    }
+    else {
+        Py_BEGIN_ALLOW_THREADS
+        if (r) {
+            ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
+                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
+                          "Loading Python script file '%s'.", getpid(),
+                          process_group, application_group, filename);
+        }
+        else {
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
+                         "Loading Python script file '%s'.", getpid(),
+                         process_group, application_group, filename);
+        }
+        Py_END_ALLOW_THREADS
+    }
+
     io_module = PyImport_ImportModule("io");
     if (!io_module) {
         goto load_source_finally;
