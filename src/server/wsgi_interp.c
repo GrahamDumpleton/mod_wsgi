@@ -100,7 +100,7 @@ static PyObject *SignalIntercept_call(
             Py_INCREF(o);
             log = newLogObject(NULL, APLOG_WARNING, NULL, 0);
             args = Py_BuildValue("(OOO)", Py_None, Py_None, log);
-            result = PyEval_CallObject(o, args);
+            result = PyObject_CallObject(o, args);
             Py_XDECREF(result);
             Py_DECREF(args);
             Py_DECREF(log);
@@ -238,7 +238,7 @@ static PyObject *ShutdownInterpreter_call(
             PyObject *res = NULL;
             Py_INCREF(exitfunc);
             PySys_SetObject("exitfunc", (PyObject *)NULL);
-            res = PyEval_CallObject(exitfunc, (PyObject *)NULL);
+            res = PyObject_CallObject(exitfunc, (PyObject *)NULL);
 
             if (res == NULL) {
                 PyObject *m = NULL;
@@ -290,7 +290,7 @@ static PyObject *ShutdownInterpreter_call(
                         log = newLogObject(NULL, APLOG_ERR, NULL, 0);
                         args = Py_BuildValue("(OOOOO)", type, value,
                                              traceback, Py_None, log);
-                        result = PyEval_CallObject(o, args);
+                        result = PyObject_CallObject(o, args);
                         Py_DECREF(args);
                         Py_DECREF(log);
                         Py_DECREF(o);
@@ -639,7 +639,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                 callback = PyCFunction_New(&wsgi_system_exit_method[0], NULL);
 
                 args = Py_BuildValue("(iO)", SIGTERM, callback);
-                res = PyEval_CallObject(func, args);
+                res = PyObject_CallObject(func, args);
 
                 if (!res) {
                     Py_BEGIN_ALLOW_THREADS
@@ -984,7 +984,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                     Py_END_ALLOW_THREADS
 
                     args = Py_BuildValue("(O)", item);
-                    result = PyEval_CallObject(object, args);
+                    result = PyObject_CallObject(object, args);
 
                     if (!result) {
                         Py_BEGIN_ALLOW_THREADS
@@ -1019,7 +1019,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                         Py_END_ALLOW_THREADS
 
                         args = Py_BuildValue("(O)", item);
-                        result = PyEval_CallObject(object, args);
+                        result = PyObject_CallObject(object, args);
 
                         if (!result) {
                             Py_BEGIN_ALLOW_THREADS
@@ -1054,7 +1054,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                 Py_END_ALLOW_THREADS
 
                 args = Py_BuildValue("(O)", item);
-                result = PyEval_CallObject(object, args);
+                result = PyObject_CallObject(object, args);
 
                 if (!result) {
                     Py_BEGIN_ALLOW_THREADS
@@ -1672,7 +1672,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
         if (func) {
             PyObject *res = NULL;
             Py_INCREF(func);
-            res = PyEval_CallObject(func, (PyObject *)NULL);
+            res = PyObject_CallObject(func, (PyObject *)NULL);
             if (!res) {
                 PyErr_Clear();
             }
@@ -1699,7 +1699,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
         if (func) {
             PyObject *res = NULL;
             Py_INCREF(func);
-            res = PyEval_CallObject(func, (PyObject *)NULL);
+            res = PyObject_CallObject(func, (PyObject *)NULL);
 
             if (res == NULL) {
                 PyObject *m = NULL;
@@ -1742,7 +1742,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
                         log = newLogObject(NULL, APLOG_ERR, NULL, 0);
                         args = Py_BuildValue("(OOOOO)", type, value,
                                              traceback, Py_None, log);
-                        result = PyEval_CallObject(o, args);
+                        result = PyObject_CallObject(o, args);
                         Py_DECREF(args);
                         Py_DECREF(log);
                         Py_DECREF(o);
@@ -1823,7 +1823,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
         PyObject *res = NULL;
         Py_INCREF(exitfunc);
         PySys_SetObject("exitfunc", (PyObject *)NULL);
-        res = PyEval_CallObject(exitfunc, (PyObject *)NULL);
+        res = PyObject_CallObject(exitfunc, (PyObject *)NULL);
 
         if (res == NULL) {
             PyObject *m = NULL;
@@ -1875,7 +1875,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
                     log = newLogObject(NULL, APLOG_ERR, NULL, 0);
                     args = Py_BuildValue("(OOOOO)", type, value,
                                          traceback, Py_None, log);
-                    result = PyEval_CallObject(o, args);
+                    result = PyObject_CallObject(o, args);
                     Py_DECREF(args);
                     Py_DECREF(log);
                     Py_DECREF(o);
@@ -2433,10 +2433,10 @@ void wsgi_python_init(apr_pool_t *p)
 
         Py_Initialize();
 
+#if PY_VERSION_HEX < 0x03090000
         /* Initialise threading. */
-
         PyEval_InitThreads();
-
+#endif
         /*
          * Remove the environment variable we set for the hash
          * seed. This has to be done in os.environ, which will

@@ -96,7 +96,7 @@ PyObject *newLogWrapperObject(PyObject *buffer)
     args = Py_BuildValue("(OssOOO)", buffer, "utf-8", "replace",
                          Py_None, Py_True, Py_True);
 
-    wrapper = PyEval_CallObject(object, args);
+    wrapper = PyObject_CallObject(object, args);
 
     Py_DECREF(args);
     Py_DECREF(object);
@@ -662,7 +662,7 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
             Py_INCREF(o);
             args = Py_BuildValue("(OOOOO)", type, value, traceback,
                                  Py_None, log);
-            result = PyEval_CallObject(o, args);
+            result = PyObject_CallObject(o, args);
             Py_DECREF(args);
             Py_DECREF(o);
         }

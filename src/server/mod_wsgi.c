@@ -2897,7 +2897,7 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
     if (!method)
         return 0;
 
-    object = PyEval_CallObject(method, NULL);
+    object = PyObject_CallObject(method, NULL);
     Py_DECREF(method);
 
     if (!object) {
@@ -3179,7 +3179,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
     args = Py_BuildValue("(OO)", vars, start);
 
-    self->sequence = PyEval_CallObject(object, args);
+    self->sequence = PyObject_CallObject(object, args);
 
     if (self->sequence != NULL) {
         if (!Adapter_process_file_wrapper(self)) {
@@ -3301,7 +3301,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
             close = PyObject_GetAttrString(self->sequence, "close");
 
             args = Py_BuildValue("()");
-            data = PyEval_CallObject(close, args);
+            data = PyObject_CallObject(close, args);
 
             Py_DECREF(args);
             Py_XDECREF(data);
@@ -3642,124 +3642,65 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
                                   const char *application_group,
                                   int ignore_system_exit)
 {
-    FILE *fp = NULL;
     PyObject *m = NULL;
     PyObject *co = NULL;
-    struct _node *n = NULL;
+    PyObject *io_module = NULL;
+    PyObject *fileobject = NULL;
+    PyObject *source_bytes_object = NULL;
+    PyObject *result = NULL;
+    char *source_buf = NULL;
 
-#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
-    apr_wchar_t wfilename[APR_PATH_MAX];
-#endif
-
-    if (exists) {
-        Py_BEGIN_ALLOW_THREADS
-        if (r) {
-            ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
-                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Reloading WSGI script '%s'.", getpid(),
-                          process_group, application_group, filename);
-        }
-        else {
-            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Reloading WSGI script '%s'.", getpid(),
-                         process_group, application_group, filename);
-        }
-        Py_END_ALLOW_THREADS
-    }
-    else {
-        Py_BEGIN_ALLOW_THREADS
-        if (r) {
-            ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
-                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Loading Python script file '%s'.", getpid(),
-                          process_group, application_group, filename);
-        }
-        else {
-            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Loading Python script file '%s'.", getpid(),
-                         process_group, application_group, filename);
-        }
-        Py_END_ALLOW_THREADS
+    io_module = PyImport_AddModule("io");
+    if (!io_module) {
+        goto load_source_finally;
     }
 
-#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
-    if (wsgi_utf8_to_unicode_path(wfilename, sizeof(wfilename) /
-                                  sizeof(apr_wchar_t), filename)) {
-
-        Py_BEGIN_ALLOW_THREADS
-        if (r) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d, process='%s', "
-                          "application='%s'): Failed to convert '%s' "
-                          "to UCS2 filename.", getpid(),
-                          process_group, application_group, filename);
-        }
-        else {
-            ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                         "mod_wsgi (pid=%d, process='%s', "
-                         "application='%s'): Failed to convert '%s' "
-                         "to UCS2 filename.", getpid(),
-                         process_group, application_group, filename);
-        }
-        Py_END_ALLOW_THREADS
-        return NULL;
+    fileobject = PyObject_CallMethod(io_module, "open", "ss", filename, "rb");
+    if (!fileobject) {
+        goto load_source_finally;
     }
 
-    fp = _wfopen(wfilename, L"r");
-#else
-    fp = fopen(filename, "r");
-#endif
+    source_bytes_object = PyObject_CallMethod(fileobject, "read", "");
+    if (!source_bytes_object) {
+        goto load_source_finally;
+    }
 
-    if (!fp) {
+    result = PyObject_CallMethod(fileobject, "close", "");
+    if (!result) {
+        goto load_source_finally;
+    }
+
+    source_buf = PyBytes_AsString(source_bytes_object);
+    if (!source_buf) {
+        goto load_source_finally;
+    }
+
+    co = Py_CompileString(source_buf, filename, Py_file_input);
+
+load_source_finally:
+    Py_XDECREF(io_module);
+    Py_XDECREF(fileobject);
+    Py_XDECREF(source_bytes_object);
+    Py_XDECREF(result);
+    if (!co) {
         Py_BEGIN_ALLOW_THREADS
         if (r) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
                           "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Call to fopen() failed for '%s'.", getpid(),
+                          "Could not read/compile source file '%s'.", getpid(),
                           process_group, application_group, filename);
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_ERR, errno, wsgi_server,
                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Call to fopen() failed for '%s'.", getpid(),
+                         "Could not read/compile source file '%s'.", getpid(),
                          process_group, application_group, filename);
         }
         Py_END_ALLOW_THREADS
         return NULL;
     }
 
-    n = PyParser_SimpleParseFile(fp, filename, Py_file_input);
-
-    fclose(fp);
-
-    if (!n) {
-        Py_BEGIN_ALLOW_THREADS
-        if (r) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Failed to parse Python script file '%s'.", getpid(),
-                          process_group, application_group, filename);
-        }
-        else {
-            ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Failed to parse Python script file '%s'.", getpid(),
-                         process_group, application_group, filename);
-        }
-        Py_END_ALLOW_THREADS
-
-        wsgi_log_python_error(r, NULL, filename, 0);
-
-        return NULL;
-    }
-
-    co = (PyObject *)PyNode_Compile(n, filename);
-    PyNode_Free(n);
-
-    if (co)
-        m = PyImport_ExecCodeModuleEx((char *)name, co, (char *)filename);
+    m = PyImport_ExecCodeModuleEx((char *)name, co, (char *)filename);
 
     Py_XDECREF(co);
 
@@ -3872,7 +3813,7 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
 
             Py_INCREF(object);
             args = Py_BuildValue("(s)", resource);
-            result = PyEval_CallObject(object, args);
+            result = PyObject_CallObject(object, args);
             Py_DECREF(args);
             Py_DECREF(object);
 
@@ -4245,7 +4186,7 @@ static int wsgi_execute_script(request_rec *r)
                 }
                 else {
                     args = PyTuple_New(0);
-                    object = PyEval_CallObject(method, args);
+                    object = PyObject_CallObject(method, args);
                     Py_DECREF(args);
                 }
 
@@ -6854,7 +6795,7 @@ static int wsgi_execute_dispatch(request_rec *r)
                 if (adapter) {
                     Py_INCREF(object);
                     args = Py_BuildValue("(O)", vars);
-                    result = PyEval_CallObject(object, args);
+                    result = PyObject_CallObject(object, args);
                     Py_DECREF(args);
                     Py_DECREF(object);
 
@@ -6936,7 +6877,7 @@ static int wsgi_execute_dispatch(request_rec *r)
                 if (adapter) {
                     Py_INCREF(object);
                     args = Py_BuildValue("(O)", vars);
-                    result = PyEval_CallObject(object, args);
+                    result = PyObject_CallObject(object, args);
                     Py_DECREF(args);
                     Py_DECREF(object);
 
@@ -7018,7 +6959,7 @@ static int wsgi_execute_dispatch(request_rec *r)
                 if (adapter) {
                     Py_INCREF(object);
                     args = Py_BuildValue("(O)", vars);
-                    result = PyEval_CallObject(object, args);
+                    result = PyObject_CallObject(object, args);
                     Py_DECREF(args);
                     Py_DECREF(object);
 
@@ -7109,9 +7050,7 @@ static int wsgi_execute_dispatch(request_rec *r)
                              adapter->log->ob_type->tp_name);
             }
             else {
-                args = PyTuple_New(0);
-                object = PyEval_CallObject(method, args);
-                Py_DECREF(args);
+                object = PyObject_CallObject(method, NULL);
             }
 
             Py_XDECREF(object);
@@ -14803,7 +14742,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Oss)", vars, user, password);
-                result = PyEval_CallObject(object, args);
+                result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
@@ -14873,10 +14812,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                                  adapter->log->ob_type->tp_name);
                 }
                 else {
-                    args = PyTuple_New(0);
-                    result = PyEval_CallObject(method, args);
+                    result = PyObject_CallObject(method, NULL);
                     Py_XDECREF(result);
-                    Py_DECREF(args);
                 }
 
                 /* Log any details of exceptions if execution failed. */
@@ -15048,7 +14985,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Oss)", vars, user, realm);
-                result = PyEval_CallObject(object, args);
+                result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
@@ -15120,7 +15057,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                 }
                 else {
                     args = PyTuple_New(0);
-                    result = PyEval_CallObject(method, args);
+                    result = PyObject_CallObject(method, args);
                     Py_XDECREF(result);
                     Py_DECREF(args);
                 }
@@ -15299,7 +15236,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Os)", vars, r->user);
-                result = PyEval_CallObject(object, args);
+                result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
@@ -15412,7 +15349,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                 }
                 else {
                     args = PyTuple_New(0);
-                    result = PyEval_CallObject(method, args);
+                    result = PyObject_CallObject(method, args);
                     Py_XDECREF(result);
                     Py_DECREF(args);
                 }
@@ -15585,7 +15522,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Oz)", vars, host);
-                result = PyEval_CallObject(object, args);
+                result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
@@ -15637,7 +15574,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
                 }
                 else {
                     args = PyTuple_New(0);
-                    result = PyEval_CallObject(method, args);
+                    result = PyObject_CallObject(method, args);
                     Py_XDECREF(result);
                     Py_DECREF(args);
                 }
@@ -15850,7 +15787,7 @@ static int wsgi_hook_check_user_id(request_rec *r)
 
                 Py_INCREF(object);
                 args = Py_BuildValue("(Oss)", vars, r->user, password);
-                result = PyEval_CallObject(object, args);
+                result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
@@ -15918,10 +15855,8 @@ static int wsgi_hook_check_user_id(request_rec *r)
                                  adapter->log->ob_type->tp_name);
                 }
                 else {
-                    args = PyTuple_New(0);
-                    result = PyEval_CallObject(method, args);
+                    result = PyObject_CallObject(method, NULL);
                     Py_XDECREF(result);
-                    Py_DECREF(args);
                 }
 
                 /* Log any details of exceptions if execution failed. */

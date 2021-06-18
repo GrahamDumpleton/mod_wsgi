@@ -43,7 +43,6 @@
 
 #include "structmember.h"
 #include "compile.h"
-#include "node.h"
 #include "osdefs.h"
 #include "frameobject.h"
 
