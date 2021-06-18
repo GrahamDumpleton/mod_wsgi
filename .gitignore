@@ -25,3 +25,4 @@ docs/_build
 newrelic.ini
 src/packages
 venv
+httpd-test

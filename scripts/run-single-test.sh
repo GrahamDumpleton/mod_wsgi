@@ -3,17 +3,17 @@
 END=$((SECONDS+15))
 
 mod_wsgi-express setup-server tests/environ.wsgi \
-    --server-root httpd --log-level info
+    --server-root httpd-test --log-level info
 
-trap "httpd/apachectl stop" EXIT
+trap "httpd-test/apachectl stop" EXIT
 
-touch httpd/error_log
+touch httpd-test/error_log
 
-tail -f httpd/error_log &
+tail -f httpd-test/error_log &
 
-httpd/apachectl start
+httpd-test/apachectl start
 
-while [ ! -f httpd/httpd.pid ]; do
+while [ ! -f httpd-test/httpd.pid ]; do
     if [ $SECONDS -gt $END ]; then
         echo 'Failed'
         exit 1
