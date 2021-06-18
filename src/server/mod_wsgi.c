@@ -3650,7 +3650,7 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
     PyObject *result = NULL;
     char *source_buf = NULL;
 
-    io_module = PyImport_AddModule("io");
+    io_module = PyImport_ImportModule("io");
     if (!io_module) {
         goto load_source_finally;
     }
