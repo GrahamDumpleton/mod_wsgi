@@ -2,11 +2,14 @@
 
 END=$((SECONDS+15))
 
-mod_wsgi-express setup-server tests/environ.wsgi --server-root httpd
+mod_wsgi-express setup-server tests/environ.wsgi \
+    --server-root httpd --log-level info
 
 trap "httpd/apachectl stop" EXIT
 
-touch httpd/error.log
+touch httpd/error_log
+
+tail -f httpd/error_log &
 
 httpd/apachectl start
 
