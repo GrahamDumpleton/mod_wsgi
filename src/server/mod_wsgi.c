@@ -3697,6 +3697,9 @@ load_source_finally:
                          process_group, application_group, filename);
         }
         Py_END_ALLOW_THREADS
+
+        wsgi_log_python_error(r, NULL, filename, 0);
+
         return NULL;
     }
 
