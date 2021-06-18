@@ -445,6 +445,7 @@ else:
     PYTHON_LDVERSION = get_python_config('LDVERSION') or PYTHON_VERSION
 
     PYTHON_LIBDIR = get_python_config('LIBDIR')
+    APXS_LIBDIR = get_apxs_config('LIBDIR')
     PYTHON_CFGDIR =  get_python_lib(plat_specific=1, standard_lib=1) + '/config'
 
     if PYTHON_LDVERSION and PYTHON_LDVERSION != PYTHON_VERSION:
@@ -452,7 +453,10 @@ else:
         if not os.path.exists(PYTHON_CFGDIR):
             PYTHON_CFGDIR = '%s-%s' % (PYTHON_CFGDIR, sys.platform)
 
-    PYTHON_LDFLAGS = ['-L%s' % PYTHON_LIBDIR, '-L%s' % PYTHON_CFGDIR]
+    PYTHON_LDFLAGS = ['-L%s' % PYTHON_CFGDIR]
+    if PYTHON_LIBDIR != APXS_LIBDIR:
+        PYTHON_LDFLAGS.insert(0, '-L%s' % PYTHON_LIBDIR)
+
     PYTHON_LDLIBS = ['-lpython%s' % PYTHON_LDVERSION]
 
     if os.path.exists(os.path.join(PYTHON_LIBDIR,
@@ -472,9 +476,13 @@ EXTRA_LINK_ARGS = PYTHON_LDFLAGS + PYTHON_LDLIBS
 
 # Force adding of LD_RUN_PATH for platforms that may need it.
 
+LD_RUN_PATHS = []
 if os.name != 'nt':
     LD_RUN_PATH = os.environ.get('LD_RUN_PATH', '')
-    LD_RUN_PATH += ':%s:%s' % (PYTHON_LIBDIR, PYTHON_CFGDIR)
+    LD_RUN_PATHS = [PYTHON_CFGDIR]
+    if PYTHON_LIBDIR != APXS_LIBDIR:
+        LD_RUN_PATHS.insert(0, PYTHON_LIBDIR)
+    LD_RUN_PATH += ':' + ':'.join(LD_RUN_PATHS)
     LD_RUN_PATH = LD_RUN_PATH.lstrip(':')
 
     os.environ['LD_RUN_PATH'] = LD_RUN_PATH
@@ -507,7 +515,7 @@ else:
 
 extension = Extension(extension_name, source_files,
         include_dirs=INCLUDE_DIRS, extra_compile_args=EXTRA_COMPILE_FLAGS,
-        extra_link_args=EXTRA_LINK_ARGS)
+        extra_link_args=EXTRA_LINK_ARGS, runtime_library_dirs=LD_RUN_PATHS)
 
 def _documentation():
     result = []
