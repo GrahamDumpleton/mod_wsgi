@@ -33,6 +33,6 @@ jobs:
       - name: "Start up mod_wsgi-express"
         run: "mod_wsgi-express start-server tests/hello.wsgi --port 8080 --log-to-terminal --pid-file httpd.pid &"
       - name: "Wait for server to start"
-        run: "while [ ! -f httpd.pid ]; do sleep 1; done; sleep 2"
+        run: "END=$((SECONDS+15)); while [ ! -f httpd.pid ]; do if [ $SECONDS -gt $END ]; then echo 'Failed'; exit 1; fi; echo 'Waiting...'; sleep 1; done; sleep 2"
       - name: "Trigger single WSGI request"
-        run: "curl --verbose --fail --show-error http://localhost:8000"
+        run: "curl --verbose --fail --show-error http://localhost:8080"
