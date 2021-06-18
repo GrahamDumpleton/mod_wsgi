@@ -3684,37 +3684,33 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
     }
 
     io_module = PyImport_ImportModule("io");
-    if (!io_module) {
+
+    if (!io_module)
         goto load_source_finally;
-    }
 
     fileobject = PyObject_CallMethod(io_module, "open", "ss", filename, "rb");
-    if (!fileobject) {
+
+    if (!fileobject)
         goto load_source_finally;
-    }
 
     source_bytes_object = PyObject_CallMethod(fileobject, "read", "");
-    if (!source_bytes_object) {
+
+    if (!source_bytes_object)
         goto load_source_finally;
-    }
 
     result = PyObject_CallMethod(fileobject, "close", "");
-    if (!result) {
+
+    if (!result)
         goto load_source_finally;
-    }
 
     source_buf = PyBytes_AsString(source_bytes_object);
-    if (!source_buf) {
+
+    if (!source_buf)
         goto load_source_finally;
-    }
 
     co = Py_CompileString(source_buf, filename, Py_file_input);
 
 load_source_finally:
-    Py_XDECREF(io_module);
-    Py_XDECREF(fileobject);
-    Py_XDECREF(source_bytes_object);
-    Py_XDECREF(result);
     if (!co) {
         Py_BEGIN_ALLOW_THREADS
         if (r) {
@@ -3733,12 +3729,20 @@ load_source_finally:
 
         wsgi_log_python_error(r, NULL, filename, 0);
 
+        Py_XDECREF(io_module);
+        Py_XDECREF(fileobject);
+        Py_XDECREF(source_bytes_object);
+        Py_XDECREF(result);
+
         return NULL;
     }
 
-    m = PyImport_ExecCodeModuleEx((char *)name, co, (char *)filename);
+    Py_XDECREF(io_module);
+    Py_XDECREF(fileobject);
+    Py_XDECREF(source_bytes_object);
+    Py_XDECREF(result);
 
-    Py_XDECREF(co);
+    m = PyImport_ExecCodeModuleEx((char *)name, co, (char *)filename);
 
     if (m) {
         PyObject *object = NULL;
@@ -3797,6 +3801,8 @@ load_source_finally:
             wsgi_log_python_error(r, NULL, filename, 0);
         }
     }
+
+    Py_XDECREF(co);
 
     return m;
 }
