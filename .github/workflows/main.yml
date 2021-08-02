@@ -22,11 +22,13 @@ jobs:
           python-version: "${{ matrix.python-version }}"
       - name: Install extra dependencies
         run: sudo apt install -y apache2-dev
-      - name: "Update pip"
-        run: python -m pip install --upgrade pip setuptools
+      - name: "Update pip installation"
+        run: python -m pip install --upgrade pip setuptools wheel
+      - name: "Build mod_wsgi packages"
+        run: ./package.sh && ls -las dist
       - name: "Install mod_wsgi-express"
-        run: python -m pip install --verbose .
+        run: python -m pip install --verbose dist/mod_wsgi-[0-9].*.tar.gz
       - name: "Run mod_wsgi-express test"
         run: scripts/run-single-test.sh
-      - name: "Verify CMMI configure/make/make install"
+      - name: "Verify configure/make/make install"
         run: ./configure && make && sudo make install
