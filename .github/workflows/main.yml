@@ -5,27 +5,45 @@ on:
   pull_request:
     branches:
       - develop
-  workflow_dispatch:
 
 jobs:
+  build:
+    name: "Build mod_wsgi packages"
+    runs-on: "ubuntu-20.04"
+    steps:
+      - uses: "actions/checkout@v2"
+      - uses: "actions/setup-python@v2"
+        with:
+          python-version: "3.9"
+          output-dir: dist
+      - name: "Build mod_wsgi packages"
+        run: ./package.sh && ls -las dist
+      - name: "Store built packages"
+        uses: actions/upload-artifact@v2
+        with:
+          name: dist
+          path: dist/*
+
   tests:
-    name: "Python ${{ matrix.python-version }}"
+    name: "Test mod_wsgi package (Python ${{ matrix.python-version }})"
     runs-on: "ubuntu-20.04"
     strategy:
       fail-fast: false
       matrix:
         python-version: ["2.7", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10-dev"]
     steps:
-      - uses: "actions/checkout@v2"
       - uses: "actions/setup-python@v2"
         with:
           python-version: "${{ matrix.python-version }}"
-      - name: Install extra dependencies
+      - name: "Download built packages"
+        uses: actions/download-artifact@v2
+        with:
+            name: dist
+            path: dist
+      - name: "Install Apache package"
         run: sudo apt install -y apache2-dev
       - name: "Update pip installation"
         run: python -m pip install --upgrade pip setuptools wheel
-      - name: "Build mod_wsgi packages"
-        run: ./package.sh && ls -las dist
       - name: "Install mod_wsgi-express"
         run: python -m pip install --verbose dist/mod_wsgi-[0-9].*.tar.gz
       - name: "Run mod_wsgi-express test"
