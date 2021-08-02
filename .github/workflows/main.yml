@@ -28,3 +28,5 @@ jobs:
         run: python -m pip install --verbose .
       - name: "Run mod_wsgi-express test"
         run: scripts/run-single-test.sh
+      - name: "Verify CMMI configure/make/make install"
+        run: ./configure && make && make install
