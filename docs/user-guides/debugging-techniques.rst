@@ -76,25 +76,36 @@ below::
         status = '200 OK'
         output = b'Hello World!'
 
-        print >> environ['wsgi.errors'], "application debug #1"
+        print("application debug #1", file=environ['wsgi.errors']))
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
         start_response(status, response_headers)
 
-        print >> environ['wsgi.errors'], "application debug #2"
+        print("application debug #2", file=environ['wsgi.errors']))
 
         return [output]
 
+.. note::
+
+    If you are using Python 2, you will need to enable the `print` function
+    at the beginning of the file::
+
+        from __future__ import print_function
+
+    Alternatively, always use `print` as a statement rather than a function::
+
+        print >> environ['wsgi.errors']), "application debug #N"
+
 If 'wsgi.errors' is not available to the code which needs to output log
-messages, then it should explicitly direct output from the 'print'
-statement to 'sys.stderr'::
+messages, then it should explicitly direct output from 'print'
+to 'sys.stderr'::
 
     import sys
 
     def function():
-        print >> sys.stderr, "application debug #3"
-            ...
+        print("application debug #3", file=sys.stderr)
+        ...
 
 If ``sys.stderr`` or ``sys.stdout`` is used directly then
 these messages will end up in the main server host error log file and not
@@ -108,7 +119,7 @@ exception occurring of the form::
     IOError: sys.stdout access restricted by mod_wsgi
 
 This is because portable WSGI applications should not write to
-``sys.stdout`` or use the 'print' statement without specifying an
+``sys.stdout`` or use 'print' without specifying an
 alternate file object besides ``sys.stdout`` as the target. This
 restriction can be disabled for the whole server using the
 WSGIRestrictStdout directive, or by mapping ``sys.stdout`` to
@@ -167,16 +178,16 @@ well, with process ID, user ID and group ID being shown as examples::
         input = environ['wsgi.input']
         output = cStringIO.StringIO()
 
-        print >> output, "PID: %s" % os.getpid()
-        print >> output, "UID: %s" % os.getuid()
-        print >> output, "GID: %s" % os.getgid()
-        print >> output
+        print("PID: %s" % os.getpid(), file=output)
+        print("UID: %s" % os.getuid(), file=output)
+        print("GID: %s" % os.getgid(), file=output)
+        print(file=output)
 
         keys = environ.keys()
         keys.sort()
         for key in keys:
-            print >> output, '%s: %s' % (key, repr(environ[key]))
-        print >> output
+            print('%s: %s' % (key, repr(environ[key])), file=output)
+        print(file=output)
 
         output.write(input.read(int(environ.get('CONTENT_LENGTH', '0'))))
 
@@ -288,7 +299,7 @@ follows::
             self.__ocontent = ocontent
 
         def __call__(self, status, headers, *args):
-            pprint.pprint((status, headers)+args), stream=self.__oheaders)
+            pprint.pprint((status, headers)+args, stream=self.__oheaders)
             self.__oheaders.close()
 
             self.__write = self.__start_response(status, headers, *args)
@@ -334,16 +345,16 @@ follows::
             key = "%s-%s-%s" % (time.time(), self.__pid, count)
 
             iheaders = os.path.join(self.__savedir, key + ".iheaders")
-            iheaders_fp = file(iheaders, 'w')
+            iheaders_fp = open(iheaders, 'w')
 
             icontent = os.path.join(self.__savedir, key + ".icontent")
-            icontent_fp = file(icontent, 'w+b')
+            icontent_fp = open(icontent, 'w+b')
 
             oheaders = os.path.join(self.__savedir, key + ".oheaders")
-            oheaders_fp = file(oheaders, 'w')
+            oheaders_fp = open(oheaders, 'w')
 
             ocontent = os.path.join(self.__savedir, key + ".ocontent")
-            ocontent_fp = file(ocontent, 'w+b')
+            ocontent_fp = open(ocontent, 'w+b')
 
             errors = environ['wsgi.errors']
             pprint.pprint(environ, stream=iheaders_fp)
@@ -377,19 +388,20 @@ Poorly Performing Code
 ----------------------
 
 The WSGI specification allows any iterable object to be returned as the
-response, so long as the iterable yields string values. That this is the
-case means that one can too easily return an object which satisfies this
-requirement but has some sort of performance related issue.
+response, so long as the iterable yields byte-strings (``bytes``, or
+``str`` on Python 2). That this is the case means that one can too easily
+return an object which satisfies this requirement but has some sort of
+performance related issue.
 
 The worst case of this is where instead of returning a list containing
-strings, a single string is returned. The problem with a string is that
-when it is iterated over, a single character of the string is yielded each
-time. In other words, a single character is written back to the client on
-each loop, with a flush occurring in between to ensure that the character
+byte-strings, a single byte-string value is returned. The problem is that
+when a byte-string is iterated over, a single byte is yielded each
+time. In other words, a single byte is written back to the client on
+each loop, with a flush occurring in between to ensure that the byte
 has actually been written and isn't just being buffered.
 
-Although for small strings a performance impact may not be noticed, if
-returning large strings the affect on request throughput could be quite
+Although for small byte-strings a performance impact may not be noticed, if
+returning more data the effect on request throughput could be quite
 significant.
 
 Another case which can cause problems is to return a file like object. For
@@ -400,15 +412,15 @@ okay, but if the file is a binary file there may not actually be line
 breaks within the file.
 
 For the case where file contains many short lines, throughput would be
-affected much like in the case where a string is returned. For the case
+affected much like in the case where a byte-string is returned. For the case
 where the file is just binary data, the result can be that the complete
 file may be read in on the first loop. If the file is large, this could
 cause a large transient spike in memory usage. Once that memory is
-allocated, it will then be retained by the process, albeit that it may be
-reused by the process at a later point.
+allocated, it will then usually be retained by the process, albeit that
+it may be reused by the process at a later point.
 
 Because of the performance impacts in terms of throughput and memory usage,
-both these cases should be avoided. For the case of returning a string, it
+both these cases should be avoided. For the case of returning a byte-string, it
 should be returned with a single element list. For the case of a file like
 object, the 'wsgi.file_wrapper' extension should be used, or a wrapper
 which suitably breaks the response into chunks.
@@ -416,19 +428,25 @@ which suitably breaks the response into chunks.
 In order to identify where code may be inadvertently returning such iterable
 types, the following code can be used::
 
-    import types
-
-    import cStringIO
+    import io
     import socket
-    import StringIO
+    import sys
 
     BAD_ITERABLES = [
-      cStringIO.InputType,
-      socket.SocketType,
-      StringIO.StringIO,
-      types.FileType,
-      types.StringType,
+      bytes,
+      socket.socket,
+      io.IOBase,
     ]
+    if sys.version_info < (3, 0):
+        # Python 2
+        import types
+        import cStringIO
+        import StringIO
+        BAD_ITERABLES.extend([
+            types.FileType,
+            cStringIO.InputType,
+            StringIO.StringIO,
+        ])
 
     class ValidatingMiddleware:
 
@@ -441,12 +459,10 @@ types, the following code can be used::
             result = self.__application(environ, start_response)
 
             value = type(result)
-            if value == types.InstanceType:
-                value = result.__class__
             if value in BAD_ITERABLES:
-                print >> errors, 'BAD ITERABLE RETURNED: ',
-                print >> errors, 'URL=%s ' % environ['REQUEST_URI'],
-                print >> errors, 'TYPE=%s' % value
+                print('BAD ITERABLE RETURNED: ', file=errors, end='')
+                print('URL=%s ' % environ['REQUEST_URI'], file=errors, end='')
+                print('TYPE=%s' % value, file=errors)
 
             return result
 
@@ -467,8 +483,8 @@ catching middleware component.
 One example of WSGI error catching middleware is the ErrorMiddleware class
 from Paste.
 
-  * http://www.pythonpaste.org
-    
+  * https://pythonpaste.readthedocs.io/en/latest/
+
 This class can be configured not only to catch exceptions and present the
 details to the browser in an error page, it can also be configured to send
 the details of any errors in email to a designated recipient, or log the
@@ -758,7 +774,8 @@ process debug mode from within 'gdb'.
 
 To do this it is necessary to first shutdown Apache. The 'gdb' debugger can
 then be started against the 'httpd' executable and then the process started
-up from inside of 'gdb'::
+up from inside of 'gdb' with the `-X` flag to select single-process debug
+mode::
 
     $ /usr/local/apache/bin/apachectl stop
     $ sudo gdb /usr/local/apache/bin/httpd
@@ -995,21 +1012,27 @@ Sample code which takes this approach is included below. This code could be
 placed temporarily at the end of your WSGI script file if you know you are
 going to need it because of a recurring problem::
 
+    from __future__ import print_function
+
     import os
     import sys
     import time
     import signal
     import threading
     import atexit
-    import Queue
-    import traceback 
+    import traceback
+
+    try:
+        from Queue import Queue  # Python 2
+    except ImportError:
+        from queue import Queue  # Python 3
 
     FILE = '/tmp/dump-stack-traces.txt'
 
     _interval = 1.0
 
     _running = False
-    _queue = Queue.Queue()
+    _queue = Queue()
     _lock = threading.Lock()
 
     def _stacktraces(): 
@@ -1024,7 +1047,7 @@ going to need it because of a recurring problem::
                     code.append("  %s" % (line.strip())) 
 
         for line in code:
-            print >> sys.stderr, line
+            print(line, file=sys.stderr)
 
     try:
         mtime = os.path.getmtime(FILE)
@@ -1032,7 +1055,7 @@ going to need it because of a recurring problem::
         mtime = None
 
     def _monitor():
-        while 1:
+        while True:
             global mtime
 
             try:
@@ -1072,7 +1095,7 @@ going to need it because of a recurring problem::
         _lock.acquire()
         if not _running:
             prefix = 'monitor (pid=%d):' % os.getpid()
-            print >> sys.stderr, '%s Starting stack trace monitor.' % prefix
+            print('%s Starting stack trace monitor.' % prefix, file=sys.stderr)
             _running = True
             _thread.start()
         _lock.release()
