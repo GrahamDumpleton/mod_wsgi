@@ -55,7 +55,7 @@ jobs:
       - name: "Uninstall mod_wsgi"
         run: pip uninstall --yes mod_wsgi
       - name: "Install mod_wsgi-standalone"
-        run: python -m pip install --verbose dist/mod_wsgi-[0-9].*.tar.gz
+        run: python -m pip install --verbose dist/mod_wsgi-standalone-[0-9].*.tar.gz
       - name: "Run mod_wsgi-express test #2"
         run: scripts/run-single-test.sh
       - name: "Uninstall mod_wsgi-standalone"
