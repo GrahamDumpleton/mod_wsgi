@@ -1,7 +1,0 @@
-APACHE_ROOTDIR = c:\Apache24-win64-VC10
-
-PYTHON_ROOTDIR = c:\Python32-win64-VC9
-PYTHON_VERSION = 32
-
-include common-VC9.mk
-
