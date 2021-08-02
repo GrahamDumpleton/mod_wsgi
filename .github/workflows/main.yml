@@ -16,6 +16,8 @@ jobs:
         with:
           python-version: "3.9"
           output-dir: dist
+      - name: "Install Apache package"
+        run: sudo apt install -y apache2-dev
       - name: "Build mod_wsgi packages"
         run: ./package.sh && ls -las dist
       - name: "Store built packages"
@@ -27,6 +29,8 @@ jobs:
   tests:
     name: "Test mod_wsgi package (Python ${{ matrix.python-version }})"
     runs-on: "ubuntu-20.04"
+    needs:
+    - build
     strategy:
       fail-fast: false
       matrix:
