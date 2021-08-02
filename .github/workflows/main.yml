@@ -22,11 +22,8 @@ jobs:
       - name: "Store built packages"
         uses: actions/upload-artifact@v2
         with:
-          name: files
-          path: |
-            dist/*
-            scripts/*
-            tests/*
+          name: dist
+          path: dist/*
 
   tests:
     name: "Test mod_wsgi package (Python ${{ matrix.python-version }})"
@@ -38,24 +35,30 @@ jobs:
       matrix:
         python-version: ["2.7", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10-dev"]
     steps:
+      - uses: "actions/checkout@v2"
       - uses: "actions/setup-python@v2"
         with:
           python-version: "${{ matrix.python-version }}"
       - name: "Download built packages"
         uses: actions/download-artifact@v2
         with:
-            name: files
-            path: |
-              dist
-              scripts
-              tests
+            name: dist
+            path: dist
       - name: "Install Apache package"
         run: sudo apt install -y apache2-dev
       - name: "Update pip installation"
         run: python -m pip install --upgrade pip setuptools wheel
-      - name: "Install mod_wsgi-express"
+      - name: "Install mod_wsgi"
         run: python -m pip install --verbose dist/mod_wsgi-[0-9].*.tar.gz
-      - name: "Run mod_wsgi-express test"
+      - name: "Run mod_wsgi-express test #1"
         run: scripts/run-single-test.sh
+      - name: "Uninstall mod_wsgi"
+        run: pip uninstall mod_wsgi
+      - name: "Install mod_wsgi-standalone"
+        run: python -m pip install --verbose dist/mod_wsgi-[0-9].*.tar.gz
+      - name: "Run mod_wsgi-express test #2"
+        run: scripts/run-single-test.sh
+      - name: "Uninstall mod_wsgi-standalone"
+        run: pip uninstall mod_wsgi-standalone
       - name: "Verify configure/make/make install"
         run: ./configure && make && sudo make install
