@@ -15,7 +15,6 @@ jobs:
       - uses: "actions/setup-python@v2"
         with:
           python-version: "3.9"
-          output-dir: dist
       - name: "Install Apache package"
         run: sudo apt install -y apache2-dev
       - name: "Build mod_wsgi packages"
@@ -23,8 +22,11 @@ jobs:
       - name: "Store built packages"
         uses: actions/upload-artifact@v2
         with:
-          name: dist
-          path: dist/*
+          name: files
+          path: |
+            dist/*
+            scripts/*
+            tests/*
 
   tests:
     name: "Test mod_wsgi package (Python ${{ matrix.python-version }})"
@@ -36,15 +38,17 @@ jobs:
       matrix:
         python-version: ["2.7", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10-dev"]
     steps:
-      - uses: "actions/checkout@v2"
       - uses: "actions/setup-python@v2"
         with:
           python-version: "${{ matrix.python-version }}"
       - name: "Download built packages"
         uses: actions/download-artifact@v2
         with:
-            name: dist
-            path: dist
+            name: files
+            path: |
+              dist
+              scripts
+              tests
       - name: "Install Apache package"
         run: sudo apt install -y apache2-dev
       - name: "Update pip installation"
