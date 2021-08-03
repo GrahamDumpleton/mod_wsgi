@@ -59,9 +59,7 @@ extern InterpreterObject *newInterpreterObject(const char *name);
 extern int wsgi_python_initialized;
 extern int wsgi_python_after_fork;
 
-#ifndef MOD_WSGI_DISABLE_EMBEDDED
 extern int wsgi_python_required;
-#endif
 
 extern const char *wsgi_python_path;
 extern const char *wsgi_python_eggs;

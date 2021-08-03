@@ -14,3 +14,6 @@ Bugs Fixed
   alternate C APIs. The changes were made for all Python versions back to
   Python 3.6 and were not conditional on Python 3.10+ being used. This is
   why the minor version got bumped.
+
+* When using CMMI (configure/make/make install) method for compiling mod_wsgi
+  if embedded mode was being disabled at compile time, compilation would fail.
