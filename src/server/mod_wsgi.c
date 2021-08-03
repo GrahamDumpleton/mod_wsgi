@@ -9354,7 +9354,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                     }
                 }
                 else {
-                    period = restart_time - now;
+                    if (!period || ((restart_time - now) < period))
+                        period = restart_time - now;
                 }
             }
         }
@@ -9463,8 +9464,10 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
             kill(getpid(), SIGINT);
         }
 
-        if (restart || wsgi_request_timeout || period <= 0)
+        if (restart || wsgi_request_timeout || period <= 0 ||
+            (wsgi_startup_timeout && !wsgi_startup_shutdown_time)) {
             period = apr_time_from_sec(1);
+        }
 
         apr_sleep(period);
     }

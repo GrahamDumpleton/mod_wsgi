@@ -24,6 +24,17 @@ Bugs Fixed
   timeout period had expired, and not as soon as any active requests had
   completed, if that had occurred before the graceful timeout had expired.
 
+* When using the ``startup-timeout`` and ``restart-interval`` options of
+  ``WSGIDaemonProcess`` directive together, checking for the expiration
+  time of the startup time was done incorrectly, resulting in process
+  restart being delayed if startup had failed. At worst case this was the
+  lessor of the time periods specified by the options ``restart-interval``,
+  ``deadlock-timeout``, ``graceful-timeout`` and ``eviction-timeout``. If
+  ``request-timeout`` were defined it would however still be calculated
+  correctly. As ``request-timeout`` was by default defined when using
+  ``mod_wsgi-express``, this issue only usually affect mod_wsgi when
+  manually configuring Apache.
+
 Features Changed
 ----------------
 
