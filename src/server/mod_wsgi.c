@@ -9087,7 +9087,10 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                 }
             }
         }
-        else if (wsgi_daemon_graceful && !wsgi_daemon_shutdown) {
+
+        /* Check if graceful shutdown and no active requests. */
+
+        if (wsgi_daemon_graceful && !wsgi_daemon_shutdown) {
             if (wsgi_active_requests == 0) {
                 ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                              "mod_wsgi (pid=%d): Requests have completed, "

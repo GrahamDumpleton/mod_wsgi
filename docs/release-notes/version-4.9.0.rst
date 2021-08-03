@@ -18,6 +18,12 @@ Bugs Fixed
 * When using CMMI (configure/make/make install) method for compiling mod_wsgi
   if embedded mode was being disabled at compile time, compilation would fail.
 
+* When ``maximum-requests`` option was used with mod_wsgi daemon mode, and
+  a graceful restart signal was sent to the daemon process while there was
+  an active request, the process would only shutdown when the graceful
+  timeout period had expired, and not as soon as any active requests had
+  completed, if that had occurred before the graceful timeout had expired.
+
 Features Changed
 ----------------
 
