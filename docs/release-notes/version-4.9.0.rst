@@ -41,3 +41,18 @@ Features Changed
   for you, the value of ``wsgi.multithread`` has been changed such that it
   will now correctly report ``False`` if using embedded mode, a multithread
   capable MPM is used, but the number of configured threads is set to 1.
+
+* The ``graceful-timeout`` option for ``WSGIDaemonProcess`` now defaults to
+  15 seconds. This was always the case when ``mod_wsgi-express`` was used
+  but the default was never applied back to the case where mod_wsgi was
+  being configured manually.
+
+  A default of 15 seconds for ``graceful-timeout`` is being added to avoid
+  the problem where sending a SIGUSR1 to a daemon mode process would never
+  see the process shutdown due to there never being a time when there were
+  no active requests. This might occur when there were a stuck request that
+  never completed, or numerous long running requests which always overlapped
+  in time meaning the process was never idle.
+
+  You can still force ``graceful-timeout`` to be 0 to restore the original
+  behaviour, but that is probably not recommended.

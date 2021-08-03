@@ -7435,7 +7435,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     int deadlock_timeout = 300;
     int inactivity_timeout = 0;
     int request_timeout = 0;
-    int graceful_timeout = 0;
+    int graceful_timeout = 15;
     int eviction_timeout = 0;
     int restart_interval = 0;
     int connect_timeout = 15;
