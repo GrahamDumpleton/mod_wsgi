@@ -13339,7 +13339,10 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
     /* Determine whether multiprocess and/or multithread. */
 
     ap_mpm_query(AP_MPMQ_IS_THREADED, &wsgi_multithread);
-    wsgi_multithread = (wsgi_multithread != AP_MPMQ_NOT_SUPPORTED);
+    if (wsgi_multithread != AP_MPMQ_NOT_SUPPORTED) {
+        ap_mpm_query(AP_MPMQ_MAX_THREADS, &wsgi_multithread);
+        wsgi_multithread = (wsgi_multithread != 1);
+    }
 
     ap_mpm_query(AP_MPMQ_IS_FORKED, &wsgi_multiprocess);
     if (wsgi_multiprocess != AP_MPMQ_NOT_SUPPORTED) {

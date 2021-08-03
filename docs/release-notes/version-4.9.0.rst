@@ -17,3 +17,21 @@ Bugs Fixed
 
 * When using CMMI (configure/make/make install) method for compiling mod_wsgi
   if embedded mode was being disabled at compile time, compilation would fail.
+
+Features Changed
+----------------
+
+* Historically when using embedded mode, ``wsgi.multithread`` in the WSGI
+  ``environ`` dictionary has reported ``True`` when any multithread capable
+  Apache MPM were used (eg., worker, event), even if the current number of
+  configured threads per child process was overridden to be 1. Why this was
+  the case has been forgotten, but generally wouldn't matter since no one
+  would ever set up Apache with a mulithread MPM and then configure the
+  number of threads to be 1. If that was desired then ``prefork`` MPM would
+  be used.
+
+  With ``mod_wsgi-express`` since 4.8.0 making it much easier to use
+  embedded mode and have a sane configuration used, since it is generated
+  for you, the value of ``wsgi.multithread`` has been changed such that it
+  will now correctly report ``False`` if using embedded mode, a multithread
+  capable MPM is used, but the number of configured threads is set to 1.
