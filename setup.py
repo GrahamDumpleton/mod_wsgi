@@ -19,84 +19,8 @@ from distutils.core import Extension
 from distutils.sysconfig import get_config_var as get_python_config
 from distutils.sysconfig import get_python_lib
 
-# Before anything else, this setup.py uses some tricks to potentially
-# install Apache. This can be from a local tarball, or from precompiled
-# Apache binaries for Heroku and OpenShift environments downloaded from
-# Amazon S3. Once they are installed, then the installation of the
-# mod_wsgi package itself will be triggered, ensuring that it can be
-# built against the precompiled Apache binaries which were installed.
-#
-# First work out whether we are actually running on either Heroku or
-# OpenShift. If we are, then we identify the set of precompiled binaries
-# we are to use and copy it into the Python installation.
-
-PREFIX = 'https://s3.amazonaws.com'
-BUCKET = os.environ.get('MOD_WSGI_REMOTE_S3_BUCKET_NAME', 'modwsgi.org')
-
-REMOTE_TARBALL_NAME = os.environ.get('MOD_WSGI_REMOTE_PACKAGES_NAME')
-LOCAL_TARBALL_FILE = os.environ.get('MOD_WSGI_LOCAL_PACKAGES_FILE')
-
-TGZ_OPENSHIFT='mod_wsgi-packages-openshift-centos6-apache-2.4.12-1.tar.gz'
-TGZ_HEROKU='mod_wsgi-packages-heroku-cedar14-apache-2.4.12-1.tar.gz'
-
-if not REMOTE_TARBALL_NAME and not LOCAL_TARBALL_FILE:
-    if os.environ.get('OPENSHIFT_HOMEDIR'):
-        REMOTE_TARBALL_NAME = TGZ_OPENSHIFT
-    elif os.path.isdir('/app/.heroku'):
-        REMOTE_TARBALL_NAME = TGZ_HEROKU
-
-REMOTE_TARBALL_URL = None
-
-if LOCAL_TARBALL_FILE is None and REMOTE_TARBALL_NAME:
-    REMOTE_TARBALL_URL = '%s/%s/%s' % (PREFIX, BUCKET, REMOTE_TARBALL_NAME)
-
-WITH_TARBALL_PACKAGE = False
-
-if REMOTE_TARBALL_URL or LOCAL_TARBALL_FILE:
-    WITH_TARBALL_PACKAGE = True
-
-# If we are doing an install, download the tarball and unpack it into
-# the 'packages' subdirectory. We will then add everything in that
-# directory as package data so that it will be installed into the Python
-# installation.
-
-if WITH_TARBALL_PACKAGE:
-    if REMOTE_TARBALL_URL:
-        if not os.path.isfile(REMOTE_TARBALL_NAME):
-            print('Downloading', REMOTE_TARBALL_URL)
-            urlretrieve(REMOTE_TARBALL_URL, REMOTE_TARBALL_NAME+'.download')
-            os.rename(REMOTE_TARBALL_NAME+'.download', REMOTE_TARBALL_NAME)
-        LOCAL_TARBALL_FILE = REMOTE_TARBALL_NAME
-
-    if LOCAL_TARBALL_FILE:
-        shutil.rmtree('src/packages', ignore_errors=True)
-
-        tar = tarfile.open(LOCAL_TARBALL_FILE)
-        tar.extractall('src/packages')
-        tar.close()
-
-    open('src/packages/__init__.py', 'a').close()
-
-    package_files = []
-
-    for root, dirs, files in os.walk('src/packages', topdown=False):
-        for name in files:
-            path = os.path.join(root, name).split('/', 1)[1]
-            package_files.append(path)
-            print('adding ', path)
-
-    print('Running setup for Apache')
-
-    setup(name = 'mod_wsgi-packages',
-        version = '1.0.0',
-        packages = ['mod_wsgi', 'mod_wsgi.packages'],
-        package_dir = {'mod_wsgi': 'src'},
-        package_data = {'mod_wsgi': package_files},
-    )
-
-# From this point on we will now actually install mod_wsgi. First we need
-# to work out what all the available source code files are that should be
-# compiled.
+# First work out what all the available source code files are that should
+# be compiled.
 
 source_files = [os.path.join('src/server', name) for name in 
         os.listdir(os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -135,9 +59,8 @@ WITHOUT_APXS = False
 WITH_WINDOWS_APACHE = None
 WITH_MACOSX_APACHE = None
 
-if not WITH_TARBALL_PACKAGE:
-    if not os.path.isabs(APXS) or not os.access(APXS, os.X_OK):
-        WITHOUT_APXS = True
+if not os.path.isabs(APXS) or not os.access(APXS, os.X_OK):
+    WITHOUT_APXS = True
 
 if WITHOUT_APXS and os.name == 'nt':
     APACHE_ROOTDIR = os.environ.get('MOD_WSGI_APACHE_ROOTDIR')
@@ -206,70 +129,6 @@ elif WITH_MACOSX_APACHE:
 
     def get_apu_includes():
         return ''
-
-elif WITH_TARBALL_PACKAGE:
-    SCRIPT_DIR = os.path.join(os.path.dirname(__file__), 'src', 'packages')
-
-    CONFIG_FILE = os.path.join(SCRIPT_DIR, 'apache/build/config_vars.mk')
-
-    CONFIG = {}
-
-    with open(CONFIG_FILE) as fp:
-        for line in fp.readlines():
-            name, value = line.split('=', 1)
-            name = name.strip()
-            value = value.strip()
-            CONFIG[name] = value
-
-    _varprog = re.compile(r'\$(\w+|(?:\{[^}]*\}|\([^)]*\)))')
-
-    def expand_vars(value):
-        if '$' not in value:
-            return value
-
-        i = 0
-        while True:
-            m = _varprog.search(value, i)
-            if not m:
-                break
-            i, j = m.span(0)
-            name = m.group(1)
-            if name.startswith('{') and name.endswith('}'):
-                name = name[1:-1]
-            elif name.startswith('(') and name.endswith(')'):
-                name = name[1:-1]
-            if name in CONFIG:
-                tail = value[j:]
-                value = value[:i] + CONFIG.get(name, '')
-                i = len(value)
-                value += tail
-            else:
-                i = j
-
-        return value
-
-    def get_apxs_config(name):
-        value = CONFIG.get(name, '')
-        sub_value = expand_vars(value)
-        while value != sub_value:
-            value = sub_value
-            sub_value = expand_vars(value)
-        return sub_value.replace('/mod_wsgi-packages/', SCRIPT_DIR+'/')
-
-    def get_apr_includes():
-        return ''
-
-    def get_apu_includes():
-        return ''
-
-    CONFIG['PREFIX'] = get_apxs_config('prefix')
-    CONFIG['TARGET'] = get_apxs_config('target')
-    CONFIG['SYSCONFDIR'] = get_apxs_config('sysconfdir')
-    CONFIG['INCLUDEDIR'] = get_apxs_config('includedir')
-    CONFIG['LIBEXECDIR'] = get_apxs_config('libexecdir')
-    CONFIG['BINDIR'] = get_apxs_config('bindir')
-    CONFIG['SBINDIR'] = get_apxs_config('sbindir')
-    CONFIG['PROGNAME'] = get_apxs_config('progname')
 
 else:
     def get_apxs_config(query):
@@ -368,7 +227,6 @@ APXS_CONFIG_TEMPLATE = """
 import os
 import posixpath
 
-WITH_TARBALL_PACKAGE = %(WITH_TARBALL_PACKAGE)r
 WITH_HTTPD_PACKAGE = %(WITH_HTTPD_PACKAGE)r
 
 if WITH_HTTPD_PACKAGE:
@@ -378,16 +236,6 @@ if WITH_HTTPD_PACKAGE:
     SBINDIR = BINDIR
     LIBEXECDIR = posixpath.join(PACKAGES_ROOTDIR, 'modules')
     SHLIBPATH = posixpath.join(PACKAGES_ROOTDIR, 'lib')
-elif WITH_TARBALL_PACKAGE:
-    from mod_wsgi.packages import __file__ as PACKAGES_ROOTDIR
-    PACKAGES_ROOTDIR = posixpath.dirname(PACKAGES_ROOTDIR)
-    BINDIR = posixpath.join(PACKAGES_ROOTDIR, 'apache', 'bin')
-    SBINDIR = BINDIR
-    LIBEXECDIR = posixpath.join(PACKAGES_ROOTDIR, 'apache', 'modules')
-    SHLIBPATH = []
-    SHLIBPATH.append(posixpath.join(PACKAGES_ROOTDIR, 'apr-util', 'lib'))
-    SHLIBPATH.append(posixpath.join(PACKAGES_ROOTDIR, 'apr', 'lib'))
-    SHLIBPATH = ':'.join(SHLIBPATH)
 else:
     BINDIR = '%(BINDIR)s'
     SBINDIR = '%(SBINDIR)s'
@@ -416,7 +264,6 @@ else:
 with open(os.path.join(os.path.dirname(__file__),
         'src/server/apxs_config.py'), 'w') as fp:
     print(APXS_CONFIG_TEMPLATE % dict(
-            WITH_TARBALL_PACKAGE=WITH_TARBALL_PACKAGE,
             WITH_HTTPD_PACKAGE=WITH_HTTPD_PACKAGE,
             BINDIR=BINDIR, SBINDIR=SBINDIR, LIBEXECDIR=LIBEXECDIR,
             MPM_NAME=MPM_NAME, PROGNAME=PROGNAME,
