@@ -3925,21 +3925,6 @@ static int wsgi_execute_script(request_rec *r)
     config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
                                                        &wsgi_module);
 
-    /* Setup startup timeout if first request and specified. */
-
-#if defined(MOD_WSGI_WITH_DAEMONS)
-    if (wsgi_daemon_process) {
-        if (wsgi_startup_shutdown_time == 0) {
-            if (wsgi_startup_timeout > 0) {
-                apr_thread_mutex_lock(wsgi_monitor_lock);
-                wsgi_startup_shutdown_time = apr_time_now();
-                wsgi_startup_shutdown_time += wsgi_startup_timeout;
-                apr_thread_mutex_unlock(wsgi_monitor_lock);
-            }
-        }
-    }
-#endif
-
     /*
      * Acquire the desired python interpreter. Once this is done
      * it is safe to start manipulating python objects.
@@ -3954,6 +3939,26 @@ static int wsgi_execute_script(request_rec *r)
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
+
+    /* Setup startup timeout if first request and specified. */
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_daemon_process) {
+        if (wsgi_startup_shutdown_time == 0) {
+            if (wsgi_startup_timeout > 0) {
+                ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                             "mod_wsgi (pid=%d): Application startup "
+                             "timer triggered '%s'.", getpid(),
+                             config->process_group);
+
+                apr_thread_mutex_lock(wsgi_monitor_lock);
+                wsgi_startup_shutdown_time = apr_time_now();
+                wsgi_startup_shutdown_time += wsgi_startup_timeout;
+                apr_thread_mutex_unlock(wsgi_monitor_lock);
+            }
+        }
+    }
+#endif
 
     /*
      * Use a lock around the check to see if the module is
@@ -4174,6 +4179,11 @@ static int wsgi_execute_script(request_rec *r)
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (module && wsgi_startup_shutdown_time > 0) {
         wsgi_startup_shutdown_time = -1;
+
+        ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Application startup "
+                     "timer cancelled '%s'.", getpid(),
+                     config->process_group);
     }
 #endif
 
