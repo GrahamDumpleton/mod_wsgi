@@ -362,6 +362,17 @@ use the ``--setup-only`` option to the ``runmodwsgi`` management command.
 This will set up all the required files and you can use ``apachectl`` to
 start and stop the Apache instance as explained previously.
 
+Connecting to port 80 without root access
+-----------------------------------
+
+Since running Apache as ``root`` is insecure, you can swap its
+default port by changing the 80 in ``/etc/apache2/ports.conf``
+and ``/etc/apache2/sites-enabled/000-default.conf`` to a value
+of your choice, such as 81. After restarting Apache, you should
+be able to use the default http port 80 for ``mod_wsgi`` without
+admin privileges.
+
+
 Connecting into Apache installation
 -----------------------------------
 
