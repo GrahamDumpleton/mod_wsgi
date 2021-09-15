@@ -112,7 +112,7 @@ at run time based on Apache configuration files.
 
 If modules have been statically compiled into Apache, usually it would be
 evident by what 'configure' arguments have been used when Apache was built.
-To verify what exactly what is compiled in statically, you can use the ``-l``
+To verify exactly what is compiled statically, you can use the ``-l``
 option to the Apache executable.
 
 On MacOS X, for the operating system supplied Apache the output from
