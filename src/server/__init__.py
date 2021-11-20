@@ -353,6 +353,13 @@ WSGISocketRotation Off
 MaxConnectionsPerChild %(maximum_requests)s
 </IfDefine>
 
+<IfDefine DESTROY_INTERPRETER>
+WSGIDestroyInterpreter On
+</IfDefine>
+<IfDefine !DESTROY_INTERPRETER>
+WSGIDestroyInterpreter Off
+</IfDefine>
+
 <IfDefine !ONE_PROCESS>
 <IfDefine !EMBEDDED_MODE>
 WSGIRestrictEmbedded On
@@ -2692,6 +2699,10 @@ add_option('unix', '--service-log-file', action='append', nargs=2,
         help='Specify the name of a separate log file to be used for '
         'the managed service.')
 
+add_option('all', '--destroy-interpreter', action='store_true',
+        default=False, help='Flag indicating whether the Python '
+        'interpreter should be destroyed on process shutdown.')
+
 add_option('unix', '--embedded-mode', action='store_true', default=False,
         help='Flag indicating whether to run in embedded mode rather '
         'than the default daemon mode. Numerous daemon mode specific '
@@ -3347,6 +3358,9 @@ def _cmd_setup_server(command, args, options):
         options['https_url'] = 'https://%s:%s/' % (host, options['https_port'])
     else:
         options['https_url'] = None
+
+    if options['destroy_interpreter']:
+        options['httpd_arguments_list'].append('-DDESTROY_INTERPRETER')
 
     if options['embedded_mode']:
         options['httpd_arguments_list'].append('-DEMBEDDED_MODE')

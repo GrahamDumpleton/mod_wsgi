@@ -4306,6 +4306,11 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     wsgi_publish_process_stopping(wsgi_shutdown_reason);
 #endif
 
+    /* Skip destruction of Python interpreter. */
+
+    if (wsgi_server_config->destroy_interpreter != 1)
+        return APR_SUCCESS;
+
     /* In a multithreaded MPM must protect table. */
 
 #if APR_HAS_THREADS
@@ -5039,6 +5044,28 @@ static const char *wsgi_set_python_hash_seed(cmd_parms *cmd, void *mconfig,
 
     sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
     sconfig->python_hash_seed = f;
+
+    return NULL;
+}
+
+static const char *wsgi_set_destroy_interpreter(cmd_parms *cmd, void *mconfig,
+                                                const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (strcasecmp(f, "Off") == 0)
+        sconfig->destroy_interpreter = 0;
+    else if (strcasecmp(f, "On") == 0)
+        sconfig->destroy_interpreter = 1;
+    else
+        return "WSGIDestroyInterpreter must be one of: Off | On";
 
     return NULL;
 }
@@ -16223,6 +16250,9 @@ static const command_rec wsgi_commands[] =
         NULL, RSRC_CONF, "Python eggs cache directory."),
     AP_INIT_TAKE1("WSGIPythonHashSeed", wsgi_set_python_hash_seed,
         NULL, RSRC_CONF, "Python hash seed."),
+
+    AP_INIT_TAKE1("WSGIDestroyInterpreter", wsgi_set_destroy_interpreter,
+        NULL, RSRC_CONF, "Enable/Disable destruction of Python interpreter."),
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     AP_INIT_TAKE1("WSGIRestrictEmbedded", wsgi_set_restrict_embedded,

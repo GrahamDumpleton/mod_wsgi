@@ -2069,6 +2069,11 @@ apr_status_t wsgi_python_term(void)
 {
     PyObject *module = NULL;
 
+    /* Skip destruction of Python interpreter. */
+
+    if (wsgi_server_config->destroy_interpreter != 1)
+        return APR_SUCCESS;
+
     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                  "mod_wsgi (pid=%d): Terminating Python.", getpid());
 

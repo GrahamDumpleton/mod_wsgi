@@ -101,6 +101,7 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 
     object->python_hash_seed = NULL;
 
+    object->destroy_interpreter = -1;
     object->restrict_embedded = -1;
     object->restrict_stdin = -1;
     object->restrict_stdout = -1;
