@@ -5,6 +5,7 @@ import traceback
 import time
 import os
 import threading
+import atexit
 
 try:
     mod_wsgi.request_data()
@@ -18,7 +19,7 @@ def wrapper(application):
     return _application
 
 def event_handler(name, **kwargs):
-    print('EVENT', name, kwargs, os.getpid(), mod_wsgi.application_group)
+    print('EVENT-HANDLER', name, kwargs, os.getpid(), mod_wsgi.application_group)
     if name == 'request_started':
         thread = threading.current_thread()
         request_data = kwargs['request_data']
@@ -39,14 +40,19 @@ print('EVENTS#ALL', mod_wsgi.event_callbacks)
 
 mod_wsgi.subscribe_events(event_handler)
 
-def shutdown_handler(reason):
-    print('SHUTDOWN', reason)
+def shutdown_handler(event, **kwargs):
+    print('SHUTDOWN-HANDLER', event, kwargs)
 
 print('EVENTS#SHUTDOWN', mod_wsgi.event_callbacks)
 
-mod_wsgi.subscribe_events(event_handler)
+mod_wsgi.subscribe_shutdown(shutdown_handler)
 
 print('CALLBACKS', mod_wsgi.event_callbacks)
+
+def atexit_handler():
+    print('ATEXIT-HANDLER')
+
+atexit.register(atexit_handler)
 
 def application(environ, start_response):
     failure_mode = environ.get('HTTP_X_FAILURE_MODE', '')
