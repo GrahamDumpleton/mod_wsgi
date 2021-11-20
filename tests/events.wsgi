@@ -35,7 +35,14 @@ def event_handler(name, **kwargs):
     elif name == 'process_stopping':
         print('SHUTDOWN', mod_wsgi.active_requests)
 
-print('EVENTS', mod_wsgi.event_callbacks)
+print('EVENTS#ALL', mod_wsgi.event_callbacks)
+
+mod_wsgi.subscribe_events(event_handler)
+
+def shutdown_handler(reason):
+    print('SHUTDOWN', reason)
+
+print('EVENTS#SHUTDOWN', mod_wsgi.event_callbacks)
 
 mod_wsgi.subscribe_events(event_handler)
 
