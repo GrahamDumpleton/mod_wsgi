@@ -22,4 +22,4 @@ operating systems such as Linux and MacOS X see:
 
 If you are on Windows, you should instead use:
 
-  * https://github.com/GrahamDumpleton/mod_wsgi/blob/develop/win32/README.rst
+  * https://github.com/GrahamDumpleton/mod_wsgi/blob/develop/README.rst
