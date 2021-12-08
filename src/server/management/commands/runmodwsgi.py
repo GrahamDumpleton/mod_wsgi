@@ -92,7 +92,8 @@ class Command(BaseCommand):
 
         if options.get('working_directory') is None:
             if hasattr(settings, 'BASE_DIR'):
-                options['working_directory'] = settings.BASE_DIR
+                # support pathlib objects in Django settings.py
+                options['working_directory'] = str(settings.BASE_DIR)
             else:
                 settings_module_path = os.environ['DJANGO_SETTINGS_MODULE']
                 root_module_path = settings_module_path.split('.')[0]
@@ -117,14 +118,16 @@ class Command(BaseCommand):
                         # lists. We need to ensure we use the same type so
                         # that sorting of items in the lists works later.
 
+                        # support pathlib objects in Django settings.py
+                        static_root = str(settings.STATIC_ROOT)
                         if not url_aliases:
                             url_aliases.insert(0, (
                                     settings.STATIC_URL.rstrip('/') or '/',
-                                    settings.STATIC_ROOT))
+                                    static_root))
                         else:
                             url_aliases.insert(0, type(url_aliases[0])((
                                     settings.STATIC_URL.rstrip('/') or '/',
-                                    settings.STATIC_ROOT)))
+                                    static_root)))
 
         except AttributeError:
             pass
