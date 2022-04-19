@@ -140,7 +140,7 @@ class Command(BaseCommand):
         executable = os.path.join(options['server_root'], 'apachectl')
         name = executable.ljust(len(options['process_name']))
 
-        if sys.stdout.isatty():
+        if sys.stdout.isatty() and not options['debug_mode']:
             process = None
 
             def handler(signum, frame):
