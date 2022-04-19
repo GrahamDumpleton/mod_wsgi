@@ -3676,7 +3676,7 @@ def cmd_start_server(params):
     else:
         executable = posixpath.join(config['server_root'], 'apachectl')
 
-        if sys.stdout.isatty():
+        if sys.stdout.isatty() and not config['debug_mode']:
             process = None
 
             def handler(signum, frame):
