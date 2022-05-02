@@ -4308,7 +4308,7 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
 
     /* Skip destruction of Python interpreter. */
 
-    if (wsgi_server_config->destroy_interpreter != 1)
+    if (wsgi_server_config->destroy_interpreter == 0)
         return APR_SUCCESS;
 
     /* In a multithreaded MPM must protect table. */

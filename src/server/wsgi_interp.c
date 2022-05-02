@@ -2071,7 +2071,7 @@ apr_status_t wsgi_python_term(void)
 
     /* Skip destruction of Python interpreter. */
 
-    if (wsgi_server_config->destroy_interpreter != 1)
+    if (wsgi_server_config->destroy_interpreter == 0)
         return APR_SUCCESS;
 
     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,

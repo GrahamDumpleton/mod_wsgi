@@ -353,11 +353,11 @@ WSGISocketRotation Off
 MaxConnectionsPerChild %(maximum_requests)s
 </IfDefine>
 
-<IfDefine DESTROY_INTERPRETER>
-WSGIDestroyInterpreter On
-</IfDefine>
-<IfDefine !DESTROY_INTERPRETER>
+<IfDefine ORPHAN_INTERPRETER>
 WSGIDestroyInterpreter Off
+</IfDefine>
+<IfDefine !ORPHAN_INTERPRETER>
+WSGIDestroyInterpreter On
 </IfDefine>
 
 <IfDefine !ONE_PROCESS>
@@ -2699,9 +2699,9 @@ add_option('unix', '--service-log-file', action='append', nargs=2,
         help='Specify the name of a separate log file to be used for '
         'the managed service.')
 
-add_option('all', '--destroy-interpreter', action='store_true',
-        default=False, help='Flag indicating whether the Python '
-        'interpreter should be destroyed on process shutdown.')
+add_option('all', '--orphan-interpreter', action='store_true',
+        default=False, help='Flag indicating whether should skip over '
+        'destroying the Python interpreter on process shutdown.')
 
 add_option('unix', '--embedded-mode', action='store_true', default=False,
         help='Flag indicating whether to run in embedded mode rather '
@@ -3359,8 +3359,8 @@ def _cmd_setup_server(command, args, options):
     else:
         options['https_url'] = None
 
-    if options['destroy_interpreter']:
-        options['httpd_arguments_list'].append('-DDESTROY_INTERPRETER')
+    if options['orphan_interpreter']:
+        options['httpd_arguments_list'].append('-DORPHAN_INTERPRETER')
 
     if options['embedded_mode']:
         options['httpd_arguments_list'].append('-DEMBEDDED_MODE')
