@@ -6,6 +6,19 @@ Version 4.9.1 of mod_wsgi can be obtained from:
 
   https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/4.9.1
 
+Bugs Fixed
+----------
+
+* When using ``--enable-debugger`` of mod_wsgi-express to enable Pdb, it was
+  failing due to prior changes to run Apache in a sub processes to avoid Apache
+  being shutdown when the window size changed. This was because standard input
+  was being detached from Apache and so it was not possible to interact with
+  Pdb. Now when ``--enable-debugger`` is used, or any feature which uses
+  ``--debug-mode``, Apache will not be run in a sub process so that you can
+  still use standard input to interact with the process if needed. This does
+  mean that a window size change event will again cause Apache to shutdown in
+  these cases though.
+
 Features Changed
 ----------------
 
