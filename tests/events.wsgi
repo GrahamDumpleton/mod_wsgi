@@ -54,6 +54,9 @@ def atexit_handler():
 
 atexit.register(atexit_handler)
 
+def do_sleep(duration):
+    time.sleep(duration)
+
 def application(environ, start_response):
     failure_mode = environ.get('HTTP_X_FAILURE_MODE', '')
     failure_mode = failure_mode.split()
@@ -74,7 +77,7 @@ def application(environ, start_response):
     environ['wsgi.input'].read()
 
     if sleep_duration:
-        time.sleep(sleep_duration)
+        do_sleep(sleep_duration)
 
     try:
         yield output
