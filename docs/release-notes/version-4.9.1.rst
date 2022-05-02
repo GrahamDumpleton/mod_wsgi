@@ -19,6 +19,9 @@ Bugs Fixed
   mean that a window size change event will again cause Apache to shutdown in
   these cases though.
 
+* Update code so compiles on Python 3.11. Python 3.11 makes structures for
+  Python frame objects opaque and requires functions to access struct members.
+
 Features Changed
 ----------------
 

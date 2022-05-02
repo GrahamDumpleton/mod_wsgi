@@ -9548,6 +9548,9 @@ static void wsgi_log_stack_traces(void)
                     const char *filename = NULL;
                     const char *name = NULL;
 
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
+                    lineno = PyFrame_GetLineNumber(current);
+#else
                     if (current->f_trace) {
                         lineno = current->f_lineno;
                     }
@@ -9555,10 +9558,16 @@ static void wsgi_log_stack_traces(void)
                         lineno = PyCode_Addr2Line(current->f_code,
                                                   current->f_lasti);
                     }
+#endif
 
 #if PY_MAJOR_VERSION >= 3
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
+                    filename = PyUnicode_AsUTF8(PyFrame_GetCode(current)->co_filename);
+                    name = PyUnicode_AsUTF8(PyFrame_GetCode(current)->co_name);
+#else
                     filename = PyUnicode_AsUTF8(current->f_code->co_filename);
                     name = PyUnicode_AsUTF8(current->f_code->co_name);
+#endif
 #else
                     filename = PyString_AsString(current->f_code->co_filename);
                     name = PyString_AsString(current->f_code->co_name);
@@ -9571,7 +9580,11 @@ static void wsgi_log_stack_traces(void)
                                 getpid(), thread_id, filename, lineno, name);
                     }
                     else {
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
+                        if (PyFrame_GetBack(current)) {
+#else
                         if (current->f_back) {
+#endif
                             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                                     "mod_wsgi (pid=%d): called from file "
                                     "\"%s\", line %d, in %s,", getpid(),
@@ -9585,7 +9598,11 @@ static void wsgi_log_stack_traces(void)
                         }
                     }
 
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
+                    current = PyFrame_GetBack(current);
+#else
                     current = current->f_back;
+#endif
                 }
             }
         }
