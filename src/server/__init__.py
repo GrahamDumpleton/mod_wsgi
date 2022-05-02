@@ -353,6 +353,13 @@ WSGISocketRotation Off
 MaxConnectionsPerChild %(maximum_requests)s
 </IfDefine>
 
+<IfDefine ORPHAN_INTERPRETER>
+WSGIDestroyInterpreter Off
+</IfDefine>
+<IfDefine !ORPHAN_INTERPRETER>
+WSGIDestroyInterpreter On
+</IfDefine>
+
 <IfDefine !ONE_PROCESS>
 <IfDefine !EMBEDDED_MODE>
 WSGIRestrictEmbedded On
@@ -2692,6 +2699,10 @@ add_option('unix', '--service-log-file', action='append', nargs=2,
         help='Specify the name of a separate log file to be used for '
         'the managed service.')
 
+add_option('all', '--orphan-interpreter', action='store_true',
+        default=False, help='Flag indicating whether should skip over '
+        'destroying the Python interpreter on process shutdown.')
+
 add_option('unix', '--embedded-mode', action='store_true', default=False,
         help='Flag indicating whether to run in embedded mode rather '
         'than the default daemon mode. Numerous daemon mode specific '
@@ -3348,6 +3359,9 @@ def _cmd_setup_server(command, args, options):
     else:
         options['https_url'] = None
 
+    if options['orphan_interpreter']:
+        options['httpd_arguments_list'].append('-DORPHAN_INTERPRETER')
+
     if options['embedded_mode']:
         options['httpd_arguments_list'].append('-DEMBEDDED_MODE')
         options['disable_reloading'] = True
@@ -3662,7 +3676,7 @@ def cmd_start_server(params):
     else:
         executable = posixpath.join(config['server_root'], 'apachectl')
 
-        if sys.stdout.isatty():
+        if sys.stdout.isatty() and not config['debug_mode']:
             process = None
 
             def handler(signum, frame):

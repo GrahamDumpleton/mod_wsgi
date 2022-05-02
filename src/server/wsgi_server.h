@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2021 GRAHAM DUMPLETON
+ * Copyright 2007-2022 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -87,6 +87,7 @@ typedef struct {
 
     const char *python_hash_seed;
 
+    int destroy_interpreter;
     int restrict_embedded;
     int restrict_stdin;
     int restrict_stdout;

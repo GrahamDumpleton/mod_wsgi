@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2021 GRAHAM DUMPLETON
+ * Copyright 2007-2022 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -4306,6 +4306,11 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     wsgi_publish_process_stopping(wsgi_shutdown_reason);
 #endif
 
+    /* Skip destruction of Python interpreter. */
+
+    if (wsgi_server_config->destroy_interpreter == 0)
+        return APR_SUCCESS;
+
     /* In a multithreaded MPM must protect table. */
 
 #if APR_HAS_THREADS
@@ -5039,6 +5044,28 @@ static const char *wsgi_set_python_hash_seed(cmd_parms *cmd, void *mconfig,
 
     sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
     sconfig->python_hash_seed = f;
+
+    return NULL;
+}
+
+static const char *wsgi_set_destroy_interpreter(cmd_parms *cmd, void *mconfig,
+                                                const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (strcasecmp(f, "Off") == 0)
+        sconfig->destroy_interpreter = 0;
+    else if (strcasecmp(f, "On") == 0)
+        sconfig->destroy_interpreter = 1;
+    else
+        return "WSGIDestroyInterpreter must be one of: Off | On";
 
     return NULL;
 }
@@ -9521,6 +9548,9 @@ static void wsgi_log_stack_traces(void)
                     const char *filename = NULL;
                     const char *name = NULL;
 
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
+                    lineno = PyFrame_GetLineNumber(current);
+#else
                     if (current->f_trace) {
                         lineno = current->f_lineno;
                     }
@@ -9528,10 +9558,16 @@ static void wsgi_log_stack_traces(void)
                         lineno = PyCode_Addr2Line(current->f_code,
                                                   current->f_lasti);
                     }
+#endif
 
 #if PY_MAJOR_VERSION >= 3
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
+                    filename = PyUnicode_AsUTF8(PyFrame_GetCode(current)->co_filename);
+                    name = PyUnicode_AsUTF8(PyFrame_GetCode(current)->co_name);
+#else
                     filename = PyUnicode_AsUTF8(current->f_code->co_filename);
                     name = PyUnicode_AsUTF8(current->f_code->co_name);
+#endif
 #else
                     filename = PyString_AsString(current->f_code->co_filename);
                     name = PyString_AsString(current->f_code->co_name);
@@ -9544,7 +9580,11 @@ static void wsgi_log_stack_traces(void)
                                 getpid(), thread_id, filename, lineno, name);
                     }
                     else {
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
+                        if (PyFrame_GetBack(current)) {
+#else
                         if (current->f_back) {
+#endif
                             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                                     "mod_wsgi (pid=%d): called from file "
                                     "\"%s\", line %d, in %s,", getpid(),
@@ -9558,7 +9598,11 @@ static void wsgi_log_stack_traces(void)
                         }
                     }
 
+#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
+                    current = PyFrame_GetBack(current);
+#else
                     current = current->f_back;
+#endif
                 }
             }
         }
@@ -10011,7 +10055,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (status != APR_SUCCESS) {
                 ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Couldn't intialise accept "
+                             "mod_wsgi (pid=%d): Couldn't initialise accept "
                              "mutex in daemon process '%s'.",
                              getpid(), daemon->group->mutex_path);
 
@@ -16223,6 +16267,9 @@ static const command_rec wsgi_commands[] =
         NULL, RSRC_CONF, "Python eggs cache directory."),
     AP_INIT_TAKE1("WSGIPythonHashSeed", wsgi_set_python_hash_seed,
         NULL, RSRC_CONF, "Python hash seed."),
+
+    AP_INIT_TAKE1("WSGIDestroyInterpreter", wsgi_set_destroy_interpreter,
+        NULL, RSRC_CONF, "Enable/Disable destruction of Python interpreter."),
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     AP_INIT_TAKE1("WSGIRestrictEmbedded", wsgi_set_restrict_embedded,

@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2021 GRAHAM DUMPLETON
+ * Copyright 2007-2022 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2068,6 +2068,11 @@ void wsgi_python_version(void)
 apr_status_t wsgi_python_term(void)
 {
     PyObject *module = NULL;
+
+    /* Skip destruction of Python interpreter. */
+
+    if (wsgi_server_config->destroy_interpreter == 0)
+        return APR_SUCCESS;
 
     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                  "mod_wsgi (pid=%d): Terminating Python.", getpid());

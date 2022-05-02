@@ -78,11 +78,11 @@ The header names which are accepted for specifying the target host are
 to override the ``HTTP_HOST`` value in the WSGI ``environ`` dictionary.
 
 The sole header name accepted for specifying the front end proxy server
-name is ``X-Fowarded-Server``. When found, the value will be used to
+name is ``X-Forwarded-Server``. When found, the value will be used to
 override the ``SERVER_NAME`` value in the WSGI ``environ`` dictionary.
 
 The sole header name accepted for specifying the front end proxy server
-port is ``X-Fowarded-Port``. When found, the value will be used to
+port is ``X-Forwarded-Port``. When found, the value will be used to
 override the ``SERVER_PORT`` value in the WSGI ``environ`` dictionary.
 
 The header names accepted for specifying the client IP address are

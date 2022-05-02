@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2021 GRAHAM DUMPLETON
+ * Copyright 2007-2022 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -101,6 +101,7 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 
     object->python_hash_seed = NULL;
 
+    object->destroy_interpreter = -1;
     object->restrict_embedded = -1;
     object->restrict_stdin = -1;
     object->restrict_stdout = -1;

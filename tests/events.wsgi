@@ -5,6 +5,7 @@ import traceback
 import time
 import os
 import threading
+import atexit
 
 try:
     mod_wsgi.request_data()
@@ -18,7 +19,7 @@ def wrapper(application):
     return _application
 
 def event_handler(name, **kwargs):
-    print('EVENT', name, kwargs, os.getpid(), mod_wsgi.application_group)
+    print('EVENT-HANDLER', name, kwargs, os.getpid(), mod_wsgi.application_group)
     if name == 'request_started':
         thread = threading.current_thread()
         request_data = kwargs['request_data']
@@ -35,11 +36,26 @@ def event_handler(name, **kwargs):
     elif name == 'process_stopping':
         print('SHUTDOWN', mod_wsgi.active_requests)
 
-print('EVENTS', mod_wsgi.event_callbacks)
+print('EVENTS#ALL', mod_wsgi.event_callbacks)
 
 mod_wsgi.subscribe_events(event_handler)
 
+def shutdown_handler(event, **kwargs):
+    print('SHUTDOWN-HANDLER', event, kwargs)
+
+print('EVENTS#SHUTDOWN', mod_wsgi.event_callbacks)
+
+mod_wsgi.subscribe_shutdown(shutdown_handler)
+
 print('CALLBACKS', mod_wsgi.event_callbacks)
+
+def atexit_handler():
+    print('ATEXIT-HANDLER')
+
+atexit.register(atexit_handler)
+
+def do_sleep(duration):
+    time.sleep(duration)
 
 def application(environ, start_response):
     failure_mode = environ.get('HTTP_X_FAILURE_MODE', '')
@@ -61,7 +77,7 @@ def application(environ, start_response):
     environ['wsgi.input'].read()
 
     if sleep_duration:
-        time.sleep(sleep_duration)
+        do_sleep(sleep_duration)
 
     try:
         yield output
