@@ -10038,7 +10038,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (status != APR_SUCCESS) {
                 ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Couldn't intialise accept "
+                             "mod_wsgi (pid=%d): Couldn't initialise accept "
                              "mutex in daemon process '%s'.",
                              getpid(), daemon->group->mutex_path);
 
