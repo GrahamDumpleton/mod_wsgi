@@ -1520,7 +1520,7 @@ class ApplicationHandler(object):
     def setup_recorder(self, savedir):
         self.application = RequestRecorder(self.application, savedir)
 
-    def reload_required(self, environ):
+    def reload_required(self, resource):
         if self.debug_mode:
             return False
 
@@ -1596,7 +1596,7 @@ class ResourceHandler(object):
         extension = self.resource_extension(resource)
         function = getattr(self.resources[extension], 'reload_required', None)
         if function is not None:
-            return function(environ)
+            return function(resource)
         return False
 
     def handle_request(self, environ, start_response):
