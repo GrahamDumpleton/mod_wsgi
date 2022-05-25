@@ -47,6 +47,8 @@ jobs:
         with:
             name: dist
             path: dist
+      - name: "Update package details"
+        run: sudo apt --fix-missing update
       - name: "Install Apache package"
         run: sudo apt install -y apache2-dev
       - name: "Update pip installation"
