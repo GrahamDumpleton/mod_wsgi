@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     name: "Build mod_wsgi packages"
-    runs-on: "ubuntu-20.04"
+    runs-on: "ubuntu-22.04"
     steps:
       - uses: "actions/checkout@v2"
       - uses: "actions/setup-python@v2"
@@ -28,7 +28,7 @@ jobs:
 
   tests:
     name: "Test mod_wsgi package (Python ${{ matrix.python-version }})"
-    runs-on: "ubuntu-20.04"
+    runs-on: "ubuntu-22.04"
     needs:
     - build
     strategy:
