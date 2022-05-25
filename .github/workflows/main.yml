@@ -10,12 +10,14 @@ on:
 jobs:
   build:
     name: "Build mod_wsgi packages"
-    runs-on: "ubuntu-22.04"
+    runs-on: "ubuntu-20.04"
     steps:
       - uses: "actions/checkout@v2"
       - uses: "actions/setup-python@v2"
         with:
           python-version: "3.9"
+      - name: "Update package details"
+        run: sudo apt --fix-missing update
       - name: "Install Apache package"
         run: sudo apt install -y apache2-dev
       - name: "Build mod_wsgi packages"
@@ -28,7 +30,7 @@ jobs:
 
   tests:
     name: "Test mod_wsgi package (Python ${{ matrix.python-version }})"
-    runs-on: "ubuntu-22.04"
+    runs-on: "ubuntu-20.04"
     needs:
     - build
     strategy:
