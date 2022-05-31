@@ -3852,9 +3852,20 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
         if (object) {
             PyObject *args = NULL;
             PyObject *result = NULL;
+#if PY_MAJOR_VERSION >= 3
+            PyObject *path = NULL;
+#endif
 
             Py_INCREF(object);
+#if PY_MAJOR_VERSION >= 3
+	    path = PyUnicode_Decode(resource, strlen(resource),
+				     Py_FileSystemDefaultEncoding,
+				     "surrogateescape");
+            args = Py_BuildValue("(O)", path);
+            Py_DECREF(path);
+#else
             args = Py_BuildValue("(s)", resource);
+#endif
             result = PyObject_CallObject(object, args);
             Py_DECREF(args);
             Py_DECREF(object);

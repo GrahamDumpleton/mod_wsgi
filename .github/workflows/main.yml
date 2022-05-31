@@ -16,6 +16,8 @@ jobs:
       - uses: "actions/setup-python@v2"
         with:
           python-version: "3.9"
+      - name: "Update package details"
+        run: sudo apt --fix-missing update
       - name: "Install Apache package"
         run: sudo apt install -y apache2-dev
       - name: "Build mod_wsgi packages"
@@ -45,6 +47,8 @@ jobs:
         with:
             name: dist
             path: dist
+      - name: "Update package details"
+        run: sudo apt --fix-missing update
       - name: "Install Apache package"
         run: sudo apt install -y apache2-dev
       - name: "Update pip installation"
