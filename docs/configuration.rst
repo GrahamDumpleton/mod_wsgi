@@ -31,3 +31,5 @@ Configuration
    configuration-directives/WSGIScriptAliasMatch
    configuration-directives/WSGIScriptReloading
    configuration-directives/WSGISocketPrefix
+   configuration-directives/WSGITrustedProxies
+   configuration-directives/WSGITrustedProxyHeaders

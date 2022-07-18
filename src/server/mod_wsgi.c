@@ -14055,6 +14055,7 @@ static void wsgi_process_proxy_headers(request_rec *r)
             name = ((const char**)trusted_proxy_headers->elts)[i];
 
             if (!strcmp(name, "HTTP_X_FORWARDED_FOR") ||
+                     !strcmp(name, "HTTP_X_CLIENT_IP") ||
                      !strcmp(name, "HTTP_X_REAL_IP")) {
 
                 match_client_header = 1;
