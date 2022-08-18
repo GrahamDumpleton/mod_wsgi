@@ -12713,6 +12713,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     apr_bucket_brigade *bb;
 
     core_request_config *req_cfg;
+    core_dir_config *d;
 
     ap_filter_t *current = NULL;
     ap_filter_t *next = NULL;
@@ -12903,6 +12904,18 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 #endif
 
     r->per_dir_config  = r->server->lookup_defaults;
+
+    /*
+     * Try and ensure that request body limit in daemon mode process
+     * is unlimited as Apache 2.4.54 changed rules for limit and if
+     * unset is now overridden by HTTP filters to be 1GiB rather than
+     * unlimited. Not sure if this is required or not but could be
+     * since we populate configuration from base server config only.
+     */
+
+    d = (core_dir_config *)ap_get_core_module_config(r->per_dir_config);
+
+    d->limit_req_body = 0;
 
     r->sent_bodyct = 0;
 
