@@ -12597,6 +12597,9 @@ static apr_status_t wsgi_header_filter(ap_filter_t *f, apr_bucket_brigade *b)
 
     /* Output status line. */
 
+    if (!r->status_line)
+        r->status_line = ap_get_status_line(r->status);
+
     vec1[0].iov_base = (void *)"Status:";
     vec1[0].iov_len  = strlen("Status:");
     vec1[1].iov_base = (void *)" ";
