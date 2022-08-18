@@ -12909,8 +12909,13 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      * Try and ensure that request body limit in daemon mode process
      * is unlimited as Apache 2.4.54 changed rules for limit and if
      * unset is now overridden by HTTP filters to be 1GiB rather than
-     * unlimited. Not sure if this is required or not but could be
-     * since we populate configuration from base server config only.
+     * unlimited. This is required since we populate configuration
+     * from the base server config only so setting unlimited in a more
+     * specific context such as a virtual host wouldn't be visible.
+     * Note that setting this to unlimited in the daemon mode process
+     * is okay as the request limit body is checked in the Apache
+     * child process before request is proxied specifically to avoid
+     * unecessarily passing the content across to the daemon process.
      */
 
     d = (core_dir_config *)ap_get_core_module_config(r->per_dir_config);
