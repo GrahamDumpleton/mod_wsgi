@@ -102,6 +102,13 @@ static apr_time_t volatile wsgi_restart_shutdown_time = 0;
 
 static apr_array_header_t *wsgi_import_list = NULL;
 
+static apr_status_t wsgi_cleanup_set_null(void *data_)
+{
+    void **ptr = (void **)data_;
+    *ptr = NULL;
+    return APR_SUCCESS;
+}
+
 static void *wsgi_create_server_config(apr_pool_t *p, server_rec *s)
 {
     WSGIServerConfig *config = NULL;
@@ -4778,7 +4785,7 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
             wsgi_import_list = apr_array_make(cmd->pool, 20,
                                               sizeof(WSGIScriptFile));
             apr_pool_cleanup_register(cmd->pool, &wsgi_import_list,
-                              ap_pool_cleanup_set_null,
+                              wsgi_cleanup_set_null,
                               apr_pool_cleanup_null);
         }
 
