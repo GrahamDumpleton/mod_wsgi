@@ -5302,7 +5302,7 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
         wsgi_import_list = apr_array_make(cmd->pool, 20,
                                           sizeof(WSGIScriptFile));
         apr_pool_cleanup_register(cmd->pool, &wsgi_import_list,
-                              ap_pool_cleanup_set_null,
+                              wsgi_cleanup_set_null,
                               apr_pool_cleanup_null);
     }
 
@@ -7956,7 +7956,7 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
         wsgi_daemon_list = apr_array_make(cmd->pool, 20,
                                           sizeof(WSGIProcessGroup));
         apr_pool_cleanup_register(cmd->pool, &wsgi_daemon_list,
-                              ap_pool_cleanup_set_null,
+                              wsgi_cleanup_set_null,
                               apr_pool_cleanup_null);
     }
 
