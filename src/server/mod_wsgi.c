@@ -4777,9 +4777,11 @@ static const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
         if (!wsgi_import_list) {
             wsgi_import_list = apr_array_make(cmd->pool, 20,
                                               sizeof(WSGIScriptFile));
+#if AP_SERVER_MINORVERSION_NUMBER > 2
             apr_pool_cleanup_register(cmd->pool, &wsgi_import_list,
                               ap_pool_cleanup_set_null,
                               apr_pool_cleanup_null);
+#endif
         }
 
         object = (WSGIScriptFile *)apr_array_push(wsgi_import_list);
@@ -5294,9 +5296,11 @@ static const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
     if (!wsgi_import_list) {
         wsgi_import_list = apr_array_make(cmd->pool, 20,
                                           sizeof(WSGIScriptFile));
+#if AP_SERVER_MINORVERSION_NUMBER > 2
         apr_pool_cleanup_register(cmd->pool, &wsgi_import_list,
                               ap_pool_cleanup_set_null,
                               apr_pool_cleanup_null);
+#endif
     }
 
     object = (WSGIScriptFile *)apr_array_push(wsgi_import_list);
@@ -7948,9 +7952,11 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     if (!wsgi_daemon_list) {
         wsgi_daemon_list = apr_array_make(cmd->pool, 20,
                                           sizeof(WSGIProcessGroup));
+#if AP_SERVER_MINORVERSION_NUMBER > 2
         apr_pool_cleanup_register(cmd->pool, &wsgi_daemon_list,
                               ap_pool_cleanup_set_null,
                               apr_pool_cleanup_null);
+#endif
     }
 
     entries = (WSGIProcessGroup *)wsgi_daemon_list->elts;
@@ -12917,11 +12923,11 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      * child process before request is proxied specifically to avoid
      * unecessarily passing the content across to the daemon process.
      */
-
+#if AP_SERVER_MINORVERSION_NUMBER > 2
     d = (core_dir_config *)ap_get_core_module_config(r->per_dir_config);
 
     d->limit_req_body = 0;
-
+#endif
     r->sent_bodyct = 0;
 
     r->read_length = 0;
