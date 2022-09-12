@@ -76,13 +76,13 @@ below::
         status = '200 OK'
         output = b'Hello World!'
 
-        print("application debug #1", file=environ['wsgi.errors']))
+        print("application debug #1", file=environ['wsgi.errors'])
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
         start_response(status, response_headers)
 
-        print("application debug #2", file=environ['wsgi.errors']))
+        print("application debug #2", file=environ['wsgi.errors'])
 
         return [output]
 
@@ -95,7 +95,7 @@ below::
 
     Alternatively, always use `print` as a statement rather than a function::
 
-        print >> environ['wsgi.errors']), "application debug #N"
+        print >> environ['wsgi.errors'], "application debug #N"
 
 If 'wsgi.errors' is not available to the code which needs to output log
 messages, then it should explicitly direct output from 'print'
