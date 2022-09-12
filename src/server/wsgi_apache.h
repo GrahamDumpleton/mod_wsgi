@@ -128,6 +128,11 @@ extern void wsgi_ap_close_listeners(void);
 #define ap_close_listeners wsgi_ap_close_listeners
 #endif
 
+#if !AP_MODULE_MAGIC_AT_LEAST(20101106,1)
+extern apr_status_t wsgi_ap_pool_cleanup_set_null(void *);
+#define ap_pool_cleanup_set_null wsgi_ap_pool_cleanup_set_null
+#endif
+
 #if (APR_MAJOR_VERSION == 0) && \
     (APR_MINOR_VERSION == 9) && \
     (APR_PATCH_VERSION < 5)

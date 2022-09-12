@@ -52,6 +52,19 @@ void wsgi_ap_close_listeners(void)
 
 /* ------------------------------------------------------------------------- */
 
+#if !AP_MODULE_MAGIC_AT_LEAST(20101106,1)
+
+apr_status_t wsgi_ap_pool_cleanup_set_null(void *data_)
+{
+    void **ptr = (void **)data_;
+    *ptr = NULL;
+    return APR_SUCCESS;
+}
+
+#endif
+
+/* ------------------------------------------------------------------------- */
+
 #if (APR_MAJOR_VERSION == 0) && \
     (APR_MINOR_VERSION == 9) && \
     (APR_PATCH_VERSION < 5)

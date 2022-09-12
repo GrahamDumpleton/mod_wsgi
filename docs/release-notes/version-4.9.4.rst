@@ -16,3 +16,6 @@ Bugs Fixed
   relying on the compiled in default, then when using mod_wsgi daemon mode, if a
   request body size greater than 1Gi was encountered the mod_wsgi daemon mode
   process would crash.
+
+* Fix ability to build mod_wsgi against Apache 2.2. Do note that in general only
+  recent versions of Apache 2.4 are supported
