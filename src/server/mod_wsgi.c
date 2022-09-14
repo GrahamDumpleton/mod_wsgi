@@ -12917,11 +12917,11 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      * child process before request is proxied specifically to avoid
      * unecessarily passing the content across to the daemon process.
      */
-
+#if AP_MODULE_MAGIC_AT_LEAST(20110605,1)
     d = (core_dir_config *)ap_get_core_module_config(r->per_dir_config);
 
     d->limit_req_body = 0;
-
+#endif
     r->sent_bodyct = 0;
 
     r->read_length = 0;
