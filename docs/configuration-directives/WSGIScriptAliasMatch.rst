@@ -28,6 +28,18 @@ doing redirects. This is because the substitution of the matched sub
 pattern from the left hand side back into the right hand side is often
 critical.
 
+If you are using WSGIScriptAliasMatch to pass to a WSGI handler, and you
+need to preserve the path.  You can do the following::
+  
+  WSGIScriptAlias /api /var/www/mysite.com/apache/django.wsgi/api
+
+A more complicated example::
+
+  WSGIScriptAliasMatch "^/(admin|files|photologue)" /projects/Media/wsgi_handler.py/$1
+  
+This will keep the URL match from being stripped off the URL by the time it
+reaches the WSGI application.
+
 If you think you need to use WSGIScriptAliasMatch, you probably don't
 really. If you really really think you need it, then check on the mod_wsgi
 mailing list about how to use it properly.
