@@ -12916,11 +12916,20 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      * is okay as the request limit body is checked in the Apache
      * child process before request is proxied specifically to avoid
      * unecessarily passing the content across to the daemon process.
+     * Note also that the reason that the change is applied for all
+     * Apache 2.4.X versions is because a module compiled against an
+     * Apache version before the change, can still be used with newer
+     * Apache version without being re-compiled which would result in
+     * a crash also. We can't enable for older Apache 2.X versions as
+     * ap_get_core_module_config() doesn't exist.
      */
 
+#if (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
+     AP_SERVER_MINORVERSION_NUMBER >= 4)
     d = (core_dir_config *)ap_get_core_module_config(r->per_dir_config);
 
     d->limit_req_body = 0;
+#endif
 
     r->sent_bodyct = 0;
 
