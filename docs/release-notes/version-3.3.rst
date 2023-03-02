@@ -12,23 +12,23 @@ Bug Fixes
 1. Inactivity timeout not triggered at correct time when occurs for first
 request after process is started. See
 
-  http://code.google.com/p/modwsgi/issues/detail?id=182
+  https://code.google.com/archive/p/modwsgi/issues/182
 
 2. Back off timer for failed connections to daemon process group wasn't
 working correctly and no delay on reconnect attempts was being applied. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=195
+  https://code.google.com/archive/p/modwsgi/issues/195
 
 3. Logging not appearing in Apache error log files when using daemon mode
 and have multiple virtual hosts against same server name. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=204
+  https://code.google.com/archive/p/modwsgi/issues/204
 
 4. Eliminate logging of !KeyError exception in threading module when processes
 are shutdown when using Python 2.6.5 or 3.1.2 or later. This wasn't indicating
 any real problem but was annoying all the same. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=197
+  https://code.google.com/archive/p/modwsgi/issues/197
 
 5. Fix potential for crash when logging error message resulting from failed
 group authorisation.
@@ -44,7 +44,7 @@ same user that daemon process runs. This will at least allow a request
 handled under ITK MPM to be directed to daemon process owned by same user
 as script. See issue:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=187
+  https://code.google.com/archive/p/modwsgi/issues/187
 
 2. Add isatty() to log objects used for sys.stdout/sys.stderr and
 wsgi.errors. The Python documentation says 'If a file-like object is not

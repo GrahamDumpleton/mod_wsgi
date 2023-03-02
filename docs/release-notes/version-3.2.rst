@@ -18,7 +18,7 @@ the URL mapped was reported instead.
 causing all requests in daemon mode on a FreeBSD system to hang immediately
 upon Apache being started.
 
-  http://code.google.com/p/modwsgi/issues/detail?id=176
+  https://code.google.com/archive/p/modwsgi/issues/176
 
 Also use a distinct flag with condition variable in case condition variable
 is triggered even though condition not satisfied. This latter issue hasn't
@@ -35,9 +35,9 @@ associated with Apache server data structure to close. Code should always
 check that there is an error log to avoid crashing mod_wsgi daemon process
 on startup by operating on null pointer. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=178
+  https://code.google.com/archive/p/modwsgi/issues/178
 
 5. Code was not compiling with Apache 2.3. This is because ap_accept_lock_mech
 variable was removed. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=186
+  https://code.google.com/archive/p/modwsgi/issues/186
