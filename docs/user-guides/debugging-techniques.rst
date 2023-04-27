@@ -313,8 +313,8 @@ follows::
             self.__ocontent.flush()
             return self.__write(data)
 
-        def next(self):
-            data = self.__iterable.next()
+        def __next__(self):
+            data = self.__iterable.__next__()
             self.__ocontent.write(data)
             self.__ocontent.flush()
             return data
