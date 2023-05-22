@@ -34,4 +34,4 @@ process to crash as corresponding arguments wouldn't have ben provided.
 
 For details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=90
+  https://code.google.com/archive/p/modwsgi/issues/90

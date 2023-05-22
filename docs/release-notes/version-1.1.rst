@@ -12,7 +12,7 @@ Bug Fixes
 1. Fix bug which could result in processes crashing when multiple threads
 attempt to write to sys.stderr or sys.stdout at the same time. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=30
+  https://code.google.com/archive/p/modwsgi/issues/30
 
 Chance of this occuring was small, as was contingent on code writing out
 strings which contained an embedded newline but no terminating new line,
@@ -46,7 +46,7 @@ insert their own connection level input/output filters. This is needed as
 running WSGI applications in daemon processes where requests were arriving
 to Apache as HTTPS requests could cause daemon processes to crash. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=33
+  https://code.google.com/archive/p/modwsgi/issues/33
 
 This was only occuring for some HTTPS configurations, but not known what
 exactly was different about those configurations to cause the problem.
@@ -57,4 +57,4 @@ mod_logio module when loaded and when handling request in daemon process.
 This is needed to prevent core output filters calling this function and
 triggering a crash due to configuration for mod_logio not being setup. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=34
+  https://code.google.com/archive/p/modwsgi/issues/34
