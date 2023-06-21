@@ -14,4 +14,4 @@ when running 'configure' script are prefixed by '-Wc,' before being passed to
 'apxs' to build module. Without this 'apxs' will incorrectly interpret the
 compiler options. For more details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=166
+  https://code.google.com/archive/p/modwsgi/issues/166

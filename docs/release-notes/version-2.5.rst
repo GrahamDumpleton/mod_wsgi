@@ -8,7 +8,7 @@ Version 2.5 of mod_wsgi can be obtained from:
 
 For Windows binaries see:
 
-  http://code.google.com/p/modwsgi/wiki/InstallationOnWindows
+  https://code.google.com/archive/p/modwsgi/wikis/InstallationOnWindows
 
 Note that this release does not support Python 3.0. Python 3.0 will only be
 supported in mod_wsgi 3.0.
@@ -31,7 +31,7 @@ in compiler tools suite.
 
 For more details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=28
+  https://code.google.com/archive/p/modwsgi/issues/28
 
 2. Remove isatty from Log object used for stdout/stderr. It should have
 been a function and not an attribute. Even so, isatty() is not meant to be
@@ -42,4 +42,4 @@ not supply this, but the packages which were trying to use it.
 
 For more details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=146
+  https://code.google.com/archive/p/modwsgi/issues/146

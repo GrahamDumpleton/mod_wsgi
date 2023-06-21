@@ -8,7 +8,7 @@ Version 2.6 of mod_wsgi can be obtained from:
 
 For Windows binaries see:
 
-  http://code.google.com/p/modwsgi/wiki/InstallationOnWindows
+  https://code.google.com/archive/p/modwsgi/wikis/InstallationOnWindows
 
 Note that this release does not support Python 3.0. Python 3.0 will only be
 supported in mod_wsgi 3.0.
@@ -25,7 +25,7 @@ run time. This was caused by '-W,-l' option prefix being dropped from '-F'
 option in LDFLAGS of Makefile and not reverted back when related changes
 undone. This would affect Python 2.3 through 2.5. For more details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=28
+  https://code.google.com/archive/p/modwsgi/issues/28
 
 2. Fixed build issue on MacOS X where incorrect Python framework found at
 run time. This was caused by '-L/-l' flags being used for versions of Python
@@ -39,7 +39,7 @@ particular setup this isn't working, then the '--disable-framework' option
 can be supplied to 'configure' script to force use of '-L/-l'. For more
 details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=28
+  https://code.google.com/archive/p/modwsgi/issues/28
 
 3. Fixed bug where was decrementing Python object reference count on NULL
 pointer, causing a crash. This was possibly only occuring in embedded mode
@@ -61,4 +61,4 @@ installed Apache header files. Do this as some Linux distributions build
 boxes do not actually have Apache executable itself installed, only the
 header files and apxs tool needed to build modules. For more details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=147
+  https://code.google.com/archive/p/modwsgi/issues/147

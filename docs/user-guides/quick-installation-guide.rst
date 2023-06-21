@@ -14,7 +14,7 @@ For Apache 2.0, 2.2 and 2.4, the single threaded 'prefork' or multithreaded
 'worker' Apache MPMs can be used. For Apache 2.4 the 'event' MPM can also
 be used.
 
-The version of Apache and its runtime libraries must have be compiled with
+The version of Apache and its runtime libraries must have been compiled with
 support for threading.
 
 On Linux systems, if Apache has been installed from a package repository,
@@ -88,8 +88,8 @@ allow installation of "dev" packages for both Apache MPM variants at the
 same time, whereas other Linux distributions do not.
 
 If you have multiple versions of Python installed and you are not using
-that which is the default, you may have to organise that the PATH inherited
-by the Apache application when run will result in Apache finding the
+that which is the default, you may have to organise the PATH inherited
+by the Apache application, which when run will result in Apache finding the
 alternate version. Alternatively, the WSGIPythonHome directive should
 be used to specify the exact location of the Python installation
 corresponding to the version of Python compiled against. If this is not
@@ -157,7 +157,7 @@ copied the file to work out what to set this value to.
 Restart Apache Web Server
 -------------------------
 
-Having adding the required directives you should perform a restart of
+Having added the required directives you should perform a restart of
 Apache to check everything is okay. If you are using an unmodified Apache
 distribution from the Apache Software Foundation, a restart is performed
 using the 'apachectl' command::
