@@ -25,7 +25,7 @@ the WSGI specification. In particular the specification says:
 In mod_wsgi when an iterable was returned from the application, the headers
 were being flushed even if the string was empty. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=35
+  https://code.google.com/archive/p/modwsgi/issues/35
 
 2. Calling start_response() a second time to supply exception information
 and status to replace prior response headers and status, was resulting in
@@ -33,7 +33,7 @@ a process crash when there had actually been response content sent and the
 existing response headers and status flushed and written back to the client.
 See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=36
+  https://code.google.com/archive/p/modwsgi/issues/36
 
 3. Added additional logging to highlight instance where WSGI script file was
 removed in between the time that Apache matched request to it and the WSGI
@@ -52,7 +52,7 @@ name would be wrong where the URL had repeating slashes in it after the
 leading portion of the URL which mapped to the mount point of the WSGI
 application. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=39
+  https://code.google.com/archive/p/modwsgi/issues/39
 
 In particular, for a URL with the repeating slash the application group
 name would have a trailing slash appended when it shouldn't. The
@@ -77,4 +77,4 @@ the default.
 daemon processes were not being caught properly. This was because mod_wsgi
 was wrongly blocking SIGCHLD signal. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=38
+  https://code.google.com/archive/p/modwsgi/issues/38

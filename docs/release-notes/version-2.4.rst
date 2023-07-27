@@ -17,9 +17,9 @@ introduced by changes in mod_wsgi 2.3.
 directives at startup. This could later result in memory corruption and may
 account for problems seen with 'fopen()' errors. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=78
+  https://code.google.com/archive/p/modwsgi/issues/78
 
-  http://code.google.com/p/modwsgi/issues/detail?id=108
+  https://code.google.com/archive/p/modwsgi/issues/108
 
 3. Fix bug where Python interpreter not being destroyed correctly in Apache
 parent process on an Apache restart. This was resulting in slow memory leak
@@ -39,13 +39,13 @@ Python seem to occur for some versions of Python on particular platforms.
 
 For further details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=99
+  https://code.google.com/archive/p/modwsgi/issues/99
 
 4. Fix bug whereby POST requests where 100-continue was expected by client
 would see request content actually truncated and not be available to WSGI
 application if application running in daemon mode. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=121
+  https://code.google.com/archive/p/modwsgi/issues/121
 
 5. Fix bug where Apache optimisation related to keep alive connections can
 kick in when using wsgi.file_wrapper with result that if amount of data is
@@ -55,7 +55,7 @@ straight away but holding it over in case subsequent request on connection
 arrives. By then the file object used with wsgi.file_wrapper can have been
 closed and underlying file descriptor will not longer be valid. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=132
+  https://code.google.com/archive/p/modwsgi/issues/132
 
 6. Modify how daemon process shutdown request is detected such that no need
 to block signals in request threads. Doing this caused problems in
@@ -65,12 +65,12 @@ handler writes a character, with main thread performing a poll on pipe
 waiting for that character to know when to shutdown. For additional details
 see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=87
+  https://code.google.com/archive/p/modwsgi/issues/87
 
 7. Fix bug where excessive transient memory usage could occur when calling
 read() or readline() on wsgi.input with no argument. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=126
+  https://code.google.com/archive/p/modwsgi/issues/126
 
 Note that calling read() with no argument is actually a violation of WSGI
 specification and any application doing that is not a WSGI compliant
@@ -79,12 +79,12 @@ application.
 8. Fix bug where daemon process would crash if User/Group directives were
 not specified prior to WSGIDaemonProcess in Apache configuration file. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=40
+  https://code.google.com/archive/p/modwsgi/issues/40
 
 9. Fix bug whereby Python exception state wasn't being cleared correctly
 when error occurred in loading target of WSGIImportScript. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=117
+  https://code.google.com/archive/p/modwsgi/issues/117
 
 Features Changed
 ----------------
@@ -101,7 +101,7 @@ Features Added
 1. Added 'mod_wsgi.version' to WSGI environment passed to WSGI application.
 For details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=93
+  https://code.google.com/archive/p/modwsgi/issues/93
 
 2. Added 'process_group' and 'application_group' attributes to mod_wsgi module
 that is created within each Python interpreter instance. This allows code
@@ -110,7 +110,7 @@ running in a daemon process group and what it may be called. Similarly, can
 determine if running in first interpreter or some other sub interpreter.
 For details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=27
+  https://code.google.com/archive/p/modwsgi/issues/27
 
 3. Added closed and isatty attributes to Log object as well as close() method.
 For wsgi.errors these aren't required, but log object also used for stderr
@@ -119,17 +119,17 @@ stderr and stdout. The closed and isatty attributes always yield false and
 close() will raise a run time error indicating that log cannot be closed.
 For details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=82
+  https://code.google.com/archive/p/modwsgi/issues/82
 
 4. Apache scoreboard cleaned up when daemon processes first initialised to
 prevent any user code interfering with operation of Apache. For details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=104
+  https://code.google.com/archive/p/modwsgi/issues/104
 
 5. When running configure script, can now supply additional options for
 CPPFLAGS, LDFLAGS and LDLIBS through environment variables. For details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=107
+  https://code.google.com/archive/p/modwsgi/issues/107
 
 6. Better checking done on response headers and an explicit error will now
 be produce if name or value of response header contains an embedded newline.
@@ -138,7 +138,7 @@ when handing response in Apache child process. In embedded mode, could allow
 application to pass back malformed response headers to client. For details
 see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=81
+  https://code.google.com/archive/p/modwsgi/issues/81
 
 7: Ensure that SYSLIBS linker options from Python configuration used when
 linking mod_wsgi Apache module. This is now prooving necessary as some Apache
@@ -146,7 +146,7 @@ distributions are no longer linking system maths library and Python requires
 it. To avoid problem simply link against mod_wsgi Apache module and system
 libraries that Python needs. For details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=115
+  https://code.google.com/archive/p/modwsgi/issues/115
 
 8: Reorder sys.path after having called site.addsitedir() in WSGIPythonPath
 and python-path option for WSGIDaemonProcess. This ensures that newly added
@@ -155,7 +155,7 @@ standard directories. This in part avoids need to ensure --no-site-packages
 option used when creating virtual environments, as shouldn't have an issue
 with standard directories still overriding additions. For details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=112
+  https://code.google.com/archive/p/modwsgi/issues/112
 
 9. Update USER, USERNAME and LOGNAME environment variables if set in
 daemon process to be the actual user that the process runs as rather than
@@ -163,7 +163,7 @@ what may be inherited from Apache root process, which would typically be
 'root' or the user that executed 'sudo' to start Apache, if they hadn't
 used '-H' option to 'sudo'. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=129
+  https://code.google.com/archive/p/modwsgi/issues/129
 
 10. Build process now inserts what is believed to be the directory where
 Python shared library is installed, into the library search path before the
@@ -171,4 +171,4 @@ Python config directory. This should negate the need to ensure that Python
 shared library is also symlink into the config directory next to the static
 library as linkers would normally expect it. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=136
+  https://code.google.com/archive/p/modwsgi/issues/136
