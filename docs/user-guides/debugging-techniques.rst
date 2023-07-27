@@ -314,7 +314,7 @@ follows::
             return self.__write(data)
 
         def __next__(self):
-            data = self.__iterable.__next__()
+            data = next(self.__iterable)
             self.__ocontent.write(data)
             self.__ocontent.flush()
             return data
