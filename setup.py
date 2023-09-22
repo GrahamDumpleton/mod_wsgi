@@ -15,9 +15,9 @@ except ImportError:
     from urllib import urlretrieve
 
 from setuptools import setup
-from distutils.core import Extension
-from distutils.sysconfig import get_config_var as get_python_config
-from distutils.sysconfig import get_python_lib
+from setuptools.extension import Extension
+from sysconfig import get_config_var as get_python_config
+from sysconfig import get_path as get_python_lib
 
 # First work out what all the available source code files are that should
 # be compiled.
@@ -293,7 +293,7 @@ else:
 
     PYTHON_LIBDIR = get_python_config('LIBDIR')
     APXS_LIBDIR = get_apxs_config('LIBDIR')
-    PYTHON_CFGDIR =  get_python_lib(plat_specific=1, standard_lib=1) + '/config'
+    PYTHON_CFGDIR =  get_python_lib('platstdlib') + '/config'
 
     if PYTHON_LDVERSION and PYTHON_LDVERSION != PYTHON_VERSION:
         PYTHON_CFGDIR = '%s-%s' % (PYTHON_CFGDIR, PYTHON_LDVERSION)
@@ -402,7 +402,7 @@ if os.name != 'nt':
             not get_python_config('PYTHONFRAMEWORK')):
         print(SHARED_LIBRARY_WARNING)
 
-# Now finally run distutils.
+# Now finally run setuptools.
 
 package_name = 'mod_wsgi'
 long_description = open('README.rst').read()

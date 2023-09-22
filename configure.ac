@@ -141,9 +141,8 @@ PYTHONLIBDIR=`${PYTHON} -c 'from sys import stdout; \
     import sysconfig; \
     stdout.write(sysconfig.get_config_var("LIBDIR"))'`
 PYTHONCFGDIR=`${PYTHON} -c 'from sys import stdout; \
-    import distutils.sysconfig; \
-    stdout.write(distutils.sysconfig.get_python_lib(plat_specific=1, \
-    standard_lib=1) +"/config")'`
+    import sysconfig; \
+    stdout.write(sysconfig.get_path("platstdlib") +"/config")'`
 PYTHONFRAMEWORKDIR=`${PYTHON} -c 'from sys import stdout; \
     import sysconfig; \
     stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORKDIR"))'`
