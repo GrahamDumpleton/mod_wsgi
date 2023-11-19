@@ -35,7 +35,6 @@ _py_dylib = ''
 
 try:
     import sysconfig
-    import distutils.sysconfig
 
     _py_soabi = sysconfig.get_config_var('SOABI')
 
@@ -63,7 +62,7 @@ if not os.path.exists(MOD_WSGI_SO) and _py_soabi:
     MOD_WSGI_SO = posixpath.join(posixpath.dirname(__file__), MOD_WSGI_SO)
 
 if not os.path.exists(MOD_WSGI_SO) and os.name == 'nt':
-    MOD_WSGI_SO = 'mod_wsgi%s' % distutils.sysconfig.get_config_var('EXT_SUFFIX')
+    MOD_WSGI_SO = 'mod_wsgi%s' % sysconfig.get_config_var('EXT_SUFFIX')
     MOD_WSGI_SO = os.path.join(os.path.dirname(__file__), MOD_WSGI_SO)
     MOD_WSGI_SO = MOD_WSGI_SO.replace('\\', '/')
 

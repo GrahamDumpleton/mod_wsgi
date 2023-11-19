@@ -9,7 +9,7 @@ Version 3.0 of mod_wsgi can be obtained from:
 Precompiled Windows binaries for Apache 2.2 and Python 2.6 and 3.1 are also
 available from:
 
-  http://code.google.com/p/modwsgi/downloads/list
+  https://code.google.com/archive/p/modwsgi/downloads/list
 
 Note that mod_wsgi 3.0 was originally derived from mod_wsgi 2.0. It has
 though all changes from later releases in the 2.X branch. Thus also see:
@@ -27,7 +27,7 @@ Bug Fixes
 
 1. Fix bug with quoting of options to mod_wsgi directives as described in:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=55
+  https://code.google.com/archive/p/modwsgi/issues/55
 
 2. For any code not run in the first Python interpreter instance, thread
 local data was being thrown away at the end of the request, rather than
@@ -37,7 +37,7 @@ where data was intended to persist for the life of the process. The result
 was that any such data would have had to have been recreated on every
 request. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=120
+  https://code.google.com/archive/p/modwsgi/issues/120
 
 Features Changed
 ----------------
@@ -52,7 +52,7 @@ allow zero length read to propogate to Apache input filters when done, if
 the zero length read is the very first read against the input stream. For
 details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=52
+  https://code.google.com/archive/p/modwsgi/issues/52
 
 2. The WSGIImportScript can now appear inside of VirtualHost. However, there
 are now additional restrictions.
@@ -72,7 +72,7 @@ daemon process group defined in a VirtualHost context.
 
 For additional details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=110
+  https://code.google.com/archive/p/modwsgi/issues/110
 
 3. The restriction on accessing sys.stdin and sys.stdout has been lifted.
 This was originally done to promote the writing of portable WSGI code. In
@@ -104,7 +104,7 @@ of process reloading always used, unless of course WSGIScriptReloadig is Off
 and all reloading is disabled. Doesn't affect embedded mode where script
 reloading was always the only option. For details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=72
+  https://code.google.com/archive/p/modwsgi/issues/72
 
 2. There is no longer an attempt to set Content-Length header for a response
 if not supplied and iterable was a sequence of length 1. This was suggested
@@ -126,7 +126,7 @@ Features Added
 
 What constitutes support for Python 3.X is described in:
 
-  http://code.google.com/p/modwsgi/wiki/SupportForPython3X
+  https://code.google.com/archive/p/modwsgi/wikis/SupportForPython3X
 
 Note that Python 3.0 is not supported and cannot be used. You must use
 Python 3.1 or later as mod_wsgi relies on features only added in Python 3.1.
@@ -190,7 +190,7 @@ connection.
 
 For details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=29
+  https://code.google.com/archive/p/modwsgi/issues/29
 
 4. Added new 'chroot' option to WSGIDaemonProcess directive to force daemon
 process to run inside of a chroot environment.
@@ -231,7 +231,7 @@ pointers to what may need to be done for Debian/Ubuntu see article at:
 
 For details on this change also see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=106
+  https://code.google.com/archive/p/modwsgi/issues/106
 
 5. Added WSGIPy3kWarningFlag directive when Python 2.6 being used. This should
 be at server scope outside of any VirtualHost and will apply to whole server::
@@ -241,18 +241,18 @@ be at server scope outside of any VirtualHost and will apply to whole server::
 This should have same affect as -3 option to 'python' executable. For more
 details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=109
+  https://code.google.com/archive/p/modwsgi/issues/109
 
 6: Fix up how Python thread state API is used to avoid internal Python
 assertion error when Python compiled with Py_DEBUG preprocessor symbol.
 For details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=113
+  https://code.google.com/archive/p/modwsgi/issues/113
 
 7. Now allow chunked request content. Such content will be dechunked and
 available for reading by WSGI application. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=1
+  https://code.google.com/archive/p/modwsgi/issues/1
 
 To enable this feature, you must use::
 
@@ -283,7 +283,7 @@ using these your code will not be portable to other WSGI hosting mechanisms.
 8. Values for HTTP headers now passed in environment dictionary to access,
 authentication and authorisation hooks. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=69
+  https://code.google.com/archive/p/modwsgi/issues/69
 
 9. The flag wsgi.run_once is not set to True when running in daemon mode and
 both threads and maximum-requests is set to 1. With this configuration, are
@@ -339,7 +339,7 @@ less memory in total.
 
 For more details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=99
+  https://code.google.com/archive/p/modwsgi/issues/99
 
 11. If daemon process defined in virtual host which has its own error log,
 then associated stderr with that virtual hosts error log instead. This way
@@ -356,7 +356,7 @@ log and read data from the logs.
 as allowed for in CGI specification. Note though that this feature has only
 been implemented for mod_wsgi daemon mode. See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=14
+  https://code.google.com/archive/p/modwsgi/issues/14
 
 14. Implement WSGIErrorOverride directive which when set to On will result
 in Apache error documents being used rather than those passed back by the
@@ -366,7 +366,7 @@ to the ProxyErrorOverride directive of Apache but for mod_wsgi only. Do note
 though that this feature has only been implemented for mod_wsgi daemon mode.
 See:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=57
+  https://code.google.com/archive/p/modwsgi/issues/57
 
 15. Implement WSGIPythonWarnings directive as equivalent to the 'python'
 executable '-W' option. The directive can be used at global scope in Apache
@@ -383,7 +383,7 @@ or::
 
 For more details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=137
+  https://code.google.com/archive/p/modwsgi/issues/137
 
 16. Added cpu-time-limit option to WSGIDaemonProcess directive. This allows
 one to define a time in seconds which will be the maximum amount of cpu
@@ -392,7 +392,7 @@ daemon process restarted. The point of this is to provide some means of
 controlling potentially run away processes due to bad code that gets stuck
 in heavy processing loops. For more details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=21
+  https://code.google.com/archive/p/modwsgi/issues/21
 
 17. Added cpu-priority option to WSGIDaemonProcess directive. This allows
 one to adjust the CPU priority associated with processes in a daemon process
@@ -401,7 +401,7 @@ setpriority() function on your particular operating system accepts. Normally
 this is in the range of about -20 to 20, with 0 being normal. For more
 details see:
 
-  http://code.google.com/p/modwsgi/issues/detail?id=142
+  https://code.google.com/archive/p/modwsgi/issues/142
 
 18. Added WSGIHandlerScript directive. This allows one to nominate a WSGI
 script file that should be executed as a handler for a specific file type

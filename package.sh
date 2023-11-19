@@ -6,6 +6,8 @@ rm -rf build dist
 
 rm -f pyproject.toml
 
+pip install setuptools
+
 python setup.py sdist
 
 ln -s pyproject.toml.in pyproject.toml

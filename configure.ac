@@ -1,6 +1,6 @@
 dnl  vim: set sw=4 expandtab :
 dnl
-dnl  Copyright 2007-2022 GRAHAM DUMPLETON
+dnl  Copyright 2007-2023 GRAHAM DUMPLETON
 dnl 
 dnl  Licensed under the Apache License, Version 2.0 (the "License");
 dnl  you may not use this file except in compliance with the License.
@@ -141,9 +141,8 @@ PYTHONLIBDIR=`${PYTHON} -c 'from sys import stdout; \
     import sysconfig; \
     stdout.write(sysconfig.get_config_var("LIBDIR"))'`
 PYTHONCFGDIR=`${PYTHON} -c 'from sys import stdout; \
-    import distutils.sysconfig; \
-    stdout.write(distutils.sysconfig.get_python_lib(plat_specific=1, \
-    standard_lib=1) +"/config")'`
+    import sysconfig; \
+    stdout.write(sysconfig.get_path("platstdlib") +"/config")'`
 PYTHONFRAMEWORKDIR=`${PYTHON} -c 'from sys import stdout; \
     import sysconfig; \
     stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORKDIR"))'`

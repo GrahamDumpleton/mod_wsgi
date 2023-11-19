@@ -2,7 +2,9 @@ on:
   push:
     branches:
       - develop
-      - master
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+rc[0-9]+"
   pull_request:
     branches:
       - develop
@@ -11,11 +13,15 @@ jobs:
   build:
     name: "Build mod_wsgi packages"
     runs-on: "ubuntu-20.04"
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
     steps:
-      - uses: "actions/checkout@v2"
-      - uses: "actions/setup-python@v2"
+      - uses: "actions/checkout@v4"
+      - uses: "actions/setup-python@v4"
         with:
-          python-version: "3.9"
+          python-version: "${{ matrix.python-version }}"
       - name: "Update package details"
         run: sudo apt --fix-missing update
       - name: "Install Apache package"
@@ -23,9 +29,9 @@ jobs:
       - name: "Build mod_wsgi packages"
         run: ./package.sh && ls -las dist
       - name: "Store built packages"
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
-          name: dist
+          name: dist ${{ matrix.python-version }}
           path: dist/*
 
   tests:
@@ -36,16 +42,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["2.7", "3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11-dev"]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
     steps:
-      - uses: "actions/checkout@v2"
-      - uses: "actions/setup-python@v2"
+      - uses: "actions/checkout@v4"
+      - uses: "actions/setup-python@v4"
         with:
           python-version: "${{ matrix.python-version }}"
       - name: "Download built packages"
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
-            name: dist
+            name: dist ${{ matrix.python-version }}
             path: dist
       - name: "Update package details"
         run: sudo apt --fix-missing update

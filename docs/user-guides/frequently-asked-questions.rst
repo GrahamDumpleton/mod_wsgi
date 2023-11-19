@@ -5,7 +5,7 @@ Frequently Asked Questions
 Apache Process Crashes
 ----------------------
 
-*Q*: Why when the mod_wsgi module is initially being loaded by Apache, do
+*Q*: When the mod_wsgi module is initially being loaded by Apache, why does
 the Apache server processes crash with a 'segmentation fault'?
 
 *A*: This is nearly always caused due to mod_python also being loaded by
@@ -16,9 +16,9 @@ Linux distributions before they started shipping with Python as a shared
 library.
 
 Further information on these problems can be found in various sections of
-[InstallationIssues Installation Issues].
+[:doc:`../user-guides/installation-issues`].
 
-*Q*: Why when first request is made against a WSGI application does the
+*Q*: When the first request is made against a WSGI application, why does the
 Apache server process handling the request crash with a 'segmentation
 fault'?
 
@@ -65,7 +65,7 @@ need to use the WSGISocketPrefix directive to specify an alternative
 location for storing of runtime files such as sockets.
 
 For further information see section 'Location Of UNIX Sockets' of
-[ConfigurationIssues Configuration Issues].
+[:doc:`../user-guides/configuration-issues`].
 
 *Q*: I am getting a HTTP 500 error response and I can't find any error in
 the Apache error logs.
@@ -227,10 +227,10 @@ and the documentation for the WSGIPassAuthorization directive.
 
 *Q*: Is there a way of having a WSGI application provide user authentication
 for resources outside of the application such as static files, CGI scripts
-or even a distinct application. In other words, something akin to being able
-to define access, authentication and authorisation handlers in mod_python?
+or even a distinct application? In other words, something akin to being able
+to define access, authentication and authorisation handlers in mod_python.
 
-*A*: Providing you are using Apache 2.0 or later, version 2.0 of mod_wsgi
+*A*: Provided you are using Apache 2.0 or later, version 2.0 of mod_wsgi
 provides support for hooking into the Apache access, authentication and
 authorisation handler phases. This doesn't allow full control of how the
 Apache handler is implemented, but does allow control over how user

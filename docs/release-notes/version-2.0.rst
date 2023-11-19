@@ -73,7 +73,7 @@ just the script file will apply.
 
 For more details see:
 
-  http://code.google.com/p/modwsgi/wiki/ReloadingSourceCode
+  https://code.google.com/archive/p/modwsgi/wikis/ReloadingSourceCode
 
 2. When application is running in embedded mode, and WSGIApacheExtensions
 directive is set to On, then a Python CObject reference is added to the
@@ -93,7 +93,7 @@ The 'ap_swig_py' package has not yet been released and is still in
 development. The package can be obtained from the Subversion repository
 at:
 
-  https://bitbucket.org/grahamdumpleton/apswigpy/wiki/Home
+  https://bitbucket.org/grahamdumpleton/apswigpy/wikis/Home
 
 With the SWIG binding for the Apache API, the intention is that many of
 the internal features of Apache would then be available. For example::
@@ -269,7 +269,7 @@ the auth provider::
 
 For more details see:
 
-  http://code.google.com/p/modwsgi/wiki/AccessControlMechanisms
+  https://code.google.com/archive/p/modwsgi/wikis/AccessControlMechanisms
 
 4. When Apache 2.2 is being used, now possible to provide a script file
 containing a callable which returns the groups that a user is a member of.
@@ -305,7 +305,7 @@ and 'groups_for_user()' function with a sample as shown below::
 
 For more details see:
 
-  http://code.google.com/p/modwsgi/wiki/AccessControlMechanisms
+  https://code.google.com/archive/p/modwsgi/wikis/AccessControlMechanisms
 
 5. Implemented WSGIDispatchScript directive. This directive can be used
 to designate a script file in which can be optionally defined any of the
@@ -444,7 +444,7 @@ file itself.
 
 For more details see:
 
-  http://code.google.com/p/modwsgi/wiki/VirtualEnvironments
+  https://code.google.com/archive/p/modwsgi/wikis/VirtualEnvironments
 
 11. Added WSGIPythonEggs directive and corresponding 'python-eggs' option
 for WSGIDaemonProcess directive. These allow the location of the Python

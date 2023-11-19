@@ -16,7 +16,7 @@ status was being returned instead of a 500 error.
 2. Fix bug which was resulting in logging destined for !VirtualHost !ErrorLog
 going missing or ending up in main Apache error log.
 
-  http://code.google.com/p/modwsgi/issues/detail?id=79
+  https://code.google.com/archive/p/modwsgi/issues/79
 
 Features Added
 --------------
