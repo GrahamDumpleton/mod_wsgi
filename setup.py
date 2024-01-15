@@ -300,19 +300,21 @@ else:
         if not os.path.exists(PYTHON_CFGDIR):
             PYTHON_CFGDIR = '%s-%s' % (PYTHON_CFGDIR, sys.platform)
 
-    PYTHON_LDFLAGS = ['-L%s' % PYTHON_CFGDIR]
+    PYTHON_LDFLAGS = []
     if PYTHON_LIBDIR != APXS_LIBDIR:
-        PYTHON_LDFLAGS.insert(0, '-L%s' % PYTHON_LIBDIR)
+        PYTHON_LDFLAGS.append('-L%s' % PYTHON_LIBDIR)
 
     PYTHON_LDLIBS = ['-lpython%s' % PYTHON_LDVERSION]
 
     if os.path.exists(os.path.join(PYTHON_LIBDIR,
             'libpython%s.a' % PYTHON_VERSION)):
         PYTHON_LDLIBS = ['-lpython%s' % PYTHON_VERSION]
+        PYTHON_LDFLAGS.append('-L%s' % PYTHON_CFGDIR)
 
     if os.path.exists(os.path.join(PYTHON_CFGDIR,
             'libpython%s.a' % PYTHON_VERSION)):
         PYTHON_LDLIBS = ['-lpython%s' % PYTHON_VERSION]
+        PYTHON_LDFLAGS.append('-L%s' % PYTHON_CFGDIR)
 
 # Create the final set of compilation flags to be used.
 
@@ -326,7 +328,9 @@ EXTRA_LINK_ARGS = PYTHON_LDFLAGS + PYTHON_LDLIBS
 LD_RUN_PATHS = []
 if os.name != 'nt':
     LD_RUN_PATH = os.environ.get('LD_RUN_PATH', '')
-    LD_RUN_PATHS = [PYTHON_CFGDIR]
+    LD_RUN_PATHS = []
+    if '-L%s' % PYTHON_CFGDIR in PYTHON_LDFLAGS:
+        LD_RUN_PATHS.append(PYTHON_CFGDIR)
     if PYTHON_LIBDIR != APXS_LIBDIR:
         LD_RUN_PATHS.insert(0, PYTHON_LIBDIR)
     LD_RUN_PATH += ':' + ':'.join(LD_RUN_PATHS)
