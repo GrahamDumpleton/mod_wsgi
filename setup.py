@@ -336,7 +336,8 @@ if os.name != 'nt':
     LD_RUN_PATH += ':' + ':'.join(LD_RUN_PATHS)
     LD_RUN_PATH = LD_RUN_PATH.lstrip(':')
 
-    os.environ['LD_RUN_PATH'] = LD_RUN_PATH
+    if LD_RUN_PATH:
+        os.environ['LD_RUN_PATH'] = LD_RUN_PATH
 
 # On MacOS X, recent versions of Apple's Apache do not support compiling
 # Apache modules with a target older than 10.8. This is because it
