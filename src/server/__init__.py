@@ -1267,7 +1267,7 @@ def _monitor():
             pass
 
 _thread = threading.Thread(target=_monitor)
-_thread.setDaemon(True)
+_thread.daemon = True
 
 def _exiting():
     try:

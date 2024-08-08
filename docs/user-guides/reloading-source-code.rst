@@ -355,7 +355,7 @@ with how mod_wsgi works is shown below::
                 pass
 
     _thread = threading.Thread(target=_monitor)
-    _thread.setDaemon(True)
+    _thread.daemon = True
 
     def _exiting():
         try:

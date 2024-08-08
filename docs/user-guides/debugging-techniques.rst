@@ -1075,7 +1075,7 @@ going to need it because of a recurring problem::
                 pass
 
     _thread = threading.Thread(target=_monitor)
-    _thread.setDaemon(True)
+    _thread.daemon = True
 
     def _exiting():
         try:
