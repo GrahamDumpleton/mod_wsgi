@@ -14,3 +14,5 @@ Bugs Fixed
   with UTF-8 encoding format.
 
 * Fix memory leak in `check_password()` authentication hook handler.
+
+* Change use of deprecated `thread.setDaemon` to `thread.daemon`.
