@@ -14926,6 +14926,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                         if (str) {
                             adapter->r->user = apr_pstrdup(adapter->r->pool,
                                     PyString_AsString(str));
+                            Py_DECREF(str);
 
                             status = AUTH_GRANTED;
                         }

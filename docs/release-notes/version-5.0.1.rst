@@ -12,3 +12,5 @@ Bugs Fixed
 * Fix issue which could result in process crashing when values were supplied
   for user/password/realm of HTTP basic authentication which weren't compliant
   with UTF-8 encoding format.
+
+* Fix memory leak in `check_password()` authentication hook handler.
