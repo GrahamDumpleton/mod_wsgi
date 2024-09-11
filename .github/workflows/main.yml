@@ -19,7 +19,7 @@ jobs:
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
     steps:
       - uses: "actions/checkout@v4"
-      - uses: "actions/setup-python@v4"
+      - uses: "actions/setup-python@v5"
         with:
           python-version: "${{ matrix.python-version }}"
       - name: "Update package details"
@@ -29,7 +29,7 @@ jobs:
       - name: "Build mod_wsgi packages"
         run: ./package.sh && ls -las dist
       - name: "Store built packages"
-        uses: actions/upload-artifact@v3
+        uses: "actions/upload-artifact@v4"
         with:
           name: dist ${{ matrix.python-version }}
           path: dist/*
@@ -45,11 +45,11 @@ jobs:
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
     steps:
       - uses: "actions/checkout@v4"
-      - uses: "actions/setup-python@v4"
+      - uses: "actions/setup-python@v5"
         with:
           python-version: "${{ matrix.python-version }}"
       - name: "Download built packages"
-        uses: actions/download-artifact@v3
+        uses: "actions/download-artifact@v4"
         with:
             name: dist ${{ matrix.python-version }}
             path: dist
