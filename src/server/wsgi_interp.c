@@ -2165,11 +2165,32 @@ static apr_status_t wsgi_python_parent_cleanup(void *data)
 }
 
 
+static void wsgi_python_init_failed(PyStatus status)
+{
+    /*
+     * On a PyConfig API failure, usually a memory allocation failure,
+     * log a critical error.
+     */
+    ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
+                 "mod_wsgi (pid=%d): Initializing Python failed: %s",
+                 getpid(), status.err_msg);
+}
+
+
 void wsgi_python_init(apr_pool_t *p)
 {
     const char *python_home = 0;
 
     int is_pyvenv = 0;
+
+#if PY_VERSION_HEX >= 0x03080000
+#  define USE_PYCONFIG
+#endif
+#ifdef USE_PYCONFIG
+    PyConfig config;
+    PyStatus status;
+    PyConfig_InitPythonConfig(&config);
+#endif
 
     /* Perform initialisation if required. */
 
@@ -2186,16 +2207,30 @@ void wsgi_python_init(apr_pool_t *p)
 
 #if (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 3) || \
     (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6)
-        if (wsgi_server_config->dont_write_bytecode == 1)
+        if (wsgi_server_config->dont_write_bytecode == 1) {
+#ifdef USE_PYCONFIG
+            config.write_bytecode = 0;
+#else
             Py_DontWriteBytecodeFlag++;
+#endif
+        }
 #endif
 
         /* Check for Python paths and optimisation flag. */
 
-        if (wsgi_server_config->python_optimize > 0)
+        if (wsgi_server_config->python_optimize > 0) {
+#ifdef USE_PYCONFIG
+            config.optimization_level = wsgi_server_config->python_optimize;
+#else
             Py_OptimizeFlag = wsgi_server_config->python_optimize;
-        else
+#endif
+        } else {
+#ifdef USE_PYCONFIG
+            config.optimization_level = 0;
+#else
             Py_OptimizeFlag = 0;
+#endif
+        }
 
         /* Check for control options for Python warnings. */
 
@@ -2215,12 +2250,18 @@ void wsgi_python_init(apr_pool_t *p)
 
                 s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
 
-#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
+#  if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
                 wsgi_utf8_to_unicode_path(s, len, entries[i]);
-#else
+#  else
                 mbstowcs(s, entries[i], len);
-#endif
+#  endif
+#  ifdef USE_PYCONFIG
+                status = PyWideStringList_Append(&config.warnoptions, s);
+                if (PyStatus_Exception(status))
+                    wsgi_python_init_failed(status);
+#  else
                 PySys_AddWarnOption(s);
+#  endif
 #else
                 PySys_AddWarnOption(entries[i]);
 #endif
@@ -2265,12 +2306,17 @@ void wsgi_python_init(apr_pool_t *p)
 
             s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
 
-#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
+#  if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
             wsgi_utf8_to_unicode_path(s, len, python_home);
-#else
+#  else
             mbstowcs(s, python_home, len);
-#endif
+#  endif
+#  ifdef USE_PYCONFIG
+            status = PyConfig_SetString(&config, &config.home, s);
+            if (PyStatus_Exception(status)) wsgi_python_init_failed(status);
+#  else
             Py_SetPythonHome(s);
+#  endif
 #else
             Py_SetPythonHome((char *)python_home);
 #endif
@@ -2375,13 +2421,19 @@ void wsgi_python_init(apr_pool_t *p)
 #if PY_MAJOR_VERSION >= 3
                 len = strlen(python_exe)+1;
                 s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
-#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
+#  if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
                 wsgi_utf8_to_unicode_path(s, len, python_exe);
-#else
+#  else
                 mbstowcs(s, python_exe, len);
-#endif
+#  endif
 
+#  ifdef USE_PYCONFIG
+                status = PyConfig_SetString(&config, &config.program_name, s);
+                if (PyStatus_Exception(status))
+                    wsgi_python_init_failed(status);
+#  else
                 Py_SetProgramName(s);
+#  endif
 #else
                 Py_SetProgramName((char *)python_exe);
 #endif
@@ -2390,13 +2442,19 @@ void wsgi_python_init(apr_pool_t *p)
 #if PY_MAJOR_VERSION >= 3
                 len = strlen(python_home)+1;
                 s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
-#if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
+#  if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
                 wsgi_utf8_to_unicode_path(s, len, python_home);
-#else
+#  else
                 mbstowcs(s, python_home, len);
-#endif
+#  endif
 
+#  ifdef USE_PYCONFIG
+                status = PyConfig_SetString(&config, &config.home, s);
+                if (PyStatus_Exception(status))
+                    wsgi_python_init_failed(status);
+#  else
                 Py_SetPythonHome(s);
+#  endif
 #else
                 Py_SetPythonHome((char *)python_home);
 #endif
@@ -2412,12 +2470,18 @@ void wsgi_python_init(apr_pool_t *p)
          */
 
         if (wsgi_server_config->python_hash_seed != NULL) {
-            char *envvar = apr_pstrcat(p, "PYTHONHASHSEED=",
-                    wsgi_server_config->python_hash_seed, NULL);
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
                          "mod_wsgi (pid=%d): Setting hash seed to %s.",
                          getpid(), wsgi_server_config->python_hash_seed);
+#ifdef USE_PYCONFIG
+            long seed = atol(wsgi_server_config->python_hash_seed);
+            config.use_hash_seed = 1;
+            config.hash_seed = (unsigned long)seed;
+#else
+            char *envvar = apr_pstrcat(p, "PYTHONHASHSEED=",
+                    wsgi_server_config->python_hash_seed, NULL);
             putenv(envvar);
+#endif
         }
 
         /*
@@ -2436,12 +2500,19 @@ void wsgi_python_init(apr_pool_t *p)
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                      "mod_wsgi (pid=%d): Initializing Python.", getpid());
 
+#ifdef USE_PYCONFIG
+        status = Py_InitializeFromConfig(&config);
+        if (PyStatus_Exception(status)) wsgi_python_init_failed(status);
+#else
         Py_Initialize();
+#endif
 
 #if PY_VERSION_HEX < 0x03090000
         /* Initialise threading. */
         PyEval_InitThreads();
 #endif
+
+#ifndef USE_PYCONFIG
         /*
          * Remove the environment variable we set for the hash
          * seed. This has to be done in os.environ, which will
@@ -2478,7 +2549,8 @@ void wsgi_python_init(apr_pool_t *p)
                 Py_DECREF(module);
             }
         }
-      
+#endif
+
         /*
          * We now want to release the GIL. Before we do that
          * though we remember what the current thread state is.
