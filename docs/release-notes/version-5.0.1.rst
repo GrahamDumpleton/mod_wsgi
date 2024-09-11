@@ -6,6 +6,12 @@ Version 5.0.1 of mod_wsgi can be obtained from:
 
   https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/5.0.1
 
+Features Changed
+----------------
+
+* Internally, when using Python 3.8 or newer, the PyConfig API will now be used
+  due to deprecation and future removal of older C API alternatives.
+
 Bugs Fixed
 ----------
 
