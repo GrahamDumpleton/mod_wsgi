@@ -17,6 +17,7 @@ Configuration
    configuration-directives/WSGIDestroyInterpreter
    configuration-directives/WSGIImportScript
    configuration-directives/WSGILazyInitialization
+   configuration-directives/WSGIMapHEADToGET
    configuration-directives/WSGIPassAuthorization
    configuration-directives/WSGIProcessGroup
    configuration-directives/WSGIPythonEggs
