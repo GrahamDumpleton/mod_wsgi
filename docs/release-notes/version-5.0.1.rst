@@ -10,7 +10,8 @@ Features Changed
 ----------------
 
 * Internally, when using Python 3.8 or newer, the PyConfig API will now be used
-  due to deprecation and future removal of older C API alternatives.
+  due to deprecation and future removal of older C API alternatives. This was
+  required to support Python 3.13.
 
 Bugs Fixed
 ----------
