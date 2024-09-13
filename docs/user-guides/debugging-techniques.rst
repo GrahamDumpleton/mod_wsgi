@@ -39,6 +39,11 @@ log level instead::
 
     LogLevel info
 
+If you don't want to turn up log verbosity for the whole server, you can
+also set the log level for just the mod_wsgi module::
+
+    LogLevel warn mod_wsgi:info
+
 If your Apache web server is only providing services for one host, it is
 likely that you will only have one error log file. If however the Apache
 web server is configured for multiple virtual hosts, then it is possible
