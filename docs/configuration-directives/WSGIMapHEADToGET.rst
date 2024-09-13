@@ -1,6 +1,6 @@
-==================
+================
 WSGIMapHEADToGET
-==================
+================
 
 :Description: Enable/disable mapping of HEAD request to GET.
 :Syntax: ``WSGIMapHEADToGET On|Off|Auto``
