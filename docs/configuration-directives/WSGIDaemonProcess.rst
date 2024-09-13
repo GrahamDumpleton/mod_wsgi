@@ -375,6 +375,12 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     to handle more requests, restarting of the process will be delayed
     if possible.
 
+    Note that when a process is restarted due to a request timeout, if the
+    Apache `LogLevel` is set to `info` or higher, or `wsgi:info` applied for
+    `LogLevel`, messages will be logged to the Apache error log file for the
+    request which gives the Python stack trace for any request handler threads
+    so you can work out where the request is blocking.
+
 .. _deadlock-timeout:
 
 **deadlock-timeout=sss**
