@@ -162,13 +162,6 @@ Python::
 All up, configuring SELinux is a bit of a black art and so you are wise
 to do your research.
 
-For some information about using mod_wsgi in a SELinux enabled environment
-check out:
-
-  * http://www.packtpub.com/article/selinux-secured-web-hosting-python-based-web-applications
-  * http://www.globalherald.net/jb01/weblog/21.html
-  * http://blog.endpoint.com/2010/02/selinux-httpd-modwsgi-26-rhel-centos-5.html
-
 If you suspect that an issue may be caused by SELinux, you could
 temporarily try disabling it and doing a restart to verify whether it is
 the cause, but always re-enable it and do not disable it completely.

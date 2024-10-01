@@ -14,8 +14,11 @@ Configuration
    configuration-directives/WSGICaseSensitivity
    configuration-directives/WSGIChunkedRequest
    configuration-directives/WSGIDaemonProcess
+   configuration-directives/WSGIDestroyInterpreter
+   configuration-directives/WSGIErrorOverride
    configuration-directives/WSGIImportScript
    configuration-directives/WSGILazyInitialization
+   configuration-directives/WSGIMapHEADToGET
    configuration-directives/WSGIPassAuthorization
    configuration-directives/WSGIProcessGroup
    configuration-directives/WSGIPythonEggs

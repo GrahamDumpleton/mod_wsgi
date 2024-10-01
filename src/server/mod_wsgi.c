@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2023 GRAHAM DUMPLETON
+ * Copyright 2007-2024 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14885,14 +14885,27 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
             adapter = newAuthObject(r, config);
 
             if (adapter) {
+                PyObject *user_string = NULL;
+                PyObject *password_string = NULL;
+
+#if PY_MAJOR_VERSION >= 3
+                user_string = PyUnicode_DecodeLatin1(user, strlen(user), NULL);
+                password_string = PyUnicode_DecodeLatin1(password, strlen(password), NULL);
+#else
+                user_string = PyString_FromString(user);
+                password_string = PyString_FromString(password);
+#endif
+
                 vars = Auth_environ(adapter, group);
 
                 Py_INCREF(object);
-                args = Py_BuildValue("(Oss)", vars, user, password);
+                args = Py_BuildValue("(OOO)", vars, user_string, password_string);
                 result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
+                Py_DECREF(user_string);
+                Py_DECREF(password_string);
 
                 if (result) {
                     if (result == Py_None) {
@@ -14913,6 +14926,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                         if (str) {
                             adapter->r->user = apr_pstrdup(adapter->r->pool,
                                     PyString_AsString(str));
+                            Py_DECREF(str);
 
                             status = AUTH_GRANTED;
                         }
@@ -15128,14 +15142,27 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
             adapter = newAuthObject(r, config);
 
             if (adapter) {
+                PyObject *user_string = NULL;
+                PyObject *realm_string = NULL;
+
+#if PY_MAJOR_VERSION >= 3
+                user_string = PyUnicode_DecodeLatin1(user, strlen(user), NULL);
+                realm_string = PyUnicode_DecodeLatin1(realm, strlen(realm), NULL);
+#else
+                user_string = PyString_FromString(user);
+                realm_string = PyString_FromString(realm);
+#endif
+
                 vars = Auth_environ(adapter, group);
 
                 Py_INCREF(object);
-                args = Py_BuildValue("(Oss)", vars, user, realm);
+                args = Py_BuildValue("(OOO)", vars, user_string, realm_string);
                 result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
+                Py_DECREF(user_string);
+                Py_DECREF(realm_string);
 
                 if (result) {
                     if (result == Py_None) {
@@ -15379,14 +15406,23 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
             adapter = newAuthObject(r, config);
 
             if (adapter) {
+                PyObject *user_string = NULL;
+
+#if PY_MAJOR_VERSION >= 3
+                user_string = PyUnicode_DecodeLatin1(r->user, strlen(r->user), NULL);
+#else
+                user_string = PyString_FromString(r->user);
+#endif
+
                 vars = Auth_environ(adapter, group);
 
                 Py_INCREF(object);
-                args = Py_BuildValue("(Os)", vars, r->user);
+                args = Py_BuildValue("(OO)", vars, user_string);
                 result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
+                Py_DECREF(user_string);
 
                 if (result) {
                     PyObject *iterator;
@@ -15930,14 +15966,27 @@ static int wsgi_hook_check_user_id(request_rec *r)
             adapter = newAuthObject(r, config);
 
             if (adapter) {
+                PyObject *user_string = NULL;
+                PyObject *password_string = NULL;
+
+#if PY_MAJOR_VERSION >= 3
+                user_string = PyUnicode_DecodeLatin1(r->user, strlen(r->user), NULL);
+                password_string = PyUnicode_DecodeLatin1(password, strlen(password), NULL);
+#else
+                user_string = PyString_FromString(r->user);
+                password_string = PyString_FromString(password);
+#endif
+
                 vars = Auth_environ(adapter, group);
 
                 Py_INCREF(object);
-                args = Py_BuildValue("(Oss)", vars, r->user, password);
+                args = Py_BuildValue("(OOO)", vars, user_string, password_string);
                 result = PyObject_CallObject(object, args);
                 Py_DECREF(args);
                 Py_DECREF(object);
                 Py_DECREF(vars);
+                Py_DECREF(user_string);
+                Py_DECREF(password_string);
 
                 if (result) {
                     if (result == Py_None) {

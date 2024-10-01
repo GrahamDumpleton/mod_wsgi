@@ -22,8 +22,7 @@ installed, with it using the version of Apache installed by the
 This method of installation is only suitable for where you want to use
 ``mod_wsgi-express``. It cannot be used to build mod_wsgi for use with
 your system Apache installation. This installation method will not
-work on Windows, and also currently fails on macOS because the Apache
-Runtime (APR) library, has not been updated to latest macOS versions.
+work on Windows.
 
 When installing mod_wsgi using this method, except that you will install
 the ``mod_wsgi-standalone`` package instead of the ``mod_wsgi`` package,
