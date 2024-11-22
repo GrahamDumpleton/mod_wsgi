@@ -176,7 +176,7 @@ static PyObject *Log_flush(LogObject *self, PyObject *args)
     if (thread_info && thread_info->log_buffer)
         return Log_flush((LogObject *)thread_info->log_buffer, args);
 
-    if (self->expired) {
+    if (self->expired && self->s) {
         PyErr_SetString(PyExc_RuntimeError, "log object has expired");
         return NULL;
     }
