@@ -21,11 +21,11 @@
 
 #elif (defined(_AIX) || defined(__TOS__AIX__)) || (defined(__sun__) || defined(__sun) || defined(sun) && (defined(__SVR4) || defined(__svr4__)))
 #include <fcntl.h>
-  #if defined(_AIX)
-  #include <sys/procfs.h>
-  #else
-  #include <procfs.h>
-  #endif
+#if defined(_AIX)
+#include <sys/procfs.h>
+#else
+#include <procfs.h>
+#endif
 
 #elif defined(__linux__) || defined(__linux) || defined(linux) || defined(__gnu_linux__)
 #include <stdio.h>
