@@ -481,7 +481,7 @@ LimitRequestBody directive can be used::
 
     LimitRequestBody 1048576
 
-The argument to the LimitRequestBody should be the maxumum number of bytes
+The argument to the LimitRequestBody should be the maximum number of bytes
 that should be allowed in the content of a request.
 
 When this directive is used, mod_wsgi will perform the check prior to
