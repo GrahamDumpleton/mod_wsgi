@@ -78,7 +78,15 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->socket_prefix = NULL;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    object->socket_prefix = DEFAULT_REL_RUNTIMEDIR "/wsgi";
+#if defined(_GNU_SOURCE)
+#  define GETENV secure_getenv
+#else
+#  define GETENV getenv
+#endif
+    object->socket_prefix = GETENV("APACHE_RUN_DIR");
+    if (!object->socket_prefix)
+      object->socket_prefix = DEFAULT_REL_RUNTIMEDIR;
+    object->socket_prefix = apr_pstrcat(p, object->socket_prefix, "/wsgi", NULL);
     object->socket_prefix = ap_server_root_relative(p, object->socket_prefix);
 #endif
 
