@@ -110,9 +110,10 @@ class Command(BaseCommand):
 
             if 'whitenoise.middleware.WhiteNoiseMiddleware' not in middleware:
                 static_url = str(settings.STATIC_URL or "")
+                static_root = str(settings.STATIC_ROOT or "")
 
                 if static_url and static_url.startswith('/'):
-                    if settings.STATIC_ROOT:
+                    if static_root:
                         # We need a fiddle here as depending on the Python
                         # version used, the list of URL aliases we are
                         # passed could be either list of tuples or list of
@@ -122,11 +123,11 @@ class Command(BaseCommand):
                         if not url_aliases:
                             url_aliases.insert(0, (
                                     static_url.rstrip('/') or '/',
-                                    settings.STATIC_ROOT))
+                                    static_root))
                         else:
                             url_aliases.insert(0, type(url_aliases[0])((
                                     static_url.rstrip('/') or '/',
-                                    settings.STATIC_ROOT)))
+                                    static_root)))
 
         except AttributeError:
             pass
