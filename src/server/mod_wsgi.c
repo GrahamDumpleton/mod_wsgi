@@ -2629,14 +2629,10 @@ static PyObject *Adapter_environ(AdapterObject *self)
             if (elts[i].val) {
 #if PY_MAJOR_VERSION >= 3
                 if (!strcmp(elts[i].val, "DOCUMENT_ROOT")) {
-                    object = PyUnicode_Decode(elts[i].val, strlen(elts[i].val),
-                                             Py_FileSystemDefaultEncoding,
-                                             "surrogateescape");
+                    object = PyUnicode_DecodeFSDefault(elts[i].val);
                 }
                 else if (!strcmp(elts[i].val, "SCRIPT_FILENAME")) {
-                    object = PyUnicode_Decode(elts[i].val, strlen(elts[i].val),
-                                             Py_FileSystemDefaultEncoding,
-                                             "surrogateescape");
+                    object = PyUnicode_DecodeFSDefault(elts[i].val);
                 }
                 else {
                     object = PyUnicode_DecodeLatin1(elts[i].val,
@@ -3858,9 +3854,7 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
 
             Py_INCREF(object);
 #if PY_MAJOR_VERSION >= 3
-	    path = PyUnicode_Decode(resource, strlen(resource),
-				     Py_FileSystemDefaultEncoding,
-				     "surrogateescape");
+            path = PyUnicode_DecodeFSDefault(resource);
             args = Py_BuildValue("(O)", path);
             Py_DECREF(path);
 #else
@@ -14390,9 +14384,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 
 #if PY_MAJOR_VERSION >= 3
     value = ap_document_root(r);
-    object = PyUnicode_Decode(value, strlen(value),
-                             Py_FileSystemDefaultEncoding,
-                             "surrogateescape");
+    object = PyUnicode_DecodeFSDefault(value);
 #else
     object = PyString_FromString(ap_document_root(r));
 #endif
