@@ -728,10 +728,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                 if (pwent && getenv("USER")) {
 #if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("USER");
-                    value = PyUnicode_Decode(pwent->pw_name,
-                                             strlen(pwent->pw_name),
-                                             Py_FileSystemDefaultEncoding,
-                                             "surrogateescape");
+                    value = PyUnicode_DecodeFSDefault(pwent->pw_name);
 #else
                     key = PyString_FromString("USER");
                     value = PyString_FromString(pwent->pw_name);
@@ -746,10 +743,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                 if (pwent && getenv("USERNAME")) {
 #if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("USERNAME");
-                    value = PyUnicode_Decode(pwent->pw_name,
-                                             strlen(pwent->pw_name),
-                                             Py_FileSystemDefaultEncoding,
-                                             "surrogateescape");
+                    value = PyUnicode_DecodeFSDefault(pwent->pw_name);
 #else
                     key = PyString_FromString("USERNAME");
                     value = PyString_FromString(pwent->pw_name);
@@ -764,10 +758,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                 if (pwent && getenv("LOGNAME")) {
 #if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("LOGNAME");
-                    value = PyUnicode_Decode(pwent->pw_name,
-                                             strlen(pwent->pw_name),
-                                             Py_FileSystemDefaultEncoding,
-                                             "surrogateescape");
+                    value = PyUnicode_DecodeFSDefault(pwent->pw_name);
 #else
                     key = PyString_FromString("LOGNAME");
                     value = PyString_FromString(pwent->pw_name);
@@ -816,10 +807,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                 if (pwent) {
 #if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("HOME");
-                    value = PyUnicode_Decode(pwent->pw_dir,
-                                             strlen(pwent->pw_dir),
-                                             Py_FileSystemDefaultEncoding,
-                                             "surrogateescape");
+                    value = PyUnicode_DecodeFSDefault(pwent->pw_dir);
 #else
                     key = PyString_FromString("HOME");
                     value = PyString_FromString(pwent->pw_dir);
@@ -862,10 +850,7 @@ InterpreterObject *newInterpreterObject(const char *name)
             if (object) {
 #if PY_MAJOR_VERSION >= 3
                 key = PyUnicode_FromString("PYTHON_EGG_CACHE");
-                value = PyUnicode_Decode(wsgi_python_eggs,
-                                         strlen(wsgi_python_eggs),
-                                         Py_FileSystemDefaultEncoding,
-                                         "surrogateescape");
+                value = PyUnicode_DecodeFSDefault(wsgi_python_eggs);
 #else
                 key = PyString_FromString("PYTHON_EGG_CACHE");
                 value = PyString_FromString(wsgi_python_eggs);
@@ -1135,9 +1120,7 @@ InterpreterObject *newInterpreterObject(const char *name)
             PyObject *item;
 
 #if PY_MAJOR_VERSION >= 3
-            item = PyUnicode_Decode(home, strlen(home),
-                                    Py_FileSystemDefaultEncoding,
-                                    "surrogateescape");
+            item = PyUnicode_DecodeFSDefault(home);
 #else
             item = PyString_FromString(home);
 #endif
@@ -1463,20 +1446,14 @@ InterpreterObject *newInterpreterObject(const char *name)
                 PyObject *result = NULL;
 
 #if PY_MAJOR_VERSION >= 3
-                config_file = PyUnicode_Decode(wsgi_newrelic_config_file,
-                         strlen(wsgi_newrelic_config_file),
-                         Py_FileSystemDefaultEncoding,
-                         "surrogateescape");
+                config_file = PyUnicode_DecodeFSDefault(wsgi_newrelic_config_file);
 #else
                 config_file = PyString_FromString(wsgi_newrelic_config_file);
 #endif
 
                 if (wsgi_newrelic_environment) {
 #if PY_MAJOR_VERSION >= 3
-                    environment = PyUnicode_Decode(wsgi_newrelic_environment,
-                            strlen(wsgi_newrelic_environment),
-                            Py_FileSystemDefaultEncoding,
-                            "surrogateescape");
+                    environment = PyUnicode_DecodeFSDefault(wsgi_newrelic_environment);
 #else
                     environment = PyString_FromString(
                             wsgi_newrelic_environment);
