@@ -2386,8 +2386,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
         if (r->connection->aborted) {
             if (!exception_when_aborted) {
                 ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, self->r,
-                              "mod_wsgi (pid=%d): Client closed connection.",
-                              getpid());
+                              "Client closed connection.");
             }
             else
                 PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client "
@@ -2439,8 +2438,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
                         sizeof(status_buffer)-1));
 
                 ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, self->r,
-                              "mod_wsgi (pid=%d): %s.", getpid(),
-                              error_message);
+                              "%s.", error_message);
             }
             else {
                 error_message = apr_psprintf(r->pool, "Apache/mod_wsgi "
@@ -2485,8 +2483,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
     if (r->connection->aborted) {
         if (!exception_when_aborted) {
             ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, self->r,
-                          "mod_wsgi (pid=%d): Client closed connection.",
-                          getpid());
+                          "Client closed connection.");
         }
         else
             PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client "
@@ -3259,8 +3256,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
             self->output_length != self->content_length) ||
             (self->output_length > self->content_length))) {
             ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, self->r,
-                          "mod_wsgi (pid=%d): Content length mismatch, "
-                          "expected %s, response generated %s: %s", getpid(),
+                          "Content length mismatch, "
+                          "expected %s, response generated %s: %s",
                           apr_off_t_toa(self->r->pool, self->content_length),
                           apr_off_t_toa(self->r->pool, self->output_length),
                           self->r->filename);
@@ -3650,15 +3647,15 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         Py_BEGIN_ALLOW_THREADS
         if (r) {
             ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
-                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Reloading WSGI script '%s'.", getpid(),
-                          process_group, application_group, filename);
+                          "Reloading WSGI script '%s' for process '%s' and "
+                          "application '%s'.",
+                          filename, process_group, application_group);
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Reloading WSGI script '%s'.", getpid(),
-                         process_group, application_group, filename);
+                         "Reloading WSGI script '%s' for process '%s' and "
+                         "application '%s'.",
+                         filename, process_group, application_group);
         }
         Py_END_ALLOW_THREADS
     }
@@ -3666,15 +3663,15 @@ static PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         Py_BEGIN_ALLOW_THREADS
         if (r) {
             ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
-                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Loading Python script file '%s'.", getpid(),
-                          process_group, application_group, filename);
+                          "Loading Python script '%s' for process '%s' and "
+                          "application '%s'.",
+                          filename, process_group, application_group);
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Loading Python script file '%s'.", getpid(),
-                         process_group, application_group, filename);
+                         "Loading Python script '%s' for process '%s' and "
+                         "application '%s'.",
+                         filename, process_group, application_group);
         }
         Py_END_ALLOW_THREADS
     }
@@ -3711,15 +3708,15 @@ load_source_finally:
         Py_BEGIN_ALLOW_THREADS
         if (r) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, errno, r,
-                          "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                          "Could not read/compile source file '%s'.", getpid(),
-                          process_group, application_group, filename);
+                          "Could not read/compile source file '%s' for "
+                          "process '%s' and application '%s'.",
+                          filename, process_group, application_group);
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_ERR, errno, wsgi_server,
-                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Could not read/compile source file '%s'.", getpid(),
-                         process_group, application_group, filename);
+                         "Could not read/compile source file '%s' for "
+                         "process '%s' and application '%s'.",
+                         filename, process_group, application_group);
         }
         Py_END_ALLOW_THREADS
 
@@ -3767,15 +3764,15 @@ load_source_finally:
                 Py_BEGIN_ALLOW_THREADS
                 if (r) {
                     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                  "mod_wsgi (pid=%d): SystemExit exception "
+                                  "SystemExit exception "
                                   "raised when doing exec of Python script "
-                                  "file '%s'.", getpid(), filename);
+                                  "file '%s'.", filename);
                 }
                 else {
                     ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): SystemExit exception "
+                                 "SystemExit exception "
                                  "raised when doing exec of Python script "
-                                 "file '%s'.", getpid(), filename);
+                                 "file '%s'.", filename);
                 }
                 Py_END_ALLOW_THREADS
             }
@@ -3784,13 +3781,11 @@ load_source_finally:
             Py_BEGIN_ALLOW_THREADS
             if (r) {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "mod_wsgi (pid=%d): Failed to exec Python script "
-                              "file '%s'.", getpid(), filename);
+                              "Failed to exec Python script '%s'.", filename);
             }
             else {
                 ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Failed to exec Python script "
-                             "file '%s'.", getpid(), filename);
+                             "Failed to exec Python script '%s'.", filename);
             }
             Py_END_ALLOW_THREADS
 
@@ -3939,8 +3934,8 @@ static int wsgi_execute_script(request_rec *r)
 
     if (!interp) {
         ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), config->application_group);
+                      "Cannot acquire interpreter '%s'.",
+                      config->application_group);
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -3952,8 +3947,8 @@ static int wsgi_execute_script(request_rec *r)
         if (wsgi_startup_shutdown_time == 0) {
             if (wsgi_startup_timeout > 0) {
                 ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Application startup "
-                             "timer triggered '%s'.", getpid(),
+                             "Application startup "
+                             "timer triggered '%s'.",
                              config->process_group);
 
                 apr_thread_mutex_lock(wsgi_monitor_lock);
@@ -3998,8 +3993,8 @@ static int wsgi_execute_script(request_rec *r)
             if (!module) {
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                             "mod_wsgi (pid=%d): Failed to import handler "
-                             "via Python module reference %s.", getpid(),
+                             "Failed to import handler "
+                             "via Python module reference '%s'.",
                              script);
                 Py_END_ALLOW_THREADS
 
@@ -4059,8 +4054,8 @@ static int wsgi_execute_script(request_rec *r)
 
                     Py_BEGIN_ALLOW_THREADS
                     ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
-                                 "mod_wsgi (pid=%d): Force restart of "
-                                 "process '%s'.", getpid(),
+                                 "Force restart of "
+                                 "process '%s'.",
                                  config->process_group);
                     Py_END_ALLOW_THREADS
 
@@ -4186,8 +4181,8 @@ static int wsgi_execute_script(request_rec *r)
         wsgi_startup_shutdown_time = -1;
 
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Application startup "
-                     "timer cancelled '%s'.", getpid(),
+                     "Application startup "
+                     "timer cancelled '%s'.",
                      config->process_group);
     }
 #endif
@@ -4260,9 +4255,9 @@ static int wsgi_execute_script(request_rec *r)
         else {
             Py_BEGIN_ALLOW_THREADS
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d): Target WSGI script '%s' does "
+                          "Target WSGI script '%s' does "
                           "not contain WSGI application '%s'.",
-                          getpid(), script, config->callable_object);
+                          script, config->callable_object);
             Py_END_ALLOW_THREADS
 
             status = HTTP_NOT_FOUND;
@@ -4346,7 +4341,7 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
      */
 
     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                 "mod_wsgi (pid=%d): Destroying interpreters.", getpid());
+                 "Destroying interpreters.");
 
     PyDict_Clear(wsgi_interpreters);
 
@@ -4524,8 +4519,8 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
                 if (!interp) {
                     ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
-                                  "mod_wsgi (pid=%d): Cannot acquire "
-                                  "interpreter '%s'.", getpid(),
+                                  "Cannot acquire "
+                                  "interpreter '%s'.",
                                   entry->application_group);
                 }
 
@@ -6756,8 +6751,8 @@ static int wsgi_execute_dispatch(request_rec *r)
 
     if (!config->dispatch_script) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI dispatch "
-                     "script not provided.", getpid());
+                     "Location of WSGI dispatch "
+                     "script not provided.");
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -6774,8 +6769,8 @@ static int wsgi_execute_dispatch(request_rec *r)
 
     if (!interp) {
         ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), group);
+                      "Cannot acquire interpreter '%s'.",
+                      group);
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -8191,7 +8186,7 @@ static void wsgi_exit_daemon_process(int status)
 {
     if (wsgi_server && wsgi_daemon_group) {
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Exiting process '%s'.", getpid(),
+                     "Exiting process '%s'.",
                      wsgi_daemon_group);
     }
 
@@ -8231,32 +8226,32 @@ static void wsgi_manage_process(int reason, void *data, apr_wait_t status)
 
             if (!stopping) {
                 ap_log_error(APLOG_MARK, APLOG_INFO, 0,
-                             wsgi_server, "mod_wsgi (pid=%d): "
-                             "Process '%s' has died, deregister and "
-                             "restart it.", daemon->process.pid,
-                             daemon->group->name);
+                             wsgi_server,
+                             "Process '%s' (pid=%d) has died, deregister and "
+                             "restart it.", daemon->group->name,
+                             daemon->process.pid);
 
                 if (WIFEXITED(status)) {
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0,
-                             wsgi_server, "mod_wsgi (pid=%d): "
-                             "Process '%s' terminated normally, exit code %d",
-                             daemon->process.pid, daemon->group->name,
+                             wsgi_server,
+                             "Process '%s' (pid=%d) terminated normally, exit code %d",
+                             daemon->group->name, daemon->process.pid,
                              WEXITSTATUS(status));
                 }
                 else if (WIFSIGNALED(status)) {
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0,
-                             wsgi_server, "mod_wsgi (pid=%d): "
-                             "Process '%s' terminated by signal %d",
-                             daemon->process.pid, daemon->group->name,
+                             wsgi_server,
+                             "Process '%s' (pid=%d) terminated by signal %d",
+                             daemon->group->name, daemon->process.pid,
                              WTERMSIG(status));
                 }
             }
             else {
                 ap_log_error(APLOG_MARK, APLOG_INFO, 0,
-                             wsgi_server, "mod_wsgi (pid=%d): "
-                             "Process '%s' has died but server is "
+                             wsgi_server,
+                             "Process '%s' (pid=%d) has died but server is "
                              "being stopped, deregister it.",
-                             daemon->process.pid, daemon->group->name);
+                             daemon->group->name, daemon->process.pid);
             }
 
             /* Deregister existing process so we stop watching it. */
@@ -8276,10 +8271,10 @@ static void wsgi_manage_process(int reason, void *data, apr_wait_t status)
         case APR_OC_REASON_RESTART: {
 
             ap_log_error(APLOG_MARK, APLOG_INFO, 0,
-                         wsgi_server, "mod_wsgi (pid=%d): "
-                         "Process '%s' to be deregistered, as server is "
+                         wsgi_server,
+                         "Process '%s' (pid=%d) to be deregistered, as server is "
                          "restarting or being shutdown.",
-                         daemon->process.pid, daemon->group->name);
+                         daemon->group->name, daemon->process.pid);
 
             /* Deregister existing process so we stop watching it. */
 
@@ -8293,10 +8288,10 @@ static void wsgi_manage_process(int reason, void *data, apr_wait_t status)
         case APR_OC_REASON_LOST: {
 
             ap_log_error(APLOG_MARK, APLOG_INFO, 0,
-                         wsgi_server, "mod_wsgi (pid=%d): "
-                         "Process '%s' appears to have been lost, "
+                         wsgi_server,
+                         "Process '%s' (pid=%d) appears to have been lost, "
                          "deregister and restart it.",
-                         daemon->process.pid, daemon->group->name);
+                         daemon->group->name, daemon->process.pid);
 
             /* Deregister existing process so we stop watching it. */
 
@@ -8316,19 +8311,19 @@ static void wsgi_manage_process(int reason, void *data, apr_wait_t status)
             /* Nothing to do at present. */
 
             ap_log_error(APLOG_MARK, APLOG_INFO, 0,
-                         wsgi_server, "mod_wsgi (pid=%d): "
-                         "Process '%s' has been deregistered and will "
-                         "no longer be monitored.", daemon->process.pid,
-                         daemon->group->name);
+                         wsgi_server,
+                         "Process '%s' (pid=%d) has been deregistered and will "
+                         "no longer be monitored.", daemon->group->name,
+                         daemon->process.pid);
 
             break;
         }
 
         default: {
             ap_log_error(APLOG_MARK, APLOG_INFO, 0,
-                         wsgi_server, "mod_wsgi (pid=%d): "
-                         "Process '%s' targeted by unexpected event %d.",
-                         daemon->process.pid, daemon->group->name, reason);
+                         wsgi_server,
+                         "Process '%s' (pid=%d) targeted by unexpected event %d.",
+                         daemon->group->name, daemon->process.pid, reason);
         }
     }
 }
@@ -8385,8 +8380,8 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
     if (daemon->group->root) {
         if (chroot(daemon->group->root) == -1) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                         "mod_wsgi (pid=%d): Unable to change root "
-                         "directory to '%s'.", getpid(), daemon->group->root);
+                         "Unable to change root "
+                         "directory to '%s'.", daemon->group->root);
 
             return -1;
         }
@@ -8399,8 +8394,8 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
 
         if (setgid(daemon->group->gid) == -1) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                         "mod_wsgi (pid=%d): Unable to set group id "
-                         "to gid=%u.", getpid(),
+                         "Unable to set group id "
+                         "to gid=%u.",
                          (unsigned)daemon->group->gid);
 
             return -1;
@@ -8410,9 +8405,9 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
                 if (setgroups(daemon->group->groups_count,
                               daemon->group->groups) == -1) {
                     ap_log_error(APLOG_MARK, APLOG_ALERT, errno,
-                                 wsgi_server, "mod_wsgi (pid=%d): Unable "
+                                 wsgi_server, "Unable "
                                  "to set supplementary groups for uname=%s "
-                                 "of '%s'.", getpid(), daemon->group->user,
+                                 "of '%s'.", daemon->group->user,
                                  daemon->group->groups_list);
 
                     return -1;
@@ -8421,9 +8416,9 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
             else if (initgroups(daemon->group->user,
                      daemon->group->gid) == -1) {
                 ap_log_error(APLOG_MARK, APLOG_ALERT, errno,
-                             wsgi_server, "mod_wsgi (pid=%d): Unable "
+                             wsgi_server, "Unable "
                              "to set groups for uname=%s and gid=%u.",
-                             getpid(), daemon->group->user,
+                             daemon->group->user,
                              (unsigned)daemon->group->gid);
 
                 return -1;
@@ -8434,8 +8429,8 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
 
         if (setuid(daemon->group->uid) == -1) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                         "mod_wsgi (pid=%d): Unable to change to uid=%ld.",
-                         getpid(), (long)daemon->group->uid);
+                         "Unable to change to uid=%ld.",
+                         (long)daemon->group->uid);
 
             /*
              * On true UNIX systems this should always succeed at
@@ -8452,10 +8447,10 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
              */
 
             ap_log_error(APLOG_MARK, APLOG_ALERT, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Failure to configure the "
+                         "Failure to configure the "
                          "daemon process correctly and process left in "
                          "unspecified state. Restarting daemon process "
-                         "after delay.", getpid());
+                         "after delay.");
 
             sleep(20);
 
@@ -8475,8 +8470,8 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
     if (daemon->group->home) {
         if (chdir(daemon->group->home) == -1) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                         "mod_wsgi (pid=%d): Unable to change working "
-                         "directory to '%s'.", getpid(), daemon->group->home);
+                         "Unable to change working "
+                         "directory to '%s'.", daemon->group->home);
 
             return -1;
         }
@@ -8489,17 +8484,17 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
         if (pwent) {
             if (chdir(pwent->pw_dir) == -1) {
                 ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                             "mod_wsgi (pid=%d): Unable to change working "
+                             "Unable to change working "
                              "directory to home directory '%s' for uid=%ld.",
-                             getpid(), pwent->pw_dir, (long)geteuid());
+                             pwent->pw_dir, (long)geteuid());
 
             return -1;
             }
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                         "mod_wsgi (pid=%d): Unable to determine home "
-                         "directory for uid=%ld.", getpid(), (long)geteuid());
+                         "Unable to determine home "
+                         "directory for uid=%ld.", (long)geteuid());
 
             return -1;
         }
@@ -8522,8 +8517,8 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
     if (ap_coredumpdir_configured) {
         if (prctl(PR_SET_DUMPABLE, 1)) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                    "mod_wsgi (pid=%d): Set dumpable failed. This child "
-                    "will not coredump after software errors.", getpid());
+                    "Set dumpable failed. This child "
+                    "will not coredump after software errors.");
         }
     }
 #endif
@@ -8542,13 +8537,13 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
     int recvsz = process->recv_buffer_size;
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                 "mod_wsgi (pid=%d): Socket for '%s' is '%s'.",
-                 getpid(), process->name, process->socket_path);
+                 "Socket for '%s' is '%s'.",
+                 process->name, process->socket_path);
 
     if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
         ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                     "mod_wsgi (pid=%d): Couldn't create unix domain "
-                     "socket.", getpid());
+                     "Couldn't create unix domain "
+                     "socket.");
         return -1;
     }
 
@@ -8557,8 +8552,8 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
         if (setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF,
                        (void *)&sendsz, sizeof(sendsz)) == -1) {
             ap_log_error(APLOG_MARK, APLOG_WARNING, errno, wsgi_server,
-                         "mod_wsgi (pid=%d): Failed to set send buffer "
-                         "size on daemon process socket.", getpid());
+                         "Failed to set send buffer "
+                         "size on daemon process socket.");
         }
     }
 #endif
@@ -8567,18 +8562,18 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
         if (setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF,
                        (void *)&recvsz, sizeof(recvsz)) == -1) {
             ap_log_error(APLOG_MARK, APLOG_WARNING, errno, wsgi_server,
-                         "mod_wsgi (pid=%d): Failed to set receive buffer "
-                         "size on daemon process socket.", getpid());
+                         "Failed to set receive buffer "
+                         "size on daemon process socket.");
         }
     }
 #endif
 
     if (strlen(process->socket_path) > sizeof(addr.sun_path)) {
         ap_log_error(APLOG_MARK, APLOG_ALERT, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Length of path for daemon process "
+                     "Length of path for daemon process "
                      "socket exceeds maxmimum allowed value and will be "
                      "truncated, resulting in likely failure to bind the "
-                     "socket, or other later related failure.", getpid());
+                     "socket, or other later related failure.");
     }
 
     memset(&addr, 0, sizeof(addr));
@@ -8590,8 +8585,8 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
     if (rc < 0 && errno == EADDRINUSE) {
         ap_log_error(APLOG_MARK, APLOG_WARNING, errno, wsgi_server,
-                     "mod_wsgi (pid=%d): Removing stale unix domain "
-                     "socket '%s'.", getpid(), process->socket_path);
+                     "Removing stale unix domain "
+                     "socket '%s'.", process->socket_path);
 
         unlink(process->socket_path);
 
@@ -8602,8 +8597,8 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
     if (rc < 0) {
         ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                     "mod_wsgi (pid=%d): Couldn't bind unix domain "
-                     "socket '%s'.", getpid(), process->socket_path);
+                     "Couldn't bind unix domain "
+                     "socket '%s'.", process->socket_path);
 
         close(sockfd);
 
@@ -8611,13 +8606,13 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
     }
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                 "mod_wsgi (pid=%d): Listen backlog for socket '%s' is '%d'.",
-                 getpid(), process->socket_path, process->listen_backlog);
+                 "Listen backlog for socket '%s' is %d.",
+                 process->socket_path, process->listen_backlog);
 
     if (listen(sockfd, process->listen_backlog) < 0) {
         ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                     "mod_wsgi (pid=%d): Couldn't listen on unix domain "
-                     "socket.", getpid());
+                     "Couldn't listen on unix domain "
+                     "socket.");
 
         close(sockfd);
 
@@ -8652,8 +8647,8 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
         if (chown(process->socket_path, socket_uid, -1) < 0) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, errno, wsgi_server,
-                         "mod_wsgi (pid=%d): Couldn't change owner of unix "
-                         "domain socket '%s' to uid=%ld.", getpid(),
+                         "Couldn't change owner of unix "
+                         "domain socket '%s' to uid=%ld.",
                          process->socket_path, (long)socket_uid);
 
             close(sockfd);
@@ -8703,8 +8698,8 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
     if ((rv = apr_socket_addr_get(&c->local_addr, APR_LOCAL, sock))
         != APR_SUCCESS) {
         ap_log_error(APLOG_MARK, APLOG_INFO, rv, wsgi_server,
-                     "mod_wsgi (pid=%d): Failed call "
-                     "apr_socket_addr_get(APR_LOCAL).", getpid());
+                     "Failed call "
+                     "apr_socket_addr_get(APR_LOCAL).");
         apr_socket_close(sock);
         return;
     }
@@ -8714,8 +8709,8 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
     if ((rv = apr_socket_addr_get(&c->client_addr, APR_REMOTE, sock))
         != APR_SUCCESS) {
         ap_log_error(APLOG_MARK, APLOG_INFO, rv, wsgi_server,
-                     "mod_wsgi (pid=%d): Failed call "
-                     "apr_socket_addr_get(APR_REMOTE).", getpid());
+                     "Failed call "
+                     "apr_socket_addr_get(APR_REMOTE).");
         apr_socket_close(sock);
         return;
     }
@@ -8724,8 +8719,8 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
     if ((rv = apr_socket_addr_get(&c->remote_addr, APR_REMOTE, sock))
         != APR_SUCCESS) {
         ap_log_error(APLOG_MARK, APLOG_INFO, rv, wsgi_server,
-                     "mod_wsgi (pid=%d): Failed call "
-                     "apr_socket_addr_get(APR_REMOTE).", getpid());
+                     "Failed call "
+                     "apr_socket_addr_get(APR_REMOTE).");
         apr_socket_close(sock);
         return;
     }
@@ -8746,8 +8741,8 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
 
     if (rv != APR_SUCCESS) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG, rv, wsgi_server,
-                      "mod_wsgi (pid=%d): Failed call "
-                      "apr_socket_timeout_set().", getpid());
+                      "Failed call "
+                      "apr_socket_timeout_set().");
     }
 
     net->c = c;
@@ -8805,9 +8800,9 @@ static apr_status_t wsgi_worker_acquire(int id)
 
             if (rv != APR_SUCCESS) {
                 ap_log_error(APLOG_MARK, APLOG_CRIT, rv,
-                             wsgi_server, "mod_wsgi (pid=%d): "
+                             wsgi_server,
                              "Wait on thread %d wakeup condition variable "
-                             "failed.", getpid(), id);
+                             "failed.", id);
             }
 
             thread->wakeup = 0;
@@ -8962,10 +8957,10 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
                 if (!wsgi_daemon_shutdown) {
                     ap_log_error(APLOG_MARK, APLOG_CRIT, rv,
-                                 wsgi_server, "mod_wsgi (pid=%d): "
+                                 wsgi_server,
                                  "Couldn't acquire accept mutex '%s'. "
                                  "Shutting down daemon process.",
-                                 getpid(), group->socket_path);
+                                 group->socket_path);
 
                     wsgi_daemon_shutdown++;
                     kill(getpid(), SIGTERM);
@@ -9014,10 +9009,10 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
         if (rv != APR_SUCCESS && !APR_STATUS_IS_EINTR(rv)) {
             ap_log_error(APLOG_MARK, APLOG_CRIT, rv,
-                         wsgi_server, "mod_wsgi (pid=%d): "
+                         wsgi_server,
                          "Unable to poll daemon socket for '%s'. "
                          "Shutting down daemon process.",
-                         getpid(), group->socket_path);
+                         group->socket_path);
 
             wsgi_daemon_shutdown++;
             kill(getpid(), SIGTERM);
@@ -9061,9 +9056,9 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                     wsgi_worker_release();
 
                     ap_log_error(APLOG_MARK, APLOG_CRIT, rv,
-                                 wsgi_server, "mod_wsgi (pid=%d): "
+                                 wsgi_server,
                                  "Couldn't release accept mutex '%s'.",
-                                 getpid(), group->socket_path);
+                                 group->socket_path);
 
                     apr_pool_destroy(ptrans);
                     thread->running = 0;
@@ -9107,9 +9102,9 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             if (--wsgi_request_count <= 0) {
                 if (wsgi_graceful_timeout && wsgi_active_requests) {
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Maximum requests "
+                                 "Maximum requests "
                                  "reached, attempt a graceful shutdown "
-                                 "'%s'.", getpid(), daemon->group->name);
+                                 "'%s'.", daemon->group->name);
 
                     apr_thread_mutex_lock(wsgi_monitor_lock);
                     wsgi_graceful_shutdown_time = apr_time_now();
@@ -9119,9 +9114,9 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                 else {
                     if (!wsgi_daemon_shutdown) {
                         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                     "mod_wsgi (pid=%d): Maximum requests "
+                                     "Maximum requests "
                                      "reached, triggering immediate shutdown "
-                                     "'%s'.", getpid(), daemon->group->name);
+                                     "'%s'.", daemon->group->name);
                     }
 
                     wsgi_daemon_shutdown++;
@@ -9135,9 +9130,9 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
         if (wsgi_daemon_graceful && !wsgi_daemon_shutdown) {
             if (wsgi_active_requests == 0) {
                 ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Requests have completed, "
+                             "Requests have completed, "
                              "triggering immediate shutdown '%s'.",
-                             getpid(), daemon->group->name);
+                             daemon->group->name);
 
                 wsgi_daemon_shutdown++;
                 kill(getpid(), SIGINT);
@@ -9147,14 +9142,14 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
     if (wsgi_server_config->verbose_debugging) {
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Exiting thread %d in daemon "
-                     "process '%s'.", getpid(), thread->id,
+                     "Exiting thread %d in daemon "
+                     "process '%s'.", thread->id,
                      thread->process->group->name);
     }
     else {
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Exiting thread %d in daemon "
-                     "process '%s'.", getpid(), thread->id,
+                     "Exiting thread %d in daemon "
+                     "process '%s'.", thread->id,
                      thread->process->group->name);
     }
 }
@@ -9166,14 +9161,14 @@ static void *wsgi_daemon_thread(apr_thread_t *thd, void *data)
 
     if (wsgi_server_config->verbose_debugging) {
       ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                   "mod_wsgi (pid=%d): Started thread %d in daemon "
-                   "process '%s'.", getpid(), thread->id,
+                   "Started thread %d in daemon "
+                   "process '%s'.", thread->id,
                    thread->process->group->name);
     }
     else {
       ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                   "mod_wsgi (pid=%d): Started thread %d in daemon "
-                   "process '%s'.", getpid(), thread->id,
+                   "Started thread %d in daemon "
+                   "process '%s'.", thread->id,
                    thread->process->group->name);
     }
 
@@ -9193,8 +9188,8 @@ static void *wsgi_reaper_thread(apr_thread_t *thd, void *data)
     sleep(daemon->group->shutdown_timeout);
 
     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                 "mod_wsgi (pid=%d): Aborting process '%s'.",
-                 getpid(), daemon->group->name);
+                 "Aborting process '%s'.",
+                 daemon->group->name);
 
     wsgi_exit_daemon_process(-1);
 
@@ -9209,8 +9204,8 @@ static void *wsgi_deadlock_thread(apr_thread_t *thd, void *data)
 
     if (wsgi_server_config->verbose_debugging) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Enable deadlock thread in "
-                     "process '%s'.", getpid(), daemon->group->name);
+                     "Enable deadlock thread in "
+                     "process '%s'.", daemon->group->name);
     }
 
     apr_thread_mutex_lock(wsgi_monitor_lock);
@@ -9248,30 +9243,30 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
 
     if (wsgi_server_config->verbose_debugging) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Enable monitor thread in "
-                     "process '%s'.", getpid(), group->name);
+                     "Enable monitor thread in "
+                     "process '%s'.", group->name);
 
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Startup timeout is %d.",
-                     getpid(), (int)(apr_time_sec(wsgi_startup_timeout)));
+                     "Startup timeout is %d.",
+                     (int)(apr_time_sec(wsgi_startup_timeout)));
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Deadlock timeout is %d.",
-                     getpid(), (int)(apr_time_sec(wsgi_deadlock_timeout)));
+                     "Deadlock timeout is %d.",
+                     (int)(apr_time_sec(wsgi_deadlock_timeout)));
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Idle inactivity timeout is %d.",
-                     getpid(), (int)(apr_time_sec(wsgi_idle_timeout)));
+                     "Idle inactivity timeout is %d.",
+                     (int)(apr_time_sec(wsgi_idle_timeout)));
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Request time limit is %d.",
-                     getpid(), (int)(apr_time_sec(wsgi_request_timeout)));
+                     "Request time limit is %d.",
+                     (int)(apr_time_sec(wsgi_request_timeout)));
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Graceful timeout is %d.",
-                     getpid(), (int)(apr_time_sec(wsgi_graceful_timeout)));
+                     "Graceful timeout is %d.",
+                     (int)(apr_time_sec(wsgi_graceful_timeout)));
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Eviction timeout is %d.",
-                     getpid(), (int)(apr_time_sec(wsgi_eviction_timeout)));
+                     "Eviction timeout is %d.",
+                     (int)(apr_time_sec(wsgi_eviction_timeout)));
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Restart interval is %d.",
-                     getpid(), (int)(apr_time_sec(wsgi_restart_interval)));
+                     "Restart interval is %d.",
+                     (int)(apr_time_sec(wsgi_restart_interval)));
     }
 
     /*
@@ -9323,9 +9318,9 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
         if (!restart && wsgi_request_timeout) {
             if (request_time > wsgi_request_timeout) {
                 ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Daemon process request "
+                             "Daemon process request "
                              "time limit exceeded, stopping process "
-                             "'%s'.", getpid(), group->name);
+                             "'%s'.", group->name);
 
                 wsgi_shutdown_reason = "request_timeout";
 
@@ -9339,9 +9334,9 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
             if (startup_time > 0) {
                 if (startup_time <= now) {
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Application startup "
+                                 "Application startup "
                                  "timer expired, stopping process '%s'.",
-                                 getpid(), group->name);
+                                 group->name);
 
                     wsgi_shutdown_reason = "startup_timeout";
 
@@ -9366,17 +9361,17 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                             apr_thread_mutex_unlock(wsgi_monitor_lock);
 
                             ap_log_error(APLOG_MARK, APLOG_INFO, 0,
-                                         wsgi_server, "mod_wsgi (pid=%d): "
+                                         wsgi_server,
                                          "Application restart timer expired, "
                                          "waiting for requests to complete "
-                                         "'%s'.", getpid(),
+                                         "'%s'.",
                                          daemon->group->name);
                         }
                         else {
                             ap_log_error(APLOG_MARK, APLOG_INFO, 0,
-                                         wsgi_server, "mod_wsgi (pid=%d): "
+                                         wsgi_server,
                                          "Application restart timer expired, "
-                                         "stopping process '%s'.", getpid(),
+                                         "stopping process '%s'.",
                                          daemon->group->name);
 
                             wsgi_shutdown_reason = "restart_interval";
@@ -9396,9 +9391,9 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
             if (deadlock_time) {
                 if (deadlock_time <= now) {
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Daemon process deadlock "
+                                 "Daemon process deadlock "
                                  "timer expired, stopping process '%s'.",
-                                 getpid(), group->name);
+                                 group->name);
 
                     restart = 1;
                 }
@@ -9418,9 +9413,9 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                 if (idle_time <= now) {
                     if (wsgi_active_requests == 0) {
                         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                     "mod_wsgi (pid=%d): Daemon process "
+                                     "Daemon process "
                                      "idle inactivity timer expired, "
-                                     "stopping process '%s'.", getpid(),
+                                     "stopping process '%s'.",
                                      group->name);
 
                         wsgi_shutdown_reason = "inactivity_timeout";
@@ -9449,8 +9444,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
             if (graceful_time) {
                 if (graceful_time <= now) {
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Daemon process "
-                                 "graceful timer expired '%s'.", getpid(),
+                                 "Daemon process '%s' "
+                                 "graceful timer expired.",
                                  group->name);
 
                     restart = 1;
@@ -9472,8 +9467,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
             if (graceful_time) {
                 if (graceful_time <= now) {
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Daemon process "
-                                 "graceful timer expired '%s'.", getpid(),
+                                 "Daemon process '%s' "
+                                 "graceful timer expired.",
                                  group->name);
 
                     restart = 1;
@@ -9535,8 +9530,8 @@ static void wsgi_log_stack_traces(void)
             Py_ssize_t i = 0;
 
             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                          "mod_wsgi (pid=%d): Dumping stack trace for "
-                          "active Python threads.", getpid());
+                          "Dumping stack trace for "
+                          "active Python threads.");
 
             while (PyDict_Next(threads, &i, &id, &frame)) {
                 apr_int64_t thread_id = 0;
@@ -9580,9 +9575,9 @@ static void wsgi_log_stack_traces(void)
 
                     if (current == (PyFrameObject *)frame) {
                         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                "mod_wsgi (pid=%d): Thread %" APR_INT64_T_FMT
-                                " executing file \"%s\", line %d, in %s",
-                                getpid(), thread_id, filename, lineno, name);
+                                "Thread %" APR_INT64_T_FMT
+                                " executing file '%s', line %d, in %s",
+                                thread_id, filename, lineno, name);
                     }
                     else {
 #if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
@@ -9591,14 +9586,14 @@ static void wsgi_log_stack_traces(void)
                         if (current->f_back) {
 #endif
                             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                    "mod_wsgi (pid=%d): called from file "
-                                    "\"%s\", line %d, in %s,", getpid(),
+                                    "called from file "
+                                    "'%s', line %d, in %s,",
                                     filename, lineno, name);
                         }
                         else {
                             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                    "mod_wsgi (pid=%d): called from file "
-                                    "\"%s\", line %d, in %s.", getpid(),
+                                    "called from file "
+                                    "'%s', line %d, in %s.",
                                     filename, lineno, name);
                         }
                     }
@@ -9613,8 +9608,8 @@ static void wsgi_log_stack_traces(void)
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                          "mod_wsgi (pid=%d): Failed to iterate over "
-                          "current frames for active threads.", getpid());
+                          "Failed to iterate over "
+                          "current frames for active threads.");
 
             PyErr_Print();
             PyErr_Clear();
@@ -9622,8 +9617,8 @@ static void wsgi_log_stack_traces(void)
     }
     else {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                      "mod_wsgi (pid=%d): Failed to get current frames "
-                      "for active threads.", getpid());
+                      "Failed to get current frames "
+                      "for active threads.");
 
         PyErr_Print();
         PyErr_Clear();
@@ -9688,8 +9683,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, rv, wsgi_server,
-                         "mod_wsgi (pid=%d): Couldn't create monitor "
-                         "thread in daemon process '%s'.", getpid(),
+                         "Couldn't create monitor "
+                         "thread in daemon process '%s'.",
                          daemon->group->name);
         }
     }
@@ -9697,8 +9692,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     if (wsgi_deadlock_timeout) {
         if (rv != APR_SUCCESS) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, rv, wsgi_server,
-                         "mod_wsgi (pid=%d): Couldn't create deadlock "
-                         "thread in daemon process '%s'.", getpid(),
+                         "Couldn't create deadlock "
+                         "thread in daemon process '%s'.",
                          daemon->group->name);
         }
 
@@ -9719,8 +9714,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
     if (wsgi_server_config->verbose_debugging) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Starting %d threads in daemon "
-                     "process '%s'.", getpid(), daemon->group->threads,
+                     "Starting %d threads in daemon "
+                     "process '%s'.", daemon->group->threads,
                      daemon->group->name);
     }
 
@@ -9729,8 +9724,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (wsgi_server_config->verbose_debugging) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Starting thread %d in daemon "
-                         "process '%s'.", getpid(), i+1, daemon->group->name);
+                         "Starting thread %d in daemon "
+                         "process '%s'.", i+1, daemon->group->name);
         }
 
         /* Create the mutex and condition variable for this thread. */
@@ -9739,9 +9734,9 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, rv, wsgi_server,
-                         "mod_wsgi (pid=%d): Couldn't create worker "
+                         "Couldn't create worker "
                          "thread %d state condition variable in daemon "
-                         "process '%s'.", getpid(), i, daemon->group->name);
+                         "process '%s'.", i, daemon->group->name);
 
             /*
              * Try to force an exit of the process if fail
@@ -9757,9 +9752,9 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, rv, wsgi_server,
-                         "mod_wsgi (pid=%d): Couldn't create worker "
+                         "Couldn't create worker "
                          "thread %d state mutex variable in daemon "
-                         "process '%s'.", getpid(), i, daemon->group->name);
+                         "process '%s'.", i, daemon->group->name);
 
             /*
              * Try to force an exit of the process if fail
@@ -9782,8 +9777,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, rv, wsgi_server,
-                         "mod_wsgi (pid=%d): Couldn't create worker "
-                         "thread %d in daemon process '%s'.", getpid(),
+                         "Couldn't create worker "
+                         "thread %d in daemon process '%s'.",
                          i, daemon->group->name);
 
             /*
@@ -9810,8 +9805,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS || nbytes != 1) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Failed read on signal pipe '%s'.",
-                         getpid(), daemon->group->name);
+                         "Failed read on signal pipe '%s'.",
+                         daemon->group->name);
 
             break;
         }
@@ -9829,15 +9824,15 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Exceeded CPU time "
+                                 "Exceeded CPU time "
                                  "limit, waiting for requests to complete "
-                                 "'%s'.", getpid(), daemon->group->name);
+                                 "'%s'.", daemon->group->name);
                 }
                 else {
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Exceeded CPU time "
+                                 "Exceeded CPU time "
                                  "limit, triggering immediate shutdown "
-                                 "'%s'.", getpid(), daemon->group->name);
+                                 "'%s'.", daemon->group->name);
 
                     wsgi_daemon_shutdown++;
                     kill(getpid(), SIGINT);
@@ -9860,15 +9855,15 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Process eviction "
+                                 "Process eviction "
                                  "requested, waiting for requests to complete "
-                                 "'%s'.", getpid(), daemon->group->name);
+                                 "'%s'.", daemon->group->name);
                 }
                 else {
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Process eviction "
+                                 "Process eviction "
                                  "requested, triggering immediate shutdown "
-                                 "'%s'.", getpid(), daemon->group->name);
+                                 "'%s'.", daemon->group->name);
 
                     wsgi_daemon_shutdown++;
                     kill(getpid(), SIGINT);
@@ -9880,8 +9875,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     }
 
     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                 "mod_wsgi (pid=%d): Shutdown requested '%s'.",
-                 getpid(), daemon->group->name);
+                 "Shutdown requested '%s'.",
+                 daemon->group->name);
 
     /*
      * Create a reaper thread to abort process if graceful
@@ -9895,8 +9890,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS) {
             ap_log_error(APLOG_MARK, APLOG_ALERT, rv, wsgi_server,
-                         "mod_wsgi (pid=%d): Couldn't create reaper "
-                         "thread in daemon process '%s'.", getpid(),
+                         "Couldn't create reaper "
+                         "thread in daemon process '%s'.",
                          daemon->group->name);
         }
     }
@@ -9932,9 +9927,9 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
             rv = apr_thread_join(&thread_rv, wsgi_worker_threads[i].thread);
             if (rv != APR_SUCCESS) {
                 ap_log_error(APLOG_MARK, APLOG_CRIT, rv, wsgi_server,
-                             "mod_wsgi (pid=%d): Couldn't join with "
+                             "Couldn't join with "
                              "worker thread %d in daemon process '%s'.",
-                             getpid(), i, daemon->group->name);
+                             i, daemon->group->name);
             }
         }
     }
@@ -9952,16 +9947,16 @@ static apr_status_t wsgi_cleanup_process(void *data)
     if (group->listener_fd != -1) {
         if (close(group->listener_fd) < 0) {
             ap_log_error(APLOG_MARK, APLOG_ERR, errno,
-                         wsgi_server, "mod_wsgi (pid=%d): "
+                         wsgi_server,
                          "Couldn't close unix domain socket '%s'.",
-                         getpid(), group->socket_path);
+                         group->socket_path);
         }
 
         if (unlink(group->socket_path) < 0 && errno != ENOENT) {
             ap_log_error(APLOG_MARK, APLOG_ERR, errno,
-                         wsgi_server, "mod_wsgi (pid=%d): "
+                         wsgi_server,
                          "Couldn't unlink unix domain socket '%s'.",
-                         getpid(), group->socket_path);
+                         group->socket_path);
         }
     }
 
@@ -9987,15 +9982,15 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
     else if (status == APR_INCHILD) {
         if (!geteuid()) {
             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Starting process '%s' with "
-                         "uid=%ld, gid=%u and threads=%d.", getpid(),
+                         "Starting process '%s' with "
+                         "uid=%ld, gid=%u and threads=%d.",
                          daemon->group->name, (long)daemon->group->uid,
                          (unsigned)daemon->group->gid, daemon->group->threads);
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Starting process '%s' with "
-                         "threads=%d.", getpid(), daemon->group->name,
+                         "Starting process '%s' with "
+                         "threads=%d.", daemon->group->name,
                          daemon->group->threads);
         }
 
@@ -10010,8 +10005,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
                                PROCESSOR_CLASS_ANY);
         if (status != OK) {
             ap_log_error(APLOG_MARK, APLOG_ERR, errno, wsgi_server,
-                         "mod_wsgi (pid=%d): Failed to unbind processor.",
-                         getpid());
+                         "Failed to unbind processor.");
         }
 #endif
 
@@ -10025,8 +10019,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             if (setpriority(PRIO_PROCESS, 0,
                             daemon->group->cpu_priority) == -1) {
                 ap_log_error(APLOG_MARK, APLOG_ERR, errno, wsgi_server,
-                             "mod_wsgi (pid=%d): Couldn't set CPU priority "
-                             "in daemon process '%d'.", getpid(),
+                             "Couldn't set CPU priority %d "
+                             "in daemon process.",
                              daemon->group->cpu_priority);
             }
         }
@@ -10042,10 +10036,10 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
              */
 
             ap_log_error(APLOG_MARK, APLOG_ALERT, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Failure to configure the "
+                         "Failed to configure the "
                          "daemon process correctly and process left in "
                          "unspecified state. Restarting daemon process "
-                         "after delay.", getpid());
+                         "after delay.");
 
             sleep(20);
 
@@ -10060,9 +10054,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (status != APR_SUCCESS) {
                 ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Couldn't initialise accept "
+                             "Couldn't initialise accept "
                              "mutex in daemon process '%s'.",
-                             getpid(), daemon->group->mutex_path);
+                             daemon->group->mutex_path);
 
                 /* Don't die immediately to avoid a fork bomb. */
 
@@ -10169,8 +10163,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (status != APR_SUCCESS) {
             ap_log_error(APLOG_MARK, APLOG_EMERG, status, wsgi_server,
-                         "mod_wsgi (pid=%d): Couldn't initialise signal "
-                         "pipe in daemon process '%s'.", getpid(),
+                         "Couldn't initialise signal "
+                         "pipe in daemon process '%s'.",
                          daemon->group->name);
 
             /* Don't die immediately to avoid a fork bomb. */
@@ -10211,8 +10205,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (result == -1) {
                 ap_log_error(APLOG_MARK, APLOG_CRIT, errno, wsgi_server,
-                             "mod_wsgi (pid=%d): Couldn't set CPU time "
-                             "limit of %d seconds for process '%s'.", getpid(),
+                             "Couldn't set CPU time "
+                             "limit of %d seconds for process '%s'.",
                              daemon->group->cpu_time_limit,
                              daemon->group->name);
             }
@@ -10239,8 +10233,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (result == -1) {
                 ap_log_error(APLOG_MARK, APLOG_CRIT, errno, wsgi_server,
-                             "mod_wsgi (pid=%d): Couldn't set memory "
-                             "limit of %ld for process '%s'.", getpid(),
+                             "Couldn't set memory "
+                             "limit of %ld for process '%s'.",
                              (long)daemon->group->memory_limit,
                              daemon->group->name);
             }
@@ -10269,8 +10263,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (result == -1) {
                 ap_log_error(APLOG_MARK, APLOG_CRIT, errno, wsgi_server,
-                             "mod_wsgi (pid=%d): Couldn't set virtual memory "
-                             "limit of %ld for process '%s'.", getpid(),
+                             "Couldn't set virtual memory "
+                             "limit of %ld for process '%s'.",
                              (long)daemon->group->virtual_memory_limit,
                              daemon->group->name);
             }
@@ -10309,8 +10303,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             char *envvar;
 
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Setting lang to %s for "
-                         "daemon process group %s.", getpid(),
+                         "Setting lang to %s for "
+                         "daemon process group %s.",
                          daemon->group->lang, daemon->group->name);
 
             envvar = apr_pstrcat(p, "LANG=", daemon->group->lang, NULL);
@@ -10322,8 +10316,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             char *result;
 
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Setting locale to %s for "
-                         "daemon process group %s.", getpid(),
+                         "Setting locale to %s for "
+                         "daemon process group %s.",
                          daemon->group->locale, daemon->group->name);
 
             envvar = apr_pstrcat(p, "LC_ALL=", daemon->group->locale, NULL);
@@ -10333,10 +10327,10 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (!result) {
                 ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Unsupported locale setting "
+                             "Unsupported locale setting "
                              "%s specified for daemon process group %s. "
                              "Consider using 'C.UTF-8' as fallback setting.",
-                             getpid(), daemon->group->locale,
+                             daemon->group->locale,
                              daemon->group->name);
             }
         }
@@ -10478,8 +10472,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         if (daemon->group->server) {
             if (wsgi_server_config->verbose_debugging) {
                 ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Process '%s' logging to "
-                             "'%s'.", getpid(), daemon->group->name,
+                             "Process '%s' logging to "
+                             "'%s'.", daemon->group->name,
                              daemon->group->server->server_hostname);
             }
 
@@ -10488,8 +10482,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         else {
             if (wsgi_server_config->verbose_debugging) {
                 ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Process '%s' forced to log "
-                             "to '%s'.", getpid(), daemon->group->name,
+                             "Process '%s' forced to log "
+                             "to '%s'.", daemon->group->name,
                              wsgi_server->server_hostname);
             }
         }
@@ -10541,7 +10535,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          */
 
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Stopping process '%s'.", getpid(),
+                     "Stopping process '%s'.",
                      daemon->group->name);
 
         apr_pool_destroy(wsgi_daemon_pool);
@@ -10637,18 +10631,18 @@ static int wsgi_start_daemons(apr_pool_t *p)
             entry->user = ap_unixd_config.user_name;
 
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Reset default user for "
+                         "Reset default user for "
                          "daemon process group '%s' to uid=%ld.",
-                         getpid(), entry->name, (long)entry->uid);
+                         entry->name, (long)entry->uid);
         }
 
         if (entry->gid == ap_gname2id(DEFAULT_GROUP)) {
             entry->gid = ap_unixd_config.group_id;
 
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Reset default group for "
+                         "Reset default group for "
                          "daemon process group '%s' to gid=%ld.",
-                         getpid(), entry->name, (long)entry->gid);
+                         entry->name, (long)entry->gid);
         }
 
         /*
@@ -10704,8 +10698,8 @@ static int wsgi_start_daemons(apr_pool_t *p)
 
             if (status != APR_SUCCESS) {
                 ap_log_error(APLOG_MARK, APLOG_CRIT, errno, wsgi_server,
-                             "mod_wsgi (pid=%d): Couldn't create accept "
-                             "lock '%s' (%d).", getpid(), entry->mutex_path,
+                             "Couldn't create accept "
+                             "lock '%s' (%d).", entry->mutex_path,
                              wsgi_server_config->lock_mechanism);
                 return DECLINED;
             }
@@ -10739,9 +10733,9 @@ static int wsgi_start_daemons(apr_pool_t *p)
                     ick.buf = &buf;
                     if (semctl(ospmutex.crossproc, 0, IPC_SET, ick) < 0) {
                         ap_log_error(APLOG_MARK, APLOG_CRIT, errno,
-                                     wsgi_server, "mod_wsgi (pid=%d): "
+                                     wsgi_server,
                                      "Couldn't set permissions on accept "
-                                     "mutex '%s' (sysvsem).", getpid(),
+                                     "mutex '%s' (sysvsem).",
                                      entry->mutex_path);
                         return DECLINED;
                     }
@@ -10751,9 +10745,9 @@ static int wsgi_start_daemons(apr_pool_t *p)
                 if (!strcmp(apr_proc_mutex_name(entry->mutex), "flock")) {
                     if (chown(entry->mutex_path, entry->uid, -1) < 0) {
                         ap_log_error(APLOG_MARK, APLOG_CRIT, errno,
-                                     wsgi_server, "mod_wsgi (pid=%d): "
+                                     wsgi_server,
                                      "Couldn't set permissions on accept "
-                                     "mutex '%s' (flock).", getpid(),
+                                     "mutex '%s' (flock).",
                                      entry->mutex_path);
                         return DECLINED;
                     }
@@ -10866,8 +10860,8 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
         
         if (rv != APR_SUCCESS) {
             ap_log_rerror(APLOG_MARK, APLOG_WARNING, rv, r,
-                         "mod_wsgi (pid=%d): Unable to create socket to "
-                         "connect to WSGI daemon process.", getpid());
+                         "Unable to create socket to "
+                         "connect to WSGI daemon process.");
 
             return HTTP_INTERNAL_SERVER_ERROR;
         }
@@ -10900,10 +10894,10 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
                 if ((apr_time_now()-start_time) < daemon->connect_timeout) {
                     if (wsgi_server_config->verbose_debugging) {
                         ap_log_rerror(APLOG_MARK, APLOG_DEBUG, rv, r,
-                                     "mod_wsgi (pid=%d): Connection attempt "
+                                     "Connection attempt "
                                      "#%d to WSGI daemon process '%s' on "
                                      "'%s' failed, sleeping before retrying "
-                                     "again.", getpid(), retries,
+                                     "again.", retries,
                                      daemon->name, daemon->socket_path);
                     }
 
@@ -10926,11 +10920,11 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
                 }
                 else {
                     ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                                 "mod_wsgi (pid=%d): Unable to connect to "
+                                 "Unable to connect to "
                                  "WSGI daemon process '%s' on '%s' after "
                                  "multiple attempts as listener backlog "
                                  "limit was exceeded or the socket does "
-                                 "not exist.", getpid(), daemon->name,
+                                 "not exist.", daemon->name,
                                  daemon->socket_path);
 
                     apr_socket_close(daemon->socket);
@@ -10940,9 +10934,9 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
             }
             else {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                             "mod_wsgi (pid=%d): Unable to connect to "
+                             "Unable to connect to "
                              "WSGI daemon process '%s' on '%s' as user "
-                             "with uid=%ld.", getpid(), daemon->name,
+                             "with uid=%ld.", daemon->name,
                              daemon->socket_path, (long)geteuid());
 
                 apr_socket_close(daemon->socket);
@@ -11613,8 +11607,8 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
             if (rv == APR_TIMEUP) {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                             "mod_wsgi (pid=%d): Failed to proxy response "
-                             "to client.", getpid());
+                             "Failed to proxy response "
+                             "to client.");
             }
 
             if (rv != APR_SUCCESS) {
@@ -11650,8 +11644,8 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
             apr_brigade_destroy(bb);
 
             ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                         "mod_wsgi (pid=%d): Failed to proxy response "
-                         "from daemon.", getpid());
+                         "Failed to proxy response "
+                         "from daemon.");
 
             /*
              * Don't flag error if couldn't read from daemon
@@ -11724,8 +11718,8 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
         if (rv == APR_TIMEUP) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                         "mod_wsgi (pid=%d): Failed to proxy response "
-                         "to client.", getpid());
+                         "Failed to proxy response "
+                         "to client.");
         }
 
         if (rv != APR_SUCCESS) {
@@ -12085,15 +12079,15 @@ static int wsgi_execute_remote(request_rec *r)
 
     if (wsgi_server_config->verbose_debugging) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Request server was "
-                     "'%s|%d'.", getpid(), r->server->server_hostname,
+                     "Request server was "
+                     "'%s|%d'.", r->server->server_hostname,
                      r->server->port);
     }
 
     if ((rv = wsgi_send_request(r, config, daemon)) != APR_SUCCESS) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                     "mod_wsgi (pid=%d): Unable to send request details "
-                     "to WSGI daemon process '%s' on '%s'.", getpid(),
+                     "Unable to send request details "
+                     "to WSGI daemon process '%s' on '%s'.",
                      daemon->name, daemon->socket_path);
 
         return HTTP_INTERNAL_SERVER_ERROR;
@@ -12154,8 +12148,8 @@ static int wsgi_execute_remote(request_rec *r)
 
             if (r->status != 200) {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                             "mod_wsgi (pid=%d): Unexpected status from "
-                             "WSGI daemon process '%d'.", getpid(),
+                             "Unexpected status %d from "
+                             "WSGI daemon process.",
                              r->status);
 
                 r->status_line = NULL;
@@ -12177,8 +12171,8 @@ static int wsgi_execute_remote(request_rec *r)
 
             if (strcmp(r->status_line, "200 Rejected")) {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                             "mod_wsgi (pid=%d): Unexpected status from "
-                             "WSGI daemon process '%d'.", getpid(), r->status);
+                             "Unexpected status %d from "
+                             "WSGI daemon process.", r->status);
 
                 r->status_line = NULL;
 
@@ -12195,9 +12189,9 @@ static int wsgi_execute_remote(request_rec *r)
 
             if (retries == maximum) {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                             "mod_wsgi (pid=%d): Maximum number of WSGI "
-                             "daemon process restart connects reached '%d'.",
-                             getpid(), maximum);
+                             "Maximum number of %d WSGI "
+                             "daemon process restart connects reached.",
+                             maximum);
                 return HTTP_SERVICE_UNAVAILABLE;
             }
 
@@ -12206,8 +12200,8 @@ static int wsgi_execute_remote(request_rec *r)
             config->daemon_restarts++;
 
             ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
-                         "mod_wsgi (pid=%d): Connect after WSGI daemon "
-                         "process restart, attempt #%d.", getpid(),
+                         "Connect after WSGI daemon "
+                         "process restart, attempt #%d.",
                          retries);
 
             /* Connect and setup connection just like before. */
@@ -12217,9 +12211,9 @@ static int wsgi_execute_remote(request_rec *r)
 
             if ((rv = wsgi_send_request(r, config, daemon)) != APR_SUCCESS) {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                             "mod_wsgi (pid=%d): Unable to send request "
+                             "Unable to send request "
                              "details to WSGI daemon process '%s' on '%s'.",
-                             getpid(), daemon->name, daemon->socket_path);
+                             daemon->name, daemon->socket_path);
 
                 return HTTP_INTERNAL_SERVER_ERROR;
             }
@@ -12276,7 +12270,7 @@ static int wsgi_execute_remote(request_rec *r)
                     status_buffer)-1));
 
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                         "mod_wsgi (pid=%d): %s.", getpid(), error_message);
+                         "%s.", error_message);
 
             if (APR_STATUS_IS_TIMEUP(rv))
                 return HTTP_REQUEST_TIME_OUT;
@@ -12312,7 +12306,7 @@ static int wsgi_execute_remote(request_rec *r)
                             status_buffer)-1));
 
                     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                 "mod_wsgi (pid=%d): %s.", getpid(),
+                                 "%s.",
                                  error_message);
                 }
 
@@ -12346,7 +12340,7 @@ static int wsgi_execute_remote(request_rec *r)
                         status_buffer)-1));
 
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                             "mod_wsgi (pid=%d): %s.", getpid(),
+                             "%s.",
                              error_message);
 
                 break;
@@ -12381,7 +12375,7 @@ static int wsgi_execute_remote(request_rec *r)
                         status_buffer)-1));
 
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                             "mod_wsgi (pid=%d): %s.", getpid(),
+                             "%s.",
                              error_message);
 
                 /* Daemon stopped reading, discard remainder. */
@@ -12971,8 +12965,7 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     if ((rv = wsgi_read_request(csd, r)) != APR_SUCCESS) {
         ap_log_error(APLOG_MARK, APLOG_CRIT, rv, wsgi_server,
-                     "mod_wsgi (pid=%d): Unable to read WSGI request.",
-                     getpid());
+                     "Unable to read WSGI request.");
 
         apr_pool_destroy(p);
 
@@ -12988,8 +12981,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (!magic) {
         ap_log_error(APLOG_MARK, APLOG_ALERT, rv, wsgi_server,
-                     "mod_wsgi (pid=%d): Request origin could not be "
-                     "validated.", getpid());
+                     "Request origin could not be "
+                     "validated.");
 
         apr_pool_destroy(p);
 
@@ -13005,8 +12998,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (strcmp(magic, hash) != 0) {
         ap_log_error(APLOG_MARK, APLOG_ALERT, rv, wsgi_server,
-                     "mod_wsgi (pid=%d): Request origin could not be "
-                     "validated.", getpid());
+                     "Request origin could not be "
+                     "validated.");
 
         apr_pool_destroy(p);
 
@@ -13042,8 +13035,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_CRIT, rv, wsgi_server,
-                         "mod_wsgi (pid=%d): WSGI script '%s' not located "
-                         "within chroot directory '%s'.", getpid(), path, root);
+                         "WSGI script '%s' not located "
+                         "within chroot directory '%s'.", path, root);
 
             return HTTP_INTERNAL_SERVER_ERROR;
         }
@@ -13073,8 +13066,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
              */
 
             ap_log_error(APLOG_MARK, APLOG_WARNING, rv, wsgi_server,
-                         "mod_wsgi (pid=%d): Unable to stat target handler "
-                         "script '%s'.", getpid(), script);
+                         "Unable to stat target handler "
+                         "script '%s'.", script);
 
             r->finfo.mtime = 0;
         }
@@ -13088,8 +13081,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
              */
 
             ap_log_error(APLOG_MARK, APLOG_WARNING, rv, wsgi_server,
-                         "mod_wsgi (pid=%d): Unable to stat target WSGI "
-                         "script '%s'.", getpid(), filename);
+                         "Unable to stat target WSGI "
+                         "script '%s'.", filename);
 
             r->finfo.mtime = 0;
         }
@@ -13126,8 +13119,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (wsgi_server_config->verbose_debugging) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Server listener address '%s'.",
-                     getpid(), key);
+                     "Server listener address '%s'.",
+                     key);
     }
 
     addr = (apr_sockaddr_t *)apr_hash_get(wsgi_daemon_listeners,
@@ -13135,8 +13128,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (wsgi_server_config->verbose_debugging) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Server listener address '%s' was"
-                     "%s found.", getpid(), key, addr ? "" : " not");
+                     "Server listener address '%s' was"
+                     "%s found.", key, addr ? "" : " not");
     }
 
     if (addr) {
@@ -13147,8 +13140,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (wsgi_server_config->verbose_debugging) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Connection server matched was "
-                     "'%s|%d'.", getpid(), c->base_server->server_hostname,
+                     "Connection server matched was "
+                     "'%s|%d'.", c->base_server->server_hostname,
                      c->base_server->port);
     }
 
@@ -13163,8 +13156,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (wsgi_server_config->verbose_debugging) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Request server matched was '%s|%d'.",
-                     getpid(), r->server->server_hostname, r->server->port);
+                     "Request server matched was '%s|%d'.",
+                     r->server->server_hostname, r->server->port);
     }
 
     /*
@@ -13286,8 +13279,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
                 r->status_line = "200 Timeout";
 
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                             "mod_wsgi (pid=%d): Queue timeout expired "
-                             "for WSGI daemon process '%s'.", getpid(),
+                             "Queue timeout expired "
+                             "for WSGI daemon process '%s'.",
                              wsgi_daemon_process->group->name);
             }
         }
@@ -13364,10 +13357,10 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
     apr_pool_userdata_get(&data, userdata_key, s->process->pool);
     if (data) {
         ap_log_error(APLOG_MARK, APLOG_CRIT, 0, NULL,
-                     "mod_wsgi (pid=%d): The mod_python module can "
+                     "The mod_python module can "
                      "not be used in conjunction with mod_wsgi 4.0+. "
                      "Remove the mod_python module from the Apache "
-                     "configuration.", getpid());
+                     "configuration.");
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -13793,8 +13786,8 @@ static void wsgi_process_forwarded_for(request_rec *r,
                 }
                 else {
                     ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
-                              "mod_wsgi (pid=%d): Forwarded IP of \"%s\" is "
-                              "not a valid IP address.", getpid(), items[i]);
+                              "Forwarded IP of '%s' is "
+                              "not a valid IP address.", items[i]);
                     break;
                 }
             }
@@ -13934,8 +13927,8 @@ static void wsgi_process_proxy_headers(request_rec *r)
             }
             else {
                 ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
-                              "mod_wsgi (pid=%d): REMOTE_ADDR of \"%s\" is "
-                              "not a valid IP address.", getpid(), client_ip);
+                              "REMOTE_ADDR of '%s' is "
+                              "not a valid IP address.", client_ip);
 
                 trusted_proxy = 0;
             }
@@ -14760,8 +14753,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     if (!config->auth_user_script) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI user "
-                     "authentication script not provided.", getpid());
+                     "Location of WSGI user "
+                     "authentication script not provided.");
 
         return AUTH_GENERAL_ERROR;
     }
@@ -14778,8 +14771,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     if (!interp) {
         ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), group);
+                      "Cannot acquire interpreter '%s'.",
+                      group);
 
         return AUTH_GENERAL_ERROR;
     }
@@ -14984,9 +14977,9 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
         else {
             Py_BEGIN_ALLOW_THREADS
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d): Target WSGI user "
+                          "Target WSGI user "
                           "authentication script '%s' does not provide "
-                          "'Basic' auth provider.", getpid(), script);
+                          "'Basic' auth provider.", script);
             Py_END_ALLOW_THREADS
         }
     }
@@ -15020,8 +15013,8 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     if (!config->auth_user_script) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI user "
-                     "authentication script not provided.", getpid());
+                     "Location of WSGI user "
+                     "authentication script not provided.");
 
         return AUTH_GENERAL_ERROR;
     }
@@ -15038,8 +15031,8 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     if (!interp) {
         ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), group);
+                      "Cannot acquire interpreter '%s'.",
+                      group);
 
         return AUTH_GENERAL_ERROR;
     }
@@ -15243,9 +15236,9 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
         else {
             Py_BEGIN_ALLOW_THREADS
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d): Target WSGI user "
+                          "Target WSGI user "
                           "authentication script '%s' does not provide "
-                          "'Digest' auth provider.", getpid(), script);
+                          "'Digest' auth provider.", script);
             Py_END_ALLOW_THREADS
         }
     }
@@ -15284,8 +15277,8 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     if (!config->auth_group_script) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI group "
-                     "authentication script not provided.", getpid());
+                     "Location of WSGI group "
+                     "authentication script not provided.");
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -15302,8 +15295,8 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     if (!interp) {
         ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), group);
+                      "Cannot acquire interpreter '%s'.",
+                      group);
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -15435,14 +15428,14 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                                 if (!latin_item) {
                                     Py_BEGIN_ALLOW_THREADS
                                     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0,
-                                                  r, "mod_wsgi (pid=%d): "
+                                                  r,
                                                   "Groups for user returned "
                                                   "from '%s' must be an "
                                                   "iterable sequence of "
                                                   "byte strings, value "
                                                   "containing non 'latin-1' "
                                                   "characters found",
-                                                  getpid(), script);
+                                                  script);
                                     Py_END_ALLOW_THREADS
 
                                     Py_DECREF(item);
@@ -15461,10 +15454,10 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                             if (!PyString_Check(item)) {
                                 Py_BEGIN_ALLOW_THREADS
                                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                              "mod_wsgi (pid=%d): Groups for "
+                                              "Groups for "
                                               "user returned from '%s' must "
                                               "be an iterable sequence of "
-                                              "byte strings.", getpid(),
+                                              "byte strings.",
                                               script);
                                 Py_END_ALLOW_THREADS
 
@@ -15488,9 +15481,9 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                     else {
                         Py_BEGIN_ALLOW_THREADS
                         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                      "mod_wsgi (pid=%d): Groups for user "
+                                      "Groups for user "
                                       "returned from '%s' must be an iterable "
-                                      "sequence of byte strings.", getpid(),
+                                      "sequence of byte strings.",
                                       script);
                         Py_END_ALLOW_THREADS
                     }
@@ -15544,9 +15537,9 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
         else {
             Py_BEGIN_ALLOW_THREADS
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d): Target WSGI group "
+                          "Target WSGI group "
                           "authentication script '%s' does not provide "
-                          "group provider.", getpid(), script);
+                          "group provider.", script);
             Py_END_ALLOW_THREADS
         }
     }
@@ -15579,8 +15572,8 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
     if (!config->access_script) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI host "
-                     "access script not provided.", getpid());
+                     "Location of WSGI host "
+                     "access script not provided.");
 
         return 0;
     }
@@ -15597,8 +15590,8 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
     if (!interp) {
         ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), group);
+                      "Cannot acquire interpreter '%s'.",
+                      group);
 
         return 0;
     }
@@ -15713,9 +15706,9 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
                     else {
                         Py_BEGIN_ALLOW_THREADS
                         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                      "mod_wsgi (pid=%d): Indicator of "
+                                      "Indicator of "
                                       "host accessibility returned from '%s' "
-                                      "must a boolean or None.", getpid(),
+                                      "must a boolean or None.",
                                       script);
                         Py_END_ALLOW_THREADS
                     }
@@ -15769,9 +15762,9 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
         else {
             Py_BEGIN_ALLOW_THREADS
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d): Target WSGI host "
+                          "Target WSGI host "
                           "access script '%s' does not provide "
-                          "host validator.", getpid(), script);
+                          "host validator.", script);
             Py_END_ALLOW_THREADS
         }
     }
@@ -15816,9 +15809,9 @@ static int wsgi_hook_access_checker(request_rec *r)
         return OK;
 
     if (ap_satisfies(r) != SATISFY_ANY || !ap_some_auth_required(r)) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "mod_wsgi (pid=%d): "
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "Client denied by server configuration: '%s'.",
-                      getpid(), r->filename);
+                      r->filename);
     }
 
     return HTTP_FORBIDDEN;
@@ -15862,8 +15855,8 @@ static int wsgi_hook_check_user_id(request_rec *r)
 
     if (!interp) {
         ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), group);
+                      "Cannot acquire interpreter '%s'.",
+                      group);
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -15987,10 +15980,10 @@ static int wsgi_hook_check_user_id(request_rec *r)
                             status = HTTP_UNAUTHORIZED;
 
                             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                          "mod_wsgi (pid=%d): User '%s' not "
+                                          "User '%s' not "
                                           "found in executing authentication "
                                           "script '%s', for uri '%s'.",
-                                          getpid(), r->user, script, r->uri);
+                                          r->user, script, r->uri);
                         }
                         else
                             status = DECLINED;
@@ -16003,10 +15996,10 @@ static int wsgi_hook_check_user_id(request_rec *r)
                         status = HTTP_UNAUTHORIZED;
 
                         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                      "mod_wsgi (pid=%d): Password mismatch "
+                                      "Password mismatch "
                                       "for user '%s' in executing "
                                       "authentication script '%s', for uri "
-                                      "'%s'.", getpid(), r->user, script,
+                                      "'%s'.", r->user, script,
                                       r->uri);
                     }
                     else {
@@ -16062,9 +16055,9 @@ static int wsgi_hook_check_user_id(request_rec *r)
         else {
             Py_BEGIN_ALLOW_THREADS
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d): Target WSGI user "
+                          "Target WSGI user "
                           "authentication script '%s' does not provide "
-                          "'Basic' auth provider.", getpid(), script);
+                          "'Basic' auth provider.", script);
             Py_END_ALLOW_THREADS
         }
     }
@@ -16105,8 +16098,8 @@ static authz_status wsgi_check_authorization(request_rec *r,
 
     if (!config->auth_group_script) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI group "
-                     "authorization script not provided.", getpid());
+                     "Location of WSGI group "
+                     "authorization script not provided.");
 
         return AUTHZ_DENIED;
     }
@@ -16117,9 +16110,9 @@ static authz_status wsgi_check_authorization(request_rec *r,
         return AUTHZ_DENIED;
 
     if (apr_table_elts(grpstatus)->nelts == 0) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "mod_wsgi (pid=%d): "
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "Authorization of user '%s' to access '%s' failed. "
-                      "User is not a member of any groups.", getpid(),
+                      "User is not a member of any groups.",
                       r->user, r->uri);
         return AUTHZ_DENIED;
     }
@@ -16131,9 +16124,9 @@ static authz_status wsgi_check_authorization(request_rec *r,
         }
     }
 
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "mod_wsgi (pid=%d): "
+    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                   "Authorization of user '%s' to access '%s' failed. "
-                  "User is not a member of designated groups.", getpid(),
+                  "User is not a member of designated groups.",
                   r->user, r->uri);
 
     return AUTHZ_DENIED;
@@ -16216,9 +16209,9 @@ static int wsgi_hook_auth_checker(request_rec *r)
     if (!required_group || !config->group_authoritative)
         return DECLINED;
 
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "mod_wsgi (pid=%d): "
+    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                   "Authorization of user '%s' to access '%s' failed. %s.",
-                  getpid(), r->user, r->uri, reason ? reason : "User is not "
+                  r->user, r->uri, reason ? reason : "User is not "
                   "a member of designated groups");
 
     ap_note_auth_failure(r);

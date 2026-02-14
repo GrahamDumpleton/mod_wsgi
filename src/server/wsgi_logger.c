@@ -612,13 +612,13 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
         Py_BEGIN_ALLOW_THREADS
         if (r) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d): SystemExit exception raised by "
-                          "WSGI script '%s' ignored.", getpid(), filename);
+                          "SystemExit exception raised by "
+                          "WSGI script '%s' ignored.", filename);
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                          "mod_wsgi (pid=%d): SystemExit exception raised by "
-                          "WSGI script '%s' ignored.", getpid(), filename);
+                          "SystemExit exception raised by "
+                          "WSGI script '%s' ignored.", filename);
         }
         Py_END_ALLOW_THREADS
     }
@@ -626,13 +626,13 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
         Py_BEGIN_ALLOW_THREADS
         if (r) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d): Exception occurred processing "
-                          "WSGI script '%s'.", getpid(), filename);
+                          "Exception occurred processing "
+                          "WSGI script '%s'.", filename);
         }
         else {
             ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                          "mod_wsgi (pid=%d): Exception occurred processing "
-                          "WSGI script '%s'.", getpid(), filename);
+                          "Exception occurred processing "
+                          "WSGI script '%s'.", filename);
         }
         Py_END_ALLOW_THREADS
     }

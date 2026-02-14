@@ -82,8 +82,8 @@ static PyObject *SignalIntercept_call(
 
     Py_BEGIN_ALLOW_THREADS
     ap_log_error(APLOG_MARK, APLOG_WARNING, 0, wsgi_server,
-                 "mod_wsgi (pid=%d): Callback registration for "
-                 "signal %d ignored.", getpid(), n);
+                 "Callback registration for "
+                 "signal %d ignored.", n);
     Py_END_ALLOW_THREADS
 
     m = PyImport_ImportModule("traceback");
@@ -251,15 +251,15 @@ static PyObject *ShutdownInterpreter_call(
                 if (PyErr_ExceptionMatches(PyExc_SystemExit)) {
                     Py_BEGIN_ALLOW_THREADS
                     ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): SystemExit exception "
-                                 "raised by exit functions ignored.", getpid());
+                                 "SystemExit exception "
+                                 "raised by exit functions ignored.");
                     Py_END_ALLOW_THREADS
                 }
                 else {
                     Py_BEGIN_ALLOW_THREADS
                     ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Exception occurred within "
-                                 "exit functions.", getpid());
+                                 "Exception occurred within "
+                                 "exit functions.");
                     Py_END_ALLOW_THREADS
                 }
 
@@ -464,8 +464,8 @@ InterpreterObject *newInterpreterObject(const char *name)
          */
 
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Attach interpreter '%s'.",
-                     getpid(), name);
+                     "Attach interpreter '%s'.",
+                     name);
 
         self->interp = interp;
         self->owner = 0;
@@ -508,8 +508,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         Py_BEGIN_ALLOW_THREADS
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Create interpreter '%s'.",
-                     getpid(), name);
+                     "Create interpreter '%s'.",
+                     name);
         Py_END_ALLOW_THREADS
 
         self->interp = tstate->interp;
@@ -644,9 +644,9 @@ InterpreterObject *newInterpreterObject(const char *name)
                 if (!res) {
                     Py_BEGIN_ALLOW_THREADS
                     ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Call to "
+                                 "Call to "
                                  "'signal.signal()' to register exit "
-                                 "function failed, ignoring.", getpid());
+                                 "function failed, ignoring.");
                     Py_END_ALLOW_THREADS
                 }
 
@@ -964,8 +964,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                     Py_BEGIN_ALLOW_THREADS
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Adding '%s' to "
-                                 "path.", getpid(), value);
+                                 "Adding '%s' to "
+                                 "path.", value);
                     Py_END_ALLOW_THREADS
 
                     args = Py_BuildValue("(O)", item);
@@ -974,9 +974,9 @@ InterpreterObject *newInterpreterObject(const char *name)
                     if (!result) {
                         Py_BEGIN_ALLOW_THREADS
                         ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                                     "mod_wsgi (pid=%d): Call to "
+                                     "Call to "
                                      "'site.addsitedir()' failed for '%s', "
-                                     "stopping.", getpid(), value);
+                                     "stopping.", value);
                         Py_END_ALLOW_THREADS
                     }
 
@@ -999,8 +999,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                         Py_BEGIN_ALLOW_THREADS
                         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                     "mod_wsgi (pid=%d): Adding '%s' to "
-                                     "path.", getpid(), value);
+                                     "Adding '%s' to "
+                                     "path.", value);
                         Py_END_ALLOW_THREADS
 
                         args = Py_BuildValue("(O)", item);
@@ -1009,10 +1009,10 @@ InterpreterObject *newInterpreterObject(const char *name)
                         if (!result) {
                             Py_BEGIN_ALLOW_THREADS
                             ap_log_error(APLOG_MARK, APLOG_ERR, 0,
-                                         wsgi_server, "mod_wsgi (pid=%d): "
+                                         wsgi_server,
                                          "Call to 'site.addsitedir()' failed "
                                          "for '%s', stopping.",
-                                         getpid(), value);
+                                         value);
                             Py_END_ALLOW_THREADS
                         }
 
@@ -1034,8 +1034,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Adding '%s' to "
-                             "path.", getpid(), value);
+                             "Adding '%s' to "
+                             "path.", value);
                 Py_END_ALLOW_THREADS
 
                 args = Py_BuildValue("(O)", item);
@@ -1044,9 +1044,9 @@ InterpreterObject *newInterpreterObject(const char *name)
                 if (!result) {
                     Py_BEGIN_ALLOW_THREADS
                     ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Call to "
+                                 "Call to "
                                  "'site.addsitedir()' failed for '%s'.",
-                                 getpid(), start);
+                                 start);
                     Py_END_ALLOW_THREADS
                 }
 
@@ -1059,8 +1059,8 @@ InterpreterObject *newInterpreterObject(const char *name)
             else {
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Unable to locate "
-                             "'site.addsitedir()'.", getpid());
+                             "Unable to locate "
+                             "'site.addsitedir()'.");
                 Py_END_ALLOW_THREADS
             }
 
@@ -1087,16 +1087,16 @@ InterpreterObject *newInterpreterObject(const char *name)
             if (!module) {
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Unable to import 'site' "
-                             "module.", getpid());
+                             "Unable to import 'site' "
+                             "module.");
                 Py_END_ALLOW_THREADS
             }
 
             if (!path) {
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Lookup for 'sys.path' "
-                             "failed.", getpid());
+                             "Lookup for 'sys.path' "
+                             "failed.");
                 Py_END_ALLOW_THREADS
             }
         }
@@ -1167,8 +1167,7 @@ InterpreterObject *newInterpreterObject(const char *name)
     else if (!*name) {
         Py_BEGIN_ALLOW_THREADS
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Imported 'mod_wsgi'.",
-                     getpid());
+                     "Imported 'mod_wsgi'.");
         Py_END_ALLOW_THREADS
     }
 
@@ -1318,8 +1317,8 @@ InterpreterObject *newInterpreterObject(const char *name)
             if (module) {
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Unable to import "
-                             "'apache' extension module.", getpid());
+                             "Unable to import "
+                             "'apache' extension module.");
                 Py_END_ALLOW_THREADS
 
                 PyErr_Print();
@@ -1334,8 +1333,7 @@ InterpreterObject *newInterpreterObject(const char *name)
         else {
             Py_BEGIN_ALLOW_THREADS
             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Imported 'apache'.",
-                         getpid());
+                         "Imported 'apache'.");
             Py_END_ALLOW_THREADS
         }
     }
@@ -1432,8 +1430,8 @@ InterpreterObject *newInterpreterObject(const char *name)
         if (module) {
             Py_BEGIN_ALLOW_THREADS
             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d, process='%s', application='%s'): "
-                         "Imported 'newrelic.agent'.", getpid(),
+                          "Imported 'newrelic.agent' "
+                          "process '%s' and application '%s'.",
                          wsgi_daemon_group , name);
             Py_END_ALLOW_THREADS
 
@@ -1470,8 +1468,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                 if (!result) {
                     Py_BEGIN_ALLOW_THREADS
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                                 "mod_wsgi (pid=%d): Unable to initialise "
-                                 "New Relic agent with config '%s'.", getpid(),
+                                 "Unable to initialise "
+                                 "New Relic agent with config '%s'.",
                                  wsgi_newrelic_config_file);
                     Py_END_ALLOW_THREADS
                 }
@@ -1489,8 +1487,8 @@ InterpreterObject *newInterpreterObject(const char *name)
         else {
             Py_BEGIN_ALLOW_THREADS
             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Unable to import "
-                         "'newrelic.agent' module.", getpid());
+                         "Unable to import "
+                         "'newrelic.agent' module.");
             Py_END_ALLOW_THREADS
 
             PyErr_Print();
@@ -1524,8 +1522,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         if (wsgi_server_config->verbose_debugging) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Bind thread state for "
-                         "thread %d against interpreter '%s'.", getpid(),
+                         "Bind thread state for "
+                         "thread %d against interpreter '%s'.",
                          thread_handle->thread_id, self->name);
         }
 
@@ -1582,8 +1580,8 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
             if (wsgi_server_config->verbose_debugging) {
                 ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Create thread state for "
-                             "thread %d against interpreter '%s'.", getpid(),
+                             "Create thread state for "
+                             "thread %d against interpreter '%s'.",
                              thread_handle->thread_id, self->name);
             }
 
@@ -1607,15 +1605,15 @@ static void Interpreter_dealloc(InterpreterObject *self)
     if (self->owner) {
         Py_BEGIN_ALLOW_THREADS
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Destroy interpreter '%s'.",
-                     getpid(), self->name);
+                     "Destroy interpreter '%s'.",
+                     self->name);
         Py_END_ALLOW_THREADS
     }
     else {
         Py_BEGIN_ALLOW_THREADS
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Cleanup interpreter '%s'.",
-                     getpid(), self->name);
+                     "Cleanup interpreter '%s'.",
+                     self->name);
         Py_END_ALLOW_THREADS
     }
 
@@ -1688,8 +1686,8 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Exception occurred within "
-                             "threading._shutdown().", getpid());
+                             "Exception occurred within "
+                             "threading._shutdown().");
                 Py_END_ALLOW_THREADS
 
                 PyErr_Fetch(&type, &value, &traceback);
@@ -1813,15 +1811,15 @@ static void Interpreter_dealloc(InterpreterObject *self)
             if (PyErr_ExceptionMatches(PyExc_SystemExit)) {
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): SystemExit exception "
-                             "raised by exit functions ignored.", getpid());
+                             "SystemExit exception "
+                             "raised by exit functions ignored.");
                 Py_END_ALLOW_THREADS
             }
             else {
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Exception occurred within "
-                             "exit functions.", getpid());
+                             "Exception occurred within "
+                             "exit functions.");
                 Py_END_ALLOW_THREADS
             }
 
@@ -1937,8 +1935,8 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
         Py_BEGIN_ALLOW_THREADS
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): End interpreter '%s'.",
-                     getpid(), self->name);
+                     "End interpreter '%s'.",
+                     self->name);
         Py_END_ALLOW_THREADS
 
         Py_EndInterpreter(tstate);
@@ -2052,7 +2050,7 @@ apr_status_t wsgi_python_term(void)
         return APR_SUCCESS;
 
     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                 "mod_wsgi (pid=%d): Terminating Python.", getpid());
+                 "Terminating Python.");
 
     /*
      * We should be executing in the main thread again at this
@@ -2119,7 +2117,7 @@ apr_status_t wsgi_python_term(void)
     wsgi_python_initialized = 0;
 
     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                 "mod_wsgi (pid=%d): Python has shutdown.", getpid());
+                 "Python has shutdown.");
 
     return APR_SUCCESS;
 }
@@ -2149,8 +2147,8 @@ static void wsgi_python_init_failed(PyStatus status)
      * log a critical error.
      */
     ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
-                 "mod_wsgi (pid=%d): Initializing Python failed: %s",
-                 getpid(), status.err_msg);
+                 "Initializing Python failed: %s",
+                 status.err_msg);
 }
 
 
@@ -2272,7 +2270,7 @@ void wsgi_python_init(apr_pool_t *p)
 
         if (python_home) {
             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Python home %s.", getpid(),
+                         "Python home %s.",
                          python_home);
         }
 
@@ -2340,7 +2338,7 @@ void wsgi_python_init(apr_pool_t *p)
              */
 
             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Python home %s.", getpid(),
+                         "Python home %s.",
                          python_home);
 
 #if !defined(WIN32)
@@ -2348,28 +2346,28 @@ void wsgi_python_init(apr_pool_t *p)
 
             if (rv != APR_SUCCESS) {
                 ap_log_error(APLOG_MARK, APLOG_WARNING, rv, wsgi_server,
-                             "mod_wsgi (pid=%d): Unable to stat Python home "
+                             "Unable to stat Python home "
                              "%s. Python interpreter may not be able to be "
                              "initialized correctly. Verify the supplied path "
                              "and access permissions for whole of the path.",
-                             getpid(), python_home);
+                             python_home);
             }
             else {
                 if (finfo.filetype != APR_DIR) {
                     ap_log_error(APLOG_MARK, APLOG_WARNING, rv, wsgi_server,
-                                 "mod_wsgi (pid=%d): Python home %s is not "
+                                 "Python home %s is not "
                                  "a directory. Python interpreter may not "
                                  "be able to be initialized correctly. "
-                                 "Verify the supplied path.", getpid(),
+                                 "Verify the supplied path.",
                                  python_home);
                 }
                 else if (access(python_home, X_OK) == -1) {
                     ap_log_error(APLOG_MARK, APLOG_WARNING, rv, wsgi_server,
-                                 "mod_wsgi (pid=%d): Python home %s is not "
+                                 "Python home %s is not "
                                  "accessible. Python interpreter may not "
                                  "be able to be initialized correctly. "
                                  "Verify the supplied path and access "
-                                 "permissions on the directory.", getpid(),
+                                 "permissions on the directory.",
                                  python_home);
                 }
             }
@@ -2448,8 +2446,8 @@ void wsgi_python_init(apr_pool_t *p)
 
         if (wsgi_server_config->python_hash_seed != NULL) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Setting hash seed to %s.",
-                         getpid(), wsgi_server_config->python_hash_seed);
+                         "Setting hash seed to %s.",
+                         wsgi_server_config->python_hash_seed);
 #ifdef USE_PYCONFIG
             long seed = atol(wsgi_server_config->python_hash_seed);
             config.use_hash_seed = 1;
@@ -2475,7 +2473,7 @@ void wsgi_python_init(apr_pool_t *p)
         /* Initialise Python. */
 
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Initializing Python.", getpid());
+                     "Initializing Python.");
 
 #ifdef USE_PYCONFIG
         status = Py_InitializeFromConfig(&config);
@@ -2612,8 +2610,8 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
         if (!handle) {
             ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Cannot create interpreter '%s'.",
-                         getpid(), name);
+                         "Cannot create interpreter '%s'.",
+                         name);
 
             PyErr_Print();
             PyErr_Clear();
@@ -2672,8 +2670,8 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
             if (wsgi_server_config->verbose_debugging) {
                 ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Create thread state for "
-                             "thread %d against interpreter '%s'.", getpid(),
+                             "Create thread state for "
+                             "thread %d against interpreter '%s'.",
                              thread_handle->thread_id, handle->name);
             }
 

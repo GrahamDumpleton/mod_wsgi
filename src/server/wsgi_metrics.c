@@ -1235,8 +1235,7 @@ void wsgi_call_callbacks(const char *name, PyObject *callbacks,
 
             Py_BEGIN_ALLOW_THREADS
             ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Exception occurred within "
-                         "event callback.", getpid());
+                         "Exception occurred within event callback.");
             Py_END_ALLOW_THREADS
 
             PyErr_Fetch(&type, &value, &traceback);
@@ -1339,8 +1338,7 @@ void wsgi_publish_event(const char *name, PyObject *event)
     else {
         Py_BEGIN_ALLOW_THREADS
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Unable to import mod_wsgi when "
-                     "publishing events.", getpid());
+                     "Unable to import mod_wsgi when publishing events.");
         Py_END_ALLOW_THREADS
 
         PyErr_Clear();
@@ -1351,8 +1349,7 @@ void wsgi_publish_event(const char *name, PyObject *event)
     if (!event_callbacks || !shutdown_callbacks) {
         Py_BEGIN_ALLOW_THREADS
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Unable to find event subscribers.",
-                     getpid());
+                     "Unable to find event subscribers.");
         Py_END_ALLOW_THREADS
 
         PyErr_Clear();
