@@ -463,10 +463,16 @@ InterpreterObject *newInterpreterObject(const char *name)
          * be the case for the main Python interpreter.
          */
 
-        ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Attach interpreter '%s'.",
-                     getpid(), name);
-
+        if (*name) {
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Attach interpreter '%s'.",
+                         getpid(), name);
+        }
+        else {
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Attach main interpreter.",
+                         getpid());
+        }
         self->interp = interp;
         self->owner = 0;
 
@@ -1606,16 +1612,30 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     if (self->owner) {
         Py_BEGIN_ALLOW_THREADS
-        ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Destroy interpreter '%s'.",
-                     getpid(), self->name);
+        if (*self->name) {
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Destroy interpreter '%s'.",
+                         getpid(), self->name);
+        }
+        else {
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Destroy main interpreter.",
+                         getpid());
+        }
         Py_END_ALLOW_THREADS
     }
     else {
         Py_BEGIN_ALLOW_THREADS
-        ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Cleanup interpreter '%s'.",
-                     getpid(), self->name);
+        if (*self->name) {
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Cleanup interpreter '%s'.",
+                         getpid(), self->name);
+        }
+        else {
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Cleanup main interpreter.",
+                         getpid());
+        }
         Py_END_ALLOW_THREADS
     }
 
