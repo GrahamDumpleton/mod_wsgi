@@ -479,9 +479,9 @@ use a test WSGI script to output the value of 'sys.prefix'::
     def application(environ, start_response):
         status = '200 OK'
 
-        output = u''
-        output += u'sys.version = %s\n' % repr(sys.version)
-        output += u'sys.prefix = %s\n' % repr(sys.prefix)
+        output = ''
+        output += 'sys.version = %s\n' % repr(sys.version)
+        output += 'sys.prefix = %s\n' % repr(sys.prefix)
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
@@ -492,7 +492,7 @@ use a test WSGI script to output the value of 'sys.prefix'::
 For standard Python installation on a Linux system, this would produce
 something like::
 
-    sys.version = "'2.6.1 (r261:67515, Feb 11 2010, 00:51:29) \\n[GCC 4.2.1 (Apple Inc. build 5646)]'"
+    sys.version = "'3.12.3 (main, Apr  9 2024, 08:09:14) \\n[GCC 11.4.0]'"
     sys.prefix = '/usr'
 
 Thus, if you were expecting to pick up a separate Python installation
@@ -507,7 +507,7 @@ value of 'sys.path'::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = u'sys.path = %s' % repr(sys.path)
+        output = 'sys.path = %s' % repr(sys.path)
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
@@ -531,7 +531,7 @@ to use is what 'sys.prefix' is set to when the correct Python is run from
 the command line and 'sys.prefix' output::
 
     >>> import sys
-    >>> print sys.prefix
+    >>> print(sys.prefix)
     /usr/local
 
 Thus for case where installed under '/usr/local', would use::
@@ -553,7 +553,7 @@ WSGI script with the test WSGI script as follows::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = u'mod_wsgi.process_group = %s' % repr(environ['mod_wsgi.process_group']) 
+        output = 'mod_wsgi.process_group = %s' % repr(environ['mod_wsgi.process_group']) 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
         start_response(status, response_headers)
@@ -591,7 +591,7 @@ the WSGI application is being run use the test WSGI script of::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = u'mod_wsgi.application_group = %s' % repr(environ['mod_wsgi.application_group'])
+        output = 'mod_wsgi.application_group = %s' % repr(environ['mod_wsgi.application_group'])
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
@@ -648,7 +648,7 @@ multithread configuration is as follows::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = u'wsgi.multithread = %s' % repr(environ['wsgi.multithread'])
+        output = 'wsgi.multithread = %s' % repr(environ['wsgi.multithread'])
 
         response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]

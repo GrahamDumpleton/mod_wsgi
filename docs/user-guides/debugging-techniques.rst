@@ -93,15 +93,6 @@ below::
 
 .. note::
 
-    If you are using Python 2, you will need to enable the `print` function
-    at the beginning of the file::
-
-        from __future__ import print_function
-
-    Alternatively, always use `print` as a statement rather than a function::
-
-        print >> environ['wsgi.errors'], "application debug #N"
-
 If 'wsgi.errors' is not available to the code which needs to output log
 messages, then it should explicitly direct output from 'print'
 to 'sys.stderr'::
@@ -172,7 +163,7 @@ Such a task can be achieved with the following test application. The
 application could be extended as necessary to display other information as
 well, with process ID, user ID and group ID being shown as examples::
 
-    import cStringIO
+    import io
     import os
 
     def application(environ, start_response):
@@ -181,22 +172,20 @@ well, with process ID, user ID and group ID being shown as examples::
         write = start_response('200 OK', headers)
 
         input = environ['wsgi.input']
-        output = cStringIO.StringIO()
+        output = io.StringIO()
 
         print("PID: %s" % os.getpid(), file=output)
         print("UID: %s" % os.getuid(), file=output)
         print("GID: %s" % os.getgid(), file=output)
         print(file=output)
 
-        keys = environ.keys()
-        keys.sort()
-        for key in keys:
+        for key in sorted(environ.keys()):
             print('%s: %s' % (key, repr(environ[key])), file=output)
         print(file=output)
 
         output.write(input.read(int(environ.get('CONTENT_LENGTH', '0'))))
 
-        return [output.getvalue()]
+        return [output.getvalue().encode('UTF-8')]
 
 For the case of the process group as recorded by the
 'mod_wsgi.process_group' variable in the WSGI request environment, if the
@@ -442,16 +431,6 @@ types, the following code can be used::
       socket.socket,
       io.IOBase,
     ]
-    if sys.version_info < (3, 0):
-        # Python 2
-        import types
-        import cStringIO
-        import StringIO
-        BAD_ITERABLES.extend([
-            types.FileType,
-            cStringIO.InputType,
-            StringIO.StringIO,
-        ])
 
     class ValidatingMiddleware:
 
@@ -992,7 +971,7 @@ One can get stack traces for Python code by using::
                    code.append("  %s" % (line.strip()))
 
        for line in code:
-           print >> sys.stderr, line
+           print(line, file=sys.stderr)
 
 The caveat here obviously is that the process has to still be running. There
 is also the issue of how you trigger that function to dump stack traces for
@@ -1017,8 +996,6 @@ Sample code which takes this approach is included below. This code could be
 placed temporarily at the end of your WSGI script file if you know you are
 going to need it because of a recurring problem::
 
-    from __future__ import print_function
-
     import os
     import sys
     import time
@@ -1027,10 +1004,7 @@ going to need it because of a recurring problem::
     import atexit
     import traceback
 
-    try:
-        from Queue import Queue  # Python 2
-    except ImportError:
-        from queue import Queue  # Python 3
+    from queue import Queue
 
     FILE = '/tmp/dump-stack-traces.txt'
 

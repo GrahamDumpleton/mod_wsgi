@@ -232,8 +232,8 @@ which outputs the values of 'sys.prefix' and 'sys.path'. For example::
                             ('Content-Length', str(len(output)))]
         start_response(status, response_headers)
 
-        print >> sys.stderr, 'sys.prefix = %s' % repr(sys.prefix)
-        print >> sys.stderr, 'sys.path = %s' % repr(sys.path)
+        print('sys.prefix = %s' % repr(sys.prefix), file=sys.stderr)
+        print('sys.path = %s' % repr(sys.path), file=sys.stderr)
 
         return [output]
 

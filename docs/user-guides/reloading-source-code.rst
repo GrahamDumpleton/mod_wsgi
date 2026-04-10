@@ -37,16 +37,16 @@ then substitute your WSGI application entry point with::
         status = '200 OK'
 
         if not environ['mod_wsgi.process_group']:
-          output = u'EMBEDDED MODE'
+          output = b'EMBEDDED MODE'
         else:
-          output = u'DAEMON MODE'
+          output = b'DAEMON MODE'
 
         response_headers = [('Content-Type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
 
         start_response(status, response_headers)
 
-        return [output.encode('UTF-8')]
+        return [output]
 
 If your WSGI application is running in embedded mode, this will output to
 the browser 'EMBEDDED MODE'. If your WSGI application is running in daemon
@@ -264,19 +264,13 @@ a restart if they have.
 Example code for such an automatic restart mechanism which is compatible
 with how mod_wsgi works is shown below::
 
-    from __future__ import print_function
-
     import os
     import sys
     import time
     import signal
     import threading
     import atexit
-
-    try:
-        import Queue as queue
-    except ImportError:
-        import queue
+    import queue
 
     _interval = 1.0
     _times = {}

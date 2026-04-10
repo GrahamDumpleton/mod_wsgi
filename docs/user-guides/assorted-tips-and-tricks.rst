@@ -111,7 +111,7 @@ the 'mod_wsgi.version' key within the WSGI environ dictionary::
 
     def application(environ, start_response):
         status = '200 OK'
-        if environ.has_key('mod_wsgi.version'):
+        if 'mod_wsgi.version' in environ:
             output = b'Hello mod_wsgi!'
         else:
             output = b'Hello other WSGI hosting mechanism!'

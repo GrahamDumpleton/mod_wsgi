@@ -39,9 +39,9 @@ construct a simple WSGI application script file containing::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = 'without expat\n' 
+        output = b'without expat\n'
 
-        response_headers = [('Content-type', 'text/plain'), 
+        response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
         start_response(status, response_headers)
 
@@ -56,9 +56,9 @@ modified handler is being used::
 
     def application(environ, start_response):
         status = '200 OK'
-        output = 'with expat\n' 
+        output = b'with expat\n'
 
-        response_headers = [('Content-type', 'text/plain'), 
+        response_headers = [('Content-type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
         start_response(status, response_headers)
 

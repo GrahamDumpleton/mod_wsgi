@@ -471,7 +471,7 @@ then it should be made to use something like::
     import sys
 
     def function():
-        print >> sys.stderr, "application debug"
+        print("application debug", file=sys.stderr)
             ...
 
 Also, note that code should ideally not be making assumptions about the
