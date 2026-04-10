@@ -32,6 +32,13 @@ Features Removed
   ``--newrelic-config-file``, and ``--newrelic-environment`` options from
   ``mod_wsgi-express``.
 
+* Removed the ``WSGILazyInitialization`` directive. Python is now always
+  initialized lazily in child and daemon processes after they have been forked
+  from the Apache parent process. The old behavior of initializing Python in
+  the Apache parent process, enabled by setting this directive to ``Off``, is
+  no longer supported due to security risks from running as root and memory
+  leak issues with the Python interpreter on Apache restarts.
+
 Bugs Fixed
 ----------
 

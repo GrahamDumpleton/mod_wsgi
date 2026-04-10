@@ -4234,20 +4234,6 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
     state = PyGILState_Ensure();
 
-    /*
-     * Trigger any special Python stuff required after a fork.
-     * Only do this though if we were responsible for the
-     * initialisation of the Python interpreter in the first
-     * place to avoid it being done multiple times. Also only
-     * do it if Python was initialised in parent process.
-     */
-
-#ifdef HAVE_FORK
-    if (wsgi_python_initialized && !wsgi_python_after_fork) {
-        PyOS_AfterFork_Child();
-    }
-#endif
-
     /* Finalise any Python objects required by child process. */
 
     PyType_Ready(&Log_Type);
@@ -4687,25 +4673,6 @@ static const char *wsgi_set_verbose_debugging(cmd_parms *cmd, void *mconfig,
         sconfig->verbose_debugging = 1;
     else
         return "WSGIVerboseDebugging must be one of: Off | On";
-
-    return NULL;
-}
-
-static const char *wsgi_set_lazy_initialization(cmd_parms *cmd, void *mconfig,
-                                                const char *f)
-{
-    const char *error = NULL;
-
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
-
-    if (strcasecmp(f, "Off") == 0)
-        wsgi_python_after_fork = 0;
-    else if (strcasecmp(f, "On") == 0)
-        wsgi_python_after_fork = 1;
-    else
-        return "WSGILazyInitialization must be one of: Off | On";
 
     return NULL;
 }
@@ -10010,9 +9977,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          * mod_python loaded and it has already been done.
          */
 
-        if (wsgi_python_after_fork)
-            wsgi_python_init(p);
-
+        wsgi_python_init(p);
 
         /*
          * If the daemon is associated with a virtual host then
@@ -12955,18 +12920,8 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
     wsgi_python_version();
 #endif
 
-    /*
-     * Initialise Python if required to be done in
-     * the parent process. Note that it will not be
-     * initialised if mod_python loaded and it has
-     * already been done.
-     */
-
     if (wsgi_python_required == -1)
         wsgi_python_required = 1;
-
-    if (!wsgi_python_after_fork)
-        wsgi_python_init(pconf);
 
     /*
      * Startup separate named daemon processes. This is
@@ -13051,8 +13006,7 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
          * already been done.
          */
 
-        if (wsgi_python_after_fork)
-            wsgi_python_init(p);
+        wsgi_python_init(p);
 
         /*
          * Now perform additional initialisation steps
@@ -15276,8 +15230,6 @@ static const command_rec wsgi_commands[] =
     AP_INIT_TAKE1("WSGIAcceptMutex", wsgi_set_accept_mutex,
         NULL, RSRC_CONF, "Set accept mutex type for daemon processes."),
 
-    AP_INIT_TAKE1("WSGILazyInitialization", wsgi_set_lazy_initialization,
-        NULL, RSRC_CONF, "Enable/Disable lazy Python initialization."),
 #endif
 
     AP_INIT_TAKE1("WSGIVerboseDebugging", wsgi_set_verbose_debugging,

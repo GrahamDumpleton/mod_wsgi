@@ -1724,8 +1724,6 @@ int wsgi_python_required = 0;
 int wsgi_python_required = -1;
 #endif
 
-int wsgi_python_after_fork = 1;
-
 void wsgi_python_version(void)
 {
     const char *compile = PY_VERSION;

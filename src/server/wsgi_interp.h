@@ -57,7 +57,6 @@ extern PyTypeObject Interpreter_Type;
 extern InterpreterObject *newInterpreterObject(const char *name);
 
 extern int wsgi_python_initialized;
-extern int wsgi_python_after_fork;
 
 extern int wsgi_python_required;
 
