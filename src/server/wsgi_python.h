@@ -29,16 +29,8 @@
 #error Sorry, Python developer package does not appear to be installed.
 #endif
 
-#if PY_VERSION_HEX <= 0x02030000
-#error Sorry, mod_wsgi requires at least Python 2.3.0 for Python 2.X.
-#endif
-
-#if PY_VERSION_HEX >= 0x03000000 && PY_VERSION_HEX < 0x03010000
-#error Sorry, mod_wsgi requires at least Python 3.1.0 for Python 3.X.
-#endif
-
-#if !defined(WITH_THREAD)
-#error Sorry, mod_wsgi requires that Python supporting thread.
+#if PY_VERSION_HEX < 0x030a0000
+#error Sorry, mod_wsgi requires at least Python 3.10.0.
 #endif
 
 #include "structmember.h"
