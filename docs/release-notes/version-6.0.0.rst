@@ -39,6 +39,11 @@ Features Removed
   no longer supported due to security risks from running as root and memory
   leak issues with the Python interpreter on Apache restarts.
 
+* Removed code that allowed mod_wsgi to coexist with mod_python in the same
+  Apache instance. Since mod_python has not been actively developed since the
+  Python 2.x era, this should be obsolete and not affect any current
+  deployments.
+
 Bugs Fixed
 ----------
 

@@ -4213,8 +4213,6 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
 
     /*
      * Destroy Python itself including the main interpreter.
-     * If mod_python is being loaded it is left to mod_python to
-     * destroy Python, although it currently doesn't do so.
      */
 
     if (wsgi_python_initialized)
@@ -9973,8 +9971,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         /*
          * Initialise Python if required to be done in the child
-         * process. Note that it will not be initialised if
-         * mod_python loaded and it has already been done.
+         * process.
          */
 
         wsgi_python_init(p);
@@ -10093,13 +10090,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         wsgi_restart_time = apr_time_now();
 
         /*
-         * Setup Python in the child daemon process. Note that
-         * we ensure that we are now marked as the original
-         * initialiser of the Python interpreter even though
-         * mod_python might have done it, as we will be the one
-         * to cleanup the child daemon process and not
-         * mod_python. We also need to perform the special
-         * Python setup which has to be done after a fork.
+         * Setup Python in the child daemon process. We need
+         * to perform the special Python setup which has to be
+         * done after a fork.
          */
 
         wsgi_python_initialized = 1;
@@ -12809,26 +12802,6 @@ static int wsgi_hook_init(apr_pool_t *pconf, apr_pool_t *ptemp,
     int status = OK;
 
     /*
-     * No longer support using mod_python at the same time as
-     * mod_wsgi as becoming too painful to hack around
-     * mod_python's broken usage of threading APIs when align
-     * code to the stricter API requirements of Python 3.2.
-     */
-
-    userdata_key = "python_init";
-
-    apr_pool_userdata_get(&data, userdata_key, s->process->pool);
-    if (data) {
-        ap_log_error(APLOG_MARK, APLOG_CRIT, 0, NULL,
-                     "mod_wsgi (pid=%d): The mod_python module can "
-                     "not be used in conjunction with mod_wsgi 4.0+. "
-                     "Remove the mod_python module from the Apache "
-                     "configuration.", getpid());
-
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    /*
      * Init function gets called twice during startup, we only
      * need to actually do anything on the second time it is
      * called. This avoids unecessarily initialising and then
@@ -13001,9 +12974,7 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
     if (wsgi_python_required) {
         /*
          * Initialise Python if required to be done in
-         * the child process. Note that it will not be
-         * initialised if mod_python loaded and it has
-         * already been done.
+         * the child process.
          */
 
         wsgi_python_init(p);
@@ -15188,12 +15159,10 @@ static void wsgi_register_hooks(apr_pool_t *p)
 
     static const char * const n5[] = { "mod_authz_host.c", NULL };
 
-    static const char * const p6[] = { "mod_python.c", NULL };
-
     static const char * const p7[] = { "mod_ssl.c", NULL };
 
-    ap_hook_post_config(wsgi_hook_init, p6, NULL, APR_HOOK_MIDDLE);
-    ap_hook_child_init(wsgi_hook_child_init, p6, NULL, APR_HOOK_MIDDLE);
+    ap_hook_post_config(wsgi_hook_init, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_child_init(wsgi_hook_child_init, NULL, NULL, APR_HOOK_MIDDLE);
 
     ap_hook_translate_name(wsgi_hook_intercept, p1, n1, APR_HOOK_MIDDLE);
     ap_hook_handler(wsgi_hook_handler, NULL, NULL, APR_HOOK_MIDDLE);

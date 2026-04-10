@@ -1695,25 +1695,7 @@ PyTypeObject Interpreter_Type = {
 };
 
 /*
- * Startup and shutdown of Python interpreter. In mod_wsgi if
- * the Python interpreter hasn't been initialised by another
- * Apache module such as mod_python, we will take control and
- * initialise it. Need to remember that we initialised Python
- * and whether done in parent or child process as when done in
- * the parent we also take responsibility for performing special
- * Python fixups after Apache is forked and child process has
- * run.
- *
- * Note that by default we now defer initialisation of Python
- * until after the fork of processes as Python 3.X by design
- * doesn't clean up properly when it is destroyed causing
- * significant memory leaks into Apache parent process on an
- * Apache restart. Some Python 2.X versions also have real
- * memory leaks but not near as much. The result of deferring
- * initialisation is that can't benefit from copy on write
- * semantics for loaded data across a fork. Each process will
- * therefore have higher memory requirement where Python needs
- * to be used.
+ * Startup and shutdown of Python interpreter.
  */
 
 int wsgi_python_initialized = 0;
@@ -1826,9 +1808,7 @@ static apr_status_t wsgi_python_parent_cleanup(void *data)
     if (wsgi_parent_pid == getpid()) {
         /*
          * Destroy Python itself including the main
-         * interpreter. If mod_python is being loaded it
-         * is left to mod_python to destroy Python,
-         * although it currently doesn't do so.
+         * interpreter.
          */
 
         if (wsgi_python_initialized)
