@@ -8,11 +8,8 @@ from the original source code.
 Apache Requirements
 -------------------
 
-Apache 2.0, 2.2 or 2.4 can be used.
-
-For Apache 2.0, 2.2 and 2.4, the single threaded 'prefork' or multithreaded
-'worker' Apache MPMs can be used. For Apache 2.4 the 'event' MPM can also
-be used.
+Apache 2.4 is required. The single threaded 'prefork' or multithreaded
+'worker' and 'event' Apache MPMs can be used.
 
 The version of Apache and its runtime libraries must have been compiled with
 support for threading.
@@ -20,13 +17,8 @@ support for threading.
 On Linux systems, if Apache has been installed from a package repository,
 you must have installed the corresponding Apache "dev" package as well.
 
-For most Linux distributions, the "dev" package for Apache 2.X is
-"apache2-dev" where the corresponding Apache package was "apache2". Some
-systems however distinguish the "dev" package based on which MPM is used by
-Apache. As such, it may also be called "apache2-worker-dev" or
-"apache2-prefork-dev". If using Apache 2.X, do not mix things up and install
-"apache-dev" by mistake, which is the "dev" package for Apache 1.3 called
-just "apache".
+For most Linux distributions, the "dev" package is "apache2-dev" where the
+corresponding Apache package was "apache2".
 
 Python Requirements
 -------------------

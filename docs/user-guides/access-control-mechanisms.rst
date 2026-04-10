@@ -41,11 +41,11 @@ shaking with the client to indicate whether the client is permitted access.
 Apache Authentication Provider
 ------------------------------
 
-When Apache 2.2 was released, it introduced the concept of authentication
-providers. That is, Apache implements the hand shaking with the client for
-authentication mechanisms such as Basic and Digest. All that the user
-server side code needs to provide is a means of authenticating the actual
-credentials of the user trying to gain access to the site.
+Apache implements the concept of authentication providers. That is, Apache
+implements the hand shaking with the client for authentication mechanisms
+such as Basic and Digest. All that the user server side code needs to
+provide is a means of authenticating the actual credentials of the user
+trying to gain access to the site.
 
 This greatly simplified the implementation of client authentication as the
 hand shaking for a particular authentication mechanism was implemented only
@@ -58,7 +58,7 @@ directive to define a Python script file containing code which performs the
 authenticating of user credentials as outlined.
 
 The required Apache configuration for defining the authentication provider
-for Basic authentication when using Apache 2.2 would be::
+for Basic authentication would be::
 
     AuthType Basic
     AuthName "Top Secret"
@@ -81,8 +81,8 @@ that the password is correct. If the user does not exist at all, then the
 result should be 'None'. If the user does exist, the result should be
 'True' or 'False' depending on whether the password was valid.
 
-If wishing to use Digest authentication, the configuration for Apache 2.2
-would instead be::
+If wishing to use Digest authentication, the configuration would instead
+be::
 
     AuthType Digest
     AuthName "Top Secret"
@@ -136,13 +136,7 @@ provider can also be defined::
     WSGIScriptAlias / /usr/local/django/mysite/apache/django.wsgi
 
     <Directory /usr/local/django/mysite/apache>
-    <IfVersion < 2.4>
-	Order allow,deny
-	Allow from all
-    </IfVersion>
-    <IfVersion >= 2.4>
-	Require all granted
-    </IfVersion>
+    Require all granted
 
     WSGIApplicationGroup django
 
@@ -188,21 +182,6 @@ Any configuration defined by !SetEnv directives is not passed in the
 'environ' dictionary because doing so would allow users to override the
 configuration specified in such a way from a '.htaccess' file.
 Configuration should as a result be placed into the script file itself.
-
-Although authentication providers were a new feature in Apache 2.2, the
-mod_wsgi module emulates the functionality so that the above can also be
-used with Apache 2.0. In using Apache 2.0, the required Apache configuration
-is however slightly different and needs to be::
-
-    AuthType Basic
-    AuthName "Top Secret"
-    WSGIAuthUserScript /usr/local/wsgi/scripts/auth.wsgi
-    AuthAuthoritative Off
-    Require valid-user
-
-When using Apache 2.0 however, only support for Basic authentication
-mechanism is provided. It is not possible to use Digest authentication.
-When using Apache 1.3, this feature is not available at all.
 
 The benefit of using the Apache authentication provider mechanism rather
 than the WSGI application doing it all itself, is that it can be used to
@@ -251,9 +230,6 @@ Any configuration defined by !SetEnv directives is not passed in the
 'environ' dictionary because doing so would allow users to override the
 configuration specified in such a way from a '.htaccess' file.
 Configuration should as a result be placed into the script file itself.
-
-Configuration of group authorisation is the same whether Apache 2.0 or 2.2
-is used. The feature is not available when using Apache 1.3.
 
 By default the group authorisation code is always executed in the context
 of the first interpreter created by Python, ie., '%{GLOBAL}', and always in

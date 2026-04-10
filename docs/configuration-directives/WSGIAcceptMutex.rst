@@ -16,6 +16,6 @@ will be used. If set the method types are the same as for the Apache
 `AcceptMutex`_ directive.
 
 Note that the ``WSGIAcceptMutex`` directive and corresponding features are
-not available on Windows or when running Apache 1.3.
+not available on Windows.
 
 .. _AcceptMutex: http://httpd.apache.org/docs/2.4/mod/mpm_common.html#acceptmutex

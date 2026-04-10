@@ -25,7 +25,7 @@ avenue for performing automatic source code reloading.
 As a consequence, it is important to understand what mode your WSGI
 application is running in.
 
-If you are running on Windows, are using Apache 1.3, or have not used
+If you are running on Windows, or have not used
 WSGIDaemonProcess/WSGIProcessGroup directives to delegate your WSGI
 application to a mod_wsgi daemon mode process, then you will be using
 embedded mode.

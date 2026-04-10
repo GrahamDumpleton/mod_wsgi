@@ -171,10 +171,6 @@ in a more optimal manner and because on Windows a Python file object only
 provides a Windows file handle and not a file descriptor, no optimisations
 are available on the Windows platform.
 
-The optimisations are also not able to be used if using Apache 1.3. This is
-because Apache doesn't provide access to a mechanism for optimised sending
-of file contents to a content handler under Apache 1.3.
-
 Finally, optimisations are not used where the WSGI application is running in
 daemon mode. This is currently disabled because some UNIX platforms do not
 appear to support use of the 'sendfile()' function over UNIX sockets and only

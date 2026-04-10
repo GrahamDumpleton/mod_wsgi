@@ -59,7 +59,7 @@ different virtual host. Which daemon process groups can be selected may be
 further restricted if the WSGIRestrictProcess directive has been used.
 
 Note that the WSGIProcessGroup directive and corresponding features are not
-available on Windows or when running Apache 1.3.
+available on Windows.
 
-.. _SetEnv: http://httpd.apache.org/docs/2.2/mod/mod_env.html#setenv
-.. _RewriteRule: http://httpd.apache.org/docs/2.2/mod/mod_rewrite.html#rewriterule
+.. _SetEnv: http://httpd.apache.org/docs/2.4/mod/mod_env.html#setenv
+.. _RewriteRule: http://httpd.apache.org/docs/2.4/mod/mod_rewrite.html#rewriterule

@@ -59,6 +59,6 @@ WSGI applications to different daemon process groups using the
   </Files>
 
 Note that the WSGIDaemonProcess directive and corresponding features are
-not available on Windows or when running Apache 1.3.
+not available on Windows.
 
-.. _SetEnv: http://httpd.apache.org/docs/2.2/mod/mod_env.html#setenv
+.. _SetEnv: http://httpd.apache.org/docs/2.4/mod/mod_env.html#setenv

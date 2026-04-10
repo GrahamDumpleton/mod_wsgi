@@ -15,9 +15,9 @@ about the handshaking related to HTTP Basic and Digest authentication and
 you only wish to deal with supplying the user credentials for authenticating
 the user.
 
-If using at least Apache 2.2, other Apache modules implementing custom
-authentication mechanisms can also make use of the authentication provider
-if they are using the corresponding Apache C API for accessing them.
+Other Apache modules implementing custom authentication mechanisms can also
+make use of the authentication provider if they are using the corresponding
+Apache C API for accessing them.
 
 More detailed information on using the WSGIAuthUserScript directive can be
 found in :doc:`../user-guides/access-control-mechanisms`.

@@ -40,4 +40,4 @@ one that is only writable by 'root' user, or if not starting Apache as
 'root', the user that Apache is started as.
 
 Note that the WSGISocketPrefix directive and corresponding features are not
-available on Windows or when running Apache 1.3.
+available on Windows.

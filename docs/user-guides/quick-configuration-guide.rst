@@ -95,13 +95,7 @@ Apache, it will be necessary to tell Apache that files within that
 directory can be used. To do this the Directory directive must be used::
 
     <Directory /usr/local/www/wsgi-scripts>
-    <IfVersion < 2.4>
-	Order allow,deny
-	Allow from all
-    </IfVersion>
-    <IfVersion >= 2.4>
-	Require all granted
-    </IfVersion>
+    Require all granted
     </Directory>
 
 Note that it is highly recommended that the WSGI application script file in
@@ -131,25 +125,13 @@ therefore be something like::
         DocumentRoot /usr/local/www/documents
 
         <Directory /usr/local/www/documents>
-	<IfVersion < 2.4>
-	    Order allow,deny
-	    Allow from all
-	</IfVersion>
-	<IfVersion >= 2.4>
-	    Require all granted
-	</IfVersion>
+	Require all granted
         </Directory>
 
         WSGIScriptAlias /myapp /usr/local/www/wsgi-scripts/myapp.wsgi
 
         <Directory /usr/local/www/wsgi-scripts>
-	<IfVersion < 2.4>
-	    Order allow,deny
-	    Allow from all
-	</IfVersion>
-	<IfVersion >= 2.4>
-	    Require all granted
-	</IfVersion>
+	Require all granted
         </Directory>
 
     </VirtualHost>
@@ -199,25 +181,13 @@ therefore be something like::
         Alias /media/ /usr/local/www/documents/media/
 
         <Directory /usr/local/www/documents>
-	<IfVersion < 2.4>
-	    Order allow,deny
-	    Allow from all
-	</IfVersion>
-	<IfVersion >= 2.4>
-	    Require all granted
-	</IfVersion>
+	Require all granted
         </Directory>
 
         WSGIScriptAlias / /usr/local/www/wsgi-scripts/myapp.wsgi
 
         <Directory /usr/local/www/wsgi-scripts>
-	<IfVersion < 2.4>
-	    Order allow,deny
-	    Allow from all
-	</IfVersion>
-	<IfVersion >= 2.4>
-	    Require all granted
-	</IfVersion>
+	Require all granted
         </Directory>
 
     </VirtualHost>
@@ -280,13 +250,7 @@ therefore be something like::
         Alias /media/ /usr/local/www/documents/media/
 
         <Directory /usr/local/www/documents>
-	<IfVersion < 2.4>
-	    Order allow,deny
-	    Allow from all
-	</IfVersion>
-	<IfVersion >= 2.4>
-	    Require all granted
-	</IfVersion>
+	Require all granted
         </Directory>
 
         WSGIDaemonProcess example.com processes=2 threads=15 display-name=%{GROUP}
@@ -295,13 +259,7 @@ therefore be something like::
         WSGIScriptAlias / /usr/local/www/wsgi-scripts/myapp.wsgi
 
         <Directory /usr/local/www/wsgi-scripts>
-	<IfVersion < 2.4>
-	    Order allow,deny
-	    Allow from all
-	</IfVersion>
-	<IfVersion >= 2.4>
-	    Require all granted
-	</IfVersion>
+	Require all granted
         </Directory>
 
     </VirtualHost>

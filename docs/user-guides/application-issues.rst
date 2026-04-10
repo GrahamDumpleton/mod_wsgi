@@ -1119,8 +1119,7 @@ WSGIDaemonProcess directive::
 
     WSGIDaemonProcess example stack-size=524288
 
-If you are unable to upgrade to Apache 2.2 and/or mod_wsgi 2.0, the only
-other option you have for affecting the amount of virtual memory set aside
+Another option you have for affecting the amount of virtual memory set aside
 for the stack of each thread is to override the process stack size. If you are
 using a standard Apache distribution, this can be done by adding to the
 'envvars' file for the Apache installation::

@@ -75,8 +75,7 @@ Although runtime configuration can customise the behaviour of the MPM, the
 choice of MPM will dictate whether or not multithreading is available.
 
 On UNIX based systems, Apache defaults to being built with the 'prefork'
-MPM. If Apache 1.3 is being used this is actually the only choice, but for
-later versions of Apache, this can be overridden at build time by supplying
+MPM. This can be overridden at build time by supplying
 an appropriate value in conjunction with the ``--with-mpm`` option when
 running the 'configure' script for Apache. The main alternative to the
 'prefork' MPM which can be used on UNIX systems is the 'worker' MPM.
@@ -119,9 +118,7 @@ On the Windows platform the only available MPM is 'winnt'.
 The UNIX 'prefork' MPM
 ----------------------
 
-This MPM is the most commonly used. It was the only mode of operation
-available in Apache 1.3 and is still the default mode on UNIX systems in
-later versions of Apache. In this configuration, the main Apache process
+This MPM is the most commonly used. It is the default mode on UNIX systems. In this configuration, the main Apache process
 will at startup create multiple child processes. When a request is received
 by the parent process, it will be processed by which ever of the child
 processes is ready.

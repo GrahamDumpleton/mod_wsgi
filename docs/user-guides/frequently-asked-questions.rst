@@ -230,9 +230,8 @@ for resources outside of the application such as static files, CGI scripts
 or even a distinct application? In other words, something akin to being able
 to define access, authentication and authorisation handlers in mod_python.
 
-*A*: Provided you are using Apache 2.0 or later, version 2.0 of mod_wsgi
-provides support for hooking into the Apache access, authentication and
-authorisation handler phases. This doesn't allow full control of how the
+*A*: mod_wsgi provides support for hooking into the Apache access,
+authentication and authorisation handler phases. This doesn't allow full control of how the
 Apache handler is implemented, but does allow control over how user
 credentials are validated, determination of what groups a user is a member
 of and whether specific hosts are allowed access. This is generally more

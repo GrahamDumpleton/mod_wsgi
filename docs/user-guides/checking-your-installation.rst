@@ -277,13 +277,9 @@ directives are used.
 
 If the AcceptMutex directive is defined in the Apache configuration file,
 then what ever mechanism is specified will be used instead for Apache child
-processes. Provided that Apache 2.2 or older is used, and WSGIAcceptMutex
-is not specified, then when AcceptMutex is used, that will also then be used
-by mod_wsgi daemon processes as well.
-
-In the case of Apache 2.4 and later, AcceptMutex will no longer override the
-default for mod_wsgi daemon process groups, and instead WSGIAcceptMutex must
-be specified seperately if it needs to be overridden for both.
+processes. AcceptMutex will not override the default for mod_wsgi daemon
+process groups, and instead WSGIAcceptMutex must be specified separately if
+it needs to be overridden for both.
 
 Either way, you should check the Apache configuration files as to whether
 either AcceptMutex or WSGIAcceptMutex directives are used as they will
