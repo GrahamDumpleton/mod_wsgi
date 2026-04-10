@@ -2099,12 +2099,8 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 
 #if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
         if (self->r->log_id) {
-#if PY_MAJOR_VERSION >= 3
 	    value = PyUnicode_DecodeLatin1(self->r->log_id,
                                            strlen(self->r->log_id), NULL);
-#else
-	    value = PyBytes_FromString(self->r->log_id);
-#endif
             PyDict_SetItemString(event, "request_id", value);
             Py_DECREF(value);
         }
@@ -2609,7 +2605,6 @@ static PyObject *Adapter_environ(AdapterObject *self)
     for (i = 0; i < head->nelts; ++i) {
         if (elts[i].key) {
             if (elts[i].val) {
-#if PY_MAJOR_VERSION >= 3
                 if (!strcmp(elts[i].val, "DOCUMENT_ROOT")) {
                     object = PyUnicode_DecodeFSDefault(elts[i].val);
                 }
@@ -2620,9 +2615,6 @@ static PyObject *Adapter_environ(AdapterObject *self)
                     object = PyUnicode_DecodeLatin1(elts[i].val,
                                                     strlen(elts[i].val), NULL);
                 }
-#else
-                object = PyBytes_FromString(elts[i].val);
-#endif
                 PyDict_SetItemString(vars, elts[i].key, object);
                 Py_DECREF(object);
             }
@@ -2665,20 +2657,12 @@ static PyObject *Adapter_environ(AdapterObject *self)
     scheme = apr_table_get(r->subprocess_env, "HTTPS");
 
     if (scheme && (!strcasecmp(scheme, "On") || !strcmp(scheme, "1"))) {
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_FromString("https");
-#else
-        object = PyBytes_FromString("https");
-#endif
         PyDict_SetItemString(vars, "wsgi.url_scheme", object);
         Py_DECREF(object);
     }
     else {
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_FromString("http");
-#else
-        object = PyBytes_FromString("http");
-#endif
         PyDict_SetItemString(vars, "wsgi.url_scheme", object);
         Py_DECREF(object);
     }
@@ -3076,12 +3060,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
 #if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
         if (self->r->log_id) {
-#if PY_MAJOR_VERSION >= 3
 	    value = PyUnicode_DecodeLatin1(self->r->log_id,
                                            strlen(self->r->log_id), NULL);
-#else
-	    value = PyBytes_FromString(self->r->log_id);
-#endif
             PyDict_SetItemString(event, "request_id", value);
             Py_DECREF(value);
         }
@@ -3295,12 +3275,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
 #if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
         if (self->r->log_id) {
-#if PY_MAJOR_VERSION >= 3
 	    value = PyUnicode_DecodeLatin1(self->r->log_id,
                                            strlen(self->r->log_id), NULL);
-#else
-	    value = PyBytes_FromString(self->r->log_id);
-#endif
             PyDict_SetItemString(event, "request_id", value);
             Py_DECREF(value);
         }
@@ -3494,7 +3470,6 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "O:ssl_var_lookup", &item))
         return NULL;
 
-#if PY_MAJOR_VERSION >= 3
     if (PyUnicode_Check(item)) {
         latin_item = PyUnicode_AsLatin1String(item);
         if (!latin_item) {
@@ -3506,7 +3481,6 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
 
         item = latin_item;
     }
-#endif
 
     if (!PyBytes_Check(item)) {
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
@@ -3541,11 +3515,7 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
         return Py_None;
     }
 
-#if PY_MAJOR_VERSION >= 3
     return PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-    return PyBytes_FromString(value);
-#endif
 }
 
 static PyMethodDef Adapter_methods[] = {
@@ -3821,18 +3791,12 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
         if (object) {
             PyObject *args = NULL;
             PyObject *result = NULL;
-#if PY_MAJOR_VERSION >= 3
             PyObject *path = NULL;
-#endif
 
             Py_INCREF(object);
-#if PY_MAJOR_VERSION >= 3
             path = PyUnicode_DecodeFSDefault(resource);
             args = Py_BuildValue("(O)", path);
             Py_DECREF(path);
-#else
-            args = Py_BuildValue("(s)", resource);
-#endif
             result = PyObject_CallObject(object, args);
             Py_DECREF(args);
             Py_DECREF(object);
@@ -6489,12 +6453,8 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
     for (i = 0; i < head->nelts; ++i) {
         if (elts[i].key) {
             if (elts[i].val) {
-#if PY_MAJOR_VERSION >= 3
                 object = PyUnicode_DecodeLatin1(elts[i].val,
                                                 strlen(elts[i].val), NULL);
-#else
-                object = PyBytes_FromString(elts[i].val);
-#endif
                 PyDict_SetItemString(vars, elts[i].key, object);
                 Py_DECREF(object);
             }
@@ -6510,19 +6470,11 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
      * to remove callable object reference.
      */
 
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_FromString("");
-#else
-    object = PyBytes_FromString("");
-#endif
     PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
     Py_DECREF(object);
 
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(group, strlen(group), NULL);
-#else
-    object = PyBytes_FromString(group);
-#endif
     PyDict_SetItemString(vars, "mod_wsgi.application_group", object);
     Py_DECREF(object);
 
@@ -6607,7 +6559,6 @@ static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "O:ssl_var_lookup", &item))
         return NULL;
 
-#if PY_MAJOR_VERSION >= 3
     if (PyUnicode_Check(item)) {
         PyObject *latin_item;
         latin_item = PyUnicode_AsLatin1String(item);
@@ -6621,7 +6572,6 @@ static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
         Py_DECREF(item);
         item = latin_item;
     }
-#endif
 
     if (!PyBytes_Check(item)) {
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
@@ -6650,11 +6600,7 @@ static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
         return Py_None;
     }
 
-#if PY_MAJOR_VERSION >= 3
     return PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-    return PyBytes_FromString(value);
-#endif
 }
 
 static PyMethodDef Dispatch_methods[] = {
@@ -6870,7 +6816,6 @@ static int wsgi_execute_dispatch(request_rec *r)
                                                "mod_wsgi.process_group",
                                                config->process_group);
                             }
-#if PY_MAJOR_VERSION >= 3
                             else if (PyUnicode_Check(result)) {
                                 PyObject *latin_item;
                                 latin_item = PyUnicode_AsLatin1String(result);
@@ -6899,7 +6844,6 @@ static int wsgi_execute_dispatch(request_rec *r)
                                                    config->process_group);
                                 }
                             }
-#endif
                             else {
                                 PyErr_SetString(PyExc_TypeError, "Process "
                                                 "group must be a byte string");
@@ -6952,7 +6896,6 @@ static int wsgi_execute_dispatch(request_rec *r)
                                                "mod_wsgi.application_group",
                                                config->application_group);
                             }
-#if PY_MAJOR_VERSION >= 3
                             else if (PyUnicode_Check(result)) {
                                 PyObject *latin_item;
                                 latin_item = PyUnicode_AsLatin1String(result);
@@ -6981,7 +6924,6 @@ static int wsgi_execute_dispatch(request_rec *r)
                                                    config->application_group);
                                 }
                             }
-#endif
                             else {
                                 PyErr_SetString(PyExc_TypeError, "Application "
                                                 "group must be a string "
@@ -7034,7 +6976,6 @@ static int wsgi_execute_dispatch(request_rec *r)
                                                "mod_wsgi.callable_object",
                                                config->callable_object);
                             }
-#if PY_MAJOR_VERSION >= 3
                             else if (PyUnicode_Check(result)) {
                                 PyObject *latin_item;
                                 latin_item = PyUnicode_AsLatin1String(result);
@@ -7063,7 +7004,6 @@ static int wsgi_execute_dispatch(request_rec *r)
                                                    config->callable_object);
                                 }
                             }
-#endif
                             else {
                                 PyErr_SetString(PyExc_TypeError, "Callable "
                                                 "object must be a string "
@@ -9538,17 +9478,12 @@ static void wsgi_log_stack_traces(void)
                     }
 #endif
 
-#if PY_MAJOR_VERSION >= 3
 #if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
                     filename = PyUnicode_AsUTF8(PyFrame_GetCode(current)->co_filename);
                     name = PyUnicode_AsUTF8(PyFrame_GetCode(current)->co_name);
 #else
                     filename = PyUnicode_AsUTF8(current->f_code->co_filename);
                     name = PyUnicode_AsUTF8(current->f_code->co_name);
-#endif
-#else
-                    filename = PyBytes_AsString(current->f_code->co_filename);
-                    name = PyBytes_AsString(current->f_code->co_name);
 #endif
 
                     if (current == (PyFrameObject *)frame) {
@@ -10328,35 +10263,6 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         if (wsgi_python_after_fork)
             wsgi_python_init(p);
 
-#if PY_MAJOR_VERSION < 3
-        /*
-         * If mod_python is also being loaded and thus it was
-         * responsible for initialising Python it can leave in
-         * place an active thread state. Under normal conditions
-         * this would be eliminated in Apache child process by
-         * the time that mod_wsgi got to do its own child
-         * initialisation but in daemon process we skip the
-         * mod_python child initialisation so the active thread
-         * state still exists. Thus need to do a bit of a fiddle
-         * to ensure there is no active thread state. Don't need
-         * to worry about this with Python 3.X as mod_python
-         * only supports Python 2.X.
-         */
-
-        if (!wsgi_python_initialized) {
-            PyGILState_STATE state;
-
-            PyEval_AcquireLock();
-
-            state = PyGILState_Ensure();
-            PyGILState_Release(state);
-
-            if (state == PyGILState_LOCKED)
-                PyThreadState_Swap(NULL);
-
-            PyEval_ReleaseLock();
-        }
-#endif
 
         /*
          * If the daemon is associated with a virtual host then
@@ -14226,22 +14132,14 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
         }
 
         if (!strcasecmp(hdrs[i].key, "Content-type")) {
-#if PY_MAJOR_VERSION >= 3
             object = PyUnicode_DecodeLatin1(hdrs[i].val,
                                             strlen(hdrs[i].val), NULL);
-#else
-            object = PyBytes_FromString(hdrs[i].val);
-#endif
             PyDict_SetItemString(vars, "CONTENT_TYPE", object);
             Py_DECREF(object);
         }
         else if (!strcasecmp(hdrs[i].key, "Content-length")) {
-#if PY_MAJOR_VERSION >= 3
             object = PyUnicode_DecodeLatin1(hdrs[i].val,
                                             strlen(hdrs[i].val), NULL);
-#else
-            object = PyBytes_FromString(hdrs[i].val);
-#endif
             PyDict_SetItemString(vars, "CONTENT_LENGTH", object);
             Py_DECREF(object);
         }
@@ -14254,12 +14152,8 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
                 char *header = wsgi_http2env(r->pool, hdrs[i].key);
 
                 if (header) {
-#if PY_MAJOR_VERSION >= 3
                     object = PyUnicode_DecodeLatin1(hdrs[i].val,
                                                     strlen(hdrs[i].val), NULL);
-#else
-                    object = PyBytes_FromString(hdrs[i].val);
-#endif
 
                     PyDict_SetItemString(vars, header, object);
 
@@ -14270,11 +14164,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     }
 
     value = ap_psignature("", r);
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-    object = PyBytes_FromString(value);
-#endif
     PyDict_SetItemString(vars, "SERVER_SIGNATURE", object);
     Py_DECREF(object);
 
@@ -14283,50 +14173,30 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #else
     value = ap_get_server_version();
 #endif
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-    object = PyBytes_FromString(value);
-#endif
     PyDict_SetItemString(vars, "SERVER_SOFTWARE", object);
     Py_DECREF(object);
 
     value = ap_escape_html(r->pool, ap_get_server_name(r));
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-    object = PyBytes_FromString(value);
-#endif
     PyDict_SetItemString(vars, "SERVER_NAME", object);
     Py_DECREF(object);
 
     if (r->connection->local_ip) {
         value = r->connection->local_ip;
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-        object = PyBytes_FromString(value);
-#endif
         PyDict_SetItemString(vars, "SERVER_ADDR", object);
         Py_DECREF(object);
     }
 
     value = apr_psprintf(r->pool, "%u", ap_get_server_port(r));
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-    object = PyBytes_FromString(value);
-#endif
     PyDict_SetItemString(vars, "SERVER_PORT", object);
     Py_DECREF(object);
 
     value = ap_get_remote_host(c, r->per_dir_config, REMOTE_HOST, NULL);
     if (value) {
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-        object = PyBytes_FromString(value);
-#endif
         PyDict_SetItemString(vars, "REMOTE_HOST", object);
         Py_DECREF(object);
     }
@@ -14334,43 +14204,27 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
     if (r->useragent_ip) {
         value = r->useragent_ip;
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-        object = PyBytes_FromString(value);
-#endif
         PyDict_SetItemString(vars, "REMOTE_ADDR", object);
         Py_DECREF(object);
     }
 #else
     if (c->remote_ip) {
         value = c->remote_ip;
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-        object = PyBytes_FromString(value);
-#endif
         PyDict_SetItemString(vars, "REMOTE_ADDR", object);
         Py_DECREF(object);
     }
 #endif
 
-#if PY_MAJOR_VERSION >= 3
     value = ap_document_root(r);
     object = PyUnicode_DecodeFSDefault(value);
-#else
-    object = PyBytes_FromString(ap_document_root(r));
-#endif
     PyDict_SetItemString(vars, "DOCUMENT_ROOT", object);
     Py_DECREF(object);
 
     if (s->server_admin) {
         value = s->server_admin;
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-        object = PyBytes_FromString(value);
-#endif
         PyDict_SetItemString(vars, "SERVER_ADMIN", object);
         Py_DECREF(object);
     }
@@ -14378,58 +14232,34 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
     rport = c->client_addr->port;
     value = apr_itoa(r->pool, rport);
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-    object = PyBytes_FromString(value);
-#endif
     PyDict_SetItemString(vars, "REMOTE_PORT", object);
     Py_DECREF(object);
 #else
     rport = c->remote_addr->port;
     value = apr_itoa(r->pool, rport);
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-    object = PyBytes_FromString(value);
-#endif
     PyDict_SetItemString(vars, "REMOTE_PORT", object);
     Py_DECREF(object);
 #endif
 
     value = r->protocol;
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-    object = PyBytes_FromString(value);
-#endif
     PyDict_SetItemString(vars, "SERVER_PROTOCOL", object);
     Py_DECREF(object);
 
     value = r->method;
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-    object = PyBytes_FromString(value);
-#endif
     PyDict_SetItemString(vars, "REQUEST_METHOD", object);
     Py_DECREF(object);
 
     value = r->args ? r->args : "";
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-    object = PyBytes_FromString(value);
-#endif
     PyDict_SetItemString(vars, "QUERY_STRING", object);
     Py_DECREF(object);
 
     value = wsgi_original_uri(r);
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-    object = PyBytes_FromString(value);
-#endif
     PyDict_SetItemString(vars, "REQUEST_URI", object);
     Py_DECREF(object);
 
@@ -14441,59 +14271,35 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 
     if (!strcmp(r->protocol, "INCLUDED")) {
         value = r->uri;
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-        object = PyBytes_FromString(value);
-#endif
         PyDict_SetItemString(vars, "SCRIPT_NAME", object);
         Py_DECREF(object);
 
         value = r->path_info ? r->path_info : "";
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-        object = PyBytes_FromString(value);
-#endif
         PyDict_SetItemString(vars, "PATH_INFO", object);
         Py_DECREF(object);
     }
     else if (!r->path_info || !*r->path_info) {
         value = r->uri;
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-        object = PyBytes_FromString(value);
-#endif
         PyDict_SetItemString(vars, "SCRIPT_NAME", object);
         Py_DECREF(object);
 
         value = "";
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-        object = PyBytes_FromString(value);
-#endif
         PyDict_SetItemString(vars, "PATH_INFO", object);
         Py_DECREF(object);
     }
     else {
         int path_info_start = ap_find_path_info(r->uri, r->path_info);
         value = apr_pstrndup(r->pool, r->uri, path_info_start);
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-        object = PyBytes_FromString(value);
-#endif
         PyDict_SetItemString(vars, "SCRIPT_NAME", object);
         Py_DECREF(object);
 
         value = r->path_info ? r->path_info : "";
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-        object = PyBytes_FromString(value);
-#endif
         PyDict_SetItemString(vars, "PATH_INFO", object);
         Py_DECREF(object);
     }
@@ -14510,19 +14316,11 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     PyDict_SetItemString(vars, "mod_wsgi.version", object);
     Py_DECREF(object);
 
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_FromString("");
-#else
-    object = PyBytes_FromString("");
-#endif
     PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
     Py_DECREF(object);
 
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(group, strlen(group), NULL);
-#else
-    object = PyBytes_FromString(group);
-#endif
     PyDict_SetItemString(vars, "mod_wsgi.application_group", object);
     Py_DECREF(object);
 
@@ -14608,7 +14406,6 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "O:ssl_var_lookup", &item))
         return NULL;
 
-#if PY_MAJOR_VERSION >= 3
     if (PyUnicode_Check(item)) {
         latin_item = PyUnicode_AsLatin1String(item);
         if (!latin_item) {
@@ -14620,7 +14417,6 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
 
         item = latin_item;
     }
-#endif
 
     if (!PyBytes_Check(item)) {
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
@@ -14655,11 +14451,7 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
         return Py_None;
     }
 
-#if PY_MAJOR_VERSION >= 3
     return PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-#else
-    return PyBytes_FromString(value);
-#endif
 }
 
 static PyMethodDef Auth_methods[] = {
@@ -14853,13 +14645,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                 PyObject *user_string = NULL;
                 PyObject *password_string = NULL;
 
-#if PY_MAJOR_VERSION >= 3
                 user_string = PyUnicode_DecodeLatin1(user, strlen(user), NULL);
                 password_string = PyUnicode_DecodeLatin1(password, strlen(password), NULL);
-#else
-                user_string = PyBytes_FromString(user);
-                password_string = PyBytes_FromString(password);
-#endif
 
                 vars = Auth_environ(adapter, group);
 
@@ -14882,7 +14669,6 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                     else if (result == Py_False) {
                         status = AUTH_DENIED;
                     }
-#if PY_MAJOR_VERSION >= 3
                     else if (PyUnicode_Check(result)) {
                         PyObject *str = NULL;
 
@@ -14896,14 +14682,6 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                             status = AUTH_GRANTED;
                         }
                     }
-#else
-                    else if (PyBytes_Check(result)) {
-                        adapter->r->user = apr_pstrdup(adapter->r->pool,
-                                PyBytes_AsString(result));
-
-                        status = AUTH_GRANTED;
-                    }
-#endif
                     else {
                         PyErr_SetString(PyExc_TypeError, "Basic auth "
                                         "provider must return True, False "
@@ -15110,13 +14888,8 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                 PyObject *user_string = NULL;
                 PyObject *realm_string = NULL;
 
-#if PY_MAJOR_VERSION >= 3
                 user_string = PyUnicode_DecodeLatin1(user, strlen(user), NULL);
                 realm_string = PyUnicode_DecodeLatin1(realm, strlen(realm), NULL);
-#else
-                user_string = PyBytes_FromString(user);
-                realm_string = PyBytes_FromString(realm);
-#endif
 
                 vars = Auth_environ(adapter, group);
 
@@ -15139,7 +14912,6 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
                         status = AUTH_USER_FOUND;
                     }
-#if PY_MAJOR_VERSION >= 3
                     else if (PyUnicode_Check(result)) {
                         PyObject *latin_item;
                         latin_item = PyUnicode_AsLatin1String(result);
@@ -15160,7 +14932,6 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                             status = AUTH_USER_FOUND;
                         }
                     }
-#endif
                     else {
                         PyErr_SetString(PyExc_TypeError, "Digest auth "
                                         "provider must return None "
@@ -15373,11 +15144,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
             if (adapter) {
                 PyObject *user_string = NULL;
 
-#if PY_MAJOR_VERSION >= 3
                 user_string = PyUnicode_DecodeLatin1(r->user, strlen(r->user), NULL);
-#else
-                user_string = PyBytes_FromString(r->user);
-#endif
 
                 vars = Auth_environ(adapter, group);
 
@@ -15401,7 +15168,6 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                         status = OK;
 
                         while ((item = PyIter_Next(iterator))) {
-#if PY_MAJOR_VERSION >= 3
                             if (PyUnicode_Check(item)) {
                                 PyObject *latin_item;
                                 latin_item = PyUnicode_AsLatin1String(item);
@@ -15429,7 +15195,6 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                                     item = latin_item;
                                 }
                             }
-#endif
 
                             if (!PyBytes_Check(item)) {
                                 Py_BEGIN_ALLOW_THREADS
@@ -15934,13 +15699,8 @@ static int wsgi_hook_check_user_id(request_rec *r)
                 PyObject *user_string = NULL;
                 PyObject *password_string = NULL;
 
-#if PY_MAJOR_VERSION >= 3
                 user_string = PyUnicode_DecodeLatin1(r->user, strlen(r->user), NULL);
                 password_string = PyUnicode_DecodeLatin1(password, strlen(password), NULL);
-#else
-                user_string = PyBytes_FromString(r->user);
-                password_string = PyBytes_FromString(password);
-#endif
 
                 vars = Auth_environ(adapter, group);
 
@@ -16425,16 +16185,10 @@ module AP_MODULE_DECLARE_DATA wsgi_module = {
 /* ------------------------------------------------------------------------- */
 
 #if defined(_WIN32)
-#if PY_MAJOR_VERSION < 3
-PyMODINIT_FUNC initmod_wsgi(void)
-{
-}
-#else
 PyMODINIT_FUNC PyInit_mod_wsgi(void)
 {
     return NULL;
 }
-#endif
 #endif
 
 /* ------------------------------------------------------------------------- */

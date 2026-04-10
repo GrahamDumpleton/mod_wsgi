@@ -219,7 +219,6 @@ static PyObject *ShutdownInterpreter_call(
         PyThreadState *tstate_save = tstate;
         PyThreadState *tstate_next = NULL;
 
-#if PY_MAJOR_VERSION >= 3
         module = PyImport_ImportModule("atexit");
 
         if (module) {
@@ -230,9 +229,6 @@ static PyObject *ShutdownInterpreter_call(
         }
         else
             PyErr_Clear();
-#else
-        exitfunc = PySys_GetObject("exitfunc");
-#endif
 
         if (exitfunc) {
             PyObject *res = NULL;
@@ -589,11 +585,7 @@ InterpreterObject *newInterpreterObject(const char *name)
      */
 
     object = PyList_New(0);
-#if PY_MAJOR_VERSION >= 3
     item = PyUnicode_FromString("mod_wsgi");
-#else
-    item = PyBytes_FromString("mod_wsgi");
-#endif
     PyList_Append(object, item);
     PySys_SetObject("argv", object);
     Py_DECREF(item);
@@ -726,13 +718,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                 pwent = getpwuid(geteuid());
 
                 if (pwent && getenv("USER")) {
-#if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("USER");
                     value = PyUnicode_DecodeFSDefault(pwent->pw_name);
-#else
-                    key = PyBytes_FromString("USER");
-                    value = PyBytes_FromString(pwent->pw_name);
-#endif
 
                     PyObject_SetItem(object, key, value);
 
@@ -741,13 +728,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                 }
 
                 if (pwent && getenv("USERNAME")) {
-#if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("USERNAME");
                     value = PyUnicode_DecodeFSDefault(pwent->pw_name);
-#else
-                    key = PyBytes_FromString("USERNAME");
-                    value = PyBytes_FromString(pwent->pw_name);
-#endif
 
                     PyObject_SetItem(object, key, value);
 
@@ -756,13 +738,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                 }
 
                 if (pwent && getenv("LOGNAME")) {
-#if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("LOGNAME");
                     value = PyUnicode_DecodeFSDefault(pwent->pw_name);
-#else
-                    key = PyBytes_FromString("LOGNAME");
-                    value = PyBytes_FromString(pwent->pw_name);
-#endif
 
                     PyObject_SetItem(object, key, value);
 
@@ -805,13 +782,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                 pwent = getpwuid(geteuid());
 
                 if (pwent) {
-#if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("HOME");
                     value = PyUnicode_DecodeFSDefault(pwent->pw_dir);
-#else
-                    key = PyBytes_FromString("HOME");
-                    value = PyBytes_FromString(pwent->pw_dir);
-#endif
 
                     PyObject_SetItem(object, key, value);
 
@@ -848,13 +820,8 @@ InterpreterObject *newInterpreterObject(const char *name)
             object = PyDict_GetItemString(dict, "environ");
 
             if (object) {
-#if PY_MAJOR_VERSION >= 3
                 key = PyUnicode_FromString("PYTHON_EGG_CACHE");
                 value = PyUnicode_DecodeFSDefault(wsgi_python_eggs);
-#else
-                key = PyBytes_FromString("PYTHON_EGG_CACHE");
-                value = PyBytes_FromString(wsgi_python_eggs);
-#endif
 
                 PyObject_SetItem(object, key, value);
 
@@ -953,13 +920,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                 end = strchr(start, DELIM);
 
                 if (end) {
-#if PY_MAJOR_VERSION >= 3
                     item = PyUnicode_DecodeFSDefaultAndSize(start, end-start);
                     value = PyUnicode_AsUTF8(item);
-#else
-                    item = PyBytes_FromStringAndSize(start, end-start);
-                    value = PyBytes_AsString(item);
-#endif
                     start = end+1;
 
                     Py_BEGIN_ALLOW_THREADS
@@ -987,14 +949,9 @@ InterpreterObject *newInterpreterObject(const char *name)
                     end = strchr(start, DELIM);
 
                     while (result && end) {
-#if PY_MAJOR_VERSION >= 3
                         item = PyUnicode_DecodeFSDefaultAndSize(start,
                                 end-start);
                         value = PyUnicode_AsUTF8(item);
-#else
-                        item = PyBytes_FromStringAndSize(start, end-start);
-                        value = PyBytes_AsString(item);
-#endif
                         start = end+1;
 
                         Py_BEGIN_ALLOW_THREADS
@@ -1024,13 +981,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                     }
                 }
 
-#if PY_MAJOR_VERSION >= 3
                 item = PyUnicode_DecodeFSDefault(start);
                 value = PyUnicode_AsUTF8(item);
-#else
-                item = PyBytes_FromString(start);
-                value = PyBytes_AsString(item);
-#endif
 
                 Py_BEGIN_ALLOW_THREADS
                 ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
@@ -1119,11 +1071,7 @@ InterpreterObject *newInterpreterObject(const char *name)
         if (module && path) {
             PyObject *item;
 
-#if PY_MAJOR_VERSION >= 3
             item = PyUnicode_DecodeFSDefault(home);
-#else
-            item = PyBytes_FromString(home);
-#endif
             PyList_Insert(path, 0, item);
             Py_DECREF(item);
         }
@@ -1192,18 +1140,11 @@ InterpreterObject *newInterpreterObject(const char *name)
      * group to the Python 'mod_wsgi' module.
      */
 
-#if PY_MAJOR_VERSION >= 3
     PyModule_AddObject(module, "process_group",
                        PyUnicode_DecodeLatin1(wsgi_daemon_group,
                        strlen(wsgi_daemon_group), NULL));
     PyModule_AddObject(module, "application_group",
                        PyUnicode_DecodeLatin1(name, strlen(name), NULL));
-#else
-    PyModule_AddObject(module, "process_group",
-                       PyBytes_FromString(wsgi_daemon_group));
-    PyModule_AddObject(module, "application_group",
-                       PyBytes_FromString(name));
-#endif
 
     /*
      * Add information about number of processes and threads
@@ -1387,27 +1328,15 @@ InterpreterObject *newInterpreterObject(const char *name)
 #else
     str = ap_get_server_version();
 #endif
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(str, strlen(str), NULL);
-#else
-    object = PyBytes_FromString(str);
-#endif
     PyModule_AddObject(module, "description", object);
 
     str = MPM_NAME;
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(str, strlen(str), NULL);
-#else
-    object = PyBytes_FromString(str);
-#endif
     PyModule_AddObject(module, "mpm_name", object);
 
     str = ap_get_server_built();
-#if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(str, strlen(str), NULL);
-#else
-    object = PyBytes_FromString(str);
-#endif
     PyModule_AddObject(module, "build_date", object);
 
     /* Done with the 'apache' module. */
@@ -1445,19 +1374,10 @@ InterpreterObject *newInterpreterObject(const char *name)
                 PyObject *environment = NULL;
                 PyObject *result = NULL;
 
-#if PY_MAJOR_VERSION >= 3
                 config_file = PyUnicode_DecodeFSDefault(wsgi_newrelic_config_file);
-#else
-                config_file = PyBytes_FromString(wsgi_newrelic_config_file);
-#endif
 
                 if (wsgi_newrelic_environment) {
-#if PY_MAJOR_VERSION >= 3
                     environment = PyUnicode_DecodeFSDefault(wsgi_newrelic_environment);
-#else
-                    environment = PyBytes_FromString(
-                            wsgi_newrelic_environment);
-#endif
                 }
                 else {
                     Py_INCREF(Py_None);
@@ -1641,11 +1561,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
         PyObject *func = NULL;
 
         dict = PyModule_GetDict(module);
-#if PY_MAJOR_VERSION >= 3
         func = PyDict_GetItemString(dict, "current_thread");
-#else
-        func = PyDict_GetItemString(dict, "currentThread");
-#endif
         if (func) {
             PyObject *res = NULL;
             Py_INCREF(func);
@@ -1779,7 +1695,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     module = NULL;
 
-#if PY_MAJOR_VERSION >= 3
     if (self->owner) {
         module = PyImport_ImportModule("atexit");
 
@@ -1792,9 +1707,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
         else
             PyErr_Clear();
     }
-#else
-    exitfunc = PySys_GetObject("exitfunc");
-#endif
 
     if (exitfunc) {
         PyObject *res = NULL;
@@ -2173,13 +2085,6 @@ void wsgi_python_init(apr_pool_t *p)
 
     if (!Py_IsInitialized()) {
 
-        /* Enable Python 3.0 migration warnings. */
-
-#if PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6
-        if (wsgi_server_config->py3k_warning_flag == 1)
-            Py_Py3kWarningFlag++;
-#endif
-
         /* Disable writing of byte code files. */
 
 #if (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 3) || \
@@ -2221,7 +2126,6 @@ void wsgi_python_init(apr_pool_t *p)
             entries = (char **)options->elts;
 
             for (i = 0; i < options->nelts; ++i) {
-#if PY_MAJOR_VERSION >= 3
                 wchar_t *s = NULL;
                 int len = strlen(entries[i])+1;
 
@@ -2239,9 +2143,6 @@ void wsgi_python_init(apr_pool_t *p)
 #  else
                 PySys_AddWarnOption(s);
 #  endif
-#else
-                PySys_AddWarnOption(entries[i]);
-#endif
             }
         }
 
@@ -2277,7 +2178,6 @@ void wsgi_python_init(apr_pool_t *p)
         }
 
         if (python_home) {
-#if PY_MAJOR_VERSION >= 3
             wchar_t *s = NULL;
             int len = strlen(python_home)+1;
 
@@ -2294,9 +2194,6 @@ void wsgi_python_init(apr_pool_t *p)
 #  else
             Py_SetPythonHome(s);
 #  endif
-#else
-            Py_SetPythonHome((char *)python_home);
-#endif
         }
 #endif
 #else
@@ -2326,10 +2223,8 @@ void wsgi_python_init(apr_pool_t *p)
 
             const char *python_exe = 0;
 
-#if PY_MAJOR_VERSION >= 3
             wchar_t *s = NULL;
             int len = 0;
-#endif
 
             /*
              * Is common to see people set the directory to an incorrect
@@ -2395,7 +2290,6 @@ void wsgi_python_init(apr_pool_t *p)
                  */
 
                 python_exe = apr_pstrcat(p, python_home, "/bin/python", NULL);
-#if PY_MAJOR_VERSION >= 3
                 len = strlen(python_exe)+1;
                 s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
 #  if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
@@ -2411,12 +2305,8 @@ void wsgi_python_init(apr_pool_t *p)
 #  else
                 Py_SetProgramName(s);
 #  endif
-#else
-                Py_SetProgramName((char *)python_exe);
-#endif
             }
             else {
-#if PY_MAJOR_VERSION >= 3
                 len = strlen(python_home)+1;
                 s = (wchar_t *)apr_palloc(p, len*sizeof(wchar_t));
 #  if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
@@ -2432,9 +2322,6 @@ void wsgi_python_init(apr_pool_t *p)
 #  else
                 Py_SetPythonHome(s);
 #  endif
-#else
-                Py_SetPythonHome((char *)python_home);
-#endif
             }
         }
 #endif
@@ -2512,11 +2399,7 @@ void wsgi_python_init(apr_pool_t *p)
                 object = PyDict_GetItemString(dict, "environ");
 
                 if (object) {
-#if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("PYTHONHASHSEED");
-#else
-                    key = PyBytes_FromString("PYTHONHASHSEED");
-#endif
 
                     PyObject_DelItem(object, key);
 
@@ -2767,11 +2650,7 @@ void wsgi_publish_process_stopping(char *reason)
 
         event = PyDict_New();
 
-#if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(reason, strlen(reason), NULL);
-#else
-        object = PyBytes_FromString(reason);
-#endif
         PyDict_SetItemString(event, "shutdown_reason", object);
         Py_DECREF(object);
 

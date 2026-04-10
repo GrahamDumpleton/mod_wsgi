@@ -28,7 +28,6 @@ PyObject *wsgi_convert_string_to_bytes(PyObject *value)
 {
     PyObject *result = NULL;
 
-#if PY_MAJOR_VERSION >= 3
     if (!PyUnicode_Check(value)) {
         PyErr_Format(PyExc_TypeError, "expected unicode object, value "
                      "of type %.200s found", value->ob_type->tp_name);
@@ -42,16 +41,6 @@ PyObject *wsgi_convert_string_to_bytes(PyObject *value)
                         "latin-1 characters");
         return NULL;
     }
-#else
-    if (!PyBytes_Check(value)) {
-        PyErr_Format(PyExc_TypeError, "expected byte string object, "
-                     "value of type %.200s found", value->ob_type->tp_name);
-        return NULL;
-    }
-
-    Py_INCREF(value);
-    result = value;
-#endif
 
     return result;
 }

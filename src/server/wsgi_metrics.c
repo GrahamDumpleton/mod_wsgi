@@ -173,12 +173,8 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
     thread_info->request_data = PyDict_New();
 
 #if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
-#if PY_MAJOR_VERSION >= 3
     thread_info->request_id = PyUnicode_DecodeLatin1(r->log_id,
                                                 strlen(r->log_id), NULL);
-#else
-    thread_info->request_id = PyBytes_FromString(r->log_id);
-#endif
 
     module = PyImport_ImportModule("mod_wsgi");
 

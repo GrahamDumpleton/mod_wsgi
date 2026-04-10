@@ -35,9 +35,6 @@ typedef struct {
         char *s;
         long l;
         int expired;
-#if PY_MAJOR_VERSION < 3
-        long softspace;
-#endif
 } LogObject;
 
 PyTypeObject Log_Type;
@@ -61,16 +58,12 @@ PyObject *newLogBufferObject(request_rec *r, int level, const char *name,
     self->s = NULL;
     self->l = 0;
     self->expired = 0;
-#if PY_MAJOR_VERSION < 3
-    self->softspace = 0;
-#endif
 
     return (PyObject *)self;
 }
 
 PyObject *newLogWrapperObject(PyObject *buffer)
 {
-#if PY_MAJOR_VERSION >= 3
     PyObject *module = NULL;
     PyObject *dict = NULL;
     PyObject *object = NULL;
@@ -102,11 +95,6 @@ PyObject *newLogWrapperObject(PyObject *buffer)
     Py_DECREF(object);
 
     return (PyObject *)wrapper;
-#else
-    Py_INCREF(buffer);
-
-    return (PyObject *)buffer;
-#endif
 }
 
 PyObject *newLogObject(request_rec *r, int level, const char *name,
@@ -412,7 +400,6 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
     return Py_None;
 }
 
-#if PY_MAJOR_VERSION >= 3
 static PyObject *Log_readable(LogObject *self, PyObject *args)
 {
     Py_INCREF(Py_False);
@@ -438,15 +425,10 @@ static PyObject *Log_fileno(LogObject *self, PyObject *args)
 
     return NULL;
 }
-#endif
 
 static PyObject *Log_name(LogObject *self, void *closure)
 {
-#if PY_MAJOR_VERSION >= 3
     return PyUnicode_FromString(self->name);
-#else
-    return PyBytes_FromString(self->name);
-#endif
 }
 
 static PyObject *Log_closed(LogObject *self, void *closure)
@@ -454,48 +436,6 @@ static PyObject *Log_closed(LogObject *self, void *closure)
     Py_INCREF(Py_False);
     return Py_False;
 }
-
-#if PY_MAJOR_VERSION < 3
-static PyObject *Log_get_softspace(LogObject *self, void *closure)
-{
-    WSGIThreadInfo *thread_info = NULL;
-
-    if (self->proxy)
-        thread_info = wsgi_thread_info(0, 0);
-
-    if (thread_info && thread_info->log_buffer)
-        return Log_get_softspace((LogObject *)thread_info->log_buffer, closure);
-
-    return PyLong_FromLong(self->softspace);
-}
-
-static int Log_set_softspace(LogObject *self, PyObject *value)
-{
-    long new;
-
-    WSGIThreadInfo *thread_info = NULL;
-
-    if (self->proxy)
-        thread_info = wsgi_thread_info(0, 0);
-
-    if (thread_info && thread_info->log_buffer)
-        return Log_set_softspace((LogObject *)thread_info->log_buffer, value);
-
-    if (value == NULL) {
-        PyErr_SetString(PyExc_TypeError, "can't delete softspace attribute");
-        return -1;
-    }
-
-    new = PyLong_AsLong(value);
-    if (new == -1 && PyErr_Occurred())
-        return -1;
-
-    self->softspace = new;
-
-    return 0;
-}
-
-#else
 
 static PyObject *Log_get_encoding(LogObject *self, void *closure)
 {
@@ -506,7 +446,6 @@ static PyObject *Log_get_errors(LogObject *self, void *closure)
 {
     return PyUnicode_FromString("replace");
 }
-#endif
 
 static PyMethodDef Log_methods[] = {
     { "flush",      (PyCFunction)Log_flush,      METH_NOARGS, 0 },
@@ -514,24 +453,18 @@ static PyMethodDef Log_methods[] = {
     { "isatty",     (PyCFunction)Log_isatty,     METH_NOARGS, 0 },
     { "write",      (PyCFunction)Log_write,      METH_VARARGS, 0 },
     { "writelines", (PyCFunction)Log_writelines, METH_VARARGS, 0 },
-#if PY_MAJOR_VERSION >= 3
     { "readable",   (PyCFunction)Log_readable,   METH_NOARGS, 0 },
     { "seekable",   (PyCFunction)Log_seekable,   METH_NOARGS, 0 },
     { "writable",   (PyCFunction)Log_writable,   METH_NOARGS, 0 },
     { "fileno",     (PyCFunction)Log_fileno,   METH_NOARGS, 0 },
-#endif
     { NULL, NULL}
 };
 
 static PyGetSetDef Log_getset[] = {
     { "name", (getter)Log_name, NULL, 0 },
     { "closed", (getter)Log_closed, NULL, 0 },
-#if PY_MAJOR_VERSION < 3
-    { "softspace", (getter)Log_get_softspace, (setter)Log_set_softspace, 0 },
-#else
     { "encoding", (getter)Log_get_encoding, NULL, 0 },
     { "errors", (getter)Log_get_errors, NULL, 0 },
-#endif
     { NULL },
 };
 
@@ -702,12 +635,8 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
 
 #if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
                 if (r->log_id) {
-#if PY_MAJOR_VERSION >= 3
                     object = PyUnicode_DecodeLatin1(r->log_id,
                                                     strlen(r->log_id), NULL);
-#else
-                    object = PyBytes_FromString(r->log_id);
-#endif
                     PyDict_SetItemString(event, "request_id", object);
                     Py_DECREF(object);
                 }
