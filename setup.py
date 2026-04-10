@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 import os
 import sys
 import fnmatch
@@ -9,10 +7,7 @@ import shutil
 import stat
 import re
 
-try:
-    from urllib.request import urlretrieve
-except ImportError:
-    from urllib import urlretrieve
+from urllib.request import urlretrieve
 
 from setuptools import setup
 from setuptools.extension import Extension
@@ -445,11 +440,11 @@ setup(name = package_name,
         'Operating System :: POSIX :: SunOS/Solaris',
         'Programming Language :: Python',
         'Programming Language :: Python :: Implementation :: CPython',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
+        'Programming Language :: Python :: 3.14',
         'Topic :: Internet :: WWW/HTTP :: WSGI',
         'Topic :: Internet :: WWW/HTTP :: WSGI :: Server'
     ],
@@ -466,5 +461,5 @@ setup(name = package_name,
         ['mod_wsgi-express = mod_wsgi.server:main'],},
     zip_safe = False,
     install_requires = standalone and ['mod_wsgi-httpd==2.4.62.1'] or [],
-    python_requires='>=3.8',
+    python_requires='>=3.10',
 )

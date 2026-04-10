@@ -5,10 +5,9 @@ The mod_wsgi package provides an Apache module that implements a WSGI
 compliant interface for hosting Python based web applications on top of the
 Apache web server.
 
-*Note that the major version 5.0 was introduced not because of any new major
-features but because from version 5.0 onwards compatability with Python 2.7 is
-no longer guaranteed. A minimum Python version of 3.8 will be enforced by the
-Python package installation configuration.*
+*Note that the major version 6.0 requires a minimum of Python 3.10. Support
+for older Python versions has been dropped and Python 2 compatibility code
+has been removed.*
 
 Installation of mod_wsgi from source code can be performed in one of two
 ways.
