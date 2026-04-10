@@ -39,11 +39,6 @@ pid_t wsgi_daemon_pid = 0;
 
 apr_time_t wsgi_restart_time = 0;
 
-/* New Relic monitoring agent. */
-
-const char *wsgi_newrelic_config_file = NULL;
-const char *wsgi_newrelic_environment = NULL;
-
 /* Python interpreter state. */
 
 PyThreadState *wsgi_main_tstate = NULL;
@@ -131,9 +126,6 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->enable_sendfile = -1;
 
     object->server_metrics = -1;
-
-    object->newrelic_config_file = NULL;
-    object->newrelic_environment = NULL;
 
     return object;
 }

@@ -1008,14 +1008,6 @@ APACHE_INCLUDE_CONFIG = """
 Include '%(filename)s'
 """
 
-APACHE_TOOLS_CONFIG = """
-WSGIDaemonProcess express display-name=%%{GROUP} threads=1 server-metrics=On
-"""
-
-APACHE_METRICS_CONFIG = """
-WSGIImportScript '%(server_root)s/server-metrics.py' \\
-    process-group=express application-group=server-metrics
-"""
 
 APACHE_SERVICE_CONFIG = """
 WSGIDaemonProcess 'service:%(name)s' \\
@@ -1180,12 +1172,6 @@ def generate_apache_config(options):
                 filename = posixpath.abspath(filename)
                 print(APACHE_INCLUDE_CONFIG % dict(filename=filename),
                         file=fp)
-
-        if options['with_newrelic_platform']:
-            print(APACHE_TOOLS_CONFIG % options, file=fp)
-
-        if options['with_newrelic_platform']:
-            print(APACHE_METRICS_CONFIG % options, file=fp)
 
 _interval = 1.0
 _times = {}
@@ -1444,7 +1430,7 @@ class ApplicationHandler(object):
 
     def __init__(self, entry_point, application_type='script',
             callable_object='application', mount_point='/',
-            with_newrelic_agent=False, debug_mode=False,
+            debug_mode=False,
             enable_debugger=False, debugger_startup=False,
             enable_recorder=False, recorder_directory=None):
 
@@ -1485,9 +1471,6 @@ class ApplicationHandler(object):
         except Exception:
             self.mtime = None
 
-        if with_newrelic_agent:
-            self.setup_newrelic_agent()
-
         self.debug_mode = debug_mode
         self.enable_debugger = enable_debugger
 
@@ -1496,22 +1479,6 @@ class ApplicationHandler(object):
 
         if enable_recorder:
             self.setup_recorder(recorder_directory)
-
-    def setup_newrelic_agent(self):
-        import newrelic.agent
-
-        config_file = os.environ.get('NEW_RELIC_CONFIG_FILE')
-        environment = os.environ.get('NEW_RELIC_ENVIRONMENT')
-
-        global_settings = newrelic.agent.global_settings()
-        if global_settings.log_file is None:
-            global_settings.log_file = 'stderr'
-
-        newrelic.agent.initialize(config_file, environment)
-        newrelic.agent.register_application()
-
-        self.application = newrelic.agent.WSGIApplicationWrapper(
-                self.application)
 
     def setup_debugger(self, startup):
         self.application = PostMortemDebugger(self.application, startup)
@@ -1625,9 +1592,6 @@ entry_point = r'%(entry_point)s'
 application_type = '%(application_type)s'
 callable_object = '%(callable_object)s'
 mount_point = '%(mount_point)s'
-with_newrelic_agent = %(with_newrelic_agent)s
-newrelic_config_file = '%(newrelic_config_file)s'
-newrelic_environment = '%(newrelic_environment)s'
 disable_reloading = %(disable_reloading)s
 reload_on_changes = %(reload_on_changes)s
 debug_mode = %(debug_mode)s
@@ -1694,15 +1658,9 @@ if enable_recorder:
 if enable_gdb:
     os.environ['MOD_WSGI_GDB_ENABLED'] = 'true'
 
-if with_newrelic_agent:
-    if newrelic_config_file:
-        os.environ['NEW_RELIC_CONFIG_FILE'] = newrelic_config_file
-    if newrelic_environment:
-        os.environ['NEW_RELIC_ENVIRONMENT'] = newrelic_environment
-
 handler = mod_wsgi.server.ApplicationHandler(entry_point,
         application_type=application_type, callable_object=callable_object,
-        mount_point=mount_point, with_newrelic_agent=with_newrelic_agent,
+        mount_point=mount_point,
         debug_mode=debug_mode, enable_debugger=enable_debugger,
         debugger_startup=debugger_startup, enable_recorder=enable_recorder,
         recorder_directory=recorder_directory)
@@ -1784,43 +1742,6 @@ def generate_wsgi_handler_script(options):
     path = os.path.join(options['server_root'], 'default.wsgi')
     with open(path, 'w') as fp:
         print(WSGI_DEFAULT_SCRIPT % options, file=fp)
-
-SERVER_METRICS_SCRIPT = """
-import os
-import logging
-
-newrelic_config_file = '%(newrelic_config_file)s'
-newrelic_environment = '%(newrelic_environment)s'
-
-with_newrelic_platform = %(with_newrelic_platform)s
-
-if with_newrelic_platform:
-    if newrelic_config_file:
-        os.environ['NEW_RELIC_CONFIG_FILE'] = newrelic_config_file
-    if newrelic_environment:
-        os.environ['NEW_RELIC_ENVIRONMENT'] = newrelic_environment
-
-logging.basicConfig(level=logging.INFO,
-    format='%%(name)s (pid=%%(process)d, level=%%(levelname)s): %%(message)s')
-
-_logger = logging.getLogger(__name__)
-
-try:
-    from mod_wsgi.metrics.newrelic import Agent
-
-    agent = Agent()
-    agent.start()
-
-except ImportError:
-    _logger.fatal('The module mod_wsgi.metrics.newrelic is not available. '
-            'The New Relic platform plugin has been disabled. Install the '
-            '"mod_wsgi-metrics" package.')
-"""
-
-def generate_server_metrics_script(options):
-    path = os.path.join(options['server_root'], 'server-metrics.py')
-    with open(path, 'w') as fp:
-        print(SERVER_METRICS_SCRIPT % options, file=fp)
 
 WSGI_CONTROL_SCRIPT = """
 #!%(shell_executable)s
@@ -2644,28 +2565,6 @@ add_option('all', '--chunked-request', action='store_true',
         default=False, help='Flag indicating whether requests which '
         'use chunked transfer encoding will be accepted.')
 
-add_option('hidden', '--with-newrelic', action='store_true',
-        default=False, help='Flag indicating whether all New Relic '
-        'performance monitoring features should be enabled.')
-
-add_option('hidden', '--with-newrelic-agent', action='store_true',
-        default=False, help='Flag indicating whether the New Relic '
-        'Python agent should be enabled for reporting application server '
-        'metrics.')
-
-add_option('hidden', '--with-newrelic-platform', action='store_true',
-        default=False, help='Flag indicating whether the New Relic '
-        'platform plugin should be enabled for reporting server level '
-        'metrics.')
-
-add_option('hidden', '--newrelic-config-file', metavar='FILE-PATH',
-        default='', help='Specify the location of the New Relic agent '
-        'configuration file.')
-
-add_option('hidden', '--newrelic-environment', metavar='NAME',
-        default='', help='Specify the name of the environment section '
-        'that should be used from New Relic agent configuration file.')
-
 add_option('hidden', '--with-php5', action='store_true', default=False,
         help='Flag indicating whether PHP 5 support should be enabled. '
         'PHP code files must use the \'.php\' extension.')
@@ -3131,17 +3030,6 @@ def _cmd_setup_server(command, args, options):
             handler_scripts.append((extension, script))
         options['handler_scripts'] = handler_scripts
 
-    if options['newrelic_config_file']:
-        options['newrelic_config_file'] = posixpath.abspath(
-                options['newrelic_config_file'])
-
-    if options['with_newrelic']:
-        options['with_newrelic_agent'] = True
-        options['with_newrelic_platform'] = True
-
-    if options['with_newrelic_platform']:
-        options['server_metrics'] = True
-
     if options['service_scripts']:
         service_scripts = []
         for name, script in options['service_scripts']:
@@ -3532,9 +3420,6 @@ def _cmd_setup_server(command, args, options):
             ' '.join(options['httpd_arguments_list']))
 
     generate_wsgi_handler_script(options)
-
-    if options['with_newrelic_platform']:
-        generate_server_metrics_script(options)
 
     print('Server URL         :', options['url'])
 

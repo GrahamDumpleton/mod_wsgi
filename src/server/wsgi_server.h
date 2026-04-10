@@ -34,11 +34,6 @@ extern const char *wsgi_daemon_group;
 
 extern apr_time_t wsgi_restart_time;
 
-/* New Relic monitoring agent. */
-
-extern const char *wsgi_newrelic_config_file;
-extern const char *wsgi_newrelic_environment;
-
 /* Python interpreter state. */
 
 extern PyThreadState *wsgi_main_tstate;
@@ -119,9 +114,6 @@ typedef struct {
     apr_hash_t *handler_scripts;
 
     int server_metrics;
-
-    const char *newrelic_config_file;
-    const char *newrelic_environment;
 } WSGIServerConfig;
   
 extern WSGIServerConfig *wsgi_server_config;

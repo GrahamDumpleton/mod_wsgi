@@ -17,6 +17,16 @@ Features Changed
 * Dropped support for Python versions older than 3.10. Python 2 compatibility
   code has been removed.
 
+Features Removed
+----------------
+
+* Removed built-in support for configuring and initializing the New Relic
+  Python agent. This includes the ``WSGINewRelicConfigFile`` and
+  ``WSGINewRelicEnvironment`` Apache directives, and the ``--with-newrelic``,
+  ``--with-newrelic-agent``, ``--with-newrelic-platform``,
+  ``--newrelic-config-file``, and ``--newrelic-environment`` options from
+  ``mod_wsgi-express``.
+
 Bugs Fixed
 ----------
 

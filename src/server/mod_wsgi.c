@@ -2956,7 +2956,6 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     PyObject *iterator = NULL;
     PyObject *close = NULL;
 
-    PyObject *nrwrapper = NULL;
     PyObject *evwrapper = NULL;
 
     PyObject *value = NULL;
@@ -2986,40 +2985,6 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         apr_thread_mutex_unlock(wsgi_monitor_lock);
     }
 #endif
-
-    if (wsgi_newrelic_config_file) {
-        PyObject *module = NULL;
-
-        module = PyImport_ImportModule("newrelic.agent");
-
-        if (module) {
-            PyObject *dict;
-            PyObject *factory;
-
-            dict = PyModule_GetDict(module);
-            factory = PyDict_GetItemString(dict, "WSGIApplicationWrapper");
-
-            if (factory) {
-                Py_INCREF(factory);
-
-                nrwrapper = PyObject_CallFunctionObjArgs(
-                        factory, object, Py_None, NULL);
-
-                if (!nrwrapper) {
-                    wsgi_log_python_error(self->r, self->log,
-                                          self->r->filename, 0);
-                    PyErr_Clear();
-                }
-
-                Py_DECREF(factory);
-            }
-
-            Py_DECREF(module);
-        }
-    }
-
-    if (nrwrapper)
-        object = nrwrapper;
 
     self->start_time = apr_time_now();
 
@@ -3387,7 +3352,6 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
     Py_DECREF(start);
     Py_DECREF(vars);
 
-    Py_XDECREF(nrwrapper);
     Py_XDECREF(evwrapper);
 
     Py_XDECREF(self->sequence);
@@ -5978,38 +5942,6 @@ static const char *wsgi_set_server_metrics(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-static const char *wsgi_set_newrelic_config_file(
-        cmd_parms *cmd, void *mconfig, const char *f)
-{
-    const char *error = NULL;
-    WSGIServerConfig *sconfig = NULL;
-
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
-
-    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
-    sconfig->newrelic_config_file = f;
-
-    return NULL;
-}
-
-static const char *wsgi_set_newrelic_environment(
-        cmd_parms *cmd, void *mconfig, const char *f)
-{
-    const char *error = NULL;
-    WSGIServerConfig *sconfig = NULL;
-
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
-
-    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
-    sconfig->newrelic_environment = f;
-
-    return NULL;
-}
-
 /* Handler for the translate name phase. */
 
 static long wsgi_alias_matches(const char *uri, const char *alias_fakename)
@@ -7385,9 +7317,6 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     int server_metrics = 0;
 
-    const char *newrelic_config_file = NULL;
-    const char *newrelic_environment = NULL;
-
     const char *option = NULL;
     const char *value = NULL;
 
@@ -7769,12 +7698,6 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             else
                 return "Invalid server metrics flag for WSGI daemon process.";
         }
-        else if (!strcmp(option, "newrelic-config-file")) {
-            newrelic_config_file = value;
-        }
-        else if (!strcmp(option, "newrelic-environment")) {
-            newrelic_environment = value;
-        }
         else
             return "Invalid option to WSGI daemon process definition.";
     }
@@ -7901,9 +7824,6 @@ static const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->virtual_memory_limit = virtual_memory_limit;
 
     entry->server_metrics = server_metrics;
-
-    entry->newrelic_config_file = newrelic_config_file;
-    entry->newrelic_environment = newrelic_environment;
 
     entry->listener_fd = -1;
 
@@ -10321,9 +10241,6 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         wsgi_python_path = daemon->group->python_path;
         wsgi_python_eggs = daemon->group->python_eggs;
-
-        wsgi_newrelic_config_file = daemon->group->newrelic_config_file;
-        wsgi_newrelic_environment = daemon->group->newrelic_environment;
 
         wsgi_python_child_init(wsgi_daemon_pool);
 
@@ -16076,11 +15993,6 @@ static const command_rec wsgi_commands[] =
 
     AP_INIT_TAKE1("WSGIServerMetrics", wsgi_set_server_metrics,
         NULL, RSRC_CONF, "Enabled/Disable access to server metrics."),
-
-    AP_INIT_TAKE1("WSGINewRelicConfigFile", wsgi_set_newrelic_config_file,
-        NULL, RSRC_CONF, "New Relic monitoring agent configuration file."),
-    AP_INIT_TAKE1("WSGINewRelicEnvironment", wsgi_set_newrelic_environment,
-        NULL, RSRC_CONF, "New Relic monitoring agent environment."),
 
     { NULL }
 };
