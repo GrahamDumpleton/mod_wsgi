@@ -2719,12 +2719,7 @@ static PyObject *Adapter_environ(AdapterObject *self)
      */
 
     if (!wsgi_daemon_pool && self->config->pass_apache_request) {
-#if (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 2) || \
-    (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 7)
         object = PyCapsule_New(self->r, 0, 0);
-#else
-        object = PyCObject_FromVoidPtr(self->r, 0);
-#endif
         PyDict_SetItemString(vars, "apache.request_rec", object);
         Py_DECREF(object);
     }
@@ -4345,11 +4340,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
 #ifdef HAVE_FORK
     if (wsgi_python_initialized && !wsgi_python_after_fork) {
-#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 7)
         PyOS_AfterFork_Child();
-#else
-        PyOS_AfterFork();
-#endif
     }
 #endif
 
@@ -4366,9 +4357,7 @@ static void wsgi_python_child_init(apr_pool_t *p)
 
     PyType_Ready(&SignalIntercept_Type);
 
-#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 4)
     PyType_Ready(&ShutdownInterpreter_Type);
-#endif
 
     /* Initialise Python interpreter instance table and lock. */
 
@@ -4842,32 +4831,6 @@ static const char *wsgi_add_python_warnings(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-#if PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6
-static const char *wsgi_set_py3k_warning_flag(cmd_parms *cmd, void *mconfig,
-                                              const char *f)
-{
-    const char *error = NULL;
-    WSGIServerConfig *sconfig = NULL;
-
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
-
-    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
-
-    if (strcasecmp(f, "Off") == 0)
-        sconfig->py3k_warning_flag = 0;
-    else if (strcasecmp(f, "On") == 0)
-        sconfig->py3k_warning_flag = 1;
-    else
-        return "WSGIPy3kWarningFlag must be one of: Off | On";
-
-    return NULL;
-}
-#endif
-
-#if (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 3) || \
-    (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6)
 static const char *wsgi_set_dont_write_bytecode(cmd_parms *cmd, void *mconfig,
                                                 const char *f)
 {
@@ -4889,7 +4852,6 @@ static const char *wsgi_set_dont_write_bytecode(cmd_parms *cmd, void *mconfig,
 
     return NULL;
 }
-#endif
 
 static const char *wsgi_set_python_optimize(cmd_parms *cmd, void *mconfig,
                                             const char *f)
@@ -6494,12 +6456,7 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
      */
 
     if (!wsgi_daemon_pool && self->config->pass_apache_request) {
-#if (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 2) || \
-    (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 7)
         object = PyCapsule_New(self->r, 0, 0);
-#else
-        object = PyCObject_FromVoidPtr(self->r, 0);
-#endif
         PyDict_SetItemString(vars, "apache.request_rec", object);
         Py_DECREF(object);
     }
@@ -9420,7 +9377,6 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
     return NULL;
 }
 
-#if (PY_MAJOR_VERSION >= 3) || (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 5)
 static void wsgi_log_stack_traces(void)
 {
     PyGILState_STATE state;
@@ -9466,25 +9422,10 @@ static void wsgi_log_stack_traces(void)
                     const char *filename = NULL;
                     const char *name = NULL;
 
-#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
                     lineno = PyFrame_GetLineNumber(current);
-#else
-                    if (current->f_trace) {
-                        lineno = current->f_lineno;
-                    }
-                    else {
-                        lineno = PyCode_Addr2Line(current->f_code,
-                                                  current->f_lasti);
-                    }
-#endif
 
-#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
                     filename = PyUnicode_AsUTF8(PyFrame_GetCode(current)->co_filename);
                     name = PyUnicode_AsUTF8(PyFrame_GetCode(current)->co_name);
-#else
-                    filename = PyUnicode_AsUTF8(current->f_code->co_filename);
-                    name = PyUnicode_AsUTF8(current->f_code->co_name);
-#endif
 
                     if (current == (PyFrameObject *)frame) {
                         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
@@ -9493,11 +9434,7 @@ static void wsgi_log_stack_traces(void)
                                 getpid(), thread_id, filename, lineno, name);
                     }
                     else {
-#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
                         if (PyFrame_GetBack(current)) {
-#else
-                        if (current->f_back) {
-#endif
                             ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                                     "mod_wsgi (pid=%d): called from file "
                                     "\"%s\", line %d, in %s,", getpid(),
@@ -9511,11 +9448,7 @@ static void wsgi_log_stack_traces(void)
                         }
                     }
 
-#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 9)
                     current = PyFrame_GetBack(current);
-#else
-                    current = current->f_back;
-#endif
                 }
             }
         }
@@ -9541,7 +9474,6 @@ static void wsgi_log_stack_traces(void)
 
     PyGILState_Release(state);
 }
-#endif
 
 static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 {
@@ -9817,10 +9749,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
     wsgi_publish_process_stopping(wsgi_shutdown_reason);
 
-#if (PY_MAJOR_VERSION >= 3) || (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 5)
     if (wsgi_dump_stack_traces)
         wsgi_log_stack_traces();
-#endif
 
     /*
      * Attempt a graceful shutdown by waiting for any
@@ -10432,7 +10362,6 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
 #ifdef HAVE_FORK
     if (wsgi_python_initialized) {
-#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 7)
 #if 0
         /*
          * XXX Appears to be wrong to call this at this point especially
@@ -10442,7 +10371,6 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
          */
 
         PyOS_AfterFork_Parent();
-#endif
 #endif
     }
 #endif
@@ -14342,12 +14270,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
      */
 
     if (!wsgi_daemon_pool && self->config->pass_apache_request) {
-#if (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 2) || \
-    (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 7)
         object = PyCapsule_New(self->r, 0, 0);
-#else
-        object = PyCObject_FromVoidPtr(self->r, 0);
-#endif
         PyDict_SetItemString(vars, "apache.request_rec", object);
         Py_DECREF(object);
     }
@@ -16060,16 +15983,8 @@ static const command_rec wsgi_commands[] =
     AP_INIT_TAKE1("WSGIVerboseDebugging", wsgi_set_verbose_debugging,
         NULL, RSRC_CONF, "Enable/Disable verbose debugging messages."),
 
-#if PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6
-    AP_INIT_TAKE1("WSGIPy3kWarningFlag", wsgi_set_py3k_warning_flag,
-        NULL, RSRC_CONF, "Enable/Disable Python 3.0 warnings."),
-#endif
-
-#if (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 3) || \
-    (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6)
     AP_INIT_TAKE1("WSGIDontWriteBytecode", wsgi_set_dont_write_bytecode,
         NULL, RSRC_CONF, "Enable/Disable writing of byte code."),
-#endif
 
     AP_INIT_TAKE1("WSGIPythonWarnings", wsgi_add_python_warnings,
         NULL, RSRC_CONF, "Control Python warning messages."),

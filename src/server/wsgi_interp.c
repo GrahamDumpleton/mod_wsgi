@@ -182,7 +182,6 @@ static PyMethodDef wsgi_system_exit_method[] = {
 const char *wsgi_python_path = NULL;
 const char *wsgi_python_eggs = NULL;
 
-#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 4)
 static void ShutdownInterpreter_dealloc(ShutdownInterpreterObject *self)
 {
     Py_DECREF(self->wrapped);
@@ -397,7 +396,6 @@ PyTypeObject ShutdownInterpreter_Type = {
     0,                      /*tp_free*/
     0,                      /*tp_is_gc*/
 };
-#endif
 
 PyTypeObject Interpreter_Type;
 
@@ -437,13 +435,7 @@ InterpreterObject *newInterpreterObject(const char *name)
      */
 
     if (!name) {
-#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 7)
         interp = PyInterpreterState_Main();
-#else
-        interp = PyInterpreterState_Head();
-        while (PyInterpreterState_Next(interp))
-            interp = PyInterpreterState_Next(interp);
-#endif
 
         name = "";
     }
@@ -521,7 +513,6 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         module = PyImport_ImportModule("threading");
 
-#if PY_MAJOR_VERSION > 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 4)
         if (module) {
             PyObject *dict = NULL;
             PyObject *func = NULL;
@@ -537,7 +528,6 @@ InterpreterObject *newInterpreterObject(const char *name)
                 Py_DECREF(wrapper);
             }
         }
-#endif
 
         Py_XDECREF(module);
     }
@@ -1466,12 +1456,9 @@ static void Interpreter_dealloc(InterpreterObject *self)
 {
     PyThreadState *tstate = NULL;
     PyObject *module = NULL;
+    PyObject *exitfunc = NULL;
 
     PyThreadState *tstate_enter = NULL;
-
-#if PY_MAJOR_VERSION < 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION < 4)
-    PyObject *exitfunc = NULL;
-#endif
 
     /*
      * We should always enter here with the Python GIL
@@ -1581,102 +1568,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
      * calls 'threading._shutdown()'. Thus need to emulate this
      * behaviour for those versions.
      */
-
-#if PY_MAJOR_VERSION < 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION < 4)
-    if (module) {
-        PyObject *dict = NULL;
-        PyObject *func = NULL;
-
-        dict = PyModule_GetDict(module);
-        func = PyDict_GetItemString(dict, "_shutdown");
-        if (func) {
-            PyObject *res = NULL;
-            Py_INCREF(func);
-            res = PyObject_CallObject(func, (PyObject *)NULL);
-
-            if (res == NULL) {
-                PyObject *m = NULL;
-                PyObject *result = NULL;
-
-                PyObject *type = NULL;
-                PyObject *value = NULL;
-                PyObject *traceback = NULL;
-
-                Py_BEGIN_ALLOW_THREADS
-                ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Exception occurred within "
-                             "threading._shutdown().", getpid());
-                Py_END_ALLOW_THREADS
-
-                PyErr_Fetch(&type, &value, &traceback);
-                PyErr_NormalizeException(&type, &value, &traceback);
-
-                if (!value) {
-                    value = Py_None;
-                    Py_INCREF(value);
-                }
-
-                if (!traceback) {
-                    traceback = Py_None;
-                    Py_INCREF(traceback);
-                }
-
-                m = PyImport_ImportModule("traceback");
-
-                if (m) {
-                    PyObject *d = NULL;
-                    PyObject *o = NULL;
-                    d = PyModule_GetDict(m);
-                    o = PyDict_GetItemString(d, "print_exception");
-                    if (o) {
-                        PyObject *log = NULL;
-                        PyObject *args = NULL;
-                        Py_INCREF(o);
-                        log = newLogObject(NULL, APLOG_ERR, NULL, 0);
-                        args = Py_BuildValue("(OOOOO)", type, value,
-                                             traceback, Py_None, log);
-                        result = PyObject_CallObject(o, args);
-                        Py_DECREF(args);
-                        Py_DECREF(log);
-                        Py_DECREF(o);
-                    }
-                }
-
-                if (!result) {
-                    /*
-                     * If can't output exception and traceback then
-                     * use PyErr_Print to dump out details of the
-                     * exception. For SystemExit though if we do
-                     * that the process will actually be terminated
-                     * so can only clear the exception information
-                     * and keep going.
-                     */
-
-                    PyErr_Restore(type, value, traceback);
-
-                    if (!PyErr_ExceptionMatches(PyExc_SystemExit)) {
-                        PyErr_Print();
-                        PyErr_Clear();
-                    }
-                    else {
-                        PyErr_Clear();
-                    }
-                }
-                else {
-                    Py_XDECREF(type);
-                    Py_XDECREF(value);
-                    Py_XDECREF(traceback);
-                }
-
-                Py_XDECREF(result);
-
-                Py_XDECREF(m);
-            }
-
-            Py_XDECREF(res);
-            Py_DECREF(func);
-        }
-    }
 
     /* Finally done with 'threading' module. */
 
@@ -1807,7 +1698,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
     }
 
     Py_XDECREF(module);
-#endif
 
     /* If we own it, we destroy it. */
 
@@ -1820,30 +1710,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
          * try to run. Only saving grace is that we are
          * trying to shutdown the process.
          */
-
-#if PY_MAJOR_VERSION < 3 || (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION < 4)
-        PyThreadState *tstate_save = tstate;
-        PyThreadState *tstate_next = NULL;
-
-        PyThreadState_Swap(NULL);
-
-        tstate = PyInterpreterState_ThreadHead(tstate->interp);
-
-        while (tstate) {
-            tstate_next = PyThreadState_Next(tstate);
-            if (tstate != tstate_save) {
-                PyThreadState_Swap(tstate);
-                PyThreadState_Clear(tstate);
-                PyThreadState_Swap(NULL);
-                PyThreadState_Delete(tstate);
-            }
-            tstate = tstate_next;
-        }
-
-        tstate = tstate_save;
-
-        PyThreadState_Swap(tstate);
-#endif
 
         /* Can now destroy the interpreter. */
 
@@ -2072,14 +1938,9 @@ void wsgi_python_init(apr_pool_t *p)
 
     int is_pyvenv = 0;
 
-#if PY_VERSION_HEX >= 0x03080000
-#  define USE_PYCONFIG
-#endif
-#ifdef USE_PYCONFIG
     PyConfig config;
     PyStatus status;
     PyConfig_InitPythonConfig(&config);
-#endif
 
     /* Perform initialisation if required. */
 
@@ -2087,31 +1948,16 @@ void wsgi_python_init(apr_pool_t *p)
 
         /* Disable writing of byte code files. */
 
-#if (PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 3) || \
-    (PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION >= 6)
         if (wsgi_server_config->dont_write_bytecode == 1) {
-#ifdef USE_PYCONFIG
             config.write_bytecode = 0;
-#else
-            Py_DontWriteBytecodeFlag++;
-#endif
         }
-#endif
 
         /* Check for Python paths and optimisation flag. */
 
         if (wsgi_server_config->python_optimize > 0) {
-#ifdef USE_PYCONFIG
             config.optimization_level = wsgi_server_config->python_optimize;
-#else
-            Py_OptimizeFlag = wsgi_server_config->python_optimize;
-#endif
         } else {
-#ifdef USE_PYCONFIG
             config.optimization_level = 0;
-#else
-            Py_OptimizeFlag = 0;
-#endif
         }
 
         /* Check for control options for Python warnings. */
@@ -2136,13 +1982,9 @@ void wsgi_python_init(apr_pool_t *p)
 #  else
                 mbstowcs(s, entries[i], len);
 #  endif
-#  ifdef USE_PYCONFIG
                 status = PyWideStringList_Append(&config.warnoptions, s);
                 if (PyStatus_Exception(status))
                     wsgi_python_init_failed(status);
-#  else
-                PySys_AddWarnOption(s);
-#  endif
             }
         }
 
@@ -2188,12 +2030,8 @@ void wsgi_python_init(apr_pool_t *p)
 #  else
             mbstowcs(s, python_home, len);
 #  endif
-#  ifdef USE_PYCONFIG
             status = PyConfig_SetString(&config, &config.home, s);
             if (PyStatus_Exception(status)) wsgi_python_init_failed(status);
-#  else
-            Py_SetPythonHome(s);
-#  endif
         }
 #endif
 #else
@@ -2298,13 +2136,9 @@ void wsgi_python_init(apr_pool_t *p)
                 mbstowcs(s, python_exe, len);
 #  endif
 
-#  ifdef USE_PYCONFIG
                 status = PyConfig_SetString(&config, &config.program_name, s);
                 if (PyStatus_Exception(status))
                     wsgi_python_init_failed(status);
-#  else
-                Py_SetProgramName(s);
-#  endif
             }
             else {
                 len = strlen(python_home)+1;
@@ -2315,13 +2149,9 @@ void wsgi_python_init(apr_pool_t *p)
                 mbstowcs(s, python_home, len);
 #  endif
 
-#  ifdef USE_PYCONFIG
                 status = PyConfig_SetString(&config, &config.home, s);
                 if (PyStatus_Exception(status))
                     wsgi_python_init_failed(status);
-#  else
-                Py_SetPythonHome(s);
-#  endif
             }
         }
 #endif
@@ -2337,79 +2167,19 @@ void wsgi_python_init(apr_pool_t *p)
             ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
                          "mod_wsgi (pid=%d): Setting hash seed to %s.",
                          getpid(), wsgi_server_config->python_hash_seed);
-#ifdef USE_PYCONFIG
             long seed = atol(wsgi_server_config->python_hash_seed);
             config.use_hash_seed = 1;
             config.hash_seed = (unsigned long)seed;
-#else
-            char *envvar = apr_pstrcat(p, "PYTHONHASHSEED=",
-                    wsgi_server_config->python_hash_seed, NULL);
-            putenv(envvar);
-#endif
         }
-
-        /*
-         * Work around bug in Python 3.1 where it will crash
-         * when used in non console application on Windows if
-         * stdin/stdout have been initialised and aren't null.
-         * Supposed to be fixed in Python 3.3.
-         */
-
-#if defined(WIN32) && PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION < 3
-        _wputenv(L"PYTHONIOENCODING=cp1252:backslashreplace");
-#endif
 
         /* Initialise Python. */
 
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
                      "mod_wsgi (pid=%d): Initializing Python.", getpid());
 
-#ifdef USE_PYCONFIG
         status = Py_InitializeFromConfig(&config);
-        if (PyStatus_Exception(status)) wsgi_python_init_failed(status);
-#else
-        Py_Initialize();
-#endif
-
-#if PY_VERSION_HEX < 0x03090000
-        /* Initialise threading. */
-        PyEval_InitThreads();
-#endif
-
-#ifndef USE_PYCONFIG
-        /*
-         * Remove the environment variable we set for the hash
-         * seed. This has to be done in os.environ, which will
-         * in turn remove it from process environ. This should
-         * only be necessary for the main interpreter. We need
-         * to do this before we release the GIL.
-         */
-
-        if (wsgi_server_config->python_hash_seed != NULL) {
-            PyObject *module = NULL;
-
-            module = PyImport_ImportModule("os");
-
-            if (module) {
-                PyObject *dict = NULL;
-                PyObject *object = NULL;
-                PyObject *key = NULL;
-
-                dict = PyModule_GetDict(module);
-                object = PyDict_GetItemString(dict, "environ");
-
-                if (object) {
-                    key = PyUnicode_FromString("PYTHONHASHSEED");
-
-                    PyObject_DelItem(object, key);
-
-                    Py_DECREF(key);
-                }
-
-                Py_DECREF(module);
-            }
-        }
-#endif
+        if (PyStatus_Exception(status))
+            wsgi_python_init_failed(status);
 
         /*
          * We now want to release the GIL. Before we do that
