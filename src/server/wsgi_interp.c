@@ -592,7 +592,7 @@ InterpreterObject *newInterpreterObject(const char *name)
 #if PY_MAJOR_VERSION >= 3
     item = PyUnicode_FromString("mod_wsgi");
 #else
-    item = PyString_FromString("mod_wsgi");
+    item = PyBytes_FromString("mod_wsgi");
 #endif
     PyList_Append(object, item);
     PySys_SetObject("argv", object);
@@ -730,8 +730,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                     key = PyUnicode_FromString("USER");
                     value = PyUnicode_DecodeFSDefault(pwent->pw_name);
 #else
-                    key = PyString_FromString("USER");
-                    value = PyString_FromString(pwent->pw_name);
+                    key = PyBytes_FromString("USER");
+                    value = PyBytes_FromString(pwent->pw_name);
 #endif
 
                     PyObject_SetItem(object, key, value);
@@ -745,8 +745,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                     key = PyUnicode_FromString("USERNAME");
                     value = PyUnicode_DecodeFSDefault(pwent->pw_name);
 #else
-                    key = PyString_FromString("USERNAME");
-                    value = PyString_FromString(pwent->pw_name);
+                    key = PyBytes_FromString("USERNAME");
+                    value = PyBytes_FromString(pwent->pw_name);
 #endif
 
                     PyObject_SetItem(object, key, value);
@@ -760,8 +760,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                     key = PyUnicode_FromString("LOGNAME");
                     value = PyUnicode_DecodeFSDefault(pwent->pw_name);
 #else
-                    key = PyString_FromString("LOGNAME");
-                    value = PyString_FromString(pwent->pw_name);
+                    key = PyBytes_FromString("LOGNAME");
+                    value = PyBytes_FromString(pwent->pw_name);
 #endif
 
                     PyObject_SetItem(object, key, value);
@@ -809,8 +809,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                     key = PyUnicode_FromString("HOME");
                     value = PyUnicode_DecodeFSDefault(pwent->pw_dir);
 #else
-                    key = PyString_FromString("HOME");
-                    value = PyString_FromString(pwent->pw_dir);
+                    key = PyBytes_FromString("HOME");
+                    value = PyBytes_FromString(pwent->pw_dir);
 #endif
 
                     PyObject_SetItem(object, key, value);
@@ -852,8 +852,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                 key = PyUnicode_FromString("PYTHON_EGG_CACHE");
                 value = PyUnicode_DecodeFSDefault(wsgi_python_eggs);
 #else
-                key = PyString_FromString("PYTHON_EGG_CACHE");
-                value = PyString_FromString(wsgi_python_eggs);
+                key = PyBytes_FromString("PYTHON_EGG_CACHE");
+                value = PyBytes_FromString(wsgi_python_eggs);
 #endif
 
                 PyObject_SetItem(object, key, value);
@@ -957,8 +957,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                     item = PyUnicode_DecodeFSDefaultAndSize(start, end-start);
                     value = PyUnicode_AsUTF8(item);
 #else
-                    item = PyString_FromStringAndSize(start, end-start);
-                    value = PyString_AsString(item);
+                    item = PyBytes_FromStringAndSize(start, end-start);
+                    value = PyBytes_AsString(item);
 #endif
                     start = end+1;
 
@@ -992,8 +992,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                                 end-start);
                         value = PyUnicode_AsUTF8(item);
 #else
-                        item = PyString_FromStringAndSize(start, end-start);
-                        value = PyString_AsString(item);
+                        item = PyBytes_FromStringAndSize(start, end-start);
+                        value = PyBytes_AsString(item);
 #endif
                         start = end+1;
 
@@ -1028,8 +1028,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                 item = PyUnicode_DecodeFSDefault(start);
                 value = PyUnicode_AsUTF8(item);
 #else
-                item = PyString_FromString(start);
-                value = PyString_AsString(item);
+                item = PyBytes_FromString(start);
+                value = PyBytes_AsString(item);
 #endif
 
                 Py_BEGIN_ALLOW_THREADS
@@ -1122,7 +1122,7 @@ InterpreterObject *newInterpreterObject(const char *name)
 #if PY_MAJOR_VERSION >= 3
             item = PyUnicode_DecodeFSDefault(home);
 #else
-            item = PyString_FromString(home);
+            item = PyBytes_FromString(home);
 #endif
             PyList_Insert(path, 0, item);
             Py_DECREF(item);
@@ -1200,9 +1200,9 @@ InterpreterObject *newInterpreterObject(const char *name)
                        PyUnicode_DecodeLatin1(name, strlen(name), NULL));
 #else
     PyModule_AddObject(module, "process_group",
-                       PyString_FromString(wsgi_daemon_group));
+                       PyBytes_FromString(wsgi_daemon_group));
     PyModule_AddObject(module, "application_group",
-                       PyString_FromString(name));
+                       PyBytes_FromString(name));
 #endif
 
     /*
@@ -1390,7 +1390,7 @@ InterpreterObject *newInterpreterObject(const char *name)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(str, strlen(str), NULL);
 #else
-    object = PyString_FromString(str);
+    object = PyBytes_FromString(str);
 #endif
     PyModule_AddObject(module, "description", object);
 
@@ -1398,7 +1398,7 @@ InterpreterObject *newInterpreterObject(const char *name)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(str, strlen(str), NULL);
 #else
-    object = PyString_FromString(str);
+    object = PyBytes_FromString(str);
 #endif
     PyModule_AddObject(module, "mpm_name", object);
 
@@ -1406,7 +1406,7 @@ InterpreterObject *newInterpreterObject(const char *name)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(str, strlen(str), NULL);
 #else
-    object = PyString_FromString(str);
+    object = PyBytes_FromString(str);
 #endif
     PyModule_AddObject(module, "build_date", object);
 
@@ -1448,14 +1448,14 @@ InterpreterObject *newInterpreterObject(const char *name)
 #if PY_MAJOR_VERSION >= 3
                 config_file = PyUnicode_DecodeFSDefault(wsgi_newrelic_config_file);
 #else
-                config_file = PyString_FromString(wsgi_newrelic_config_file);
+                config_file = PyBytes_FromString(wsgi_newrelic_config_file);
 #endif
 
                 if (wsgi_newrelic_environment) {
 #if PY_MAJOR_VERSION >= 3
                     environment = PyUnicode_DecodeFSDefault(wsgi_newrelic_environment);
 #else
-                    environment = PyString_FromString(
+                    environment = PyBytes_FromString(
                             wsgi_newrelic_environment);
 #endif
                 }
@@ -2515,7 +2515,7 @@ void wsgi_python_init(apr_pool_t *p)
 #if PY_MAJOR_VERSION >= 3
                     key = PyUnicode_FromString("PYTHONHASHSEED");
 #else
-                    key = PyString_FromString("PYTHONHASHSEED");
+                    key = PyBytes_FromString("PYTHONHASHSEED");
 #endif
 
                     PyObject_DelItem(object, key);
@@ -2770,7 +2770,7 @@ void wsgi_publish_process_stopping(char *reason)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(reason, strlen(reason), NULL);
 #else
-        object = PyString_FromString(reason);
+        object = PyBytes_FromString(reason);
 #endif
         PyDict_SetItemString(event, "shutdown_reason", object);
         Py_DECREF(object);

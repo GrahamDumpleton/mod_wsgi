@@ -1237,11 +1237,7 @@ finally:
 
 static PyObject *Input_read(InputObject *self, PyObject *args)
 {
-#if defined(HAVE_LONG_LONG)
     PY_LONG_LONG size = -1;
-#else
-    long size = -1;
-#endif
 
     PyObject *result = NULL;
     char *buffer = NULL;
@@ -1255,13 +1251,8 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
         return NULL;
     }
 
-#if defined(HAVE_LONG_LONG)
     if (!PyArg_ParseTuple(args, "|L:read", &size))
         return NULL;
-#else
-    if (!PyArg_ParseTuple(args, "|l:read", &size))
-        return NULL;
-#endif
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_idle_timeout && !self->ignore_activity) {
@@ -1291,7 +1282,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
     /* No point continuing if no more data to be consumed. */
 
     if (self->done && self->length == 0)
-        return PyString_FromString("");
+        return PyBytes_FromString("");
 
     /*
      * If requested size is zero bytes, then still need to pass
@@ -1316,7 +1307,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
                 return NULL;
         }
 
-        return PyString_FromString("");
+        return PyBytes_FromString("");
     }
 
     /*
@@ -1328,12 +1319,12 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
     if (size > 0) {
         /* Allocate string of the exact size required. */
 
-        result = PyString_FromStringAndSize(NULL, size);
+        result = PyBytes_FromStringAndSize(NULL, size);
 
         if (!result)
             return NULL;
 
-        buffer = PyString_AS_STRING((PyStringObject *)result);
+        buffer = PyBytes_AS_STRING((PyBytesObject *)result);
 
         /* Copy any residual data from use of readline(). */
 
@@ -1387,7 +1378,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
              */
 
             if (length != size) {
-                if (_PyString_Resize(&result, length))
+                if (_PyBytes_Resize(&result, length))
                     return NULL;
             }
         }
@@ -1428,12 +1419,12 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
         /* Allocate string of the estimated size. */
 
-        result = PyString_FromStringAndSize(NULL, size);
+        result = PyBytes_FromStringAndSize(NULL, size);
 
         if (!result)
             return NULL;
 
-        buffer = PyString_AS_STRING((PyStringObject *)result);
+        buffer = PyBytes_AS_STRING((PyBytesObject *)result);
 
         /*
          * Copy any residual data from use of readline(). The
@@ -1480,10 +1471,10 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
                 size = size + (size >> 2);
 
-                if (_PyString_Resize(&result, size))
+                if (_PyBytes_Resize(&result, size))
                     return NULL;
 
-                buffer = PyString_AS_STRING((PyStringObject *)result);
+                buffer = PyBytes_AS_STRING((PyBytesObject *)result);
             }
 
             /* Now make succesive attempt at reading data. */
@@ -1511,7 +1502,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
          */
 
         if (length != size) {
-            if (_PyString_Resize(&result, length))
+            if (_PyBytes_Resize(&result, length))
                 return NULL;
         }
     }
@@ -1523,11 +1514,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
 static PyObject *Input_readline(InputObject *self, PyObject *args)
 {
-#if defined(HAVE_LONG_LONG)
     PY_LONG_LONG size = -1;
-#else
-    long size = -1;
-#endif
 
     PyObject *result = NULL;
     char *buffer = NULL;
@@ -1540,13 +1527,8 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
         return NULL;
     }
 
-#if defined(HAVE_LONG_LONG)
     if (!PyArg_ParseTuple(args, "|L:readline", &size))
         return NULL;
-#else
-    if (!PyArg_ParseTuple(args, "|l:readline", &size))
-        return NULL;
-#endif
 
     if (self->seen_error) {
         PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi request data read "
@@ -1564,7 +1546,7 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
      */
 
     if ((self->done && self->length == 0) || size == 0)
-        return PyString_FromString("");
+        return PyBytes_FromString("");
 
     /*
      * First deal with case where size has been specified. After
@@ -1575,12 +1557,12 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
     if (size > 0) {
         /* Allocate string of the exact size required. */
 
-        result = PyString_FromStringAndSize(NULL, size);
+        result = PyBytes_FromStringAndSize(NULL, size);
 
         if (!result)
             return NULL;
 
-        buffer = PyString_AS_STRING((PyStringObject *)result);
+        buffer = PyBytes_AS_STRING((PyBytesObject *)result);
 
         /* Copy any residual data from use of readline(). */
 
@@ -1667,7 +1649,7 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
          */
 
         if (length != size) {
-            if (_PyString_Resize(&result, length))
+            if (_PyBytes_Resize(&result, length))
                 return NULL;
         }
     }
@@ -1712,12 +1694,12 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
 
         /* Allocate string of the initial size. */
 
-        result = PyString_FromStringAndSize(NULL, size);
+        result = PyBytes_FromStringAndSize(NULL, size);
 
         if (!result)
             return NULL;
 
-        buffer = PyString_AS_STRING((PyStringObject *)result);
+        buffer = PyBytes_AS_STRING((PyBytesObject *)result);
 
         /* Copy any residual data from use of readline(). */
 
@@ -1795,10 +1777,10 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
 
                     size = size + (size >> 2);
 
-                    if (_PyString_Resize(&result, size))
+                    if (_PyBytes_Resize(&result, size))
                         return NULL;
 
-                    buffer = PyString_AS_STRING((PyStringObject *)result);
+                    buffer = PyBytes_AS_STRING((PyBytesObject *)result);
                 }
             }
         }
@@ -1811,7 +1793,7 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
          */
 
         if (length != size) {
-            if (_PyString_Resize(&result, length))
+            if (_PyBytes_Resize(&result, length))
                 return NULL;
         }
     }
@@ -1857,7 +1839,7 @@ static PyObject *Input_readlines(InputObject *self, PyObject *args)
             break;
         }
 
-        if ((n = PyString_Size(line)) == 0) {
+        if ((n = PyBytes_Size(line)) == 0) {
             Py_DECREF(line);
             break;
         }
@@ -1922,7 +1904,7 @@ static PyObject *Input_iternext(InputObject *self)
     if (!line)
         return NULL;
 
-    if (PyString_GET_SIZE(line) == 0) {
+    if (PyBytes_GET_SIZE(line) == 0) {
         PyErr_SetObject(PyExc_StopIteration, Py_None);
         Py_DECREF(line);
         return NULL;
@@ -2121,7 +2103,7 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 	    value = PyUnicode_DecodeLatin1(self->r->log_id,
                                            strlen(self->r->log_id), NULL);
 #else
-	    value = PyString_FromString(self->r->log_id);
+	    value = PyBytes_FromString(self->r->log_id);
 #endif
             PyDict_SetItemString(event, "request_id", value);
             Py_DECREF(value);
@@ -2149,7 +2131,7 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     if (!headers_as_bytes)
         goto finally;
 
-    self->status_line = apr_pstrdup(self->r->pool, PyString_AsString(
+    self->status_line = apr_pstrdup(self->r->pool, PyBytes_AsString(
                                     status_line_as_bytes));
     self->status = (int)strtol(self->status_line, NULL, 10);
 
@@ -2639,7 +2621,7 @@ static PyObject *Adapter_environ(AdapterObject *self)
                                                     strlen(elts[i].val), NULL);
                 }
 #else
-                object = PyString_FromString(elts[i].val);
+                object = PyBytes_FromString(elts[i].val);
 #endif
                 PyDict_SetItemString(vars, elts[i].key, object);
                 Py_DECREF(object);
@@ -2686,7 +2668,7 @@ static PyObject *Adapter_environ(AdapterObject *self)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_FromString("https");
 #else
-        object = PyString_FromString("https");
+        object = PyBytes_FromString("https");
 #endif
         PyDict_SetItemString(vars, "wsgi.url_scheme", object);
         Py_DECREF(object);
@@ -2695,7 +2677,7 @@ static PyObject *Adapter_environ(AdapterObject *self)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_FromString("http");
 #else
-        object = PyString_FromString("http");
+        object = PyBytes_FromString("http");
 #endif
         PyDict_SetItemString(vars, "wsgi.url_scheme", object);
         Py_DECREF(object);
@@ -2902,17 +2884,8 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
     }
 
     if (PyLong_Check(object)) {
-#if defined(HAVE_LONG_LONG)
         fo_offset = PyLong_AsLongLong(object);
-#else
-        fo_offset = PyLong_AsLong(object);
-#endif
     }
-#if PY_MAJOR_VERSION < 3
-    else if (PyInt_Check(object)) {
-        fo_offset = PyInt_AsLong(object);
-    }
-#endif
     else {
         Py_DECREF(object);
         return 0;
@@ -3077,17 +3050,17 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
     vars = Adapter_environ(self);
 
-    value = wsgi_PyInt_FromLongLong(wsgi_total_requests);
+    value = PyLong_FromLongLong(wsgi_total_requests);
     PyDict_SetItemString(vars, "mod_wsgi.total_requests", value);
     Py_DECREF(value);
 
     thread_handle = wsgi_thread_info(1, 1);
 
-    value = wsgi_PyInt_FromLong(thread_handle->thread_id);
+    value = PyLong_FromLong(thread_handle->thread_id);
     PyDict_SetItemString(vars, "mod_wsgi.thread_id", value);
     Py_DECREF(value);
 
-    value = wsgi_PyInt_FromLongLong(thread_handle->request_count);
+    value = PyLong_FromLongLong(thread_handle->request_count);
     PyDict_SetItemString(vars, "mod_wsgi.thread_requests", value);
     Py_DECREF(value);
 
@@ -3107,22 +3080,22 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 	    value = PyUnicode_DecodeLatin1(self->r->log_id,
                                            strlen(self->r->log_id), NULL);
 #else
-	    value = PyString_FromString(self->r->log_id);
+	    value = PyBytes_FromString(self->r->log_id);
 #endif
             PyDict_SetItemString(event, "request_id", value);
             Py_DECREF(value);
         }
 #endif
 
-        value = wsgi_PyInt_FromLong(thread_handle->thread_id);
+        value = PyLong_FromLong(thread_handle->thread_id);
         PyDict_SetItemString(event, "thread_id", value);
         Py_DECREF(value);
 
-        value = wsgi_PyInt_FromLong(self->config->daemon_connects);
+        value = PyLong_FromLong(self->config->daemon_connects);
         PyDict_SetItemString(event, "daemon_connects", value);
         Py_DECREF(value);
 
-        value = wsgi_PyInt_FromLong(self->config->daemon_restarts);
+        value = PyLong_FromLong(self->config->daemon_restarts);
         PyDict_SetItemString(event, "daemon_restarts", value);
         Py_DECREF(value);
 
@@ -3185,7 +3158,7 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                 PyObject *item = NULL;
 
                 while ((item = PyIter_Next(iterator))) {
-                    if (!PyString_Check(item)) {
+                    if (!PyBytes_Check(item)) {
                         PyErr_Format(PyExc_TypeError, "sequence of byte "
                                      "string values expected, value of "
                                      "type %.200s found",
@@ -3194,8 +3167,8 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
                         break;
                     }
 
-                    msg = PyString_AsString(item);
-                    length = PyString_Size(item);
+                    msg = PyBytes_AsString(item);
+                    length = PyBytes_Size(item);
 
                     if (!msg) {
                         Py_DECREF(item);
@@ -3326,18 +3299,18 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 	    value = PyUnicode_DecodeLatin1(self->r->log_id,
                                            strlen(self->r->log_id), NULL);
 #else
-	    value = PyString_FromString(self->r->log_id);
+	    value = PyBytes_FromString(self->r->log_id);
 #endif
             PyDict_SetItemString(event, "request_id", value);
             Py_DECREF(value);
         }
 #endif
 
-        value = wsgi_PyInt_FromLongLong(self->input->reads);
+        value = PyLong_FromLongLong(self->input->reads);
         PyDict_SetItemString(event, "input_reads", value);
         Py_DECREF(value);
 
-        value = wsgi_PyInt_FromLongLong(self->input->bytes);
+        value = PyLong_FromLongLong(self->input->bytes);
         PyDict_SetItemString(event, "input_length", value);
         Py_DECREF(value);
 
@@ -3345,11 +3318,11 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
         PyDict_SetItemString(event, "input_time", value);
         Py_DECREF(value);
 
-        value = wsgi_PyInt_FromLongLong(self->output_length);
+        value = PyLong_FromLongLong(self->output_length);
         PyDict_SetItemString(event, "output_length", value);
         Py_DECREF(value);
 
-        value = wsgi_PyInt_FromLongLong(self->output_writes);
+        value = PyLong_FromLongLong(self->output_writes);
         PyDict_SetItemString(event, "output_writes", value);
         Py_DECREF(value);
 
@@ -3466,14 +3439,14 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "O:write", &item))
         return NULL;
 
-    if (!PyString_Check(item)) {
+    if (!PyBytes_Check(item)) {
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
                      "of type %.200s found", item->ob_type->tp_name);
         return NULL;
     }
 
-    data = PyString_AsString(item);
-    length = PyString_Size(item);
+    data = PyBytes_AsString(item);
+    length = PyBytes_Size(item);
 
     if (!Adapter_output(self, data, length, item, 1)) {
         return NULL;
@@ -3535,7 +3508,7 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
     }
 #endif
 
-    if (!PyString_Check(item)) {
+    if (!PyBytes_Check(item)) {
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
                      "of type %.200s found", item->ob_type->tp_name);
 
@@ -3544,7 +3517,7 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
         return NULL;
     }
 
-    name = PyString_AsString(item);
+    name = PyBytes_AsString(item);
 
     ssl_var_lookup = APR_RETRIEVE_OPTIONAL_FN(ssl_var_lookup);
 
@@ -3571,7 +3544,7 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
 #if PY_MAJOR_VERSION >= 3
     return PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    return PyString_FromString(value);
+    return PyBytes_FromString(value);
 #endif
 }
 
@@ -6520,7 +6493,7 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
                 object = PyUnicode_DecodeLatin1(elts[i].val,
                                                 strlen(elts[i].val), NULL);
 #else
-                object = PyString_FromString(elts[i].val);
+                object = PyBytes_FromString(elts[i].val);
 #endif
                 PyDict_SetItemString(vars, elts[i].key, object);
                 Py_DECREF(object);
@@ -6540,7 +6513,7 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_FromString("");
 #else
-    object = PyString_FromString("");
+    object = PyBytes_FromString("");
 #endif
     PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
     Py_DECREF(object);
@@ -6548,7 +6521,7 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(group, strlen(group), NULL);
 #else
-    object = PyString_FromString(group);
+    object = PyBytes_FromString(group);
 #endif
     PyDict_SetItemString(vars, "mod_wsgi.application_group", object);
     Py_DECREF(object);
@@ -6650,14 +6623,14 @@ static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
     }
 #endif
 
-    if (!PyString_Check(item)) {
+    if (!PyBytes_Check(item)) {
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
                      "of type %.200s found", item->ob_type->tp_name);
         Py_DECREF(item);
         return NULL;
     }
 
-    name = PyString_AsString(item);
+    name = PyBytes_AsString(item);
 
     ssl_var_lookup = APR_RETRIEVE_OPTIONAL_FN(ssl_var_lookup);
 
@@ -6680,7 +6653,7 @@ static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
 #if PY_MAJOR_VERSION >= 3
     return PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    return PyString_FromString(value);
+    return PyBytes_FromString(value);
 #endif
 }
 
@@ -6885,10 +6858,10 @@ static int wsgi_execute_dispatch(request_rec *r)
 
                     if (result) {
                         if (result != Py_None) {
-                            if (PyString_Check(result)) {
+                            if (PyBytes_Check(result)) {
                                 const char *s;
 
-                                s = PyString_AsString(result);
+                                s = PyBytes_AsString(result);
                                 s = apr_pstrdup(r->pool, s);
                                 s = wsgi_process_group(r, s);
                                 config->process_group = s;
@@ -6916,7 +6889,7 @@ static int wsgi_execute_dispatch(request_rec *r)
                                     Py_DECREF(result);
                                     result = latin_item;
 
-                                    s = PyString_AsString(result);
+                                    s = PyBytes_AsString(result);
                                     s = apr_pstrdup(r->pool, s);
                                     s = wsgi_process_group(r, s);
                                     config->process_group = s;
@@ -6967,10 +6940,10 @@ static int wsgi_execute_dispatch(request_rec *r)
 
                     if (result) {
                         if (result != Py_None) {
-                            if (PyString_Check(result)) {
+                            if (PyBytes_Check(result)) {
                                 const char *s;
 
-                                s = PyString_AsString(result);
+                                s = PyBytes_AsString(result);
                                 s = apr_pstrdup(r->pool, s);
                                 s = wsgi_application_group(r, s);
                                 config->application_group = s;
@@ -6998,7 +6971,7 @@ static int wsgi_execute_dispatch(request_rec *r)
                                     Py_DECREF(result);
                                     result = latin_item;
 
-                                    s = PyString_AsString(result);
+                                    s = PyBytes_AsString(result);
                                     s = apr_pstrdup(r->pool, s);
                                     s = wsgi_application_group(r, s);
                                     config->application_group = s;
@@ -7049,10 +7022,10 @@ static int wsgi_execute_dispatch(request_rec *r)
 
                     if (result) {
                         if (result != Py_None) {
-                            if (PyString_Check(result)) {
+                            if (PyBytes_Check(result)) {
                                 const char *s;
 
-                                s = PyString_AsString(result);
+                                s = PyBytes_AsString(result);
                                 s = apr_pstrdup(r->pool, s);
                                 s = wsgi_callable_object(r, s);
                                 config->callable_object = s;
@@ -7080,7 +7053,7 @@ static int wsgi_execute_dispatch(request_rec *r)
                                     Py_DECREF(result);
                                     result = latin_item;
 
-                                    s = PyString_AsString(result);
+                                    s = PyBytes_AsString(result);
                                     s = apr_pstrdup(r->pool, s);
                                     s = wsgi_callable_object(r, s);
                                     config->callable_object = s;
@@ -9574,8 +9547,8 @@ static void wsgi_log_stack_traces(void)
                     name = PyUnicode_AsUTF8(current->f_code->co_name);
 #endif
 #else
-                    filename = PyString_AsString(current->f_code->co_filename);
-                    name = PyString_AsString(current->f_code->co_name);
+                    filename = PyBytes_AsString(current->f_code->co_filename);
+                    name = PyBytes_AsString(current->f_code->co_name);
 #endif
 
                     if (current == (PyFrameObject *)frame) {
@@ -14257,7 +14230,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
             object = PyUnicode_DecodeLatin1(hdrs[i].val,
                                             strlen(hdrs[i].val), NULL);
 #else
-            object = PyString_FromString(hdrs[i].val);
+            object = PyBytes_FromString(hdrs[i].val);
 #endif
             PyDict_SetItemString(vars, "CONTENT_TYPE", object);
             Py_DECREF(object);
@@ -14267,7 +14240,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
             object = PyUnicode_DecodeLatin1(hdrs[i].val,
                                             strlen(hdrs[i].val), NULL);
 #else
-            object = PyString_FromString(hdrs[i].val);
+            object = PyBytes_FromString(hdrs[i].val);
 #endif
             PyDict_SetItemString(vars, "CONTENT_LENGTH", object);
             Py_DECREF(object);
@@ -14285,7 +14258,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
                     object = PyUnicode_DecodeLatin1(hdrs[i].val,
                                                     strlen(hdrs[i].val), NULL);
 #else
-                    object = PyString_FromString(hdrs[i].val);
+                    object = PyBytes_FromString(hdrs[i].val);
 #endif
 
                     PyDict_SetItemString(vars, header, object);
@@ -14300,7 +14273,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(value);
+    object = PyBytes_FromString(value);
 #endif
     PyDict_SetItemString(vars, "SERVER_SIGNATURE", object);
     Py_DECREF(object);
@@ -14313,7 +14286,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(value);
+    object = PyBytes_FromString(value);
 #endif
     PyDict_SetItemString(vars, "SERVER_SOFTWARE", object);
     Py_DECREF(object);
@@ -14322,7 +14295,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(value);
+    object = PyBytes_FromString(value);
 #endif
     PyDict_SetItemString(vars, "SERVER_NAME", object);
     Py_DECREF(object);
@@ -14332,7 +14305,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(value);
+        object = PyBytes_FromString(value);
 #endif
         PyDict_SetItemString(vars, "SERVER_ADDR", object);
         Py_DECREF(object);
@@ -14342,7 +14315,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(value);
+    object = PyBytes_FromString(value);
 #endif
     PyDict_SetItemString(vars, "SERVER_PORT", object);
     Py_DECREF(object);
@@ -14352,7 +14325,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(value);
+        object = PyBytes_FromString(value);
 #endif
         PyDict_SetItemString(vars, "REMOTE_HOST", object);
         Py_DECREF(object);
@@ -14364,7 +14337,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(value);
+        object = PyBytes_FromString(value);
 #endif
         PyDict_SetItemString(vars, "REMOTE_ADDR", object);
         Py_DECREF(object);
@@ -14375,7 +14348,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(value);
+        object = PyBytes_FromString(value);
 #endif
         PyDict_SetItemString(vars, "REMOTE_ADDR", object);
         Py_DECREF(object);
@@ -14386,7 +14359,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     value = ap_document_root(r);
     object = PyUnicode_DecodeFSDefault(value);
 #else
-    object = PyString_FromString(ap_document_root(r));
+    object = PyBytes_FromString(ap_document_root(r));
 #endif
     PyDict_SetItemString(vars, "DOCUMENT_ROOT", object);
     Py_DECREF(object);
@@ -14396,7 +14369,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(value);
+        object = PyBytes_FromString(value);
 #endif
         PyDict_SetItemString(vars, "SERVER_ADMIN", object);
         Py_DECREF(object);
@@ -14408,7 +14381,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(value);
+    object = PyBytes_FromString(value);
 #endif
     PyDict_SetItemString(vars, "REMOTE_PORT", object);
     Py_DECREF(object);
@@ -14418,7 +14391,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(value);
+    object = PyBytes_FromString(value);
 #endif
     PyDict_SetItemString(vars, "REMOTE_PORT", object);
     Py_DECREF(object);
@@ -14428,7 +14401,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(value);
+    object = PyBytes_FromString(value);
 #endif
     PyDict_SetItemString(vars, "SERVER_PROTOCOL", object);
     Py_DECREF(object);
@@ -14437,7 +14410,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(value);
+    object = PyBytes_FromString(value);
 #endif
     PyDict_SetItemString(vars, "REQUEST_METHOD", object);
     Py_DECREF(object);
@@ -14446,7 +14419,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(value);
+    object = PyBytes_FromString(value);
 #endif
     PyDict_SetItemString(vars, "QUERY_STRING", object);
     Py_DECREF(object);
@@ -14455,7 +14428,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    object = PyString_FromString(value);
+    object = PyBytes_FromString(value);
 #endif
     PyDict_SetItemString(vars, "REQUEST_URI", object);
     Py_DECREF(object);
@@ -14471,7 +14444,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(value);
+        object = PyBytes_FromString(value);
 #endif
         PyDict_SetItemString(vars, "SCRIPT_NAME", object);
         Py_DECREF(object);
@@ -14480,7 +14453,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(value);
+        object = PyBytes_FromString(value);
 #endif
         PyDict_SetItemString(vars, "PATH_INFO", object);
         Py_DECREF(object);
@@ -14490,7 +14463,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(value);
+        object = PyBytes_FromString(value);
 #endif
         PyDict_SetItemString(vars, "SCRIPT_NAME", object);
         Py_DECREF(object);
@@ -14499,7 +14472,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(value);
+        object = PyBytes_FromString(value);
 #endif
         PyDict_SetItemString(vars, "PATH_INFO", object);
         Py_DECREF(object);
@@ -14510,7 +14483,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(value);
+        object = PyBytes_FromString(value);
 #endif
         PyDict_SetItemString(vars, "SCRIPT_NAME", object);
         Py_DECREF(object);
@@ -14519,7 +14492,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-        object = PyString_FromString(value);
+        object = PyBytes_FromString(value);
 #endif
         PyDict_SetItemString(vars, "PATH_INFO", object);
         Py_DECREF(object);
@@ -14540,7 +14513,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_FromString("");
 #else
-    object = PyString_FromString("");
+    object = PyBytes_FromString("");
 #endif
     PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
     Py_DECREF(object);
@@ -14548,7 +14521,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
 #if PY_MAJOR_VERSION >= 3
     object = PyUnicode_DecodeLatin1(group, strlen(group), NULL);
 #else
-    object = PyString_FromString(group);
+    object = PyBytes_FromString(group);
 #endif
     PyDict_SetItemString(vars, "mod_wsgi.application_group", object);
     Py_DECREF(object);
@@ -14649,7 +14622,7 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
     }
 #endif
 
-    if (!PyString_Check(item)) {
+    if (!PyBytes_Check(item)) {
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
                      "of type %.200s found", item->ob_type->tp_name);
 
@@ -14658,7 +14631,7 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
         return NULL;
     }
 
-    name = PyString_AsString(item);
+    name = PyBytes_AsString(item);
 
     ssl_var_lookup = APR_RETRIEVE_OPTIONAL_FN(ssl_var_lookup);
 
@@ -14685,7 +14658,7 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
 #if PY_MAJOR_VERSION >= 3
     return PyUnicode_DecodeLatin1(value, strlen(value), NULL);
 #else
-    return PyString_FromString(value);
+    return PyBytes_FromString(value);
 #endif
 }
 
@@ -14884,8 +14857,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                 user_string = PyUnicode_DecodeLatin1(user, strlen(user), NULL);
                 password_string = PyUnicode_DecodeLatin1(password, strlen(password), NULL);
 #else
-                user_string = PyString_FromString(user);
-                password_string = PyString_FromString(password);
+                user_string = PyBytes_FromString(user);
+                password_string = PyBytes_FromString(password);
 #endif
 
                 vars = Auth_environ(adapter, group);
@@ -14917,16 +14890,16 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
                         if (str) {
                             adapter->r->user = apr_pstrdup(adapter->r->pool,
-                                    PyString_AsString(str));
+                                    PyBytes_AsString(str));
                             Py_DECREF(str);
 
                             status = AUTH_GRANTED;
                         }
                     }
 #else
-                    else if (PyString_Check(result)) {
+                    else if (PyBytes_Check(result)) {
                         adapter->r->user = apr_pstrdup(adapter->r->pool,
-                                PyString_AsString(result));
+                                PyBytes_AsString(result));
 
                         status = AUTH_GRANTED;
                     }
@@ -15141,8 +15114,8 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                 user_string = PyUnicode_DecodeLatin1(user, strlen(user), NULL);
                 realm_string = PyUnicode_DecodeLatin1(realm, strlen(realm), NULL);
 #else
-                user_string = PyString_FromString(user);
-                realm_string = PyString_FromString(realm);
+                user_string = PyBytes_FromString(user);
+                realm_string = PyBytes_FromString(realm);
 #endif
 
                 vars = Auth_environ(adapter, group);
@@ -15160,8 +15133,8 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                     if (result == Py_None) {
                         status = AUTH_USER_NOT_FOUND;
                     }
-                    else if (PyString_Check(result)) {
-                        *rethash = PyString_AsString(result);
+                    else if (PyBytes_Check(result)) {
+                        *rethash = PyBytes_AsString(result);
                         *rethash = apr_pstrdup(r->pool, *rethash);
 
                         status = AUTH_USER_FOUND;
@@ -15181,7 +15154,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                             Py_DECREF(result);
                             result = latin_item;
 
-                            *rethash = PyString_AsString(result);
+                            *rethash = PyBytes_AsString(result);
                             *rethash = apr_pstrdup(r->pool, *rethash);
 
                             status = AUTH_USER_FOUND;
@@ -15403,7 +15376,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 #if PY_MAJOR_VERSION >= 3
                 user_string = PyUnicode_DecodeLatin1(r->user, strlen(r->user), NULL);
 #else
-                user_string = PyString_FromString(r->user);
+                user_string = PyBytes_FromString(r->user);
 #endif
 
                 vars = Auth_environ(adapter, group);
@@ -15458,7 +15431,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                             }
 #endif
 
-                            if (!PyString_Check(item)) {
+                            if (!PyBytes_Check(item)) {
                                 Py_BEGIN_ALLOW_THREADS
                                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                                               "mod_wsgi (pid=%d): Groups for "
@@ -15475,7 +15448,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                                 break;
                             }
 
-                            name = PyString_AsString(item);
+                            name = PyBytes_AsString(item);
 
                             apr_table_setn(grps, apr_pstrdup(r->pool, name),
                                            "1");
@@ -15965,8 +15938,8 @@ static int wsgi_hook_check_user_id(request_rec *r)
                 user_string = PyUnicode_DecodeLatin1(r->user, strlen(r->user), NULL);
                 password_string = PyUnicode_DecodeLatin1(password, strlen(password), NULL);
 #else
-                user_string = PyString_FromString(r->user);
-                password_string = PyString_FromString(password);
+                user_string = PyBytes_FromString(r->user);
+                password_string = PyBytes_FromString(password);
 #endif
 
                 vars = Auth_environ(adapter, group);

@@ -445,7 +445,7 @@ static PyObject *Log_name(LogObject *self, void *closure)
 #if PY_MAJOR_VERSION >= 3
     return PyUnicode_FromString(self->name);
 #else
-    return PyString_FromString(self->name);
+    return PyBytes_FromString(self->name);
 #endif
 }
 
@@ -466,7 +466,7 @@ static PyObject *Log_get_softspace(LogObject *self, void *closure)
     if (thread_info && thread_info->log_buffer)
         return Log_get_softspace((LogObject *)thread_info->log_buffer, closure);
 
-    return PyInt_FromLong(self->softspace);
+    return PyLong_FromLong(self->softspace);
 }
 
 static int Log_set_softspace(LogObject *self, PyObject *value)
@@ -486,7 +486,7 @@ static int Log_set_softspace(LogObject *self, PyObject *value)
         return -1;
     }
 
-    new = PyInt_AsLong(value);
+    new = PyLong_AsLong(value);
     if (new == -1 && PyErr_Occurred())
         return -1;
 
@@ -706,7 +706,7 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
                     object = PyUnicode_DecodeLatin1(r->log_id,
                                                     strlen(r->log_id), NULL);
 #else
-                    object = PyString_FromString(r->log_id);
+                    object = PyBytes_FromString(r->log_id);
 #endif
                     PyDict_SetItemString(event, "request_id", object);
                     Py_DECREF(object);

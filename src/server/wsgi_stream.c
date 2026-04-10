@@ -133,8 +133,8 @@ static PyObject *Stream_iternext(StreamObject *self)
     if (!result)
         return 0;
 
-    if (PyString_Check(result)) {
-        if (PyString_Size(result) == 0) {
+    if (PyBytes_Check(result)) {
+        if (PyBytes_Size(result) == 0) {
             PyErr_SetObject(PyExc_StopIteration, Py_None);
             Py_DECREF(result);
             return 0;
