@@ -23,10 +23,10 @@
 
 /* Module version information. */
 
-#define MOD_WSGI_MAJORVERSION_NUMBER 5
+#define MOD_WSGI_MAJORVERSION_NUMBER 6
 #define MOD_WSGI_MINORVERSION_NUMBER 0
-#define MOD_WSGI_MICROVERSION_NUMBER 2
-#define MOD_WSGI_VERSION_STRING "5.0.2"
+#define MOD_WSGI_MICROVERSION_NUMBER 0
+#define MOD_WSGI_VERSION_STRING "6.0.0"
 
 /* ------------------------------------------------------------------------- */
 
