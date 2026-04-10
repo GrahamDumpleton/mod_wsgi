@@ -1010,8 +1010,18 @@ InterpreterObject *newInterpreterObject(const char *name)
                 PyList_Append(tmp, PyList_GetItem(path, i));
 
             for (i=0; i<PyList_Size(tmp); i++) {
+                int contains;
+
                 item = PyList_GetItem(tmp, i);
-                if (!PySequence_Contains(old, item)) {
+
+                contains = PySequence_Contains(old, item);
+
+                if (contains == -1) {
+                    PyErr_Clear();
+                    contains = 0;
+                }
+
+                if (!contains) {
                     long index = PySequence_Index(path, item);
                     PyList_Append(new, item);
                     if (index != -1)

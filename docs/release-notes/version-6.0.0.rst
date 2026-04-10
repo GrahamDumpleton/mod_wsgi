@@ -47,4 +47,18 @@ Features Removed
 Bugs Fixed
 ----------
 
-* ...
+* Fixed incorrect handling of ``PySequence_Contains()`` return value when
+  reordering ``sys.path`` entries added by ``site.addsitedir()`` during
+  interpreter initialization. An error return of -1 was being treated as a
+  truthy value, causing newly added path entries to be silently skipped rather
+  than moved to the front of ``sys.path``.
+
+* Fixed incorrect handling of ``PyObject_IsInstance()`` return value in the
+  file wrapper optimisation path. An error return of -1 was being treated as
+  a successful instance check, potentially causing subsequent attribute access
+  failures on non-Stream objects.
+
+* Fixed incorrect handling of ``PyObject_IsTrue()`` return value when checking
+  a module's ``reload_required()`` callback result. An error return of -1 was
+  being treated as truthy, causing unnecessary module reloads and skipping the
+  error logging path.

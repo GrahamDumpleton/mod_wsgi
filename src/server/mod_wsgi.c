@@ -2710,8 +2710,20 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
 
     /* Perform file wrapper optimisations where possible. */
 
-    if (!PyObject_IsInstance(self->sequence, (PyObject *)&Stream_Type))
-        return 0;
+    {
+        int is_instance;
+
+        is_instance = PyObject_IsInstance(self->sequence,
+                                         (PyObject *)&Stream_Type);
+
+        if (is_instance == -1) {
+            PyErr_Clear();
+            return 0;
+        }
+
+        if (!is_instance)
+            return 0;
+    }
 
     /*
      * Only attempt to perform optimisations if the
@@ -3700,10 +3712,14 @@ static int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
             Py_DECREF(args);
             Py_DECREF(object);
 
-            if (result && PyObject_IsTrue(result)) {
-                Py_DECREF(result);
+            if (result) {
+                int istrue = PyObject_IsTrue(result);
 
-                return 1;
+                if (istrue == 1) {
+                    Py_DECREF(result);
+
+                    return 1;
+                }
             }
 
             if (PyErr_Occurred())
