@@ -633,14 +633,12 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
 
                 event = PyDict_New();
 
-#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
                 if (r->log_id) {
                     object = PyUnicode_DecodeLatin1(r->log_id,
                                                     strlen(r->log_id), NULL);
                     PyDict_SetItemString(event, "request_id", object);
                     Py_DECREF(object);
                 }
-#endif
 
                 object = Py_BuildValue("(OOO)", type, value, traceback);
                 PyDict_SetItemString(event, "exception_info", object);

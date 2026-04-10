@@ -5,9 +5,9 @@ The mod_wsgi package provides an Apache module that implements a WSGI
 compliant interface for hosting Python based web applications on top of the
 Apache web server.
 
-*Note that the major version 6.0 requires a minimum of Python 3.10. Support
-for older Python versions has been dropped and Python 2 compatibility code
-has been removed.*
+*Note that mod_wsgi version 6.0 requires a minimum of Python 3.10 and
+Apache httpd 2.4. Support for older Python and Apache httpd versions has
+been dropped and compatibility code has been removed.*
 
 Installation of mod_wsgi from source code can be performed in one of two
 ways.
@@ -69,17 +69,6 @@ third party Apache modules.
 Similarly with Python, you must have a complete Python installation which
 includes the corresponding development package, which contains the header
 files for the Python library.
-
-If you are running Debian or Ubuntu Linux with Apache 2.2 system packages,
-and were using the Apache prefork MPM you would need both:
-
-* apache2-mpm-prefork
-* apache2-prefork-dev
-
-If instead you were using the Apache worker MPM, you would need both:
-
-* apache2-mpm-worker
-* apache2-threaded-dev
 
 If you are running Debian or Ubuntu Linux with Apache 2.4 system packages,
 regardless of which Apache MPM is being used, you would need both:

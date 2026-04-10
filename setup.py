@@ -68,8 +68,6 @@ if WITHOUT_APXS and os.name == 'nt':
     else:
         if os.path.exists('c:\\Apache24'):
             WITH_WINDOWS_APACHE = 'c:\\Apache24'
-        elif os.path.exists('c:\\Apache22'):
-            WITH_WINDOWS_APACHE = 'c:\\Apache22'
         elif os.path.exists('c:\\Apache2'):
             WITH_WINDOWS_APACHE = 'c:\\Apache2'
         else:

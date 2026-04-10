@@ -30,23 +30,9 @@
 #endif
 
 static PyTypeObject Auth_Type;
-#if AP_SERVER_MINORVERSION_NUMBER >= 2
-#define MOD_WSGI_WITH_AUTHN_PROVIDER 1
-#endif
-#if AP_MODULE_MAGIC_AT_LEAST(20060110,0)
-#define MOD_WSGI_WITH_AUTHZ_PROVIDER 1
-#if AP_MODULE_MAGIC_AT_LEAST(20100919,0)
-#define MOD_WSGI_WITH_AUTHZ_PROVIDER_PARSED 1
-#endif
-#endif
 
-#if defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
 #include "mod_auth.h"
 #include "ap_provider.h"
-#ifndef AUTHN_PROVIDER_VERSION
-#define AUTHN_PROVIDER_VERSION "0"
-#endif
-#endif
 
 /* Local project header files. */
 
@@ -2097,14 +2083,12 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 
         event = PyDict_New();
 
-#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
         if (self->r->log_id) {
 	    value = PyUnicode_DecodeLatin1(self->r->log_id,
                                            strlen(self->r->log_id), NULL);
             PyDict_SetItemString(event, "request_id", value);
             Py_DECREF(value);
         }
-#endif
 
         PyDict_SetItemString(event, "response_status", status_line);
         PyDict_SetItemString(event, "response_headers", headers);
@@ -2187,46 +2171,6 @@ static int Adapter_output(AdapterObject *self, const char *data,
     /* Have response headers yet been sent. */
 
     if (self->headers) {
-        /*
-         * Apache prior to Apache 2.2.8 has a bug in it
-         * whereby it doesn't force '100 Continue'
-         * response before responding with headers if no
-         * read. So, force a zero length read before
-         * sending the headers if haven't yet attempted
-         * to read anything. This will ensure that if no
-         * request content has been read that any '100
-         * Continue' response will be flushed and sent
-         * back to the client if client was expecting
-         * one. Only want to do this for 2xx and 3xx
-         * status values. Note that even though Apple
-         * supplied version of Apache on MacOS X Leopard
-         * is newer than version 2.2.8, the header file
-         * has never been patched when they make updates
-         * and so anything compiled against it thinks it
-         * is older.
-         */
-
-#if (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
-     AP_SERVER_MINORVERSION_NUMBER < 2) || \
-    (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
-     AP_SERVER_MINORVERSION_NUMBER == 2 && \
-     AP_SERVER_PATCHLEVEL_NUMBER < 8)
-
-        if (!self->input->init) {
-            if (self->status >= 200 && self->status < 400) {
-                PyObject *args = NULL;
-                PyObject *result = NULL;
-                args = Py_BuildValue("(i)", 0);
-                result = Input_read(self->input, args);
-                if (PyErr_Occurred())
-                    PyErr_Clear();
-                Py_DECREF(args);
-                Py_XDECREF(result);
-            }
-        }
-
-#endif
-
         /*
          * Now setup the response headers in request object. We
          * have already converted any native strings in the
@@ -3018,14 +2962,12 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         event = PyDict_New();
 
-#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
         if (self->r->log_id) {
 	    value = PyUnicode_DecodeLatin1(self->r->log_id,
                                            strlen(self->r->log_id), NULL);
             PyDict_SetItemString(event, "request_id", value);
             Py_DECREF(value);
         }
-#endif
 
         value = PyLong_FromLong(thread_handle->thread_id);
         PyDict_SetItemString(event, "thread_id", value);
@@ -3233,14 +3175,12 @@ static int Adapter_run(AdapterObject *self, PyObject *object)
 
         event = PyDict_New();
 
-#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
         if (self->r->log_id) {
 	    value = PyUnicode_DecodeLatin1(self->r->log_id,
                                            strlen(self->r->log_id), NULL);
             PyDict_SetItemString(event, "request_id", value);
             Py_DECREF(value);
         }
-#endif
 
         value = PyLong_FromLongLong(self->input->reads);
         PyDict_SetItemString(event, "input_reads", value);
@@ -5807,24 +5747,6 @@ static const char *wsgi_set_auth_group_script(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-#if !defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
-static const char *wsgi_set_user_authoritative(cmd_parms *cmd, void *mconfig,
-                                               const char *f)
-{
-    WSGIDirectoryConfig *dconfig = NULL;
-    dconfig = (WSGIDirectoryConfig *)mconfig;
-
-    if (strcasecmp(f, "Off") == 0)
-        dconfig->user_authoritative = 0;
-    else if (strcasecmp(f, "On") == 0)
-        dconfig->user_authoritative = 1;
-    else
-        return "WSGIUserAuthoritative must be one of: Off | On";
-
-    return NULL;
-}
-#endif
-
 static const char *wsgi_set_group_authoritative(cmd_parms *cmd, void *mconfig,
                                                 const char *f)
 {
@@ -6270,7 +6192,6 @@ static void wsgi_build_environment(request_rec *r)
     apr_table_setn(r->subprocess_env, "mod_wsgi.request_start",
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT, r->request_time));
 
-#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
     if (!r->log_id) {
         const char **id;
 
@@ -6286,7 +6207,6 @@ static void wsgi_build_environment(request_rec *r)
     if (r->connection->log_id)
         apr_table_setn(r->subprocess_env, "mod_wsgi.connection_id",
                        r->connection->log_id);
-#endif
 }
 
 typedef struct {
@@ -7105,14 +7025,12 @@ static int wsgi_hook_handler(request_rec *r)
      * accept additional path information.
      */
 
-#if AP_MODULE_MAGIC_AT_LEAST(20011212,0)
     if ((r->used_path_info == AP_REQ_REJECT_PATH_INFO) &&
         r->path_info && *r->path_info) {
         wsgi_log_script_error(r, "AcceptPathInfo off disallows user's path",
                               r->filename);
         return HTTP_NOT_FOUND;
     }
-#endif
 
     /*
      * Setup policy to apply if request contains a body. Note that the
@@ -8474,13 +8392,7 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
      * will add their own input/output filters to the chain.
      */
 
-#if AP_MODULE_MAGIC_AT_LEAST(20110619,0)
-    /* For 2.4 a NULL sbh pointer should work. */
     sbh = NULL;
-#else
-    /* For 2.2 a dummy sbh pointer is needed. */
-    ap_create_sb_handle(&sbh, p, -1, 0);
-#endif
 
     c = (conn_rec *)apr_pcalloc(p, sizeof(conn_rec));
 
@@ -8500,7 +8412,6 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
     }
     apr_sockaddr_ip_get(&c->local_ip, c->local_addr);
 
-#if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
     if ((rv = apr_socket_addr_get(&c->client_addr, APR_REMOTE, sock))
         != APR_SUCCESS) {
         ap_log_error(APLOG_MARK, APLOG_INFO, rv, wsgi_server,
@@ -8510,17 +8421,6 @@ static void wsgi_process_socket(apr_pool_t *p, apr_socket_t *sock,
         return;
     }
     c->client_ip = "unknown";
-#else
-    if ((rv = apr_socket_addr_get(&c->remote_addr, APR_REMOTE, sock))
-        != APR_SUCCESS) {
-        ap_log_error(APLOG_MARK, APLOG_INFO, rv, wsgi_server,
-                     "mod_wsgi (pid=%d): Failed call "
-                     "apr_socket_addr_get(APR_REMOTE).", getpid());
-        apr_socket_close(sock);
-        return;
-    }
-    c->remote_ip = "unknown";
-#endif
 
     c->base_server = daemon->group->server;
 
@@ -11220,10 +11120,8 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
     apr_status_t rv;
 
-#if AP_MODULE_MAGIC_AT_LEAST(20110605, 2)
     apr_socket_t *sock;
     apr_interval_time_t existing_timeout = 0;
-#endif
 
     if (buffer_size == 0)
         buffer_size = 65536;
@@ -11239,7 +11137,6 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
      * subsequent request with a different handler.
      */
 
-#if AP_MODULE_MAGIC_AT_LEAST(20110605, 2)
     sock = ap_get_conn_socket(r->connection);
 
     rv = apr_socket_timeout_get(sock, &existing_timeout);
@@ -11251,7 +11148,6 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
         if (timeout)
             apr_socket_timeout_set(sock, timeout);
     }
-#endif
 
     /*
      * Transfer any response content. We want to avoid the
@@ -11468,10 +11364,8 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
         }
     }
 
-#if AP_MODULE_MAGIC_AT_LEAST(20110605, 2)
     if (existing_timeout)
         apr_socket_timeout_set(sock, existing_timeout);
-#endif
 
     apr_brigade_destroy(bb);
 
@@ -12389,27 +12283,6 @@ static apr_status_t wsgi_header_filter(ap_filter_t *f, apr_bucket_brigade *b)
     return ap_pass_brigade(f->next, b);
 }
 
-typedef struct cve_2013_5704_fields cve_2013_5704_fields;
-typedef struct cve_2013_5704_apache22 cve_2013_5704_apache22;
-typedef struct cve_2013_5704_apache24 cve_2013_5704_apache24;
-
-struct cve_2013_5704_fields {
-    apr_table_t *trailers_in;
-    apr_table_t *trailers_out;
-};
-
-struct cve_2013_5704_apache22 {
-    struct ap_filter_t *proto_input_filters;
-    int eos_sent;
-    cve_2013_5704_fields fields;
-};
-
-struct cve_2013_5704_apache24 {
-    apr_sockaddr_t *useragent_addr;
-    char *useragent_ip;
-    cve_2013_5704_fields fields;
-};
-
 static int wsgi_hook_daemon_handler(conn_rec *c)
 {
     apr_socket_t *csd;
@@ -12442,12 +12315,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     apr_time_t daemon_start = 0;
 
-#if ! (AP_MODULE_MAGIC_AT_LEAST(20120211, 37) || \
-    (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
-     AP_SERVER_MINORVERSION_NUMBER <= 2 && \
-     AP_MODULE_MAGIC_AT_LEAST(20051115, 36)))
-    apr_size_t size = 0;
-#endif
 
     /* Don't do anything if not in daemon process. */
 
@@ -12510,22 +12377,11 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
             next = current->next;
     }
 
-    /*
-     * Create and populate our own request object. We allocate more
-     * memory than we require here for the request_rec in order to
-     * implement an opimistic hack for the case where mod_wsgi is built
-     * against an Apache version prior to CVE-2013-6704 being applied to
-     * it. If that Apache is upgraded but mod_wsgi not recompiled then
-     * it will crash in daemon mode. We therefore use the extra space to
-     * set the structure members which are added by CVE-2013-6704 to try
-     * and avoid that situation. Note that this is distinct from the
-     * hack down below to deal with where mod_wsgi was compiled against
-     * an Apache version which had CVE-2013-6704 backported.
-     */
+    /* Create and populate our own request object. */
 
     apr_pool_create(&p, c->pool);
 
-    r = apr_pcalloc(p, sizeof(request_rec)+sizeof(cve_2013_5704_fields));
+    r = apr_pcalloc(p, sizeof(request_rec));
 
     r->pool = p;
     r->connection = c;
@@ -12549,77 +12405,8 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
     r->proto_input_filters = c->input_filters;
     r->input_filters = r->proto_input_filters;
 
-#if AP_MODULE_MAGIC_AT_LEAST(20120211, 37) || \
-    (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
-     AP_SERVER_MINORVERSION_NUMBER <= 2 && \
-     AP_MODULE_MAGIC_AT_LEAST(20051115, 36))
-
-    /*
-     * New request_rec fields were added to Apache because of changes
-     * related to CVE-2013-5704. The change means that mod_wsgi version
-     * 4.4.0-4.4.5 will crash if run on the Apache versions with the
-     * addition fields if mod_wsgi daemon mode is used. If we are using
-     * Apache 2.2.29 or 2.4.11, we set the fields direct against the
-     * new structure members.
-     */
-
     r->trailers_in = apr_table_make(r->pool, 5);
     r->trailers_out = apr_table_make(r->pool, 5);
-#else
-    /*
-     * We use a huge hack here to try and identify when CVE-2013-5704
-     * has been back ported to older Apache version. This is necessary
-     * as when backported the Apache module magic number will not be
-     * updated and it isn't possible to determine from that at compile
-     * time if the new structure members exist and so that they should
-     * be set. We therefore try and work out whether the extra structure
-     * members exist through looking at the size of request_rec and
-     * whether memory has been allocated above what is known to be the
-     * last member in the structure before the new members were added.
-     */
-
-#if AP_SERVER_MINORVERSION_NUMBER <= 2
-    size = offsetof(request_rec, eos_sent);
-    size += sizeof(r->eos_sent);
-#else
-    size = offsetof(request_rec, useragent_ip);
-    size += sizeof(r->useragent_ip);
-#endif
-
-    /*
-     * Check whether request_rec is at least as large as minimal size
-     * plus the size of the extra fields. If it is, then we need to
-     * set the additional fields.
-     */
-
-    if (sizeof(request_rec) >= size + sizeof(cve_2013_5704_fields)) {
-#if AP_SERVER_MINORVERSION_NUMBER <= 2
-        cve_2013_5704_apache22 *rext;
-        rext = (cve_2013_5704_apache22 *)&r->proto_input_filters;
-#else
-        cve_2013_5704_apache24 *rext;
-        rext = (cve_2013_5704_apache24 *)&r->useragent_addr;
-#endif
-
-        rext->fields.trailers_in = apr_table_make(r->pool, 5);
-        rext->fields.trailers_out = apr_table_make(r->pool, 5);
-    }
-    else {
-        /*
-         * Finally, to allow forward portability of a compiled mod_wsgi
-         * binary from an Apache version without the CVE-2013-5704
-         * change to one where it is, without needing to recompile
-         * mod_wsgi, we set fields in the extra memory we added before
-         * the actual request_rec.
-         */
-
-        cve_2013_5704_fields *rext;
-        rext = (cve_2013_5704_fields *)(r+1);
-
-        rext->trailers_in = apr_table_make(r->pool, 5);
-        rext->trailers_out = apr_table_make(r->pool, 5);
-    }
-#endif
 
     r->per_dir_config  = r->server->lookup_defaults;
 
@@ -12634,20 +12421,11 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      * is okay as the request limit body is checked in the Apache
      * child process before request is proxied specifically to avoid
      * unecessarily passing the content across to the daemon process.
-     * Note also that the reason that the change is applied for all
-     * Apache 2.4.X versions is because a module compiled against an
-     * Apache version before the change, can still be used with newer
-     * Apache version without being re-compiled which would result in
-     * a crash also. We can't enable for older Apache 2.X versions as
-     * ap_get_core_module_config() doesn't exist.
      */
 
-#if (AP_SERVER_MAJORVERSION_NUMBER == 2 && \
-     AP_SERVER_MINORVERSION_NUMBER >= 4)
     d = (core_dir_config *)ap_get_core_module_config(r->per_dir_config);
 
     d->limit_req_body = 0;
-#endif
 
     r->sent_bodyct = 0;
 
@@ -12825,22 +12603,13 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
      * file for the host.
      */
 
-#if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
     r->connection->client_ip = (char *)apr_table_get(r->subprocess_env,
                                                      "REMOTE_ADDR");
     r->connection->client_addr->port = atoi(apr_table_get(r->subprocess_env,
                                                           "REMOTE_PORT"));
-#else
-    r->connection->remote_ip = (char *)apr_table_get(r->subprocess_env,
-                                                     "REMOTE_ADDR");
-    r->connection->remote_addr->port = atoi(apr_table_get(r->subprocess_env,
-                                                          "REMOTE_PORT"));
-#endif
 
-#if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
     r->useragent_addr = c->client_addr;
     r->useragent_ip = c->client_ip;
-#endif
 
     key = apr_psprintf(p, "%s|%s",
                        apr_table_get(r->subprocess_env,
@@ -12964,7 +12733,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT,
                    config->daemon_start));
 
-#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
     item = apr_table_get(r->subprocess_env, "mod_wsgi.request_id");
 
     if (item)
@@ -12974,7 +12742,6 @@ static int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (item)
         r->connection->log_id = item;
-#endif
 
     /*
      * Install the standard HTTP input filter and set header for
@@ -14013,11 +13780,7 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     PyDict_SetItemString(vars, "SERVER_SIGNATURE", object);
     Py_DECREF(object);
 
-#if AP_MODULE_MAGIC_AT_LEAST(20060905,0)
     value = ap_get_server_banner();
-#else
-    value = ap_get_server_version();
-#endif
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
     PyDict_SetItemString(vars, "SERVER_SOFTWARE", object);
     Py_DECREF(object);
@@ -14046,21 +13809,12 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
         Py_DECREF(object);
     }
 
-#if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
     if (r->useragent_ip) {
         value = r->useragent_ip;
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
         PyDict_SetItemString(vars, "REMOTE_ADDR", object);
         Py_DECREF(object);
     }
-#else
-    if (c->remote_ip) {
-        value = c->remote_ip;
-        object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-        PyDict_SetItemString(vars, "REMOTE_ADDR", object);
-        Py_DECREF(object);
-    }
-#endif
 
     value = ap_document_root(r);
     object = PyUnicode_DecodeFSDefault(value);
@@ -14074,19 +13828,11 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
         Py_DECREF(object);
     }
 
-#if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
     rport = c->client_addr->port;
     value = apr_itoa(r->pool, rport);
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
     PyDict_SetItemString(vars, "REMOTE_PORT", object);
     Py_DECREF(object);
-#else
-    rport = c->remote_addr->port;
-    value = apr_itoa(r->pool, rport);
-    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-    PyDict_SetItemString(vars, "REMOTE_PORT", object);
-    Py_DECREF(object);
-#endif
 
     value = r->protocol;
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
@@ -14344,7 +14090,6 @@ static PyTypeObject Auth_Type = {
     0,                      /*tp_is_gc*/
 };
 
-#if defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
 static authn_status wsgi_check_password(request_rec *r, const char *user,
                                         const char *password)
 {
@@ -14848,7 +14593,6 @@ static const authn_provider wsgi_authn_provider =
     &wsgi_check_password,
     &wsgi_get_realm_hash
 };
-#endif
 
 static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                                 apr_table_t **grpstatus)
@@ -15378,13 +15122,8 @@ static int wsgi_hook_access_checker(request_rec *r)
     host = ap_get_remote_host(r->connection, r->per_dir_config,
                               REMOTE_HOST, NULL);
 
-#if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
     if (!host)
         host = r->useragent_ip;
-#else
-    if (!host)
-        host = r->connection->remote_ip;
-#endif
 
     allow = wsgi_allow_access(r, config, host);
 
@@ -15402,266 +15141,9 @@ static int wsgi_hook_access_checker(request_rec *r)
     return HTTP_FORBIDDEN;
 }
 
-#if !defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
-static int wsgi_hook_check_user_id(request_rec *r)
-{
-    WSGIRequestConfig *config;
-
-    int status = -1;
-
-    const char *password;
-
-    InterpreterObject *interp = NULL;
-    PyObject *modules = NULL;
-    PyObject *module = NULL;
-    char *name = NULL;
-    int exists = 0;
-
-    const char *script;
-    const char *group;
-
-    if ((status = ap_get_basic_auth_pw(r, &password)))
-        return status;
-
-    config = wsgi_create_req_config(r->pool, r);
-
-    if (!config->auth_user_script)
-        return DECLINED;
-
-    /*
-     * Acquire the desired python interpreter. Once this is done
-     * it is safe to start manipulating python objects.
-     */
-
-    script = config->auth_user_script->handler_script;
-    group = wsgi_server_group(r, config->auth_user_script->application_group);
-
-    interp = wsgi_acquire_interpreter(group);
-
-    if (!interp) {
-        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), group);
-
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    /* Calculate the Python module name to be used for script. */
-
-    name = wsgi_module_name(r->pool, script);
-
-    /*
-     * Use a lock around the check to see if the module is
-     * already loaded and the import of the module to prevent
-     * two request handlers trying to import the module at the
-     * same time.
-     */
-
-#if APR_HAS_THREADS
-    Py_BEGIN_ALLOW_THREADS
-    apr_thread_mutex_lock(wsgi_module_lock);
-    Py_END_ALLOW_THREADS
-#endif
-
-    modules = PyImport_GetModuleDict();
-    module = PyDict_GetItemString(modules, name);
-
-    Py_XINCREF(module);
-
-    if (module)
-        exists = 1;
-
-    /*
-     * If script reloading is enabled and the module for it has
-     * previously been loaded, see if it has been modified since
-     * the last time it was accessed.
-     */
-
-    if (module && config->script_reloading) {
-        if (wsgi_reload_required(r->pool, r, script, module, NULL)) {
-            /*
-             * Script file has changed. Only support module
-             * reloading for authentication scripts. Remove the
-             * module from the modules dictionary before
-             * reloading it again. If code is executing within
-             * the module at the time, the callers reference
-             * count on the module should ensure it isn't
-             * actually destroyed until it is finished.
-             */
-
-            Py_DECREF(module);
-            module = NULL;
-
-            PyDict_DelItemString(modules, name);
-        }
-    }
-
-    if (!module) {
-        module = wsgi_load_source(r->pool, r, name, exists, script,
-                                  "", group, 0);
-    }
-
-    /* Safe now to release the module lock. */
-
-#if APR_HAS_THREADS
-    apr_thread_mutex_unlock(wsgi_module_lock);
-#endif
-
-    /* Log any details of exceptions if import failed. */
-
-    if (PyErr_Occurred())
-        wsgi_log_python_error(r, NULL, script, 0);
-
-    /* Assume an internal server error unless everything okay. */
-
-    status = HTTP_INTERNAL_SERVER_ERROR;
-
-    /* Determine if script exists and execute it. */
-
-    if (module) {
-        PyObject *module_dict = NULL;
-        PyObject *object = NULL;
-
-        module_dict = PyModule_GetDict(module);
-        object = PyDict_GetItemString(module_dict, "check_password");
-
-        if (object) {
-            PyObject *vars = NULL;
-            PyObject *args = NULL;
-            PyObject *result = NULL;
-            PyObject *method = NULL;
-
-            AuthObject *adapter = NULL;
-
-            adapter = newAuthObject(r, config);
-
-            if (adapter) {
-                PyObject *user_string = NULL;
-                PyObject *password_string = NULL;
-
-                user_string = PyUnicode_DecodeLatin1(r->user, strlen(r->user), NULL);
-                password_string = PyUnicode_DecodeLatin1(password, strlen(password), NULL);
-
-                vars = Auth_environ(adapter, group);
-
-                Py_INCREF(object);
-                args = Py_BuildValue("(OOO)", vars, user_string, password_string);
-                result = PyObject_CallObject(object, args);
-                Py_DECREF(args);
-                Py_DECREF(object);
-                Py_DECREF(vars);
-                Py_DECREF(user_string);
-                Py_DECREF(password_string);
-
-                if (result) {
-                    if (result == Py_None) {
-                        if (config->user_authoritative) {
-                            ap_note_basic_auth_failure(r);
-                            status = HTTP_UNAUTHORIZED;
-
-                            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                          "mod_wsgi (pid=%d): User '%s' not "
-                                          "found in executing authentication "
-                                          "script '%s', for uri '%s'.",
-                                          getpid(), r->user, script, r->uri);
-                        }
-                        else
-                            status = DECLINED;
-                    }
-                    else if (result == Py_True) {
-                        status = OK;
-                    }
-                    else if (result == Py_False) {
-                        ap_note_basic_auth_failure(r);
-                        status = HTTP_UNAUTHORIZED;
-
-                        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                      "mod_wsgi (pid=%d): Password mismatch "
-                                      "for user '%s' in executing "
-                                      "authentication script '%s', for uri "
-                                      "'%s'.", getpid(), r->user, script,
-                                      r->uri);
-                    }
-                    else {
-                        PyErr_SetString(PyExc_TypeError, "Basic auth "
-                                        "provider must return True, False "
-                                        "or None");
-                    }
-
-                    Py_DECREF(result);
-                }
-
-                /*
-                 * Wipe out references to Apache request object
-                 * held by Python objects, so can detect when an
-                 * application holds on to the transient Python
-                 * objects beyond the life of the request and
-                 * thus raise an exception if they are used.
-                 */
-
-                adapter->r = NULL;
-
-                /* Log any details of exceptions if execution failed. */
-
-                if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
-
-                /* Close the log object so data is flushed. */
-
-                method = PyObject_GetAttrString(adapter->log, "close");
-
-                if (!method) {
-                    PyErr_Format(PyExc_AttributeError,
-                                 "'%s' object has no attribute 'close'",
-                                 adapter->log->ob_type->tp_name);
-                }
-                else {
-                    result = PyObject_CallObject(method, NULL);
-                    Py_XDECREF(result);
-                }
-
-                /* Log any details of exceptions if execution failed. */
-
-                if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
-
-                Py_XDECREF(method);
-
-                /* No longer need adapter object. */
-
-                Py_DECREF((PyObject *)adapter);
-            }
-        }
-        else {
-            Py_BEGIN_ALLOW_THREADS
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d): Target WSGI user "
-                          "authentication script '%s' does not provide "
-                          "'Basic' auth provider.", getpid(), script);
-            Py_END_ALLOW_THREADS
-        }
-    }
-
-    /* Cleanup and release interpreter, */
-
-    Py_XDECREF(module);
-
-    wsgi_release_interpreter(interp);
-
-    return status;
-}
-#endif
-
-#if defined(MOD_WSGI_WITH_AUTHZ_PROVIDER)
-
-#if MOD_WSGI_WITH_AUTHZ_PROVIDER_PARSED
 static authz_status wsgi_check_authorization(request_rec *r,
                                              const char *require_args,
                                              const void *parsed_require_line)
-#else
-static authz_status wsgi_check_authorization(request_rec *r,
-                                             const char *require_args)
-#endif
 {
     WSGIRequestConfig *config;
 
@@ -15669,10 +15151,8 @@ static authz_status wsgi_check_authorization(request_rec *r,
     const char *t, *w;
     int status;
 
-#if AP_MODULE_MAGIC_AT_LEAST(20100714,0)
     if (!r->user)
         return AUTHZ_DENIED_NO_USER;
-#endif
 
     config = wsgi_create_req_config(r->pool, r);
 
@@ -15715,91 +15195,8 @@ static authz_status wsgi_check_authorization(request_rec *r,
 static const authz_provider wsgi_authz_provider =
 {
     &wsgi_check_authorization,
-#if MOD_WSGI_WITH_AUTHZ_PROVIDER_PARSED
     NULL,
-#endif
 };
-
-#else
-
-static int wsgi_hook_auth_checker(request_rec *r)
-{
-    WSGIRequestConfig *config;
-
-    int m = r->method_number;
-    const apr_array_header_t *reqs_arr;
-    require_line *reqs;
-    int required_group = 0;
-    register int x;
-    const char *t, *w;
-    apr_table_t *grpstatus = NULL;
-    char *reason = NULL;
-
-    config = wsgi_create_req_config(r->pool, r);
-
-    if (!config->auth_group_script)
-        return DECLINED;
-
-    reqs_arr = ap_requires(r);
-
-    if (!reqs_arr)
-        return DECLINED;
-
-    reqs = (require_line *)reqs_arr->elts;
-
-    for (x = 0; x < reqs_arr->nelts; x++) {
-
-        if (!(reqs[x].method_mask & (AP_METHOD_BIT << m))) {
-            continue;
-        }
-
-        t = reqs[x].requirement;
-        w = ap_getword_white(r->pool, &t);
-
-#if AP_MODULE_MAGIC_AT_LEAST(20100714,0)
-        if (!strcasecmp(w, "wsgi-group")) {
-#else
-        if (!strcasecmp(w, "group") || !strcasecmp(w, "wsgi-group")) {
-#endif
-            required_group = 1;
-
-            if (!grpstatus) {
-                int status;
-
-                status = wsgi_groups_for_user(r, config, &grpstatus);
-
-                if (status != OK)
-                    return status;
-
-                if (apr_table_elts(grpstatus)->nelts == 0) {
-                    reason = "User is not a member of any groups";
-                    break;
-                }
-            }
-
-            while (t[0]) {
-                w = ap_getword_conf(r->pool, &t);
-                if (apr_table_get(grpstatus, w)) {
-                    return OK;
-                }
-            }
-        }
-    }
-
-    if (!required_group || !config->group_authoritative)
-        return DECLINED;
-
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "mod_wsgi (pid=%d): "
-                  "Authorization of user '%s' to access '%s' failed. %s.",
-                  getpid(), r->user, r->uri, reason ? reason : "User is not "
-                  "a member of designated groups");
-
-    ap_note_auth_failure(r);
-
-    return HTTP_UNAUTHORIZED;
-}
-
-#endif
 
 APR_OPTIONAL_FN_TYPE(ap_logio_add_bytes_out) *wsgi_logio_add_bytes_out;
 
@@ -15835,12 +15232,6 @@ static void wsgi_register_hooks(apr_pool_t *p)
 
     static const char * const n2[] = { "core.c", NULL };
 
-#if !defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
-    static const char * const p3[] = { "mod_auth.c", NULL };
-#endif
-#if !defined(MOD_WSGI_WITH_AUTHZ_PROVIDER)
-    static const char * const n4[] = { "mod_authz_user.c", NULL };
-#endif
     static const char * const n5[] = { "mod_authz_host.c", NULL };
 
     static const char * const p6[] = { "mod_python.c", NULL };
@@ -15861,18 +15252,10 @@ static void wsgi_register_hooks(apr_pool_t *p)
                                   NULL, AP_FTYPE_PROTOCOL);
 #endif
 
-#if !defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
-    ap_hook_check_user_id(wsgi_hook_check_user_id, p3, NULL, APR_HOOK_MIDDLE);
-#else
     ap_register_provider(p, AUTHN_PROVIDER_GROUP, "wsgi",
                          AUTHN_PROVIDER_VERSION, &wsgi_authn_provider);
-#endif
-#if !defined(MOD_WSGI_WITH_AUTHZ_PROVIDER)
-    ap_hook_auth_checker(wsgi_hook_auth_checker, NULL, n4, APR_HOOK_MIDDLE);
-#else
     ap_register_provider(p, AUTHZ_PROVIDER_GROUP, "wsgi-group",
                          AUTHZ_PROVIDER_VERSION, &wsgi_authz_provider);
-#endif
     ap_hook_access_checker(wsgi_hook_access_checker, p7, n5, APR_HOOK_MIDDLE);
 }
 
@@ -15981,10 +15364,6 @@ static const command_rec wsgi_commands[] =
         NULL, OR_AUTHCFG, "Location of WSGI user auth script file."),
     AP_INIT_RAW_ARGS("WSGIAuthGroupScript", wsgi_set_auth_group_script,
         NULL, OR_AUTHCFG, "Location of WSGI group auth script file."),
-#if !defined(MOD_WSGI_WITH_AUTHN_PROVIDER)
-    AP_INIT_TAKE1("WSGIUserAuthoritative", wsgi_set_user_authoritative,
-        NULL, OR_AUTHCFG, "Enable/Disable as being authoritative on users."),
-#endif
     AP_INIT_TAKE1("WSGIGroupAuthoritative", wsgi_set_group_authoritative,
         NULL, OR_AUTHCFG, "Enable/Disable as being authoritative on groups."),
 

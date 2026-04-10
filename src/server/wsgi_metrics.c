@@ -172,7 +172,6 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
 
     thread_info->request_data = PyDict_New();
 
-#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
     thread_info->request_id = PyUnicode_DecodeLatin1(r->log_id,
                                                 strlen(r->log_id), NULL);
 
@@ -193,7 +192,6 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
     }
     else
         PyErr_Clear();
-#endif
 
     wsgi_utilization_time(1, NULL);
 
@@ -212,7 +210,6 @@ void wsgi_end_request(void)
         if (wsgi_request_threads_buckets)
             wsgi_request_threads_buckets[thread_info->thread_id-1] += 1;
 
-#if AP_MODULE_MAGIC_AT_LEAST(20100923,2)
         module = PyImport_ImportModule("mod_wsgi");
 
         if (module) {
@@ -228,7 +225,6 @@ void wsgi_end_request(void)
         }
         else
             PyErr_Clear();
-#endif
 
         if (thread_info->log_buffer)
             Py_CLEAR(thread_info->log_buffer);
@@ -1021,11 +1017,7 @@ static PyObject *wsgi_server_metrics(void)
         for (j = 0; j < gs_record->thread_limit; ++j) {
             PyObject *worker_dict = NULL;
 
-#if AP_MODULE_MAGIC_AT_LEAST(20071023,0)
             ws_record = ap_get_scoreboard_worker_from_indexes(i, j);
-#else
-            ws_record = ap_get_scoreboard_worker(i, j);
-#endif
 
             worker_dict = PyDict_New();
 

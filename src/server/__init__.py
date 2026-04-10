@@ -121,17 +121,11 @@ def find_mimetypes():
 SHELL = find_program(['bash', 'sh'], ['/usr/local/bin'])
 
 APACHE_GENERAL_CONFIG = """
-<IfModule !version_module>
-LoadModule version_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_version.so'
-</IfModule>
-
 ServerName %(host)s
 ServerRoot '%(server_root)s'
 PidFile '%(pid_file)s'
 
-<IfVersion >= 2.4>
 DefaultRuntimeDir '%(server_root)s'
-</IfVersion>
 
 ServerTokens ProductOnly
 ServerSignature Off
@@ -148,11 +142,6 @@ Listen %(host)s:%(port)s
 Listen %(port)s
 </IfDefine>
 
-<IfVersion < 2.4>
-LockFile '%(server_root)s/accept.lock'
-</IfVersion>
-
-<IfVersion >= 2.4>
 <IfDefine MOD_WSGI_WITH_PHP5>
 <IfModule !mpm_event_module>
 <IfModule !mpm_worker_module>
@@ -164,9 +153,7 @@ LoadModule mpm_prefork_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_mpm_prefork.so'
 </IfModule>
 </IfModule>
 </IfDefine>
-</IfVersion>
 
-<IfVersion >= 2.4>
 <IfModule !mpm_event_module>
 <IfModule !mpm_worker_module>
 <IfModule !mpm_prefork_module>
@@ -182,13 +169,11 @@ LoadModule mpm_prefork_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_mpm_prefork.so'
 </IfModule>
 </IfModule>
 </IfModule>
-</IfVersion>
 
 <IfDefine MOD_WSGI_WITH_HTTP2>
 LoadModule http2_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_http2.so'
 </IfDefine>
 
-<IfVersion >= 2.4>
 <IfModule !access_compat_module>
 LoadModule access_compat_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_access_compat.so'
 </IfModule>
@@ -203,7 +188,6 @@ LoadModule authn_core_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_authn_core.so'
 <IfModule !authz_core_module>
 LoadModule authz_core_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_authz_core.so'
 </IfModule>
-</IfVersion>
 
 <IfModule !authz_host_module>
 LoadModule authz_host_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_authz_host.so'
@@ -236,11 +220,9 @@ LoadModule autoindex_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_autoindex.so'
 </IfModule>
 </IfDefine>
 
-<IfVersion >= 2.2.15>
 <IfModule !reqtimeout_module>
 LoadModule reqtimeout_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_reqtimeout.so'
 </IfModule>
-</IfVersion>
 
 <IfDefine MOD_WSGI_COMPRESS_RESPONSES>
 <IfModule !deflate_module>
@@ -302,10 +284,6 @@ LoadModule cgi_module '${MOD_WSGI_MODULES_DIRECTORY}/mod_cgi.so'
 </IfModule>
 </IfDefine>
 
-<IfVersion < 2.4>
-DefaultType text/plain
-</IfVersion>
-
 TypesConfig '%(mime_types)s'
 
 HostnameLookups Off
@@ -317,21 +295,13 @@ ListenBacklog %(server_backlog)s
 Protocols h2 h2c http/1.1
 </IfDefine>
 
-<IfVersion >= 2.2.15>
 RequestReadTimeout %(request_read_timeout)s
-</IfVersion>
 
 LimitRequestBody %(limit_request_body)s
 
 <Directory />
     AllowOverride None
-<IfVersion < 2.4>
-    Order deny,allow
-    Deny from all
-</IfVersion>
-<IfVersion >= 2.4>
     Require all denied
-</IfVersion>
 </Directory>
 
 WSGIPythonHome '%(python_home)s'
@@ -455,15 +425,8 @@ WSGIServerMetrics %(server_metrics_flag)s
 <IfDefine MOD_WSGI_SERVER_STATUS>
 <Location /server-status>
     SetHandler server-status
-<IfVersion < 2.4>
-    Order deny,allow
-    Deny from all
-    Allow from localhost
-</IfVersion>
-<IfVersion >= 2.4>
     Require all denied
     Require host localhost
-</IfVersion>
 </Location>
 </IfDefine>
 
@@ -602,29 +565,19 @@ ThreadStackSize 262144
 </IfModule>
 
 <IfDefine !MOD_WSGI_VIRTUAL_HOST>
-<IfVersion < 2.4>
-NameVirtualHost *:%(port)s
-</IfVersion>
 <VirtualHost _default_:%(port)s>
 </VirtualHost>
 </IfDefine>
 
 <IfDefine MOD_WSGI_VIRTUAL_HOST>
 
-<IfVersion < 2.4>
-NameVirtualHost *:%(port)s
-</IfVersion>
 <VirtualHost _default_:%(port)s>
 <Location />
-<IfVersion < 2.4>
-Order deny,allow
-Deny from all
-</IfVersion>
-<IfVersion >= 2.4>
-Require all denied
-</IfVersion>
 <IfDefine MOD_WSGI_ALLOW_LOCALHOST>
-Allow from localhost
+Require host localhost
+</IfDefine>
+<IfDefine !MOD_WSGI_ALLOW_LOCALHOST>
+Require all denied
 </IfDefine>
 </Location>
 </VirtualHost>
@@ -674,20 +627,13 @@ Listen %(host)s:%(https_port)s
 <IfDefine !MOD_WSGI_WITH_LISTENER_HOST>
 Listen %(https_port)s
 </IfDefine>
-<IfVersion < 2.4>
-NameVirtualHost *:%(https_port)s
-</IfVersion>
 <VirtualHost _default_:%(https_port)s>
 <Location />
-<IfVersion < 2.4>
-Order deny,allow
-Deny from all
-</IfVersion>
-<IfVersion >= 2.4>
-Require all denied
-</IfVersion>
 <IfDefine MOD_WSGI_ALLOW_LOCALHOST>
-Allow from localhost
+Require host localhost
+</IfDefine>
+<IfDefine !MOD_WSGI_ALLOW_LOCALHOST>
+Require all denied
 </IfDefine>
 </Location>
 SSLEngine On
@@ -752,13 +698,7 @@ AccessFileName .htaccess
 <Directory '%(server_root)s'>
     AllowOverride %(allow_override)s
 <Files handler.wsgi>
-<IfVersion < 2.4>
-    Order allow,deny
-    Allow from all
-</IfVersion>
-<IfVersion >= 2.4>
     Require all granted
-</IfVersion>
 </Files>
 </Directory>
 
@@ -778,13 +718,7 @@ AccessFileName .htaccess
 </IfDefine>
     RewriteEngine On
     Include %(rewrite_rules)s
-<IfVersion < 2.4>
-    Order allow,deny
-    Allow from all
-</IfVersion>
-<IfVersion >= 2.4>
     Require all granted
-</IfVersion>
 </Directory>
 
 <Directory '%(document_root)s%(mount_point)s'>
@@ -819,20 +753,12 @@ WSGIErrorOverride On
 <IfDefine MOD_WSGI_AUTH_GROUP>
     WSGIAuthGroupScript '%(auth_group_script)s'
 </IfDefine>
-<IfVersion < 2.4>
-    Require valid-user
-<IfDefine MOD_WSGI_AUTH_GROUP>
-    Require wsgi-group '%(auth_group)s'
-</IfDefine>
-</IfVersion>
-<IfVersion >= 2.4>
     <RequireAll>
     Require valid-user
 <IfDefine MOD_WSGI_AUTH_GROUP>
     Require wsgi-group '%(auth_group)s'
 </IfDefine>
     </RequireAll>
-</IfVersion>
 </Location>
 </IfDefine>
 
@@ -922,13 +848,7 @@ Alias '%(mount_point)s' '%(directory)s'
 
 <Directory '%(directory)s'>
     AllowOverride %(allow_override)s
-<IfVersion < 2.4>
-    Order allow,deny
-    Allow from all
-</IfVersion>
-<IfVersion >= 2.4>
     Require all granted
-</IfVersion>
 </Directory>
 """
 
@@ -937,13 +857,7 @@ Alias '%(mount_point)s' '%(directory)s/%(filename)s'
 
 <Directory '%(directory)s'>
 <Files '%(filename)s'>
-<IfVersion < 2.4>
-    Order allow,deny
-    Allow from all
-</IfVersion>
-<IfVersion >= 2.4>
     Require all granted
-</IfVersion>
 </Files>
 </Directory>
 """
@@ -954,23 +868,11 @@ Alias /__wsgi__/images '%(images_directory)s'
 
 <Directory '%(documentation_directory)s'>
     DirectoryIndex index.html
-<IfVersion < 2.4>
-    Order allow,deny
-    Allow from all
-</IfVersion>
-<IfVersion >= 2.4>
     Require all granted
-</IfVersion>
 </Directory>
 
 <Directory '%(images_directory)s'>
-<IfVersion < 2.4>
-    Order allow,deny
-    Allow from all
-</IfVersion>
-<IfVersion >= 2.4>
     Require all granted
-</IfVersion>
 </Directory>
 """
 
