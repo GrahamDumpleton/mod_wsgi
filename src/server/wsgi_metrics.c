@@ -1290,15 +1290,15 @@ void wsgi_call_callbacks(const char *name, PyObject *callbacks,
                 if (o)
                 {
                     PyObject *log = NULL;
-                    PyObject *args = NULL;
-                    PyObject *kwargs = NULL;
+                    PyObject *tb_args = NULL;
+                    PyObject *tb_kwargs = NULL;
                     Py_INCREF(o);
                     log = newLogObject(NULL, APLOG_ERR, NULL, 0);
-                    args = Py_BuildValue("(O)", value);
-                    kwargs = Py_BuildValue("{s:O}", "file", log);
-                    result = PyObject_Call(o, args, kwargs);
-                    Py_DECREF(kwargs);
-                    Py_DECREF(args);
+                    tb_args = Py_BuildValue("(O)", value);
+                    tb_kwargs = Py_BuildValue("{s:O}", "file", log);
+                    result = PyObject_Call(o, tb_args, tb_kwargs);
+                    Py_DECREF(tb_kwargs);
+                    Py_DECREF(tb_args);
                     Py_DECREF(log);
                     Py_DECREF(o);
                 }
