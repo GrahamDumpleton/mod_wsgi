@@ -113,6 +113,34 @@ assert_body_length() {
     fi
 }
 
+assert_log_contains() {
+    local expected="$1"
+    local description="$2"
+
+    if grep -qF "$expected" "$SERVER_ROOT/error_log"; then
+        echo "  PASS: $description"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $description (log does not contain '$expected')"
+        FAIL=$((FAIL + 1))
+        ERRORS="$ERRORS\n  FAIL: $description"
+    fi
+}
+
+assert_log_not_contains() {
+    local unexpected="$1"
+    local description="$2"
+
+    if grep -qF "$unexpected" "$SERVER_ROOT/error_log"; then
+        echo "  FAIL: $description (log contains '$unexpected')"
+        FAIL=$((FAIL + 1))
+        ERRORS="$ERRORS\n  FAIL: $description"
+    else
+        echo "  PASS: $description"
+        PASS=$((PASS + 1))
+    fi
+}
+
 # ---- Server management ----
 
 start_server() {
