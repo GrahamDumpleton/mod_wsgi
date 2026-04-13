@@ -48,6 +48,8 @@ static PyTypeObject Auth_Type;
 #include "wsgi_daemon.h"
 #include "wsgi_buckets.h"
 #include "wsgi_thread.h"
+#include "wsgi_signal.h"
+#include "wsgi_shutdown.h"
 
 /* Module information. */
 
