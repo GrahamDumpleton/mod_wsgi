@@ -227,11 +227,13 @@ fi
 INCLUDE_FILE=$(mktemp)
 trap "rm -f $INCLUDE_FILE; stop_server" EXIT
 
-# Grant Apache access to the tests directory.
+# Grant Apache access to the tests directory and configure
+# server-level directives for testing.
 cat >> "$INCLUDE_FILE" <<EOF
 <Directory $PROJECT_DIR/tests>
     Require all granted
 </Directory>
+WSGIRestrictStdin On
 EOF
 
 for test_sh in "${TEST_FILES[@]}"; do

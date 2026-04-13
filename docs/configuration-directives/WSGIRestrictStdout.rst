@@ -4,7 +4,7 @@ WSGIRestrictStdout
 
 :Description: Enable restrictions on use of STDOUT.
 :Syntax: ``WSGIRestrictStdout On|Off``
-:Default: ``WSGIRestrictStdout On``
+:Default: ``WSGIRestrictStdout Off``
 :Context: server config
 
 A well behaved Python WSGI application should never attempt to write any
@@ -16,14 +16,9 @@ application were to directly write to ``sys.stdout`` it could interfere
 with the operation of the WSGI adapter and result in corruption of the
 output stream.
 
-In the interests of promoting portability of WSGI applications, mod_wsgi
-restricts access to ``sys.stdout`` and will raise an exception if an
-attempt is made to use ``sys.stdout`` explicitly.
-
-The only time that one might want to remove this restriction is purely out
-of convencience of being able to use the ``print`` statement during
-debugging of an application, or if some third party module or WSGI
-application was errornously using ``print`` when it shouldn't. If
-restrictions on using ``sys.stdout`` are removed, any data written to
-it will instead be sent through to ``sys.stderr`` and will appear in
-the Apache error log file.
+When this directive is set to ``On``, mod_wsgi replaces ``sys.stdout``
+with a restricted object that will raise an exception if an attempt is
+made to use it. This restriction is off by default since mod_wsgi 3.0,
+as the original intent of promoting portable WSGI code proved
+ineffective in practice. When the restriction is off, any data written
+to ``sys.stdout`` will instead be directed to the Apache error log.
