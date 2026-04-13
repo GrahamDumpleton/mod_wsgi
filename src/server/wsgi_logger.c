@@ -204,7 +204,16 @@ static PyObject *Log_close(LogObject *self, PyObject *args)
     if (!self->expired)
         result = Log_flush(self, args);
 
-    Py_XDECREF(result);
+    /*
+     * Flush should never fail for the log object, but
+     * clear any exception to avoid returning a result
+     * with an exception set.
+     */
+
+    if (!result)
+        PyErr_Clear();
+    else
+        Py_DECREF(result);
 
     self->r = NULL;
     self->expired = 1;
