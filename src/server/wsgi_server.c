@@ -54,8 +54,10 @@ WSGIScriptFile *newWSGIScriptFile(apr_pool_t *p)
     object = (WSGIScriptFile *)apr_pcalloc(p, sizeof(WSGIScriptFile));
 
     object->handler_script = NULL;
-    object->application_group = NULL;
     object->process_group = NULL;
+    object->application_group = NULL;
+    object->callable_object = NULL;
+    object->pass_authorization = NULL;
 
     return object;
 }
@@ -78,12 +80,12 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 #endif
 
     object->socket_rotation = 1;
+    object->lock_mechanism = 0;
 
     object->verbose_debugging = 0;
 
     object->python_warnings = NULL;
 
-    object->py3k_warning_flag = -1;
     object->python_optimize = -1;
     object->dont_write_bytecode = -1;
 
@@ -121,9 +123,15 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->script_reloading = -1;
     object->error_override = -1;
     object->chunked_request = -1;
+    object->map_head_to_get = 0;
     object->ignore_activity = -1;
 
+    object->trusted_proxy_headers = NULL;
+    object->trusted_proxies = NULL;
+
     object->enable_sendfile = -1;
+
+    object->handler_scripts = NULL;
 
     object->server_metrics = -1;
 

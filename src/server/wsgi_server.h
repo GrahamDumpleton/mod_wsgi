@@ -73,7 +73,6 @@ typedef struct
     apr_array_header_t *python_warnings;
 
     int python_optimize;
-    int py3k_warning_flag;
     int dont_write_bytecode;
 
     const char *lang;
