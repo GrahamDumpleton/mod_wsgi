@@ -80,6 +80,7 @@ PyObject *newLogWrapperObject(PyObject *buffer)
 
     if (!object)
     {
+        Py_DECREF(module);
         PyErr_SetString(PyExc_NameError,
                         "name 'TextIOWrapper' is not defined");
         return NULL;
@@ -94,6 +95,7 @@ PyObject *newLogWrapperObject(PyObject *buffer)
 
     Py_DECREF(args);
     Py_DECREF(object);
+    Py_DECREF(module);
 
     return (PyObject *)wrapper;
 }
