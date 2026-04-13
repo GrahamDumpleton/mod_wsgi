@@ -92,18 +92,12 @@ static PyObject *Stream_iternext(StreamObject *self)
     attribute = PyObject_GetAttrString((PyObject *)self, "filelike");
 
     if (!attribute)
-    {
-        PyErr_SetString(PyExc_KeyError,
-                        "file wrapper no filelike attribute");
         return 0;
-    }
 
     method = PyObject_GetAttrString(attribute, "read");
 
     if (!method)
     {
-        PyErr_SetString(PyExc_KeyError,
-                        "file like object has no read() method");
         Py_DECREF(attribute);
         return 0;
     }
@@ -114,8 +108,6 @@ static PyObject *Stream_iternext(StreamObject *self)
 
     if (!attribute)
     {
-        PyErr_SetString(PyExc_KeyError,
-                        "file wrapper has no blksize attribute");
         Py_DECREF(method);
         return 0;
     }
