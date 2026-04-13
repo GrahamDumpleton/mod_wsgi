@@ -223,11 +223,7 @@ PyTypeObject Stream_Type = {
     0,                          /*tp_getattro*/
     0,                          /*tp_setattro*/
     0,                          /*tp_as_buffer*/
-#if defined(Py_TPFLAGS_HAVE_ITER)
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_ITER, /*tp_flags*/
-#else
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
-#endif
     0,                             /*tp_doc*/
     0,                             /*tp_traverse*/
     0,                             /*tp_clear*/
