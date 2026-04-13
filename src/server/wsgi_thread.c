@@ -53,7 +53,7 @@ WSGIThreadInfo *wsgi_thread_info(int create, int request)
         if (!wsgi_thread_details)
         {
             wsgi_thread_details = apr_array_make(
-                wsgi_server->process->pool, 3, sizeof(char *));
+                wsgi_server->process->pool, 3, sizeof(WSGIThreadInfo *));
         }
 
         thread_handle = (WSGIThreadInfo *)apr_pcalloc(
