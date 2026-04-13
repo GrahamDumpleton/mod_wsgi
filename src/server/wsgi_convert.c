@@ -32,7 +32,7 @@ PyObject *wsgi_convert_string_to_bytes(PyObject *value)
     {
         PyErr_Format(PyExc_TypeError, "expected unicode object, value "
                                       "of type %.200s found",
-                     value->ob_type->tp_name);
+                     Py_TYPE(value)->tp_name);
         return NULL;
     }
 
@@ -75,14 +75,14 @@ PyObject *wsgi_convert_headers_to_bytes(PyObject *headers)
     PyObject *result = NULL;
 
     int i;
-    long size;
+    Py_ssize_t size;
 
     if (!PyList_Check(headers))
     {
         PyErr_Format(PyExc_TypeError, "expected list object for headers, "
                                       "value of type %.200s found",
-                     headers->ob_type->tp_name);
-        return 0;
+                     Py_TYPE(headers)->tp_name);
+        return NULL;
     }
 
     size = PyList_Size(headers);
@@ -106,9 +106,9 @@ PyObject *wsgi_convert_headers_to_bytes(PyObject *headers)
         {
             PyErr_Format(PyExc_TypeError, "list of tuple values "
                                           "expected for headers, value of type %.200s found",
-                         header->ob_type->tp_name);
+                         Py_TYPE(header)->tp_name);
             Py_DECREF(result);
-            return 0;
+            return NULL;
         }
 
         if (PyTuple_Size(header) != 2)
