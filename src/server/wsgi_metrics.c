@@ -1291,11 +1291,13 @@ void wsgi_call_callbacks(const char *name, PyObject *callbacks,
                 {
                     PyObject *log = NULL;
                     PyObject *args = NULL;
+                    PyObject *kwargs = NULL;
                     Py_INCREF(o);
                     log = newLogObject(NULL, APLOG_ERR, NULL, 0);
-                    args = Py_BuildValue("(OOOOO)", type, value,
-                                         traceback, Py_None, log);
-                    result = PyObject_CallObject(o, args);
+                    args = Py_BuildValue("(O)", value);
+                    kwargs = Py_BuildValue("{s:O}", "file", log);
+                    result = PyObject_Call(o, args, kwargs);
+                    Py_DECREF(kwargs);
                     Py_DECREF(args);
                     Py_DECREF(log);
                     Py_DECREF(o);
