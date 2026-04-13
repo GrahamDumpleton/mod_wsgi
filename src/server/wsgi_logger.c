@@ -185,8 +185,7 @@ static PyObject *Log_flush(LogObject *self, PyObject *args)
         self->l = 0;
     }
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject *Log_close(LogObject *self, PyObject *args)
@@ -218,14 +217,12 @@ static PyObject *Log_close(LogObject *self, PyObject *args)
     self->r = NULL;
     self->expired = 1;
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
-static PyObject *Log_isatty(LogObject *self, PyObject *args)
+static PyObject *Log_isatty(LogObject *self, PyObject *Py_UNUSED(args))
 {
-    Py_INCREF(Py_False);
-    return Py_False;
+    Py_RETURN_FALSE;
 }
 
 static int Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
@@ -385,8 +382,7 @@ static PyObject *Log_write(LogObject *self, PyObject *args)
     if (Log_queue(self, msg, len) != 0)
         return NULL;
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject *Log_writelines(LogObject *self, PyObject *args)
@@ -444,29 +440,25 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
 
     Py_DECREF(iterator);
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
-static PyObject *Log_readable(LogObject *self, PyObject *args)
+static PyObject *Log_readable(LogObject *self, PyObject *Py_UNUSED(args))
 {
-    Py_INCREF(Py_False);
-    return Py_False;
+    Py_RETURN_FALSE;
 }
 
-static PyObject *Log_seekable(LogObject *self, PyObject *args)
+static PyObject *Log_seekable(LogObject *self, PyObject *Py_UNUSED(args))
 {
-    Py_INCREF(Py_False);
-    return Py_False;
+    Py_RETURN_FALSE;
 }
 
-static PyObject *Log_writable(LogObject *self, PyObject *args)
+static PyObject *Log_writable(LogObject *self, PyObject *Py_UNUSED(args))
 {
-    Py_INCREF(Py_True);
-    return Py_True;
+    Py_RETURN_TRUE;
 }
 
-static PyObject *Log_fileno(LogObject *self, PyObject *args)
+static PyObject *Log_fileno(LogObject *self, PyObject *Py_UNUSED(args))
 {
     PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi log object is not "
                                    "associated with a file descriptor.");
@@ -474,23 +466,22 @@ static PyObject *Log_fileno(LogObject *self, PyObject *args)
     return NULL;
 }
 
-static PyObject *Log_name(LogObject *self, void *closure)
+static PyObject *Log_name(LogObject *self, void *Py_UNUSED(closure))
 {
     return PyUnicode_FromString(self->name);
 }
 
-static PyObject *Log_closed(LogObject *self, void *closure)
+static PyObject *Log_closed(LogObject *self, void *Py_UNUSED(closure))
 {
-    Py_INCREF(Py_False);
-    return Py_False;
+    Py_RETURN_FALSE;
 }
 
-static PyObject *Log_get_encoding(LogObject *self, void *closure)
+static PyObject *Log_get_encoding(LogObject *self, void *Py_UNUSED(closure))
 {
     return PyUnicode_FromString("utf-8");
 }
 
-static PyObject *Log_get_errors(LogObject *self, void *closure)
+static PyObject *Log_get_errors(LogObject *self, void *Py_UNUSED(closure))
 {
     return PyUnicode_FromString("replace");
 }
