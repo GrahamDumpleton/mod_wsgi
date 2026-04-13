@@ -46,14 +46,16 @@ static int Stream_init(StreamObject *self, PyObject *args, PyObject *kwds)
     PyObject *filelike = NULL;
     apr_size_t blksize = HUGE_STRING_LEN;
 
-    static char *kwlist[] = { "filelike", "blksize", NULL };
+    static char *kwlist[] = {"filelike", "blksize", NULL};
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|l:FileWrapper", kwlist,
-                                     &filelike, &blksize)) {
+                                     &filelike, &blksize))
+    {
         return -1;
     }
 
-    if (filelike) {
+    if (filelike)
+    {
         PyObject *tmp = NULL;
 
         tmp = self->filelike;
@@ -89,7 +91,8 @@ static PyObject *Stream_iternext(StreamObject *self)
 
     attribute = PyObject_GetAttrString((PyObject *)self, "filelike");
 
-    if (!attribute) {
+    if (!attribute)
+    {
         PyErr_SetString(PyExc_KeyError,
                         "file wrapper no filelike attribute");
         return 0;
@@ -97,7 +100,8 @@ static PyObject *Stream_iternext(StreamObject *self)
 
     method = PyObject_GetAttrString(attribute, "read");
 
-    if (!method) {
+    if (!method)
+    {
         PyErr_SetString(PyExc_KeyError,
                         "file like object has no read() method");
         Py_DECREF(attribute);
@@ -108,14 +112,16 @@ static PyObject *Stream_iternext(StreamObject *self)
 
     attribute = PyObject_GetAttrString((PyObject *)self, "blksize");
 
-    if (!attribute) {
+    if (!attribute)
+    {
         PyErr_SetString(PyExc_KeyError,
                         "file wrapper has no blksize attribute");
         Py_DECREF(method);
         return 0;
     }
 
-    if (!PyLong_Check(attribute)) {
+    if (!PyLong_Check(attribute))
+    {
         PyErr_SetString(PyExc_KeyError,
                         "file wrapper blksize attribute not integer");
         Py_DECREF(method);
@@ -133,8 +139,10 @@ static PyObject *Stream_iternext(StreamObject *self)
     if (!result)
         return 0;
 
-    if (PyBytes_Check(result)) {
-        if (PyBytes_Size(result) == 0) {
+    if (PyBytes_Check(result))
+    {
+        if (PyBytes_Size(result) == 0)
+        {
             PyErr_SetObject(PyExc_StopIteration, Py_None);
             Py_DECREF(result);
             return 0;
@@ -156,14 +164,16 @@ static PyObject *Stream_close(StreamObject *self, PyObject *args)
     PyObject *method = NULL;
     PyObject *result = NULL;
 
-    if (!self->filelike || self->filelike == Py_None) {
+    if (!self->filelike || self->filelike == Py_None)
+    {
         Py_INCREF(Py_None);
         return Py_None;
     }
 
     method = PyObject_GetAttrString(self->filelike, "close");
 
-    if (method) {
+    if (method)
+    {
         result = PyObject_CallObject(method, (PyObject *)NULL);
         if (!result)
             PyErr_Clear();
@@ -185,69 +195,66 @@ static PyObject *Stream_get_filelike(StreamObject *self, void *closure)
     return self->filelike;
 }
 
-
 static PyObject *Stream_get_blksize(StreamObject *self, void *closure)
 {
     return PyLong_FromLong(self->blksize);
 }
 
 static PyMethodDef Stream_methods[] = {
-    { "close",      (PyCFunction)Stream_close,      METH_NOARGS, 0 },
-    { NULL, NULL }
-};
+    {"close", (PyCFunction)Stream_close, METH_NOARGS, 0},
+    {NULL, NULL}};
 
 static PyGetSetDef Stream_getset[] = {
-    { "filelike", (getter)Stream_get_filelike, NULL, 0 },
-    { "blksize",  (getter)Stream_get_blksize, NULL, 0 },
-    { NULL },
+    {"filelike", (getter)Stream_get_filelike, NULL, 0},
+    {"blksize", (getter)Stream_get_blksize, NULL, 0},
+    {NULL},
 };
 
 PyTypeObject Stream_Type = {
-    PyVarObject_HEAD_INIT(NULL, 0)
-    "mod_wsgi.FileWrapper", /*tp_name*/
-    sizeof(StreamObject),   /*tp_basicsize*/
-    0,                      /*tp_itemsize*/
+    PyVarObject_HEAD_INIT(NULL, 0) "mod_wsgi.FileWrapper", /*tp_name*/
+    sizeof(StreamObject),                                  /*tp_basicsize*/
+    0,                                                     /*tp_itemsize*/
     /* methods */
     (destructor)Stream_dealloc, /*tp_dealloc*/
-    0,                      /*tp_print*/
-    0,                      /*tp_getattr*/
-    0,                      /*tp_setattr*/
-    0,                      /*tp_compare*/
-    0,                      /*tp_repr*/
-    0,                      /*tp_as_number*/
-    0,                      /*tp_as_sequence*/
-    0,                      /*tp_as_mapping*/
-    0,                      /*tp_hash*/
-    0,                      /*tp_call*/
-    0,                      /*tp_str*/
-    0,                      /*tp_getattro*/
-    0,                      /*tp_setattro*/
-    0,                      /*tp_as_buffer*/
+    0,                          /*tp_print*/
+    0,                          /*tp_getattr*/
+    0,                          /*tp_setattr*/
+    0,                          /*tp_compare*/
+    0,                          /*tp_repr*/
+    0,                          /*tp_as_number*/
+    0,                          /*tp_as_sequence*/
+    0,                          /*tp_as_mapping*/
+    0,                          /*tp_hash*/
+    0,                          /*tp_call*/
+    0,                          /*tp_str*/
+    0,                          /*tp_getattro*/
+    0,                          /*tp_setattro*/
+    0,                          /*tp_as_buffer*/
 #if defined(Py_TPFLAGS_HAVE_ITER)
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_ITER, /*tp_flags*/
 #else
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
 #endif
-    0,                      /*tp_doc*/
-    0,                      /*tp_traverse*/
-    0,                      /*tp_clear*/
-    0,                      /*tp_richcompare*/
-    0,                      /*tp_weaklistoffset*/
-    (getiterfunc)Stream_iter, /*tp_iter*/
+    0,                             /*tp_doc*/
+    0,                             /*tp_traverse*/
+    0,                             /*tp_clear*/
+    0,                             /*tp_richcompare*/
+    0,                             /*tp_weaklistoffset*/
+    (getiterfunc)Stream_iter,      /*tp_iter*/
     (iternextfunc)Stream_iternext, /*tp_iternext*/
-    Stream_methods,         /*tp_methods*/
-    0,                      /*tp_members*/
-    Stream_getset,          /*tp_getset*/
-    0,                      /*tp_base*/
-    0,                      /*tp_dict*/
-    0,                      /*tp_descr_get*/
-    0,                      /*tp_descr_set*/
-    0,                      /*tp_dictoffset*/
-    (initproc)Stream_init,  /*tp_init*/
-    0,                      /*tp_alloc*/
-    Stream_new,             /*tp_new*/
-    0,                      /*tp_free*/
-    0,                      /*tp_is_gc*/
+    Stream_methods,                /*tp_methods*/
+    0,                             /*tp_members*/
+    Stream_getset,                 /*tp_getset*/
+    0,                             /*tp_base*/
+    0,                             /*tp_dict*/
+    0,                             /*tp_descr_get*/
+    0,                             /*tp_descr_set*/
+    0,                             /*tp_dictoffset*/
+    (initproc)Stream_init,         /*tp_init*/
+    0,                             /*tp_alloc*/
+    Stream_new,                    /*tp_new*/
+    0,                             /*tp_free*/
+    0,                             /*tp_is_gc*/
 };
 
 /* ------------------------------------------------------------------------- */

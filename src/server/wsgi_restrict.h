@@ -27,9 +27,9 @@
 
 /* Restricted object to stop access to STDIN/STDOUT. */
 
-typedef struct {
-    PyObject_HEAD
-    const char *s;
+typedef struct
+{
+    PyObject_HEAD const char *s;
 } RestrictedObject;
 
 extern PyTypeObject Restricted_Type;

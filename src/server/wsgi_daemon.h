@@ -78,12 +78,13 @@
 #define WSGI_LISTEN_BACKLOG 100
 #endif
 
-#define WSGI_STACK_HEAD  0xffff
-#define WSGI_STACK_LAST  0xffff
+#define WSGI_STACK_HEAD 0xffff
+#define WSGI_STACK_LAST 0xffff
 #define WSGI_STACK_TERMINATED 0x10000
 #define WSGI_STACK_NO_LISTENER 0x20000
 
-typedef struct {
+typedef struct
+{
     server_rec *server;
     long random;
     int id;
@@ -136,19 +137,21 @@ typedef struct {
     const char *socket_path;
     int socket_rotation;
     int listener_fd;
-    const char* mutex_path;
-    apr_proc_mutex_t* mutex;
+    const char *mutex_path;
+    apr_proc_mutex_t *mutex;
     int server_metrics;
 } WSGIProcessGroup;
 
-typedef struct {
+typedef struct
+{
     WSGIProcessGroup *group;
     int instance;
     apr_proc_t process;
     apr_socket_t *listener;
 } WSGIDaemonProcess;
 
-typedef struct {
+typedef struct
+{
     int id;
     WSGIDaemonProcess *process;
     apr_thread_t *thread;
@@ -160,11 +163,13 @@ typedef struct {
     apr_time_t request;
 } WSGIDaemonThread;
 
-typedef struct {
+typedef struct
+{
     apr_uint32_t state;
 } WSGIThreadStack;
 
-typedef struct {
+typedef struct
+{
     const char *name;
     const char *socket_path;
     apr_time_t connect_timeout;

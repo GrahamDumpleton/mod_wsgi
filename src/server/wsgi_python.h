@@ -44,12 +44,18 @@
     static PyObject *wsgi_id_##name
 
 #define WSGI_CREATE_INTERNED_STRING(name, val) \
-    if (wsgi_id_##name) ; else wsgi_id_##name = \
-    PyUnicode_InternFromString(val)
+    if (wsgi_id_##name)                        \
+        ;                                      \
+    else                                       \
+        wsgi_id_##name =                       \
+            PyUnicode_InternFromString(val)
 
 #define WSGI_CREATE_INTERNED_STRING_ID(name) \
-    if (wsgi_id_##name) ; else wsgi_id_##name = \
-    PyUnicode_InternFromString(#name)
+    if (wsgi_id_##name)                      \
+        ;                                    \
+    else                                     \
+        wsgi_id_##name =                     \
+            PyUnicode_InternFromString(#name)
 
 #define WSGI_INTERNED_STRING(name) \
     wsgi_id_##name

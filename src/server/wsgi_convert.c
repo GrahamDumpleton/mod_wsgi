@@ -28,17 +28,20 @@ PyObject *wsgi_convert_string_to_bytes(PyObject *value)
 {
     PyObject *result = NULL;
 
-    if (!PyUnicode_Check(value)) {
+    if (!PyUnicode_Check(value))
+    {
         PyErr_Format(PyExc_TypeError, "expected unicode object, value "
-                     "of type %.200s found", value->ob_type->tp_name);
+                                      "of type %.200s found",
+                     value->ob_type->tp_name);
         return NULL;
     }
 
     result = PyUnicode_AsLatin1String(value);
 
-    if (!result) {
+    if (!result)
+    {
         PyErr_SetString(PyExc_ValueError, "unicode object contains non "
-                        "latin-1 characters");
+                                          "latin-1 characters");
         return NULL;
     }
 
@@ -56,7 +59,8 @@ PyObject *wsgi_convert_status_line_to_bytes(PyObject *status_line)
     if (!result)
         return NULL;
 
-    if (!wsgi_validate_status_line(result)) {
+    if (!wsgi_validate_status_line(result))
+    {
         Py_DECREF(result);
         return NULL;
     }
@@ -73,16 +77,19 @@ PyObject *wsgi_convert_headers_to_bytes(PyObject *headers)
     int i;
     long size;
 
-    if (!PyList_Check(headers)) {
+    if (!PyList_Check(headers))
+    {
         PyErr_Format(PyExc_TypeError, "expected list object for headers, "
-                     "value of type %.200s found", headers->ob_type->tp_name);
+                                      "value of type %.200s found",
+                     headers->ob_type->tp_name);
         return 0;
     }
 
     size = PyList_Size(headers);
     result = PyList_New(size);
 
-    for (i = 0; i < size; i++) {
+    for (i = 0; i < size; i++)
+    {
         PyObject *header = NULL;
 
         PyObject *header_name = NULL;
@@ -95,17 +102,19 @@ PyObject *wsgi_convert_headers_to_bytes(PyObject *headers)
 
         header = PyList_GetItem(headers, i);
 
-        if (!PyTuple_Check(header)) {
+        if (!PyTuple_Check(header))
+        {
             PyErr_Format(PyExc_TypeError, "list of tuple values "
-                         "expected for headers, value of type %.200s found",
+                                          "expected for headers, value of type %.200s found",
                          header->ob_type->tp_name);
             Py_DECREF(result);
             return 0;
         }
 
-        if (PyTuple_Size(header) != 2) {
+        if (PyTuple_Size(header) != 2)
+        {
             PyErr_Format(PyExc_ValueError, "tuple of length 2 "
-                         "expected for header, length is %d",
+                                           "expected for header, length is %d",
                          (int)PyTuple_Size(header));
             Py_DECREF(result);
             return 0;

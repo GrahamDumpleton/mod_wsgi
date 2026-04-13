@@ -26,7 +26,8 @@
 
 /* ------------------------------------------------------------------------- */
 
-typedef struct {
+typedef struct
+{
     int thread_id;
     int request_thread;
     apr_int64_t request_count;
@@ -42,7 +43,8 @@ extern apr_array_header_t *wsgi_thread_details;
 
 extern WSGIThreadInfo *wsgi_thread_info(int create, int request);
 
-typedef struct {
+typedef struct
+{
     double user_time;
     double system_time;
 } WSGIThreadCPUUsage;

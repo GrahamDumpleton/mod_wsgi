@@ -26,9 +26,9 @@
 
 /* ------------------------------------------------------------------------- */
 
-typedef struct {
-        PyObject_HEAD
-        PyObject *filelike;
+typedef struct
+{
+        PyObject_HEAD PyObject *filelike;
         apr_size_t blksize;
 } StreamObject;
 

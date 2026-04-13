@@ -39,39 +39,46 @@ int wsgi_validate_status_line(PyObject *value)
 {
     const char *s;
 
-    if (!PyBytes_Check(value)) {
+    if (!PyBytes_Check(value))
+    {
         PyErr_Format(PyExc_TypeError, "expected byte string object for "
-                     "status line, value of type %.200s found",
+                                      "status line, value of type %.200s found",
                      value->ob_type->tp_name);
         return 0;
     }
-    
+
     s = PyBytes_AsString(value);
 
-    if (!isdigit(*s++) || !isdigit(*s++) || !isdigit(*s++)) {
+    if (!isdigit(*s++) || !isdigit(*s++) || !isdigit(*s++))
+    {
         PyErr_SetString(PyExc_ValueError,
                         "status code is not a 3 digit integer");
         return 0;
     }
 
-    if (isdigit(*s)) {
+    if (isdigit(*s))
+    {
         PyErr_SetString(PyExc_ValueError,
                         "status code is not a 3 digit integer");
         return 0;
     }
 
-    if (*s != ' ') {
+    if (*s != ' ')
+    {
         PyErr_SetString(PyExc_ValueError, "no space following status code");
         return 0;
     }
 
-    if (!*s) {
+    if (!*s)
+    {
         PyErr_SetString(PyExc_ValueError, "no reason phrase supplied");
         return 0;
     }
 
-    while (*s) {
-        if (iscntrl(*s)) {
+    while (*s)
+    {
+        if (iscntrl(*s))
+        {
             PyErr_SetString(PyExc_ValueError,
                             "control character present in reason phrase");
             return 0;
@@ -97,28 +104,33 @@ int wsgi_validate_header_name(PyObject *value)
 {
     const char *s;
 
-    if (!PyBytes_Check(value)) {
+    if (!PyBytes_Check(value))
+    {
         PyErr_Format(PyExc_TypeError, "expected byte string object for "
-                     "header name, value of type %.200s found",
+                                      "header name, value of type %.200s found",
                      value->ob_type->tp_name);
         return 0;
     }
-    
+
     s = PyBytes_AsString(value);
 
-    if (!*s) {
+    if (!*s)
+    {
         PyErr_SetString(PyExc_ValueError, "header name is empty");
         return 0;
     }
 
-    while (*s) {
-        if (iscntrl(*s)) {
+    while (*s)
+    {
+        if (iscntrl(*s))
+        {
             PyErr_SetString(PyExc_ValueError,
                             "control character present in header name");
             return 0;
         }
 
-        if (*s == ' ') {
+        if (*s == ' ')
+        {
             PyErr_SetString(PyExc_ValueError,
                             "space character present in header name");
             return 0;
@@ -146,19 +158,22 @@ int wsgi_validate_header_value(PyObject *value)
 {
     const char *s;
 
-    if (!PyBytes_Check(value)) {
+    if (!PyBytes_Check(value))
+    {
         PyErr_Format(PyExc_TypeError, "expected byte string object for "
-                     "header value, value of type %.200s found",
+                                      "header value, value of type %.200s found",
                      value->ob_type->tp_name);
         return 0;
     }
-    
+
     s = PyBytes_AsString(value);
 
-    while (*s) {
-        if (*s == '\r' || *s == '\n') {
+    while (*s)
+    {
+        if (*s == '\r' || *s == '\n')
+        {
             PyErr_SetString(PyExc_ValueError, "carriage return/line "
-                            "feed character present in header value");
+                                              "feed character present in header value");
             return 0;
         }
         s++;

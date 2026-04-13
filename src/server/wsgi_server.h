@@ -38,7 +38,8 @@ extern apr_time_t wsgi_restart_time;
 
 extern PyThreadState *wsgi_main_tstate;
 
-typedef struct {
+typedef struct
+{
     const char *location;
     const char *application;
     ap_regex_t *regexp;
@@ -48,7 +49,8 @@ typedef struct {
     int pass_authorization;
 } WSGIAliasEntry;
 
-typedef struct {
+typedef struct
+{
     const char *handler_script;
     const char *process_group;
     const char *application_group;
@@ -56,7 +58,8 @@ typedef struct {
     const char *pass_authorization;
 } WSGIScriptFile;
 
-typedef struct {
+typedef struct
+{
     apr_pool_t *pool;
 
     apr_array_header_t *alias_list;
@@ -115,7 +118,7 @@ typedef struct {
 
     int server_metrics;
 } WSGIServerConfig;
-  
+
 extern WSGIServerConfig *wsgi_server_config;
 
 extern WSGIScriptFile *newWSGIScriptFile(apr_pool_t *p);

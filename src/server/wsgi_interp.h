@@ -26,23 +26,23 @@
 
 /* ------------------------------------------------------------------------- */
 
-typedef struct {
-    PyObject_HEAD
-    PyObject *wrapped;
+typedef struct
+{
+    PyObject_HEAD PyObject *wrapped;
 } SignalInterceptObject;
 
 extern PyTypeObject SignalIntercept_Type;
 
-typedef struct {
-    PyObject_HEAD
-    PyObject *wrapped;
+typedef struct
+{
+    PyObject_HEAD PyObject *wrapped;
 } ShutdownInterpreterObject;
 
 extern PyTypeObject ShutdownInterpreter_Type;
 
-typedef struct {
-    PyObject_HEAD
-    char *name;
+typedef struct
+{
+    PyObject_HEAD char *name;
     PyInterpreterState *interp;
     int owner;
 #if APR_HAS_THREADS
@@ -69,7 +69,7 @@ extern apr_hash_t *wsgi_interpreters_index;
 
 #if APR_HAS_THREADS
 extern apr_thread_mutex_t *wsgi_interp_lock;
-extern apr_thread_mutex_t* wsgi_shutdown_lock;
+extern apr_thread_mutex_t *wsgi_shutdown_lock;
 #endif
 
 extern void wsgi_python_version(void);

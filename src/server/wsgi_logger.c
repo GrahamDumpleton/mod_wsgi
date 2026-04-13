@@ -26,15 +26,15 @@
 
 /* ------------------------------------------------------------------------- */
 
-typedef struct {
-        PyObject_HEAD
-        const char *name;
-        int proxy;
-        request_rec *r;
-        int level;
-        char *s;
-        long l;
-        int expired;
+typedef struct
+{
+    PyObject_HEAD const char *name;
+    int proxy;
+    request_rec *r;
+    int level;
+    char *s;
+    long l;
+    int expired;
 } LogObject;
 
 PyTypeObject Log_Type;
@@ -54,7 +54,7 @@ PyObject *newLogBufferObject(request_rec *r, int level, const char *name,
     self->name = name;
     self->proxy = proxy;
     self->r = r;
-    self->level = APLOG_NOERRNO|level;
+    self->level = APLOG_NOERRNO | level;
     self->s = NULL;
     self->l = 0;
     self->expired = 0;
@@ -78,7 +78,8 @@ PyObject *newLogWrapperObject(PyObject *buffer)
     dict = PyModule_GetDict(module);
     object = PyDict_GetItemString(dict, "TextIOWrapper");
 
-    if (!object) {
+    if (!object)
+    {
         PyErr_SetString(PyExc_NameError,
                         "name 'TextIOWrapper' is not defined");
         return NULL;
@@ -130,21 +131,24 @@ static void Log_call(LogObject *self, const char *s, long l)
      * doing anything different here.
      */
 
-    if (self->r) {
+    if (self->r)
+    {
         Py_BEGIN_ALLOW_THREADS
-        ap_log_rerror(APLOG_MARK, self->level, 0, self->r, "%s", s);
+            ap_log_rerror(APLOG_MARK, self->level, 0, self->r, "%s", s);
         Py_END_ALLOW_THREADS
     }
-    else {
+    else
+    {
         Py_BEGIN_ALLOW_THREADS
-        ap_log_error(APLOG_MARK, self->level, 0, wsgi_server, "%s", s);
+            ap_log_error(APLOG_MARK, self->level, 0, wsgi_server, "%s", s);
         Py_END_ALLOW_THREADS
     }
 }
 
 static void Log_dealloc(LogObject *self)
 {
-    if (self->s) {
+    if (self->s)
+    {
         if (!self->expired)
             Log_call(self, self->s, self->l);
 
@@ -164,12 +168,14 @@ static PyObject *Log_flush(LogObject *self, PyObject *args)
     if (thread_info && thread_info->log_buffer)
         return Log_flush((LogObject *)thread_info->log_buffer, args);
 
-    if (self->expired && self->s) {
+    if (self->expired && self->s)
+    {
         PyErr_SetString(PyExc_RuntimeError, "log object has expired");
         return NULL;
     }
 
-    if (self->s) {
+    if (self->s)
+    {
         Log_call(self, self->s, self->l);
 
         free(self->s);
@@ -226,16 +232,19 @@ static void Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
      */
 
     q = p;
-    while (q != e) {
+    while (q != e)
+    {
         if (*q == '\n')
             break;
         q++;
     }
 
-    while (q != e) {
+    while (q != e)
+    {
         /* Output each complete line. */
 
-        if (self->s) {
+        if (self->s)
+        {
             /* Need to join with buffered value. */
 
             long m = 0;
@@ -243,74 +252,79 @@ static void Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
             char *s = NULL;
 
             m = self->l;
-            n = m+q-p+1;
+            n = m + q - p + 1;
 
             s = (char *)malloc(n);
             memcpy(s, self->s, m);
-            memcpy(s+m, p, q-p);
-            s[n-1] = '\0';
+            memcpy(s + m, p, q - p);
+            s[n - 1] = '\0';
 
             free(self->s);
             self->s = NULL;
             self->l = 0;
 
-            Log_call(self, s, n-1);
+            Log_call(self, s, n - 1);
 
             free(s);
         }
-        else {
+        else
+        {
             long n = 0;
             char *s = NULL;
 
-            n = q-p+1;
+            n = q - p + 1;
 
             s = (char *)malloc(n);
-            memcpy(s, p, q-p);
-            s[n-1] = '\0';
+            memcpy(s, p, q - p);
+            s[n - 1] = '\0';
 
-            Log_call(self, s, n-1);
+            Log_call(self, s, n - 1);
 
             free(s);
         }
 
-        p = q+1;
+        p = q + 1;
 
         /* Break string on newline. */
 
         q = p;
-        while (q != e) {
+        while (q != e)
+        {
             if (*q == '\n')
                 break;
             q++;
         }
     }
 
-    if (p != e) {
+    if (p != e)
+    {
         /* Save away incomplete line. */
 
-        if (self->s) {
+        if (self->s)
+        {
             /* Need to join with buffered value. */
 
             long m = 0;
             long n = 0;
 
             m = self->l;
-            n = m+e-p+1;
+            n = m + e - p + 1;
 
             self->s = (char *)realloc(self->s, n);
-            memcpy(self->s+m, p, e-p);
-            self->s[n-1] = '\0';
-            self->l = n-1;
+            memcpy(self->s + m, p, e - p);
+            self->s[n - 1] = '\0';
+            self->l = n - 1;
         }
-        else {
+        else
+        {
             long n = 0;
 
-            n = e-p+1;
+            n = e - p + 1;
 
             self->s = (char *)malloc(n);
-            memcpy(self->s, p, n-1);
-            self->s[n-1] = '\0';
-            self->l = n-1;
+            memcpy(self->s, p, n - 1);
+            self->s[n - 1] = '\0';
+            self->l = n - 1;
         }
     }
 }
@@ -328,7 +342,8 @@ static PyObject *Log_write(LogObject *self, PyObject *args)
     if (thread_info && thread_info->log_buffer)
         return Log_write((LogObject *)thread_info->log_buffer, args);
 
-    if (self->expired) {
+    if (self->expired)
+    {
         PyErr_SetString(PyExc_RuntimeError, "log object has expired");
         return NULL;
     }
@@ -356,7 +371,8 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
     if (thread_info && thread_info->log_buffer)
         return Log_writelines((LogObject *)thread_info->log_buffer, args);
 
-    if (self->expired) {
+    if (self->expired)
+    {
         PyErr_SetString(PyExc_RuntimeError, "log object has expired");
         return NULL;
     }
@@ -366,14 +382,16 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
 
     iterator = PyObject_GetIter(sequence);
 
-    if (iterator == NULL) {
+    if (iterator == NULL)
+    {
         PyErr_SetString(PyExc_TypeError,
                         "argument must be sequence of strings");
 
         return NULL;
     }
 
-    while ((item = PyIter_Next(iterator))) {
+    while ((item = PyIter_Next(iterator)))
+    {
         PyObject *result = NULL;
         PyObject *args = NULL;
 
@@ -384,7 +402,8 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
         Py_DECREF(args);
         Py_DECREF(item);
 
-        if (!result) {
+        if (!result)
+        {
             Py_DECREF(iterator);
 
             PyErr_SetString(PyExc_TypeError,
@@ -421,7 +440,7 @@ static PyObject *Log_writable(LogObject *self, PyObject *args)
 static PyObject *Log_fileno(LogObject *self, PyObject *args)
 {
     PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi log object is not "
-            "associated with a file descriptor.");
+                                   "associated with a file descriptor.");
 
     return NULL;
 }
@@ -448,68 +467,66 @@ static PyObject *Log_get_errors(LogObject *self, void *closure)
 }
 
 static PyMethodDef Log_methods[] = {
-    { "flush",      (PyCFunction)Log_flush,      METH_NOARGS, 0 },
-    { "close",      (PyCFunction)Log_close,      METH_NOARGS, 0 },
-    { "isatty",     (PyCFunction)Log_isatty,     METH_NOARGS, 0 },
-    { "write",      (PyCFunction)Log_write,      METH_VARARGS, 0 },
-    { "writelines", (PyCFunction)Log_writelines, METH_VARARGS, 0 },
-    { "readable",   (PyCFunction)Log_readable,   METH_NOARGS, 0 },
-    { "seekable",   (PyCFunction)Log_seekable,   METH_NOARGS, 0 },
-    { "writable",   (PyCFunction)Log_writable,   METH_NOARGS, 0 },
-    { "fileno",     (PyCFunction)Log_fileno,   METH_NOARGS, 0 },
-    { NULL, NULL}
-};
+    {"flush", (PyCFunction)Log_flush, METH_NOARGS, 0},
+    {"close", (PyCFunction)Log_close, METH_NOARGS, 0},
+    {"isatty", (PyCFunction)Log_isatty, METH_NOARGS, 0},
+    {"write", (PyCFunction)Log_write, METH_VARARGS, 0},
+    {"writelines", (PyCFunction)Log_writelines, METH_VARARGS, 0},
+    {"readable", (PyCFunction)Log_readable, METH_NOARGS, 0},
+    {"seekable", (PyCFunction)Log_seekable, METH_NOARGS, 0},
+    {"writable", (PyCFunction)Log_writable, METH_NOARGS, 0},
+    {"fileno", (PyCFunction)Log_fileno, METH_NOARGS, 0},
+    {NULL, NULL}};
 
 static PyGetSetDef Log_getset[] = {
-    { "name", (getter)Log_name, NULL, 0 },
-    { "closed", (getter)Log_closed, NULL, 0 },
-    { "encoding", (getter)Log_get_encoding, NULL, 0 },
-    { "errors", (getter)Log_get_errors, NULL, 0 },
-    { NULL },
+    {"name", (getter)Log_name, NULL, 0},
+    {"closed", (getter)Log_closed, NULL, 0},
+    {"encoding", (getter)Log_get_encoding, NULL, 0},
+    {"errors", (getter)Log_get_errors, NULL, 0},
+    {NULL},
 };
 
 PyTypeObject Log_Type = {
-    PyVarObject_HEAD_INIT(NULL, 0)
-    "mod_wsgi.Log",         /*tp_name*/
-    sizeof(LogObject),      /*tp_basicsize*/
-    0,                      /*tp_itemsize*/
+    PyVarObject_HEAD_INIT(NULL, 0) "mod_wsgi.Log", /*tp_name*/
+    sizeof(LogObject),                             /*tp_basicsize*/
+    0,                                             /*tp_itemsize*/
     /* methods */
     (destructor)Log_dealloc, /*tp_dealloc*/
-    0,                      /*tp_print*/
-    0,                      /*tp_getattr*/
-    0,                      /*tp_setattr*/
-    0,                      /*tp_compare*/
-    0,                      /*tp_repr*/
-    0,                      /*tp_as_number*/
-    0,                      /*tp_as_sequence*/
-    0,                      /*tp_as_mapping*/
-    0,                      /*tp_hash*/
-    0,                      /*tp_call*/
-    0,                      /*tp_str*/
-    0,                      /*tp_getattro*/
-    0,                      /*tp_setattro*/
-    0,                      /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT,     /*tp_flags*/
-    0,                      /*tp_doc*/
-    0,                      /*tp_traverse*/
-    0,                      /*tp_clear*/
-    0,                      /*tp_richcompare*/
-    0,                      /*tp_weaklistoffset*/
-    0,                      /*tp_iter*/
-    0,                      /*tp_iternext*/
-    Log_methods,            /*tp_methods*/
-    0,                      /*tp_members*/
-    Log_getset,             /*tp_getset*/
-    0,                      /*tp_base*/
-    0,                      /*tp_dict*/
-    0,                      /*tp_descr_get*/
-    0,                      /*tp_descr_set*/
-    0,                      /*tp_dictoffset*/
-    0,                      /*tp_init*/
-    0,                      /*tp_alloc*/
-    0,                      /*tp_new*/
-    0,                      /*tp_free*/
-    0,                      /*tp_is_gc*/
+    0,                       /*tp_print*/
+    0,                       /*tp_getattr*/
+    0,                       /*tp_setattr*/
+    0,                       /*tp_compare*/
+    0,                       /*tp_repr*/
+    0,                       /*tp_as_number*/
+    0,                       /*tp_as_sequence*/
+    0,                       /*tp_as_mapping*/
+    0,                       /*tp_hash*/
+    0,                       /*tp_call*/
+    0,                       /*tp_str*/
+    0,                       /*tp_getattro*/
+    0,                       /*tp_setattro*/
+    0,                       /*tp_as_buffer*/
+    Py_TPFLAGS_DEFAULT,      /*tp_flags*/
+    0,                       /*tp_doc*/
+    0,                       /*tp_traverse*/
+    0,                       /*tp_clear*/
+    0,                       /*tp_richcompare*/
+    0,                       /*tp_weaklistoffset*/
+    0,                       /*tp_iter*/
+    0,                       /*tp_iternext*/
+    Log_methods,             /*tp_methods*/
+    0,                       /*tp_members*/
+    Log_getset,              /*tp_getset*/
+    0,                       /*tp_base*/
+    0,                       /*tp_dict*/
+    0,                       /*tp_descr_get*/
+    0,                       /*tp_descr_set*/
+    0,                       /*tp_dictoffset*/
+    0,                       /*tp_init*/
+    0,                       /*tp_alloc*/
+    0,                       /*tp_new*/
+    0,                       /*tp_free*/
+    0,                       /*tp_is_gc*/
 };
 
 void wsgi_log_python_error(request_rec *r, PyObject *log,
@@ -527,7 +544,8 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
     if (!PyErr_Occurred())
         return;
 
-    if (!log) {
+    if (!log)
+    {
         PyErr_Fetch(&type, &value, &traceback);
 
         xlog = newLogObject(r, APLOG_ERR, NULL, 0);
@@ -541,31 +559,39 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
         traceback = NULL;
     }
 
-    if (PyErr_ExceptionMatches(PyExc_SystemExit)) {
-        Py_BEGIN_ALLOW_THREADS
-        if (r) {
+    if (PyErr_ExceptionMatches(PyExc_SystemExit))
+    {
+        Py_BEGIN_ALLOW_THREADS if (r)
+        {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                           "mod_wsgi (pid=%d): SystemExit exception raised by "
-                          "WSGI script '%s' ignored.", getpid(), filename);
+                          "WSGI script '%s' ignored.",
+                          getpid(), filename);
         }
-        else {
+        else
+        {
             ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                          "mod_wsgi (pid=%d): SystemExit exception raised by "
-                          "WSGI script '%s' ignored.", getpid(), filename);
+                         "mod_wsgi (pid=%d): SystemExit exception raised by "
+                         "WSGI script '%s' ignored.",
+                         getpid(), filename);
         }
         Py_END_ALLOW_THREADS
     }
-    else {
-        Py_BEGIN_ALLOW_THREADS
-        if (r) {
+    else
+    {
+        Py_BEGIN_ALLOW_THREADS if (r)
+        {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                           "mod_wsgi (pid=%d): Exception occurred processing "
-                          "WSGI script '%s'.", getpid(), filename);
+                          "WSGI script '%s'.",
+                          getpid(), filename);
         }
-        else {
+        else
+        {
             ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                          "mod_wsgi (pid=%d): Exception occurred processing "
-                          "WSGI script '%s'.", getpid(), filename);
+                         "mod_wsgi (pid=%d): Exception occurred processing "
+                         "WSGI script '%s'.",
+                         getpid(), filename);
         }
         Py_END_ALLOW_THREADS
     }
@@ -573,24 +599,28 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
     PyErr_Fetch(&type, &value, &traceback);
     PyErr_NormalizeException(&type, &value, &traceback);
 
-    if (!value) {
+    if (!value)
+    {
         value = Py_None;
         Py_INCREF(value);
     }
 
-    if (!traceback) {
+    if (!traceback)
+    {
         traceback = Py_None;
         Py_INCREF(traceback);
     }
 
     m = PyImport_ImportModule("traceback");
 
-    if (m) {
+    if (m)
+    {
         PyObject *d = NULL;
         PyObject *o = NULL;
         d = PyModule_GetDict(m);
         o = PyDict_GetItemString(d, "print_exception");
-        if (o) {
+        if (o)
+        {
             PyObject *args = NULL;
             Py_INCREF(o);
             args = Py_BuildValue("(OOOOO)", type, value, traceback,
@@ -601,7 +631,8 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
         }
     }
 
-    if (!result) {
+    if (!result)
+    {
         /*
          * If can't output exception and traceback then
          * use PyErr_Print to dump out details of the
@@ -613,27 +644,33 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
 
         PyErr_Restore(type, value, traceback);
 
-        if (!PyErr_ExceptionMatches(PyExc_SystemExit)) {
+        if (!PyErr_ExceptionMatches(PyExc_SystemExit))
+        {
             PyErr_Print();
             PyErr_Clear();
         }
-        else {
+        else
+        {
             PyErr_Clear();
         }
     }
-    else {
-        if (publish) {
+    else
+    {
+        if (publish)
+        {
             PyObject *event = NULL;
             PyObject *object = NULL;
 
-            if (wsgi_event_subscribers()) {
+            if (wsgi_event_subscribers())
+            {
                 WSGIThreadInfo *thread_info;
 
                 thread_info = wsgi_thread_info(0, 0);
 
                 event = PyDict_New();
 
-                if (r->log_id) {
+                if (r->log_id)
+                {
                     object = PyUnicode_DecodeLatin1(r->log_id,
                                                     strlen(r->log_id), NULL);
                     PyDict_SetItemString(event, "request_id", object);

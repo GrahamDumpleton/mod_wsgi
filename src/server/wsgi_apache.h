@@ -45,7 +45,7 @@
 #error Sorry, Apache developer package does not appear to be installed.
 #endif
 
-#if !AP_MODULE_MAGIC_AT_LEAST(20120211,0)
+#if !AP_MODULE_MAGIC_AT_LEAST(20120211, 0)
 #error Sorry, mod_wsgi 6.0+ requires Apache 2.4+.
 #endif
 
@@ -64,8 +64,7 @@
 #include "apr_optional.h"
 
 APR_DECLARE_OPTIONAL_FN(int, ssl_is_https, (conn_rec *));
-APR_DECLARE_OPTIONAL_FN(char *, ssl_var_lookup, (apr_pool_t *,
-      server_rec *, conn_rec *, request_rec *, char *));
+APR_DECLARE_OPTIONAL_FN(char *, ssl_var_lookup, (apr_pool_t *, server_rec *, conn_rec *, request_rec *, char *));
 
 #include "ap_config.h"
 #include "http_core.h"
@@ -82,9 +81,9 @@ APLOG_USE_MODULE(wsgi);
 
 #if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
 typedef apr_uint16_t apr_wchar_t;
-extern apr_status_t wsgi_utf8_to_unicode_path(apr_wchar_t* retstr,
-                                              apr_size_t retlen, 
-                                              const char* srcstr);
+extern apr_status_t wsgi_utf8_to_unicode_path(apr_wchar_t *retstr,
+                                              apr_size_t retlen,
+                                              const char *srcstr);
 #endif
 
 /* ------------------------------------------------------------------------- */

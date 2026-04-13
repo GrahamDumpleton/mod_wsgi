@@ -31,7 +31,7 @@
 extern apr_uint64_t wsgi_total_requests;
 extern int wsgi_active_requests;
 
-extern apr_thread_mutex_t* wsgi_monitor_lock;
+extern apr_thread_mutex_t *wsgi_monitor_lock;
 
 extern PyMethodDef wsgi_request_metrics_method[];
 
@@ -41,8 +41,8 @@ extern WSGIThreadInfo *wsgi_start_request(request_rec *r);
 extern void wsgi_end_request(void);
 
 extern void wsgi_record_request_times(apr_time_t request_start,
-        apr_time_t queue_start, apr_time_t daemon_start,
-        apr_time_t application_start, apr_time_t application_finish);
+                                      apr_time_t queue_start, apr_time_t daemon_start,
+                                      apr_time_t application_start, apr_time_t application_finish);
 
 extern PyMethodDef wsgi_server_metrics_method[];
 

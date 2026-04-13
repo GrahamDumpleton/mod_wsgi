@@ -24,8 +24,9 @@
 
 /* ------------------------------------------------------------------------- */
 
-typedef struct {
-    apr_bucket_refcount  refcount;
+typedef struct
+{
+    apr_bucket_refcount refcount;
     char *base;
     const char *application_group;
     PyObject *string_object;
@@ -38,8 +39,10 @@ static void wsgi_python_bucket_destroy(void *data)
 {
     wsgi_apr_bucket_python *h = data;
 
-    if (apr_bucket_shared_destroy(h)) {
-        if (h->decref_string) {
+    if (apr_bucket_shared_destroy(h))
+    {
+        if (h->decref_string)
+        {
             InterpreterObject *interp = NULL;
 
             interp = wsgi_acquire_interpreter(h->application_group);
@@ -71,8 +74,7 @@ static apr_bucket *wsgi_apr_bucket_python_make(apr_bucket *b,
                                                apr_size_t length,
                                                const char *application_group,
                                                PyObject *string_object,
-                                               int decref_string
-                                               )
+                                               int decref_string)
 {
     wsgi_apr_bucket_python *h;
 
@@ -103,7 +105,7 @@ apr_bucket *wsgi_apr_bucket_python_create(const char *buf, apr_size_t length,
     b->list = list;
 
     return wsgi_apr_bucket_python_make(b, buf, length, application_group,
-            string_object, 0);
+                                       string_object, 0);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -112,7 +114,8 @@ static apr_status_t wsgi_python_bucket_setaside(apr_bucket *b, apr_pool_t *p)
 {
     wsgi_apr_bucket_python *h = b->data;
 
-    if (h->decref_string) {
+    if (h->decref_string)
+    {
         /*
          * XXX Not sure if this is correct. Can't assume that if doing
          * a set aside of a bucket which was already set aside that
@@ -124,12 +127,13 @@ static apr_status_t wsgi_python_bucket_setaside(apr_bucket *b, apr_pool_t *p)
         Py_INCREF(h->string_object);
         wsgi_release_interpreter(interp);
     }
-    else {
+    else
+    {
         Py_INCREF(h->string_object);
     }
 
     wsgi_apr_bucket_python_make(b, (char *)h->base + b->start, b->length,
-            h->application_group, h->string_object, 1);
+                                h->application_group, h->string_object, 1);
 
     return APR_SUCCESS;
 }
@@ -142,8 +146,7 @@ const apr_bucket_type_t wsgi_apr_bucket_type_python = {
     wsgi_python_bucket_read,
     wsgi_python_bucket_setaside,
     apr_bucket_shared_split,
-    apr_bucket_shared_copy
-};
+    apr_bucket_shared_copy};
 
 /* ------------------------------------------------------------------------- */
 

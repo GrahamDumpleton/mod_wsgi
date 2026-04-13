@@ -44,18 +44,20 @@ WSGIThreadInfo *wsgi_thread_info(int create, int request)
 {
     WSGIThreadInfo *thread_handle = NULL;
 
-    apr_threadkey_private_get((void**)&thread_handle, wsgi_thread_key);
+    apr_threadkey_private_get((void **)&thread_handle, wsgi_thread_key);
 
-    if (!thread_handle && create) {
+    if (!thread_handle && create)
+    {
         WSGIThreadInfo **entry = NULL;
 
-        if (!wsgi_thread_details) {
+        if (!wsgi_thread_details)
+        {
             wsgi_thread_details = apr_array_make(
-                    wsgi_server->process->pool, 3, sizeof(char*));
+                wsgi_server->process->pool, 3, sizeof(char *));
         }
 
         thread_handle = (WSGIThreadInfo *)apr_pcalloc(
-                wsgi_server->process->pool, sizeof(WSGIThreadInfo));
+            wsgi_server->process->pool, sizeof(WSGIThreadInfo));
 
         thread_handle->log_buffer = NULL;
 
@@ -67,7 +69,8 @@ WSGIThreadInfo *wsgi_thread_info(int create, int request)
         apr_threadkey_private_set(thread_handle, wsgi_thread_key);
     }
 
-    if (thread_handle && request && !thread_handle->request_thread) {
+    if (thread_handle && request && !thread_handle->request_thread)
+    {
         thread_handle->request_thread = 1;
         wsgi_request_threads++;
     }
@@ -95,7 +98,8 @@ int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage)
 
     mach_port_deallocate(mach_task_self(), thread);
 
-    if (kr == KERN_SUCCESS && (info.flags & TH_FLAGS_IDLE) == 0) {
+    if (kr == KERN_SUCCESS && (info.flags & TH_FLAGS_IDLE) == 0)
+    {
         usage->user_time = info.user_time.seconds;
         usage->user_time += info.user_time.microseconds / 1000000.0;
         usage->system_time = info.system_time.seconds;
@@ -109,7 +113,8 @@ int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage)
     usage->user_time = 0.0;
     usage->system_time = 0.0;
 
-    if (getrusage(RUSAGE_THREAD, &info) == 0) {
+    if (getrusage(RUSAGE_THREAD, &info) == 0)
+    {
         usage->user_time = info.ru_utime.tv_sec;
         usage->user_time += info.ru_utime.tv_usec / 1000000.0;
         usage->system_time = info.ru_stime.tv_sec;
@@ -118,7 +123,7 @@ int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage)
         return 1;
     }
 #elif defined(linux)
-    FILE* fp;
+    FILE *fp;
     char filename[256];
     char content[1024];
     long tid;
@@ -146,12 +151,16 @@ int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage)
 
     fp = fopen(filename, "r");
 
-    if (fp) {
-        if (fread(content, 1, sizeof(content)-1, fp)) {
+    if (fp)
+    {
+        if (fread(content, 1, sizeof(content) - 1, fp))
+        {
             p = content;
 
-            while (*p && offset) {
-                if (*p++ == ' ') {
+            while (*p && offset)
+            {
+                if (*p++ == ' ')
+                {
                     offset--;
                     while (*p == ' ')
                         p++;
