@@ -122,7 +122,7 @@ static PyObject *Stream_iternext(StreamObject *self)
 
     if (!PyLong_Check(attribute))
     {
-        PyErr_SetString(PyExc_KeyError,
+        PyErr_SetString(PyExc_TypeError,
                         "file wrapper blksize attribute not integer");
         Py_DECREF(method);
         Py_DECREF(attribute);
