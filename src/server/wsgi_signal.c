@@ -87,14 +87,14 @@ static PyObject *SignalIntercept_call(
         if (o)
         {
             PyObject *log = NULL;
-            PyObject *args = NULL;
+            PyObject *call_args = NULL;
             PyObject *result = NULL;
             Py_INCREF(o);
             log = newLogObject(NULL, APLOG_WARNING, NULL, 0);
-            args = Py_BuildValue("(OOO)", Py_None, Py_None, log);
-            result = PyObject_CallObject(o, args);
+            call_args = Py_BuildValue("(OOO)", Py_None, Py_None, log);
+            result = PyObject_CallObject(o, call_args);
             Py_XDECREF(result);
-            Py_DECREF(args);
+            Py_DECREF(call_args);
             Py_DECREF(log);
             Py_DECREF(o);
         }
@@ -152,7 +152,8 @@ PyTypeObject SignalIntercept_Type = {
 
 /* ------------------------------------------------------------------------- */
 
-static PyObject *wsgi_system_exit(PyObject *self, PyObject *args)
+static PyObject *wsgi_system_exit(PyObject *Py_UNUSED(self),
+                                  PyObject *Py_UNUSED(args))
 {
     PyErr_SetObject(PyExc_SystemExit, 0);
 
