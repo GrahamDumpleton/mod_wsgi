@@ -258,8 +258,8 @@ static int Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
         {
             /* Need to join with buffered value. */
 
-            long m = 0;
-            long n = 0;
+            Py_ssize_t m = 0;
+            Py_ssize_t n = 0;
             char *s = NULL;
 
             m = self->l;
@@ -284,7 +284,7 @@ static int Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
         }
         else
         {
-            long n = 0;
+            Py_ssize_t n = 0;
             char *s = NULL;
 
             n = q - p + 1;
@@ -323,8 +323,8 @@ static int Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
         {
             /* Need to join with buffered value. */
 
-            long m = 0;
-            long n = 0;
+            Py_ssize_t m = 0;
+            Py_ssize_t n = 0;
             char *tmp = NULL;
 
             m = self->l;
@@ -342,7 +342,7 @@ static int Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
         }
         else
         {
-            long n = 0;
+            Py_ssize_t n = 0;
 
             n = e - p + 1;
 
