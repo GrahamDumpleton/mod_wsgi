@@ -219,7 +219,7 @@ static PyObject *Log_isatty(LogObject *self, PyObject *args)
     return Py_False;
 }
 
-static void Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
+static int Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
 {
     const char *p = NULL;
     const char *q = NULL;
@@ -257,6 +257,10 @@ static void Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
             n = m + q - p + 1;
 
             s = (char *)malloc(n);
+            if (!s) {
+                PyErr_NoMemory();
+                return -1;
+            }
             memcpy(s, self->s, m);
             memcpy(s + m, p, q - p);
             s[n - 1] = '\0';
@@ -277,6 +281,10 @@ static void Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
             n = q - p + 1;
 
             s = (char *)malloc(n);
+            if (!s) {
+                PyErr_NoMemory();
+                return -1;
+            }
             memcpy(s, p, q - p);
             s[n - 1] = '\0';
 
@@ -308,11 +316,17 @@ static void Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
 
             long m = 0;
             long n = 0;
+            char *tmp = NULL;
 
             m = self->l;
             n = m + e - p + 1;
 
-            self->s = (char *)realloc(self->s, n);
+            tmp = (char *)realloc(self->s, n);
+            if (!tmp) {
+                PyErr_NoMemory();
+                return -1;
+            }
+            self->s = tmp;
             memcpy(self->s + m, p, e - p);
             self->s[n - 1] = '\0';
             self->l = n - 1;
@@ -324,11 +338,17 @@ static void Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
             n = e - p + 1;
 
             self->s = (char *)malloc(n);
+            if (!self->s) {
+                PyErr_NoMemory();
+                return -1;
+            }
             memcpy(self->s, p, n - 1);
             self->s[n - 1] = '\0';
             self->l = n - 1;
         }
     }
+
+    return 0;
 }
 
 static PyObject *Log_write(LogObject *self, PyObject *args)
@@ -353,7 +373,8 @@ static PyObject *Log_write(LogObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "s#:write", &msg, &len))
         return NULL;
 
-    Log_queue(self, msg, len);
+    if (Log_queue(self, msg, len) != 0)
+        return NULL;
 
     Py_INCREF(Py_None);
     return Py_None;
