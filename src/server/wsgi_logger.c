@@ -416,21 +416,18 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
     while ((item = PyIter_Next(iterator)))
     {
         PyObject *result = NULL;
-        PyObject *args = NULL;
+        PyObject *item_args = NULL;
 
-        args = PyTuple_Pack(1, item);
+        item_args = PyTuple_Pack(1, item);
 
-        result = Log_write(self, args);
+        result = Log_write(self, item_args);
 
-        Py_DECREF(args);
+        Py_DECREF(item_args);
         Py_DECREF(item);
 
         if (!result)
         {
             Py_DECREF(iterator);
-
-            PyErr_SetString(PyExc_TypeError,
-                            "argument must be sequence of strings");
 
             return NULL;
         }
