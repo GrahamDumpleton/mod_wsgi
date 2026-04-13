@@ -1154,15 +1154,19 @@ static PyObject *wsgi_subscribe_events(PyObject *self, PyObject *args)
         if (list)
             PyList_Append(list, callback);
         else
+        {
+            Py_DECREF(module);
+            PyErr_SetString(PyExc_RuntimeError,
+                            "mod_wsgi event_callbacks not initialised");
             return NULL;
+        }
 
         Py_DECREF(module);
     }
     else
         return NULL;
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject *wsgi_subscribe_shutdown(PyObject *self, PyObject *args)
@@ -1187,15 +1191,19 @@ static PyObject *wsgi_subscribe_shutdown(PyObject *self, PyObject *args)
         if (list)
             PyList_Append(list, callback);
         else
+        {
+            Py_DECREF(module);
+            PyErr_SetString(PyExc_RuntimeError,
+                            "mod_wsgi shutdown_callbacks not initialised");
             return NULL;
+        }
 
         Py_DECREF(module);
     }
     else
         return NULL;
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 long wsgi_event_subscribers(void)
