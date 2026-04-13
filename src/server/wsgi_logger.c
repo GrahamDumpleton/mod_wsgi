@@ -460,7 +460,7 @@ static PyObject *Log_writable(LogObject *self, PyObject *Py_UNUSED(args))
 
 static PyObject *Log_fileno(LogObject *self, PyObject *Py_UNUSED(args))
 {
-    PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi log object is not "
+    PyErr_SetString(PyExc_OSError, "Apache/mod_wsgi log object is not "
                                    "associated with a file descriptor.");
 
     return NULL;
