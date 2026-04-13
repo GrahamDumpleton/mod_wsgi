@@ -26,7 +26,7 @@
 /* ------------------------------------------------------------------------- */
 
 extern PyObject *wsgi_convert_string_to_bytes(PyObject *value);
-extern PyObject *wsgi_convert_status_line_to_bytes(PyObject *headers);
+extern PyObject *wsgi_convert_status_line_to_bytes(PyObject *status_line);
 extern PyObject *wsgi_convert_headers_to_bytes(PyObject *headers);
 
 /* ------------------------------------------------------------------------- */

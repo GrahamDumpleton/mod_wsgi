@@ -39,11 +39,7 @@ PyObject *wsgi_convert_string_to_bytes(PyObject *value)
     result = PyUnicode_AsLatin1String(value);
 
     if (!result)
-    {
-        PyErr_SetString(PyExc_ValueError, "unicode object contains non "
-                                          "latin-1 characters");
         return NULL;
-    }
 
     return result;
 }
@@ -88,6 +84,9 @@ PyObject *wsgi_convert_headers_to_bytes(PyObject *headers)
     size = PyList_Size(headers);
     result = PyList_New(size);
 
+    if (!result)
+        return NULL;
+
     for (i = 0; i < size; i++)
     {
         PyObject *header = NULL;
@@ -114,13 +113,17 @@ PyObject *wsgi_convert_headers_to_bytes(PyObject *headers)
         if (PyTuple_Size(header) != 2)
         {
             PyErr_Format(PyExc_ValueError, "tuple of length 2 "
-                                           "expected for header, length is %d",
-                         (int)PyTuple_Size(header));
+                                           "expected for header, length is %zd",
+                         PyTuple_Size(header));
             Py_DECREF(result);
-            return 0;
+            return NULL;
         }
 
         result_tuple = PyTuple_New(2);
+
+        if (!result_tuple)
+            goto failure;
+
         PyList_SET_ITEM(result, i, result_tuple);
 
         header_name = PyTuple_GetItem(header, 0);
