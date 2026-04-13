@@ -152,16 +152,13 @@ static PyObject *Stream_iternext(StreamObject *self)
     return NULL;
 }
 
-static PyObject *Stream_close(StreamObject *self, PyObject *args)
+static PyObject *Stream_close(StreamObject *self, PyObject *Py_UNUSED(args))
 {
     PyObject *method = NULL;
     PyObject *result = NULL;
 
     if (!self->filelike || self->filelike == Py_None)
-    {
-        Py_INCREF(Py_None);
-        return Py_None;
-    }
+        Py_RETURN_NONE;
 
     method = PyObject_GetAttrString(self->filelike, "close");
 
@@ -178,17 +175,16 @@ static PyObject *Stream_close(StreamObject *self, PyObject *args)
     Py_DECREF(self->filelike);
     self->filelike = NULL;
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
-static PyObject *Stream_get_filelike(StreamObject *self, void *closure)
+static PyObject *Stream_get_filelike(StreamObject *self, void *Py_UNUSED(closure))
 {
     Py_INCREF(self->filelike);
     return self->filelike;
 }
 
-static PyObject *Stream_get_blksize(StreamObject *self, void *closure)
+static PyObject *Stream_get_blksize(StreamObject *self, void *Py_UNUSED(closure))
 {
     return PyLong_FromSize_t(self->blksize);
 }
