@@ -92,14 +92,14 @@ static PyObject *Stream_iternext(StreamObject *self)
     attribute = PyObject_GetAttrString((PyObject *)self, "filelike");
 
     if (!attribute)
-        return 0;
+        return NULL;
 
     method = PyObject_GetAttrString(attribute, "read");
 
     if (!method)
     {
         Py_DECREF(attribute);
-        return 0;
+        return NULL;
     }
 
     Py_DECREF(attribute);
@@ -109,7 +109,7 @@ static PyObject *Stream_iternext(StreamObject *self)
     if (!attribute)
     {
         Py_DECREF(method);
-        return 0;
+        return NULL;
     }
 
     if (!PyLong_Check(attribute))
@@ -119,7 +119,7 @@ static PyObject *Stream_iternext(StreamObject *self)
                      Py_TYPE(attribute)->tp_name);
         Py_DECREF(method);
         Py_DECREF(attribute);
-        return 0;
+        return NULL;
     }
 
     args = Py_BuildValue("(O)", attribute);
@@ -130,7 +130,7 @@ static PyObject *Stream_iternext(StreamObject *self)
     Py_DECREF(attribute);
 
     if (!result)
-        return 0;
+        return NULL;
 
     if (PyBytes_Check(result))
     {
@@ -138,7 +138,7 @@ static PyObject *Stream_iternext(StreamObject *self)
         {
             PyErr_SetObject(PyExc_StopIteration, Py_None);
             Py_DECREF(result);
-            return 0;
+            return NULL;
         }
 
         return result;
@@ -149,7 +149,7 @@ static PyObject *Stream_iternext(StreamObject *self)
     PyErr_SetString(PyExc_TypeError,
                     "file like object yielded non string type");
 
-    return 0;
+    return NULL;
 }
 
 static PyObject *Stream_close(StreamObject *self, PyObject *args)
