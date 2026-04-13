@@ -55,7 +55,7 @@ static double wsgi_utilization_time(int adjustment,
 
     now = apr_time_now();
 
-    if (wsgi_utilization_last != 0.0)
+    if (wsgi_utilization_last != 0)
     {
         utilization = (now - wsgi_utilization_last) / 1000000.0;
 
@@ -390,7 +390,7 @@ static PyObject *wsgi_request_metrics(void)
 
     apr_time_t stop_time;
     double stop_request_busy_time = 0.0;
-    apr_uint64_t stop_request_count = 0.0;
+    apr_uint64_t stop_request_count = 0;
 
     double request_busy_time = 0.0;
     double capacity_utilization = 0.0;
@@ -429,7 +429,7 @@ static PyObject *wsgi_request_metrics(void)
 
 #ifdef HAVE_TIMES
     struct tms tmsbuf;
-    static float tick = 0.0;
+    static double tick = 0.0;
 
     if (!tick)
     {
@@ -775,7 +775,7 @@ static PyObject *wsgi_process_metrics(void)
 
 #ifdef HAVE_TIMES
     struct tms tmsbuf;
-    static float tick = 0.0;
+    static double tick = 0.0;
 #endif
 
     apr_time_t current_time;
@@ -846,9 +846,7 @@ static PyObject *wsgi_process_metrics(void)
                    WSGI_INTERNED_STRING(current_time), object);
     Py_DECREF(object);
 
-    running_time = (apr_uint32_t)apr_time_sec((double)
-                                                  current_time -
-                                              wsgi_restart_time);
+    running_time = apr_time_sec((double)current_time - wsgi_restart_time);
 
     object = PyLong_FromLongLong(running_time);
     PyDict_SetItem(result,
@@ -997,9 +995,8 @@ static PyObject *wsgi_server_metrics(void)
                    WSGI_INTERNED_STRING(current_time), object);
     Py_DECREF(object);
 
-    running_time = (apr_uint32_t)apr_time_sec((double)
-                                                  current_time -
-                                              ap_scoreboard_image->global->restart_time);
+    running_time = apr_time_sec((double)current_time -
+                               ap_scoreboard_image->global->restart_time);
 
     object = PyLong_FromLongLong(running_time);
     PyDict_SetItem(scoreboard_dict,
