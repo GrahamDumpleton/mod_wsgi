@@ -33,12 +33,6 @@ int wsgi_apache_dummy = 1;
 
 /* ------------------------------------------------------------------------- */
 
-#if defined(MOD_WSGI_WITH_DAEMONS)
-
-#endif
-
-/* ------------------------------------------------------------------------- */
-
 #if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
 APR_DECLARE(apr_status_t)
 apr_conv_utf8_to_ucs2(const char *in,
