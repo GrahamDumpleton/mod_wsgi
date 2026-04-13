@@ -173,14 +173,16 @@ int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage)
                 p++;
 
             system_time = strtoul(p, &p, 10);
+
+            fclose(fp);
+
+            usage->user_time = (double)user_time / ticks;
+            usage->system_time = (double)system_time / ticks;
+
+            return 1;
         }
 
         fclose(fp);
-
-        usage->user_time = (double)user_time / ticks;
-        usage->system_time = (double)system_time / ticks;
-
-        return 1;
     }
 #endif
 
