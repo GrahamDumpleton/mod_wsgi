@@ -927,41 +927,25 @@ static PyObject *wsgi_server_metrics(void)
     /* Scoreboard needs to exist and server metrics enabled. */
 
     if (!ap_exists_scoreboard_image())
-    {
-        Py_INCREF(Py_None);
-
-        return Py_None;
-    }
+        Py_RETURN_NONE;
 
     if (!wsgi_daemon_pool)
     {
         if (!wsgi_server_config->server_metrics)
-        {
-            Py_INCREF(Py_None);
-
-            return Py_None;
-        }
+            Py_RETURN_NONE;
     }
 #if defined(MOD_WSGI_WITH_DAEMONS)
     else
     {
         if (!wsgi_daemon_process->group->server_metrics)
-        {
-            Py_INCREF(Py_None);
-
-            return Py_None;
-        }
+            Py_RETURN_NONE;
     }
 #endif
 
     gs_record = ap_get_scoreboard_global();
 
     if (!gs_record)
-    {
-        Py_INCREF(Py_None);
-
-        return Py_None;
-    }
+        Py_RETURN_NONE;
 
     /* Return everything in a dictionary. Start with global. */
 
@@ -1132,7 +1116,7 @@ PyMethodDef wsgi_server_metrics_method[] = {
 
 /* ------------------------------------------------------------------------- */
 
-static PyObject *wsgi_subscribe_events(PyObject *self, PyObject *args)
+static PyObject *wsgi_subscribe_events(PyObject *Py_UNUSED(self), PyObject *args)
 {
     PyObject *callback = NULL;
 
@@ -1169,7 +1153,7 @@ static PyObject *wsgi_subscribe_events(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
-static PyObject *wsgi_subscribe_shutdown(PyObject *self, PyObject *args)
+static PyObject *wsgi_subscribe_shutdown(PyObject *Py_UNUSED(self), PyObject *args)
 {
     PyObject *callback = NULL;
 
@@ -1433,7 +1417,7 @@ PyMethodDef wsgi_subscribe_shutdown_method[] = {
 
 /* ------------------------------------------------------------------------- */
 
-static PyObject *wsgi_request_data(PyObject *self, PyObject *args)
+static PyObject *wsgi_request_data(PyObject *Py_UNUSED(self), PyObject *Py_UNUSED(args))
 {
     WSGIThreadInfo *thread_info;
 
