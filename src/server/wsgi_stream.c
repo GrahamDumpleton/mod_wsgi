@@ -44,11 +44,11 @@ static PyObject *Stream_new(PyTypeObject *type, PyObject *args,
 static int Stream_init(StreamObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *filelike = NULL;
-    apr_size_t blksize = HUGE_STRING_LEN;
+    Py_ssize_t blksize = HUGE_STRING_LEN;
 
     static char *kwlist[] = {"filelike", "blksize", NULL};
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|l:FileWrapper", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|n:FileWrapper", kwlist,
                                      &filelike, &blksize))
     {
         return -1;
@@ -190,7 +190,7 @@ static PyObject *Stream_get_filelike(StreamObject *self, void *closure)
 
 static PyObject *Stream_get_blksize(StreamObject *self, void *closure)
 {
-    return PyLong_FromLong(self->blksize);
+    return PyLong_FromSize_t(self->blksize);
 }
 
 static PyMethodDef Stream_methods[] = {
