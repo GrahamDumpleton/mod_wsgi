@@ -623,7 +623,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                 const char *end;
                 const char *value;
 
-                PyObject *item;
+                PyObject *path_entry;
                 PyObject *args;
 
                 PyObject *result = NULL;
@@ -635,8 +635,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                 if (end)
                 {
-                    item = PyUnicode_DecodeFSDefaultAndSize(start, end - start);
-                    value = PyUnicode_AsUTF8(item);
+                    path_entry = PyUnicode_DecodeFSDefaultAndSize(start, end - start);
+                    value = PyUnicode_AsUTF8(path_entry);
                     start = end + 1;
 
                     Py_BEGIN_ALLOW_THREADS
@@ -646,7 +646,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                                      getpid(), value);
                     Py_END_ALLOW_THREADS
 
-                        args = Py_BuildValue("(O)", item);
+                        args = Py_BuildValue("(O)", path_entry);
                     result = PyObject_CallObject(object, args);
 
                     if (!result)
@@ -661,16 +661,16 @@ InterpreterObject *newInterpreterObject(const char *name)
                     }
 
                     Py_XDECREF(result);
-                    Py_DECREF(item);
+                    Py_DECREF(path_entry);
                     Py_DECREF(args);
 
                     end = strchr(start, DELIM);
 
                     while (result && end)
                     {
-                        item = PyUnicode_DecodeFSDefaultAndSize(start,
+                        path_entry = PyUnicode_DecodeFSDefaultAndSize(start,
                                                                 end - start);
-                        value = PyUnicode_AsUTF8(item);
+                        value = PyUnicode_AsUTF8(path_entry);
                         start = end + 1;
 
                         Py_BEGIN_ALLOW_THREADS
@@ -680,7 +680,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                                          getpid(), value);
                         Py_END_ALLOW_THREADS
 
-                            args = Py_BuildValue("(O)", item);
+                            args = Py_BuildValue("(O)", path_entry);
                         result = PyObject_CallObject(object, args);
 
                         if (!result)
@@ -695,15 +695,15 @@ InterpreterObject *newInterpreterObject(const char *name)
                         }
 
                         Py_XDECREF(result);
-                        Py_DECREF(item);
+                        Py_DECREF(path_entry);
                         Py_DECREF(args);
 
                         end = strchr(start, DELIM);
                     }
                 }
 
-                item = PyUnicode_DecodeFSDefault(start);
-                value = PyUnicode_AsUTF8(item);
+                path_entry = PyUnicode_DecodeFSDefault(start);
+                value = PyUnicode_AsUTF8(path_entry);
 
                 Py_BEGIN_ALLOW_THREADS
                     ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
@@ -712,7 +712,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                                  getpid(), value);
                 Py_END_ALLOW_THREADS
 
-                    args = Py_BuildValue("(O)", item);
+                    args = Py_BuildValue("(O)", path_entry);
                 result = PyObject_CallObject(object, args);
 
                 if (!result)
@@ -726,7 +726,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                 }
 
                 Py_XDECREF(result);
-                Py_XDECREF(item);
+                Py_XDECREF(path_entry);
                 Py_DECREF(args);
 
                 Py_DECREF(object);
