@@ -123,6 +123,14 @@ static PyObject *Stream_iternext(StreamObject *self)
     }
 
     args = Py_BuildValue("(O)", attribute);
+
+    if (!args)
+    {
+        Py_DECREF(method);
+        Py_DECREF(attribute);
+        return NULL;
+    }
+
     result = PyObject_CallObject(method, args);
 
     Py_DECREF(args);
