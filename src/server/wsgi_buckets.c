@@ -46,8 +46,21 @@ static void wsgi_python_bucket_destroy(void *data)
             InterpreterObject *interp = NULL;
 
             interp = wsgi_acquire_interpreter(h->application_group);
-            Py_DECREF(h->string_object);
-            wsgi_release_interpreter(interp);
+
+            /*
+             * If the interpreter could not be acquired (e.g. it was
+             * never successfully created or has already been torn
+             * down) we cannot safely decrement the reference on the
+             * Python string object because we do not hold the GIL
+             * for it. Accept leaking the reference in this shutdown
+             * path rather than risking a crash.
+             */
+
+            if (interp)
+            {
+                Py_DECREF(h->string_object);
+                wsgi_release_interpreter(interp);
+            }
         }
 
         apr_bucket_free(h);
@@ -124,6 +137,19 @@ static apr_status_t wsgi_python_bucket_setaside(apr_bucket *b, apr_pool_t *p)
         InterpreterObject *interp = NULL;
 
         interp = wsgi_acquire_interpreter(h->application_group);
+
+        /*
+         * If the interpreter could not be acquired we cannot safely
+         * increment the reference count on the Python string object
+         * because we do not hold the GIL for it. Return an error so
+         * the bucket brigade can be cleaned up rather than risking
+         * a crash from working with the Python object without the
+         * GIL held.
+         */
+
+        if (!interp)
+            return APR_EGENERAL;
+
         Py_INCREF(h->string_object);
         wsgi_release_interpreter(interp);
     }
