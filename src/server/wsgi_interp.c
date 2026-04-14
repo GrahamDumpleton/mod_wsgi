@@ -2262,15 +2262,31 @@ void wsgi_publish_process_stopping(char *reason)
 
         interp = wsgi_acquire_interpreter((char *)key);
 
+        if (!interp)
+        {
+            hi = apr_hash_next(hi);
+            continue;
+        }
+
         event = PyDict_New();
-
         object = PyUnicode_DecodeLatin1(reason, strlen(reason), NULL);
-        PyDict_SetItemString(event, "shutdown_reason", object);
-        Py_DECREF(object);
 
-        wsgi_publish_event("process_stopping", event);
+        if (event && object &&
+            PyDict_SetItemString(event, "shutdown_reason", object) == 0)
+        {
+            wsgi_publish_event("process_stopping", event);
+        }
+        else
+        {
+            ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Failed to publish "
+                         "'process_stopping' event for interpreter '%s'.",
+                         getpid(), (const char *)key);
+            PyErr_Clear();
+        }
 
-        Py_DECREF(event);
+        Py_XDECREF(object);
+        Py_XDECREF(event);
 
         wsgi_release_interpreter(interp);
 
