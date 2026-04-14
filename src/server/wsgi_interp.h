@@ -60,7 +60,7 @@ extern apr_thread_mutex_t *wsgi_shutdown_lock;
 
 extern void wsgi_python_version(void);
 
-extern void wsgi_python_init(apr_pool_t *p);
+extern apr_status_t wsgi_python_init(apr_pool_t *p);
 extern apr_status_t wsgi_python_term(void);
 
 extern InterpreterObject *wsgi_acquire_interpreter(const char *name);

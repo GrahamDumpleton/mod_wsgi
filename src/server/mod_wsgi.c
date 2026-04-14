@@ -10771,10 +10771,21 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         /*
          * Initialise Python if required to be done in the child
-         * process.
+         * process. If initialisation fails the daemon process is
+         * essentially useless, but rather than exit (which Apache
+         * would just respawn) log a critical error and continue.
+         * The wsgi_python_initialized flag will remain 0 so code
+         * paths gated on it will short circuit and request handlers
+         * will return errors when Python operations are attempted.
          */
 
-        wsgi_python_init(p);
+        if (wsgi_python_init(p) != APR_SUCCESS)
+        {
+            ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Python initialisation failed "
+                         "in daemon process '%s'.",
+                         getpid(), daemon->group->name);
+        }
 
         /*
          * If the daemon is associated with a virtual host then
@@ -10903,15 +10914,17 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         /*
          * Setup Python in the child daemon process. We need
          * to perform the special Python setup which has to be
-         * done after a fork.
+         * done after a fork. Skip this if Python initialisation
+         * failed earlier as the interpreter is not usable.
          */
 
-        wsgi_python_initialized = 1;
+        if (wsgi_python_initialized)
+        {
+            wsgi_python_path = daemon->group->python_path;
+            wsgi_python_eggs = daemon->group->python_eggs;
 
-        wsgi_python_path = daemon->group->python_path;
-        wsgi_python_eggs = daemon->group->python_eggs;
-
-        wsgi_python_child_init(wsgi_daemon_pool);
+            wsgi_python_child_init(wsgi_daemon_pool);
+        }
 
         /*
          * Create socket wrapper for listener file descriptor
@@ -14011,17 +14024,30 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
     {
         /*
          * Initialise Python if required to be done in
-         * the child process.
+         * the child process. If initialisation fails,
+         * skip subsequent Python setup so that we don't
+         * crash trying to use a broken interpreter. The
+         * wsgi_python_initialized flag will remain 0 so
+         * code paths gated on it will short circuit.
          */
 
-        wsgi_python_init(p);
+        if (wsgi_python_init(p) != APR_SUCCESS)
+        {
+            ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
+                         "mod_wsgi (pid=%d): Python initialisation failed; "
+                         "Python based handlers will not be available in "
+                         "this child process.",
+                         getpid());
+        }
+        else
+        {
+            /*
+             * Now perform additional initialisation steps
+             * always done in child process.
+             */
 
-        /*
-         * Now perform additional initialisation steps
-         * always done in child process.
-         */
-
-        wsgi_python_child_init(p);
+            wsgi_python_child_init(p);
+        }
     }
 }
 

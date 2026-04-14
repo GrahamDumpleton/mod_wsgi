@@ -1570,22 +1570,27 @@ static apr_status_t wsgi_python_parent_cleanup(void *data)
     return APR_SUCCESS;
 }
 
-static void wsgi_python_init_failed(PyStatus status)
+static int wsgi_python_init_failed(PyStatus status)
 {
     /*
      * On a PyConfig API failure, usually a memory allocation failure,
-     * log a critical error.
+     * log a critical error. Returns non-zero so callers can track
+     * that a failure has occurred and bail out before continuing on
+     * to call Py_InitializeFromConfig() with a broken config.
      */
     ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
                  "mod_wsgi (pid=%d): Initializing Python failed: %s",
                  getpid(), status.err_msg);
+
+    return 1;
 }
 
-void wsgi_python_init(apr_pool_t *p)
+apr_status_t wsgi_python_init(apr_pool_t *p)
 {
     const char *python_home = 0;
 
     int is_pyvenv = 0;
+    int init_failed = 0;
 
     PyConfig config;
     PyStatus status;
@@ -1640,7 +1645,7 @@ void wsgi_python_init(apr_pool_t *p)
 #endif
                 status = PyWideStringList_Append(&config.warnoptions, s);
                 if (PyStatus_Exception(status))
-                    wsgi_python_init_failed(status);
+                    init_failed = wsgi_python_init_failed(status);
             }
         }
 
@@ -1690,7 +1695,7 @@ void wsgi_python_init(apr_pool_t *p)
 #endif
             status = PyConfig_SetString(&config, &config.home, s);
             if (PyStatus_Exception(status))
-                wsgi_python_init_failed(status);
+                init_failed = wsgi_python_init_failed(status);
         }
 #endif
 #else
@@ -1805,7 +1810,7 @@ void wsgi_python_init(apr_pool_t *p)
 
                 status = PyConfig_SetString(&config, &config.program_name, s);
                 if (PyStatus_Exception(status))
-                    wsgi_python_init_failed(status);
+                    init_failed = wsgi_python_init_failed(status);
             }
             else
             {
@@ -1819,7 +1824,7 @@ void wsgi_python_init(apr_pool_t *p)
 
                 status = PyConfig_SetString(&config, &config.home, s);
                 if (PyStatus_Exception(status))
-                    wsgi_python_init_failed(status);
+                    init_failed = wsgi_python_init_failed(status);
             }
         }
 #endif
@@ -1841,6 +1846,19 @@ void wsgi_python_init(apr_pool_t *p)
             config.hash_seed = (unsigned long)seed;
         }
 
+        /*
+         * If any earlier PyConfig setup failed, don't proceed to
+         * initialize Python as the config is likely incomplete or
+         * broken and Py_InitializeFromConfig() may either fail or
+         * worse, succeed with an unexpected configuration.
+         */
+
+        if (init_failed)
+        {
+            PyConfig_Clear(&config);
+            return APR_EGENERAL;
+        }
+
         /* Initialise Python. */
 
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
@@ -1848,7 +1866,11 @@ void wsgi_python_init(apr_pool_t *p)
 
         status = Py_InitializeFromConfig(&config);
         if (PyStatus_Exception(status))
+        {
             wsgi_python_init_failed(status);
+            PyConfig_Clear(&config);
+            return APR_EGENERAL;
+        }
 
         /*
          * We now want to release the GIL. Before we do that
@@ -1873,6 +1895,8 @@ void wsgi_python_init(apr_pool_t *p)
     }
 
     PyConfig_Clear(&config);
+
+    return APR_SUCCESS;
 }
 
 /*
