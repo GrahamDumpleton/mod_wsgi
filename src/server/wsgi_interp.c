@@ -1872,6 +1872,8 @@ void wsgi_python_init(apr_pool_t *p)
         apr_pool_cleanup_register(p, NULL, wsgi_python_parent_cleanup,
                                   apr_pool_cleanup_null);
     }
+
+    PyConfig_Clear(&config);
 }
 
 /*
