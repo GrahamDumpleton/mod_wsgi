@@ -50,6 +50,29 @@ const char *wsgi_python_eggs = NULL;
 
 PyTypeObject Interpreter_Type;
 
+/*
+ * Helper to add an object to a module. Properly handles the case
+ * where the value is NULL (i.e. the allocator that produced it
+ * failed) and where PyModule_AddObject() itself fails. The latter
+ * does not steal the reference on failure, so the value must be
+ * decremented in that case. Returns 0 on success, -1 on failure.
+ */
+
+static int wsgi_module_add_object(PyObject *module, const char *name,
+                                  PyObject *value)
+{
+    if (!value)
+        return -1;
+
+    if (PyModule_AddObject(module, name, value) < 0)
+    {
+        Py_DECREF(value);
+        return -1;
+    }
+
+    return 0;
+}
+
 InterpreterObject *newInterpreterObject(const char *name)
 {
     PyInterpreterState *interp = NULL;
@@ -236,8 +259,23 @@ InterpreterObject *newInterpreterObject(const char *name)
      */
 
     object = PyList_New(0);
+    if (!object)
+        goto failure;
+
     item = PyUnicode_FromString("mod_wsgi");
-    PyList_Append(object, item);
+    if (!item)
+    {
+        Py_DECREF(object);
+        goto failure;
+    }
+
+    if (PyList_Append(object, item) < 0)
+    {
+        Py_DECREF(item);
+        Py_DECREF(object);
+        goto failure;
+    }
+
     PySys_SetObject("argv", object);
     Py_DECREF(item);
     Py_DECREF(object);
@@ -836,23 +874,31 @@ InterpreterObject *newInterpreterObject(const char *name)
      * 'mod_wsgi' module.
      */
 
-    PyModule_AddObject(module, "version", Py_BuildValue("(iii)", MOD_WSGI_MAJORVERSION_NUMBER, MOD_WSGI_MINORVERSION_NUMBER, MOD_WSGI_MICROVERSION_NUMBER));
+    if (wsgi_module_add_object(module, "version",
+            Py_BuildValue("(iii)", MOD_WSGI_MAJORVERSION_NUMBER,
+                          MOD_WSGI_MINORVERSION_NUMBER,
+                          MOD_WSGI_MICROVERSION_NUMBER)) < 0)
+        goto failure;
 
     /* Add type object for file wrapper. */
 
     Py_INCREF(&Stream_Type);
-    PyModule_AddObject(module, "FileWrapper", (PyObject *)&Stream_Type);
+    if (wsgi_module_add_object(module, "FileWrapper",
+                               (PyObject *)&Stream_Type) < 0)
+        goto failure;
 
     /*
      * Add information about process group and application
      * group to the Python 'mod_wsgi' module.
      */
 
-    PyModule_AddObject(module, "process_group",
-                       PyUnicode_DecodeLatin1(wsgi_daemon_group,
-                                              strlen(wsgi_daemon_group), NULL));
-    PyModule_AddObject(module, "application_group",
-                       PyUnicode_DecodeLatin1(name, strlen(name), NULL));
+    if (wsgi_module_add_object(module, "process_group",
+            PyUnicode_DecodeLatin1(wsgi_daemon_group,
+                                   strlen(wsgi_daemon_group), NULL)) < 0)
+        goto failure;
+    if (wsgi_module_add_object(module, "application_group",
+            PyUnicode_DecodeLatin1(name, strlen(name), NULL)) < 0)
+        goto failure;
 
     /*
      * Add information about number of processes and threads
@@ -864,11 +910,13 @@ InterpreterObject *newInterpreterObject(const char *name)
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process)
     {
-        object = PyLong_FromLong(wsgi_daemon_process->group->processes);
-        PyModule_AddObject(module, "maximum_processes", object);
+        if (wsgi_module_add_object(module, "maximum_processes",
+                PyLong_FromLong(wsgi_daemon_process->group->processes)) < 0)
+            goto failure;
 
-        object = PyLong_FromLong(wsgi_daemon_process->group->threads);
-        PyModule_AddObject(module, "threads_per_process", object);
+        if (wsgi_module_add_object(module, "threads_per_process",
+                PyLong_FromLong(wsgi_daemon_process->group->threads)) < 0)
+            goto failure;
     }
     else
     {
@@ -890,11 +938,13 @@ InterpreterObject *newInterpreterObject(const char *name)
         max_threads = (max_threads <= 0) ? 1 : max_threads;
         max_processes = (max_processes <= 0) ? 1 : max_processes;
 
-        object = PyLong_FromLong(max_processes);
-        PyModule_AddObject(module, "maximum_processes", object);
+        if (wsgi_module_add_object(module, "maximum_processes",
+                PyLong_FromLong(max_processes)) < 0)
+            goto failure;
 
-        object = PyLong_FromLong(max_threads);
-        PyModule_AddObject(module, "threads_per_process", object);
+        if (wsgi_module_add_object(module, "threads_per_process",
+                PyLong_FromLong(max_threads)) < 0)
+            goto failure;
     }
 #else
     ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
@@ -915,34 +965,55 @@ InterpreterObject *newInterpreterObject(const char *name)
     max_threads = (max_threads <= 0) ? 1 : max_threads;
     max_processes = (max_processes <= 0) ? 1 : max_processes;
 
-    object = PyLong_FromLong(max_processes);
-    PyModule_AddObject(module, "maximum_processes", object);
+    if (wsgi_module_add_object(module, "maximum_processes",
+            PyLong_FromLong(max_processes)) < 0)
+        goto failure;
 
-    object = PyLong_FromLong(max_threads);
-    PyModule_AddObject(module, "threads_per_process", object);
+    if (wsgi_module_add_object(module, "threads_per_process",
+            PyLong_FromLong(max_threads)) < 0)
+        goto failure;
 #endif
 
-    PyModule_AddObject(module, "server_metrics", PyCFunction_New(&wsgi_server_metrics_method[0], NULL));
+    if (wsgi_module_add_object(module, "server_metrics",
+            PyCFunction_New(&wsgi_server_metrics_method[0], NULL)) < 0)
+        goto failure;
 
-    PyModule_AddObject(module, "process_metrics", PyCFunction_New(&wsgi_process_metrics_method[0], NULL));
+    if (wsgi_module_add_object(module, "process_metrics",
+            PyCFunction_New(&wsgi_process_metrics_method[0], NULL)) < 0)
+        goto failure;
 
-    PyModule_AddObject(module, "request_metrics", PyCFunction_New(&wsgi_request_metrics_method[0], NULL));
+    if (wsgi_module_add_object(module, "request_metrics",
+            PyCFunction_New(&wsgi_request_metrics_method[0], NULL)) < 0)
+        goto failure;
 
-    PyModule_AddObject(module, "subscribe_events", PyCFunction_New(&wsgi_subscribe_events_method[0], NULL));
+    if (wsgi_module_add_object(module, "subscribe_events",
+            PyCFunction_New(&wsgi_subscribe_events_method[0], NULL)) < 0)
+        goto failure;
 
-    PyModule_AddObject(module, "subscribe_shutdown", PyCFunction_New(&wsgi_subscribe_shutdown_method[0], NULL));
+    if (wsgi_module_add_object(module, "subscribe_shutdown",
+            PyCFunction_New(&wsgi_subscribe_shutdown_method[0], NULL)) < 0)
+        goto failure;
 
-    PyModule_AddObject(module, "event_callbacks", PyList_New(0));
+    if (wsgi_module_add_object(module, "event_callbacks",
+                               PyList_New(0)) < 0)
+        goto failure;
 
-    PyModule_AddObject(module, "shutdown_callbacks", PyList_New(0));
+    if (wsgi_module_add_object(module, "shutdown_callbacks",
+                               PyList_New(0)) < 0)
+        goto failure;
 
-    PyModule_AddObject(module, "active_requests", PyDict_New());
+    if (wsgi_module_add_object(module, "active_requests",
+                               PyDict_New()) < 0)
+        goto failure;
 
-    PyModule_AddObject(module, "request_data", PyCFunction_New(&wsgi_request_data_method[0], NULL));
+    if (wsgi_module_add_object(module, "request_data",
+            PyCFunction_New(&wsgi_request_data_method[0], NULL)) < 0)
+        goto failure;
 
     /* Done with the 'mod_wsgi' module. */
 
     Py_DECREF(module);
+    module = NULL;
 
     /*
      * Create 'apache' Python module. If this is not a daemon
@@ -1008,7 +1079,11 @@ InterpreterObject *newInterpreterObject(const char *name)
      * module.
      */
 
-    PyModule_AddObject(module, "version", Py_BuildValue("(iii)", AP_SERVER_MAJORVERSION_NUMBER, AP_SERVER_MINORVERSION_NUMBER, AP_SERVER_PATCHLEVEL_NUMBER));
+    if (wsgi_module_add_object(module, "version",
+            Py_BuildValue("(iii)", AP_SERVER_MAJORVERSION_NUMBER,
+                          AP_SERVER_MINORVERSION_NUMBER,
+                          AP_SERVER_PATCHLEVEL_NUMBER)) < 0)
+        goto failure;
 
     /*
      * Add information about the Apache MPM configuration and
@@ -1033,23 +1108,28 @@ InterpreterObject *newInterpreterObject(const char *name)
     max_threads = (max_threads <= 0) ? 1 : max_threads;
     max_processes = (max_processes <= 0) ? 1 : max_processes;
 
-    object = PyLong_FromLong(max_processes);
-    PyModule_AddObject(module, "maximum_processes", object);
+    if (wsgi_module_add_object(module, "maximum_processes",
+            PyLong_FromLong(max_processes)) < 0)
+        goto failure;
 
-    object = PyLong_FromLong(max_threads);
-    PyModule_AddObject(module, "threads_per_process", object);
+    if (wsgi_module_add_object(module, "threads_per_process",
+            PyLong_FromLong(max_threads)) < 0)
+        goto failure;
 
     str = ap_get_server_description();
-    object = PyUnicode_DecodeLatin1(str, strlen(str), NULL);
-    PyModule_AddObject(module, "description", object);
+    if (wsgi_module_add_object(module, "description",
+            PyUnicode_DecodeLatin1(str, strlen(str), NULL)) < 0)
+        goto failure;
 
     str = ap_show_mpm();
-    object = PyUnicode_DecodeLatin1(str, strlen(str), NULL);
-    PyModule_AddObject(module, "mpm_name", object);
+    if (wsgi_module_add_object(module, "mpm_name",
+            PyUnicode_DecodeLatin1(str, strlen(str), NULL)) < 0)
+        goto failure;
 
     str = ap_get_server_built();
-    object = PyUnicode_DecodeLatin1(str, strlen(str), NULL);
-    PyModule_AddObject(module, "build_date", object);
+    if (wsgi_module_add_object(module, "build_date",
+            PyUnicode_DecodeLatin1(str, strlen(str), NULL)) < 0)
+        goto failure;
 
     /* Done with the 'apache' module. */
 
@@ -1100,6 +1180,36 @@ InterpreterObject *newInterpreterObject(const char *name)
     }
 
     return self;
+
+failure:
+    /*
+     * Cleanup partially constructed interpreter on allocation
+     * failure. If we still hold a reference to a Python module
+     * being populated, decrement it. If we own the sub interpreter
+     * we created, end it which also cleans up all Python objects
+     * created within it. Then restore the original thread state,
+     * free the heap allocated name and decrement reference count
+     * on self.
+     */
+
+    Py_BEGIN_ALLOW_THREADS
+        ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Failed to create interpreter '%s'.",
+                     getpid(), self->name);
+    Py_END_ALLOW_THREADS
+
+    Py_XDECREF(module);
+
+    if (self->owner)
+    {
+        Py_EndInterpreter(tstate);
+        PyThreadState_Swap(save_tstate);
+    }
+
+    free(self->name);
+    Py_DECREF(self);
+
+    return NULL;
 }
 
 static void Interpreter_dealloc(InterpreterObject *self)
