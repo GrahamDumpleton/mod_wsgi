@@ -73,6 +73,39 @@ static int wsgi_module_add_object(PyObject *module, const char *name,
     return 0;
 }
 
+/*
+ * Helper to set an environment variable in the os.environ dict.
+ * Allocates the key as a Python unicode object and decodes the
+ * value using the filesystem default encoding. Returns 0 on
+ * success, -1 on failure with Python exception set.
+ */
+
+static int wsgi_set_environ_item(PyObject *environ, const char *key,
+                                 const char *value)
+{
+    PyObject *py_key = NULL;
+    PyObject *py_value = NULL;
+    int result = -1;
+
+    py_key = PyUnicode_FromString(key);
+    if (!py_key)
+        goto done;
+
+    py_value = PyUnicode_DecodeFSDefault(value);
+    if (!py_value)
+        goto done;
+
+    if (PyObject_SetItem(environ, py_key, py_value) < 0)
+        goto done;
+
+    result = 0;
+
+done:
+    Py_XDECREF(py_key);
+    Py_XDECREF(py_value);
+    return result;
+}
+
 InterpreterObject *newInterpreterObject(const char *name)
 {
     PyInterpreterState *interp = NULL;
@@ -405,8 +438,6 @@ InterpreterObject *newInterpreterObject(const char *name)
         if (module)
         {
             PyObject *dict = NULL;
-            PyObject *key = NULL;
-            PyObject *value = NULL;
 
             dict = PyModule_GetDict(module);
             object = PyDict_GetItemString(dict, "environ");
@@ -419,35 +450,32 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                 if (pwent && getenv("USER"))
                 {
-                    key = PyUnicode_FromString("USER");
-                    value = PyUnicode_DecodeFSDefault(pwent->pw_name);
-
-                    PyObject_SetItem(object, key, value);
-
-                    Py_DECREF(key);
-                    Py_DECREF(value);
+                    if (wsgi_set_environ_item(object, "USER",
+                                              pwent->pw_name) < 0)
+                    {
+                        Py_DECREF(module);
+                        goto failure;
+                    }
                 }
 
                 if (pwent && getenv("USERNAME"))
                 {
-                    key = PyUnicode_FromString("USERNAME");
-                    value = PyUnicode_DecodeFSDefault(pwent->pw_name);
-
-                    PyObject_SetItem(object, key, value);
-
-                    Py_DECREF(key);
-                    Py_DECREF(value);
+                    if (wsgi_set_environ_item(object, "USERNAME",
+                                              pwent->pw_name) < 0)
+                    {
+                        Py_DECREF(module);
+                        goto failure;
+                    }
                 }
 
                 if (pwent && getenv("LOGNAME"))
                 {
-                    key = PyUnicode_FromString("LOGNAME");
-                    value = PyUnicode_DecodeFSDefault(pwent->pw_name);
-
-                    PyObject_SetItem(object, key, value);
-
-                    Py_DECREF(key);
-                    Py_DECREF(value);
+                    if (wsgi_set_environ_item(object, "LOGNAME",
+                                              pwent->pw_name) < 0)
+                    {
+                        Py_DECREF(module);
+                        goto failure;
+                    }
                 }
             }
 
@@ -475,8 +503,6 @@ InterpreterObject *newInterpreterObject(const char *name)
         if (module)
         {
             PyObject *dict = NULL;
-            PyObject *key = NULL;
-            PyObject *value = NULL;
 
             dict = PyModule_GetDict(module);
             object = PyDict_GetItemString(dict, "environ");
@@ -489,13 +515,12 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                 if (pwent)
                 {
-                    key = PyUnicode_FromString("HOME");
-                    value = PyUnicode_DecodeFSDefault(pwent->pw_dir);
-
-                    PyObject_SetItem(object, key, value);
-
-                    Py_DECREF(key);
-                    Py_DECREF(value);
+                    if (wsgi_set_environ_item(object, "HOME",
+                                              pwent->pw_dir) < 0)
+                    {
+                        Py_DECREF(module);
+                        goto failure;
+                    }
                 }
             }
 
@@ -522,21 +547,18 @@ InterpreterObject *newInterpreterObject(const char *name)
         if (module)
         {
             PyObject *dict = NULL;
-            PyObject *key = NULL;
-            PyObject *value = NULL;
 
             dict = PyModule_GetDict(module);
             object = PyDict_GetItemString(dict, "environ");
 
             if (object)
             {
-                key = PyUnicode_FromString("PYTHON_EGG_CACHE");
-                value = PyUnicode_DecodeFSDefault(wsgi_python_eggs);
-
-                PyObject_SetItem(object, key, value);
-
-                Py_DECREF(key);
-                Py_DECREF(value);
+                if (wsgi_set_environ_item(object, "PYTHON_EGG_CACHE",
+                                          wsgi_python_eggs) < 0)
+                {
+                    Py_DECREF(module);
+                    goto failure;
+                }
             }
 
             Py_DECREF(module);
@@ -610,6 +632,15 @@ InterpreterObject *newInterpreterObject(const char *name)
             old = PyList_New(0);
             new = PyList_New(0);
             tmp = PyList_New(0);
+
+            if (!old || !new || !tmp)
+            {
+                Py_XDECREF(old);
+                Py_XDECREF(new);
+                Py_XDECREF(tmp);
+                Py_DECREF(module);
+                goto failure;
+            }
 
             for (i = 0; i < PyList_Size(path); i++)
                 PyList_Append(old, PyList_GetItem(path, i));
