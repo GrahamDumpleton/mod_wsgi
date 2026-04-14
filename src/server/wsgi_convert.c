@@ -70,7 +70,7 @@ PyObject *wsgi_convert_headers_to_bytes(PyObject *headers)
 {
     PyObject *result = NULL;
 
-    int i;
+    Py_ssize_t i;
     Py_ssize_t size;
 
     if (!PyList_Check(headers))
