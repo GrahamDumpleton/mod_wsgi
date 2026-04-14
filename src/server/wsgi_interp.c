@@ -567,9 +567,7 @@ InterpreterObject *newInterpreterObject(const char *name)
             PyObject *new = NULL;
             PyObject *tmp = NULL;
 
-            PyObject *item = NULL;
-
-            int i = 0;
+            Py_ssize_t i = 0;
 
             old = PyList_New(0);
             new = PyList_New(0);
@@ -710,11 +708,12 @@ InterpreterObject *newInterpreterObject(const char *name)
 
             for (i = 0; i < PyList_Size(tmp); i++)
             {
+                PyObject *path_item;
                 int contains;
 
-                item = PyList_GetItem(tmp, i);
+                path_item = PyList_GetItem(tmp, i);
 
-                contains = PySequence_Contains(old, item);
+                contains = PySequence_Contains(old, path_item);
 
                 if (contains == -1)
                 {
@@ -724,8 +723,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                 if (!contains)
                 {
-                    long index = PySequence_Index(path, item);
-                    PyList_Append(new, item);
+                    Py_ssize_t index = PySequence_Index(path, path_item);
+                    PyList_Append(new, path_item);
                     if (index != -1)
                         PySequence_DelItem(path, index);
                 }
