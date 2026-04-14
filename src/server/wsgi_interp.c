@@ -1271,7 +1271,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
         if (res == NULL)
         {
             PyObject *m = NULL;
-            PyObject *result = NULL;
+            PyObject *tb_result = NULL;
 
             PyObject *type = NULL;
             PyObject *value = NULL;
@@ -1305,12 +1305,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
                 Py_INCREF(value);
             }
 
-            if (!traceback)
-            {
-                traceback = Py_None;
-                Py_INCREF(traceback);
-            }
-
             m = PyImport_ImportModule("traceback");
 
             if (m)
@@ -1322,19 +1316,21 @@ static void Interpreter_dealloc(InterpreterObject *self)
                 if (o)
                 {
                     PyObject *log = NULL;
-                    PyObject *args = NULL;
+                    PyObject *tb_args = NULL;
+                    PyObject *tb_kwargs = NULL;
                     Py_INCREF(o);
                     log = newLogObject(NULL, APLOG_ERR, NULL, 0);
-                    args = Py_BuildValue("(OOOOO)", type, value,
-                                         traceback, Py_None, log);
-                    result = PyObject_CallObject(o, args);
-                    Py_DECREF(args);
+                    tb_args = Py_BuildValue("(O)", value);
+                    tb_kwargs = Py_BuildValue("{s:O}", "file", log);
+                    tb_result = PyObject_Call(o, tb_args, tb_kwargs);
+                    Py_DECREF(tb_kwargs);
+                    Py_DECREF(tb_args);
                     Py_DECREF(log);
                     Py_DECREF(o);
                 }
             }
 
-            if (!result)
+            if (!tb_result)
             {
                 /*
                  * If can't output exception and traceback then
@@ -1364,7 +1360,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
                 Py_XDECREF(traceback);
             }
 
-            Py_XDECREF(result);
+            Py_XDECREF(tb_result);
 
             Py_XDECREF(m);
         }
