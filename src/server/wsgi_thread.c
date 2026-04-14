@@ -147,7 +147,7 @@ int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage)
 
     ticks = sysconf(_SC_CLK_TCK);
 
-    sprintf(filename, "/proc/%ld/stat", tid);
+    snprintf(filename, sizeof(filename), "/proc/%ld/stat", tid);
 
     fp = fopen(filename, "r");
 
