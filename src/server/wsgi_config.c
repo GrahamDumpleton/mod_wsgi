@@ -47,7 +47,7 @@ int wsgi_parse_option(apr_pool_t *p, const char **line,
     if (!*str || *str == '=')
     {
         *line = str;
-        return !APR_SUCCESS;
+        return APR_EINVAL;
     }
 
     /* Option must be of form name=value. Extract the name. */
@@ -59,7 +59,7 @@ int wsgi_parse_option(apr_pool_t *p, const char **line,
     if (*strend != '=')
     {
         *line = str;
-        return !APR_SUCCESS;
+        return APR_EINVAL;
     }
 
     *name = apr_pstrndup(p, str, strend - str);
