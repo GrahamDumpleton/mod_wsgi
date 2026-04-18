@@ -20,6 +20,7 @@
 
 #include "wsgi_dispatch.h"
 
+#include "wsgi_daemon.h"
 #include "wsgi_interp.h"
 #include "wsgi_logger.h"
 
