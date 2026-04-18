@@ -160,6 +160,49 @@ assert_post_body_equals() {
     fi
 }
 
+assert_header_equals() {
+    local url="$1"
+    local header_name="$2"
+    local expected_value="$3"
+    local description="$4"
+
+    local actual
+    actual=$(curl -sD - -o /dev/null "$url" \
+        | grep -i "^${header_name}:" \
+        | head -1 \
+        | sed "s/^[^:]*: *//" \
+        | tr -d '\r')
+
+    if [ "$actual" = "$expected_value" ]; then
+        echo "  PASS: $description"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $description (expected '$expected_value', got '$actual')"
+        FAIL=$((FAIL + 1))
+        ERRORS="$ERRORS\n  FAIL: $description"
+    fi
+}
+
+assert_header_count() {
+    local url="$1"
+    local header_name="$2"
+    local expected_count="$3"
+    local description="$4"
+
+    local actual
+    actual=$(curl -sD - -o /dev/null "$url" \
+        | grep -ic "^${header_name}:")
+
+    if [ "$actual" = "$expected_count" ]; then
+        echo "  PASS: $description"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $description (expected $expected_count, got $actual)"
+        FAIL=$((FAIL + 1))
+        ERRORS="$ERRORS\n  FAIL: $description"
+    fi
+}
+
 # ---- Server management ----
 
 start_server() {
