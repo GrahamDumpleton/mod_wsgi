@@ -41,12 +41,18 @@ static DispatchObject *newDispatchObject(request_rec *r,
 
     self->log = newLogObject(r, APLOG_ERR, NULL, 0);
 
+    if (!self->log)
+    {
+        Py_DECREF(self);
+        return NULL;
+    }
+
     return self;
 }
 
 static void Dispatch_dealloc(DispatchObject *self)
 {
-    Py_DECREF(self->log);
+    Py_XDECREF(self->log);
 
     PyObject_Del(self);
 }
