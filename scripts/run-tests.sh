@@ -183,6 +183,44 @@ assert_header_equals() {
     fi
 }
 
+assert_body_equals_headers() {
+    local url="$1"
+    local expected="$2"
+    local description="$3"
+    shift 3
+
+    local body
+    body=$(curl -s "$@" "$url")
+
+    if [ "$body" = "$expected" ]; then
+        echo "  PASS: $description"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $description (expected '$expected', got '$body')"
+        FAIL=$((FAIL + 1))
+        ERRORS="$ERRORS\n  FAIL: $description"
+    fi
+}
+
+assert_body_contains_headers() {
+    local url="$1"
+    local expected="$2"
+    local description="$3"
+    shift 3
+
+    local body
+    body=$(curl -s "$@" "$url")
+
+    if echo "$body" | grep -qF "$expected"; then
+        echo "  PASS: $description"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $description (body does not contain '$expected')"
+        FAIL=$((FAIL + 1))
+        ERRORS="$ERRORS\n  FAIL: $description"
+    fi
+}
+
 assert_header_count() {
     local url="$1"
     local header_name="$2"
