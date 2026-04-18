@@ -306,7 +306,8 @@ int wsgi_execute_dispatch(request_rec *r)
             Py_DECREF(module);
             module = NULL;
 
-            PyDict_DelItemString(modules, name);
+            if (PyDict_DelItemString(modules, name) < 0)
+                PyErr_Clear();
         }
     }
 
@@ -369,21 +370,54 @@ int wsgi_execute_dispatch(request_rec *r)
             {
                 PyObject *result = NULL;
 
-                if (adapter)
+                Py_INCREF(object);
+                args = Py_BuildValue("(O)", vars);
+
+                if (args)
                 {
-                    Py_INCREF(object);
-                    args = Py_BuildValue("(O)", vars);
                     result = PyObject_CallObject(object, args);
                     Py_DECREF(args);
-                    Py_DECREF(object);
+                }
 
-                    if (result)
+                Py_DECREF(object);
+
+                if (result)
+                {
+                    if (result != Py_None)
                     {
-                        if (result != Py_None)
+                        if (PyBytes_Check(result))
                         {
-                            if (PyBytes_Check(result))
+                            const char *s;
+
+                            s = PyBytes_AsString(result);
+                            s = apr_pstrdup(r->pool, s);
+                            s = wsgi_process_group(r, s);
+                            config->process_group = s;
+
+                            apr_table_setn(r->subprocess_env,
+                                           "mod_wsgi.process_group",
+                                           config->process_group);
+                        }
+                        else if (PyUnicode_Check(result))
+                        {
+                            PyObject *latin_item;
+                            latin_item = PyUnicode_AsLatin1String(result);
+                            if (!latin_item)
+                            {
+                                PyErr_SetString(PyExc_TypeError,
+                                                "Process group must be "
+                                                "a byte string, value "
+                                                "containing non 'latin-1' "
+                                                "characters found");
+
+                                status = HTTP_INTERNAL_SERVER_ERROR;
+                            }
+                            else
                             {
                                 const char *s;
+
+                                Py_DECREF(result);
+                                result = latin_item;
 
                                 s = PyBytes_AsString(result);
                                 s = apr_pstrdup(r->pool, s);
@@ -394,56 +428,25 @@ int wsgi_execute_dispatch(request_rec *r)
                                                "mod_wsgi.process_group",
                                                config->process_group);
                             }
-                            else if (PyUnicode_Check(result))
-                            {
-                                PyObject *latin_item;
-                                latin_item = PyUnicode_AsLatin1String(result);
-                                if (!latin_item)
-                                {
-                                    PyErr_SetString(PyExc_TypeError,
-                                                    "Process group must be "
-                                                    "a byte string, value "
-                                                    "containing non 'latin-1' "
-                                                    "characters found");
-
-                                    status = HTTP_INTERNAL_SERVER_ERROR;
-                                }
-                                else
-                                {
-                                    const char *s;
-
-                                    Py_DECREF(result);
-                                    result = latin_item;
-
-                                    s = PyBytes_AsString(result);
-                                    s = apr_pstrdup(r->pool, s);
-                                    s = wsgi_process_group(r, s);
-                                    config->process_group = s;
-
-                                    apr_table_setn(r->subprocess_env,
-                                                   "mod_wsgi.process_group",
-                                                   config->process_group);
-                                }
-                            }
-                            else
-                            {
-                                PyErr_SetString(PyExc_TypeError, "Process "
-                                                                 "group must be a byte string");
-
-                                status = HTTP_INTERNAL_SERVER_ERROR;
-                            }
                         }
+                        else
+                        {
+                            PyErr_SetString(PyExc_TypeError, "Process "
+                                                             "group must be a byte string");
 
-                        Py_DECREF(result);
+                            status = HTTP_INTERNAL_SERVER_ERROR;
+                        }
                     }
-                    else
-                        status = HTTP_INTERNAL_SERVER_ERROR;
 
-                    /* Log any details of exceptions if execution failed. */
-
-                    if (PyErr_Occurred())
-                        wsgi_log_python_error(r, NULL, script, 0);
+                    Py_DECREF(result);
                 }
+                else
+                    status = HTTP_INTERNAL_SERVER_ERROR;
+
+                /* Log any details of exceptions if execution failed. */
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
 
                 object = NULL;
             }
@@ -458,21 +461,54 @@ int wsgi_execute_dispatch(request_rec *r)
             {
                 PyObject *result = NULL;
 
-                if (adapter)
+                Py_INCREF(object);
+                args = Py_BuildValue("(O)", vars);
+
+                if (args)
                 {
-                    Py_INCREF(object);
-                    args = Py_BuildValue("(O)", vars);
                     result = PyObject_CallObject(object, args);
                     Py_DECREF(args);
-                    Py_DECREF(object);
+                }
 
-                    if (result)
+                Py_DECREF(object);
+
+                if (result)
+                {
+                    if (result != Py_None)
                     {
-                        if (result != Py_None)
+                        if (PyBytes_Check(result))
                         {
-                            if (PyBytes_Check(result))
+                            const char *s;
+
+                            s = PyBytes_AsString(result);
+                            s = apr_pstrdup(r->pool, s);
+                            s = wsgi_application_group(r, s);
+                            config->application_group = s;
+
+                            apr_table_setn(r->subprocess_env,
+                                           "mod_wsgi.application_group",
+                                           config->application_group);
+                        }
+                        else if (PyUnicode_Check(result))
+                        {
+                            PyObject *latin_item;
+                            latin_item = PyUnicode_AsLatin1String(result);
+                            if (!latin_item)
+                            {
+                                PyErr_SetString(PyExc_TypeError,
+                                                "Application group must "
+                                                "be a byte string, value "
+                                                "containing non 'latin-1' "
+                                                "characters found");
+
+                                status = HTTP_INTERNAL_SERVER_ERROR;
+                            }
+                            else
                             {
                                 const char *s;
+
+                                Py_DECREF(result);
+                                result = latin_item;
 
                                 s = PyBytes_AsString(result);
                                 s = apr_pstrdup(r->pool, s);
@@ -483,57 +519,26 @@ int wsgi_execute_dispatch(request_rec *r)
                                                "mod_wsgi.application_group",
                                                config->application_group);
                             }
-                            else if (PyUnicode_Check(result))
-                            {
-                                PyObject *latin_item;
-                                latin_item = PyUnicode_AsLatin1String(result);
-                                if (!latin_item)
-                                {
-                                    PyErr_SetString(PyExc_TypeError,
-                                                    "Application group must "
-                                                    "be a byte string, value "
-                                                    "containing non 'latin-1' "
-                                                    "characters found");
-
-                                    status = HTTP_INTERNAL_SERVER_ERROR;
-                                }
-                                else
-                                {
-                                    const char *s;
-
-                                    Py_DECREF(result);
-                                    result = latin_item;
-
-                                    s = PyBytes_AsString(result);
-                                    s = apr_pstrdup(r->pool, s);
-                                    s = wsgi_application_group(r, s);
-                                    config->application_group = s;
-
-                                    apr_table_setn(r->subprocess_env,
-                                                   "mod_wsgi.application_group",
-                                                   config->application_group);
-                                }
-                            }
-                            else
-                            {
-                                PyErr_SetString(PyExc_TypeError, "Application "
-                                                                 "group must be a string "
-                                                                 "object");
-
-                                status = HTTP_INTERNAL_SERVER_ERROR;
-                            }
                         }
+                        else
+                        {
+                            PyErr_SetString(PyExc_TypeError, "Application "
+                                                             "group must be a string "
+                                                             "object");
 
-                        Py_DECREF(result);
+                            status = HTTP_INTERNAL_SERVER_ERROR;
+                        }
                     }
-                    else
-                        status = HTTP_INTERNAL_SERVER_ERROR;
 
-                    /* Log any details of exceptions if execution failed. */
-
-                    if (PyErr_Occurred())
-                        wsgi_log_python_error(r, NULL, script, 0);
+                    Py_DECREF(result);
                 }
+                else
+                    status = HTTP_INTERNAL_SERVER_ERROR;
+
+                /* Log any details of exceptions if execution failed. */
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
 
                 object = NULL;
             }
@@ -547,21 +552,54 @@ int wsgi_execute_dispatch(request_rec *r)
             {
                 PyObject *result = NULL;
 
-                if (adapter)
+                Py_INCREF(object);
+                args = Py_BuildValue("(O)", vars);
+
+                if (args)
                 {
-                    Py_INCREF(object);
-                    args = Py_BuildValue("(O)", vars);
                     result = PyObject_CallObject(object, args);
                     Py_DECREF(args);
-                    Py_DECREF(object);
+                }
 
-                    if (result)
+                Py_DECREF(object);
+
+                if (result)
+                {
+                    if (result != Py_None)
                     {
-                        if (result != Py_None)
+                        if (PyBytes_Check(result))
                         {
-                            if (PyBytes_Check(result))
+                            const char *s;
+
+                            s = PyBytes_AsString(result);
+                            s = apr_pstrdup(r->pool, s);
+                            s = wsgi_callable_object(r, s);
+                            config->callable_object = s;
+
+                            apr_table_setn(r->subprocess_env,
+                                           "mod_wsgi.callable_object",
+                                           config->callable_object);
+                        }
+                        else if (PyUnicode_Check(result))
+                        {
+                            PyObject *latin_item;
+                            latin_item = PyUnicode_AsLatin1String(result);
+                            if (!latin_item)
+                            {
+                                PyErr_SetString(PyExc_TypeError,
+                                                "Callable object must "
+                                                "be a byte string, value "
+                                                "containing non 'latin-1' "
+                                                "characters found");
+
+                                status = HTTP_INTERNAL_SERVER_ERROR;
+                            }
+                            else
                             {
                                 const char *s;
+
+                                Py_DECREF(result);
+                                result = latin_item;
 
                                 s = PyBytes_AsString(result);
                                 s = apr_pstrdup(r->pool, s);
@@ -572,57 +610,26 @@ int wsgi_execute_dispatch(request_rec *r)
                                                "mod_wsgi.callable_object",
                                                config->callable_object);
                             }
-                            else if (PyUnicode_Check(result))
-                            {
-                                PyObject *latin_item;
-                                latin_item = PyUnicode_AsLatin1String(result);
-                                if (!latin_item)
-                                {
-                                    PyErr_SetString(PyExc_TypeError,
-                                                    "Callable object must "
-                                                    "be a byte string, value "
-                                                    "containing non 'latin-1' "
-                                                    "characters found");
-
-                                    status = HTTP_INTERNAL_SERVER_ERROR;
-                                }
-                                else
-                                {
-                                    const char *s;
-
-                                    Py_DECREF(result);
-                                    result = latin_item;
-
-                                    s = PyBytes_AsString(result);
-                                    s = apr_pstrdup(r->pool, s);
-                                    s = wsgi_callable_object(r, s);
-                                    config->callable_object = s;
-
-                                    apr_table_setn(r->subprocess_env,
-                                                   "mod_wsgi.callable_object",
-                                                   config->callable_object);
-                                }
-                            }
-                            else
-                            {
-                                PyErr_SetString(PyExc_TypeError, "Callable "
-                                                                 "object must be a string "
-                                                                 "object");
-
-                                status = HTTP_INTERNAL_SERVER_ERROR;
-                            }
                         }
+                        else
+                        {
+                            PyErr_SetString(PyExc_TypeError, "Callable "
+                                                             "object must be a string "
+                                                             "object");
 
-                        Py_DECREF(result);
+                            status = HTTP_INTERNAL_SERVER_ERROR;
+                        }
                     }
-                    else
-                        status = HTTP_INTERNAL_SERVER_ERROR;
 
-                    /* Log any details of exceptions if execution failed. */
-
-                    if (PyErr_Occurred())
-                        wsgi_log_python_error(r, NULL, script, 0);
+                    Py_DECREF(result);
                 }
+                else
+                    status = HTTP_INTERNAL_SERVER_ERROR;
+
+                /* Log any details of exceptions if execution failed. */
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
 
                 object = NULL;
             }
@@ -645,7 +652,7 @@ int wsgi_execute_dispatch(request_rec *r)
             {
                 PyErr_Format(PyExc_AttributeError,
                              "'%s' object has no attribute 'close'",
-                             adapter->log->ob_type->tp_name);
+                             Py_TYPE(adapter->log)->tp_name);
             }
             else
             {
