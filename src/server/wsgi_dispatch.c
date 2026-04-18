@@ -73,6 +73,9 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
 
     vars = PyDict_New();
 
+    if (!vars)
+        return NULL;
+
     /* Merge the CGI environment into the WSGI environment. */
 
     r = self->r;
@@ -88,11 +91,17 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
             {
                 object = PyUnicode_DecodeLatin1(elts[i].val,
                                                 strlen(elts[i].val), NULL);
-                PyDict_SetItemString(vars, elts[i].key, object);
-                Py_DECREF(object);
+                if (!object)
+                    goto error;
+                if (PyDict_SetItemString(vars, elts[i].key, object) < 0)
+                    goto error;
+                Py_CLEAR(object);
             }
             else
-                PyDict_SetItemString(vars, elts[i].key, Py_None);
+            {
+                if (PyDict_SetItemString(vars, elts[i].key, Py_None) < 0)
+                    goto error;
+            }
         }
     }
 
@@ -104,22 +113,35 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
      */
 
     object = PyUnicode_FromString("");
-    PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_wsgi.process_group", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     object = PyUnicode_DecodeLatin1(group, strlen(group), NULL);
-    PyDict_SetItemString(vars, "mod_wsgi.application_group", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_wsgi.application_group", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
-    PyDict_DelItemString(vars, "mod_wsgi.callable_object");
+    if (PyDict_DelItemString(vars, "mod_wsgi.callable_object") < 0)
+    {
+        if (PyErr_ExceptionMatches(PyExc_KeyError))
+            PyErr_Clear();
+        else
+            goto error;
+    }
 
     /*
      * Setup log object for WSGI errors. Don't decrement
      * reference to log object as keep reference to it.
      */
 
-    object = (PyObject *)self->log;
-    PyDict_SetItemString(vars, "wsgi.errors", object);
+    if (PyDict_SetItemString(vars, "wsgi.errors",
+                             (PyObject *)self->log) < 0)
+        goto error;
 
     /*
      * If Apache extensions are enabled add a CObject reference
@@ -129,11 +151,19 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
     if (!wsgi_daemon_pool && self->config->pass_apache_request)
     {
         object = PyCapsule_New(self->r, 0, 0);
-        PyDict_SetItemString(vars, "apache.request_rec", object);
-        Py_DECREF(object);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "apache.request_rec", object) < 0)
+            goto error;
+        Py_CLEAR(object);
     }
 
     return vars;
+
+error:
+    Py_XDECREF(object);
+    Py_DECREF(vars);
+    return NULL;
 }
 
 PyTypeObject Dispatch_Type = {
@@ -321,10 +351,19 @@ int wsgi_execute_dispatch(request_rec *r)
 
             vars = Dispatch_environ(adapter, group);
 
+            if (!vars)
+            {
+                status = HTTP_INTERNAL_SERVER_ERROR;
+
+                if (PyErr_Occurred())
+                    wsgi_log_python_error(r, NULL, script, 0);
+            }
+
             /* First check process_group(). */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-            object = PyDict_GetItemString(module_dict, "process_group");
+            if (status == OK)
+                object = PyDict_GetItemString(module_dict, "process_group");
 
             if (object)
             {
@@ -625,7 +664,7 @@ int wsgi_execute_dispatch(request_rec *r)
             if (PyErr_Occurred())
                 wsgi_log_python_error(r, NULL, script, 0);
 
-            Py_DECREF(vars);
+            Py_XDECREF(vars);
         }
     }
 
