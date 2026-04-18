@@ -87,6 +87,16 @@ void Input_finish(InputObject *self)
 
 static PyObject *Input_close(InputObject *self, PyObject *args)
 {
+    /*
+     * Nothing to close here. The underlying bucket brigade lives in
+     * the request pool and is cleaned up by Input_finish when the
+     * request completes. The only thing we want to catch is code
+     * that reaches into wsgi.input after the request has already
+     * finished (for example via a stashed environ reference hit by
+     * GC, or post-commit cleanup in a web framework), so surface a
+     * RuntimeError in that case rather than silently succeeding.
+     */
+
     if (!self->r)
     {
         PyErr_SetString(PyExc_RuntimeError, "request object has expired");
