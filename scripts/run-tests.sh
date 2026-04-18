@@ -141,6 +141,25 @@ assert_log_not_contains() {
     fi
 }
 
+assert_post_body_equals() {
+    local url="$1"
+    local post_data="$2"
+    local expected="$3"
+    local description="$4"
+
+    local body
+    body=$(printf '%s' "$post_data" | curl -s -X POST --data-binary @- "$url")
+
+    if [ "$body" = "$expected" ]; then
+        echo "  PASS: $description"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $description (body mismatch)"
+        FAIL=$((FAIL + 1))
+        ERRORS="$ERRORS\n  FAIL: $description"
+    fi
+}
+
 # ---- Server management ----
 
 start_server() {
