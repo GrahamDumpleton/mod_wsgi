@@ -1911,8 +1911,6 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
         return 0;
     }
 
-    Py_DECREF(filelike);
-
     /*
      * On some platforms, such as Linux, sendfile() system call
      * will not work on UNIX sockets. Thus when using daemon mode
@@ -1926,7 +1924,10 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
 
     rv = apr_file_info_get(&finfo, APR_FINFO_SIZE | APR_FINFO_TYPE, tmpfile);
     if (rv != APR_SUCCESS || finfo.filetype != APR_REG)
+    {
+        Py_DECREF(filelike);
         return 0;
+    }
 
     /*
      * Because Python file like objects potentially have
@@ -1948,9 +1949,13 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
 
     rv = apr_file_seek(tmpfile, APR_CUR, &fd_offset);
     if (rv != APR_SUCCESS)
+    {
+        Py_DECREF(filelike);
         return 0;
+    }
 
     method = PyObject_GetAttrString(filelike, "tell");
+    Py_DECREF(filelike);
     if (!method)
         return 0;
 
