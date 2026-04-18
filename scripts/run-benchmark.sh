@@ -12,6 +12,17 @@
 #   -p, --processes N         Worker processes (default: 1)
 #   -t, --threads N           Threads per process (default: 5)
 #   -P, --port PORT           Port to listen on (default: 8765)
+#   -s, --script PATH         WSGI script to serve (default: tests/hello.wsgi)
+#       --disable-reloading   Pass --disable-reloading to mod_wsgi-express.
+#                             Only meaningful in daemon mode; no-op otherwise.
+#       --queue-timeout SEC   Pass --queue-timeout SEC to mod_wsgi-express.
+#                             Only meaningful in daemon mode; no-op otherwise.
+#                             Setting to 0 combined with --disable-reloading
+#                             bypasses the Apache-to-daemon handshake.
+#       --delay SECONDS       Sleep this many (fractional) seconds per
+#                             request inside the WSGI app to emulate I/O
+#                             wait. Requires a benchmark script that reads
+#                             BENCHMARK_DELAY (e.g. tests/benchmark.wsgi).
 #   -h, --help                Show this help
 
 set -e
@@ -26,6 +37,10 @@ MODE=daemon
 PROCESSES=1
 THREADS=5
 PORT=8765
+SCRIPT=tests/hello.wsgi
+DISABLE_RELOADING=0
+QUEUE_TIMEOUT=
+DELAY=0
 
 usage() {
     sed -n '3,16p' "$0" | sed 's/^# \{0,1\}//'
@@ -40,6 +55,10 @@ while [ $# -gt 0 ]; do
         -p|--processes)   PROCESSES="$2"; shift 2 ;;
         -t|--threads)     THREADS="$2"; shift 2 ;;
         -P|--port)        PORT="$2"; shift 2 ;;
+        -s|--script)      SCRIPT="$2"; shift 2 ;;
+        --disable-reloading) DISABLE_RELOADING=1; shift ;;
+        --queue-timeout)  QUEUE_TIMEOUT="$2"; shift 2 ;;
+        --delay)          DELAY="$2"; shift 2 ;;
         -h|--help)        usage ;;
         *) echo "ERROR: Unknown option: $1" >&2; usage 1 ;;
     esac
@@ -91,7 +110,7 @@ trap cleanup EXIT
 cleanup
 
 setup_args=(
-    tests/hello.wsgi
+    "$SCRIPT"
     --server-root "$SERVER_ROOT"
     --port "$PORT"
     --processes "$PROCESSES"
@@ -101,16 +120,41 @@ setup_args=(
 
 if [ "$MODE" = "embedded" ]; then
     setup_args+=(--embedded-mode)
+else
+    if [ "$DISABLE_RELOADING" = "1" ]; then
+        setup_args+=(--disable-reloading)
+    fi
+    if [ -n "$QUEUE_TIMEOUT" ]; then
+        setup_args+=(--queue-timeout "$QUEUE_TIMEOUT")
+    fi
+fi
+
+if [ "$MODE" = "daemon" ] && [ "$DISABLE_RELOADING" = "1" ]; then
+    reloading_state="disabled"
+else
+    reloading_state="default"
+fi
+
+if [ "$MODE" = "daemon" ] && [ -n "$QUEUE_TIMEOUT" ]; then
+    queue_timeout_state="$QUEUE_TIMEOUT"
+else
+    queue_timeout_state="default"
 fi
 
 echo "Configuration:"
-echo "  mode        : $MODE"
-echo "  processes   : $PROCESSES"
-echo "  threads     : $THREADS"
-echo "  concurrency : $CONCURRENCY"
-echo "  duration    : ${DURATION}s"
-echo "  port        : $PORT"
+echo "  script         : $SCRIPT"
+echo "  mode           : $MODE"
+echo "  processes      : $PROCESSES"
+echo "  threads        : $THREADS"
+echo "  concurrency    : $CONCURRENCY"
+echo "  duration       : ${DURATION}s"
+echo "  port           : $PORT"
+echo "  reloading      : $reloading_state"
+echo "  queue-timeout  : $queue_timeout_state"
+echo "  delay          : ${DELAY}s"
 echo ""
+
+export BENCHMARK_DELAY="$DELAY"
 
 echo "Starting mod_wsgi-express..."
 "$MOD_WSGI_EXPRESS" setup-server "${setup_args[@]}" >/dev/null
