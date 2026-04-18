@@ -227,9 +227,12 @@ assert_header_count() {
     local expected_count="$3"
     local description="$4"
 
+    # grep -c exits 1 when there are no matches which would trip
+    # `set -e` before we could compare the count, so swallow the
+    # exit code with `|| true` and rely on grep's printed "0".
     local actual
     actual=$(curl -sD - -o /dev/null "$url" \
-        | grep -ic "^${header_name}:")
+        | grep -ic "^${header_name}:" || true)
 
     if [ "$actual" = "$expected_count" ]; then
         echo "  PASS: $description"

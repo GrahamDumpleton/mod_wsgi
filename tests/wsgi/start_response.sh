@@ -1,0 +1,78 @@
+# Test WSGI start_response semantics.
+#
+# Sourced by scripts/run-tests.sh which provides:
+#   BASE_URL, assert_status, assert_body_equals,
+#   assert_header_equals, assert_header_count
+
+URL="$BASE_URL/test/wsgi/start-response"
+
+# ----- write() callable -----
+
+assert_status "$URL/write" "200" \
+    "write() callable endpoint returns 200"
+
+assert_body_equals "$URL/write" "via-write-via-iter" \
+    "write() callable content precedes returned iterable content"
+
+assert_body_equals "$URL/write-before-return" "pre-mid-post1-post2" \
+    "multiple write() calls interleave correctly with iterable return"
+
+# ----- Non-tuple exc_info -----
+
+assert_body_equals "$URL/non-tuple-exc-info" \
+    "got:exception info must be a tuple" \
+    "non-tuple exc_info raises RuntimeError"
+
+# ----- exc_info after headers sent -----
+
+assert_status "$URL/exc-info-after-headers" "200" \
+    "exc_info after headers sent keeps already-committed status (200)"
+
+assert_body_equals "$URL/exc-info-after-headers" \
+    "headers-sent-reraised:intentional-exc-info" \
+    "exc_info after headers sent re-raises the supplied exception"
+
+# ----- exc_info before headers sent replaces prior status/headers -----
+
+assert_status "$URL/exc-info-before-headers" "418" \
+    "exc_info before headers sent replaces status line"
+
+assert_body_equals "$URL/exc-info-before-headers" \
+    "second-headers-win" \
+    "exc_info before headers sent replaces body content"
+
+assert_header_equals "$URL/exc-info-before-headers" \
+    "X-After" "second" \
+    "exc_info before headers sent installs replacement headers"
+
+assert_header_count "$URL/exc-info-before-headers" \
+    "X-Before" "0" \
+    "exc_info before headers sent discards original headers"
+
+# ----- Double start_response without exc_info, before output -----
+# PEP 3333 says start_response "must not be called without the
+# optional exc_info argument if start_response() has already been
+# called within the current invocation of the application",
+# regardless of whether headers have been flushed. mod_wsgi is
+# deliberately more tolerant here: when no output has been sent
+# yet, a second start_response call simply replaces the previously
+# recorded status line and headers. The strictness only kicks in
+# once headers are committed to the wire (see the
+# /double-no-exc-after-headers assertion below).
+
+assert_status "$URL/double-no-exc-before-headers" "201" \
+    "second start_response before output uses second status"
+
+assert_header_count "$URL/double-no-exc-before-headers" \
+    "X-First" "0" \
+    "second start_response before output discards first headers"
+
+assert_header_equals "$URL/double-no-exc-before-headers" \
+    "X-Second" "2" \
+    "second start_response before output installs second headers"
+
+# ----- Double start_response without exc_info, after output -----
+
+assert_body_equals "$URL/double-no-exc-after-headers" \
+    "pre-err:headers have already been sent" \
+    "second start_response without exc_info after output raises RuntimeError"
