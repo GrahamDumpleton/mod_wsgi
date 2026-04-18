@@ -72,3 +72,18 @@ sleep 1
 
 assert_log_contains "MARKER_FLUSH_TEST_22222" \
     "flushed message appears in error log"
+
+# Test wsgi.errors.writelines().
+assert_status "$URL/wsgi-errors-writelines" "200" \
+    "wsgi.errors.writelines() returns 200"
+
+sleep 1
+
+assert_log_contains "MARKER_WRITELINES_A_33333" \
+    "first line of writelines() appears in error log"
+
+assert_log_contains "MARKER_WRITELINES_B_33333" \
+    "second line of writelines() appears in error log"
+
+assert_log_contains "MARKER_WRITELINES_C_33333" \
+    "third line of writelines() appears in error log"

@@ -14,9 +14,20 @@ Covers:
     line and headers while nothing has reached the wire yet
   * a second start_response without exc_info after output: must
     raise "headers have already been sent"
+  * invalid status-line formats rejected by
+    wsgi_validate_status_line (missing code, mixed digits, extra
+    digit, missing space, embedded control character)
+  * invalid per-header cases rejected by
+    wsgi_validate_header_name / wsgi_validate_header_value
+    (empty name, space in name, control char in name, CR/LF in
+    value, non-string name, non-latin1 value, non-tuple item,
+    tuple of wrong length)
+  * invalid types for the headers argument itself (string, tuple,
+    dict) rejected by PyArg_ParseTuple's list check
 """
 
 import sys
+from urllib.parse import parse_qs
 
 
 def application(environ, start_response):
@@ -30,6 +41,9 @@ def application(environ, start_response):
         "/exc-info-before-headers": handle_exc_info_before_headers,
         "/double-no-exc-before-headers": handle_double_no_exc_before_headers,
         "/double-no-exc-after-headers": handle_double_no_exc_after_headers,
+        "/invalid-status": handle_invalid_status,
+        "/invalid-header": handle_invalid_header,
+        "/invalid-headers-type": handle_invalid_headers_type,
     }
 
     handler = handlers.get(path)
@@ -124,3 +138,97 @@ def handle_double_no_exc_after_headers(environ, start_response):
         return []
 
     return []
+
+
+def _case(environ):
+    qs = parse_qs(environ.get("QUERY_STRING", ""))
+    return qs.get("case", [""])[0]
+
+
+def _error_response(start_response, exc):
+    start_response("200 OK", [("Content-Type", "text/plain")])
+    body = (type(exc).__name__ + ":" + str(exc) + ";end").encode()
+    return [body]
+
+
+# Invalid status lines exercise wsgi_validate_status_line via
+# wsgi_convert_status_line_to_bytes.
+_INVALID_STATUS_CASES = {
+    "no-digits": "OK",
+    "mixed": "20X OK",
+    "four-digits": "2000 OK",
+    "no-space": "200OK",
+    "control-char": "200 OK\r\nX-Injected: yes",
+}
+
+
+def handle_invalid_status(environ, start_response):
+    case = _case(environ)
+    status = _INVALID_STATUS_CASES.get(case)
+    if status is None:
+        start_response("400 Bad Request", [("Content-Type", "text/plain")])
+        return [b"unknown case;end"]
+
+    try:
+        start_response(status, [("Content-Type", "text/plain")])
+    except (ValueError, TypeError) as e:
+        return _error_response(start_response, e)
+
+    start_response("200 OK", [("Content-Type", "text/plain")])
+    return [b"no-error-raised;end"]
+
+
+# Invalid header tuples exercise wsgi_validate_header_name and
+# wsgi_validate_header_value via wsgi_convert_headers_to_bytes.
+_INVALID_HEADER_CASES = {
+    "empty-name": [("", "value")],
+    "space-name": [("X Foo", "value")],
+    "control-name": [("X\tFoo", "value")],
+    "cr-value": [("X-Foo", "line1\r\nline2")],
+    "lf-value": [("X-Foo", "line1\nline2")],
+    "non-string-name": [(42, "value")],
+    "non-latin1-value": [("X-Foo", "\u65e5\u672c")],
+    "not-a-tuple": ["X-Foo:value"],
+    "wrong-tuple-size": [("a", "b", "c")],
+}
+
+
+def handle_invalid_header(environ, start_response):
+    case = _case(environ)
+    extra = _INVALID_HEADER_CASES.get(case)
+    if extra is None:
+        start_response("400 Bad Request", [("Content-Type", "text/plain")])
+        return [b"unknown case;end"]
+
+    headers = [("Content-Type", "text/plain")] + extra
+    try:
+        start_response("200 OK", headers)
+    except (ValueError, TypeError, UnicodeEncodeError) as e:
+        return _error_response(start_response, e)
+
+    start_response("200 OK", [("Content-Type", "text/plain")])
+    return [b"no-error-raised;end"]
+
+
+# Pass the wrong type for the headers argument itself.
+_INVALID_HEADERS_TYPE_CASES = {
+    "string": "Content-Type: text/plain",
+    "tuple": (("Content-Type", "text/plain"),),
+    "dict": {"Content-Type": "text/plain"},
+}
+
+
+def handle_invalid_headers_type(environ, start_response):
+    case = _case(environ)
+    if case not in _INVALID_HEADERS_TYPE_CASES:
+        start_response("400 Bad Request", [("Content-Type", "text/plain")])
+        return [b"unknown case;end"]
+
+    headers = _INVALID_HEADERS_TYPE_CASES[case]
+    try:
+        start_response("200 OK", headers)
+    except TypeError as e:
+        return _error_response(start_response, e)
+
+    start_response("200 OK", [("Content-Type", "text/plain")])
+    return [b"no-error-raised;end"]

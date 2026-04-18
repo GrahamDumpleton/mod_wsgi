@@ -76,3 +76,77 @@ assert_header_equals "$URL/double-no-exc-before-headers" \
 assert_body_equals "$URL/double-no-exc-after-headers" \
     "pre-err:headers have already been sent" \
     "second start_response without exc_info after output raises RuntimeError"
+
+# ----- Invalid status lines -----
+
+assert_body_equals "$URL/invalid-status?case=no-digits" \
+    "ValueError:status code is not a 3 digit integer;end" \
+    "status line without any leading digits is rejected"
+
+assert_body_equals "$URL/invalid-status?case=mixed" \
+    "ValueError:status code is not a 3 digit integer;end" \
+    "status line with a non-digit in the code is rejected"
+
+assert_body_equals "$URL/invalid-status?case=four-digits" \
+    "ValueError:status code is not a 3 digit integer;end" \
+    "status line with a 4-digit code is rejected"
+
+assert_body_equals "$URL/invalid-status?case=no-space" \
+    "ValueError:no space following status code;end" \
+    "status line without a space after the 3-digit code is rejected"
+
+assert_body_equals "$URL/invalid-status?case=control-char" \
+    "ValueError:control character present in reason phrase;end" \
+    "status line with embedded CR/LF is rejected (prevents header injection)"
+
+# ----- Invalid header entries -----
+
+assert_body_equals "$URL/invalid-header?case=empty-name" \
+    "ValueError:header name is empty;end" \
+    "empty header name is rejected"
+
+assert_body_equals "$URL/invalid-header?case=space-name" \
+    "ValueError:space character present in header name;end" \
+    "header name containing a space is rejected"
+
+assert_body_equals "$URL/invalid-header?case=control-name" \
+    "ValueError:control character present in header name;end" \
+    "header name containing a control character (tab) is rejected"
+
+assert_body_equals "$URL/invalid-header?case=cr-value" \
+    "ValueError:carriage return/line feed character present in header value;end" \
+    "header value containing CR is rejected (prevents header injection)"
+
+assert_body_equals "$URL/invalid-header?case=lf-value" \
+    "ValueError:carriage return/line feed character present in header value;end" \
+    "header value containing LF is rejected (prevents header injection)"
+
+assert_body_equals "$URL/invalid-header?case=non-string-name" \
+    "TypeError:expected unicode object, value of type int found;end" \
+    "non-string header name is rejected with TypeError"
+
+assert_body_equals "$URL/invalid-header?case=non-latin1-value" \
+    "UnicodeEncodeError:'latin-1' codec can't encode characters in position 0-1: ordinal not in range(256);end" \
+    "header value with non-latin1 characters is rejected"
+
+assert_body_equals "$URL/invalid-header?case=not-a-tuple" \
+    "TypeError:list of tuple values expected for headers, value of type str found;end" \
+    "header list item that is not a tuple is rejected"
+
+assert_body_equals "$URL/invalid-header?case=wrong-tuple-size" \
+    "ValueError:tuple of length 2 expected for header, length is 3;end" \
+    "header tuple with more than two entries is rejected"
+
+# ----- Invalid types for the headers argument itself -----
+
+assert_body_equals "$URL/invalid-headers-type?case=string" \
+    "TypeError:start_response() argument 2 must be list, not str;end" \
+    "string passed as headers argument is rejected"
+
+assert_body_equals "$URL/invalid-headers-type?case=tuple" \
+    "TypeError:start_response() argument 2 must be list, not tuple;end" \
+    "tuple passed as headers argument is rejected (must be list)"
+
+assert_body_equals "$URL/invalid-headers-type?case=dict" \
+    "TypeError:start_response() argument 2 must be list, not dict;end" \
+    "dict passed as headers argument is rejected"

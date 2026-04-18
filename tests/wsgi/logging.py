@@ -24,6 +24,10 @@ Endpoints:
 
   /test/wsgi/logging/flush
     Writes to wsgi.errors and explicitly flushes.
+
+  /test/wsgi/logging/wsgi-errors-writelines
+    Calls wsgi.errors.writelines() with a list of pre-terminated
+    lines. PEP 3333 requires wsgi.errors to support writelines().
 """
 
 import sys
@@ -44,6 +48,8 @@ def application(environ, start_response):
         return handle_multiline(environ, start_response)
     elif path == "/flush":
         return handle_flush(environ, start_response)
+    elif path == "/wsgi-errors-writelines":
+        return handle_wsgi_errors_writelines(environ, start_response)
     else:
         start_response("404 Not Found", [("Content-Type", "text/plain")])
         return [b"Unknown test path"]
@@ -95,3 +101,19 @@ def handle_flush(environ, start_response):
 
     start_response("200 OK", [("Content-Type", "text/plain")])
     return [b"flush done"]
+
+
+def handle_wsgi_errors_writelines(environ, start_response):
+    # PEP 3333 requires wsgi.errors to support writelines(). The
+    # convention (matching file objects) is that writelines takes
+    # an iterable of strings and does NOT add line terminators,
+    # so each element includes its own "\n".
+    errors = environ["wsgi.errors"]
+    errors.writelines([
+        "MARKER_WRITELINES_A_33333\n",
+        "MARKER_WRITELINES_B_33333\n",
+        "MARKER_WRITELINES_C_33333\n",
+    ])
+
+    start_response("200 OK", [("Content-Type", "text/plain")])
+    return [b"writelines done"]

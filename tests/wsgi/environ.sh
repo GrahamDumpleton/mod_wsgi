@@ -139,6 +139,51 @@ assert_body_equals "$URL/type?key=wsgi.multiprocess" \
     "type=builtins.bool;end" \
     "wsgi.multiprocess is a bool"
 
+# ----- PEP 3333 mandates native strings (str in Py3) for CGI -----
+#
+# Per PEP 3333 § 2.2, all CGI-environment keys and values in the
+# environ dict must be of the native string type (str on Python 3).
+# mod_wsgi decodes Apache's subprocess_env entries via
+# PyUnicode_DecodeLatin1 / PyUnicode_DecodeFSDefault, so all CGI
+# values should surface as str.
+
+assert_body_equals "$URL/type?key=REQUEST_METHOD" \
+    "type=builtins.str;end" \
+    "REQUEST_METHOD environ value is a native str"
+
+assert_body_equals "$URL/type?key=PATH_INFO" \
+    "type=builtins.str;end" \
+    "PATH_INFO environ value is a native str"
+
+assert_body_equals "$URL/type?key=SCRIPT_NAME" \
+    "type=builtins.str;end" \
+    "SCRIPT_NAME environ value is a native str"
+
+assert_body_equals "$URL/type?key=QUERY_STRING" \
+    "type=builtins.str;end" \
+    "QUERY_STRING environ value is a native str"
+
+assert_body_equals "$URL/type?key=SERVER_PROTOCOL" \
+    "type=builtins.str;end" \
+    "SERVER_PROTOCOL environ value is a native str"
+
+assert_body_equals "$URL/type?key=SERVER_NAME" \
+    "type=builtins.str;end" \
+    "SERVER_NAME environ value is a native str"
+
+assert_body_equals "$URL/type?key=SERVER_PORT" \
+    "type=builtins.str;end" \
+    "SERVER_PORT environ value is a native str (not int)"
+
+assert_body_equals_headers "$URL/type?key=HTTP_X_CUSTOM_STR" \
+    "type=builtins.str;end" \
+    "custom HTTP_* request header surfaces as str" \
+    -H "X-Custom-Str: hello"
+
+assert_body_equals "$URL/type?key=wsgi.url_scheme" \
+    "type=builtins.str;end" \
+    "wsgi.url_scheme is a native str"
+
 # ----- mod_wsgi / apache metadata keys -----
 
 assert_body_equals "$URL/has?key=mod_wsgi.version" \
