@@ -1782,7 +1782,13 @@ static PyObject *Adapter_environ(AdapterObject *self)
         }
     }
 
-    PyDict_DelItemString(vars, "PATH");
+    if (PyDict_DelItemString(vars, "PATH") < 0)
+    {
+        if (PyErr_ExceptionMatches(PyExc_KeyError))
+            PyErr_Clear();
+        else
+            goto error;
+    }
 
     /* Now setup all the WSGI specific environment values. */
 
@@ -1863,7 +1869,15 @@ static PyObject *Adapter_environ(AdapterObject *self)
      */
 
     if (scheme)
-        PyDict_DelItemString(vars, "HTTPS");
+    {
+        if (PyDict_DelItemString(vars, "HTTPS") < 0)
+        {
+            if (PyErr_ExceptionMatches(PyExc_KeyError))
+                PyErr_Clear();
+            else
+                goto error;
+        }
+    }
 
     /*
      * Setup log object for WSGI errors. Don't decrement
