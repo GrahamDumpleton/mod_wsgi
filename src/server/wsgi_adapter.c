@@ -1751,11 +1751,15 @@ static PyObject *Adapter_environ(AdapterObject *self)
                 if (!object)
                     goto error;
 
-                PyDict_SetItemString(vars, elts[i].key, object);
-                Py_DECREF(object);
+                if (PyDict_SetItemString(vars, elts[i].key, object) < 0)
+                    goto error;
+                Py_CLEAR(object);
             }
             else
-                PyDict_SetItemString(vars, elts[i].key, Py_None);
+            {
+                if (PyDict_SetItemString(vars, elts[i].key, Py_None) < 0)
+                    goto error;
+            }
         }
     }
 
@@ -1766,20 +1770,23 @@ static PyObject *Adapter_environ(AdapterObject *self)
     object = Py_BuildValue("(ii)", 1, 0);
     if (!object)
         goto error;
-    PyDict_SetItemString(vars, "wsgi.version", object);
-    Py_DECREF(object);
+    if (PyDict_SetItemString(vars, "wsgi.version", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     object = PyBool_FromLong(wsgi_multithread);
     if (!object)
         goto error;
-    PyDict_SetItemString(vars, "wsgi.multithread", object);
-    Py_DECREF(object);
+    if (PyDict_SetItemString(vars, "wsgi.multithread", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     object = PyBool_FromLong(wsgi_multiprocess);
     if (!object)
         goto error;
-    PyDict_SetItemString(vars, "wsgi.multiprocess", object);
-    Py_DECREF(object);
+    if (PyDict_SetItemString(vars, "wsgi.multiprocess", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process)
@@ -1787,15 +1794,23 @@ static PyObject *Adapter_environ(AdapterObject *self)
         if (wsgi_daemon_process->group->threads == 1 &&
             wsgi_daemon_process->group->maximum_requests == 1)
         {
-            PyDict_SetItemString(vars, "wsgi.run_once", Py_True);
+            if (PyDict_SetItemString(vars, "wsgi.run_once", Py_True) < 0)
+                goto error;
         }
         else
-            PyDict_SetItemString(vars, "wsgi.run_once", Py_False);
+        {
+            if (PyDict_SetItemString(vars, "wsgi.run_once", Py_False) < 0)
+                goto error;
+        }
     }
     else
-        PyDict_SetItemString(vars, "wsgi.run_once", Py_False);
+    {
+        if (PyDict_SetItemString(vars, "wsgi.run_once", Py_False) < 0)
+            goto error;
+    }
 #else
-    PyDict_SetItemString(vars, "wsgi.run_once", Py_False);
+    if (PyDict_SetItemString(vars, "wsgi.run_once", Py_False) < 0)
+        goto error;
 #endif
 
     scheme = apr_table_get(r->subprocess_env, "HTTPS");
@@ -1805,16 +1820,18 @@ static PyObject *Adapter_environ(AdapterObject *self)
         object = PyUnicode_FromString("https");
         if (!object)
             goto error;
-        PyDict_SetItemString(vars, "wsgi.url_scheme", object);
-        Py_DECREF(object);
+        if (PyDict_SetItemString(vars, "wsgi.url_scheme", object) < 0)
+            goto error;
+        Py_CLEAR(object);
     }
     else
     {
         object = PyUnicode_FromString("http");
         if (!object)
             goto error;
-        PyDict_SetItemString(vars, "wsgi.url_scheme", object);
-        Py_DECREF(object);
+        if (PyDict_SetItemString(vars, "wsgi.url_scheme", object) < 0)
+            goto error;
+        Py_CLEAR(object);
     }
 
     /*
@@ -1834,19 +1851,24 @@ static PyObject *Adapter_environ(AdapterObject *self)
      * reference to log object as keep reference to it.
      */
 
-    object = (PyObject *)self->log;
-    PyDict_SetItemString(vars, "wsgi.errors", object);
+    if (PyDict_SetItemString(vars, "wsgi.errors",
+                             (PyObject *)self->log) < 0)
+        goto error;
 
     /* Setup input object for request content. */
 
-    object = (PyObject *)self->input;
-    PyDict_SetItemString(vars, "wsgi.input", object);
+    if (PyDict_SetItemString(vars, "wsgi.input",
+                             (PyObject *)self->input) < 0)
+        goto error;
 
-    PyDict_SetItemString(vars, "wsgi.input_terminated", Py_True);
+    if (PyDict_SetItemString(vars, "wsgi.input_terminated", Py_True) < 0)
+        goto error;
 
     /* Setup file wrapper object for efficient file responses. */
 
-    PyDict_SetItemString(vars, "wsgi.file_wrapper", (PyObject *)&Stream_Type);
+    if (PyDict_SetItemString(vars, "wsgi.file_wrapper",
+                             (PyObject *)&Stream_Type) < 0)
+        goto error;
 
     /* Add Apache and mod_wsgi version information. */
 
@@ -1855,16 +1877,18 @@ static PyObject *Adapter_environ(AdapterObject *self)
                            AP_SERVER_PATCHLEVEL_NUMBER);
     if (!object)
         goto error;
-    PyDict_SetItemString(vars, "apache.version", object);
-    Py_DECREF(object);
+    if (PyDict_SetItemString(vars, "apache.version", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     object = Py_BuildValue("(iii)", MOD_WSGI_MAJORVERSION_NUMBER,
                            MOD_WSGI_MINORVERSION_NUMBER,
                            MOD_WSGI_MICROVERSION_NUMBER);
     if (!object)
         goto error;
-    PyDict_SetItemString(vars, "mod_wsgi.version", object);
-    Py_DECREF(object);
+    if (PyDict_SetItemString(vars, "mod_wsgi.version", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     /*
      * If Apache extensions are enabled and running in embedded
@@ -1877,30 +1901,15 @@ static PyObject *Adapter_environ(AdapterObject *self)
         object = PyCapsule_New(self->r, 0, 0);
         if (!object)
             goto error;
-        PyDict_SetItemString(vars, "apache.request_rec", object);
-        Py_DECREF(object);
+        if (PyDict_SetItemString(vars, "apache.request_rec", object) < 0)
+            goto error;
+        Py_CLEAR(object);
     }
-
-    /*
-     * Extensions for accessing SSL certificate information from
-     * mod_ssl when in use.
-     */
-
-#if 0
-    if (!wsgi_daemon_pool) {
-        object = PyObject_GetAttrString((PyObject *)self, "ssl_is_https");
-        PyDict_SetItemString(vars, "mod_ssl.is_https", object);
-        Py_DECREF(object);
-
-        object = PyObject_GetAttrString((PyObject *)self, "ssl_var_lookup");
-        PyDict_SetItemString(vars, "mod_ssl.var_lookup", object);
-        Py_DECREF(object);
-    }
-#endif
 
     return vars;
 
 error:
+    Py_XDECREF(object);
     Py_DECREF(vars);
     return NULL;
 }
@@ -2647,7 +2656,9 @@ int Adapter_run(AdapterObject *self, PyObject *object)
             else
                 goto event_error;
 
-            PyDict_SetItemString(event, "request_data", thread_handle->request_data);
+            if (PyDict_SetItemString(event, "request_data",
+                                     thread_handle->request_data) < 0)
+                goto event_error;
 
             /*
              * If any allocation while building the event failed,
