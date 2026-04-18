@@ -170,6 +170,8 @@ static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
     APR_OPTIONAL_FN_TYPE(ssl_var_lookup) *ssl_var_lookup = 0;
 
     PyObject *item = NULL;
+    PyObject *latin_item = NULL;
+    PyObject *result = NULL;
 
     char *name = 0;
     char *value = 0;
@@ -183,19 +185,24 @@ static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "O:ssl_var_lookup", &item))
         return NULL;
 
+    /*
+     * item is a borrowed reference from PyArg_ParseTuple and must
+     * not be released here. If the caller supplied a str, convert
+     * it to a latin-1 bytes object which we own and must release
+     * before returning; rebind item to point at the owned copy for
+     * the subsequent PyBytes_AsString call.
+     */
+
     if (PyUnicode_Check(item))
     {
-        PyObject *latin_item;
         latin_item = PyUnicode_AsLatin1String(item);
         if (!latin_item)
         {
             PyErr_Format(PyExc_TypeError, "byte string value expected, "
                                           "value containing non 'latin-1' characters found");
-            Py_DECREF(item);
             return NULL;
         }
 
-        Py_DECREF(item);
         item = latin_item;
     }
 
@@ -204,7 +211,7 @@ static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
                                       "of type %.200s found",
                      item->ob_type->tp_name);
-        Py_DECREF(item);
+        Py_XDECREF(latin_item);
         return NULL;
     }
 
@@ -214,6 +221,8 @@ static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
 
     if (ssl_var_lookup == 0)
     {
+        Py_XDECREF(latin_item);
+
         Py_INCREF(Py_None);
 
         return Py_None;
@@ -224,12 +233,18 @@ static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
 
     if (!value)
     {
+        Py_XDECREF(latin_item);
+
         Py_INCREF(Py_None);
 
         return Py_None;
     }
 
-    return PyUnicode_DecodeLatin1(value, strlen(value), NULL);
+    result = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
+
+    Py_XDECREF(latin_item);
+
+    return result;
 }
 
 static PyMethodDef Dispatch_methods[] = {
