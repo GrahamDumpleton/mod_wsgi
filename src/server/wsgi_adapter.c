@@ -1093,10 +1093,33 @@ AdapterObject *newAdapterObject(request_rec *r)
 
     self->output_time = 0;
 
+    self->input = NULL;
+    self->log_buffer = NULL;
+    self->log = NULL;
+
     self->input = newInputObject(r, self->config->ignore_activity);
 
+    if (!self->input)
+    {
+        Py_DECREF(self);
+        return NULL;
+    }
+
     self->log_buffer = newLogBufferObject(r, APLOG_ERR, "<wsgi.errors>", 0);
+
+    if (!self->log_buffer)
+    {
+        Py_DECREF(self);
+        return NULL;
+    }
+
     self->log = newLogWrapperObject(self->log_buffer);
+
+    if (!self->log)
+    {
+        Py_DECREF(self);
+        return NULL;
+    }
 
     return self;
 }
@@ -1106,10 +1129,10 @@ static void Adapter_dealloc(AdapterObject *self)
     Py_XDECREF(self->headers);
     Py_XDECREF(self->sequence);
 
-    Py_DECREF(self->input);
+    Py_XDECREF(self->input);
 
-    Py_DECREF(self->log_buffer);
-    Py_DECREF(self->log);
+    Py_XDECREF(self->log_buffer);
+    Py_XDECREF(self->log);
 
     PyObject_Del(self);
 }
