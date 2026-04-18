@@ -30,10 +30,6 @@
 
 apr_array_header_t *wsgi_import_list = NULL;
 
-/* Forward declaration for helper defined in mod_wsgi.c. */
-
-extern char *wsgi_http2env(apr_pool_t *a, const char *w);
-
 /* ------------------------------------------------------------------------- */
 
 int wsgi_parse_option(apr_pool_t *p, const char **line,

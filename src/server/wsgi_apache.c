@@ -50,6 +50,38 @@ apr_status_t wsgi_strtoff(apr_off_t *offset, const char *nptr,
 
 /* ------------------------------------------------------------------------- */
 
+char *wsgi_http2env(apr_pool_t *a, const char *w)
+{
+    char *res = (char *)apr_palloc(a, sizeof("HTTP_") + strlen(w));
+    char *cp = res;
+    char c;
+
+    *cp++ = 'H';
+    *cp++ = 'T';
+    *cp++ = 'T';
+    *cp++ = 'P';
+    *cp++ = '_';
+
+    while ((c = *w++) != 0)
+    {
+        if (apr_isalnum(c))
+        {
+            *cp++ = apr_toupper(c);
+        }
+        else if (c == '-')
+        {
+            *cp++ = '_';
+        }
+        else
+            return NULL;
+    }
+    *cp = 0;
+
+    return res;
+}
+
+/* ------------------------------------------------------------------------- */
+
 #if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
 APR_DECLARE(apr_status_t)
 apr_conv_utf8_to_ucs2(const char *in,
