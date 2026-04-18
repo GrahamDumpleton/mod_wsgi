@@ -722,6 +722,16 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
 
                 if (p != q)
                 {
+                    /*
+                     * TODO: self->size looks like it could be a
+                     * local. It is only used here (and at the
+                     * equivalent residual-stash site in the no-size
+                     * branch below) as the immediate malloc length
+                     * and memcpy length, and self->length is
+                     * assigned the same value on the next line.
+                     * Leaving it on the struct until the original
+                     * intent is confirmed.
+                     */
                     self->size = q - p;
                     self->buffer = (char *)malloc(self->size);
 
