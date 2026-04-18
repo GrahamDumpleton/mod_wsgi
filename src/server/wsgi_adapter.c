@@ -1283,7 +1283,8 @@ static int Adapter_output(AdapterObject *self, const char *data,
                           apr_off_t length, PyObject *string_object,
                           int exception_when_aborted)
 {
-    int i = 0;
+    Py_ssize_t i;
+    Py_ssize_t headers_count;
     apr_status_t rv;
     request_rec *r;
 
@@ -1337,7 +1338,9 @@ static int Adapter_output(AdapterObject *self, const char *data,
         r->status = self->status;
         r->status_line = self->status_line;
 
-        for (i = 0; i < PyList_Size(self->headers); i++)
+        headers_count = PyList_Size(self->headers);
+
+        for (i = 0; i < headers_count; i++)
         {
             PyObject *tuple = NULL;
 
