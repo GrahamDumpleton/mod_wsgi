@@ -280,14 +280,14 @@ finally:
 
 static PyObject *Input_read(InputObject *self, PyObject *args)
 {
-    PY_LONG_LONG size = -1;
+    Py_ssize_t size = -1;
 
     PyObject *result = NULL;
     char *buffer = NULL;
-    apr_off_t length = 0;
+    Py_ssize_t length = 0;
     int init = 0;
 
-    apr_int64_t n;
+    Py_ssize_t n;
 
     if (!self->r)
     {
@@ -295,7 +295,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
         return NULL;
     }
 
-    if (!PyArg_ParseTuple(args, "|L:read", &size))
+    if (!PyArg_ParseTuple(args, "|n:read", &size))
         return NULL;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
@@ -583,13 +583,13 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
 static PyObject *Input_readline(InputObject *self, PyObject *args)
 {
-    PY_LONG_LONG size = -1;
+    Py_ssize_t size = -1;
 
     PyObject *result = NULL;
     char *buffer = NULL;
-    apr_off_t length = 0;
+    Py_ssize_t length = 0;
 
-    apr_int64_t n;
+    Py_ssize_t n;
 
     if (!self->r)
     {
@@ -597,7 +597,7 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
         return NULL;
     }
 
-    if (!PyArg_ParseTuple(args, "|L:readline", &size))
+    if (!PyArg_ParseTuple(args, "|n:readline", &size))
         return NULL;
 
     if (self->seen_error)
@@ -919,8 +919,8 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
 
 static PyObject *Input_readlines(InputObject *self, PyObject *args)
 {
-    long hint = 0;
-    long length = 0;
+    Py_ssize_t hint = 0;
+    Py_ssize_t length = 0;
 
     PyObject *result = NULL;
     PyObject *line = NULL;
@@ -932,7 +932,7 @@ static PyObject *Input_readlines(InputObject *self, PyObject *args)
         return NULL;
     }
 
-    if (!PyArg_ParseTuple(args, "|l:readlines", &hint))
+    if (!PyArg_ParseTuple(args, "|n:readlines", &hint))
         return NULL;
 
     result = PyList_New(0);
@@ -948,7 +948,7 @@ static PyObject *Input_readlines(InputObject *self, PyObject *args)
 
     while (1)
     {
-        long n;
+        Py_ssize_t n;
 
         if (!(line = Input_readline(self, rlargs)))
         {
@@ -2758,7 +2758,7 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
 {
     PyObject *item = NULL;
     const char *data = NULL;
-    long length = 0;
+    Py_ssize_t length = 0;
 
     if (!self->r)
     {
