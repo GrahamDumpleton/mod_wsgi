@@ -24,6 +24,51 @@ assert_body_equals "$URL/get?key=HTTP_HOST" \
     "value=localhost:9876;end" \
     "HTTP_HOST reflects the Host header"
 
+# ----- SCRIPT_NAME vs PATH_INFO split at WSGIScriptAlias mount -----
+
+assert_body_equals "$URL/get?key=SCRIPT_NAME" \
+    "value=/test/wsgi/environ;end" \
+    "SCRIPT_NAME matches the WSGIScriptAlias mount point"
+
+assert_body_equals "$URL/get?key=PATH_INFO" \
+    "value=/get;end" \
+    "PATH_INFO is the URL path beneath the mount point"
+
+assert_body_equals "$URL/get?key=QUERY_STRING" \
+    "value=key=QUERY_STRING;end" \
+    "QUERY_STRING reflects the request query string"
+
+# ----- CONTENT_TYPE and CONTENT_LENGTH from request headers -----
+#
+# PEP 3333 §8.1 mandates that the Content-Type and Content-Length
+# request headers surface in environ under the bare CGI keys
+# (CONTENT_TYPE / CONTENT_LENGTH) rather than the HTTP_-prefixed
+# form used for other request headers.
+
+assert_post_body_equals_curl "$URL/get?key=CONTENT_TYPE" \
+    "payload" \
+    "value=application/x-custom;end" \
+    "CONTENT_TYPE environ key reflects the request Content-Type header" \
+    -H "Content-Type: application/x-custom"
+
+assert_post_body_equals_curl "$URL/get?key=CONTENT_LENGTH" \
+    "payload" \
+    "value=7;end" \
+    "CONTENT_LENGTH environ key reflects the request Content-Length header" \
+    -H "Content-Type: application/x-custom"
+
+assert_post_body_equals_curl "$URL/has?key=HTTP_CONTENT_TYPE" \
+    "payload" \
+    "present=NO;end" \
+    "HTTP_CONTENT_TYPE is absent (Content-Type uses the bare CONTENT_TYPE key)" \
+    -H "Content-Type: application/x-custom"
+
+assert_post_body_equals_curl "$URL/has?key=HTTP_CONTENT_LENGTH" \
+    "payload" \
+    "present=NO;end" \
+    "HTTP_CONTENT_LENGTH is absent (Content-Length uses the bare CONTENT_LENGTH key)" \
+    -H "Content-Type: application/x-custom"
+
 # ----- Custom request headers become HTTP_* keys -----
 
 assert_body_equals_headers "$URL/get?key=HTTP_X_REQUEST_ID" \

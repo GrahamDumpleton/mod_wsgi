@@ -94,3 +94,22 @@ assert_post_body_equals "$URL/iterate" \
     $'p\nq\nr' \
     "count=3,lines=p|q|r;end" \
     "iterating wsgi.input yields each line"
+
+# ----- Chunked request bodies -----
+#
+# When the client uses Transfer-Encoding: chunked instead of a
+# declared Content-Length, the Apache HTTP_IN input filter
+# de-chunks the body before handing it to mod_wsgi, so
+# wsgi.input.read() should still return the complete body.
+
+assert_post_body_equals_curl "$URL/read-all" \
+    "chunked-body-content" \
+    "data=chunked-body-content;end" \
+    "chunked request body is fully read by wsgi.input.read()" \
+    -H "Transfer-Encoding: chunked"
+
+assert_post_body_equals_curl "$URL/read-chunks" \
+    "chunked-long-body-that-spans-many-small-reads" \
+    "chunks=7,data=chunked-long-body-that-spans-many-small-reads;end" \
+    "chunked request body can be consumed via multiple read(N) calls" \
+    -H "Transfer-Encoding: chunked"

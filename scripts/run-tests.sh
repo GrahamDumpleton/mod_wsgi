@@ -221,6 +221,55 @@ assert_body_contains_headers() {
     fi
 }
 
+# Like assert_header_equals but with arbitrary extra curl args
+# (e.g., -X HEAD, -H 'Some: header') passed after the description.
+assert_header_equals_curl() {
+    local url="$1"
+    local header_name="$2"
+    local expected_value="$3"
+    local description="$4"
+    shift 4
+
+    local actual
+    actual=$(curl -sD - -o /dev/null "$@" "$url" \
+        | grep -i "^${header_name}:" \
+        | head -1 \
+        | sed "s/^[^:]*: *//" \
+        | tr -d '\r')
+
+    if [ "$actual" = "$expected_value" ]; then
+        echo "  PASS: $description"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $description (expected '$expected_value', got '$actual')"
+        FAIL=$((FAIL + 1))
+        ERRORS="$ERRORS\n  FAIL: $description"
+    fi
+}
+
+# POST body equality with extra curl args (e.g., for
+# Transfer-Encoding: chunked or non-default Content-Type).
+assert_post_body_equals_curl() {
+    local url="$1"
+    local post_data="$2"
+    local expected="$3"
+    local description="$4"
+    shift 4
+
+    local body
+    body=$(printf '%s' "$post_data" \
+        | curl -s -X POST --data-binary @- "$@" "$url")
+
+    if [ "$body" = "$expected" ]; then
+        echo "  PASS: $description"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $description (expected '$expected', got '$body')"
+        FAIL=$((FAIL + 1))
+        ERRORS="$ERRORS\n  FAIL: $description"
+    fi
+}
+
 assert_header_count() {
     local url="$1"
     local header_name="$2"
@@ -351,6 +400,14 @@ for test_sh in "${TEST_FILES[@]}"; do
     mount_path="/test/$(echo "${test_py#tests/}" | sed 's/\.py$//' | tr '_' '-')"
 
     echo "WSGIScriptAlias $mount_path $PROJECT_DIR/$test_py process-group=localhost:$PORT application-group=%{GLOBAL}" >> "$INCLUDE_FILE"
+
+    # Append optional per-test Apache configuration (e.g., for
+    # tests that need a <Location> override of a mod_wsgi
+    # directive).
+    test_conf="${test_sh%.sh}.conf"
+    if [ -f "$test_conf" ]; then
+        cat "$test_conf" >> "$INCLUDE_FILE"
+    fi
 done
 
 echo "Starting test server on port $PORT..."
