@@ -952,8 +952,7 @@ static PyObject *Input_readlines(InputObject *self, PyObject *args)
 
         if (!(line = Input_readline(self, rlargs)))
         {
-            Py_DECREF(result);
-            result = NULL;
+            Py_CLEAR(result);
             break;
         }
 
@@ -966,8 +965,7 @@ static PyObject *Input_readlines(InputObject *self, PyObject *args)
         if (PyList_Append(result, line) == -1)
         {
             Py_DECREF(line);
-            Py_DECREF(result);
-            result = NULL;
+            Py_CLEAR(result);
             break;
         }
 
@@ -1166,6 +1164,9 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     PyObject *status_line_as_bytes = NULL;
     PyObject *headers_as_bytes = NULL;
 
+    PyObject *event = NULL;
+    PyObject *item = NULL;
+
     if (!self->r)
     {
         PyErr_SetString(PyExc_RuntimeError, "request object has expired");
@@ -1219,30 +1220,34 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     {
         WSGIThreadInfo *thread_info;
 
-        PyObject *event = NULL;
-        PyObject *value = NULL;
-
         thread_info = wsgi_thread_info(0, 0);
 
         event = PyDict_New();
 
+        if (!event)
+            goto finally;
+
         if (self->r->log_id)
         {
-            value = PyUnicode_DecodeLatin1(self->r->log_id,
-                                           strlen(self->r->log_id), NULL);
-            PyDict_SetItemString(event, "request_id", value);
-            Py_DECREF(value);
+            item = PyUnicode_DecodeLatin1(self->r->log_id,
+                                          strlen(self->r->log_id), NULL);
+            if (!item)
+                goto finally;
+            if (PyDict_SetItemString(event, "request_id", item) < 0)
+                goto finally;
+            Py_CLEAR(item);
         }
 
-        PyDict_SetItemString(event, "response_status", status_line);
-        PyDict_SetItemString(event, "response_headers", headers);
-        PyDict_SetItemString(event, "exception_info", exc_info);
-
-        PyDict_SetItemString(event, "request_data", thread_info->request_data);
+        if (PyDict_SetItemString(event, "response_status", status_line) < 0 ||
+            PyDict_SetItemString(event, "response_headers", headers) < 0 ||
+            PyDict_SetItemString(event, "exception_info", exc_info) < 0 ||
+            PyDict_SetItemString(event, "request_data",
+                                 thread_info->request_data) < 0)
+            goto finally;
 
         wsgi_publish_event("response_started", event);
 
-        Py_DECREF(event);
+        Py_CLEAR(event);
     }
 
     status_line_as_bytes = wsgi_convert_status_line_to_bytes(status_line);
@@ -1266,6 +1271,8 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     result = PyObject_GetAttrString((PyObject *)self, "write");
 
 finally:
+    Py_XDECREF(event);
+    Py_XDECREF(item);
     Py_XDECREF(status_line_as_bytes);
     Py_XDECREF(headers_as_bytes);
 
@@ -1711,6 +1718,9 @@ static PyObject *Adapter_environ(AdapterObject *self)
 
     vars = PyDict_New();
 
+    if (!vars)
+        return NULL;
+
     /* Merge the CGI environment into the WSGI environment. */
 
     r = self->r;
@@ -1737,6 +1747,10 @@ static PyObject *Adapter_environ(AdapterObject *self)
                     object = PyUnicode_DecodeLatin1(elts[i].val,
                                                     strlen(elts[i].val), NULL);
                 }
+
+                if (!object)
+                    goto error;
+
                 PyDict_SetItemString(vars, elts[i].key, object);
                 Py_DECREF(object);
             }
@@ -1750,14 +1764,20 @@ static PyObject *Adapter_environ(AdapterObject *self)
     /* Now setup all the WSGI specific environment values. */
 
     object = Py_BuildValue("(ii)", 1, 0);
+    if (!object)
+        goto error;
     PyDict_SetItemString(vars, "wsgi.version", object);
     Py_DECREF(object);
 
     object = PyBool_FromLong(wsgi_multithread);
+    if (!object)
+        goto error;
     PyDict_SetItemString(vars, "wsgi.multithread", object);
     Py_DECREF(object);
 
     object = PyBool_FromLong(wsgi_multiprocess);
+    if (!object)
+        goto error;
     PyDict_SetItemString(vars, "wsgi.multiprocess", object);
     Py_DECREF(object);
 
@@ -1783,12 +1803,16 @@ static PyObject *Adapter_environ(AdapterObject *self)
     if (scheme && (!strcasecmp(scheme, "On") || !strcmp(scheme, "1")))
     {
         object = PyUnicode_FromString("https");
+        if (!object)
+            goto error;
         PyDict_SetItemString(vars, "wsgi.url_scheme", object);
         Py_DECREF(object);
     }
     else
     {
         object = PyUnicode_FromString("http");
+        if (!object)
+            goto error;
         PyDict_SetItemString(vars, "wsgi.url_scheme", object);
         Py_DECREF(object);
     }
@@ -1829,12 +1853,16 @@ static PyObject *Adapter_environ(AdapterObject *self)
     object = Py_BuildValue("(iii)", AP_SERVER_MAJORVERSION_NUMBER,
                            AP_SERVER_MINORVERSION_NUMBER,
                            AP_SERVER_PATCHLEVEL_NUMBER);
+    if (!object)
+        goto error;
     PyDict_SetItemString(vars, "apache.version", object);
     Py_DECREF(object);
 
     object = Py_BuildValue("(iii)", MOD_WSGI_MAJORVERSION_NUMBER,
                            MOD_WSGI_MINORVERSION_NUMBER,
                            MOD_WSGI_MICROVERSION_NUMBER);
+    if (!object)
+        goto error;
     PyDict_SetItemString(vars, "mod_wsgi.version", object);
     Py_DECREF(object);
 
@@ -1847,6 +1875,8 @@ static PyObject *Adapter_environ(AdapterObject *self)
     if (!wsgi_daemon_pool && self->config->pass_apache_request)
     {
         object = PyCapsule_New(self->r, 0, 0);
+        if (!object)
+            goto error;
         PyDict_SetItemString(vars, "apache.request_rec", object);
         Py_DECREF(object);
     }
@@ -1869,6 +1899,10 @@ static PyObject *Adapter_environ(AdapterObject *self)
 #endif
 
     return vars;
+
+error:
+    Py_DECREF(vars);
+    return NULL;
 }
 
 static int Adapter_process_file_wrapper(AdapterObject *self)
@@ -1939,8 +1973,7 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
 
     if (!filelike)
     {
-        PyErr_SetString(PyExc_KeyError,
-                        "file wrapper no filelike attribute");
+        PyErr_Clear();
         return 0;
     }
 
@@ -1998,7 +2031,10 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
     method = PyObject_GetAttrString(filelike, "tell");
     Py_DECREF(filelike);
     if (!method)
+    {
+        PyErr_Clear();
         return 0;
+    }
 
     object = PyObject_CallObject(method, NULL);
     Py_DECREF(method);
@@ -2148,19 +2184,31 @@ int Adapter_run(AdapterObject *self, PyObject *object)
 
     vars = Adapter_environ(self);
 
+    if (!vars)
+        goto error;
+
     value = PyLong_FromLongLong(wsgi_total_requests);
-    PyDict_SetItemString(vars, "mod_wsgi.total_requests", value);
-    Py_DECREF(value);
+    if (!value)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_wsgi.total_requests", value) < 0)
+        goto error;
+    Py_CLEAR(value);
 
     thread_handle = wsgi_thread_info(1, 1);
 
     value = PyLong_FromLong(thread_handle->thread_id);
-    PyDict_SetItemString(vars, "mod_wsgi.thread_id", value);
-    Py_DECREF(value);
+    if (!value)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_wsgi.thread_id", value) < 0)
+        goto error;
+    Py_CLEAR(value);
 
     value = PyLong_FromLongLong(thread_handle->request_count);
-    PyDict_SetItemString(vars, "mod_wsgi.thread_requests", value);
-    Py_DECREF(value);
+    if (!value)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_wsgi.thread_requests", value) < 0)
+        goto error;
+    Py_CLEAR(value);
 
     /* Publish event for the start of the request. */
 
@@ -2173,50 +2221,81 @@ int Adapter_run(AdapterObject *self, PyObject *object)
 
         event = PyDict_New();
 
+        if (!event)
+            goto error;
+
         if (self->r->log_id)
         {
             value = PyUnicode_DecodeLatin1(self->r->log_id,
                                            strlen(self->r->log_id), NULL);
-            PyDict_SetItemString(event, "request_id", value);
-            Py_DECREF(value);
+            if (!value)
+                goto error;
+            if (PyDict_SetItemString(event, "request_id", value) < 0)
+                goto error;
+            Py_CLEAR(value);
         }
 
         value = PyLong_FromLong(thread_handle->thread_id);
-        PyDict_SetItemString(event, "thread_id", value);
-        Py_DECREF(value);
+        if (!value)
+            goto error;
+        if (PyDict_SetItemString(event, "thread_id", value) < 0)
+            goto error;
+        Py_CLEAR(value);
 
         value = PyLong_FromLong(self->config->daemon_connects);
-        PyDict_SetItemString(event, "daemon_connects", value);
-        Py_DECREF(value);
+        if (!value)
+            goto error;
+        if (PyDict_SetItemString(event, "daemon_connects", value) < 0)
+            goto error;
+        Py_CLEAR(value);
 
         value = PyLong_FromLong(self->config->daemon_restarts);
-        PyDict_SetItemString(event, "daemon_restarts", value);
-        Py_DECREF(value);
+        if (!value)
+            goto error;
+        if (PyDict_SetItemString(event, "daemon_restarts", value) < 0)
+            goto error;
+        Py_CLEAR(value);
 
         value = PyFloat_FromDouble(apr_time_sec(
             (double)self->config->request_start));
-        PyDict_SetItemString(event, "request_start", value);
-        Py_DECREF(value);
+        if (!value)
+            goto error;
+        if (PyDict_SetItemString(event, "request_start", value) < 0)
+            goto error;
+        Py_CLEAR(value);
 
         value = PyFloat_FromDouble(apr_time_sec(
             (double)self->config->queue_start));
-        PyDict_SetItemString(event, "queue_start", value);
-        Py_DECREF(value);
+        if (!value)
+            goto error;
+        if (PyDict_SetItemString(event, "queue_start", value) < 0)
+            goto error;
+        Py_CLEAR(value);
 
         value = PyFloat_FromDouble(apr_time_sec(
             (double)self->config->daemon_start));
-        PyDict_SetItemString(event, "daemon_start", value);
-        Py_DECREF(value);
+        if (!value)
+            goto error;
+        if (PyDict_SetItemString(event, "daemon_start", value) < 0)
+            goto error;
+        Py_CLEAR(value);
 
-        PyDict_SetItemString(event, "application_object", object);
+        if (PyDict_SetItemString(event, "application_object", object) < 0)
+            goto error;
 
-        PyDict_SetItemString(event, "request_environ", vars);
+        if (PyDict_SetItemString(event, "request_environ", vars) < 0)
+            goto error;
 
         value = PyFloat_FromDouble(apr_time_sec((double)self->start_time));
-        PyDict_SetItemString(event, "application_start", value);
-        Py_DECREF(value);
+        if (!value)
+            goto error;
+        if (PyDict_SetItemString(event, "application_start", value) < 0)
+            goto error;
+        Py_CLEAR(value);
 
-        PyDict_SetItemString(event, "request_data", thread_handle->request_data);
+        if (PyDict_SetItemString(event, "request_data",
+                                 thread_handle->request_data) < 0)
+            goto error;
 
         wsgi_publish_event("request_started", event);
 
@@ -2233,7 +2312,7 @@ int Adapter_run(AdapterObject *self, PyObject *object)
                 evwrapper = NULL;
         }
 
-        Py_DECREF(event);
+        Py_CLEAR(event);
     }
 
     /* Pass the request through to the WSGI application. */
@@ -2380,12 +2459,19 @@ int Adapter_run(AdapterObject *self, PyObject *object)
 
             close = PyObject_GetAttrString(self->sequence, "close");
 
-            args = Py_BuildValue("()");
-            data = PyObject_CallObject(close, args);
+            if (close)
+            {
+                args = Py_BuildValue("()");
 
-            Py_DECREF(args);
-            Py_XDECREF(data);
-            Py_DECREF(close);
+                if (args)
+                {
+                    data = PyObject_CallObject(close, args);
+                    Py_XDECREF(data);
+                    Py_DECREF(args);
+                }
+
+                Py_DECREF(close);
+            }
         }
 
         if (PyErr_Occurred())
@@ -2405,99 +2491,183 @@ int Adapter_run(AdapterObject *self, PyObject *object)
 
         event = PyDict_New();
 
-        if (self->r->log_id)
+        if (event)
         {
-            value = PyUnicode_DecodeLatin1(self->r->log_id,
-                                           strlen(self->r->log_id), NULL);
-            PyDict_SetItemString(event, "request_id", value);
-            Py_DECREF(value);
-        }
-
-        value = PyLong_FromLongLong(self->input->reads);
-        PyDict_SetItemString(event, "input_reads", value);
-        Py_DECREF(value);
-
-        value = PyLong_FromLongLong(self->input->bytes);
-        PyDict_SetItemString(event, "input_length", value);
-        Py_DECREF(value);
-
-        value = PyFloat_FromDouble(apr_time_sec((double)self->input->time));
-        PyDict_SetItemString(event, "input_time", value);
-        Py_DECREF(value);
-
-        value = PyLong_FromLongLong(self->output_length);
-        PyDict_SetItemString(event, "output_length", value);
-        Py_DECREF(value);
-
-        value = PyLong_FromLongLong(self->output_writes);
-        PyDict_SetItemString(event, "output_writes", value);
-        Py_DECREF(value);
-
-        output_time = apr_time_sec((double)self->output_time);
-
-        if (output_time < 0.0)
-            output_time = 0.0;
-
-        application_time = apr_time_sec((double)finish_time - self->start_time);
-
-        if (application_time < 0.0)
-            application_time = 0.0;
-
-        if (start_usage.user_time != 0.0)
-        {
-            if (wsgi_thread_cpu_usage(&end_usage))
+            if (self->r->log_id)
             {
-                double user_seconds;
-                double system_seconds;
-                double total_seconds;
-
-                user_seconds = end_usage.user_time;
-                user_seconds -= start_usage.user_time;
-
-                if (user_seconds < 0.0)
-                    user_seconds = 0.0;
-
-                system_seconds = end_usage.system_time;
-                system_seconds -= start_usage.system_time;
-
-                if (system_seconds < 0.0)
-                    system_seconds = 0.0;
-
-                total_seconds = user_seconds + system_seconds;
-
-                if (total_seconds && total_seconds > application_time)
+                value = PyUnicode_DecodeLatin1(self->r->log_id,
+                                               strlen(self->r->log_id), NULL);
+                if (value)
                 {
-                    user_seconds = (user_seconds / total_seconds) * application_time;
-                    system_seconds = application_time - user_seconds;
+                    if (PyDict_SetItemString(event, "request_id", value) < 0)
+                        goto event_error;
+                    Py_CLEAR(value);
                 }
-
-                value = PyFloat_FromDouble(user_seconds);
-                PyDict_SetItemString(event, "cpu_user_time", value);
-                Py_DECREF(value);
-
-                value = PyFloat_FromDouble(system_seconds);
-                PyDict_SetItemString(event, "cpu_system_time", value);
-                Py_DECREF(value);
+                else
+                    goto event_error;
             }
+
+            value = PyLong_FromLongLong(self->input->reads);
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "input_reads", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            value = PyLong_FromLongLong(self->input->bytes);
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "input_length", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            value = PyFloat_FromDouble(apr_time_sec((double)self->input->time));
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "input_time", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            value = PyLong_FromLongLong(self->output_length);
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "output_length", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            value = PyLong_FromLongLong(self->output_writes);
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "output_writes", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            output_time = apr_time_sec((double)self->output_time);
+
+            if (output_time < 0.0)
+                output_time = 0.0;
+
+            application_time = apr_time_sec((double)finish_time - self->start_time);
+
+            if (application_time < 0.0)
+                application_time = 0.0;
+
+            if (start_usage.user_time != 0.0)
+            {
+                if (wsgi_thread_cpu_usage(&end_usage))
+                {
+                    double user_seconds;
+                    double system_seconds;
+                    double total_seconds;
+
+                    user_seconds = end_usage.user_time;
+                    user_seconds -= start_usage.user_time;
+
+                    if (user_seconds < 0.0)
+                        user_seconds = 0.0;
+
+                    system_seconds = end_usage.system_time;
+                    system_seconds -= start_usage.system_time;
+
+                    if (system_seconds < 0.0)
+                        system_seconds = 0.0;
+
+                    total_seconds = user_seconds + system_seconds;
+
+                    if (total_seconds && total_seconds > application_time)
+                    {
+                        user_seconds = (user_seconds / total_seconds) * application_time;
+                        system_seconds = application_time - user_seconds;
+                    }
+
+                    value = PyFloat_FromDouble(user_seconds);
+                    if (value)
+                    {
+                        if (PyDict_SetItemString(event, "cpu_user_time", value) < 0)
+                            goto event_error;
+                        Py_CLEAR(value);
+                    }
+                    else
+                        goto event_error;
+
+                    value = PyFloat_FromDouble(system_seconds);
+                    if (value)
+                    {
+                        if (PyDict_SetItemString(event, "cpu_system_time", value) < 0)
+                            goto event_error;
+                        Py_CLEAR(value);
+                    }
+                    else
+                        goto event_error;
+                }
+            }
+
+            value = PyFloat_FromDouble(output_time);
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "output_time", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            value = PyFloat_FromDouble(apr_time_sec((double)finish_time));
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "application_finish", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            value = PyFloat_FromDouble(application_time);
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "application_time", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            PyDict_SetItemString(event, "request_data", thread_handle->request_data);
+
+            /*
+             * If any allocation while building the event failed,
+             * discard the partial event rather than publishing
+             * misleading data to subscribers. wsgi_log_python_error
+             * also clears the exception so the subscriber callbacks
+             * aren't invoked with an error pending.
+             */
+
+event_error:
+            if (PyErr_Occurred())
+                wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
+            else
+                wsgi_publish_event("request_finished", event);
+
+            Py_XDECREF(value);
+            Py_CLEAR(event);
         }
-
-        value = PyFloat_FromDouble(output_time);
-        PyDict_SetItemString(event, "output_time", value);
-        Py_DECREF(value);
-
-        value = PyFloat_FromDouble(apr_time_sec((double)finish_time));
-        PyDict_SetItemString(event, "application_finish", value);
-        Py_DECREF(value);
-
-        value = PyFloat_FromDouble(application_time);
-        PyDict_SetItemString(event, "application_time", value);
-        Py_DECREF(value);
-
-        PyDict_SetItemString(event, "request_data", thread_handle->request_data);
-
-        wsgi_publish_event("request_finished", event);
-
-        Py_DECREF(event);
+        else
+            wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
     }
 
     /*
@@ -2519,6 +2689,10 @@ int Adapter_run(AdapterObject *self, PyObject *object)
      * in any error page automatically generated by Apache.
      */
 
+error:
+    if (PyErr_Occurred())
+        wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
+
     if (self->result == HTTP_INTERNAL_SERVER_ERROR)
         self->r->status_line = "500 Internal Server Error";
 
@@ -2526,10 +2700,12 @@ int Adapter_run(AdapterObject *self, PyObject *object)
     Py_XDECREF(start);
     Py_XDECREF(vars);
 
+    Py_XDECREF(event);
+    Py_XDECREF(value);
+
     Py_XDECREF(evwrapper);
 
-    Py_XDECREF(self->sequence);
-    self->sequence = NULL;
+    Py_CLEAR(self->sequence);
 
     return self->result;
 }
