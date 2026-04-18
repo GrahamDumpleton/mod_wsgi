@@ -177,15 +177,18 @@ const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
             return "Invalid option to WSGI script alias definition.";
     }
 
-    entry = (WSGIAliasEntry *)apr_array_push(sconfig->alias_list);
+    ap_regex_t *regexp = NULL;
 
     if (cmd->info)
     {
-        entry->regexp = ap_pregcomp(cmd->pool, l, AP_REG_EXTENDED);
-        if (!entry->regexp)
+        regexp = ap_pregcomp(cmd->pool, l, AP_REG_EXTENDED);
+        if (!regexp)
             return "Regular expression could not be compiled.";
     }
 
+    entry = (WSGIAliasEntry *)apr_array_push(sconfig->alias_list);
+
+    entry->regexp = regexp;
     entry->location = l;
     entry->application = a;
 
@@ -696,8 +699,14 @@ const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
 {
     WSGIScriptFile *object = NULL;
 
+    const char *handler_script = NULL;
     const char *option = NULL;
     const char *value = NULL;
+
+    handler_script = ap_getword_conf(cmd->pool, &args);
+
+    if (!handler_script || !*handler_script)
+        return "Location of import script not supplied.";
 
     if (!wsgi_import_list)
     {
@@ -710,12 +719,9 @@ const char *wsgi_add_import_script(cmd_parms *cmd, void *mconfig,
 
     object = (WSGIScriptFile *)apr_array_push(wsgi_import_list);
 
-    object->handler_script = ap_getword_conf(cmd->pool, &args);
+    object->handler_script = handler_script;
     object->process_group = NULL;
     object->application_group = NULL;
-
-    if (!object->handler_script || !*object->handler_script)
-        return "Location of import script not supplied.";
 
     while (*args)
     {
