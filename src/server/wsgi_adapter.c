@@ -2203,7 +2203,8 @@ int Adapter_run(AdapterObject *self, PyObject *object)
 
     args = Py_BuildValue("(OO)", vars, start);
 
-    self->sequence = PyObject_CallObject(object, args);
+    if (args)
+        self->sequence = PyObject_CallObject(object, args);
 
     if (self->sequence != NULL)
     {
@@ -2480,9 +2481,9 @@ int Adapter_run(AdapterObject *self, PyObject *object)
     if (self->result == HTTP_INTERNAL_SERVER_ERROR)
         self->r->status_line = "500 Internal Server Error";
 
-    Py_DECREF(args);
-    Py_DECREF(start);
-    Py_DECREF(vars);
+    Py_XDECREF(args);
+    Py_XDECREF(start);
+    Py_XDECREF(vars);
 
     Py_XDECREF(evwrapper);
 
