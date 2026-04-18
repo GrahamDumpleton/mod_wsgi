@@ -103,8 +103,7 @@ static PyObject *Input_close(InputObject *self, PyObject *args)
         return NULL;
     }
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static apr_int64_t Input_read_from_input(InputObject *self, char *buffer,
@@ -2808,8 +2807,7 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
         return NULL;
     }
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject *Adapter_ssl_is_https(AdapterObject *self, PyObject *args)
@@ -2885,9 +2883,7 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
     {
         Py_XDECREF(latin_item);
 
-        Py_INCREF(Py_None);
-
-        return Py_None;
+        Py_RETURN_NONE;
     }
 
     value = ssl_var_lookup(self->r->pool, self->r->server,
@@ -2897,9 +2893,7 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
 
     if (!value)
     {
-        Py_INCREF(Py_None);
-
-        return Py_None;
+        Py_RETURN_NONE;
     }
 
     return PyUnicode_DecodeLatin1(value, strlen(value), NULL);
