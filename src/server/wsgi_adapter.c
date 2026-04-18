@@ -1622,7 +1622,26 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
 
     bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 
-    apr_file_dup(&dupfile, tmpfile, r->pool);
+    rv = apr_file_dup(&dupfile, tmpfile, r->pool);
+
+    if (rv != APR_SUCCESS)
+    {
+        char status_buffer[512];
+        const char *error_message;
+
+        error_message = apr_psprintf(r->pool, "Apache/mod_wsgi failed "
+                                              "to duplicate file handle: %s.",
+                                     apr_strerror(rv, status_buffer,
+                                                  sizeof(status_buffer) - 1));
+
+        PyErr_SetString(PyExc_IOError, error_message);
+
+        Py_BEGIN_ALLOW_THREADS
+            apr_brigade_destroy(bb);
+        Py_END_ALLOW_THREADS
+
+        return 0;
+    }
 
     if (sizeof(apr_off_t) == sizeof(apr_size_t) || len < MAX_BUCKET_SIZE)
     {
