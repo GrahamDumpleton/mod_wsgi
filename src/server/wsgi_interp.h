@@ -55,8 +55,22 @@ extern apr_hash_t *wsgi_interpreters_index;
 
 #if APR_HAS_THREADS
 extern apr_thread_mutex_t *wsgi_interp_lock;
+extern apr_thread_mutex_t *wsgi_module_lock;
 extern apr_thread_mutex_t *wsgi_shutdown_lock;
 #endif
+
+extern char *wsgi_module_name(apr_pool_t *pool, const char *filename);
+
+extern int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
+                                const char *filename, PyObject *module,
+                                const char *resource);
+
+extern PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
+                                  const char *name, int exists,
+                                  const char *filename,
+                                  const char *process_group,
+                                  const char *application_group,
+                                  int ignore_system_exit);
 
 extern void wsgi_python_version(void);
 

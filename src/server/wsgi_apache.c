@@ -33,6 +33,23 @@ int wsgi_apache_dummy = 1;
 
 /* ------------------------------------------------------------------------- */
 
+apr_status_t wsgi_strtoff(apr_off_t *offset, const char *nptr,
+                          char **endptr, int base)
+{
+    errno = 0;
+    if (sizeof(apr_off_t) == 4)
+    {
+        *offset = strtol(nptr, endptr, base);
+    }
+    else
+    {
+        *offset = apr_strtoi64(nptr, endptr, base);
+    }
+    return APR_FROM_OS_ERROR(errno);
+}
+
+/* ------------------------------------------------------------------------- */
+
 #if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
 APR_DECLARE(apr_status_t)
 apr_conv_utf8_to_ucs2(const char *in,

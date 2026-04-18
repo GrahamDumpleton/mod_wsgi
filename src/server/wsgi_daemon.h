@@ -191,6 +191,9 @@ extern WSGIThreadStack *wsgi_worker_stack;
 
 extern int volatile wsgi_daemon_shutdown;
 
+extern apr_interval_time_t wsgi_idle_timeout;
+extern apr_time_t volatile wsgi_idle_shutdown_time;
+
 #endif
 
 /* ------------------------------------------------------------------------- */

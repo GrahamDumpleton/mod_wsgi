@@ -85,6 +85,9 @@ extern apr_status_t wsgi_utf8_to_unicode_path(apr_wchar_t *retstr,
                                               const char *srcstr);
 #endif
 
+extern apr_status_t wsgi_strtoff(apr_off_t *offset, const char *nptr,
+                                 char **endptr, int base);
+
 /* ------------------------------------------------------------------------- */
 
 #endif

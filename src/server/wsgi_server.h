@@ -58,6 +58,11 @@ typedef struct
     const char *pass_authorization;
 } WSGIScriptFile;
 
+extern module AP_MODULE_DECLARE_DATA wsgi_module;
+
+extern int wsgi_multiprocess;
+extern int wsgi_multithread;
+
 typedef struct
 {
     apr_pool_t *pool;
@@ -123,7 +128,54 @@ extern WSGIServerConfig *wsgi_server_config;
 extern WSGIScriptFile *newWSGIScriptFile(apr_pool_t *p);
 extern WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p);
 
+typedef struct
+{
+    apr_pool_t *pool;
+
+    apr_table_t *restrict_process;
+
+    const char *process_group;
+    const char *application_group;
+    const char *callable_object;
+
+    WSGIScriptFile *dispatch_script;
+
+    int pass_apache_request;
+    int pass_authorization;
+    int script_reloading;
+    int error_override;
+    int chunked_request;
+    int map_head_to_get;
+    int ignore_activity;
+
+    apr_array_header_t *trusted_proxy_headers;
+    apr_array_header_t *trusted_proxies;
+
+    int enable_sendfile;
+
+    WSGIScriptFile *access_script;
+    WSGIScriptFile *auth_user_script;
+    WSGIScriptFile *auth_group_script;
+    int user_authoritative;
+    int group_authoritative;
+
+    apr_hash_t *handler_scripts;
+    const char *handler_script;
+
+    int daemon_connects;
+    int daemon_restarts;
+
+    apr_time_t request_start;
+    apr_time_t queue_start;
+    apr_time_t daemon_start;
+} WSGIRequestConfig;
+
 extern apr_pool_t *wsgi_daemon_pool;
+
+extern const char *wsgi_process_group(request_rec *r, const char *s);
+extern const char *wsgi_server_group(request_rec *r, const char *s);
+extern const char *wsgi_application_group(request_rec *r, const char *s);
+extern const char *wsgi_callable_object(request_rec *r, const char *s);
 
 /* ------------------------------------------------------------------------- */
 
