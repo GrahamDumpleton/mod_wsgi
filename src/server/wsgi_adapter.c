@@ -714,6 +714,15 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
                 {
                     self->size = q - p;
                     self->buffer = (char *)malloc(self->size);
+
+                    if (!self->buffer)
+                    {
+                        PyErr_NoMemory();
+                        Py_DECREF(result);
+                        self->seen_error = 1;
+                        return NULL;
+                    }
+
                     self->offset = 0;
                     self->length = self->size;
 
@@ -860,6 +869,15 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
                 {
                     self->size = q - p;
                     self->buffer = (char *)malloc(self->size);
+
+                    if (!self->buffer)
+                    {
+                        PyErr_NoMemory();
+                        Py_DECREF(result);
+                        self->seen_error = 1;
+                        return NULL;
+                    }
+
                     self->offset = 0;
                     self->length = self->size;
 
