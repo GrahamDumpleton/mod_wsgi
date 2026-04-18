@@ -386,6 +386,7 @@ cat >> "$INCLUDE_FILE" <<EOF
     Require all granted
 </Directory>
 WSGIRestrictStdin On
+WSGIDispatchScript $PROJECT_DIR/tests/dispatch.py
 EOF
 
 for test_sh in "${TEST_FILES[@]}"; do
