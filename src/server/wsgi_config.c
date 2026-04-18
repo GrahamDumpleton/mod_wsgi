@@ -441,6 +441,7 @@ const char *wsgi_set_python_hash_seed(cmd_parms *cmd, void *mconfig,
         const char *endptr = f;
         unsigned long seed;
 
+        errno = 0;
         seed = PyOS_strtoul((char *)f, (char **)&endptr, 10);
 
         if (*endptr != '\0' || seed > 4294967295UL || (errno == ERANGE && seed == ULONG_MAX))
