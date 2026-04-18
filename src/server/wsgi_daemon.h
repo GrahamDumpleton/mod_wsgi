@@ -177,6 +177,8 @@ typedef struct
     apr_socket_t *socket;
 } WSGIDaemonSocket;
 
+extern apr_array_header_t *wsgi_daemon_list;
+
 extern int wsgi_daemon_count;
 extern apr_hash_t *wsgi_daemon_index;
 extern apr_hash_t *wsgi_daemon_listeners;
