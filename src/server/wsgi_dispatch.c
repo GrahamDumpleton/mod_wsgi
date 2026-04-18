@@ -127,131 +127,8 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
         Py_DECREF(object);
     }
 
-    /*
-     * Extensions for accessing SSL certificate information from
-     * mod_ssl when in use.
-     */
-
-#if 0
-    object = PyObject_GetAttrString((PyObject *)self, "ssl_is_https");
-    PyDict_SetItemString(vars, "mod_ssl.is_https", object);
-    Py_DECREF(object);
-
-    object = PyObject_GetAttrString((PyObject *)self, "ssl_var_lookup");
-    PyDict_SetItemString(vars, "mod_ssl.var_lookup", object);
-    Py_DECREF(object);
-#endif
-
     return vars;
 }
-
-static PyObject *Dispatch_ssl_is_https(DispatchObject *self, PyObject *args)
-{
-    APR_OPTIONAL_FN_TYPE(ssl_is_https) *ssl_is_https = 0;
-
-    if (!self->r)
-    {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
-        return NULL;
-    }
-
-    if (!PyArg_ParseTuple(args, ":ssl_is_https"))
-        return NULL;
-
-    ssl_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
-
-    if (ssl_is_https == 0)
-        return Py_BuildValue("i", 0);
-
-    return Py_BuildValue("i", ssl_is_https(self->r->connection));
-}
-
-static PyObject *Dispatch_ssl_var_lookup(DispatchObject *self, PyObject *args)
-{
-    APR_OPTIONAL_FN_TYPE(ssl_var_lookup) *ssl_var_lookup = 0;
-
-    PyObject *item = NULL;
-    PyObject *latin_item = NULL;
-    PyObject *result = NULL;
-
-    char *name = 0;
-    char *value = 0;
-
-    if (!self->r)
-    {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
-        return NULL;
-    }
-
-    if (!PyArg_ParseTuple(args, "O:ssl_var_lookup", &item))
-        return NULL;
-
-    /*
-     * item is a borrowed reference from PyArg_ParseTuple and must
-     * not be released here. If the caller supplied a str, convert
-     * it to a latin-1 bytes object which we own and must release
-     * before returning; rebind item to point at the owned copy for
-     * the subsequent PyBytes_AsString call.
-     */
-
-    if (PyUnicode_Check(item))
-    {
-        latin_item = PyUnicode_AsLatin1String(item);
-        if (!latin_item)
-        {
-            PyErr_Format(PyExc_TypeError, "byte string value expected, "
-                                          "value containing non 'latin-1' characters found");
-            return NULL;
-        }
-
-        item = latin_item;
-    }
-
-    if (!PyBytes_Check(item))
-    {
-        PyErr_Format(PyExc_TypeError, "byte string value expected, value "
-                                      "of type %.200s found",
-                     item->ob_type->tp_name);
-        Py_XDECREF(latin_item);
-        return NULL;
-    }
-
-    name = PyBytes_AsString(item);
-
-    ssl_var_lookup = APR_RETRIEVE_OPTIONAL_FN(ssl_var_lookup);
-
-    if (ssl_var_lookup == 0)
-    {
-        Py_XDECREF(latin_item);
-
-        Py_INCREF(Py_None);
-
-        return Py_None;
-    }
-
-    value = ssl_var_lookup(self->r->pool, self->r->server,
-                           self->r->connection, self->r, name);
-
-    if (!value)
-    {
-        Py_XDECREF(latin_item);
-
-        Py_INCREF(Py_None);
-
-        return Py_None;
-    }
-
-    result = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-
-    Py_XDECREF(latin_item);
-
-    return result;
-}
-
-static PyMethodDef Dispatch_methods[] = {
-    {"ssl_is_https", (PyCFunction)Dispatch_ssl_is_https, METH_VARARGS, 0},
-    {"ssl_var_lookup", (PyCFunction)Dispatch_ssl_var_lookup, METH_VARARGS, 0},
-    {NULL, NULL}};
 
 PyTypeObject Dispatch_Type = {
     PyVarObject_HEAD_INIT(NULL, 0) "mod_wsgi.Dispatch", /*tp_name*/
@@ -281,7 +158,7 @@ PyTypeObject Dispatch_Type = {
     0,                            /*tp_weaklistoffset*/
     0,                            /*tp_iter*/
     0,                            /*tp_iternext*/
-    Dispatch_methods,             /*tp_methods*/
+    0,                            /*tp_methods*/
     0,                            /*tp_members*/
     0,                            /*tp_getset*/
     0,                            /*tp_base*/
