@@ -236,7 +236,7 @@ const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
 
             WSGIProcessGroup *group = NULL;
             WSGIProcessGroup *entries = NULL;
-            WSGIProcessGroup *entry = NULL;
+            WSGIProcessGroup *candidate = NULL;
             int i;
 
             if (!wsgi_daemon_list)
@@ -246,11 +246,11 @@ const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
 
             for (i = 0; i < wsgi_daemon_list->nelts; ++i)
             {
-                entry = &entries[i];
+                candidate = &entries[i];
 
-                if (!strcmp(entry->name, object->process_group))
+                if (!strcmp(candidate->name, object->process_group))
                 {
-                    group = entry;
+                    group = candidate;
                     break;
                 }
             }
