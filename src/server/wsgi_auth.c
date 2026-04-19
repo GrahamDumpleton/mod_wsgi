@@ -493,7 +493,7 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
     {
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
                                       "of type %.200s found",
-                     item->ob_type->tp_name);
+                     Py_TYPE(item)->tp_name);
 
         Py_XDECREF(latin_item);
 
@@ -806,7 +806,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                 {
                     PyErr_Format(PyExc_AttributeError,
                                  "'%s' object has no attribute 'close'",
-                                 adapter->log->ob_type->tp_name);
+                                 Py_TYPE(adapter->log)->tp_name);
                 }
                 else
                 {
@@ -1084,7 +1084,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                 {
                     PyErr_Format(PyExc_AttributeError,
                                  "'%s' object has no attribute 'close'",
-                                 adapter->log->ob_type->tp_name);
+                                 Py_TYPE(adapter->log)->tp_name);
                 }
                 else
                 {
@@ -1407,7 +1407,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                 {
                     PyErr_Format(PyExc_AttributeError,
                                  "'%s' object has no attribute 'close'",
-                                 adapter->log->ob_type->tp_name);
+                                 Py_TYPE(adapter->log)->tp_name);
                 }
                 else
                 {
@@ -1656,7 +1656,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
                 {
                     PyErr_Format(PyExc_AttributeError,
                                  "'%s' object has no attribute 'close'",
-                                 adapter->log->ob_type->tp_name);
+                                 Py_TYPE(adapter->log)->tp_name);
                 }
                 else
                 {
