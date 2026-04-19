@@ -261,7 +261,7 @@ static apr_status_t wsgi_socket_sendv_limit(apr_socket_t *sock,
 
         if (n > 0)
         {
-            /* Bail out of all data has been sent. */
+            /* Bail out if all data has been sent. */
 
             written += n;
 
@@ -269,7 +269,7 @@ static apr_status_t wsgi_socket_sendv_limit(apr_socket_t *sock,
                 break;
 
             /*
-             * Not all data was sent, so ween need to try
+             * Not all data was sent, so we need to try
              * again with the remainder of the data. We
              * first need to work out where to start from.
              */
@@ -714,8 +714,7 @@ static int wsgi_scan_headers_brigade(request_rec *r, apr_bucket_brigade *bb,
         {
             char malformed[32];
 
-            strncpy(malformed, w, sizeof(malformed) - 1);
-            malformed[sizeof(malformed) - 1] = '\0';
+            apr_cpystrn(malformed, w, sizeof(malformed));
 
             if (!buffer)
             {
