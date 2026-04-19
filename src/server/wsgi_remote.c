@@ -1945,6 +1945,16 @@ static apr_status_t wsgi_socket_read(apr_socket_t *sock, void *vbuf,
     return APR_SUCCESS;
 }
 
+/*
+ * Upper bound on the size of a serialised request-environment frame
+ * received from the Apache child. Sufficient to cover any realistic CGI
+ * environment (including generous headers and cookies) while still
+ * rejecting implausibly large or corrupted frames that would otherwise
+ * drive unbounded memory allocation.
+ */
+
+#define WSGI_MAX_REQUEST_FRAME (16 * 1024 * 1024)
+
 static apr_status_t wsgi_read_strings(apr_socket_t *sock, char ***s,
                                       apr_pool_t *p)
 {
@@ -1954,16 +1964,26 @@ static apr_status_t wsgi_read_strings(apr_socket_t *sock, char ***s,
 
     apr_size_t n;
     apr_size_t i;
-    apr_size_t l;
 
     char *buffer;
     char *offset;
+    char *end;
+    char *nul;
 
     if ((rv = wsgi_socket_read(sock, &total, sizeof(total))) != APR_SUCCESS)
         return rv;
 
+    /*
+     * Reject frames too small to hold the string count or larger than
+     * the configured sanity cap to guard against corrupted peers.
+     */
+
+    if (total < sizeof(n) || total > WSGI_MAX_REQUEST_FRAME)
+        return APR_EINVAL;
+
     buffer = apr_palloc(p, total);
     offset = buffer;
+    end = buffer + total;
 
     if ((rv = wsgi_socket_read(sock, buffer, total)) != APR_SUCCESS)
         return rv;
@@ -1971,13 +1991,25 @@ static apr_status_t wsgi_read_strings(apr_socket_t *sock, char ***s,
     memcpy(&n, offset, sizeof(n));
     offset += sizeof(n);
 
+    /* Guard against (n + 1) * sizeof(**s) overflow before allocating. */
+
+    if (n > (APR_SIZE_MAX / sizeof(**s)) - 1)
+        return APR_EINVAL;
+
     *s = apr_pcalloc(p, (n + 1) * sizeof(**s));
 
     for (i = 0; i < n; i++)
     {
-        l = strlen(offset) + 1;
+        /*
+         * Bounded search for the string terminator so a malformed frame
+         * missing a trailing NUL cannot walk off the end of the buffer.
+         */
+
+        nul = memchr(offset, '\0', end - offset);
+        if (nul == NULL)
+            return APR_EINVAL;
         (*s)[i] = offset;
-        offset += l;
+        offset = nul + 1;
     }
 
     return APR_SUCCESS;
