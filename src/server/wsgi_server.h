@@ -206,6 +206,9 @@ typedef struct
 
 extern apr_pool_t *wsgi_daemon_pool;
 
+extern WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p,
+                                                 request_rec *r);
+
 extern const char *wsgi_process_group(request_rec *r, const char *s);
 extern const char *wsgi_server_group(request_rec *r, const char *s);
 extern const char *wsgi_application_group(request_rec *r, const char *s);
