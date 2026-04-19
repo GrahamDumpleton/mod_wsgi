@@ -70,8 +70,8 @@ static void Auth_dealloc(AuthObject *self)
 
 static PyObject *Auth_environ(AuthObject *self, const char *group)
 {
-    PyObject *vars;
-    PyObject *object;
+    PyObject *vars = NULL;
+    PyObject *object = NULL;
 
     request_rec *r = self->r;
     server_rec *s = r->server;
@@ -86,6 +86,8 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     int i;
 
     vars = PyDict_New();
+    if (!vars)
+        return NULL;
 
     hdrs_arr = apr_table_elts(r->headers_in);
     hdrs = (const apr_table_entry_t *)hdrs_arr->elts;
@@ -101,15 +103,21 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
         {
             object = PyUnicode_DecodeLatin1(hdrs[i].val,
                                             strlen(hdrs[i].val), NULL);
-            PyDict_SetItemString(vars, "CONTENT_TYPE", object);
-            Py_DECREF(object);
+            if (!object)
+                goto error;
+            if (PyDict_SetItemString(vars, "CONTENT_TYPE", object) < 0)
+                goto error;
+            Py_CLEAR(object);
         }
         else if (!strcasecmp(hdrs[i].key, "Content-length"))
         {
             object = PyUnicode_DecodeLatin1(hdrs[i].val,
                                             strlen(hdrs[i].val), NULL);
-            PyDict_SetItemString(vars, "CONTENT_LENGTH", object);
-            Py_DECREF(object);
+            if (!object)
+                goto error;
+            if (PyDict_SetItemString(vars, "CONTENT_LENGTH", object) < 0)
+                goto error;
+            Py_CLEAR(object);
         }
         else if (!strcasecmp(hdrs[i].key, "Authorization") || !strcasecmp(hdrs[i].key, "Proxy-Authorization"))
         {
@@ -125,97 +133,155 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
                 {
                     object = PyUnicode_DecodeLatin1(hdrs[i].val,
                                                     strlen(hdrs[i].val), NULL);
-
-                    PyDict_SetItemString(vars, header, object);
-
-                    Py_DECREF(object);
+                    if (!object)
+                        goto error;
+                    if (PyDict_SetItemString(vars, header, object) < 0)
+                        goto error;
+                    Py_CLEAR(object);
                 }
             }
         }
     }
 
     value = ap_psignature("", r);
-    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-    PyDict_SetItemString(vars, "SERVER_SIGNATURE", object);
-    Py_DECREF(object);
+    if (value)
+    {
+        object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "SERVER_SIGNATURE", object) < 0)
+            goto error;
+        Py_CLEAR(object);
+    }
 
     value = ap_get_server_banner();
-    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-    PyDict_SetItemString(vars, "SERVER_SOFTWARE", object);
-    Py_DECREF(object);
+    if (value)
+    {
+        object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "SERVER_SOFTWARE", object) < 0)
+            goto error;
+        Py_CLEAR(object);
+    }
 
     value = ap_escape_html(r->pool, ap_get_server_name(r));
-    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-    PyDict_SetItemString(vars, "SERVER_NAME", object);
-    Py_DECREF(object);
+    if (value)
+    {
+        object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "SERVER_NAME", object) < 0)
+            goto error;
+        Py_CLEAR(object);
+    }
 
     if (r->connection->local_ip)
     {
         value = r->connection->local_ip;
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-        PyDict_SetItemString(vars, "SERVER_ADDR", object);
-        Py_DECREF(object);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "SERVER_ADDR", object) < 0)
+            goto error;
+        Py_CLEAR(object);
     }
 
     value = apr_psprintf(r->pool, "%u", ap_get_server_port(r));
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-    PyDict_SetItemString(vars, "SERVER_PORT", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "SERVER_PORT", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     value = ap_get_remote_host(c, r->per_dir_config, REMOTE_HOST, NULL);
     if (value)
     {
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-        PyDict_SetItemString(vars, "REMOTE_HOST", object);
-        Py_DECREF(object);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "REMOTE_HOST", object) < 0)
+            goto error;
+        Py_CLEAR(object);
     }
 
     if (r->useragent_ip)
     {
         value = r->useragent_ip;
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-        PyDict_SetItemString(vars, "REMOTE_ADDR", object);
-        Py_DECREF(object);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "REMOTE_ADDR", object) < 0)
+            goto error;
+        Py_CLEAR(object);
     }
 
     value = ap_document_root(r);
-    object = PyUnicode_DecodeFSDefault(value);
-    PyDict_SetItemString(vars, "DOCUMENT_ROOT", object);
-    Py_DECREF(object);
+    if (value)
+    {
+        object = PyUnicode_DecodeFSDefault(value);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "DOCUMENT_ROOT", object) < 0)
+            goto error;
+        Py_CLEAR(object);
+    }
 
     if (s->server_admin)
     {
         value = s->server_admin;
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-        PyDict_SetItemString(vars, "SERVER_ADMIN", object);
-        Py_DECREF(object);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "SERVER_ADMIN", object) < 0)
+            goto error;
+        Py_CLEAR(object);
     }
 
     rport = c->client_addr->port;
     value = apr_itoa(r->pool, rport);
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-    PyDict_SetItemString(vars, "REMOTE_PORT", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "REMOTE_PORT", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     value = r->protocol;
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-    PyDict_SetItemString(vars, "SERVER_PROTOCOL", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "SERVER_PROTOCOL", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     value = r->method;
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-    PyDict_SetItemString(vars, "REQUEST_METHOD", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "REQUEST_METHOD", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     value = r->args ? r->args : "";
     object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-    PyDict_SetItemString(vars, "QUERY_STRING", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "QUERY_STRING", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     value = wsgi_original_uri(r);
-    object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-    PyDict_SetItemString(vars, "REQUEST_URI", object);
-    Py_DECREF(object);
+    if (value)
+    {
+        object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "REQUEST_URI", object) < 0)
+            goto error;
+        Py_CLEAR(object);
+    }
 
     /*
      * XXX Apparently webdav does actually do modifications to
@@ -227,71 +293,105 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     {
         value = r->uri;
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-        PyDict_SetItemString(vars, "SCRIPT_NAME", object);
-        Py_DECREF(object);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "SCRIPT_NAME", object) < 0)
+            goto error;
+        Py_CLEAR(object);
 
         value = r->path_info ? r->path_info : "";
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-        PyDict_SetItemString(vars, "PATH_INFO", object);
-        Py_DECREF(object);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "PATH_INFO", object) < 0)
+            goto error;
+        Py_CLEAR(object);
     }
     else if (!r->path_info || !*r->path_info)
     {
         value = r->uri;
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-        PyDict_SetItemString(vars, "SCRIPT_NAME", object);
-        Py_DECREF(object);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "SCRIPT_NAME", object) < 0)
+            goto error;
+        Py_CLEAR(object);
 
         value = "";
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-        PyDict_SetItemString(vars, "PATH_INFO", object);
-        Py_DECREF(object);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "PATH_INFO", object) < 0)
+            goto error;
+        Py_CLEAR(object);
     }
     else
     {
         int path_info_start = ap_find_path_info(r->uri, r->path_info);
         value = apr_pstrndup(r->pool, r->uri, path_info_start);
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-        PyDict_SetItemString(vars, "SCRIPT_NAME", object);
-        Py_DECREF(object);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "SCRIPT_NAME", object) < 0)
+            goto error;
+        Py_CLEAR(object);
 
         value = r->path_info ? r->path_info : "";
         object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
-        PyDict_SetItemString(vars, "PATH_INFO", object);
-        Py_DECREF(object);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "PATH_INFO", object) < 0)
+            goto error;
+        Py_CLEAR(object);
     }
 
     object = Py_BuildValue("(iii)", AP_SERVER_MAJORVERSION_NUMBER,
                            AP_SERVER_MINORVERSION_NUMBER,
                            AP_SERVER_PATCHLEVEL_NUMBER);
-    PyDict_SetItemString(vars, "apache.version", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "apache.version", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     object = Py_BuildValue("(iii)", MOD_WSGI_MAJORVERSION_NUMBER,
                            MOD_WSGI_MINORVERSION_NUMBER,
                            MOD_WSGI_MICROVERSION_NUMBER);
-    PyDict_SetItemString(vars, "mod_wsgi.version", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_wsgi.version", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     object = PyUnicode_FromString("");
-    PyDict_SetItemString(vars, "mod_wsgi.process_group", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_wsgi.process_group", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     object = PyUnicode_DecodeLatin1(group, strlen(group), NULL);
-    PyDict_SetItemString(vars, "mod_wsgi.application_group", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_wsgi.application_group", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     object = PyLong_FromLong(self->config->script_reloading);
-    PyDict_SetItemString(vars, "mod_wsgi.script_reloading", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_wsgi.script_reloading", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     /*
      * Setup log object for WSGI errors. Don't decrement
      * reference to log object as keep reference to it.
      */
 
-    object = (PyObject *)self->log;
-    PyDict_SetItemString(vars, "wsgi.errors", object);
+    if (PyDict_SetItemString(vars, "wsgi.errors",
+                             (PyObject *)self->log) < 0)
+        goto error;
 
     /*
      * If Apache extensions are enabled add a CObject reference
@@ -301,8 +401,11 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     if (!wsgi_daemon_pool && self->config->pass_apache_request)
     {
         object = PyCapsule_New(self->r, 0, 0);
-        PyDict_SetItemString(vars, "apache.request_rec", object);
-        Py_DECREF(object);
+        if (!object)
+            goto error;
+        if (PyDict_SetItemString(vars, "apache.request_rec", object) < 0)
+            goto error;
+        Py_CLEAR(object);
     }
 
     /*
@@ -311,14 +414,25 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
      */
 
     object = PyObject_GetAttrString((PyObject *)self, "ssl_is_https");
-    PyDict_SetItemString(vars, "mod_ssl.is_https", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_ssl.is_https", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     object = PyObject_GetAttrString((PyObject *)self, "ssl_var_lookup");
-    PyDict_SetItemString(vars, "mod_ssl.var_lookup", object);
-    Py_DECREF(object);
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_ssl.var_lookup", object) < 0)
+        goto error;
+    Py_CLEAR(object);
 
     return vars;
+
+error:
+    Py_XDECREF(object);
+    Py_DECREF(vars);
+    return NULL;
 }
 
 static PyObject *Auth_ssl_is_https(AuthObject *self, PyObject *args)
@@ -611,16 +725,24 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                 user_string = PyUnicode_DecodeLatin1(user, strlen(user), NULL);
                 password_string = PyUnicode_DecodeLatin1(password, strlen(password), NULL);
 
-                vars = Auth_environ(adapter, group);
+                if (user_string && password_string)
+                    vars = Auth_environ(adapter, group);
 
-                Py_INCREF(object);
-                args = Py_BuildValue("(OOO)", vars, user_string, password_string);
-                result = PyObject_CallObject(object, args);
-                Py_DECREF(args);
-                Py_DECREF(object);
-                Py_DECREF(vars);
-                Py_DECREF(user_string);
-                Py_DECREF(password_string);
+                if (vars)
+                    args = Py_BuildValue("(OOO)", vars, user_string,
+                                         password_string);
+
+                if (args)
+                {
+                    Py_INCREF(object);
+                    result = PyObject_CallObject(object, args);
+                    Py_DECREF(object);
+                }
+
+                Py_XDECREF(args);
+                Py_XDECREF(vars);
+                Py_XDECREF(user_string);
+                Py_XDECREF(password_string);
 
                 if (result)
                 {
@@ -874,16 +996,24 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                 user_string = PyUnicode_DecodeLatin1(user, strlen(user), NULL);
                 realm_string = PyUnicode_DecodeLatin1(realm, strlen(realm), NULL);
 
-                vars = Auth_environ(adapter, group);
+                if (user_string && realm_string)
+                    vars = Auth_environ(adapter, group);
 
-                Py_INCREF(object);
-                args = Py_BuildValue("(OOO)", vars, user_string, realm_string);
-                result = PyObject_CallObject(object, args);
-                Py_DECREF(args);
-                Py_DECREF(object);
-                Py_DECREF(vars);
-                Py_DECREF(user_string);
-                Py_DECREF(realm_string);
+                if (vars)
+                    args = Py_BuildValue("(OOO)", vars, user_string,
+                                         realm_string);
+
+                if (args)
+                {
+                    Py_INCREF(object);
+                    result = PyObject_CallObject(object, args);
+                    Py_DECREF(object);
+                }
+
+                Py_XDECREF(args);
+                Py_XDECREF(vars);
+                Py_XDECREF(user_string);
+                Py_XDECREF(realm_string);
 
                 if (result)
                 {
@@ -1147,15 +1277,22 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
                 user_string = PyUnicode_DecodeLatin1(r->user, strlen(r->user), NULL);
 
-                vars = Auth_environ(adapter, group);
+                if (user_string)
+                    vars = Auth_environ(adapter, group);
 
-                Py_INCREF(object);
-                args = Py_BuildValue("(OO)", vars, user_string);
-                result = PyObject_CallObject(object, args);
-                Py_DECREF(args);
-                Py_DECREF(object);
-                Py_DECREF(vars);
-                Py_DECREF(user_string);
+                if (vars)
+                    args = Py_BuildValue("(OO)", vars, user_string);
+
+                if (args)
+                {
+                    Py_INCREF(object);
+                    result = PyObject_CallObject(object, args);
+                    Py_DECREF(object);
+                }
+
+                Py_XDECREF(args);
+                Py_XDECREF(vars);
+                Py_XDECREF(user_string);
 
                 if (result)
                 {
@@ -1457,12 +1594,18 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
             {
                 vars = Auth_environ(adapter, group);
 
-                Py_INCREF(object);
-                args = Py_BuildValue("(Oz)", vars, host);
-                result = PyObject_CallObject(object, args);
-                Py_DECREF(args);
-                Py_DECREF(object);
-                Py_DECREF(vars);
+                if (vars)
+                    args = Py_BuildValue("(Oz)", vars, host);
+
+                if (args)
+                {
+                    Py_INCREF(object);
+                    result = PyObject_CallObject(object, args);
+                    Py_DECREF(object);
+                }
+
+                Py_XDECREF(args);
+                Py_XDECREF(vars);
 
                 if (result)
                 {
