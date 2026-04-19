@@ -752,6 +752,12 @@ void wsgi_build_environment(request_rec *r)
     if (!value)
         apr_table_setn(r->subprocess_env, "PATH_INFO", "");
 
+    /* If SCRIPT_NAME not set, set it to an empty string. */
+
+    value = apr_table_get(r->subprocess_env, "SCRIPT_NAME");
+    if (!value)
+        apr_table_setn(r->subprocess_env, "SCRIPT_NAME", "");
+
     /*
      * Multiple slashes are not always collapsed into a single
      * slash in SCRIPT_NAME and PATH_INFO with Apache 1.3 and
