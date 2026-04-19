@@ -196,6 +196,19 @@ extern int volatile wsgi_daemon_shutdown;
 extern apr_interval_time_t wsgi_idle_timeout;
 extern apr_time_t volatile wsgi_idle_shutdown_time;
 
+extern const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
+                                           const char *args);
+extern const char *wsgi_set_socket_prefix(cmd_parms *cmd, void *mconfig,
+                                          const char *arg);
+extern const char *wsgi_set_socket_rotation(cmd_parms *cmd, void *mconfig,
+                                            const char *f);
+extern const char *wsgi_set_accept_mutex(cmd_parms *cmd, void *mconfig,
+                                         const char *arg);
+
+extern int wsgi_start_daemons(apr_pool_t *p);
+extern int wsgi_deferred_start_daemons(apr_pool_t *p, ap_scoreboard_e sb_type);
+extern int wsgi_hook_daemon_handler(conn_rec *c);
+
 #endif
 
 /* ------------------------------------------------------------------------- */

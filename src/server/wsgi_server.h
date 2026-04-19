@@ -214,6 +214,8 @@ extern const char *wsgi_server_group(request_rec *r, const char *s);
 extern const char *wsgi_application_group(request_rec *r, const char *s);
 extern const char *wsgi_callable_object(request_rec *r, const char *s);
 
+extern int wsgi_execute_script(request_rec *r);
+
 /* ------------------------------------------------------------------------- */
 
 #endif
