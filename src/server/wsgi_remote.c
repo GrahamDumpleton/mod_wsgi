@@ -274,17 +274,17 @@ static apr_status_t wsgi_socket_sendv_limit(apr_socket_t *sock,
              * first need to work out where to start from.
              */
 
-            for (i = offset; i < nvec;)
+            while (offset < nvec)
             {
-                if (n >= vec[i].iov_len)
+                if (n >= vec[offset].iov_len)
                 {
+                    n -= vec[offset].iov_len;
                     offset++;
-                    n -= vec[i++].iov_len;
                 }
                 else
                 {
-                    vec[i].iov_len -= n;
-                    vec[i].iov_base = (char *)vec[i].iov_base + n;
+                    vec[offset].iov_len -= n;
+                    vec[offset].iov_base = (char *)vec[offset].iov_base + n;
                     break;
                 }
             }
@@ -308,14 +308,14 @@ static apr_status_t wsgi_socket_sendv(apr_socket_t *sock, struct iovec *vec,
 
     if (nvec > iov_max)
     {
-        int offset = 0;
+        size_t offset = 0;
 
         while (nvec != 0)
         {
             apr_status_t rv;
 
             rv = wsgi_socket_sendv_limit(sock, &vec[offset],
-                                         (nvec < iov_max ? nvec : (int)iov_max));
+                                         (nvec < iov_max ? nvec : iov_max));
 
             if (rv != APR_SUCCESS)
                 return rv;
@@ -327,7 +327,7 @@ static apr_status_t wsgi_socket_sendv(apr_socket_t *sock, struct iovec *vec,
             }
             else
             {
-                nvec = 0;
+                break;
             }
         }
 
@@ -341,8 +341,6 @@ static apr_status_t wsgi_send_request(request_rec *r,
                                       WSGIRequestConfig *config,
                                       WSGIDaemonSocket *daemon)
 {
-    int rv;
-
     const apr_array_header_t *env_arr;
     const apr_table_entry_t *elts;
     int i;
@@ -414,12 +412,7 @@ static apr_status_t wsgi_send_request(request_rec *r,
     vec[0].iov_base = (void *)&total;
     vec[0].iov_len = sizeof(total);
 
-    rv = wsgi_socket_sendv(daemon->socket, vec, (int)(vec_next - vec));
-
-    if (rv != APR_SUCCESS)
-        return rv;
-
-    return APR_SUCCESS;
+    return wsgi_socket_sendv(daemon->socket, vec, vec_next - vec);
 }
 
 static void wsgi_discard_output(apr_bucket_brigade *bb)
