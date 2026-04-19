@@ -521,12 +521,9 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
      */
 
 #if APR_HAS_THREADS
-    if (config->script_reloading)
-    {
-        Py_BEGIN_ALLOW_THREADS
-            apr_thread_mutex_lock(wsgi_module_lock);
-        Py_END_ALLOW_THREADS
-    }
+    Py_BEGIN_ALLOW_THREADS
+        apr_thread_mutex_lock(wsgi_module_lock);
+    Py_END_ALLOW_THREADS
 #endif
 
     modules = PyImport_GetModuleDict();
@@ -573,8 +570,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
     /* Safe now to release the module lock. */
 
 #if APR_HAS_THREADS
-    if (config->script_reloading)
-        apr_thread_mutex_unlock(wsgi_module_lock);
+    apr_thread_mutex_unlock(wsgi_module_lock);
 #endif
 
     /* Log any details of exceptions if import failed. */
