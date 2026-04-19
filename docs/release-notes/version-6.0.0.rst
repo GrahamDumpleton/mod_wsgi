@@ -62,3 +62,13 @@ Bugs Fixed
   a module's ``reload_required()`` callback result. An error return of -1 was
   being treated as truthy, causing unnecessary module reloads and skipping the
   error logging path.
+
+* Fixed unreachable retry-limit check in the daemon mode request dispatch loop
+  that handles ``200 Rejected`` responses sent during daemon process restart.
+  The bound check was placed where the loop condition guaranteed it could
+  never fire, so the intended ``503 Service Unavailable`` response with a
+  "Maximum number of WSGI daemon process restart connects reached" log message
+  was never emitted. A daemon stuck in a restart loop would instead yield a
+  bogus ``200 Rejected`` status to the client, a ``500`` from a truncated
+  header read, or a ``504`` from a read timeout, depending on the final
+  attempt's outcome.

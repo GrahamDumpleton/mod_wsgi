@@ -1569,20 +1569,20 @@ int wsgi_execute_remote(request_rec *r)
 
             apr_socket_close(daemon->socket);
 
+            retries++;
+
+            config->daemon_restarts++;
+
             /* Has maximum number of attempts been reached. */
 
-            if (retries == maximum)
+            if (retries >= maximum)
             {
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
+                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                               "mod_wsgi (pid=%d): Maximum number of WSGI "
                               "daemon process restart connects reached '%d'.",
                               getpid(), maximum);
                 return HTTP_SERVICE_UNAVAILABLE;
             }
-
-            retries++;
-
-            config->daemon_restarts++;
 
             ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
                           "mod_wsgi (pid=%d): Connect after WSGI daemon "
