@@ -6,6 +6,16 @@ Version 6.0.0 of mod_wsgi can be obtained from:
 
   https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/6.0.0
 
+For this release a signficant review of the code base was undertaken to clean
+up legacy code and remove support for older versions of Python and Apache httpd.
+In the process a large number of fixes were made to the code base to fix up
+inconsistencies in how the Python C API and Apache API were used, such as
+error handling and reference counting. This should make the code base more
+robust and easier to maintain going forward. Because of the large number of
+changes, rather than listing all of the individual fixes, the release notes
+will just list the major fixes which may have had a visibe effect on users
+in production deployments.
+
 New Features
 ------------
 
@@ -46,22 +56,6 @@ Features Removed
 
 Bugs Fixed
 ----------
-
-* Fixed incorrect handling of ``PySequence_Contains()`` return value when
-  reordering ``sys.path`` entries added by ``site.addsitedir()`` during
-  interpreter initialization. An error return of -1 was being treated as a
-  truthy value, causing newly added path entries to be silently skipped rather
-  than moved to the front of ``sys.path``.
-
-* Fixed incorrect handling of ``PyObject_IsInstance()`` return value in the
-  file wrapper optimisation path. An error return of -1 was being treated as
-  a successful instance check, potentially causing subsequent attribute access
-  failures on non-Stream objects.
-
-* Fixed incorrect handling of ``PyObject_IsTrue()`` return value when checking
-  a module's ``reload_required()`` callback result. An error return of -1 was
-  being treated as truthy, causing unnecessary module reloads and skipping the
-  error logging path.
 
 * Fixed unreachable retry-limit check in the daemon mode request dispatch loop
   that handles ``200 Rejected`` responses sent during daemon process restart.
