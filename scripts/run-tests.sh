@@ -247,6 +247,27 @@ assert_header_equals_curl() {
     fi
 }
 
+# Like assert_status but with arbitrary extra curl args
+# (e.g., -u user:pass, --digest).
+assert_status_curl() {
+    local url="$1"
+    local expected_status="$2"
+    local description="$3"
+    shift 3
+
+    local status
+    status=$(curl -s -o /dev/null -w '%{http_code}' "$@" "$url")
+
+    if [ "$status" = "$expected_status" ]; then
+        echo "  PASS: $description"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $description (expected status $expected_status, got $status)"
+        FAIL=$((FAIL + 1))
+        ERRORS="$ERRORS\n  FAIL: $description"
+    fi
+}
+
 # POST body equality with extra curl args (e.g., for
 # Transfer-Encoding: chunked or non-default Content-Type).
 assert_post_body_equals_curl() {
@@ -382,6 +403,7 @@ trap "rm -f $INCLUDE_FILE; stop_server" EXIT
 # Grant Apache access to the tests directory and configure
 # server-level directives for testing.
 cat >> "$INCLUDE_FILE" <<EOF
+Define TESTS_DIR $PROJECT_DIR/tests
 <Directory $PROJECT_DIR/tests>
     Require all granted
 </Directory>
