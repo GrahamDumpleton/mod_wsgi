@@ -65,7 +65,7 @@ static apr_status_t wsgi_socket_connect_un(apr_socket_t *sock,
 
     if (rv == -1 && errno != EISCONN)
     {
-        return errno;
+        return APR_FROM_OS_ERROR(errno);
     }
 
     return APR_SUCCESS;
