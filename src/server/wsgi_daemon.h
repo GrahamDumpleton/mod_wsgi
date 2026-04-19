@@ -26,6 +26,8 @@
 
 /* ------------------------------------------------------------------------- */
 
+extern char *wsgi_shutdown_reason;
+
 #ifndef WIN32
 #if APR_HAS_OTHER_CHILD && APR_HAS_THREADS && APR_HAS_FORK
 #define MOD_WSGI_WITH_DAEMONS 1
@@ -195,6 +197,11 @@ extern int volatile wsgi_daemon_shutdown;
 
 extern apr_interval_time_t wsgi_idle_timeout;
 extern apr_time_t volatile wsgi_idle_shutdown_time;
+
+extern apr_interval_time_t wsgi_startup_timeout;
+extern apr_time_t volatile wsgi_startup_shutdown_time;
+
+extern apr_pool_t *wsgi_pconf_pool;
 
 extern const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
                                            const char *args);

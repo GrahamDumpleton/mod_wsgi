@@ -32,6 +32,8 @@
 
 /* ------------------------------------------------------------------------- */
 
+char *wsgi_shutdown_reason = "";
+
 #if defined(MOD_WSGI_WITH_DAEMONS)
 
 int wsgi_daemon_count = 0;
@@ -49,20 +51,20 @@ WSGIThreadStack *wsgi_worker_stack = NULL;
 apr_array_header_t *wsgi_daemon_list = NULL;
 
 static apr_pool_t *wsgi_parent_pool = NULL;
+apr_pool_t *wsgi_pconf_pool = NULL;
 
 int volatile wsgi_daemon_shutdown = 0;
 static int volatile wsgi_daemon_graceful = 0;
 static int wsgi_dump_stack_traces = 0;
-static char *wsgi_shutdown_reason = "";
 
-static apr_interval_time_t wsgi_startup_timeout = 0;
+apr_interval_time_t wsgi_startup_timeout = 0;
 static apr_interval_time_t wsgi_deadlock_timeout = 0;
 apr_interval_time_t wsgi_idle_timeout = 0;
 static apr_interval_time_t wsgi_request_timeout = 0;
 static apr_interval_time_t wsgi_graceful_timeout = 0;
 static apr_interval_time_t wsgi_eviction_timeout = 0;
 static apr_interval_time_t wsgi_restart_interval = 0;
-static apr_time_t volatile wsgi_startup_shutdown_time = 0;
+apr_time_t volatile wsgi_startup_shutdown_time = 0;
 static apr_time_t volatile wsgi_deadlock_shutdown_time = 0;
 apr_time_t volatile wsgi_idle_shutdown_time = 0;
 static apr_time_t volatile wsgi_graceful_shutdown_time = 0;
@@ -3667,8 +3669,6 @@ int wsgi_start_daemons(apr_pool_t *p)
 
     return OK;
 }
-
-static apr_pool_t *wsgi_pconf_pool = NULL;
 
 int wsgi_deferred_start_daemons(apr_pool_t *p, ap_scoreboard_e sb_type)
 {
