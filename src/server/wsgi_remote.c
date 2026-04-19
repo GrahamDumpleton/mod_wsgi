@@ -453,13 +453,110 @@ static int wsgi_copy_header(void *v, const char *key, const char *val)
 
 #define HTTP_UNSET (-HTTP_OK)
 
-static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
-                             int (*getsfunc)(char *, int, void *),
-                             void *getsfunc_data)
+/*
+ * Classification of outcomes from wsgi_read_header_line. LINE means a
+ * terminated line (stripped of CR/LF) is available in the buffer. The
+ * remaining values indicate why no line was produced.
+ */
+
+#define WSGI_HEADER_LINE       1
+#define WSGI_HEADER_TRUNCATED  0
+#define WSGI_HEADER_TIMEOUT   -1
+#define WSGI_HEADER_CLOSED    -2
+#define WSGI_HEADER_ERROR     -3
+
+static int wsgi_read_header_line(char *buf, apr_size_t len,
+                                 apr_bucket_brigade *bb,
+                                 apr_status_t *status_out)
+{
+    char *dst_end;
+    char *dst;
+    apr_bucket *e;
+    apr_status_t rv;
+    int done = 0;
+
+    *status_out = APR_SUCCESS;
+
+    if (len == 0)
+        return WSGI_HEADER_TRUNCATED;
+
+    dst = buf;
+    dst_end = buf + len - 1;
+
+    e = APR_BRIGADE_FIRST(bb);
+
+    while ((dst < dst_end) && !done &&
+           e != APR_BRIGADE_SENTINEL(bb) && !APR_BUCKET_IS_EOS(e))
+    {
+        const char *bucket_data;
+        apr_size_t bucket_data_len;
+        const char *src;
+        const char *src_end;
+        apr_bucket *next;
+
+        rv = apr_bucket_read(e, &bucket_data, &bucket_data_len,
+                             APR_BLOCK_READ);
+
+        if (rv != APR_SUCCESS)
+        {
+            *dst = '\0';
+            *status_out = rv;
+
+            if (APR_STATUS_IS_TIMEUP(rv))
+                return WSGI_HEADER_TIMEOUT;
+            if (APR_STATUS_IS_EOF(rv))
+                return WSGI_HEADER_CLOSED;
+
+            return WSGI_HEADER_ERROR;
+        }
+
+        if (bucket_data_len == 0)
+        {
+            next = APR_BUCKET_NEXT(e);
+            APR_BUCKET_REMOVE(e);
+            apr_bucket_destroy(e);
+            e = next;
+            continue;
+        }
+
+        src = bucket_data;
+        src_end = bucket_data + bucket_data_len;
+
+        while ((src < src_end) && (dst < dst_end) && !done)
+        {
+            if (*src == '\n')
+                done = 1;
+            else if (*src != '\r')
+                *dst++ = *src;
+            src++;
+        }
+
+        if (src < src_end)
+            apr_bucket_split(e, src - bucket_data);
+
+        next = APR_BUCKET_NEXT(e);
+        APR_BUCKET_REMOVE(e);
+        apr_bucket_destroy(e);
+        e = next;
+    }
+
+    *dst = '\0';
+
+    if (done)
+        return WSGI_HEADER_LINE;
+
+    if (dst >= dst_end)
+        return WSGI_HEADER_TRUNCATED;
+
+    return WSGI_HEADER_CLOSED;
+}
+
+static int wsgi_scan_headers_brigade(request_rec *r, apr_bucket_brigade *bb,
+                                     char *buffer, int buflen)
 {
     char x[32768];
     char *w, *l;
-    size_t p;
+    apr_size_t w_size;
 
     int cgi_status = HTTP_UNSET;
 
@@ -481,7 +578,7 @@ static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
         *buffer = '\0';
 
     w = buffer ? buffer : x;
-    buflen = buffer ? buflen : sizeof(x);
+    w_size = buffer ? (apr_size_t)buflen : sizeof(x);
 
     /* Temporary place to hold headers as we read them. */
 
@@ -507,50 +604,55 @@ static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
 
     while (1)
     {
-        int rv = (*getsfunc)(w, buflen - 1, getsfunc_data);
+        apr_status_t read_status = APR_SUCCESS;
+        char apr_error[512];
+        int rv;
 
-        if (rv == 0)
+        rv = wsgi_read_header_line(w, w_size, bb, &read_status);
+
+        if (rv == WSGI_HEADER_TRUNCATED)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Truncated or "
-                                                           "oversized response headers received from "
-                                                           "daemon process '%s'",
-                                                  config->process_group),
-                                  r->filename);
+            wsgi_log_script_error(r, apr_psprintf(r->pool,
+                "Response header line too long from daemon process '%s'",
+                config->process_group), r->filename);
 
             r->status_line = NULL;
 
             return HTTP_INTERNAL_SERVER_ERROR;
         }
-        else if (rv == -1)
+        else if (rv == WSGI_HEADER_TIMEOUT)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Timeout when "
-                                                           "reading response headers from daemon "
-                                                           "process '%s'",
-                                                  config->process_group),
-                                  r->filename);
+            wsgi_log_script_error(r, apr_psprintf(r->pool,
+                "Timeout when reading response headers from daemon "
+                "process '%s'", config->process_group), r->filename);
 
             r->status_line = NULL;
 
             return HTTP_GATEWAY_TIME_OUT;
         }
-
-        /*
-         * Delete any trailing (CR?)LF. Indeed, the host's '\n':
-         * '\012' for UNIX; '\015' for MacOS; '\025' for OS/390.
-         */
-
-        p = strlen(w);
-
-        if (p > 0 && w[p - 1] == '\n')
+        else if (rv == WSGI_HEADER_CLOSED)
         {
-            if (p > 1 && w[p - 2] == CR)
-            {
-                w[p - 2] = '\0';
-            }
-            else
-            {
-                w[p - 1] = '\0';
-            }
+            wsgi_log_script_error(r, apr_psprintf(r->pool,
+                "Daemon process '%s' closed connection before sending "
+                "complete response headers", config->process_group),
+                r->filename);
+
+            r->status_line = NULL;
+
+            return HTTP_BAD_GATEWAY;
+        }
+        else if (rv == WSGI_HEADER_ERROR)
+        {
+            wsgi_log_script_error(r, apr_psprintf(r->pool,
+                "Error reading response headers from daemon process "
+                "'%s': %s", config->process_group,
+                apr_strerror(read_status, apr_error,
+                             sizeof(apr_error) - 1)),
+                r->filename);
+
+            r->status_line = NULL;
+
+            return HTTP_BAD_GATEWAY;
         }
 
         /*
@@ -626,7 +728,8 @@ static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
             {
                 /* Soak up all the script output. */
 
-                while ((*getsfunc)(w, buflen - 1, getsfunc_data) > 0)
+                while (wsgi_read_header_line(w, w_size, bb,
+                                             &read_status) == WSGI_HEADER_LINE)
                 {
                     continue;
                 }
@@ -718,65 +821,6 @@ static int wsgi_scan_headers(request_rec *r, char *buffer, int buflen,
     }
 
     return OK;
-}
-
-static int wsgi_getsfunc_brigade(char *buf, int len, void *arg)
-{
-    apr_bucket_brigade *bb = (apr_bucket_brigade *)arg;
-    const char *dst_end = buf + len - 1;
-    char *dst = buf;
-    apr_bucket *e = APR_BRIGADE_FIRST(bb);
-    apr_status_t rv;
-    int done = 0;
-
-    while ((dst < dst_end) && !done && e != APR_BRIGADE_SENTINEL(bb) && !APR_BUCKET_IS_EOS(e))
-    {
-        const char *bucket_data;
-        apr_size_t bucket_data_len;
-        const char *src;
-        const char *src_end;
-        apr_bucket *next;
-
-        rv = apr_bucket_read(e, &bucket_data, &bucket_data_len,
-                             APR_BLOCK_READ);
-        if (rv != APR_SUCCESS || (bucket_data_len == 0))
-        {
-            *dst = '\0';
-            return APR_STATUS_IS_TIMEUP(rv) ? -1 : 0;
-        }
-        src = bucket_data;
-        src_end = bucket_data + bucket_data_len;
-        while ((src < src_end) && (dst < dst_end) && !done)
-        {
-            if (*src == '\n')
-            {
-                done = 1;
-            }
-            else if (*src != '\r')
-            {
-                *dst++ = *src;
-            }
-            src++;
-        }
-
-        if (src < src_end)
-        {
-            apr_bucket_split(e, src - bucket_data);
-        }
-        next = APR_BUCKET_NEXT(e);
-        APR_BUCKET_REMOVE(e);
-        apr_bucket_destroy(e);
-        e = next;
-    }
-    *dst = '\0';
-    return done;
-}
-
-static int wsgi_scan_headers_brigade(request_rec *r,
-                                     apr_bucket_brigade *bb,
-                                     char *buffer, int buflen)
-{
-    return wsgi_scan_headers(r, buffer, buflen, wsgi_getsfunc_brigade, bb);
 }
 
 static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,

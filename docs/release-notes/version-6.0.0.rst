@@ -24,7 +24,17 @@ New Features
 Features Changed
 ----------------
 
-* ...
+* When a daemon process closes its connection or encounters a read error
+  before returning complete response headers, the request now receives a
+  ``502 Bad Gateway`` response instead of ``500 Internal Server Error``.
+  The ``500`` response is retained for the distinct case of a response
+  header line exceeding the configured buffer size, and ``504 Gateway
+  Timeout`` is still used for read timeouts. The corresponding error log
+  messages have also been reworked so that each failure mode is reported
+  with a distinct message, and the underlying APR error string is now
+  included for generic read failures. Deployments that alert on ``500``
+  responses from mod_wsgi may want to adjust monitoring to include ``502``
+  for upstream daemon failures.
 
 Features Removed
 ----------------
