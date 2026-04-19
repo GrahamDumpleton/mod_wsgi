@@ -802,13 +802,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
                 method = PyObject_GetAttrString(adapter->log, "close");
 
-                if (!method)
-                {
-                    PyErr_Format(PyExc_AttributeError,
-                                 "'%s' object has no attribute 'close'",
-                                 Py_TYPE(adapter->log)->tp_name);
-                }
-                else
+                if (method)
                 {
                     result = PyObject_CallObject(method, NULL);
                     Py_XDECREF(result);
@@ -1080,18 +1074,10 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
                 method = PyObject_GetAttrString(adapter->log, "close");
 
-                if (!method)
+                if (method)
                 {
-                    PyErr_Format(PyExc_AttributeError,
-                                 "'%s' object has no attribute 'close'",
-                                 Py_TYPE(adapter->log)->tp_name);
-                }
-                else
-                {
-                    args = PyTuple_New(0);
-                    result = PyObject_CallObject(method, args);
+                    result = PyObject_CallObject(method, NULL);
                     Py_XDECREF(result);
-                    Py_DECREF(args);
                 }
 
                 /* Log any details of exceptions if execution failed. */
@@ -1246,10 +1232,6 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
     if (PyErr_Occurred())
         wsgi_log_python_error(r, NULL, script, 0);
 
-    /* Assume an internal server error unless everything okay. */
-
-    status = HTTP_INTERNAL_SERVER_ERROR;
-
     /* Determine if script exists and execute it. */
 
     if (module)
@@ -1403,18 +1385,10 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
                 method = PyObject_GetAttrString(adapter->log, "close");
 
-                if (!method)
+                if (method)
                 {
-                    PyErr_Format(PyExc_AttributeError,
-                                 "'%s' object has no attribute 'close'",
-                                 Py_TYPE(adapter->log)->tp_name);
-                }
-                else
-                {
-                    args = PyTuple_New(0);
-                    result = PyObject_CallObject(method, args);
+                    result = PyObject_CallObject(method, NULL);
                     Py_XDECREF(result);
-                    Py_DECREF(args);
                 }
 
                 /* Log any details of exceptions if execution failed. */
@@ -1652,18 +1626,10 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
                 method = PyObject_GetAttrString(adapter->log, "close");
 
-                if (!method)
+                if (method)
                 {
-                    PyErr_Format(PyExc_AttributeError,
-                                 "'%s' object has no attribute 'close'",
-                                 Py_TYPE(adapter->log)->tp_name);
-                }
-                else
-                {
-                    args = PyTuple_New(0);
-                    result = PyObject_CallObject(method, args);
+                    result = PyObject_CallObject(method, NULL);
                     Py_XDECREF(result);
-                    Py_DECREF(args);
                 }
 
                 /* Log any details of exceptions if execution failed. */
