@@ -52,12 +52,18 @@ static AuthObject *newAuthObject(request_rec *r, WSGIRequestConfig *config)
 
     self->log = newLogObject(r, APLOG_ERR, NULL, 0);
 
+    if (!self->log)
+    {
+        Py_DECREF(self);
+        return NULL;
+    }
+
     return self;
 }
 
 static void Auth_dealloc(AuthObject *self)
 {
-    Py_DECREF(self->log);
+    Py_XDECREF(self->log);
 
     PyObject_Del(self);
 }
