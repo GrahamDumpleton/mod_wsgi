@@ -704,7 +704,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                     while (result && end)
                     {
                         path_entry = PyUnicode_DecodeFSDefaultAndSize(start,
-                                                                end - start);
+                                                                      end - start);
                         value = PyUnicode_AsUTF8(path_entry);
                         start = end + 1;
 
@@ -910,9 +910,9 @@ InterpreterObject *newInterpreterObject(const char *name)
      */
 
     if (wsgi_module_add_object(module, "version",
-            Py_BuildValue("(iii)", MOD_WSGI_MAJORVERSION_NUMBER,
-                          MOD_WSGI_MINORVERSION_NUMBER,
-                          MOD_WSGI_MICROVERSION_NUMBER)) < 0)
+                               Py_BuildValue("(iii)", MOD_WSGI_MAJORVERSION_NUMBER,
+                                             MOD_WSGI_MINORVERSION_NUMBER,
+                                             MOD_WSGI_MICROVERSION_NUMBER)) < 0)
         goto failure;
 
     /* Add type object for file wrapper. */
@@ -928,11 +928,11 @@ InterpreterObject *newInterpreterObject(const char *name)
      */
 
     if (wsgi_module_add_object(module, "process_group",
-            PyUnicode_DecodeLatin1(wsgi_daemon_group,
-                                   strlen(wsgi_daemon_group), NULL)) < 0)
+                               PyUnicode_DecodeLatin1(wsgi_daemon_group,
+                                                      strlen(wsgi_daemon_group), NULL)) < 0)
         goto failure;
     if (wsgi_module_add_object(module, "application_group",
-            PyUnicode_DecodeLatin1(name, strlen(name), NULL)) < 0)
+                               PyUnicode_DecodeLatin1(name, strlen(name), NULL)) < 0)
         goto failure;
 
     /*
@@ -946,11 +946,11 @@ InterpreterObject *newInterpreterObject(const char *name)
     if (wsgi_daemon_process)
     {
         if (wsgi_module_add_object(module, "maximum_processes",
-                PyLong_FromLong(wsgi_daemon_process->group->processes)) < 0)
+                                   PyLong_FromLong(wsgi_daemon_process->group->processes)) < 0)
             goto failure;
 
         if (wsgi_module_add_object(module, "threads_per_process",
-                PyLong_FromLong(wsgi_daemon_process->group->threads)) < 0)
+                                   PyLong_FromLong(wsgi_daemon_process->group->threads)) < 0)
             goto failure;
     }
     else
@@ -974,11 +974,11 @@ InterpreterObject *newInterpreterObject(const char *name)
         max_processes = (max_processes <= 0) ? 1 : max_processes;
 
         if (wsgi_module_add_object(module, "maximum_processes",
-                PyLong_FromLong(max_processes)) < 0)
+                                   PyLong_FromLong(max_processes)) < 0)
             goto failure;
 
         if (wsgi_module_add_object(module, "threads_per_process",
-                PyLong_FromLong(max_threads)) < 0)
+                                   PyLong_FromLong(max_threads)) < 0)
             goto failure;
     }
 #else
@@ -1001,32 +1001,32 @@ InterpreterObject *newInterpreterObject(const char *name)
     max_processes = (max_processes <= 0) ? 1 : max_processes;
 
     if (wsgi_module_add_object(module, "maximum_processes",
-            PyLong_FromLong(max_processes)) < 0)
+                               PyLong_FromLong(max_processes)) < 0)
         goto failure;
 
     if (wsgi_module_add_object(module, "threads_per_process",
-            PyLong_FromLong(max_threads)) < 0)
+                               PyLong_FromLong(max_threads)) < 0)
         goto failure;
 #endif
 
     if (wsgi_module_add_object(module, "server_metrics",
-            PyCFunction_New(&wsgi_server_metrics_method[0], NULL)) < 0)
+                               PyCFunction_New(&wsgi_server_metrics_method[0], NULL)) < 0)
         goto failure;
 
     if (wsgi_module_add_object(module, "process_metrics",
-            PyCFunction_New(&wsgi_process_metrics_method[0], NULL)) < 0)
+                               PyCFunction_New(&wsgi_process_metrics_method[0], NULL)) < 0)
         goto failure;
 
     if (wsgi_module_add_object(module, "request_metrics",
-            PyCFunction_New(&wsgi_request_metrics_method[0], NULL)) < 0)
+                               PyCFunction_New(&wsgi_request_metrics_method[0], NULL)) < 0)
         goto failure;
 
     if (wsgi_module_add_object(module, "subscribe_events",
-            PyCFunction_New(&wsgi_subscribe_events_method[0], NULL)) < 0)
+                               PyCFunction_New(&wsgi_subscribe_events_method[0], NULL)) < 0)
         goto failure;
 
     if (wsgi_module_add_object(module, "subscribe_shutdown",
-            PyCFunction_New(&wsgi_subscribe_shutdown_method[0], NULL)) < 0)
+                               PyCFunction_New(&wsgi_subscribe_shutdown_method[0], NULL)) < 0)
         goto failure;
 
     if (wsgi_module_add_object(module, "event_callbacks",
@@ -1042,7 +1042,7 @@ InterpreterObject *newInterpreterObject(const char *name)
         goto failure;
 
     if (wsgi_module_add_object(module, "request_data",
-            PyCFunction_New(&wsgi_request_data_method[0], NULL)) < 0)
+                               PyCFunction_New(&wsgi_request_data_method[0], NULL)) < 0)
         goto failure;
 
     /* Done with the 'mod_wsgi' module. */
@@ -1115,9 +1115,9 @@ InterpreterObject *newInterpreterObject(const char *name)
      */
 
     if (wsgi_module_add_object(module, "version",
-            Py_BuildValue("(iii)", AP_SERVER_MAJORVERSION_NUMBER,
-                          AP_SERVER_MINORVERSION_NUMBER,
-                          AP_SERVER_PATCHLEVEL_NUMBER)) < 0)
+                               Py_BuildValue("(iii)", AP_SERVER_MAJORVERSION_NUMBER,
+                                             AP_SERVER_MINORVERSION_NUMBER,
+                                             AP_SERVER_PATCHLEVEL_NUMBER)) < 0)
         goto failure;
 
     /*
@@ -1144,26 +1144,26 @@ InterpreterObject *newInterpreterObject(const char *name)
     max_processes = (max_processes <= 0) ? 1 : max_processes;
 
     if (wsgi_module_add_object(module, "maximum_processes",
-            PyLong_FromLong(max_processes)) < 0)
+                               PyLong_FromLong(max_processes)) < 0)
         goto failure;
 
     if (wsgi_module_add_object(module, "threads_per_process",
-            PyLong_FromLong(max_threads)) < 0)
+                               PyLong_FromLong(max_threads)) < 0)
         goto failure;
 
     str = ap_get_server_description();
     if (wsgi_module_add_object(module, "description",
-            PyUnicode_DecodeLatin1(str, strlen(str), NULL)) < 0)
+                               PyUnicode_DecodeLatin1(str, strlen(str), NULL)) < 0)
         goto failure;
 
     str = ap_show_mpm();
     if (wsgi_module_add_object(module, "mpm_name",
-            PyUnicode_DecodeLatin1(str, strlen(str), NULL)) < 0)
+                               PyUnicode_DecodeLatin1(str, strlen(str), NULL)) < 0)
         goto failure;
 
     str = ap_get_server_built();
     if (wsgi_module_add_object(module, "build_date",
-            PyUnicode_DecodeLatin1(str, strlen(str), NULL)) < 0)
+                               PyUnicode_DecodeLatin1(str, strlen(str), NULL)) < 0)
         goto failure;
 
     /* Done with the 'apache' module. */
@@ -1233,7 +1233,7 @@ failure:
                      getpid(), self->name);
     Py_END_ALLOW_THREADS
 
-    Py_XDECREF(module);
+        Py_XDECREF(module);
 
     if (self->owner)
     {
@@ -2683,7 +2683,8 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
         ap_log_error(APLOG_MARK, APLOG_WARNING, 0, wsgi_server,
                      "mod_wsgi (pid=%d): Main interpreter reference "
                      "is missing from interpreters dictionary during "
-                     "child cleanup.", getpid());
+                     "child cleanup.",
+                     getpid());
     }
 
     /*
@@ -2746,20 +2747,12 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
 
     /* Finalise any Python objects required by child process. */
 
-    if (PyType_Ready(&Log_Type) < 0
-        || PyType_Ready(&Stream_Type) < 0
-        || PyType_Ready(&Input_Type) < 0
-        || PyType_Ready(&Adapter_Type) < 0
-        || PyType_Ready(&Restricted_Type) < 0
-        || PyType_Ready(&Interpreter_Type) < 0
-        || PyType_Ready(&Dispatch_Type) < 0
-        || PyType_Ready(&Auth_Type) < 0
-        || PyType_Ready(&SignalIntercept_Type) < 0
-        || PyType_Ready(&ShutdownInterpreter_Type) < 0)
+    if (PyType_Ready(&Log_Type) < 0 || PyType_Ready(&Stream_Type) < 0 || PyType_Ready(&Input_Type) < 0 || PyType_Ready(&Adapter_Type) < 0 || PyType_Ready(&Restricted_Type) < 0 || PyType_Ready(&Interpreter_Type) < 0 || PyType_Ready(&Dispatch_Type) < 0 || PyType_Ready(&Auth_Type) < 0 || PyType_Ready(&SignalIntercept_Type) < 0 || PyType_Ready(&ShutdownInterpreter_Type) < 0)
     {
         ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
                      "mod_wsgi (pid=%d): Unable to initialise Python "
-                     "types for this child process.", getpid());
+                     "types for this child process.",
+                     getpid());
         PyErr_Clear();
         PyGILState_Release(state);
         wsgi_python_initialized = 0;
@@ -2809,7 +2802,8 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
         ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
                      "mod_wsgi (pid=%d): Unable to create wrapper "
                      "object for main Python interpreter in this "
-                     "child process.", getpid());
+                     "child process.",
+                     getpid());
         PyErr_Clear();
         PyGILState_Release(state);
         wsgi_python_initialized = 0;
@@ -2821,7 +2815,8 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
         ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
                      "mod_wsgi (pid=%d): Unable to record wrapper for "
                      "main Python interpreter in interpreters "
-                     "dictionary for this child process.", getpid());
+                     "dictionary for this child process.",
+                     getpid());
         Py_DECREF(object);
         PyErr_Clear();
         PyGILState_Release(state);
