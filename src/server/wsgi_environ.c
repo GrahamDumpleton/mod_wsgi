@@ -207,7 +207,7 @@ static void wsgi_process_forwarded_for(request_rec *r,
 
         if (arr->nelts != 0)
         {
-            /* HTTP_X_FORDWARDED_FOR wasn't just an empty string. */
+            /* HTTP_X_FORWARDED_FOR wasn't just an empty string. */
 
             char **items;
             int first = -1;
@@ -646,8 +646,8 @@ static void wsgi_process_proxy_headers(request_rec *r)
     }
 
     /*
-     * Remove all proxy host from request environment which weren't
-     * matched as being trusted.
+     * Remove all proxy host headers from request environment which
+     * weren't matched as being trusted.
      */
 
     if (match_host_header)
@@ -758,6 +758,7 @@ void wsgi_build_environment(request_rec *r)
     if (config->map_head_to_get == 2)
     {
         if (r->method_number == M_GET && r->header_only &&
+            r->output_filters && r->output_filters->frec &&
             r->output_filters->frec->ftype < AP_FTYPE_PROTOCOL)
             apr_table_setn(r->subprocess_env, "REQUEST_METHOD", "GET");
     }
