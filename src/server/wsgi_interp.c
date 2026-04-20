@@ -2664,10 +2664,27 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     /*
      * Extract a handle to the main Python interpreter from
      * interpreters dictionary as want to process that one last.
+     * The entry for the main interpreter is seeded by
+     * wsgi_python_child_init and should always be present; if it
+     * is not, something has gone seriously wrong. Log and skip
+     * the special-case hold so the rest of the cleanup (clearing
+     * the dict, releasing the interp lock, tearing down Python
+     * itself) still runs.
      */
 
     interp = PyDict_GetItemString(wsgi_interpreters, "");
-    Py_INCREF(interp);
+
+    if (interp)
+    {
+        Py_INCREF(interp);
+    }
+    else
+    {
+        ap_log_error(APLOG_MARK, APLOG_WARNING, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Main interpreter reference "
+                     "is missing from interpreters dictionary during "
+                     "child cleanup.", getpid());
+    }
 
     /*
      * Remove all items from interpreters dictionary. This will
@@ -2695,7 +2712,8 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
      * and so they will not actually be run a second time.
      */
 
-    Py_DECREF(interp);
+    if (interp)
+        Py_DECREF(interp);
 
     /*
      * The code which performs actual shutdown of the main
