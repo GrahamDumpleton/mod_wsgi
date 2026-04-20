@@ -29,6 +29,7 @@
 #include "wsgi_thread.h"
 #include "wsgi_signal.h"
 #include "wsgi_version.h"
+#include "wsgi_execute.h"
 
 /* ------------------------------------------------------------------------- */
 
