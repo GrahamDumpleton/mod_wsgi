@@ -2840,6 +2840,15 @@ void wsgi_python_child_init(apr_pool_t *p)
                                  "interpreter '%s'.",
                                  getpid(),
                                  entry->application_group);
+
+                    /*
+                     * Cannot proceed without a valid interpreter handle;
+                     * the module-import code below would operate without
+                     * a thread state and wsgi_release_interpreter would
+                     * dereference a NULL handle.
+                     */
+
+                    continue;
                 }
 
                 /* Calculate the Python module name to be used for script. */
