@@ -110,3 +110,18 @@ Bugs Fixed
   value began with a comma, ``REMOTE_ADDR`` was set to an empty string. Empty
   list elements are now skipped in both code paths, so ``REMOTE_ADDR`` is
   derived from the first non-empty element as the header semantics intend.
+
+* Fixed the ``X-Forwarded-Server`` and ``X-Forwarded-Port`` headers to be
+  stripped from the WSGI request environment when a request is received
+  from a peer that is not in the ``WSGITrustedProxies`` allowlist, matching
+  the documented contract for ``WSGITrustedProxyHeaders`` and the behaviour
+  already implemented for the other trusted-proxy header categories.
+  Previously these two headers were only classified for rewriting the
+  ``SERVER_NAME`` and ``SERVER_PORT`` CGI variables when the peer was
+  trusted, but the raw ``HTTP_X_FORWARDED_SERVER`` and
+  ``HTTP_X_FORWARDED_PORT`` entries were left in the environment even when
+  the peer was untrusted. While WSGI applications are expected to consult
+  ``SERVER_NAME`` and ``SERVER_PORT`` rather than the raw headers, any
+  middleware that independently processes proxy headers could be misled by
+  spoofed values, so the stripping is applied consistently for all
+  categories listed in ``WSGITrustedProxyHeaders``.

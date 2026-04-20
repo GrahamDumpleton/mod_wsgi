@@ -184,6 +184,16 @@ assert_body_equals_headers "$TRUSTED/get?key=SCRIPT_NAME" \
     "X-Script-Name rewrites SCRIPT_NAME when peer is in WSGITrustedProxies" \
     -H "X-Script-Name: /mounted"
 
+assert_body_equals_headers "$TRUSTED/get?key=SERVER_NAME" \
+    "value=overridden.example.com;end" \
+    "X-Forwarded-Server rewrites SERVER_NAME when peer is in WSGITrustedProxies" \
+    -H "X-Forwarded-Server: overridden.example.com"
+
+assert_body_equals_headers "$TRUSTED/get?key=SERVER_PORT" \
+    "value=8443;end" \
+    "X-Forwarded-Port rewrites SERVER_PORT when peer is in WSGITrustedProxies" \
+    -H "X-Forwarded-Port: 8443"
+
 # ---------- 3. Untrusted client: peer not in WSGITrustedProxies ---------------
 #
 # Loopback is 127.0.0.1 but WSGITrustedProxies here is 10.99.99.99
@@ -236,6 +246,16 @@ assert_body_equals_headers "$UNTRUSTED/has?key=HTTP_X_SCRIPT_NAME" \
     "present=NO;end" \
     "untrusted peer: spoofed X-Script-Name is stripped from environ" \
     -H "X-Script-Name: /spoof"
+
+assert_body_equals_headers "$UNTRUSTED/has?key=HTTP_X_FORWARDED_SERVER" \
+    "present=NO;end" \
+    "untrusted peer: spoofed X-Forwarded-Server is stripped from environ" \
+    -H "X-Forwarded-Server: spoof.example.com"
+
+assert_body_equals_headers "$UNTRUSTED/has?key=HTTP_X_FORWARDED_PORT" \
+    "present=NO;end" \
+    "untrusted peer: spoofed X-Forwarded-Port is stripped from environ" \
+    -H "X-Forwarded-Port: 31337"
 
 # ---------- 4. Partial: only X-Forwarded-For is trusted ----------------------
 #
