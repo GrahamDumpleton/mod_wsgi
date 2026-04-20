@@ -683,6 +683,20 @@ static void wsgi_process_proxy_headers(request_rec *r)
 
 static APR_OPTIONAL_FN_TYPE(ssl_is_https) *wsgi_is_https = NULL;
 
+void wsgi_environ_child_init(void)
+{
+    /*
+     * Retrieve mod_ssl's optional function once per child process
+     * after post-config has completed but before any requests are
+     * served. Doing it here rather than lazily in wsgi_build_environment
+     * avoids a benign but avoidable race across worker threads. If
+     * mod_ssl is not loaded the pointer remains NULL and the HTTPS
+     * check in wsgi_build_environment short circuits.
+     */
+
+    wsgi_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
+}
+
 void wsgi_build_environment(request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
@@ -838,10 +852,10 @@ void wsgi_build_environment(request_rec *r)
     /*
      * Determine whether connection uses HTTPS protocol. This has
      * to be done after and fixups due to trusted proxy headers.
+     * wsgi_is_https is populated once per child process in
+     * wsgi_environ_child_init and will be NULL if mod_ssl is not
+     * loaded.
      */
-
-    if (!wsgi_is_https)
-        wsgi_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
 
     if (wsgi_is_https && wsgi_is_https(r->connection))
         apr_table_set(r->subprocess_env, "HTTPS", "1");

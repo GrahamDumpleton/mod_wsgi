@@ -2547,6 +2547,10 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
     apr_thread_mutex_create(&wsgi_monitor_lock,
                             APR_THREAD_MUTEX_UNNESTED, p);
 
+    /* Retrieve optional functions from peer modules. */
+
+    wsgi_environ_child_init();
+
     if (wsgi_python_required)
     {
         /*
