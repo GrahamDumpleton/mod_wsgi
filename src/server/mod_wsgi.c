@@ -1558,7 +1558,14 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
              * always done in child process.
              */
 
-            wsgi_python_child_init(p);
+            if (wsgi_python_child_init(p) != APR_SUCCESS)
+            {
+                ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
+                             "mod_wsgi (pid=%d): Python child "
+                             "initialisation failed; Python based "
+                             "handlers will not be available in "
+                             "this child process.", getpid());
+            }
         }
     }
 }

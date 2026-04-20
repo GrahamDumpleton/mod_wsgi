@@ -3389,7 +3389,14 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             wsgi_python_path = daemon->group->python_path;
             wsgi_python_eggs = daemon->group->python_eggs;
 
-            wsgi_python_child_init(wsgi_daemon_pool);
+            if (wsgi_python_child_init(wsgi_daemon_pool) != APR_SUCCESS)
+            {
+                ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
+                             "mod_wsgi (pid=%d): Python child "
+                             "initialisation failed; Python based "
+                             "handlers will not be available in "
+                             "this daemon process.", getpid());
+            }
         }
 
         /*

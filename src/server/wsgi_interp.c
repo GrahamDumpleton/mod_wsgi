@@ -2733,7 +2733,7 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     return APR_SUCCESS;
 }
 
-void wsgi_python_child_init(apr_pool_t *p)
+apr_status_t wsgi_python_child_init(apr_pool_t *p)
 {
     PyGILState_STATE state;
     PyObject *object = NULL;
@@ -2746,18 +2746,25 @@ void wsgi_python_child_init(apr_pool_t *p)
 
     /* Finalise any Python objects required by child process. */
 
-    PyType_Ready(&Log_Type);
-    PyType_Ready(&Stream_Type);
-    PyType_Ready(&Input_Type);
-    PyType_Ready(&Adapter_Type);
-    PyType_Ready(&Restricted_Type);
-    PyType_Ready(&Interpreter_Type);
-    PyType_Ready(&Dispatch_Type);
-    PyType_Ready(&Auth_Type);
-
-    PyType_Ready(&SignalIntercept_Type);
-
-    PyType_Ready(&ShutdownInterpreter_Type);
+    if (PyType_Ready(&Log_Type) < 0
+        || PyType_Ready(&Stream_Type) < 0
+        || PyType_Ready(&Input_Type) < 0
+        || PyType_Ready(&Adapter_Type) < 0
+        || PyType_Ready(&Restricted_Type) < 0
+        || PyType_Ready(&Interpreter_Type) < 0
+        || PyType_Ready(&Dispatch_Type) < 0
+        || PyType_Ready(&Auth_Type) < 0
+        || PyType_Ready(&SignalIntercept_Type) < 0
+        || PyType_Ready(&ShutdownInterpreter_Type) < 0)
+    {
+        ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Unable to initialise Python "
+                     "types for this child process.", getpid());
+        PyErr_Clear();
+        PyGILState_Release(state);
+        wsgi_python_initialized = 0;
+        return APR_EGENERAL;
+    }
 
     /* Initialise Python interpreter instance table and lock. */
 
@@ -2796,7 +2803,32 @@ void wsgi_python_child_init(apr_pool_t *p)
      */
 
     object = (PyObject *)newInterpreterObject(NULL);
-    PyDict_SetItemString(wsgi_interpreters, "", object);
+
+    if (!object)
+    {
+        ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Unable to create wrapper "
+                     "object for main Python interpreter in this "
+                     "child process.", getpid());
+        PyErr_Clear();
+        PyGILState_Release(state);
+        wsgi_python_initialized = 0;
+        return APR_EGENERAL;
+    }
+
+    if (PyDict_SetItemString(wsgi_interpreters, "", object) < 0)
+    {
+        ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
+                     "mod_wsgi (pid=%d): Unable to record wrapper for "
+                     "main Python interpreter in interpreters "
+                     "dictionary for this child process.", getpid());
+        Py_DECREF(object);
+        PyErr_Clear();
+        PyGILState_Release(state);
+        wsgi_python_initialized = 0;
+        return APR_EGENERAL;
+    }
+
     Py_DECREF(object);
 
     apr_hash_set(wsgi_interpreters_index, "", APR_HASH_KEY_STRING, "");
@@ -2947,6 +2979,8 @@ void wsgi_python_child_init(apr_pool_t *p)
             }
         }
     }
+
+    return APR_SUCCESS;
 }
 
 /* ------------------------------------------------------------------------- */

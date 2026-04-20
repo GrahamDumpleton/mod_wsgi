@@ -82,7 +82,7 @@ extern void wsgi_release_interpreter(InterpreterObject *handle);
 
 extern void wsgi_publish_process_stopping(char *reason);
 
-extern void wsgi_python_child_init(apr_pool_t *p);
+extern apr_status_t wsgi_python_child_init(apr_pool_t *p);
 
 /* ------------------------------------------------------------------------- */
 
