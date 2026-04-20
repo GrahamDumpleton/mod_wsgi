@@ -35,7 +35,7 @@ lib
 
 # Testing
 .tox
-httpd-test
+httpd-test*
 
 # Documentation build output
 docs/_build
