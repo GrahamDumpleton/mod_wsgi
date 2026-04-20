@@ -12,7 +12,26 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_ROOT="$PROJECT_DIR/httpd-tests"
 PORT=9876
-BASE_URL="http://localhost:$PORT"
+HTTPS_PORT=9877
+# The harness configures the test httpd with --server-name
+# example.com so requests always address a stable name-based
+# VirtualHost rather than relying on name-based matching of
+# "localhost", which collides with the auto-generated _default_
+# VirtualHost mod_wsgi-express emits alongside it. curl is pointed
+# at example.com but --resolve below pins the address to 127.0.0.1.
+SERVER_NAME=example.com
+BASE_URL="http://$SERVER_NAME:$PORT"
+HTTPS_BASE_URL="https://$SERVER_NAME:$HTTPS_PORT"
+
+# Common flags prepended to every curl invocation in the helpers:
+# -k disables cert verification against the throwaway self-signed
+# HTTPS cert, and --resolve maps the test hostname to loopback for
+# both listeners so no DNS or /etc/hosts changes are needed.
+CURL_COMMON=(
+    -k
+    --resolve "$SERVER_NAME:$PORT:127.0.0.1"
+    --resolve "$SERVER_NAME:$HTTPS_PORT:127.0.0.1"
+)
 
 PASS=0
 FAIL=0
@@ -25,18 +44,20 @@ if [ -f "$SERVER_ROOT/apachectl" ]; then
     "$SERVER_ROOT/apachectl" stop 2>/dev/null || true
 fi
 
-# Wait for the port to be free (httpd may take several seconds to
-# shut down cleanly).
-tries=0
-while lsof -i :"$PORT" -t >/dev/null 2>&1; do
-    tries=$((tries + 1))
-    if [ $tries -gt 10 ]; then
-        # Force kill anything still holding the port.
-        lsof -i :"$PORT" -t 2>/dev/null | xargs kill -9 2>/dev/null || true
+# Wait for the HTTP and HTTPS ports to be free (httpd may take several
+# seconds to shut down cleanly).
+for p in "$PORT" "$HTTPS_PORT"; do
+    tries=0
+    while lsof -i :"$p" -t >/dev/null 2>&1; do
+        tries=$((tries + 1))
+        if [ $tries -gt 10 ]; then
+            # Force kill anything still holding the port.
+            lsof -i :"$p" -t 2>/dev/null | xargs kill -9 2>/dev/null || true
+            sleep 1
+            break
+        fi
         sleep 1
-        break
-    fi
-    sleep 1
+    done
 done
 
 # ---- Assertion helpers (available to test .sh files) ----
@@ -47,7 +68,7 @@ assert_status() {
     local description="$3"
 
     local status
-    status=$(curl -s -o /dev/null -w '%{http_code}' "$url")
+    status=$(curl "${CURL_COMMON[@]}" -s -o /dev/null -w '%{http_code}' "$url")
 
     if [ "$status" = "$expected_status" ]; then
         echo "  PASS: $description"
@@ -65,7 +86,7 @@ assert_body_contains() {
     local description="$3"
 
     local body
-    body=$(curl -s "$url")
+    body=$(curl "${CURL_COMMON[@]}" -s "$url")
 
     if echo "$body" | grep -qF "$expected"; then
         echo "  PASS: $description"
@@ -83,7 +104,7 @@ assert_body_equals() {
     local description="$3"
 
     local body
-    body=$(curl -s "$url")
+    body=$(curl "${CURL_COMMON[@]}" -s "$url")
 
     if [ "$body" = "$expected" ]; then
         echo "  PASS: $description"
@@ -101,7 +122,7 @@ assert_body_length() {
     local description="$3"
 
     local actual_length
-    actual_length=$(curl -s "$url" | wc -c | tr -d ' ')
+    actual_length=$(curl "${CURL_COMMON[@]}" -s "$url" | wc -c | tr -d ' ')
 
     if [ "$actual_length" = "$expected_length" ]; then
         echo "  PASS: $description"
@@ -148,7 +169,7 @@ assert_post_body_equals() {
     local description="$4"
 
     local body
-    body=$(printf '%s' "$post_data" | curl -s -X POST --data-binary @- "$url")
+    body=$(printf '%s' "$post_data" | curl "${CURL_COMMON[@]}" -s -X POST --data-binary @- "$url")
 
     if [ "$body" = "$expected" ]; then
         echo "  PASS: $description"
@@ -167,7 +188,7 @@ assert_header_equals() {
     local description="$4"
 
     local actual
-    actual=$(curl -sD - -o /dev/null "$url" \
+    actual=$(curl "${CURL_COMMON[@]}" -sD - -o /dev/null "$url" \
         | grep -i "^${header_name}:" \
         | head -1 \
         | sed "s/^[^:]*: *//" \
@@ -190,7 +211,7 @@ assert_body_equals_headers() {
     shift 3
 
     local body
-    body=$(curl -s "$@" "$url")
+    body=$(curl "${CURL_COMMON[@]}" -s "$@" "$url")
 
     if [ "$body" = "$expected" ]; then
         echo "  PASS: $description"
@@ -209,7 +230,7 @@ assert_body_contains_headers() {
     shift 3
 
     local body
-    body=$(curl -s "$@" "$url")
+    body=$(curl "${CURL_COMMON[@]}" -s "$@" "$url")
 
     if echo "$body" | grep -qF "$expected"; then
         echo "  PASS: $description"
@@ -231,7 +252,7 @@ assert_header_equals_curl() {
     shift 4
 
     local actual
-    actual=$(curl -sD - -o /dev/null "$@" "$url" \
+    actual=$(curl "${CURL_COMMON[@]}" -sD - -o /dev/null "$@" "$url" \
         | grep -i "^${header_name}:" \
         | head -1 \
         | sed "s/^[^:]*: *//" \
@@ -256,7 +277,7 @@ assert_status_curl() {
     shift 3
 
     local status
-    status=$(curl -s -o /dev/null -w '%{http_code}' "$@" "$url")
+    status=$(curl "${CURL_COMMON[@]}" -s -o /dev/null -w '%{http_code}' "$@" "$url")
 
     if [ "$status" = "$expected_status" ]; then
         echo "  PASS: $description"
@@ -279,7 +300,7 @@ assert_post_body_equals_curl() {
 
     local body
     body=$(printf '%s' "$post_data" \
-        | curl -s -X POST --data-binary @- "$@" "$url")
+        | curl "${CURL_COMMON[@]}" -s -X POST --data-binary @- "$@" "$url")
 
     if [ "$body" = "$expected" ]; then
         echo "  PASS: $description"
@@ -301,7 +322,7 @@ assert_header_count() {
     # `set -e` before we could compare the count, so swallow the
     # exit code with `|| true` and rely on grep's printed "0".
     local actual
-    actual=$(curl -sD - -o /dev/null "$url" \
+    actual=$(curl "${CURL_COMMON[@]}" -sD - -o /dev/null "$url" \
         | grep -ic "^${header_name}:" || true)
 
     if [ "$actual" = "$expected_count" ]; then
@@ -321,10 +342,24 @@ start_server() {
 
     rm -rf "$SERVER_ROOT"
 
+    # --server-name activates MOD_WSGI_VIRTUAL_HOST mode in the
+    # generated Apache config, which is required for the SSL
+    # VirtualHost block that enables HTTPS on --https-port.
+    # --ssl-environment turns on SSLOptions +StdEnvVars so mod_ssl
+    # populates HTTPS=on and SSL_* entries in subprocess_env.
+    # example.com is used as the server name rather than localhost
+    # because the latter clashes with Apache's default ServerName
+    # inheritance and lets the _default_ VirtualHost shadow
+    # server-scope <Location> directives (e.g. authnz auth config).
     local setup_args=(
         tests/hello.wsgi
         --server-root "$SERVER_ROOT"
         --port "$PORT"
+        --server-name "$SERVER_NAME"
+        --https-port "$HTTPS_PORT"
+        --ssl-certificate-file "$CERT_DIR/test.crt"
+        --ssl-certificate-key-file "$CERT_DIR/test.key"
+        --ssl-environment
         --log-level info
     )
 
@@ -355,16 +390,19 @@ stop_server() {
         "$SERVER_ROOT/apachectl" stop 2>/dev/null || true
     fi
 
-    # Wait for clean shutdown, then force kill if needed.
-    local tries=0
-    while lsof -i :"$PORT" -t >/dev/null 2>&1; do
-        tries=$((tries + 1))
-        if [ $tries -gt 10 ]; then
-            lsof -i :"$PORT" -t 2>/dev/null | xargs kill -9 2>/dev/null || true
+    # Wait for clean shutdown of both listeners, then force kill if
+    # needed.
+    for p in "$PORT" "$HTTPS_PORT"; do
+        local tries=0
+        while lsof -i :"$p" -t >/dev/null 2>&1; do
+            tries=$((tries + 1))
+            if [ $tries -gt 10 ]; then
+                lsof -i :"$p" -t 2>/dev/null | xargs kill -9 2>/dev/null || true
+                sleep 1
+                break
+            fi
             sleep 1
-            break
-        fi
-        sleep 1
+        done
     done
 
     rm -rf "$SERVER_ROOT"
@@ -396,17 +434,31 @@ if [ ${#TEST_FILES[@]} -eq 0 ]; then
     exit 0
 fi
 
+# Generate a throwaway self-signed certificate for the HTTPS
+# listener. Kept outside $SERVER_ROOT because start_server() wipes
+# that directory on each run.
+CERT_DIR=$(mktemp -d)
+openssl req -x509 -nodes -newkey rsa:2048 \
+    -keyout "$CERT_DIR/test.key" \
+    -out    "$CERT_DIR/test.crt" \
+    -days 1 \
+    -subj "/CN=$SERVER_NAME" 2>/dev/null
+
 # Build Apache include file mounting each test app.
 INCLUDE_FILE=$(mktemp)
-trap "rm -f $INCLUDE_FILE; stop_server" EXIT
+trap "rm -f $INCLUDE_FILE; rm -rf $CERT_DIR; stop_server" EXIT
 
 # Grant Apache access to the tests directory and configure
-# server-level directives for testing.
+# server-level directives for testing. MOD_WSGI_TESTS_DAEMON_PORT
+# is read by tests/dispatch.py so that HTTPS requests (whose
+# SERVER_PORT is $HTTPS_PORT) still route to the single daemon
+# process group bound to $PORT.
 cat >> "$INCLUDE_FILE" <<EOF
 Define TESTS_DIR $PROJECT_DIR/tests
 <Directory $PROJECT_DIR/tests>
     Require all granted
 </Directory>
+SetEnv MOD_WSGI_TESTS_DAEMON_PORT $PORT
 WSGIRestrictStdin On
 WSGIDispatchScript $PROJECT_DIR/tests/dispatch.py
 EOF

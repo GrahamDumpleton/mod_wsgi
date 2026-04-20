@@ -63,12 +63,12 @@ assert_body_contains "$URL/process-metrics" "'threads'" \
 # First call initialises the collection period (returns empty-ish dict).
 # Second call returns actual metrics from the interval.
 
-curl -s "$URL/request-metrics" > /dev/null
+curl "${CURL_COMMON[@]}" -s "$URL/request-metrics" > /dev/null
 
 # Generate some traffic between the two calls.
-curl -s "$URL/basic" > /dev/null
-curl -s "$URL/basic" > /dev/null
-curl -s "$URL/basic" > /dev/null
+curl "${CURL_COMMON[@]}" -s "$URL/basic" > /dev/null
+curl "${CURL_COMMON[@]}" -s "$URL/basic" > /dev/null
+curl "${CURL_COMMON[@]}" -s "$URL/basic" > /dev/null
 
 assert_status "$URL/request-metrics" "200" \
     "request metrics endpoint returns 200"

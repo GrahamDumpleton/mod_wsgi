@@ -12,8 +12,12 @@ daemon process against the same callable name.
 
 def process_group(environ):
     # Matches "process-group=localhost:$PORT" on the WSGIScriptAlias.
-    # SERVER_PORT is surfaced by Apache in the dispatch environ.
-    return "localhost:" + environ["SERVER_PORT"]
+    # The harness passes MOD_WSGI_TESTS_DAEMON_PORT via SetEnv so
+    # requests arriving on the HTTPS listener (where SERVER_PORT is
+    # the HTTPS port) still route to the single daemon bound to the
+    # primary HTTP port. Falls back to SERVER_PORT when unset.
+    port = environ.get("MOD_WSGI_TESTS_DAEMON_PORT") or environ["SERVER_PORT"]
+    return "localhost:" + port
 
 
 def application_group(environ):

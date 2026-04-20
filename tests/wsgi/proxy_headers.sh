@@ -193,16 +193,14 @@ assert_body_equals_headers "$TRUSTED/get?key=SCRIPT_NAME" \
 
 UNTRUSTED="$ROOT/untrusted-client"
 
-# Pin this assertion to an explicit IPv4 connect so the loopback
-# address surfaced as REMOTE_ADDR is stable across systems where
-# `localhost` might otherwise resolve to ::1 first.
-UNTRUSTED_V4=$(printf '%s' "$UNTRUSTED" | sed 's#://localhost:#://127.0.0.1:#')
+# The harness's curl invocations resolve the test hostname to
+# 127.0.0.1 via --resolve, so this assertion's REMOTE_ADDR is
+# stable as 127.0.0.1 without a separate IPv4-only variant URL.
 
-assert_body_equals_headers "$UNTRUSTED_V4/get?key=REMOTE_ADDR" \
+assert_body_equals_headers "$UNTRUSTED/get?key=REMOTE_ADDR" \
     "value=127.0.0.1;end" \
     "untrusted peer: REMOTE_ADDR is left as the real connection IP (not the spoofed X-Forwarded-For)" \
-    -H "X-Forwarded-For: 203.0.113.5" \
-    -H "Host: localhost:9876"
+    -H "X-Forwarded-For: 203.0.113.5"
 
 assert_body_equals_headers "$UNTRUSTED/has?key=HTTP_X_FORWARDED_FOR" \
     "present=NO;end" \
@@ -220,7 +218,7 @@ assert_body_equals_headers "$UNTRUSTED/has?key=HTTP_X_FORWARDED_PROTO" \
     -H "X-Forwarded-Proto: https"
 
 assert_body_equals_headers "$UNTRUSTED/get?key=HTTP_HOST" \
-    "value=localhost:9876;end" \
+    "value=example.com:9876;end" \
     "untrusted peer: HTTP_HOST is left as the real Host header value" \
     -H "X-Forwarded-Host: spoof.example.com"
 
@@ -254,7 +252,7 @@ assert_body_equals_headers "$PARTIAL/get?key=REMOTE_ADDR" \
     -H "X-Forwarded-For: 203.0.113.5"
 
 assert_body_equals_headers "$PARTIAL/get?key=HTTP_HOST" \
-    "value=localhost:9876;end" \
+    "value=example.com:9876;end" \
     "partial config: X-Forwarded-Host does NOT rewrite HTTP_HOST when not trusted" \
     -H "X-Forwarded-Host: proxy.example.com"
 
