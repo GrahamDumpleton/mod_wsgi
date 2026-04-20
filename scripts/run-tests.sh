@@ -452,6 +452,15 @@ Define TESTS_DIR $PROJECT_DIR/tests
 SetEnv MOD_WSGI_TESTS_DAEMON_PORT $PORT
 WSGIRestrictStdin On
 WSGIDispatchScript $PROJECT_DIR/tests/dispatch.py
+# MergeSlashes defaults to On in Apache 2.4 and collapses duplicate
+# slashes in the request URL before any handler runs. Turning it off
+# lets URLs like /a//b reach mod_wsgi with duplicate slashes intact
+# so tests/wsgi/slash_collapse can exercise the collapse logic in
+# mod_wsgi itself. The directive is only valid at server or virtual
+# host scope, so it lives here rather than in the per-test .conf.
+# Safe for all tests because mod_wsgi's own collapse produces the
+# same canonical output that MergeSlashes On would have produced.
+MergeSlashes Off
 EOF
 
 for test_sh in "${TEST_FILES[@]}"; do
