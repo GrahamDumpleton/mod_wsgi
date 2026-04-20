@@ -372,8 +372,6 @@ static void wsgi_process_proxy_headers(request_rec *r)
 
     const char *client_ip = NULL;
 
-    apr_status_t rv;
-
     config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
                                                        &wsgi_module);
 
@@ -398,6 +396,7 @@ static void wsgi_process_proxy_headers(request_rec *r)
         if (client_ip)
         {
             apr_sockaddr_t *sa;
+            apr_status_t rv;
 
             rv = apr_sockaddr_info_get(&sa, client_ip, APR_UNSPEC,
                                        0, 0, r->pool);
