@@ -100,7 +100,7 @@ int wsgi_execute_script(request_rec *r)
     Py_END_ALLOW_THREADS
 #endif
 
-        /* Calculate the Python module name to be used for script. */
+        /* Determine the script path to be loaded. */
 
         if (config->handler_script && *config->handler_script)
     {
@@ -135,6 +135,8 @@ int wsgi_execute_script(request_rec *r)
 
     if (!module)
     {
+        /* Calculate the Python module name to be used for script. */
+
         name = wsgi_module_name(r->pool, script);
 
         modules = PyImport_GetModuleDict();
