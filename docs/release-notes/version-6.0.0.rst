@@ -142,3 +142,20 @@ Bugs Fixed
   the proxy's declaration honoured. Deployments where Apache terminates
   TLS directly without a front proxy and do not list a scheme header in
   ``WSGITrustedProxyHeaders`` are unaffected.
+
+* Fixed an inverted case-sensitivity check in ``wsgi_module_name``,
+  which computes the Python module name used to cache a WSGI script
+  under ``sys.modules`` by MD5-hashing the script's absolute filename.
+  The helper lowercases the filename before hashing so that two paths
+  differing only in case collapse to the same cache slot on case-
+  insensitive filesystems. The guard around this lowercasing evaluated
+  the ``WSGICaseSensitivity`` flag the wrong way round: it lowercased
+  when the filesystem was case-sensitive (Linux default, or
+  ``WSGICaseSensitivity On``) and preserved case when the filesystem
+  was case-insensitive (Windows/macOS defaults, or
+  ``WSGICaseSensitivity Off``) — the opposite of the directive's
+  documented meaning and the function's comment. A deployment that
+  served the same script via paths differing only in case would have
+  observed duplicate module loads on Windows/macOS and cache
+  collisions on Linux; in practice almost no deployments mount scripts
+  that way, so the bug has been latent.

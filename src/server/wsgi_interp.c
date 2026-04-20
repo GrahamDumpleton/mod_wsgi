@@ -2603,7 +2603,7 @@ char *wsgi_module_name(apr_pool_t *pool, const char *filename)
 
     file = (char *)filename;
 
-    if (wsgi_server_config->case_sensitivity)
+    if (!wsgi_server_config->case_sensitivity)
     {
         file = apr_pstrdup(pool, file);
         ap_str_tolower(file);
