@@ -21,7 +21,7 @@ assert_body_equals "$URL/get?key=SERVER_PROTOCOL" \
     "SERVER_PROTOCOL reflects the HTTP protocol version"
 
 assert_body_equals "$URL/get?key=HTTP_HOST" \
-    "value=example.com:9876;end" \
+    "value=localhost:9876;end" \
     "HTTP_HOST reflects the Host header"
 
 # ----- SCRIPT_NAME vs PATH_INFO split at WSGIScriptAlias mount -----

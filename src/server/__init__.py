@@ -572,6 +572,7 @@ ThreadStackSize 262144
 <IfDefine MOD_WSGI_VIRTUAL_HOST>
 
 <VirtualHost _default_:%(port)s>
+ServerName _wsgi_
 <Location />
 <IfDefine MOD_WSGI_ALLOW_LOCALHOST>
 Require host localhost
@@ -628,6 +629,7 @@ Listen %(host)s:%(https_port)s
 Listen %(https_port)s
 </IfDefine>
 <VirtualHost _default_:%(https_port)s>
+ServerName _wsgi_
 <Location />
 <IfDefine MOD_WSGI_ALLOW_LOCALHOST>
 Require host localhost

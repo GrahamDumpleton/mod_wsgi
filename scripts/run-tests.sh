@@ -13,20 +13,15 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_ROOT="$PROJECT_DIR/httpd-tests"
 PORT=9876
 HTTPS_PORT=9877
-# The harness configures the test httpd with --server-name
-# example.com so requests always address a stable name-based
-# VirtualHost rather than relying on name-based matching of
-# "localhost", which collides with the auto-generated _default_
-# VirtualHost mod_wsgi-express emits alongside it. curl is pointed
-# at example.com but --resolve below pins the address to 127.0.0.1.
-SERVER_NAME=example.com
+SERVER_NAME=localhost
 BASE_URL="http://$SERVER_NAME:$PORT"
 HTTPS_BASE_URL="https://$SERVER_NAME:$HTTPS_PORT"
 
 # Common flags prepended to every curl invocation in the helpers:
 # -k disables cert verification against the throwaway self-signed
-# HTTPS cert, and --resolve maps the test hostname to loopback for
-# both listeners so no DNS or /etc/hosts changes are needed.
+# HTTPS cert, and --resolve pins the address to IPv4 loopback for
+# both listeners so REMOTE_ADDR is stable on hosts where plain
+# "localhost" might otherwise resolve to ::1 first.
 CURL_COMMON=(
     -k
     --resolve "$SERVER_NAME:$PORT:127.0.0.1"
@@ -347,10 +342,6 @@ start_server() {
     # VirtualHost block that enables HTTPS on --https-port.
     # --ssl-environment turns on SSLOptions +StdEnvVars so mod_ssl
     # populates HTTPS=on and SSL_* entries in subprocess_env.
-    # example.com is used as the server name rather than localhost
-    # because the latter clashes with Apache's default ServerName
-    # inheritance and lets the _default_ VirtualHost shadow
-    # server-scope <Location> directives (e.g. authnz auth config).
     local setup_args=(
         tests/hello.wsgi
         --server-root "$SERVER_ROOT"
