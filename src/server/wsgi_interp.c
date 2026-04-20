@@ -2446,7 +2446,7 @@ load_source_finally:
         {
             object = PyLong_FromLongLong(r->finfo.mtime);
         }
-        PyModule_AddObject(m, "__mtime__", object);
+        wsgi_module_add_object(m, "__mtime__", object);
     }
     else
     {
