@@ -38,7 +38,7 @@ int wsgi_execute_script(request_rec *r)
     const char *name = NULL;
     int exists = 0;
 
-    int status;
+    int status = HTTP_INTERNAL_SERVER_ERROR;
 
     WSGIThreadInfo *thread_info = NULL;
 
@@ -131,7 +131,10 @@ int wsgi_execute_script(request_rec *r)
         }
 #endif
     }
-    else script = r->filename;
+    else
+    {
+        script = r->filename;
+    }
 
     if (!module)
     {
@@ -313,10 +316,6 @@ int wsgi_execute_script(request_rec *r)
     }
 #endif
 
-    /* Assume an internal server error unless everything okay. */
-
-    status = HTTP_INTERNAL_SERVER_ERROR;
-
     /* Determine if script exists and execute it. */
 
     if (module)
@@ -365,7 +364,7 @@ int wsgi_execute_script(request_rec *r)
                 {
                     PyErr_Format(PyExc_AttributeError,
                                  "'%s' object has no attribute 'close'",
-                                 adapter->log->ob_type->tp_name);
+                                 Py_TYPE(adapter->log)->tp_name);
                 }
                 else
                 {
@@ -408,7 +407,7 @@ int wsgi_execute_script(request_rec *r)
 
     wsgi_end_request();
 
-    /* Cleanup and release interpreter, */
+    /* Cleanup and release interpreter. */
 
     wsgi_release_interpreter(interp);
 
