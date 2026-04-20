@@ -474,15 +474,18 @@ for test_sh in "${TEST_FILES[@]}"; do
     # tests/wsgi/file_wrapper.py -> /test/wsgi/file-wrapper
     mount_path="/test/$(echo "${test_py#tests/}" | sed 's/\.py$//' | tr '_' '-')"
 
-    echo "WSGIScriptAlias $mount_path $PROJECT_DIR/$test_py process-group=localhost:$PORT application-group=%{GLOBAL}" >> "$INCLUDE_FILE"
-
     # Append optional per-test Apache configuration (e.g., for
     # tests that need a <Location> override of a mod_wsgi
-    # directive).
+    # directive, or an extra WSGIScriptAlias for a longer-prefix
+    # sub-mount). The .conf is emitted BEFORE the primary alias
+    # because WSGIScriptAlias matching is first-match-wins and
+    # longer-prefix aliases must be registered first.
     test_conf="${test_sh%.sh}.conf"
     if [ -f "$test_conf" ]; then
         cat "$test_conf" >> "$INCLUDE_FILE"
     fi
+
+    echo "WSGIScriptAlias $mount_path $PROJECT_DIR/$test_py process-group=localhost:$PORT application-group=%{GLOBAL}" >> "$INCLUDE_FILE"
 done
 
 echo "Starting test server on port $PORT..."
