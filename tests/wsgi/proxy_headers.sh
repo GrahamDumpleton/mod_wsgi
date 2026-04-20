@@ -282,3 +282,66 @@ assert_body_equals_headers "$PARTIAL/get?key=HTTP_X_SCRIPT_NAME" \
     "value=/app;end" \
     "partial config: un-trusted X-Script-Name still surfaces as HTTP_X_SCRIPT_NAME" \
     -H "X-Script-Name: /app"
+
+# ---------- 5. Empty list entries in X-Forwarded-For (RFC 9110 §5.6.1) -------
+#
+# RFC 9110 §5.6.1 requires recipients to parse and ignore a
+# reasonable number of empty list elements in comma-separated
+# header field values. These assertions codify the spec-compliant
+# behaviour expected from wsgi_process_forwarded_for for inputs
+# like "a, , b", "a,,b", "a, b,", ", a, b" and "a, , , b".
+
+# ---- Trusted-proxies branch (chain walk) ----
+#
+# With the loopback peer listed in WSGITrustedProxies, the chain
+# walk must skip empty entries rather than treating them as
+# resolvable IPs. In every case below the rightmost real entry
+# (127.0.0.1) is a trusted proxy, so REMOTE_ADDR should become
+# 203.0.113.5 once the walk has stripped the trusted loopback
+# entry from the tail.
+
+assert_body_equals_headers "$TRUSTED/get?key=REMOTE_ADDR" \
+    "value=203.0.113.5;end" \
+    "empty middle entry (with spaces) in X-Forwarded-For is ignored during chain walk" \
+    -H "X-Forwarded-For: 203.0.113.5, , 127.0.0.1"
+
+assert_body_equals_headers "$TRUSTED/get?key=REMOTE_ADDR" \
+    "value=203.0.113.5;end" \
+    "empty middle entry (no whitespace) in X-Forwarded-For is ignored during chain walk" \
+    -H "X-Forwarded-For: 203.0.113.5,,127.0.0.1"
+
+assert_body_equals_headers "$TRUSTED/get?key=REMOTE_ADDR" \
+    "value=203.0.113.5;end" \
+    "trailing comma (empty trailing entry) in X-Forwarded-For is ignored during chain walk" \
+    -H "X-Forwarded-For: 203.0.113.5, 127.0.0.1,"
+
+assert_body_equals_headers "$TRUSTED/get?key=REMOTE_ADDR" \
+    "value=203.0.113.5;end" \
+    "leading empty entry in X-Forwarded-For is ignored during chain walk" \
+    -H "X-Forwarded-For: , 203.0.113.5, 127.0.0.1"
+
+assert_body_equals_headers "$TRUSTED/get?key=REMOTE_ADDR" \
+    "value=203.0.113.5;end" \
+    "multiple adjacent empty entries in X-Forwarded-For are ignored during chain walk" \
+    -H "X-Forwarded-For: 203.0.113.5,  ,  , 127.0.0.1"
+
+# ---- No-trusted-proxies branch (leftmost-wins) ----
+#
+# Without a trusted-proxies allowlist the first non-empty entry
+# of X-Forwarded-For becomes REMOTE_ADDR; empty leading entries
+# must be skipped rather than emitted as empty strings.
+
+assert_body_equals_headers "$BASIC/get?key=REMOTE_ADDR" \
+    "value=203.0.113.5;end" \
+    "leading empty entry is skipped and leftmost non-empty X-Forwarded-For entry wins" \
+    -H "X-Forwarded-For: , 203.0.113.5"
+
+assert_body_equals_headers "$BASIC/get?key=REMOTE_ADDR" \
+    "value=203.0.113.5;end" \
+    "multiple leading empty entries are skipped and leftmost non-empty X-Forwarded-For entry wins" \
+    -H "X-Forwarded-For: , , 203.0.113.5, 198.51.100.1"
+
+assert_body_equals_headers "$BASIC/get?key=REMOTE_ADDR" \
+    "value=203.0.113.5;end" \
+    "trailing comma after single X-Forwarded-For entry is ignored (leftmost-wins branch)" \
+    -H "X-Forwarded-For: 203.0.113.5,"

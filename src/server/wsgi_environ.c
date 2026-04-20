@@ -190,8 +190,16 @@ static void wsgi_process_forwarded_for(request_rec *r,
                     end--;
                 }
 
-                entry = (char **)apr_array_push(arr);
-                *entry = apr_pstrndup(r->pool, value, (end - value));
+                /*
+                 * Skip empty list elements per RFC 9110 §5.6.1, which
+                 * requires recipients to parse and ignore them.
+                 */
+
+                if (end != value)
+                {
+                    entry = (char **)apr_array_push(arr);
+                    *entry = apr_pstrndup(r->pool, value, (end - value));
+                }
 
                 value = next;
             }
@@ -294,17 +302,29 @@ static void wsgi_process_forwarded_for(request_rec *r,
 
         const char *end = NULL;
 
-        /* Skip leading whitespace for item. */
+        /*
+         * Loop until we find the first non-empty list element. Empty
+         * elements are skipped per RFC 9110 §5.6.1.
+         */
 
-        while (*value != '\0' && apr_isspace(*value))
-            value++;
-
-        if (*value != '\0')
+        while (*value != '\0')
         {
+            const char *next = NULL;
+
+            /* Skip leading whitespace for item. */
+
+            while (*value != '\0' && apr_isspace(*value))
+                value++;
+
+            if (*value == '\0')
+                break;
+
             end = value;
 
             while (*end != '\0' && *end != ',')
                 end++;
+
+            next = (*end == ',') ? end + 1 : end;
 
             /* Need deal with trailing whitespace. */
 
@@ -316,10 +336,16 @@ static void wsgi_process_forwarded_for(request_rec *r,
                 end--;
             }
 
-            /* Override REMOTE_ADDR. Leave HTTP_X_FORWARDED_FOR. */
+            if (end != value)
+            {
+                /* Override REMOTE_ADDR. Leave HTTP_X_FORWARDED_FOR. */
 
-            apr_table_setn(r->subprocess_env, "REMOTE_ADDR",
-                           apr_pstrndup(r->pool, value, (end - value)));
+                apr_table_setn(r->subprocess_env, "REMOTE_ADDR",
+                               apr_pstrndup(r->pool, value, (end - value)));
+                break;
+            }
+
+            value = next;
         }
     }
 }

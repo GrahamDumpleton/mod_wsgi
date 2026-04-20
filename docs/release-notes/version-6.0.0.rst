@@ -76,3 +76,17 @@ Bugs Fixed
   bogus ``200 Rejected`` status to the client, a ``500`` from a truncated
   header read, or a ``504`` from a read timeout, depending on the final
   attempt's outcome.
+
+* Fixed handling of empty list elements in the ``X-Forwarded-For`` header
+  when processing trusted proxy headers. RFC 9110 §5.6.1 requires HTTP
+  recipients to parse and ignore empty elements in comma-separated list
+  headers, but the parser in ``wsgi_process_forwarded_for`` was pushing
+  zero-length tokens into the parsed array for inputs such as ``a,,b``,
+  ``, a, b``, or values with multiple adjacent commas. When
+  ``WSGITrustedProxies`` was configured, the resulting empty string would
+  later fail ``apr_sockaddr_info_get`` during the right-to-left trust-chain
+  walk, breaking the walk early and producing an empty or incorrect
+  ``REMOTE_ADDR``. When ``WSGITrustedProxies`` was not configured and the
+  value began with a comma, ``REMOTE_ADDR`` was set to an empty string. Empty
+  list elements are now skipped in both code paths, so ``REMOTE_ADDR`` is
+  derived from the first non-empty element as the header semantics intend.
