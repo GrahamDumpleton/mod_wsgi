@@ -2566,6 +2566,16 @@ int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
                 }
             }
 
+            /*
+             * A raising callback (or __bool__ raising) is logged but
+             * does NOT force a reload. In daemon mode a forced reload
+             * on every call means a full daemon restart per request,
+             * which for a systematically-failing callback degenerates
+             * into a restart loop. Keeping the cached module is the
+             * safer behaviour; operators see the traceback in the
+             * error log and can fix the callback.
+             */
+
             if (PyErr_Occurred())
                 wsgi_log_python_error(r, NULL, filename, 0);
 
