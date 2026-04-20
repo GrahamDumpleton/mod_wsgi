@@ -207,21 +207,8 @@ int wsgi_execute_script(request_rec *r)
 
                     return OK;
                 }
-                else
-                {
-                    /*
-                     * Need to reload just the script module. Remove
-                     * the module from the modules dictionary before
-                     * reloading it again. If code is executing
-                     * within the module at the time, the callers
-                     * reference count on the module should ensure
-                     * it isn't actually destroyed until it is
-                     * finished.
-                     */
+#endif
 
-                    PyDict_DelItemString(modules, name);
-                }
-#else
                 /*
                  * Need to reload just the script module. Remove
                  * the module from the modules dictionary before
@@ -233,7 +220,6 @@ int wsgi_execute_script(request_rec *r)
                  */
 
                 PyDict_DelItemString(modules, name);
-#endif
             }
         }
     }
