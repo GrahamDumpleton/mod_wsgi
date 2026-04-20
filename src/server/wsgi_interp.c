@@ -2423,7 +2423,7 @@ load_source_finally:
     Py_XDECREF(source_bytes_object);
     Py_XDECREF(result);
 
-    m = PyImport_ExecCodeModuleEx((char *)name, co, (char *)filename);
+    m = PyImport_ExecCodeModuleEx(name, co, filename);
 
     if (m)
     {
@@ -2538,10 +2538,6 @@ int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
 
     if (resource)
     {
-        PyObject *dict = NULL;
-        PyObject *object = NULL;
-
-        dict = PyModule_GetDict(module);
         object = PyDict_GetItemString(dict, "reload_required");
 
         if (object)
