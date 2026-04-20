@@ -23,6 +23,21 @@
 #                             request inside the WSGI app to emulate I/O
 #                             wait. Requires a benchmark script that reads
 #                             BENCHMARK_DELAY (e.g. tests/benchmark.wsgi).
+#       --cpu SECONDS         Run a GIL-holding busy loop for this many
+#                             (fractional) seconds per request to emulate
+#                             Python-level CPU work. Requires a benchmark
+#                             script that reads BENCHMARK_CPU.
+#       --chunks N            Split a mixed --delay + --cpu workload into
+#                             N interleaved [sleep, cpu] iterations per
+#                             request to scramble GIL acquisition timing
+#                             across threads. Requires a benchmark script
+#                             that reads BENCHMARK_CHUNKS. Default 1.
+#       --metrics             Capture mod_wsgi.request_metrics() around
+#                             the benchmark run and print a per-process
+#                             summary after bombardier. Requires a
+#                             benchmark script that exposes the
+#                             /metrics/reset and /metrics/report paths
+#                             (e.g. tests/benchmark.wsgi).
 #   -h, --help                Show this help
 
 set -e
@@ -41,9 +56,12 @@ SCRIPT=tests/hello.wsgi
 DISABLE_RELOADING=0
 QUEUE_TIMEOUT=
 DELAY=0
+CPU=0
+CHUNKS=1
+METRICS=0
 
 usage() {
-    sed -n '3,16p' "$0" | sed 's/^# \{0,1\}//'
+    awk '/^# Benchmark/,/^$/' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -59,6 +77,9 @@ while [ $# -gt 0 ]; do
         --disable-reloading) DISABLE_RELOADING=1; shift ;;
         --queue-timeout)  QUEUE_TIMEOUT="$2"; shift 2 ;;
         --delay)          DELAY="$2"; shift 2 ;;
+        --cpu)            CPU="$2"; shift 2 ;;
+        --chunks)         CHUNKS="$2"; shift 2 ;;
+        --metrics)        METRICS=1; shift ;;
         -h|--help)        usage ;;
         *) echo "ERROR: Unknown option: $1" >&2; usage 1 ;;
     esac
@@ -82,6 +103,14 @@ elif command -v mod_wsgi-express >/dev/null 2>&1; then
 else
     echo "ERROR: mod_wsgi-express not found" >&2
     exit 1
+fi
+
+if [ -x "$PROJECT_DIR/.venv/bin/python" ]; then
+    PYTHON="$PROJECT_DIR/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON="$(command -v python3)"
+else
+    PYTHON="python"
 fi
 
 cd "$PROJECT_DIR"
@@ -141,6 +170,12 @@ else
     queue_timeout_state="default"
 fi
 
+if [ "$METRICS" = "1" ]; then
+    metrics_state="enabled"
+else
+    metrics_state="disabled"
+fi
+
 echo "Configuration:"
 echo "  script         : $SCRIPT"
 echo "  mode           : $MODE"
@@ -152,9 +187,14 @@ echo "  port           : $PORT"
 echo "  reloading      : $reloading_state"
 echo "  queue-timeout  : $queue_timeout_state"
 echo "  delay          : ${DELAY}s"
+echo "  cpu            : ${CPU}s"
+echo "  chunks         : $CHUNKS"
+echo "  metrics        : $metrics_state"
 echo ""
 
 export BENCHMARK_DELAY="$DELAY"
+export BENCHMARK_CPU="$CPU"
+export BENCHMARK_CHUNKS="$CHUNKS"
 
 echo "Starting mod_wsgi-express..."
 "$MOD_WSGI_EXPRESS" setup-server "${setup_args[@]}" >/dev/null
@@ -186,7 +226,17 @@ done
 echo "Warming up..."
 bombardier -c "$CONCURRENCY" -d 2s -l "$url" >/dev/null
 
+if [ "$METRICS" = "1" ]; then
+    "$PYTHON" "$SCRIPT_DIR/benchmark_metrics.py" reset \
+        "http://localhost:$PORT" "$PROCESSES" || true
+fi
+
 echo ""
 echo "Running benchmark..."
 echo ""
 bombardier -c "$CONCURRENCY" -d "${DURATION}s" -l "$url"
+
+if [ "$METRICS" = "1" ]; then
+    "$PYTHON" "$SCRIPT_DIR/benchmark_metrics.py" report \
+        "http://localhost:$PORT" "$PROCESSES" || true
+fi
