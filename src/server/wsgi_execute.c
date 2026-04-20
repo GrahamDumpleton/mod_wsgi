@@ -348,6 +348,7 @@ int wsgi_execute_script(request_rec *r)
             {
                 PyObject *method = NULL;
                 PyObject *args = NULL;
+                PyObject *close_result = NULL;
 
                 Py_INCREF(adapter->log_buffer);
                 thread_info->log_buffer = adapter->log_buffer;
@@ -381,11 +382,11 @@ int wsgi_execute_script(request_rec *r)
                 else
                 {
                     args = PyTuple_New(0);
-                    object = PyObject_CallObject(method, args);
+                    close_result = PyObject_CallObject(method, args);
                     Py_DECREF(args);
                 }
 
-                Py_XDECREF(object);
+                Py_XDECREF(close_result);
                 Py_XDECREF(method);
 
                 Py_CLEAR(thread_info->log_buffer);
