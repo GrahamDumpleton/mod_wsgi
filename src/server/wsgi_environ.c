@@ -490,13 +490,15 @@ typedef struct {
     const char *trusted_header;
 } wsgi_proxy_category_state_t;
 
-static void wsgi_process_proxy_headers(request_rec *r)
+static unsigned int wsgi_process_proxy_headers(request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
 
     apr_array_header_t *trusted_proxy_headers = NULL;
 
     wsgi_proxy_category_state_t category_state[WSGI_PROXY_CATEGORY_MAX];
+
+    unsigned int applied = 0;
 
     int i = 0;
     int category = 0;
@@ -513,7 +515,7 @@ static void wsgi_process_proxy_headers(request_rec *r)
     /* Nothing to do if no trusted headers have been specified. */
 
     if (!trusted_proxy_headers)
-        return;
+        return 0;
 
     memset(category_state, 0, sizeof(category_state));
 
@@ -608,6 +610,9 @@ static void wsgi_process_proxy_headers(request_rec *r)
         const wsgi_proxy_header_entry_t *entry;
         const char *kept = category_state[category].trusted_header;
 
+        if (kept)
+            applied |= (1u << category);
+
         if (!category_state[category].matched)
             continue;
 
@@ -620,6 +625,8 @@ static void wsgi_process_proxy_headers(request_rec *r)
             apr_table_unset(r->subprocess_env, entry->name);
         }
     }
+
+    return applied;
 }
 
 static APR_OPTIONAL_FN_TYPE(ssl_is_https) *wsgi_is_https = NULL;
@@ -645,6 +652,8 @@ void wsgi_build_environment(request_rec *r)
     const char *value = NULL;
     const char *script_name = NULL;
     const char *path_info = NULL;
+
+    unsigned int proxy_applied = 0;
 
     conn_rec *c = r->connection;
 
@@ -782,20 +791,26 @@ void wsgi_build_environment(request_rec *r)
 
     /*
      * Perform fixups on environment based on trusted proxy headers
-     * sent through from a front end proxy.
+     * sent through from a front end proxy. Returns a bitmask of
+     * categories whose trusted apply handler fired so the scheme
+     * detection below can defer to the proxy when it authoritatively
+     * declared the original client scheme.
      */
 
-    wsgi_process_proxy_headers(r);
+    proxy_applied = wsgi_process_proxy_headers(r);
 
     /*
-     * Determine whether connection uses HTTPS protocol. This has
-     * to be done after and fixups due to trusted proxy headers.
-     * wsgi_is_https is populated once per child process in
-     * wsgi_environ_child_init and will be NULL if mod_ssl is not
-     * loaded.
+     * Determine whether the connection uses HTTPS. This only runs if a
+     * trusted X-Forwarded-Proto style header did not already settle the
+     * question above, otherwise mod_ssl's view of the immediate Apache
+     * hop could overwrite a "http" scheme that the proxy correctly
+     * reported for the original client connection. wsgi_is_https is
+     * populated once per child process in wsgi_environ_child_init and
+     * will be NULL if mod_ssl is not loaded.
      */
 
-    if (wsgi_is_https && wsgi_is_https(r->connection))
+    if (!(proxy_applied & (1u << WSGI_PROXY_CATEGORY_SCHEME)) &&
+        wsgi_is_https && wsgi_is_https(r->connection))
         apr_table_set(r->subprocess_env, "HTTPS", "1");
 
     /*

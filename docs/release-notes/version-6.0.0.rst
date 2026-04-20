@@ -125,3 +125,20 @@ Bugs Fixed
   middleware that independently processes proxy headers could be misled by
   spoofed values, so the stripping is applied consistently for all
   categories listed in ``WSGITrustedProxyHeaders``.
+
+* Fixed precedence between a trusted proxy scheme header and ``mod_ssl``
+  when Apache terminates TLS directly. The ``ssl_is_https`` check that
+  sets ``HTTPS=1`` (and therefore ``wsgi.url_scheme=https`` in the WSGI
+  environ) runs after ``wsgi_process_proxy_headers`` and previously
+  overwrote whatever a trusted ``X-Forwarded-Proto`` / ``X-Forwarded-SSL``
+  / ``X-Forwarded-Scheme`` header had decided. In an unusual but valid
+  deployment where a front proxy receives the original client over plain
+  HTTP and speaks TLS to Apache itself, the proxy correctly reports
+  ``X-Forwarded-Proto: http`` for the client scheme, but Apache's view of
+  its own TLS inbound connection would override that back to ``https``.
+  The scheme check now only consults ``ssl_is_https`` when no trusted
+  scheme header was applied for the request, so an operator who has
+  opted the proxy's scheme header into ``WSGITrustedProxyHeaders`` gets
+  the proxy's declaration honoured. Deployments where Apache terminates
+  TLS directly without a front proxy and do not list a scheme header in
+  ``WSGITrustedProxyHeaders`` are unaffected.

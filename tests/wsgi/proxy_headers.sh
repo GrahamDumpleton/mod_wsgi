@@ -363,3 +363,39 @@ assert_body_equals_headers "$BASIC/get?key=REMOTE_ADDR" \
     "value=203.0.113.5;end" \
     "trailing comma after single X-Forwarded-For entry is ignored (leftmost-wins branch)" \
     -H "X-Forwarded-For: 203.0.113.5,"
+
+# ---------- 6. Scheme precedence: trusted X-Forwarded-Proto vs mod_ssl --------
+#
+# When Apache is terminating TLS directly AND the config trusts a
+# scheme header from the peer, the proxy's view of the original client
+# scheme must win over ssl_is_https's view of the immediate TLS hop.
+# Otherwise a proxy that legitimately relays a plain-HTTP client over
+# a TLS-protected back channel would have its correct X-Forwarded-Proto
+# overridden by Apache's view of its own inbound connection.
+
+HTTPS_TRUSTED="$HTTPS_BASE_URL/test/wsgi/proxy-headers/trusted-client"
+HTTPS_PARTIAL="$HTTPS_BASE_URL/test/wsgi/proxy-headers/partial"
+
+assert_body_equals_headers "$HTTPS_TRUSTED/get?key=wsgi.url_scheme" \
+    "value=http;end" \
+    "trusted X-Forwarded-Proto: http over a TLS connection keeps wsgi.url_scheme http" \
+    -H "X-Forwarded-Proto: http"
+
+assert_body_equals_headers "$HTTPS_TRUSTED/get?key=wsgi.url_scheme" \
+    "value=https;end" \
+    "trusted X-Forwarded-Proto: https over a TLS connection keeps wsgi.url_scheme https" \
+    -H "X-Forwarded-Proto: https"
+
+assert_body_equals_headers "$HTTPS_TRUSTED/get?key=wsgi.url_scheme" \
+    "value=https;end" \
+    "no scheme header on a TLS connection falls back to ssl_is_https (wsgi.url_scheme https)"
+
+assert_body_equals_headers "$HTTPS_TRUSTED/get?key=wsgi.url_scheme" \
+    "value=http;end" \
+    "trusted X-Forwarded-SSL: Off over a TLS connection unsets HTTPS" \
+    -H "X-Forwarded-SSL: Off"
+
+assert_body_equals_headers "$HTTPS_PARTIAL/get?key=wsgi.url_scheme" \
+    "value=https;end" \
+    "partial config with no scheme header trusted: X-Forwarded-Proto: http is ignored and ssl_is_https wins" \
+    -H "X-Forwarded-Proto: http"
