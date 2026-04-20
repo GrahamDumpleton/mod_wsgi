@@ -93,34 +93,29 @@ static void wsgi_drop_invalid_headers(request_rec *r)
     }
 }
 
-static const char *wsgi_proxy_client_headers[] = {
-    "HTTP_X_FORWARDED_FOR",
-    "HTTP_X_CLIENT_IP",
-    "HTTP_X_REAL_IP",
-    NULL,
-};
+/*
+ * Proxy header registry. This is the single source of truth for the set
+ * of trusted-proxy-related headers mod_wsgi understands, the category
+ * each belongs to (used both for deriving the match flag and for the
+ * post-rewrite trim pass that strips non-winning synonyms), and the
+ * rewrite handler invoked when the peer is trusted and the header is
+ * present. Adding a new synonym is a one-line registry entry.
+ */
 
-static const char *wsgi_proxy_scheme_headers[] = {
-    "HTTP_X_FORWARDED_HTTPS",
-    "HTTP_X_FORWARDED_PROTO",
-    "HTTP_X_FORWARDED_SCHEME",
-    "HTTP_X_FORWARDED_SSL",
-    "HTTP_X_HTTPS",
-    "HTTP_X_SCHEME",
-    NULL,
-};
+typedef enum {
+    WSGI_PROXY_CATEGORY_NONE = 0,
+    WSGI_PROXY_CATEGORY_CLIENT,
+    WSGI_PROXY_CATEGORY_HOST,
+    WSGI_PROXY_CATEGORY_SCRIPT_NAME,
+    WSGI_PROXY_CATEGORY_SCHEME,
+    WSGI_PROXY_CATEGORY_MAX,
+} wsgi_proxy_category_t;
 
-static const char *wsgi_proxy_host_headers[] = {
-    "HTTP_X_FORWARDED_HOST",
-    "HTTP_X_HOST",
-    NULL,
-};
-
-static const char *wsgi_proxy_script_name_headers[] = {
-    "HTTP_X_SCRIPT_NAME",
-    "HTTP_X_FORWARDED_SCRIPT_NAME",
-    NULL,
-};
+typedef struct {
+    const char *name;
+    wsgi_proxy_category_t category;
+    void (*apply)(request_rec *, WSGIRequestConfig *, const char *);
+} wsgi_proxy_header_entry_t;
 
 static int wsgi_ip_is_in_array(apr_sockaddr_t *client_ip,
                                apr_array_header_t *proxy_ips)
@@ -350,23 +345,159 @@ static void wsgi_process_forwarded_for(request_rec *r,
     }
 }
 
+static void wsgi_apply_forwarded_for(request_rec *r,
+                                     WSGIRequestConfig *config,
+                                     const char *value)
+{
+    wsgi_process_forwarded_for(r, config, value);
+}
+
+static void wsgi_apply_client_ip_verbatim(request_rec *r,
+                                          WSGIRequestConfig *config,
+                                          const char *value)
+{
+    (void)config;
+
+    /* Use the value as is. */
+
+    apr_table_setn(r->subprocess_env, "REMOTE_ADDR", value);
+}
+
+static void wsgi_apply_forwarded_host(request_rec *r,
+                                      WSGIRequestConfig *config,
+                                      const char *value)
+{
+    (void)config;
+
+    /* Use the value as is. May include a port. */
+
+    apr_table_setn(r->subprocess_env, "HTTP_HOST", value);
+}
+
+static void wsgi_apply_forwarded_server(request_rec *r,
+                                        WSGIRequestConfig *config,
+                                        const char *value)
+{
+    (void)config;
+
+    /* Use the value as is. */
+
+    apr_table_setn(r->subprocess_env, "SERVER_NAME", value);
+}
+
+static void wsgi_apply_forwarded_port(request_rec *r,
+                                      WSGIRequestConfig *config,
+                                      const char *value)
+{
+    (void)config;
+
+    /* Use the value as is. */
+
+    apr_table_setn(r->subprocess_env, "SERVER_PORT", value);
+}
+
+static void wsgi_apply_script_name(request_rec *r,
+                                   WSGIRequestConfig *config,
+                                   const char *value)
+{
+    (void)config;
+
+    /*
+     * Use the value as is. We want to remember what the
+     * original value for SCRIPT_NAME was though.
+     */
+
+    apr_table_setn(r->subprocess_env, "mod_wsgi.mount_point", value);
+    apr_table_setn(r->subprocess_env, "SCRIPT_NAME", value);
+}
+
+static void wsgi_apply_scheme_string(request_rec *r,
+                                     WSGIRequestConfig *config,
+                                     const char *value)
+{
+    (void)config;
+
+    /* Value can be either 'http' or 'https'. */
+
+    if (!strcasecmp(value, "https"))
+        apr_table_setn(r->subprocess_env, "HTTPS", "1");
+    else if (!strcasecmp(value, "http"))
+        apr_table_unset(r->subprocess_env, "HTTPS");
+}
+
+static void wsgi_apply_scheme_bool(request_rec *r,
+                                   WSGIRequestConfig *config,
+                                   const char *value)
+{
+    (void)config;
+
+    /*
+     * Value can be a boolean like flag such as 'On',
+     * 'Off', 'true', 'false', '1' or '0'.
+     */
+
+    if (!strcasecmp(value, "On") ||
+        !strcasecmp(value, "true") ||
+        !strcasecmp(value, "1"))
+    {
+        apr_table_setn(r->subprocess_env, "HTTPS", "1");
+    }
+    else if (!strcasecmp(value, "Off") ||
+             !strcasecmp(value, "false") ||
+             !strcasecmp(value, "0"))
+    {
+        apr_table_unset(r->subprocess_env, "HTTPS");
+    }
+}
+
+static const wsgi_proxy_header_entry_t wsgi_proxy_header_registry[] = {
+    { "HTTP_X_FORWARDED_FOR",         WSGI_PROXY_CATEGORY_CLIENT,      wsgi_apply_forwarded_for },
+    { "HTTP_X_CLIENT_IP",             WSGI_PROXY_CATEGORY_CLIENT,      wsgi_apply_client_ip_verbatim },
+    { "HTTP_X_REAL_IP",               WSGI_PROXY_CATEGORY_CLIENT,      wsgi_apply_client_ip_verbatim },
+    { "HTTP_X_FORWARDED_HOST",        WSGI_PROXY_CATEGORY_HOST,        wsgi_apply_forwarded_host },
+    { "HTTP_X_HOST",                  WSGI_PROXY_CATEGORY_HOST,        wsgi_apply_forwarded_host },
+    { "HTTP_X_FORWARDED_SERVER",      WSGI_PROXY_CATEGORY_NONE,        wsgi_apply_forwarded_server },
+    { "HTTP_X_FORWARDED_PORT",        WSGI_PROXY_CATEGORY_NONE,        wsgi_apply_forwarded_port },
+    { "HTTP_X_SCRIPT_NAME",           WSGI_PROXY_CATEGORY_SCRIPT_NAME, wsgi_apply_script_name },
+    { "HTTP_X_FORWARDED_SCRIPT_NAME", WSGI_PROXY_CATEGORY_SCRIPT_NAME, wsgi_apply_script_name },
+    { "HTTP_X_FORWARDED_PROTO",       WSGI_PROXY_CATEGORY_SCHEME,      wsgi_apply_scheme_string },
+    { "HTTP_X_FORWARDED_SCHEME",      WSGI_PROXY_CATEGORY_SCHEME,      wsgi_apply_scheme_string },
+    { "HTTP_X_SCHEME",                WSGI_PROXY_CATEGORY_SCHEME,      wsgi_apply_scheme_string },
+    { "HTTP_X_FORWARDED_HTTPS",       WSGI_PROXY_CATEGORY_SCHEME,      wsgi_apply_scheme_bool },
+    { "HTTP_X_FORWARDED_SSL",         WSGI_PROXY_CATEGORY_SCHEME,      wsgi_apply_scheme_bool },
+    { "HTTP_X_HTTPS",                 WSGI_PROXY_CATEGORY_SCHEME,      wsgi_apply_scheme_bool },
+    { NULL, WSGI_PROXY_CATEGORY_NONE, NULL },
+};
+
+static const wsgi_proxy_header_entry_t *
+wsgi_lookup_proxy_header(const char *name)
+{
+    const wsgi_proxy_header_entry_t *entry;
+
+    for (entry = wsgi_proxy_header_registry; entry->name; entry++)
+    {
+        if (!strcmp(entry->name, name))
+            return entry;
+    }
+
+    return NULL;
+}
+
+typedef struct {
+    int matched;
+    const char *trusted_header;
+} wsgi_proxy_category_state_t;
+
 static void wsgi_process_proxy_headers(request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
 
     apr_array_header_t *trusted_proxy_headers = NULL;
 
-    int match_client_header = 0;
-    int match_host_header = 0;
-    int match_script_name_header = 0;
-    int match_scheme_header = 0;
-
-    const char *trusted_client_header = NULL;
-    const char *trusted_host_header = NULL;
-    const char *trusted_script_name_header = NULL;
-    const char *trusted_scheme_header = NULL;
+    wsgi_proxy_category_state_t category_state[WSGI_PROXY_CATEGORY_MAX];
 
     int i = 0;
+    int category = 0;
 
     int trusted_proxy = 1;
 
@@ -381,6 +512,8 @@ static void wsgi_process_proxy_headers(request_rec *r)
 
     if (!trusted_proxy_headers)
         return;
+
+    memset(category_state, 0, sizeof(category_state));
 
     /*
      * Check for any special processing required for each trusted
@@ -420,262 +553,69 @@ static void wsgi_process_proxy_headers(request_rec *r)
             trusted_proxy = 0;
     }
 
-    if (trusted_proxy)
+    /*
+     * Walk every header the admin declared as trusted. For each
+     * recognised entry, unconditionally record its category as matched
+     * (this drives the trim loop below so untrusted spoofed values of
+     * synonyms are stripped regardless of peer trust). When the peer is
+     * trusted and the header carries a value, invoke the registered
+     * apply handler to rewrite derived environment variables, and
+     * remember which synonym "won" so the trim loop preserves it.
+     */
+
+    for (i = 0; i < trusted_proxy_headers->nelts; i++)
     {
-        for (i = 0; i < trusted_proxy_headers->nelts; i++)
-        {
-            const char *name;
-            const char *value;
+        const char *name;
+        const char *value;
+        const wsgi_proxy_header_entry_t *entry;
 
-            name = ((const char **)trusted_proxy_headers->elts)[i];
-            value = apr_table_get(r->subprocess_env, name);
+        name = ((const char **)trusted_proxy_headers->elts)[i];
+        entry = wsgi_lookup_proxy_header(name);
 
-            if (!strcmp(name, "HTTP_X_FORWARDED_FOR"))
-            {
-                match_client_header = 1;
+        if (!entry)
+            continue;
 
-                if (value)
-                {
-                    wsgi_process_forwarded_for(r, config, value);
+        if (entry->category != WSGI_PROXY_CATEGORY_NONE)
+            category_state[entry->category].matched = 1;
 
-                    trusted_client_header = name;
-                }
-            }
-            else if (!strcmp(name, "HTTP_X_CLIENT_IP") ||
-                     !strcmp(name, "HTTP_X_REAL_IP"))
-            {
+        if (!trusted_proxy || !entry->apply)
+            continue;
 
-                match_client_header = 1;
+        value = apr_table_get(r->subprocess_env, name);
+        if (!value)
+            continue;
 
-                if (value)
-                {
-                    /* Use the value as is. */
+        entry->apply(r, config, value);
 
-                    apr_table_setn(r->subprocess_env, "REMOTE_ADDR", value);
-
-                    trusted_client_header = name;
-                }
-            }
-            else if (!strcmp(name, "HTTP_X_FORWARDED_HOST") ||
-                     !strcmp(name, "HTTP_X_HOST"))
-            {
-
-                match_host_header = 1;
-
-                if (value)
-                {
-                    /* Use the value as is. May include a port. */
-
-                    trusted_host_header = name;
-
-                    apr_table_setn(r->subprocess_env, "HTTP_HOST", value);
-                }
-            }
-            else if (!strcmp(name, "HTTP_X_FORWARDED_SERVER"))
-            {
-                if (value)
-                {
-                    /* Use the value as is. */
-
-                    apr_table_setn(r->subprocess_env, "SERVER_NAME", value);
-                }
-            }
-            else if (!strcmp(name, "HTTP_X_FORWARDED_PORT"))
-            {
-                if (value)
-                {
-                    /* Use the value as is. */
-
-                    apr_table_setn(r->subprocess_env, "SERVER_PORT", value);
-                }
-            }
-            else if (!strcmp(name, "HTTP_X_SCRIPT_NAME") ||
-                     !strcmp(name, "HTTP_X_FORWARDED_SCRIPT_NAME"))
-            {
-
-                match_script_name_header = 1;
-
-                if (value)
-                {
-                    /*
-                     * Use the value as is. We want to remember what the
-                     * original value for SCRIPT_NAME was though.
-                     */
-
-                    apr_table_setn(r->subprocess_env, "mod_wsgi.mount_point",
-                                   value);
-
-                    trusted_script_name_header = name;
-
-                    apr_table_setn(r->subprocess_env, "SCRIPT_NAME", value);
-                }
-            }
-            else if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
-                     !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
-                     !strcmp(name, "HTTP_X_SCHEME"))
-            {
-
-                match_scheme_header = 1;
-
-                if (value)
-                {
-                    trusted_scheme_header = name;
-
-                    /* Value can be either 'http' or 'https'. */
-
-                    if (!strcasecmp(value, "https"))
-                        apr_table_setn(r->subprocess_env, "HTTPS", "1");
-                    else if (!strcasecmp(value, "http"))
-                        apr_table_unset(r->subprocess_env, "HTTPS");
-                }
-            }
-            else if (!strcmp(name, "HTTP_X_FORWARDED_HTTPS") ||
-                     !strcmp(name, "HTTP_X_FORWARDED_SSL") ||
-                     !strcmp(name, "HTTP_X_HTTPS"))
-            {
-
-                match_scheme_header = 1;
-
-                if (value)
-                {
-                    trusted_scheme_header = name;
-
-                    /*
-                     * Value can be a boolean like flag such as 'On',
-                     * 'Off', 'true', 'false', '1' or '0'.
-                     */
-
-                    if (!strcasecmp(value, "On") ||
-                        !strcasecmp(value, "true") ||
-                        !strcasecmp(value, "1"))
-                    {
-
-                        apr_table_setn(r->subprocess_env, "HTTPS", "1");
-                    }
-                    else if (!strcasecmp(value, "Off") ||
-                             !strcasecmp(value, "false") ||
-                             !strcasecmp(value, "0"))
-                    {
-
-                        apr_table_unset(r->subprocess_env, "HTTPS");
-                    }
-                }
-            }
-        }
-    }
-    else
-    {
-        /*
-         * If it isn't a trusted proxy, we still need to knock
-         * out any headers for categories we were interested in.
-         */
-
-        for (i = 0; i < trusted_proxy_headers->nelts; i++)
-        {
-            const char *name;
-
-            name = ((const char **)trusted_proxy_headers->elts)[i];
-
-            if (!strcmp(name, "HTTP_X_FORWARDED_FOR") ||
-                !strcmp(name, "HTTP_X_CLIENT_IP") ||
-                !strcmp(name, "HTTP_X_REAL_IP"))
-            {
-
-                match_client_header = 1;
-            }
-            else if (!strcmp(name, "HTTP_X_FORWARDED_HOST") ||
-                     !strcmp(name, "HTTP_X_HOST"))
-            {
-
-                match_host_header = 1;
-            }
-            else if (!strcmp(name, "HTTP_X_SCRIPT_NAME") ||
-                     !strcmp(name, "HTTP_X_FORWARDED_SCRIPT_NAME"))
-            {
-
-                match_script_name_header = 1;
-            }
-            else if (!strcmp(name, "HTTP_X_FORWARDED_PROTO") ||
-                     !strcmp(name, "HTTP_X_FORWARDED_SCHEME") ||
-                     !strcmp(name, "HTTP_X_SCHEME") ||
-                     !strcmp(name, "HTTP_X_FORWARDED_HTTPS") ||
-                     !strcmp(name, "HTTP_X_FORWARDED_SSL") ||
-                     !strcmp(name, "HTTP_X_HTTPS"))
-            {
-
-                match_scheme_header = 1;
-            }
-        }
+        if (entry->category != WSGI_PROXY_CATEGORY_NONE)
+            category_state[entry->category].trusted_header = name;
     }
 
     /*
-     * Remove all client IP headers from request environment which
-     * weren't matched as being trusted.
+     * Remove all synonym headers for each matched category from the
+     * request environment except the one that won (if any). This
+     * protects categories which the admin declared trusted from being
+     * polluted by spoofed values of other synonyms in the same
+     * category.
      */
 
-    if (match_client_header)
+    for (category = WSGI_PROXY_CATEGORY_NONE + 1;
+         category < WSGI_PROXY_CATEGORY_MAX;
+         category++)
     {
-        const char *name = NULL;
+        const wsgi_proxy_header_entry_t *entry;
+        const char *kept = category_state[category].trusted_header;
 
-        for (i = 0; (name = wsgi_proxy_client_headers[i]); i++)
+        if (!category_state[category].matched)
+            continue;
+
+        for (entry = wsgi_proxy_header_registry; entry->name; entry++)
         {
-            if (!trusted_client_header || strcmp(name, trusted_client_header))
-            {
-                apr_table_unset(r->subprocess_env, name);
-            }
-        }
-    }
-
-    /*
-     * Remove all proxy scheme headers from request environment
-     * which weren't matched as being trusted.
-     */
-
-    if (match_scheme_header)
-    {
-        const char *name = NULL;
-
-        for (i = 0; (name = wsgi_proxy_scheme_headers[i]); i++)
-        {
-            if (!trusted_scheme_header || strcmp(name, trusted_scheme_header))
-            {
-                apr_table_unset(r->subprocess_env, name);
-            }
-        }
-    }
-
-    /*
-     * Remove all proxy host headers from request environment which
-     * weren't matched as being trusted.
-     */
-
-    if (match_host_header)
-    {
-        const char *name = NULL;
-
-        for (i = 0; (name = wsgi_proxy_host_headers[i]); i++)
-        {
-            if (!trusted_host_header || strcmp(name, trusted_host_header))
-                apr_table_unset(r->subprocess_env, name);
-        }
-    }
-
-    /*
-     * Remove all proxy script name headers from request environment
-     * which weren't matched as being trusted.
-     */
-
-    if (match_script_name_header)
-    {
-        const char *name = NULL;
-
-        for (i = 0; (name = wsgi_proxy_script_name_headers[i]); i++)
-        {
-            if (!trusted_script_name_header ||
-                strcmp(name, trusted_script_name_header))
-            {
-                apr_table_unset(r->subprocess_env, name);
-            }
+            if (entry->category != (wsgi_proxy_category_t)category)
+                continue;
+            if (kept && !strcmp(entry->name, kept))
+                continue;
+            apr_table_unset(r->subprocess_env, entry->name);
         }
     }
 }
