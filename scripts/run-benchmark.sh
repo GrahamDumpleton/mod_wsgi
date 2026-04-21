@@ -38,6 +38,17 @@
 #                             benchmark script that exposes the
 #                             /metrics/reset and /metrics/report paths
 #                             (e.g. tests/benchmark.wsgi).
+#       --telemetry-target T  Pass --telemetry-target T to mod_wsgi-express
+#                             to enable the telemetry reporter. T is
+#                             'unix:/path/to/sock' or 'udp:host:port'.
+#                             Start the ingester separately from the
+#                             telemetry/ directory:
+#                               uv run mod-wsgi-telemetry \\
+#                                   --listen T
+#       --telemetry-interval S
+#                             Telemetry sampling interval in seconds.
+#                             Only applies with --telemetry-target.
+#                             Default: 1.0
 #   -h, --help                Show this help
 
 set -e
@@ -59,6 +70,8 @@ DELAY=0
 CPU=0
 CHUNKS=1
 METRICS=0
+TELEMETRY_TARGET=
+TELEMETRY_INTERVAL=1.0
 
 usage() {
     awk '/^# Benchmark/,/^$/' "$0" | sed 's/^# \{0,1\}//'
@@ -80,6 +93,8 @@ while [ $# -gt 0 ]; do
         --cpu)            CPU="$2"; shift 2 ;;
         --chunks)         CHUNKS="$2"; shift 2 ;;
         --metrics)        METRICS=1; shift ;;
+        --telemetry-target)   TELEMETRY_TARGET="$2"; shift 2 ;;
+        --telemetry-interval) TELEMETRY_INTERVAL="$2"; shift 2 ;;
         -h|--help)        usage ;;
         *) echo "ERROR: Unknown option: $1" >&2; usage 1 ;;
     esac
@@ -116,20 +131,31 @@ fi
 cd "$PROJECT_DIR"
 
 cleanup() {
+    local httpd_pid=""
+    if [ -f "$SERVER_ROOT/httpd.pid" ]; then
+        httpd_pid="$(cat "$SERVER_ROOT/httpd.pid" 2>/dev/null || true)"
+    fi
+
     if [ -f "$SERVER_ROOT/apachectl" ]; then
         "$SERVER_ROOT/apachectl" stop 2>/dev/null || true
     fi
 
-    local tries=0
-    while lsof -i :"$PORT" -t >/dev/null 2>&1; do
-        tries=$((tries + 1))
-        if [ $tries -gt 10 ]; then
-            lsof -i :"$PORT" -t 2>/dev/null | xargs kill -9 2>/dev/null || true
+    # Wait up to 10s for httpd to exit cleanly. Fall back to SIGKILL on
+    # its own pid only — never use lsof on $PORT, since other processes
+    # (e.g. the mod-wsgi-telemetry UI on the same default port) may also
+    # be bound there and must not be disturbed.
+    if [ -n "$httpd_pid" ]; then
+        local tries=0
+        while kill -0 "$httpd_pid" 2>/dev/null; do
+            tries=$((tries + 1))
+            if [ $tries -gt 10 ]; then
+                kill -9 "$httpd_pid" 2>/dev/null || true
+                sleep 1
+                break
+            fi
             sleep 1
-            break
-        fi
-        sleep 1
-    done
+        done
+    fi
 
     rm -rf "$SERVER_ROOT"
 }
@@ -158,6 +184,11 @@ else
     fi
 fi
 
+if [ -n "$TELEMETRY_TARGET" ]; then
+    setup_args+=(--telemetry-target "$TELEMETRY_TARGET")
+    setup_args+=(--telemetry-interval "$TELEMETRY_INTERVAL")
+fi
+
 if [ "$MODE" = "daemon" ] && [ "$DISABLE_RELOADING" = "1" ]; then
     reloading_state="disabled"
 else
@@ -176,6 +207,12 @@ else
     metrics_state="disabled"
 fi
 
+if [ -n "$TELEMETRY_TARGET" ]; then
+    telemetry_state="$TELEMETRY_TARGET (interval ${TELEMETRY_INTERVAL}s)"
+else
+    telemetry_state="disabled"
+fi
+
 echo "Configuration:"
 echo "  script         : $SCRIPT"
 echo "  mode           : $MODE"
@@ -190,6 +227,7 @@ echo "  delay          : ${DELAY}s"
 echo "  cpu            : ${CPU}s"
 echo "  chunks         : $CHUNKS"
 echo "  metrics        : $metrics_state"
+echo "  telemetry      : $telemetry_state"
 echo ""
 
 export BENCHMARK_DELAY="$DELAY"
