@@ -128,6 +128,28 @@
     font-family: inherit;
   }
   .window-picker:hover { border-color: var(--accent); }
+  .chart .dist-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+  .tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: #1a1a1a;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 6px 8px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+    white-space: nowrap;
+    display: none;
+    z-index: 10;
+  }
+  .tooltip .label { color: var(--muted); margin-right: 4px; }
+  .tooltip .range { color: var(--accent); margin-bottom: 2px; }
   canvas {
     display: block;
     width: 100%;
@@ -168,10 +190,10 @@
     <div class="chart"><h3>Memory RSS</h3>
       <div class="header-row"><div class="unit">MB per process</div><div class="live" id="live_mem"></div></div>
       <canvas id="c_mem"></canvas></div>
-    <div class="chart"><h3>Slow + aborted requests</h3>
-      <div class="header-row"><div class="unit">count (sum this interval)</div><div class="live" id="live_sa"></div></div>
-      <canvas id="c_sa"></canvas></div>
-    <div class="chart wide"><h3>Application time distribution</h3>
+    <div class="chart"><h3>Queue time</h3>
+      <div class="header-row"><div class="unit">average ms/request (daemon queue wait)</div><div class="live" id="live_queue"></div></div>
+      <canvas id="c_queue"></canvas></div>
+    <div class="chart wide"><h3>Time distribution</h3>
       <div class="header-row">
         <div class="unit">log2 buckets, 5ms..&gt;40s &mdash; summed across visible processes over last
           <select id="dist_window" class="window-picker">
@@ -183,11 +205,20 @@
             <option value="600">10m</option>
           </select>
         </div>
-        <div class="live" id="live_dist"></div>
+        <div class="dist-right">
+          <select id="dist_field" class="window-picker">
+            <option value="application_time_buckets" selected>application time</option>
+            <option value="daemon_time_buckets">daemon time</option>
+            <option value="queue_time_buckets">queue time</option>
+            <option value="server_time_buckets">server time</option>
+          </select>
+          <div class="live" id="live_dist"></div>
+        </div>
       </div>
       <canvas id="c_dist" class="tall"></canvas></div>
   </section>
 </main>
+<div class="tooltip" id="tooltip"></div>
 
 <script>
 const COLORS = ["#4fc3f7","#ff8a65","#81c784","#ba68c8","#fff176","#4db6ac","#e57373","#9575cd"];
@@ -340,6 +371,13 @@ function fmtMs(ms) {
   return ms + "ms";
 }
 
+// Human-readable range for a single bucket index.
+function bucketRangeLabel(i) {
+  if (i === 0) return "\u2264 " + fmtMs(BUCKET_UPPER_MS[0]);
+  if (BUCKET_UPPER_MS[i] === Infinity) return "> " + fmtMs(BUCKET_UPPER_MS[i - 1]);
+  return fmtMs(BUCKET_UPPER_MS[i - 1]) + " \u2013 " + fmtMs(BUCKET_UPPER_MS[i]);
+}
+
 function drawHistogram(canvas, hist) {
   const ctx = canvas.getContext("2d");
   const w = canvas.width = canvas.clientWidth * devicePixelRatio;
@@ -349,6 +387,7 @@ function drawHistogram(canvas, hist) {
   const total = hist.reduce((a, b) => a + b, 0);
   const maxBucket = Math.max(...hist);
   if (maxBucket === 0) {
+    canvas._hitTest = null;
     ctx.fillStyle = "#555";
     ctx.font = (11 * devicePixelRatio) + "px -apple-system, sans-serif";
     ctx.textAlign = "center";
@@ -365,6 +404,17 @@ function drawHistogram(canvas, hist) {
   const plotW = w - padLeft - padRight;
   const plotH = h - padTop - padBottom;
   const barW = plotW / N_BUCKETS;
+
+  // Stash bar geometry in CSS pixels so mouse handlers can map
+  // pointer offsets to bucket indices without redoing the layout.
+  canvas._hitTest = {
+    hist: hist.slice(),
+    total: total,
+    firstBarPx: padLeft / devicePixelRatio,
+    barWidthPx: barW / devicePixelRatio,
+    plotTopPx: padTop / devicePixelRatio,
+    plotBottomPx: (padTop + plotH) / devicePixelRatio,
+  };
 
   // Y-axis count labels (top and zero).
   ctx.fillStyle = "#666";
@@ -540,13 +590,13 @@ function redraw() {
   setLive("live_mem",
     `<span class="label">total</span>${fmt(mem.sum, 0)} <span class="label">mean</span>${fmt(mem.mean, 0)} MB`);
 
-  const sa = drawChart(document.getElementById("c_sa"),
-    f => (f.slow_requests || 0) + (f.aborted_requests || 0));
-  setLive("live_sa", `<span class="label">total</span>${fmt(sa.sum, 0)}`);
+  const queue = drawChart(document.getElementById("c_queue"), f => (f.queue_time || 0) * 1000);
+  setLive("live_queue", `<span class="label">mean</span>${fmt(queue.mean)} ms`);
 
   const distWindowSec = parseInt(
     document.getElementById("dist_window").value, 10) || LINE_WINDOW_SEC;
-  const hist = aggregateBuckets("application_time_buckets", distWindowSec);
+  const distField = document.getElementById("dist_field").value || "application_time_buckets";
+  const hist = aggregateBuckets(distField, distWindowSec);
   const dist = drawHistogram(document.getElementById("c_dist"), hist);
   if (dist.total > 0) {
     setLive("live_dist",
@@ -557,6 +607,8 @@ function redraw() {
   } else {
     setLive("live_dist", "");
   }
+
+  refreshTooltip();
 }
 
 function setConn(ok, label) {
@@ -592,6 +644,75 @@ setInterval(redraw, 500);
 window.addEventListener("resize", redraw);
 document.getElementById("hide_idle").addEventListener("change", redraw);
 document.getElementById("dist_window").addEventListener("change", redraw);
+document.getElementById("dist_field").addEventListener("change", redraw);
+
+// Histogram hover tooltip: shows bucket range, request count in that
+// bucket, share of the current window, and the cumulative share at the
+// bucket's upper bound ("X% of requests completed in <= Yms"). The
+// tooltip is kept in sync with the histogram redraws so numbers stay
+// live without the user having to jiggle the mouse.
+const tooltipState = { idx: null, clientX: 0, clientY: 0 };
+
+function refreshTooltip() {
+  const canvas = document.getElementById("c_dist");
+  const tip = document.getElementById("tooltip");
+  if (tooltipState.idx === null) { tip.style.display = "none"; return; }
+  const hit = canvas._hitTest;
+  if (!hit || !hit.total) { tip.style.display = "none"; return; }
+
+  const idx = tooltipState.idx;
+  const count = hit.hist[idx];
+  const pct = hit.total ? (count / hit.total) * 100 : 0;
+  let cum = 0;
+  for (let i = 0; i <= idx; i++) cum += hit.hist[i];
+  const cumPct = hit.total ? (cum / hit.total) * 100 : 0;
+
+  tip.innerHTML =
+    `<div class="range">${bucketRangeLabel(idx)}</div>` +
+    `<div><span class="label">count</span>${count}</div>` +
+    `<div><span class="label">bucket</span>${pct.toFixed(1)}%</div>` +
+    `<div><span class="label">cumulative</span>${cumPct.toFixed(1)}% \u2264 ${fmtMs(BUCKET_UPPER_MS[idx])}</div>`;
+  tip.style.display = "block";
+
+  // Position next to the cursor, flipping to the left / above if it
+  // would run off the right or bottom of the viewport.
+  const tipRect = tip.getBoundingClientRect();
+  let left = tooltipState.clientX + 12;
+  let top = tooltipState.clientY + 12;
+  if (left + tipRect.width > window.innerWidth - 8) {
+    left = tooltipState.clientX - tipRect.width - 12;
+  }
+  if (top + tipRect.height > window.innerHeight - 8) {
+    top = tooltipState.clientY - tipRect.height - 12;
+  }
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+}
+
+(function () {
+  const canvas = document.getElementById("c_dist");
+
+  function clear() {
+    tooltipState.idx = null;
+    refreshTooltip();
+  }
+
+  canvas.addEventListener("mousemove", e => {
+    const hit = canvas._hitTest;
+    if (!hit || !hit.total) { clear(); return; }
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (y < hit.plotTopPx || y > hit.plotBottomPx) { clear(); return; }
+    const idx = Math.floor((x - hit.firstBarPx) / hit.barWidthPx);
+    if (idx < 0 || idx >= N_BUCKETS) { clear(); return; }
+    tooltipState.idx = idx;
+    tooltipState.clientX = e.clientX;
+    tooltipState.clientY = e.clientY;
+    refreshTooltip();
+  });
+  canvas.addEventListener("mouseleave", clear);
+})();
 </script>
 </body>
 </html>
