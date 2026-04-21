@@ -32,6 +32,19 @@
 #                             request to scramble GIL acquisition timing
 #                             across threads. Requires a benchmark script
 #                             that reads BENCHMARK_CHUNKS. Default 1.
+#       --distribution DIST   'fixed' (default) or 'lognormal'. Selects
+#                             per-request sampling: fixed uses --delay /
+#                             --cpu verbatim, lognormal draws from a
+#                             distribution whose mean equals the nominal
+#                             value, matching the right-skewed fall-off
+#                             typical of real web response times.
+#       --io-sigma N          Log-normal sigma for I/O delay (default
+#                             0.6). Larger => heavier tail. Only applies
+#                             with --distribution lognormal.
+#       --cpu-sigma N         Log-normal sigma for CPU (default 0.0 =
+#                             keep CPU constant). Set > 0 to also vary
+#                             per-request CPU under --distribution
+#                             lognormal.
 #       --metrics             Capture mod_wsgi.request_metrics() around
 #                             the benchmark run and print a per-process
 #                             summary after bombardier. Requires a
@@ -69,6 +82,9 @@ QUEUE_TIMEOUT=
 DELAY=0
 CPU=0
 CHUNKS=1
+DISTRIBUTION=fixed
+IO_SIGMA=0.6
+CPU_SIGMA=0.0
 METRICS=0
 TELEMETRY_TARGET=
 TELEMETRY_INTERVAL=1.0
@@ -92,6 +108,9 @@ while [ $# -gt 0 ]; do
         --delay)          DELAY="$2"; shift 2 ;;
         --cpu)            CPU="$2"; shift 2 ;;
         --chunks)         CHUNKS="$2"; shift 2 ;;
+        --distribution)   DISTRIBUTION="$2"; shift 2 ;;
+        --io-sigma)       IO_SIGMA="$2"; shift 2 ;;
+        --cpu-sigma)      CPU_SIGMA="$2"; shift 2 ;;
         --metrics)        METRICS=1; shift ;;
         --telemetry-target)   TELEMETRY_TARGET="$2"; shift 2 ;;
         --telemetry-interval) TELEMETRY_INTERVAL="$2"; shift 2 ;;
@@ -103,6 +122,11 @@ done
 case "$MODE" in
     daemon|embedded) ;;
     *) echo "ERROR: --mode must be 'daemon' or 'embedded'" >&2; exit 1 ;;
+esac
+
+case "$DISTRIBUTION" in
+    fixed|lognormal) ;;
+    *) echo "ERROR: --distribution must be 'fixed' or 'lognormal'" >&2; exit 1 ;;
 esac
 
 if ! command -v bombardier >/dev/null 2>&1; then
@@ -226,6 +250,11 @@ echo "  queue-timeout  : $queue_timeout_state"
 echo "  delay          : ${DELAY}s"
 echo "  cpu            : ${CPU}s"
 echo "  chunks         : $CHUNKS"
+if [ "$DISTRIBUTION" = "lognormal" ]; then
+    echo "  distribution   : lognormal (io_sigma=${IO_SIGMA}, cpu_sigma=${CPU_SIGMA})"
+else
+    echo "  distribution   : fixed"
+fi
 echo "  metrics        : $metrics_state"
 echo "  telemetry      : $telemetry_state"
 echo ""
@@ -233,6 +262,9 @@ echo ""
 export BENCHMARK_DELAY="$DELAY"
 export BENCHMARK_CPU="$CPU"
 export BENCHMARK_CHUNKS="$CHUNKS"
+export BENCHMARK_DISTRIBUTION="$DISTRIBUTION"
+export BENCHMARK_IO_SIGMA="$IO_SIGMA"
+export BENCHMARK_CPU_SIGMA="$CPU_SIGMA"
 
 echo "Starting mod_wsgi-express..."
 "$MOD_WSGI_EXPRESS" setup-server "${setup_args[@]}" >/dev/null

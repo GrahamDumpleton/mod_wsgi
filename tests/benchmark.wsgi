@@ -25,6 +25,27 @@
 # scrambles the acquisition timing and reduces that stampede. Only
 # has an effect when both DELAY and CPU are positive.
 #
+# BENCHMARK_DISTRIBUTION env var selects per-request time sampling:
+#
+#   "fixed" (default)   Every request uses BENCHMARK_DELAY / BENCHMARK_CPU
+#                       verbatim (historical behaviour).
+#
+#   "lognormal"         Per-request delay (and optionally CPU) is drawn
+#                       from a log-normal distribution whose *mean*
+#                       equals BENCHMARK_DELAY / BENCHMARK_CPU. Matches
+#                       the right-skewed fall-off typical of real HTTP
+#                       response time distributions.
+#
+# BENCHMARK_IO_SIGMA env var (float, default 0.6) is the log-normal
+# sigma parameter for the I/O delay when distribution is "lognormal".
+# Larger sigma => heavier tail. sigma ~ 0.6 gives roughly
+# P95 = 2.7 * P50, P99 = 4 * P50.
+#
+# BENCHMARK_CPU_SIGMA env var (float, default 0.0) is the log-normal
+# sigma for the CPU portion. Defaulting to zero keeps per-request CPU
+# constant so the test host is not overwhelmed by pathological tail
+# samples; set > 0 to also vary CPU.
+#
 # Paths served (all other paths fall through to the benchmark handler):
 #
 #   /                 Benchmark response (applies delay/cpu, returns body).
@@ -40,7 +61,9 @@
 #                     window, so /metrics/reset must be hit first.
 
 import json
+import math
 import os
+import random
 import threading
 import time
 
@@ -63,6 +86,9 @@ _HEADERS = [
 _DELAY = float(os.environ.get("BENCHMARK_DELAY", "0") or "0")
 _CPU = float(os.environ.get("BENCHMARK_CPU", "0") or "0")
 _CHUNKS = max(1, int(os.environ.get("BENCHMARK_CHUNKS", "1") or "1"))
+_DISTRIBUTION = (os.environ.get("BENCHMARK_DISTRIBUTION", "fixed") or "fixed").lower()
+_IO_SIGMA = max(0.0, float(os.environ.get("BENCHMARK_IO_SIGMA", "0.6") or "0.6"))
+_CPU_SIGMA = max(0.0, float(os.environ.get("BENCHMARK_CPU_SIGMA", "0.0") or "0.0"))
 
 _PID = os.getpid()
 
@@ -82,36 +108,50 @@ def _cpu_burn(seconds):
     return count
 
 
-if _DELAY > 0 and _CPU > 0 and _CHUNKS > 1:
-    _DELAY_PER_CHUNK = _DELAY / _CHUNKS
-    _CPU_PER_CHUNK = _CPU / _CHUNKS
-    _CHUNK_RANGE = range(_CHUNKS)
-    def _bench(environ, start_response):
-        for _ in _CHUNK_RANGE:
-            time.sleep(_DELAY_PER_CHUNK)
-            _cpu_burn(_CPU_PER_CHUNK)
-        start_response("200 OK", _HEADERS)
-        return [_BODY]
-elif _DELAY > 0 and _CPU > 0:
-    def _bench(environ, start_response):
-        time.sleep(_DELAY)
-        _cpu_burn(_CPU)
-        start_response("200 OK", _HEADERS)
-        return [_BODY]
-elif _DELAY > 0:
-    def _bench(environ, start_response):
-        time.sleep(_DELAY)
-        start_response("200 OK", _HEADERS)
-        return [_BODY]
-elif _CPU > 0:
-    def _bench(environ, start_response):
-        _cpu_burn(_CPU)
-        start_response("200 OK", _HEADERS)
-        return [_BODY]
+def _sample_lognormal(target_mean, sigma):
+    """Draw a positive sample whose expectation equals target_mean.
+
+    For X ~ LogNormal(mu, sigma), E[X] = exp(mu + sigma^2/2), so we pick
+    mu accordingly. Sigma=0 (or target_mean=0) collapses to the fixed
+    value. Extreme outliers in the right tail are clamped at 10x the
+    target to avoid pathological stalls on rare draws.
+    """
+    if target_mean <= 0 or sigma <= 0:
+        return target_mean
+    mu = math.log(target_mean) - (sigma * sigma) / 2.0
+    sample = random.lognormvariate(mu, sigma)
+    ceiling = target_mean * 10.0
+    if sample > ceiling:
+        sample = ceiling
+    return sample
+
+
+if _DISTRIBUTION == "lognormal":
+    def _per_request_times():
+        return (_sample_lognormal(_DELAY, _IO_SIGMA),
+                _sample_lognormal(_CPU, _CPU_SIGMA))
 else:
-    def _bench(environ, start_response):
-        start_response("200 OK", _HEADERS)
-        return [_BODY]
+    def _per_request_times():
+        return (_DELAY, _CPU)
+
+
+def _bench(environ, start_response):
+    delay, cpu = _per_request_times()
+    if delay > 0 and cpu > 0 and _CHUNKS > 1:
+        d_per = delay / _CHUNKS
+        c_per = cpu / _CHUNKS
+        for _ in range(_CHUNKS):
+            time.sleep(d_per)
+            _cpu_burn(c_per)
+    elif delay > 0 and cpu > 0:
+        time.sleep(delay)
+        _cpu_burn(cpu)
+    elif delay > 0:
+        time.sleep(delay)
+    elif cpu > 0:
+        _cpu_burn(cpu)
+    start_response("200 OK", _HEADERS)
+    return [_BODY]
 
 
 def _metrics_reset(environ, start_response):
