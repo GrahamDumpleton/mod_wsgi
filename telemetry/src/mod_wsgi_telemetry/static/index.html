@@ -197,6 +197,10 @@ const COLORS = ["#4fc3f7","#ff8a65","#81c784","#ba68c8","#fff176","#4db6ac","#e5
 // focused on recent activity.
 const LINE_WINDOW_SEC = 120;
 const SAMPLE_RETENTION_SEC = 600;
+// A process disappears from the sidebar if we haven't received a sample
+// in this many seconds. Default telemetry interval is 1s, so 10s leaves
+// ample margin for jitter while still hiding dead workers promptly.
+const STALE_PROCESS_SEC = 10;
 
 const state = {
   processes: new Map(),      // pid -> { color, samples: [{t, fields}] }
@@ -227,6 +231,11 @@ function isHidden(p) {
   const hideIdle = document.getElementById("hide_idle").checked;
   return hideIdle && isEmbedded(p) && !hasAnyRequestActivity(p);
 }
+function isStale(p) {
+  const last = p.samples[p.samples.length - 1];
+  if (!last) return true;
+  return (Date.now() / 1000 - last.t) > STALE_PROCESS_SEC;
+}
 
 function addSample(s) {
   let p = state.processes.get(s.pid);
@@ -244,8 +253,9 @@ function addSample(s) {
 function renderProcs() {
   const el = document.getElementById("procs");
   const pids = [...state.processes.keys()].sort((a, b) => a - b);
-  const visible = pids.filter(pid => !isHidden(state.processes.get(pid)));
-  const hiddenCount = pids.length - visible.length;
+  const live = pids.filter(pid => !isStale(state.processes.get(pid)));
+  const visible = live.filter(pid => !isHidden(state.processes.get(pid)));
+  const hiddenCount = live.length - visible.length;
   el.innerHTML = visible.map(pid => {
     const p = state.processes.get(pid);
     const last = p.samples[p.samples.length - 1];
