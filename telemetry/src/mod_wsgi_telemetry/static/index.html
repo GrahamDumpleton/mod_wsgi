@@ -42,10 +42,8 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    cursor: pointer;
     user-select: none;
   }
-  header .filters input { margin: 0; }
   header .conn {
     padding: 2px 8px;
     border-radius: 3px;
@@ -163,9 +161,11 @@
 <header>
   <h1>mod_wsgi telemetry</h1>
   <div class="stats" id="stats">0 samples</div>
-  <label class="filters" title="Hide embedded-mode processes that have had no requests in the rolling window. Daemon-group processes are never hidden.">
-    <input type="checkbox" id="hide_idle" checked>
-    Hide idle embedded
+  <label class="filters" title="Show only processes from the selected daemon group. '(embedded)' selects WSGI applications running inside Apache MPM children.">
+    Daemon group:
+    <select id="group_filter" class="window-picker">
+      <option value="*">All</option>
+    </select>
   </label>
   <div class="conn bad" id="conn">disconnected</div>
 </header>
@@ -247,25 +247,52 @@ function colorFor(pid) {
 
 // A process counts as "embedded" when it did not send a daemon_group
 // field — i.e. it runs inside an Apache MPM child rather than a WSGI
-// daemon process. "Idle" means no sample in the rolling window reported
-// any requests.
-function isEmbedded(p) {
-  return !p.daemon_group;
-}
-function hasAnyRequestActivity(p) {
-  for (const s of p.samples) {
-    if ((s.fields.request_count || 0) > 0) return true;
-  }
-  return false;
+// daemon process. The group filter treats "" (empty) as the embedded
+// group and "*" as the wildcard that selects every process.
+function groupKey(p) {
+  return p.daemon_group || "";
 }
 function isHidden(p) {
-  const hideIdle = document.getElementById("hide_idle").checked;
-  return hideIdle && isEmbedded(p) && !hasAnyRequestActivity(p);
+  const sel = document.getElementById("group_filter").value;
+  if (!sel || sel === "*") return false;
+  return groupKey(p) !== sel;
 }
 function isStale(p) {
   const last = p.samples[p.samples.length - 1];
   if (!last) return true;
   return (Date.now() / 1000 - last.t) > STALE_PROCESS_SEC;
+}
+
+// Rebuild the group filter dropdown from the set of groups currently
+// present across live processes. Preserves the user's selection when the
+// option set changes; falls back to "All" if the selected group no
+// longer has any live processes.
+function rebuildGroupFilter() {
+  const select = document.getElementById("group_filter");
+  const current = select.value || "*";
+  const groups = new Set();
+  for (const p of state.processes.values()) {
+    if (!isStale(p)) groups.add(groupKey(p));
+  }
+  const sorted = [...groups].sort((a, b) => {
+    if (a === "") return -1;
+    if (b === "") return 1;
+    return a.localeCompare(b);
+  });
+  const wanted = ["*", ...sorted];
+  const existing = [...select.options].map(o => o.value);
+  const same = existing.length === wanted.length
+    && existing.every((v, i) => v === wanted[i]);
+  if (same) return;
+  select.innerHTML = "";
+  for (const val of wanted) {
+    const opt = document.createElement("option");
+    opt.value = val;
+    opt.textContent = val === "*" ? "All"
+      : val === "" ? "(embedded)" : val;
+    select.appendChild(opt);
+  }
+  select.value = wanted.includes(current) ? current : "*";
 }
 
 function addSample(s) {
@@ -302,7 +329,7 @@ function renderProcs() {
   }).join("");
   if (hiddenCount > 0) {
     el.innerHTML += `<div class="meta" style="margin-top:8px;color:var(--muted);font-size:11px">
-      ${hiddenCount} idle embedded hidden</div>`;
+      ${hiddenCount} filtered out</div>`;
   }
   document.getElementById("stats").textContent =
     `${state.totalReceived} samples · ${state.processes.size} processes · ${state.decodeErrors} errors`;
@@ -570,6 +597,7 @@ function setLive(id, text) {
 }
 
 function redraw() {
+  rebuildGroupFilter();
   renderProcs();
 
   const rps = drawChart(document.getElementById("c_rps"), f => f.request_throughput);
@@ -642,7 +670,7 @@ function connect() {
 connect();
 setInterval(redraw, 500);
 window.addEventListener("resize", redraw);
-document.getElementById("hide_idle").addEventListener("change", redraw);
+document.getElementById("group_filter").addEventListener("change", redraw);
 document.getElementById("dist_window").addEventListener("change", redraw);
 document.getElementById("dist_field").addEventListener("change", redraw);
 
