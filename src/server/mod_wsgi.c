@@ -357,20 +357,6 @@ static void *wsgi_merge_dir_config(apr_pool_t *p, void *base_conf,
     return config;
 }
 
-/* Error reporting. */
-
-void wsgi_log_script_error(request_rec *r, const char *e, const char *n)
-{
-    char *message = NULL;
-
-    if (!n)
-        n = r->filename;
-
-    message = apr_psprintf(r->pool, "%s: %s", e, n);
-
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "%s", message);
-}
-
 /* Handler for the translate name phase. */
 
 static long wsgi_alias_matches(const char *uri, const char *alias_fakename)
