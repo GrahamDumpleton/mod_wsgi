@@ -40,6 +40,7 @@ lib
 .tox
 .pytest_cache
 httpd-test*
+httpd-benchmark
 
 # Documentation build output
 docs/_build

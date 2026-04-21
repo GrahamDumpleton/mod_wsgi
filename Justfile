@@ -34,6 +34,7 @@ clean:
     rm -rf .venv
     rm -rf httpd-test
     rm -rf httpd-tests
+    rm -rf httpd-benchmark
     rm -f Makefile
 
 # Run test builds across all supported Python versions.
