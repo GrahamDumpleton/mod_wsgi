@@ -422,6 +422,10 @@ ExtendedStatus On
 
 WSGIServerMetrics %(server_metrics_flag)s
 
+<IfDefine MOD_WSGI_TELEMETRY>
+WSGITelemetryReporter %(telemetry_target)s interval=%(telemetry_interval)s
+</IfDefine>
+
 <IfDefine MOD_WSGI_SERVER_STATUS>
 <Location /server-status>
     SetHandler server-status
@@ -2268,6 +2272,18 @@ add_option('all', '--server-metrics', action='store_true',
         'metrics will be available within the WSGI application. '
         'Defaults to being disabled.')
 
+add_option('all', '--telemetry-target', metavar='TARGET',
+        default=None, help='Target for the telemetry reporter thread. '
+        'Enables WSGITelemetryReporter in the generated config. Use '
+        '"unix:/path/to/socket" for a local datagram socket (same-host '
+        'ingester) or "udp:host:port" for a remote ingester. Off by '
+        'default.')
+
+add_option('all', '--telemetry-interval', type='float', default=1.0,
+        metavar='SECONDS', help='Telemetry reporter sampling interval '
+        'in seconds. Only applies when --telemetry-target is set. '
+        'Defaults to %default.')
+
 add_option('all', '--server-status', action='store_true',
         default=False, help='Flag indicating whether web server status '
         'will be available at the /server-status sub URL. Defaults to '
@@ -2926,6 +2942,14 @@ def _cmd_setup_server(command, args, options):
     else:
         options['server_metrics_flag'] = 'Off'
 
+    if options['telemetry_target']:
+        target = options['telemetry_target']
+        if not (target.startswith('unix:') or target.startswith('udp:')):
+            raise ValueError(
+                "--telemetry-target must be 'unix:/path' or 'udp:host:port'")
+    else:
+        options['telemetry_target'] = ''
+
     if options['handler_scripts']:
         handler_scripts = []
         for extension, script in options['handler_scripts']:
@@ -3256,6 +3280,8 @@ def _cmd_setup_server(command, args, options):
     if options['server_status']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_SERVER_METRICS')
         options['httpd_arguments_list'].append('-DMOD_WSGI_SERVER_STATUS')
+    if options['telemetry_target']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_TELEMETRY')
     if options['directory_index']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_DIRECTORY_INDEX')
     if options['directory_listing']:

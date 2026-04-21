@@ -25,6 +25,7 @@
 #include "wsgi_apache.h"
 
 #include "wsgi_thread.h"
+#include "wsgi_telemetry.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -43,6 +44,11 @@ extern void wsgi_end_request(void);
 extern void wsgi_record_request_times(apr_time_t request_start,
                                       apr_time_t queue_start, apr_time_t daemon_start,
                                       apr_time_t application_start, apr_time_t application_finish);
+
+extern int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out);
+
+extern void wsgi_telemetry_start_reporter(apr_pool_t *pool);
+extern void wsgi_telemetry_stop_reporter(void);
 
 extern PyMethodDef wsgi_server_metrics_method[];
 

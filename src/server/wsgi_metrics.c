@@ -26,6 +26,7 @@
 #include "wsgi_memory.h"
 #include "wsgi_logger.h"
 #include "wsgi_thread.h"
+#include "wsgi_telemetry.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -247,6 +248,240 @@ void wsgi_end_request(void)
     }
 
     wsgi_utilization_time(-1, NULL);
+}
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * C-native interval snapshot for the telemetry reporter thread. Reads the
+ * same aggregation globals as wsgi_request_metrics() but builds no Python
+ * objects, so it does not require the GIL. Maintains its own per-caller
+ * state (telemetry_*) so it does not interfere with the Python accessor's
+ * sampling window.
+ */
+
+int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
+{
+    static double telemetry_start_time = 0.0;
+    static double telemetry_start_request_busy_time = 0.0;
+    static apr_uint64_t telemetry_start_request_count = 0;
+    static double telemetry_start_cpu_user_time = 0.0;
+    static double telemetry_start_cpu_system_time = 0.0;
+
+    static int telemetry_request_threads_maximum = 0;
+    static int *telemetry_request_threads_buckets = NULL;
+
+    apr_time_t stop_time;
+    double stop_request_busy_time = 0.0;
+    apr_uint64_t stop_request_count = 0;
+    double sample_period = 0.0;
+    double request_busy_time = 0.0;
+    apr_uint64_t interval_requests = 0;
+
+    double server_time_total = 0.0;
+    double queue_time_total = 0.0;
+    double daemon_time_total = 0.0;
+    double application_time_total = 0.0;
+
+    int i;
+    int threads_active = 0;
+
+#ifdef HAVE_TIMES
+    struct tms tmsbuf;
+    static double tick = 0.0;
+
+    if (!tick) {
+#ifdef _SC_CLK_TCK
+        tick = sysconf(_SC_CLK_TCK);
+#else
+        tick = HZ;
+#endif
+    }
+#endif
+
+    if (!out)
+        return 0;
+
+    memset(out, 0, sizeof(*out));
+
+    if (!telemetry_request_threads_maximum) {
+        int is_threaded = 0;
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+        if (wsgi_daemon_process) {
+            telemetry_request_threads_maximum =
+                wsgi_daemon_process->group->threads;
+        }
+        else {
+            ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
+            if (is_threaded != AP_MPMQ_NOT_SUPPORTED) {
+                ap_mpm_query(AP_MPMQ_MAX_THREADS,
+                             &telemetry_request_threads_maximum);
+            }
+        }
+#else
+        ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
+        if (is_threaded != AP_MPMQ_NOT_SUPPORTED) {
+            ap_mpm_query(AP_MPMQ_MAX_THREADS,
+                         &telemetry_request_threads_maximum);
+        }
+#endif
+
+        if (telemetry_request_threads_maximum <= 0)
+            telemetry_request_threads_maximum = 1;
+
+        telemetry_request_threads_buckets = (int *)apr_pcalloc(
+            wsgi_server_config->pool,
+            telemetry_request_threads_maximum *
+                sizeof(telemetry_request_threads_buckets[0]));
+    }
+
+    stop_time = apr_time_now();
+    stop_request_busy_time = wsgi_utilization_time(0, &stop_request_count);
+
+    /* First call seeds counters and returns a not-yet-seeded sample. */
+    if (!telemetry_start_time) {
+        telemetry_start_time = stop_time;
+        telemetry_start_request_busy_time = stop_request_busy_time;
+        telemetry_start_request_count = stop_request_count;
+
+#ifdef HAVE_TIMES
+        times(&tmsbuf);
+        telemetry_start_cpu_user_time = tmsbuf.tms_utime / tick;
+        telemetry_start_cpu_system_time = tmsbuf.tms_stime / tick;
+#endif
+
+        apr_thread_mutex_lock(wsgi_monitor_lock);
+
+        wsgi_sample_requests = 0;
+        wsgi_server_time_total = 0.0;
+        wsgi_queue_time_total = 0.0;
+        wsgi_daemon_time_total = 0.0;
+        wsgi_application_time_total = 0.0;
+
+        memset(&wsgi_server_time_buckets, 0, sizeof(wsgi_server_time_buckets));
+        memset(&wsgi_queue_time_buckets, 0, sizeof(wsgi_queue_time_buckets));
+        memset(&wsgi_daemon_time_buckets, 0, sizeof(wsgi_daemon_time_buckets));
+        memset(&wsgi_application_time_buckets, 0,
+               sizeof(wsgi_application_time_buckets));
+        if (wsgi_request_threads_buckets) {
+            memset(wsgi_request_threads_buckets, 0,
+                   telemetry_request_threads_maximum *
+                       sizeof(wsgi_request_threads_buckets[0]));
+        }
+
+        wsgi_request_metrics_enabled = 1;
+
+        apr_thread_mutex_unlock(wsgi_monitor_lock);
+
+        out->seeded = 0;
+        return 1;
+    }
+
+    out->seeded = 1;
+
+    sample_period = apr_time_sec((double)stop_time) -
+                    apr_time_sec((double)telemetry_start_time);
+    if (sample_period <= 0.0)
+        sample_period = 1e-9;  /* avoid divide by zero */
+
+    out->sample_period = sample_period;
+
+#ifdef HAVE_TIMES
+    times(&tmsbuf);
+    {
+        double stop_user = tmsbuf.tms_utime / tick;
+        double stop_system = tmsbuf.tms_stime / tick;
+        double user_rate = (stop_user - telemetry_start_cpu_user_time) /
+                           sample_period;
+        double system_rate = (stop_system - telemetry_start_cpu_system_time) /
+                             sample_period;
+
+        out->cpu_user_utilization = user_rate;
+        out->cpu_system_utilization = system_rate;
+        out->cpu_utilization = user_rate + system_rate;
+
+        telemetry_start_cpu_user_time = stop_user;
+        telemetry_start_cpu_system_time = stop_system;
+    }
+#endif
+
+    out->memory_rss = (uint64_t)wsgi_get_current_memory_RSS();
+    out->memory_max_rss = (uint64_t)wsgi_get_peak_memory_RSS();
+
+    out->request_threads_maximum = (uint32_t)telemetry_request_threads_maximum;
+    out->request_threads_started = (uint32_t)wsgi_request_threads;
+
+    request_busy_time = stop_request_busy_time -
+                        telemetry_start_request_busy_time;
+    out->capacity_utilization = request_busy_time / sample_period /
+                                telemetry_request_threads_maximum;
+
+    out->request_count = stop_request_count - telemetry_start_request_count;
+    out->request_throughput = (sample_period > 0) ?
+        (double)out->request_count / sample_period : 0.0;
+
+    telemetry_start_time = stop_time;
+    telemetry_start_request_busy_time = stop_request_busy_time;
+    telemetry_start_request_count = stop_request_count;
+
+    apr_thread_mutex_lock(wsgi_monitor_lock);
+
+    interval_requests = wsgi_sample_requests;
+    server_time_total = wsgi_server_time_total;
+    queue_time_total = wsgi_queue_time_total;
+    daemon_time_total = wsgi_daemon_time_total;
+    application_time_total = wsgi_application_time_total;
+
+    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++) {
+        out->server_time_buckets[i] = wsgi_server_time_buckets[i];
+        out->queue_time_buckets[i] = wsgi_queue_time_buckets[i];
+        out->daemon_time_buckets[i] = wsgi_daemon_time_buckets[i];
+        out->application_time_buckets[i] = wsgi_application_time_buckets[i];
+    }
+
+    if (wsgi_request_threads_buckets) {
+        for (i = 0; i < telemetry_request_threads_maximum; i++) {
+            if (wsgi_request_threads_buckets[i])
+                threads_active++;
+        }
+    }
+
+    wsgi_sample_requests = 0;
+    wsgi_server_time_total = 0.0;
+    wsgi_queue_time_total = 0.0;
+    wsgi_daemon_time_total = 0.0;
+    wsgi_application_time_total = 0.0;
+
+    memset(&wsgi_server_time_buckets, 0, sizeof(wsgi_server_time_buckets));
+    memset(&wsgi_queue_time_buckets, 0, sizeof(wsgi_queue_time_buckets));
+    memset(&wsgi_daemon_time_buckets, 0, sizeof(wsgi_daemon_time_buckets));
+    memset(&wsgi_application_time_buckets, 0,
+           sizeof(wsgi_application_time_buckets));
+
+    if (wsgi_request_threads_buckets) {
+        memset(wsgi_request_threads_buckets, 0,
+               telemetry_request_threads_maximum *
+                   sizeof(wsgi_request_threads_buckets[0]));
+    }
+
+    apr_thread_mutex_unlock(wsgi_monitor_lock);
+
+    out->request_threads_active = (uint32_t)threads_active;
+
+    if (interval_requests) {
+        out->server_time = server_time_total / interval_requests;
+        out->application_time = application_time_total / interval_requests;
+#if defined(MOD_WSGI_WITH_DAEMONS)
+        if (wsgi_daemon_process) {
+            out->queue_time = queue_time_total / interval_requests;
+            out->daemon_time = daemon_time_total / interval_requests;
+            out->has_daemon_timing = 1;
+        }
+#endif
+    }
+
+    return 1;
 }
 
 /* ------------------------------------------------------------------------- */

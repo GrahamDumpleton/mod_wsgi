@@ -26,6 +26,7 @@ apxs_config.py
 
 # Python bytecode
 *.pyc
+__pycache__
 
 # Python virtual environments
 .Python
@@ -37,6 +38,7 @@ lib
 
 # Testing
 .tox
+.pytest_cache
 httpd-test*
 
 # Documentation build output

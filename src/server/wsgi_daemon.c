@@ -2529,6 +2529,10 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                                daemon, p);
     }
 
+    /* Start telemetry reporter if configured. */
+
+    wsgi_telemetry_start_reporter(p);
+
     /* Initialise worker stack. */
 
     wsgi_worker_stack = (WSGIThreadStack *)apr_palloc(p,
