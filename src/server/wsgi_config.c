@@ -1541,8 +1541,6 @@ const char *wsgi_set_server_metrics(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-/* ------------------------------------------------------------------------- */
-
 static long wsgi_find_path_info(const char *uri, const char *path_info)
 {
     long lu = strlen(uri);
@@ -2064,7 +2062,7 @@ char *wsgi_original_uri(request_rec *r)
 
     if (r->the_request == NULL)
     {
-        return (char *)apr_pcalloc(r->pool, 1);
+        return apr_pcalloc(r->pool, 1);
     }
 
     first = r->the_request; /* use the request-line */
