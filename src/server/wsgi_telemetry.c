@@ -33,6 +33,7 @@
 #include "wsgi_python.h"
 #include "wsgi_apache.h"
 #include "wsgi_server.h"
+#include "wsgi_daemon.h"
 #include "wsgi_metrics.h"
 #include "wsgi_telemetry.h"
 
