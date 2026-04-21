@@ -2,6 +2,8 @@
 autom4te.cache
 config.log
 config.status
+configure~
+configure.ac~
 Makefile
 
 # Libtool artifacts
