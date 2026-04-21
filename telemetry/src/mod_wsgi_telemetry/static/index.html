@@ -94,6 +94,8 @@
     border-radius: 4px;
     padding: 10px;
   }
+  .chart.wide { grid-column: 1 / -1; }
+  .chart canvas.tall { height: 220px; }
   .chart h3 {
     margin: 0 0 4px;
     font-size: 13px;
@@ -115,6 +117,17 @@
     color: var(--fg);
   }
   .chart .live .label { color: var(--muted); margin-right: 4px; }
+  .window-picker {
+    background: #1a1a1a;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 4px;
+    margin-left: 4px;
+    font-size: 11px;
+    font-family: inherit;
+  }
+  .window-picker:hover { border-color: var(--accent); }
   canvas {
     display: block;
     width: 100%;
@@ -158,12 +171,32 @@
     <div class="chart"><h3>Slow + aborted requests</h3>
       <div class="header-row"><div class="unit">count (sum this interval)</div><div class="live" id="live_sa"></div></div>
       <canvas id="c_sa"></canvas></div>
+    <div class="chart wide"><h3>Application time distribution</h3>
+      <div class="header-row">
+        <div class="unit">log2 buckets, 5ms..&gt;40s &mdash; summed across visible processes over last
+          <select id="dist_window" class="window-picker">
+            <option value="10">10s</option>
+            <option value="30">30s</option>
+            <option value="60">1m</option>
+            <option value="120" selected>2m</option>
+            <option value="300">5m</option>
+            <option value="600">10m</option>
+          </select>
+        </div>
+        <div class="live" id="live_dist"></div>
+      </div>
+      <canvas id="c_dist" class="tall"></canvas></div>
   </section>
 </main>
 
 <script>
 const COLORS = ["#4fc3f7","#ff8a65","#81c784","#ba68c8","#fff176","#4db6ac","#e57373","#9575cd"];
-const WINDOW_SEC = 120;
+// Line charts always show the most recent LINE_WINDOW_SEC. Samples are
+// retained for up to SAMPLE_RETENTION_SEC so the distribution panel's
+// window picker can reach 10 minutes even though the line charts stay
+// focused on recent activity.
+const LINE_WINDOW_SEC = 120;
+const SAMPLE_RETENTION_SEC = 600;
 
 const state = {
   processes: new Map(),      // pid -> { color, samples: [{t, fields}] }
@@ -204,7 +237,7 @@ function addSample(s) {
   p.hostname = s.fields.hostname || p.hostname;
   p.daemon_group = s.fields.daemon_group || p.daemon_group;
   p.samples.push({ t: s.stamp_us / 1e6, fields: s.fields, seq: s.seq });
-  const cutoff = (s.stamp_us / 1e6) - WINDOW_SEC;
+  const cutoff = (s.stamp_us / 1e6) - SAMPLE_RETENTION_SEC;
   while (p.samples.length && p.samples[0].t < cutoff) p.samples.shift();
 }
 
@@ -252,6 +285,159 @@ function fmt(v, precision) {
   return v.toFixed(p);
 }
 
+// Bucket scheme from wsgi_record_time_in_buckets in wsgi_metrics.c.
+// Indices 0..13 are "<= threshold" where threshold starts at 5ms and
+// doubles; index 14 is the overflow (> 40.96s). Index 15 is unused.
+const BUCKET_LABELS = ["5", "10", "20", "40", "80", "160", "320", "640",
+                       "1.3k", "2.6k", "5k", "10k", "20k", "41k", ">41k"];
+const BUCKET_UPPER_MS = [5, 10, 20, 40, 80, 160, 320, 640,
+                         1280, 2560, 5120, 10240, 20480, 40960, Infinity];
+const N_BUCKETS = BUCKET_LABELS.length;
+
+function aggregateBuckets(fieldName, windowSec) {
+  const agg = new Array(N_BUCKETS).fill(0);
+  const cutoff = windowSec ? (Date.now() / 1000 - windowSec) : 0;
+  for (const [pid, p] of state.processes) {
+    if (isHidden(p)) continue;
+    for (const s of p.samples) {
+      if (s.t < cutoff) continue;
+      const buckets = s.fields[fieldName];
+      if (!buckets) continue;
+      for (let i = 0; i < N_BUCKETS; i++) {
+        agg[i] += buckets[i] || 0;
+      }
+    }
+  }
+  return agg;
+}
+
+function bucketPercentileMs(hist, pct) {
+  const total = hist.reduce((a, b) => a + b, 0);
+  if (total === 0) return null;
+  const target = total * pct;
+  let cum = 0;
+  for (let i = 0; i < hist.length; i++) {
+    cum += hist[i];
+    if (cum >= target) return BUCKET_UPPER_MS[i];
+  }
+  return null;
+}
+
+function fmtMs(ms) {
+  if (ms === null || ms === undefined) return "—";
+  if (ms === Infinity) return ">41s";
+  if (ms >= 1000) return (ms / 1000).toFixed(1) + "s";
+  return ms + "ms";
+}
+
+function drawHistogram(canvas, hist) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width = canvas.clientWidth * devicePixelRatio;
+  const h = canvas.height = canvas.clientHeight * devicePixelRatio;
+  ctx.clearRect(0, 0, w, h);
+
+  const total = hist.reduce((a, b) => a + b, 0);
+  const maxBucket = Math.max(...hist);
+  if (maxBucket === 0) {
+    ctx.fillStyle = "#555";
+    ctx.font = (11 * devicePixelRatio) + "px -apple-system, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("no data yet", w / 2, h / 2);
+    return { total: 0 };
+  }
+
+  // Layout: reserve space at top for percentile markers, bottom for labels.
+  const padLeft = 46 * devicePixelRatio;
+  const padRight = 12 * devicePixelRatio;
+  const padTop = 18 * devicePixelRatio;
+  const padBottom = 36 * devicePixelRatio;
+  const plotW = w - padLeft - padRight;
+  const plotH = h - padTop - padBottom;
+  const barW = plotW / N_BUCKETS;
+
+  // Y-axis count labels (top and zero).
+  ctx.fillStyle = "#666";
+  ctx.font = (10 * devicePixelRatio) + "px -apple-system, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "top";
+  ctx.fillText(String(maxBucket), padLeft - 6, padTop);
+  ctx.textBaseline = "bottom";
+  ctx.fillText("0", padLeft - 6, padTop + plotH);
+
+  // Bars.
+  for (let i = 0; i < N_BUCKETS; i++) {
+    const barH = (hist[i] / maxBucket) * plotH;
+    if (barH <= 0) continue;
+    ctx.fillStyle = "#4fc3f7";
+    ctx.fillRect(
+      padLeft + i * barW + 2 * devicePixelRatio,
+      padTop + plotH - barH,
+      barW - 4 * devicePixelRatio,
+      barH
+    );
+  }
+
+  // X-axis labels below the bars.
+  ctx.fillStyle = "#888";
+  ctx.font = (9 * devicePixelRatio) + "px -apple-system, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  for (let i = 0; i < N_BUCKETS; i++) {
+    ctx.fillText(BUCKET_LABELS[i],
+      padLeft + i * barW + barW / 2,
+      padTop + plotH + 6 * devicePixelRatio);
+  }
+  ctx.fillText("<= ms", padLeft + plotW / 2,
+    padTop + plotH + 20 * devicePixelRatio);
+
+  // Percentile markers — vertical dashed lines through the bar whose
+  // upper bound contains the percentile. When multiple percentiles fall
+  // into the same bucket, combine into a single marker with a merged
+  // label (e.g. "P50/95/99") using the highest percentile's colour.
+  const marks = [
+    { pct: 0.50, color: "#81c784", label: "P50" },
+    { pct: 0.95, color: "#ff8a65", label: "P95" },
+    { pct: 0.99, color: "#ba68c8", label: "P99" },
+  ];
+  const groups = new Map();
+  for (const m of marks) {
+    const ms = bucketPercentileMs(hist, m.pct);
+    if (ms === null) continue;
+    const idx = BUCKET_UPPER_MS.indexOf(ms);
+    if (!groups.has(idx)) groups.set(idx, []);
+    groups.get(idx).push(m);
+  }
+  for (const [idx, members] of groups) {
+    const x = padLeft + idx * barW + barW / 2;
+    const primary = members[members.length - 1];
+    ctx.strokeStyle = primary.color;
+    ctx.lineWidth = 1 * devicePixelRatio;
+    ctx.setLineDash([3 * devicePixelRatio, 3 * devicePixelRatio]);
+    ctx.beginPath();
+    ctx.moveTo(x, padTop);
+    ctx.lineTo(x, padTop + plotH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Combined label: "P50", "P50/95", or "P50/95/99".
+    const label = members.map((m, i) =>
+      i === 0 ? m.label : m.label.slice(1)
+    ).join("/");
+    ctx.fillStyle = primary.color;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.font = (10 * devicePixelRatio) + "px -apple-system, sans-serif";
+    ctx.fillText(label, x, padTop - 2 * devicePixelRatio);
+  }
+
+  return {
+    total,
+    p50: bucketPercentileMs(hist, 0.5),
+    p95: bucketPercentileMs(hist, 0.95),
+    p99: bucketPercentileMs(hist, 0.99),
+  };
+}
+
 function drawChart(canvas, extract, opts = {}) {
   const ctx = canvas.getContext("2d");
   const w = canvas.width = canvas.clientWidth * devicePixelRatio;
@@ -259,7 +445,7 @@ function drawChart(canvas, extract, opts = {}) {
   ctx.clearRect(0, 0, w, h);
 
   const now = Date.now() / 1000;
-  const tmin = now - WINDOW_SEC;
+  const tmin = now - LINE_WINDOW_SEC;
   const tmax = now;
 
   let vmax = opts.ymin || 0;
@@ -347,6 +533,20 @@ function redraw() {
   const sa = drawChart(document.getElementById("c_sa"),
     f => (f.slow_requests || 0) + (f.aborted_requests || 0));
   setLive("live_sa", `<span class="label">total</span>${fmt(sa.sum, 0)}`);
+
+  const distWindowSec = parseInt(
+    document.getElementById("dist_window").value, 10) || LINE_WINDOW_SEC;
+  const hist = aggregateBuckets("application_time_buckets", distWindowSec);
+  const dist = drawHistogram(document.getElementById("c_dist"), hist);
+  if (dist.total > 0) {
+    setLive("live_dist",
+      `<span class="label">n</span>${dist.total} ` +
+      `<span class="label">p50</span>&lt;=${fmtMs(dist.p50)} ` +
+      `<span class="label">p95</span>&lt;=${fmtMs(dist.p95)} ` +
+      `<span class="label">p99</span>&lt;=${fmtMs(dist.p99)}`);
+  } else {
+    setLive("live_dist", "");
+  }
 }
 
 function setConn(ok, label) {
@@ -381,6 +581,7 @@ connect();
 setInterval(redraw, 500);
 window.addEventListener("resize", redraw);
 document.getElementById("hide_idle").addEventListener("change", redraw);
+document.getElementById("dist_window").addEventListener("change", redraw);
 </script>
 </body>
 </html>
