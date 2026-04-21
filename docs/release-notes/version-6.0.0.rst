@@ -24,6 +24,23 @@ New Features
 Features Changed
 ----------------
 
+* The ``cpu_user_time`` and ``cpu_system_time`` keys in the dict returned
+  by ``mod_wsgi.request_metrics()`` have always been CPU utilization rates
+  (fraction of one CPU core consumed over the sample period), not absolute
+  times, which made their names inconsistent with the identically-named
+  keys in ``mod_wsgi.process_metrics()`` where the values are cumulative
+  CPU seconds since process start. New keys ``cpu_user_utilization`` and
+  ``cpu_system_utilization`` have been added carrying the same values,
+  along with ``cpu_utilization`` for their sum. On multi-core systems
+  these may exceed 1.0, matching the ``top(1)`` convention, and they
+  parallel the existing ``capacity_utilization`` key. The original
+  ``cpu_user_time`` and ``cpu_system_time`` keys are retained as aliases
+  for backwards compatibility but are deprecated and will be removed in a
+  future release. A new ``cpu_time`` key has also been added to
+  ``mod_wsgi.process_metrics()`` and to the ``request_finished`` event
+  payload, providing the pre-computed sum of the corresponding user and
+  system CPU seconds for that scope.
+
 * When a daemon process closes its connection or encounters a read error
   before returning complete response headers, the request now receives a
   ``502 Bad Gateway`` response instead of ``500 Internal Server Error``.

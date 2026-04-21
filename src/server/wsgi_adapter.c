@@ -2678,6 +2678,16 @@ int Adapter_run(AdapterObject *self, PyObject *object)
                     }
                     else
                         goto event_error;
+
+                    value = PyFloat_FromDouble(user_seconds + system_seconds);
+                    if (value)
+                    {
+                        if (PyDict_SetItemString(event, "cpu_time", value) < 0)
+                            goto event_error;
+                        Py_CLEAR(value);
+                    }
+                    else
+                        goto event_error;
                 }
             }
 

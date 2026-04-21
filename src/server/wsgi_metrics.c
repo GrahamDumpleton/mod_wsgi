@@ -282,6 +282,10 @@ WSGI_STATIC_INTERNED_STRING(memory_max_rss);
 WSGI_STATIC_INTERNED_STRING(memory_rss);
 WSGI_STATIC_INTERNED_STRING(cpu_user_time);
 WSGI_STATIC_INTERNED_STRING(cpu_system_time);
+WSGI_STATIC_INTERNED_STRING(cpu_time);
+WSGI_STATIC_INTERNED_STRING(cpu_user_utilization);
+WSGI_STATIC_INTERNED_STRING(cpu_system_utilization);
+WSGI_STATIC_INTERNED_STRING(cpu_utilization);
 WSGI_STATIC_INTERNED_STRING(request_threads);
 WSGI_STATIC_INTERNED_STRING(active_requests);
 WSGI_STATIC_INTERNED_STRING(threads);
@@ -343,6 +347,10 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(memory_rss);
         WSGI_CREATE_INTERNED_STRING_ID(cpu_user_time);
         WSGI_CREATE_INTERNED_STRING_ID(cpu_system_time);
+        WSGI_CREATE_INTERNED_STRING_ID(cpu_time);
+        WSGI_CREATE_INTERNED_STRING_ID(cpu_user_utilization);
+        WSGI_CREATE_INTERNED_STRING_ID(cpu_system_utilization);
+        WSGI_CREATE_INTERNED_STRING_ID(cpu_utilization);
         WSGI_CREATE_INTERNED_STRING_ID(request_threads);
         WSGI_CREATE_INTERNED_STRING_ID(active_requests);
         WSGI_CREATE_INTERNED_STRING_ID(threads);
@@ -546,27 +554,44 @@ static PyObject *wsgi_request_metrics(void)
     cpu_system_time = ((stop_cpu_system_time - start_cpu_system_time) /
                        sample_period);
 
-    total_cpu_time += cpu_user_time;
-    total_cpu_time += cpu_system_time;
+    total_cpu_time = cpu_user_time + cpu_system_time;
 
     object = PyFloat_FromDouble(cpu_user_time);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(cpu_user_utilization), object);
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(cpu_user_time), object);
     Py_DECREF(object);
 
     object = PyFloat_FromDouble(cpu_system_time);
     PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(cpu_system_utilization), object);
+    PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(cpu_system_time), object);
+    Py_DECREF(object);
+
+    object = PyFloat_FromDouble(total_cpu_time);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(cpu_utilization), object);
     Py_DECREF(object);
 #else
     object = PyFloat_FromDouble(0.0);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(cpu_user_utilization), object);
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(cpu_user_time), object);
     Py_DECREF(object);
 
     object = PyFloat_FromDouble(0.0);
     PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(cpu_system_utilization), object);
+    PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(cpu_system_time), object);
+    Py_DECREF(object);
+
+    object = PyFloat_FromDouble(0.0);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(cpu_utilization), object);
     Py_DECREF(object);
 #endif
 
@@ -831,6 +856,11 @@ static PyObject *wsgi_process_metrics(void)
     object = PyFloat_FromDouble(tmsbuf.tms_stime / tick);
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(cpu_system_time), object);
+    Py_DECREF(object);
+
+    object = PyFloat_FromDouble((tmsbuf.tms_utime + tmsbuf.tms_stime) / tick);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(cpu_time), object);
     Py_DECREF(object);
 #endif
 

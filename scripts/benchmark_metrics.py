@@ -101,8 +101,9 @@ def summarise(seen):
 
     agg_req = 0
     agg_tp = 0.0
-    agg_cpu_u = 0.0
-    agg_cpu_s = 0.0
+    agg_cpu_user = 0.0
+    agg_cpu_system = 0.0
+    agg_cpu = 0.0
     agg_cap = 0.0
     agg_app = 0.0
     agg_q = 0.0
@@ -113,31 +114,33 @@ def summarise(seen):
         d = seen[pid]
         period = d.get("sample_period", 0.0)
         print(f"\n  pid {pid}  (window {period:.2f}s)")
-        print(f"    request_count         : {d.get('request_count', 0)}")
-        print(f"    request_throughput    : {d.get('request_throughput', 0.0):8.1f} rps")
-        print(f"    capacity_utilization  : {d.get('capacity_utilization', 0.0):8.3f}")
-        print(f"    cpu_user_time         : {d.get('cpu_user_time', 0.0):8.3f} cores")
-        print(f"    cpu_system_time       : {d.get('cpu_system_time', 0.0):8.3f} cores")
-        print(f"    memory_rss            : {d.get('memory_rss', 0) / 1024 / 1024:8.1f} MB")
-        print(f"    server_time avg       : {d.get('server_time', 0.0) * 1000:8.3f} ms")
+        print(f"    request_count           : {d.get('request_count', 0)}")
+        print(f"    request_throughput      : {d.get('request_throughput', 0.0):8.1f} rps")
+        print(f"    capacity_utilization    : {d.get('capacity_utilization', 0.0):8.3f}")
+        print(f"    cpu_user_utilization    : {d.get('cpu_user_utilization', 0.0):8.3f} cores")
+        print(f"    cpu_system_utilization  : {d.get('cpu_system_utilization', 0.0):8.3f} cores")
+        print(f"    cpu_utilization         : {d.get('cpu_utilization', 0.0):8.3f} cores")
+        print(f"    memory_rss              : {d.get('memory_rss', 0) / 1024 / 1024:8.1f} MB")
+        print(f"    server_time avg         : {d.get('server_time', 0.0) * 1000:8.3f} ms")
         qt = d.get("queue_time")
         dt = d.get("daemon_time")
         if qt is not None:
-            print(f"    queue_time avg        : {qt * 1000:8.3f} ms")
+            print(f"    queue_time avg          : {qt * 1000:8.3f} ms")
         if dt is not None:
-            print(f"    daemon_time avg       : {dt * 1000:8.3f} ms")
-        print(f"    application_time avg  : {d.get('application_time', 0.0) * 1000:8.3f} ms")
+            print(f"    daemon_time avg         : {dt * 1000:8.3f} ms")
+        print(f"    application_time avg    : {d.get('application_time', 0.0) * 1000:8.3f} ms")
 
         rtb = d.get("request_threads_buckets", [])
-        print(f"    per-thread req counts : {rtb}")
-        print(f"    application_buckets   : {fmt_buckets(d.get('application_time_buckets', []))}")
+        print(f"    per-thread req counts   : {rtb}")
+        print(f"    application_buckets     : {fmt_buckets(d.get('application_time_buckets', []))}")
         if qt is not None:
-            print(f"    queue_time_buckets    : {fmt_buckets(d.get('queue_time_buckets', []))}")
+            print(f"    queue_time_buckets      : {fmt_buckets(d.get('queue_time_buckets', []))}")
 
         agg_req += d.get("request_count", 0)
         agg_tp += d.get("request_throughput", 0.0)
-        agg_cpu_u += d.get("cpu_user_time", 0.0)
-        agg_cpu_s += d.get("cpu_system_time", 0.0)
+        agg_cpu_user += d.get("cpu_user_utilization", 0.0)
+        agg_cpu_system += d.get("cpu_system_utilization", 0.0)
+        agg_cpu += d.get("cpu_utilization", 0.0)
         agg_cap += d.get("capacity_utilization", 0.0)
         agg_app += d.get("application_time", 0.0)
         agg_q += qt or 0.0
@@ -146,17 +149,18 @@ def summarise(seen):
 
     print("")
     print(f"  aggregate")
-    print(f"    sampled requests      : {agg_req}")
-    print(f"    sum throughput        : {agg_tp:8.1f} rps")
-    print(f"    sum cpu_user          : {agg_cpu_u:8.2f} cores")
-    print(f"    sum cpu_system        : {agg_cpu_s:8.2f} cores")
-    print(f"    mean capacity_util    : {agg_cap / n:8.3f}")
-    print(f"    mean application_time : {agg_app / n * 1000:8.3f} ms")
+    print(f"    sampled requests        : {agg_req}")
+    print(f"    sum throughput          : {agg_tp:8.1f} rps")
+    print(f"    sum cpu_user            : {agg_cpu_user:8.2f} cores")
+    print(f"    sum cpu_system          : {agg_cpu_system:8.2f} cores")
+    print(f"    sum cpu_utilization     : {agg_cpu:8.2f} cores")
+    print(f"    mean capacity_util      : {agg_cap / n:8.3f}")
+    print(f"    mean application_time   : {agg_app / n * 1000:8.3f} ms")
     if agg_q:
-        print(f"    mean queue_time       : {agg_q / n * 1000:8.3f} ms")
+        print(f"    mean queue_time         : {agg_q / n * 1000:8.3f} ms")
     if agg_d:
-        print(f"    mean daemon_time      : {agg_d / n * 1000:8.3f} ms")
-    print(f"    mean server_time      : {agg_srv / n * 1000:8.3f} ms")
+        print(f"    mean daemon_time        : {agg_d / n * 1000:8.3f} ms")
+    print(f"    mean server_time        : {agg_srv / n * 1000:8.3f} ms")
     print("")
 
 
