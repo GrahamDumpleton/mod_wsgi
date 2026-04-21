@@ -35,8 +35,18 @@
     color: var(--muted);
     font-size: 12px;
   }
-  header .conn {
+  header .filters {
     margin-left: auto;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  header .filters input { margin: 0; }
+  header .conn {
     padding: 2px 8px;
     border-radius: 3px;
     font-size: 11px;
@@ -118,6 +128,10 @@
 <header>
   <h1>mod_wsgi telemetry</h1>
   <div class="stats" id="stats">0 samples</div>
+  <label class="filters" title="Hide embedded-mode processes that have had no requests in the rolling window. Daemon-group processes are never hidden.">
+    <input type="checkbox" id="hide_idle" checked>
+    Hide idle embedded
+  </label>
   <div class="conn bad" id="conn">disconnected</div>
 </header>
 <main>
@@ -163,6 +177,24 @@ function colorFor(pid) {
   return COLORS[state.processes.size % COLORS.length];
 }
 
+// A process counts as "embedded" when it did not send a daemon_group
+// field — i.e. it runs inside an Apache MPM child rather than a WSGI
+// daemon process. "Idle" means no sample in the rolling window reported
+// any requests.
+function isEmbedded(p) {
+  return !p.daemon_group;
+}
+function hasAnyRequestActivity(p) {
+  for (const s of p.samples) {
+    if ((s.fields.request_count || 0) > 0) return true;
+  }
+  return false;
+}
+function isHidden(p) {
+  const hideIdle = document.getElementById("hide_idle").checked;
+  return hideIdle && isEmbedded(p) && !hasAnyRequestActivity(p);
+}
+
 function addSample(s) {
   let p = state.processes.get(s.pid);
   if (!p) {
@@ -179,7 +211,9 @@ function addSample(s) {
 function renderProcs() {
   const el = document.getElementById("procs");
   const pids = [...state.processes.keys()].sort((a, b) => a - b);
-  el.innerHTML = pids.map(pid => {
+  const visible = pids.filter(pid => !isHidden(state.processes.get(pid)));
+  const hiddenCount = pids.length - visible.length;
+  el.innerHTML = visible.map(pid => {
     const p = state.processes.get(pid);
     const last = p.samples[p.samples.length - 1];
     const f = last ? last.fields : {};
@@ -188,10 +222,14 @@ function renderProcs() {
     const rss = f.memory_rss ? (f.memory_rss / 1048576).toFixed(0) + " MB" : "—";
     return `<div class="proc" style="border-left-color:${p.color}">
       <div class="pid">pid ${pid}</div>
-      <div class="meta">${p.hostname || ""} ${p.daemon_group ? '['+p.daemon_group+']' : ''}</div>
+      <div class="meta">${p.hostname || ""} ${p.daemon_group ? '['+p.daemon_group+']' : '(embedded)'}</div>
       <div class="meta">${rps} rps · cap ${cap} · ${rss}</div>
     </div>`;
   }).join("");
+  if (hiddenCount > 0) {
+    el.innerHTML += `<div class="meta" style="margin-top:8px;color:var(--muted);font-size:11px">
+      ${hiddenCount} idle embedded hidden</div>`;
+  }
   document.getElementById("stats").textContent =
     `${state.totalReceived} samples · ${state.processes.size} processes · ${state.decodeErrors} errors`;
 }
@@ -228,6 +266,7 @@ function drawChart(canvas, extract, opts = {}) {
   const series = [];
   const latest = [];
   for (const [pid, p] of state.processes) {
+    if (isHidden(p)) continue;
     const pts = p.samples
       .filter(s => s.t >= tmin)
       .map(s => [s.t, extract(s.fields)])
@@ -341,6 +380,7 @@ function connect() {
 connect();
 setInterval(redraw, 500);
 window.addEventListener("resize", redraw);
+document.getElementById("hide_idle").addEventListener("change", redraw);
 </script>
 </body>
 </html>
