@@ -25,10 +25,6 @@
 #include "wsgi_logger.h"
 #include "wsgi_version.h"
 
-/* Forward declaration for helper defined in mod_wsgi.c. */
-
-extern char *wsgi_original_uri(request_rec *r);
-
 /* ------------------------------------------------------------------------- */
 
 typedef struct

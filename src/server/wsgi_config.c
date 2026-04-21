@@ -1543,4 +1543,550 @@ const char *wsgi_set_server_metrics(cmd_parms *cmd, void *mconfig,
 
 /* ------------------------------------------------------------------------- */
 
+static long wsgi_find_path_info(const char *uri, const char *path_info)
+{
+    long lu = strlen(uri);
+    long lp = strlen(path_info);
+
+    while (lu-- && lp-- && uri[lu] == path_info[lp])
+    {
+        if (path_info[lp] == '/')
+        {
+            while (lu && uri[lu - 1] == '/')
+                lu--;
+        }
+    }
+
+    if (lu == -1)
+    {
+        lu = 0;
+    }
+
+    while (uri[lu] != '\0' && uri[lu] != '/')
+    {
+        lu++;
+    }
+    return lu;
+}
+
+static const char *wsgi_script_name(request_rec *r)
+{
+    char *script_name = NULL;
+    long path_info_start = 0;
+
+    if (!r->path_info || !*r->path_info)
+    {
+        script_name = apr_pstrdup(r->pool, r->uri);
+    }
+    else
+    {
+        path_info_start = wsgi_find_path_info(r->uri, r->path_info);
+
+        script_name = apr_pstrndup(r->pool, r->uri, path_info_start);
+    }
+
+    if (strstr(script_name, "//"))
+        ap_no2slash(script_name);
+
+    ap_str_tolower(script_name);
+
+    return script_name;
+}
+
+const char *wsgi_process_group(request_rec *r, const char *s)
+{
+    const char *name = NULL;
+    const char *value = NULL;
+
+    const char *h = NULL;
+    apr_port_t p = 0;
+    const char *n = NULL;
+
+    if (!s)
+        return "";
+
+    if (*s != '%')
+        return s;
+
+    name = s + 1;
+
+    if (*name)
+    {
+        if (!strcmp(name, "{GLOBAL}"))
+            return "";
+
+        if (!strcmp(name, "{RESOURCE}"))
+        {
+            h = r->server->server_hostname;
+            p = ap_get_server_port(r);
+            n = wsgi_script_name(r);
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u|%s", h, p, n);
+            else
+                return apr_psprintf(r->pool, "%s|%s", h, n);
+        }
+
+        if (!strcmp(name, "{SERVER}"))
+        {
+            h = r->server->server_hostname;
+            p = ap_get_server_port(r);
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
+
+        if (!strcmp(name, "{HOST}"))
+        {
+            h = r->hostname;
+            p = ap_get_server_port(r);
+
+            /*
+             * The Host header could be empty or absent for HTTP/1.0
+             * or older. In that case fallback to ServerName.
+             */
+
+            if (h == NULL || *h == 0)
+                h = r->server->server_hostname;
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
+
+        if (strstr(name, "{ENV:") == name)
+        {
+            long len = 0;
+
+            name = name + 5;
+            len = strlen(name);
+
+            if (len && name[len - 1] == '}')
+            {
+                name = apr_pstrndup(r->pool, name, len - 1);
+
+                value = apr_table_get(r->notes, name);
+
+                if (!value)
+                    value = apr_table_get(r->subprocess_env, name);
+
+                if (!value)
+                    value = getenv(name);
+
+                if (value)
+                {
+                    if (*value == '%' && strstr(value, "%{ENV:") != value)
+                        return wsgi_process_group(r, value);
+
+                    return value;
+                }
+            }
+        }
+    }
+
+    return s;
+}
+
+const char *wsgi_server_group(request_rec *r, const char *s)
+{
+    const char *name = NULL;
+
+    const char *h = NULL;
+    apr_port_t p = 0;
+
+    if (!s)
+        return "";
+
+    if (*s != '%')
+        return s;
+
+    name = s + 1;
+
+    if (*name)
+    {
+        if (!strcmp(name, "{GLOBAL}"))
+            return "";
+
+        if (!strcmp(name, "{SERVER}"))
+        {
+            h = r->server->server_hostname;
+            p = ap_get_server_port(r);
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
+
+        if (!strcmp(name, "{HOST}"))
+        {
+            h = r->hostname;
+            p = ap_get_server_port(r);
+
+            /*
+             * The Host header could be empty or absent for HTTP/1.0
+             * or older. In that case fallback to ServerName.
+             */
+
+            if (h == NULL || *h == 0)
+                h = r->server->server_hostname;
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
+    }
+
+    return s;
+}
+
+const char *wsgi_application_group(request_rec *r, const char *s)
+{
+    const char *name = NULL;
+    const char *value = NULL;
+
+    const char *h = NULL;
+    apr_port_t p = 0;
+    const char *n = NULL;
+
+    if (!s)
+    {
+        h = r->server->server_hostname;
+        p = ap_get_server_port(r);
+        n = wsgi_script_name(r);
+
+        if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+            return apr_psprintf(r->pool, "%s:%u|%s", h, p, n);
+        else
+            return apr_psprintf(r->pool, "%s|%s", h, n);
+    }
+
+    if (*s != '%')
+        return s;
+
+    name = s + 1;
+
+    if (*name)
+    {
+        if (!strcmp(name, "{GLOBAL}"))
+            return "";
+
+        if (!strcmp(name, "{RESOURCE}"))
+        {
+            h = r->server->server_hostname;
+            p = ap_get_server_port(r);
+            n = wsgi_script_name(r);
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u|%s", h, p, n);
+            else
+                return apr_psprintf(r->pool, "%s|%s", h, n);
+        }
+
+        if (!strcmp(name, "{SERVER}"))
+        {
+            h = r->server->server_hostname;
+            p = ap_get_server_port(r);
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
+
+        if (!strcmp(name, "{HOST}"))
+        {
+            h = r->hostname;
+            p = ap_get_server_port(r);
+
+            /*
+             * The Host header could be empty or absent for HTTP/1.0
+             * or older. In that case fallback to ServerName.
+             */
+
+            if (h == NULL || *h == 0)
+                h = r->server->server_hostname;
+
+            if (p != DEFAULT_HTTP_PORT && p != DEFAULT_HTTPS_PORT)
+                return apr_psprintf(r->pool, "%s:%u", h, p);
+            else
+                return h;
+        }
+
+        if (strstr(name, "{ENV:") == name)
+        {
+            long len = 0;
+
+            name = name + 5;
+            len = strlen(name);
+
+            if (len && name[len - 1] == '}')
+            {
+                name = apr_pstrndup(r->pool, name, len - 1);
+
+                value = apr_table_get(r->notes, name);
+
+                if (!value)
+                    value = apr_table_get(r->subprocess_env, name);
+
+                if (!value)
+                    value = getenv(name);
+
+                if (value)
+                {
+                    if (*value == '%' && strstr(value, "%{ENV:") != value)
+                        return wsgi_application_group(r, value);
+
+                    return value;
+                }
+            }
+        }
+    }
+
+    return s;
+}
+
+const char *wsgi_callable_object(request_rec *r, const char *s)
+{
+    const char *name = NULL;
+    const char *value = NULL;
+
+    if (!s)
+        return "application";
+
+    if (*s != '%')
+        return s;
+
+    name = s + 1;
+
+    if (!*name)
+        return "application";
+
+    if (strstr(name, "{ENV:") == name)
+    {
+        long len = 0;
+
+        name = name + 5;
+        len = strlen(name);
+
+        if (len && name[len - 1] == '}')
+        {
+            name = apr_pstrndup(r->pool, name, len - 1);
+
+            value = apr_table_get(r->notes, name);
+
+            if (!value)
+                value = apr_table_get(r->subprocess_env, name);
+
+            if (!value)
+                value = getenv(name);
+
+            if (value)
+                return value;
+        }
+    }
+
+    return "application";
+}
+
+WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
+{
+    WSGIRequestConfig *config = NULL;
+    WSGIServerConfig *sconfig = NULL;
+    WSGIDirectoryConfig *dconfig = NULL;
+
+    config = (WSGIRequestConfig *)apr_pcalloc(p, sizeof(WSGIRequestConfig));
+
+    dconfig = ap_get_module_config(r->per_dir_config, &wsgi_module);
+    sconfig = ap_get_module_config(r->server->module_config, &wsgi_module);
+
+    config->pool = p;
+
+    config->restrict_process = dconfig->restrict_process;
+
+    if (!config->restrict_process)
+        config->restrict_process = sconfig->restrict_process;
+
+    config->process_group = dconfig->process_group;
+
+    if (!config->process_group)
+        config->process_group = sconfig->process_group;
+
+    config->process_group = wsgi_process_group(r, config->process_group);
+
+    config->application_group = dconfig->application_group;
+
+    if (!config->application_group)
+        config->application_group = sconfig->application_group;
+
+    config->application_group = wsgi_application_group(r,
+                                                       config->application_group);
+
+    config->callable_object = dconfig->callable_object;
+
+    if (!config->callable_object)
+        config->callable_object = sconfig->callable_object;
+
+    config->callable_object = wsgi_callable_object(r, config->callable_object);
+
+    config->dispatch_script = dconfig->dispatch_script;
+
+    if (!config->dispatch_script)
+        config->dispatch_script = sconfig->dispatch_script;
+
+    config->pass_apache_request = dconfig->pass_apache_request;
+
+    if (config->pass_apache_request < 0)
+    {
+        config->pass_apache_request = sconfig->pass_apache_request;
+        if (config->pass_apache_request < 0)
+            config->pass_apache_request = 0;
+    }
+
+    config->pass_authorization = dconfig->pass_authorization;
+
+    if (config->pass_authorization < 0)
+    {
+        config->pass_authorization = sconfig->pass_authorization;
+        if (config->pass_authorization < 0)
+            config->pass_authorization = 0;
+    }
+
+    config->script_reloading = dconfig->script_reloading;
+
+    if (config->script_reloading < 0)
+    {
+        config->script_reloading = sconfig->script_reloading;
+        if (config->script_reloading < 0)
+            config->script_reloading = 1;
+    }
+
+    config->error_override = dconfig->error_override;
+
+    if (config->error_override < 0)
+    {
+        config->error_override = sconfig->error_override;
+        if (config->error_override < 0)
+            config->error_override = 0;
+    }
+
+    config->chunked_request = dconfig->chunked_request;
+
+    if (config->chunked_request < 0)
+    {
+        config->chunked_request = sconfig->chunked_request;
+        if (config->chunked_request < 0)
+            config->chunked_request = 0;
+    }
+
+    config->map_head_to_get = dconfig->map_head_to_get;
+
+    if (config->map_head_to_get < 0)
+    {
+        config->map_head_to_get = sconfig->map_head_to_get;
+        if (config->map_head_to_get < 0)
+            config->map_head_to_get = 2;
+    }
+
+    config->ignore_activity = dconfig->ignore_activity;
+
+    if (config->ignore_activity < 0)
+    {
+        config->ignore_activity = sconfig->ignore_activity;
+        if (config->ignore_activity < 0)
+            config->ignore_activity = 0;
+    }
+
+    config->trusted_proxy_headers = dconfig->trusted_proxy_headers;
+
+    if (!config->trusted_proxy_headers)
+        config->trusted_proxy_headers = sconfig->trusted_proxy_headers;
+
+    config->trusted_proxies = dconfig->trusted_proxies;
+
+    if (!config->trusted_proxies)
+        config->trusted_proxies = sconfig->trusted_proxies;
+
+    config->enable_sendfile = dconfig->enable_sendfile;
+
+    if (config->enable_sendfile < 0)
+    {
+        config->enable_sendfile = sconfig->enable_sendfile;
+        if (config->enable_sendfile < 0)
+            config->enable_sendfile = 0;
+    }
+
+    config->access_script = dconfig->access_script;
+
+    config->auth_user_script = dconfig->auth_user_script;
+
+    config->auth_group_script = dconfig->auth_group_script;
+
+    config->user_authoritative = dconfig->user_authoritative;
+
+    if (config->user_authoritative == -1)
+        config->user_authoritative = 1;
+
+    config->group_authoritative = dconfig->group_authoritative;
+
+    if (config->group_authoritative == -1)
+        config->group_authoritative = 1;
+
+    if (!dconfig->handler_scripts)
+        config->handler_scripts = sconfig->handler_scripts;
+    else if (!sconfig->handler_scripts)
+        config->handler_scripts = dconfig->handler_scripts;
+    else
+    {
+        config->handler_scripts = apr_hash_overlay(p, dconfig->handler_scripts,
+                                                   sconfig->handler_scripts);
+    }
+
+    config->handler_script = "";
+
+    config->daemon_connects = 0;
+    config->daemon_restarts = 0;
+
+    config->request_start = 0;
+    config->queue_start = 0;
+    config->daemon_start = 0;
+
+    return config;
+}
+
+char *wsgi_original_uri(request_rec *r)
+{
+    char *first, *last;
+
+    if (r->the_request == NULL)
+    {
+        return (char *)apr_pcalloc(r->pool, 1);
+    }
+
+    first = r->the_request; /* use the request-line */
+
+    while (*first && !apr_isspace(*first))
+    {
+        ++first; /* skip over the method */
+    }
+    while (apr_isspace(*first))
+    {
+        ++first; /*   and the space(s)   */
+    }
+
+    last = first;
+    while (*last && !apr_isspace(*last))
+    {
+        ++last; /* end at next whitespace */
+    }
+
+    return apr_pstrmemdup(r->pool, first, last - first);
+}
+
+/* ------------------------------------------------------------------------- */
+
 /* vi: set sw=4 expandtab : */
