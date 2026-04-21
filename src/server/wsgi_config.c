@@ -1586,7 +1586,8 @@ static const char *wsgi_script_name(request_rec *r)
     if (strstr(script_name, "//"))
         ap_no2slash(script_name);
 
-    ap_str_tolower(script_name);
+    if (!wsgi_server_config->case_sensitivity)
+        ap_str_tolower(script_name);
 
     return script_name;
 }
