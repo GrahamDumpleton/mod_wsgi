@@ -63,7 +63,7 @@ class ProcessState:
     """Rolling window of samples for one PID."""
     pid: int
     hostname: str = ""
-    daemon_group: str = ""
+    process_group: str = ""
     samples: deque = field(default_factory=lambda: deque(maxlen=600))
     last_seq: int = 0
     drops: int = 0
@@ -122,9 +122,9 @@ class Ingester:
         hostname = sample.fields.get("hostname")
         if isinstance(hostname, bytes):
             state.hostname = hostname.decode("utf-8", errors="replace")
-        group = sample.fields.get("daemon_group")
+        group = sample.fields.get("process_group")
         if isinstance(group, bytes):
-            state.daemon_group = group.decode("utf-8", errors="replace")
+            state.process_group = group.decode("utf-8", errors="replace")
 
         self._broadcast(sample)
         self._gc_stale()
@@ -172,7 +172,7 @@ class Ingester:
                 {
                     "pid": st.pid,
                     "hostname": st.hostname,
-                    "daemon_group": st.daemon_group,
+                    "process_group": st.process_group,
                     "last_seq": st.last_seq,
                     "drops": st.drops,
                     "samples": [self._sample_to_dict(s) for s in st.samples],

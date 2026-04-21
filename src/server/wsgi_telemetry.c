@@ -146,9 +146,9 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
     if (s->hostname[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_HOSTNAME, s->hostname,
                        (uint16_t)strlen(s->hostname));
-    if (s->daemon_group[0])
-        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_DAEMON_GROUP, s->daemon_group,
-                       (uint16_t)strlen(s->daemon_group));
+    if (s->process_group[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_PROCESS_GROUP, s->process_group,
+                       (uint16_t)strlen(s->process_group));
 
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SAMPLE_PERIOD, s->sample_period);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_REQUEST_COUNT, s->request_count);
@@ -243,9 +243,9 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
         /* Populate identity that the snapshot function does not fill. */
         strncpy(sample.hostname, hostname, sizeof(sample.hostname) - 1);
         sample.hostname[sizeof(sample.hostname) - 1] = '\0';
-        strncpy(sample.daemon_group, group_name,
-                sizeof(sample.daemon_group) - 1);
-        sample.daemon_group[sizeof(sample.daemon_group) - 1] = '\0';
+        strncpy(sample.process_group, group_name,
+                sizeof(sample.process_group) - 1);
+        sample.process_group[sizeof(sample.process_group) - 1] = '\0';
 
         if (!sample.seeded)
             continue;  /* first call seeded counters; skip send */

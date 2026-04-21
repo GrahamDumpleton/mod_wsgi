@@ -161,8 +161,8 @@
 <header>
   <h1>mod_wsgi telemetry</h1>
   <div class="stats" id="stats">0 samples</div>
-  <label class="filters" title="Show only processes from the selected daemon group. '(embedded)' selects WSGI applications running inside Apache MPM children.">
-    Daemon group:
+  <label class="filters" title="Show only processes from the selected process group. '(embedded)' selects WSGI applications running inside Apache MPM children.">
+    Process group:
     <select id="group_filter" class="window-picker">
       <option value="*">All</option>
     </select>
@@ -245,12 +245,12 @@ function colorFor(pid) {
   return COLORS[state.processes.size % COLORS.length];
 }
 
-// A process counts as "embedded" when it did not send a daemon_group
+// A process counts as "embedded" when it did not send a process_group
 // field — i.e. it runs inside an Apache MPM child rather than a WSGI
 // daemon process. The group filter treats "" (empty) as the embedded
 // group and "*" as the wildcard that selects every process.
 function groupKey(p) {
-  return p.daemon_group || "";
+  return p.process_group || "";
 }
 function isHidden(p) {
   const sel = document.getElementById("group_filter").value;
@@ -298,11 +298,11 @@ function rebuildGroupFilter() {
 function addSample(s) {
   let p = state.processes.get(s.pid);
   if (!p) {
-    p = { color: colorFor(s.pid), samples: [], hostname: "", daemon_group: "" };
+    p = { color: colorFor(s.pid), samples: [], hostname: "", process_group: "" };
     state.processes.set(s.pid, p);
   }
   p.hostname = s.fields.hostname || p.hostname;
-  p.daemon_group = s.fields.daemon_group || p.daemon_group;
+  p.process_group = s.fields.process_group || p.process_group;
   p.samples.push({ t: s.stamp_us / 1e6, fields: s.fields, seq: s.seq });
   const cutoff = (s.stamp_us / 1e6) - SAMPLE_RETENTION_SEC;
   while (p.samples.length && p.samples[0].t < cutoff) p.samples.shift();
@@ -323,7 +323,7 @@ function renderProcs() {
     const rss = f.memory_rss ? (f.memory_rss / 1048576).toFixed(0) + " MB" : "—";
     return `<div class="proc" style="border-left-color:${p.color}">
       <div class="pid">pid ${pid}</div>
-      <div class="meta">${p.hostname || ""} ${p.daemon_group ? '['+p.daemon_group+']' : '(embedded)'}</div>
+      <div class="meta">${p.hostname || ""} ${p.process_group ? '['+p.process_group+']' : '(embedded)'}</div>
       <div class="meta">${rps} rps · cap ${cap} · ${rss}</div>
     </div>`;
   }).join("");

@@ -38,9 +38,9 @@ def test_roundtrip_primitives():
 
 
 def test_roundtrip_bytes():
-    got = _roundtrip({"hostname": "example.local", "daemon_group": b"grpA"})
+    got = _roundtrip({"hostname": "example.local", "process_group": b"grpA"})
     assert got.fields["hostname"] == b"example.local"
-    assert got.fields["daemon_group"] == b"grpA"
+    assert got.fields["process_group"] == b"grpA"
 
 
 def test_roundtrip_i32_array():

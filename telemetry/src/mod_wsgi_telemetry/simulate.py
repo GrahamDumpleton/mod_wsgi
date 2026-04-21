@@ -60,7 +60,7 @@ def make_sample(pid: int, seq: int, phase: float, interval: float) -> Sample:
 
     fields = {
         "hostname": socket.gethostname(),
-        "daemon_group": "simulated",
+        "process_group": "simulated",
         "sample_period": float(interval),
         "request_count": count,
         "request_throughput": throughput,

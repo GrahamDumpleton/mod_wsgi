@@ -69,7 +69,7 @@
  * Python decoder table in telemetry/src/mod_wsgi_telemetry/wire.py. */
 
 #define WSGI_METRICS_F_HOSTNAME                     1
-#define WSGI_METRICS_F_DAEMON_GROUP                 2
+#define WSGI_METRICS_F_PROCESS_GROUP                2
 
 #define WSGI_METRICS_F_SAMPLE_PERIOD               10
 #define WSGI_METRICS_F_REQUEST_COUNT               11
@@ -114,7 +114,7 @@
 
 typedef struct {
     char     hostname[128];
-    char     daemon_group[64];
+    char     process_group[64];
 
     double   sample_period;
     uint64_t request_count;

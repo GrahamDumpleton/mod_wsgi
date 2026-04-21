@@ -54,7 +54,7 @@ T_I32_ARRAY = 0x05
 FIELDS = {
     # Identity
     1: "hostname",
-    2: "daemon_group",
+    2: "process_group",
 
     # Interval / counting
     10: "sample_period",
