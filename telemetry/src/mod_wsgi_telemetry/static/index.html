@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mod_wsgi telemetry</title>
+<style>
+  :root {
+    --bg: #1a1a1a;
+    --panel: #242424;
+    --border: #333;
+    --fg: #e0e0e0;
+    --muted: #888;
+    --accent: #4fc3f7;
+  }
+  body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  header {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 500;
+  }
+  header .stats {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  header .conn {
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+  .conn.ok { background: #264d2b; color: #a8e6b0; }
+  .conn.bad { background: #4d2626; color: #e6a8a8; }
+  main {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 12px;
+    padding: 12px 20px;
+  }
+  .process-list {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .process-list h2 {
+    font-size: 12px;
+    margin: 0 0 8px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .proc {
+    padding: 6px 8px;
+    margin-bottom: 4px;
+    border-left: 3px solid var(--accent);
+    background: rgba(255,255,255,0.02);
+    font-size: 12px;
+  }
+  .proc .pid { font-weight: 600; }
+  .proc .meta { color: var(--muted); font-size: 11px; }
+  .charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .chart {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+  }
+  .chart h3 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .chart .header-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .chart .unit {
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .chart .live {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+  }
+  .chart .live .label { color: var(--muted); margin-right: 4px; }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 160px;
+    background: #161616;
+    border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>mod_wsgi telemetry</h1>
+  <div class="stats" id="stats">0 samples</div>
+  <div class="conn bad" id="conn">disconnected</div>
+</header>
+<main>
+  <aside class="process-list">
+    <h2>Processes</h2>
+    <div id="procs"></div>
+  </aside>
+  <section class="charts">
+    <div class="chart"><h3>Request throughput</h3>
+      <div class="header-row"><div class="unit">requests / second</div><div class="live" id="live_rps"></div></div>
+      <canvas id="c_rps"></canvas></div>
+    <div class="chart"><h3>Capacity utilization</h3>
+      <div class="header-row"><div class="unit">fraction of worker threads busy</div><div class="live" id="live_cap"></div></div>
+      <canvas id="c_cap"></canvas></div>
+    <div class="chart"><h3>CPU utilization</h3>
+      <div class="header-row"><div class="unit">cores (user + system)</div><div class="live" id="live_cpu"></div></div>
+      <canvas id="c_cpu"></canvas></div>
+    <div class="chart"><h3>Application time</h3>
+      <div class="header-row"><div class="unit">average ms/request</div><div class="live" id="live_app"></div></div>
+      <canvas id="c_app"></canvas></div>
+    <div class="chart"><h3>Memory RSS</h3>
+      <div class="header-row"><div class="unit">MB per process</div><div class="live" id="live_mem"></div></div>
+      <canvas id="c_mem"></canvas></div>
+    <div class="chart"><h3>Slow + aborted requests</h3>
+      <div class="header-row"><div class="unit">count (sum this interval)</div><div class="live" id="live_sa"></div></div>
+      <canvas id="c_sa"></canvas></div>
+  </section>
+</main>
+
+<script>
+const COLORS = ["#4fc3f7","#ff8a65","#81c784","#ba68c8","#fff176","#4db6ac","#e57373","#9575cd"];
+const WINDOW_SEC = 120;
+
+const state = {
+  processes: new Map(),      // pid -> { color, samples: [{t, fields}] }
+  totalReceived: 0,
+  decodeErrors: 0,
+};
+
+function colorFor(pid) {
+  const p = state.processes.get(pid);
+  if (p) return p.color;
+  return COLORS[state.processes.size % COLORS.length];
+}
+
+function addSample(s) {
+  let p = state.processes.get(s.pid);
+  if (!p) {
+    p = { color: colorFor(s.pid), samples: [], hostname: "", daemon_group: "" };
+    state.processes.set(s.pid, p);
+  }
+  p.hostname = s.fields.hostname || p.hostname;
+  p.daemon_group = s.fields.daemon_group || p.daemon_group;
+  p.samples.push({ t: s.stamp_us / 1e6, fields: s.fields, seq: s.seq });
+  const cutoff = (s.stamp_us / 1e6) - WINDOW_SEC;
+  while (p.samples.length && p.samples[0].t < cutoff) p.samples.shift();
+}
+
+function renderProcs() {
+  const el = document.getElementById("procs");
+  const pids = [...state.processes.keys()].sort((a, b) => a - b);
+  el.innerHTML = pids.map(pid => {
+    const p = state.processes.get(pid);
+    const last = p.samples[p.samples.length - 1];
+    const f = last ? last.fields : {};
+    const rps = (f.request_throughput || 0).toFixed(1);
+    const cap = (f.capacity_utilization || 0).toFixed(2);
+    const rss = f.memory_rss ? (f.memory_rss / 1048576).toFixed(0) + " MB" : "—";
+    return `<div class="proc" style="border-left-color:${p.color}">
+      <div class="pid">pid ${pid}</div>
+      <div class="meta">${p.hostname || ""} ${p.daemon_group ? '['+p.daemon_group+']' : ''}</div>
+      <div class="meta">${rps} rps · cap ${cap} · ${rss}</div>
+    </div>`;
+  }).join("");
+  document.getElementById("stats").textContent =
+    `${state.totalReceived} samples · ${state.processes.size} processes · ${state.decodeErrors} errors`;
+}
+
+// Pick a sensible number of decimals given the magnitude of the axis.
+function autoPrecision(v) {
+  const a = Math.abs(v);
+  if (a === 0) return 0;
+  if (a < 0.001) return 5;
+  if (a < 0.01) return 4;
+  if (a < 0.1) return 3;
+  if (a < 1) return 2;
+  if (a < 10) return 1;
+  return 0;
+}
+
+function fmt(v, precision) {
+  if (v === undefined || v === null || Number.isNaN(v)) return "—";
+  const p = precision !== undefined ? precision : autoPrecision(v);
+  return v.toFixed(p);
+}
+
+function drawChart(canvas, extract, opts = {}) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width = canvas.clientWidth * devicePixelRatio;
+  const h = canvas.height = canvas.clientHeight * devicePixelRatio;
+  ctx.clearRect(0, 0, w, h);
+
+  const now = Date.now() / 1000;
+  const tmin = now - WINDOW_SEC;
+  const tmax = now;
+
+  let vmax = opts.ymin || 0;
+  const series = [];
+  const latest = [];
+  for (const [pid, p] of state.processes) {
+    const pts = p.samples
+      .filter(s => s.t >= tmin)
+      .map(s => [s.t, extract(s.fields)])
+      .filter(([_, v]) => v !== undefined && v !== null && !Number.isNaN(v));
+    if (pts.length === 0) continue;
+    for (const [_, v] of pts) if (v > vmax) vmax = v;
+    series.push({ color: p.color, pts });
+    latest.push(pts[pts.length - 1][1]);
+  }
+  if (vmax === 0) vmax = 1;
+  vmax *= 1.1;
+
+  // axes
+  ctx.strokeStyle = "#333";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, h - 1);
+  ctx.lineTo(w, h - 1);
+  ctx.stroke();
+
+  // y-axis labels — adaptive precision
+  const prec = opts.precision !== undefined ? opts.precision : autoPrecision(vmax);
+  ctx.fillStyle = "#666";
+  ctx.font = (10 * devicePixelRatio) + "px -apple-system, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(vmax.toFixed(prec), 4, 4);
+  ctx.textBaseline = "bottom";
+  ctx.fillText((0).toFixed(prec), 4, h - 4);
+
+  const xOf = t => ((t - tmin) / (tmax - tmin)) * w;
+  const yOf = v => h - (v / vmax) * h;
+
+  ctx.lineWidth = 1.5 * devicePixelRatio;
+  for (const s of series) {
+    ctx.strokeStyle = s.color;
+    ctx.beginPath();
+    s.pts.forEach(([t, v], i) => {
+      const x = xOf(t), y = yOf(v);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  // Aggregate stats for the live readout.
+  const sum = latest.reduce((a, b) => a + b, 0);
+  const mean = latest.length ? sum / latest.length : 0;
+  return { latest, mean, sum, max: vmax / 1.1 };
+}
+
+function setLive(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = text;
+}
+
+function redraw() {
+  renderProcs();
+
+  const rps = drawChart(document.getElementById("c_rps"), f => f.request_throughput);
+  setLive("live_rps",
+    `<span class="label">total</span>${fmt(rps.sum, 1)} <span class="label">mean</span>${fmt(rps.mean, 1)} rps`);
+
+  const cap = drawChart(document.getElementById("c_cap"), f => f.capacity_utilization);
+  setLive("live_cap", `<span class="label">mean</span>${fmt(cap.mean)}`);
+
+  const cpu = drawChart(document.getElementById("c_cpu"), f => f.cpu_utilization);
+  setLive("live_cpu",
+    `<span class="label">total</span>${fmt(cpu.sum)} <span class="label">mean</span>${fmt(cpu.mean)} cores`);
+
+  const app = drawChart(document.getElementById("c_app"), f => (f.application_time || 0) * 1000);
+  setLive("live_app", `<span class="label">mean</span>${fmt(app.mean)} ms`);
+
+  const mem = drawChart(document.getElementById("c_mem"), f => (f.memory_rss || 0) / 1048576);
+  setLive("live_mem",
+    `<span class="label">total</span>${fmt(mem.sum, 0)} <span class="label">mean</span>${fmt(mem.mean, 0)} MB`);
+
+  const sa = drawChart(document.getElementById("c_sa"),
+    f => (f.slow_requests || 0) + (f.aborted_requests || 0));
+  setLive("live_sa", `<span class="label">total</span>${fmt(sa.sum, 0)}`);
+}
+
+function setConn(ok, label) {
+  const el = document.getElementById("conn");
+  el.className = "conn " + (ok ? "ok" : "bad");
+  el.textContent = label;
+}
+
+function connect() {
+  const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+  const ws = new WebSocket(url);
+  ws.onopen = () => setConn(true, "connected");
+  ws.onclose = () => { setConn(false, "disconnected, reconnecting…"); setTimeout(connect, 1500); };
+  ws.onerror = () => setConn(false, "error");
+  ws.onmessage = evt => {
+    const msg = JSON.parse(evt.data);
+    if (msg.type === "snapshot") {
+      state.totalReceived = msg.total_received;
+      state.decodeErrors = msg.decode_errors;
+      state.processes.clear();
+      for (const p of msg.processes) {
+        for (const s of p.samples) addSample(s);
+      }
+    } else if (msg.type === "sample") {
+      state.totalReceived += 1;
+      addSample(msg);
+    }
+  };
+}
+
+connect();
+setInterval(redraw, 500);
+window.addEventListener("resize", redraw);
+</script>
+</body>
+</html>
