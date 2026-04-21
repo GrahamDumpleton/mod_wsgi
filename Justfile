@@ -17,6 +17,7 @@ clean:
     rm -rf dist
     rm -rf *.egg-info
     rm -rf httpd-test
+    rm -rf httpd-tests
     rm -rf __pycache__
     rm -rf src/__pycache__
     rm -rf src/server/__pycache__
