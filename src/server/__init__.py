@@ -422,8 +422,12 @@ ExtendedStatus On
 
 WSGIServerMetrics %(server_metrics_flag)s
 
-<IfDefine MOD_WSGI_TELEMETRY>
-WSGITelemetryReporter %(telemetry_target)s interval=%(telemetry_interval)s
+<IfDefine MOD_WSGI_METRICS_SERVICE>
+WSGIMetricsService %(metrics_service)s interval=%(metrics_interval)s
+</IfDefine>
+
+<IfDefine MOD_WSGI_SLOW_REQUESTS>
+WSGISlowRequests %(slow_requests)s
 </IfDefine>
 
 <IfDefine MOD_WSGI_SERVER_STATUS>
@@ -2272,17 +2276,23 @@ add_option('all', '--server-metrics', action='store_true',
         'metrics will be available within the WSGI application. '
         'Defaults to being disabled.')
 
-add_option('all', '--telemetry-target', metavar='TARGET',
-        default=None, help='Target for the telemetry reporter thread. '
-        'Enables WSGITelemetryReporter in the generated config. Use '
+add_option('all', '--metrics-service', metavar='TARGET',
+        default=None, help='Target metrics service to push telemetry to. '
+        'Enables WSGIMetricsService in the generated config. Use '
         '"unix:/path/to/socket" for a local datagram socket (same-host '
         'ingester) or "udp:host:port" for a remote ingester. Off by '
         'default.')
 
-add_option('all', '--telemetry-interval', type='float', default=1.0,
-        metavar='SECONDS', help='Telemetry reporter sampling interval '
-        'in seconds. Only applies when --telemetry-target is set. '
+add_option('all', '--metrics-interval', type='float', default=1.0,
+        metavar='SECONDS', help='Metrics reporter sampling interval '
+        'in seconds. Only applies when --metrics-service is set. '
         'Defaults to %default.')
+
+add_option('all', '--slow-requests', type='float', default=None,
+        metavar='SECONDS', help='Enable slow-request reporting and set '
+        'the threshold in seconds above which a still-running request '
+        'is reported. Generates WSGISlowRequests in the config. Only '
+        'meaningful alongside --metrics-service. Off by default.')
 
 add_option('all', '--server-status', action='store_true',
         default=False, help='Flag indicating whether web server status '
@@ -2942,13 +2952,23 @@ def _cmd_setup_server(command, args, options):
     else:
         options['server_metrics_flag'] = 'Off'
 
-    if options['telemetry_target']:
-        target = options['telemetry_target']
+    if options['metrics_service']:
+        target = options['metrics_service']
         if not (target.startswith('unix:') or target.startswith('udp:')):
             raise ValueError(
-                "--telemetry-target must be 'unix:/path' or 'udp:host:port'")
+                "--metrics-service must be 'unix:/path' or 'udp:host:port'")
     else:
-        options['telemetry_target'] = ''
+        options['metrics_service'] = ''
+
+    if options['slow_requests'] is not None:
+        if options['slow_requests'] < 0:
+            raise ValueError(
+                "--slow-requests threshold must be non-negative")
+        if not options['metrics_service']:
+            raise ValueError(
+                "--slow-requests requires --metrics-service")
+    else:
+        options['slow_requests'] = ''
 
     if options['handler_scripts']:
         handler_scripts = []
@@ -3280,8 +3300,10 @@ def _cmd_setup_server(command, args, options):
     if options['server_status']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_SERVER_METRICS')
         options['httpd_arguments_list'].append('-DMOD_WSGI_SERVER_STATUS')
-    if options['telemetry_target']:
-        options['httpd_arguments_list'].append('-DMOD_WSGI_TELEMETRY')
+    if options['metrics_service']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_METRICS_SERVICE')
+    if options['slow_requests'] != '':
+        options['httpd_arguments_list'].append('-DMOD_WSGI_SLOW_REQUESTS')
     if options['directory_index']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_DIRECTORY_INDEX')
     if options['directory_listing']:

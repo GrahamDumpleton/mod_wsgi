@@ -81,10 +81,134 @@
   }
   .proc .pid { font-weight: 600; }
   .proc .meta { color: var(--muted); font-size: 11px; }
+  .charts-area {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    padding: 6px 14px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--fg); }
+  .tab.active {
+    color: var(--fg);
+    border-bottom-color: var(--accent);
+  }
+  .tab-panel.hidden { display: none; }
   .charts {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
+  }
+  .slow-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+  }
+  .slow-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .slow-panel h3 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .slow-controls {
+    display: flex;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .slow-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .slow-panel .subtitle {
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 8px;
+  }
+  .slow-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .slow-table .col-elapsed { width: 80px; }
+  .slow-table .col-state   { width: 90px; }
+  .slow-table .col-pid     { width: 110px; }
+  .slow-table .col-method  { width: 70px; }
+  .slow-table .col-url     { width: auto; }
+  .slow-table .col-logid   { width: 140px; }
+  .slow-table th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .slow-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid #262626;
+    vertical-align: top;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .slow-table tr.completed td { color: var(--muted); }
+  .slow-table .url {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .slow-table .url-count {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 0 5px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 10px;
+    color: var(--muted);
+    background: rgba(255,255,255,0.03);
+    font-family: inherit;
+  }
+  .slow-table .method {
+    display: inline-block;
+    padding: 0 5px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .slow-table .method-none { color: var(--muted); }
+  .slow-table .state-active { color: #81c784; }
+  .slow-table .state-completed { color: var(--muted); }
+  .slow-empty {
+    color: var(--muted);
+    font-size: 12px;
+    padding: 16px 8px;
+    text-align: center;
   }
   .chart {
     background: var(--panel);
@@ -176,51 +300,103 @@
     <h2>Processes</h2>
     <div id="procs"></div>
   </aside>
-  <section class="charts">
-    <div class="chart"><h3>Request throughput</h3>
-      <div class="header-row"><div class="unit">requests / second</div><div class="live" id="live_rps"></div></div>
-      <canvas id="c_rps"></canvas></div>
-    <div class="chart"><h3>Capacity utilization</h3>
-      <div class="header-row"><div class="unit">fraction of worker threads busy</div><div class="live" id="live_cap"></div></div>
-      <canvas id="c_cap"></canvas></div>
-    <div class="chart"><h3>CPU utilization</h3>
-      <div class="header-row"><div class="unit">cores (user + system)</div><div class="live" id="live_cpu"></div></div>
-      <canvas id="c_cpu"></canvas></div>
-    <div class="chart"><h3>Application time</h3>
-      <div class="header-row"><div class="unit">average ms/request</div><div class="live" id="live_app"></div></div>
-      <canvas id="c_app"></canvas></div>
-    <div class="chart"><h3>Memory RSS</h3>
-      <div class="header-row"><div class="unit">MB per process</div><div class="live" id="live_mem"></div></div>
-      <canvas id="c_mem"></canvas></div>
-    <div class="chart"><h3>Queue time</h3>
-      <div class="header-row"><div class="unit">average ms/request (daemon queue wait)</div><div class="live" id="live_queue"></div></div>
-      <canvas id="c_queue"></canvas></div>
-    <div class="chart wide">
-      <div class="header-row">
-        <h3>Time distribution</h3>
-        <label class="phase-picker">Phase:
-          <select id="dist_field" class="window-picker">
-            <option value="application_time_buckets" selected>application</option>
-            <option value="daemon_time_buckets">daemon</option>
-            <option value="queue_time_buckets">queue</option>
-            <option value="server_time_buckets">server</option>
-          </select>
-        </label>
+  <section class="charts-area">
+    <div class="tabs" id="tabs">
+      <button type="button" class="tab active" data-panel="overview">Overview</button>
+      <button type="button" class="tab" data-panel="slow">Slow requests</button>
+    </div>
+    <div class="tab-panel" id="panel_overview">
+      <div class="charts">
+        <div class="chart"><h3>Request throughput</h3>
+          <div class="header-row"><div class="unit">requests / second</div><div class="live" id="live_rps"></div></div>
+          <canvas id="c_rps"></canvas></div>
+        <div class="chart"><h3>Capacity utilization</h3>
+          <div class="header-row"><div class="unit">fraction of worker threads busy</div><div class="live" id="live_cap"></div></div>
+          <canvas id="c_cap"></canvas></div>
+        <div class="chart"><h3>CPU utilization</h3>
+          <div class="header-row"><div class="unit">cores (user + system)</div><div class="live" id="live_cpu"></div></div>
+          <canvas id="c_cpu"></canvas></div>
+        <div class="chart"><h3>Application time</h3>
+          <div class="header-row"><div class="unit">average ms/request</div><div class="live" id="live_app"></div></div>
+          <canvas id="c_app"></canvas></div>
+        <div class="chart"><h3>Memory RSS</h3>
+          <div class="header-row"><div class="unit">MB per process</div><div class="live" id="live_mem"></div></div>
+          <canvas id="c_mem"></canvas></div>
+        <div class="chart"><h3>Queue time</h3>
+          <div class="header-row"><div class="unit">average ms/request (daemon queue wait)</div><div class="live" id="live_queue"></div></div>
+          <canvas id="c_queue"></canvas></div>
+        <div class="chart wide">
+          <div class="header-row">
+            <h3>Time distribution</h3>
+            <label class="phase-picker">Phase:
+              <select id="dist_field" class="window-picker">
+                <option value="application_time_buckets" selected>application</option>
+                <option value="daemon_time_buckets">daemon</option>
+                <option value="queue_time_buckets">queue</option>
+                <option value="server_time_buckets">server</option>
+              </select>
+            </label>
+          </div>
+          <div class="header-row">
+            <div class="unit">log2 buckets, 5ms..&gt;40s &mdash; summed across visible processes over last
+              <select id="dist_window" class="window-picker">
+                <option value="10">10s</option>
+                <option value="30">30s</option>
+                <option value="60">1m</option>
+                <option value="120" selected>2m</option>
+                <option value="300">5m</option>
+                <option value="600">10m</option>
+              </select>
+            </div>
+            <div class="live" id="live_dist"></div>
+          </div>
+          <canvas id="c_dist" class="tall"></canvas></div>
       </div>
-      <div class="header-row">
-        <div class="unit">log2 buckets, 5ms..&gt;40s &mdash; summed across visible processes over last
-          <select id="dist_window" class="window-picker">
-            <option value="10">10s</option>
-            <option value="30">30s</option>
-            <option value="60">1m</option>
-            <option value="120" selected>2m</option>
-            <option value="300">5m</option>
-            <option value="600">10m</option>
-          </select>
+    </div>
+    <div class="tab-panel hidden" id="panel_slow">
+      <div class="slow-panel">
+        <div class="slow-header">
+          <h3>Slow requests</h3>
+          <div class="slow-controls">
+            <label>State:
+              <select id="slow_state_filter" class="window-picker">
+                <option value="active" selected>Active</option>
+                <option value="completed">Completed</option>
+                <option value="both">Both</option>
+              </select>
+            </label>
+            <label>Per URL:
+              <select id="slow_per_url" class="window-picker">
+                <option value="1" selected>1</option>
+                <option value="3">3</option>
+                <option value="10">10</option>
+                <option value="0">All</option>
+              </select>
+            </label>
+          </div>
         </div>
-        <div class="live" id="live_dist"></div>
+        <div class="subtitle" id="slow_subtitle">sorted slowest first; filtered by selected process group</div>
+        <table class="slow-table">
+          <colgroup>
+            <col class="col-elapsed">
+            <col class="col-state">
+            <col class="col-pid">
+            <col class="col-method">
+            <col class="col-url">
+            <col class="col-logid">
+          </colgroup>
+          <thead><tr>
+            <th>Elapsed</th>
+            <th>State</th>
+            <th>PID / thread</th>
+            <th>Method</th>
+            <th>URL</th>
+            <th>Log ID</th>
+          </tr></thead>
+          <tbody id="slow_tbody"></tbody>
+        </table>
       </div>
-      <canvas id="c_dist" class="tall"></canvas></div>
+    </div>
   </section>
 </main>
 <div class="tooltip" id="tooltip"></div>
@@ -240,9 +416,24 @@ const STALE_PROCESS_SEC = 10;
 
 const state = {
   processes: new Map(),      // pid -> { color, samples: [{t, fields}] }
+  // Slow-request entries keyed by JSON-stringified [pid, log_id] tuple
+  // (or [pid, thread_id, start_stamp_us] when log_id is empty — matches
+  // the ingester's key convention). Each value is { entry, last_seen_ms }
+  // where entry is the same shape the server sends.
+  slowRequests: new Map(),
   totalReceived: 0,
   decodeErrors: 0,
+  activeTab: "overview",
 };
+
+// Floor values for slow-request TTLs (ms). Defensive second layer of
+// age-out: the server already prunes these, but if the browser misses
+// a tick (tab hidden, throttled) we still drop stale rows. Effective
+// per-entry TTL is scaled up by the reporting process's sample_period
+// in gcSlow, so a 10 s reporter interval uses TTL ≥ 30 s and rows
+// don't flicker in and out between heartbeats.
+const SLOW_ACTIVE_TTL_MS = 5000;
+const SLOW_COMPLETED_TTL_MS = 15000;
 
 function colorFor(pid) {
   const p = state.processes.get(pid);
@@ -338,6 +529,150 @@ function renderProcs() {
   }
   document.getElementById("stats").textContent =
     `${state.totalReceived} samples · ${state.processes.size} processes · ${state.decodeErrors} errors`;
+}
+
+// --- Slow-request tracking -----------------------------------------------
+
+function slowKeyFor(entry) {
+  // Match the ingester's keying: prefer (pid, log_id) when log_id is
+  // non-empty, otherwise fall back to (pid, thread_id, start_stamp_us).
+  return entry.log_id
+    ? JSON.stringify([entry.pid, entry.log_id])
+    : JSON.stringify([entry.pid, entry.thread_id, entry.start_stamp_us]);
+}
+
+function upsertSlow(entry) {
+  const key = slowKeyFor(entry);
+  state.slowRequests.set(key, { entry, last_seen_ms: Date.now() });
+}
+
+function gcSlow() {
+  const now = Date.now();
+  for (const [key, rec] of state.slowRequests) {
+    // Derive TTL from the reporting process's telemetry interval, read
+    // off its most recent KIND_REQUEST sample. Falls back to 1 s when
+    // the process isn't known yet.
+    const p = state.processes.get(rec.entry.pid);
+    let spMs = 1000;
+    if (p && p.samples.length > 0) {
+      const sp = p.samples[p.samples.length - 1].fields.sample_period;
+      if (typeof sp === "number" && sp > 0) spMs = sp * 1000;
+    }
+    const ttl = rec.entry.state === 1
+      ? Math.max(SLOW_COMPLETED_TTL_MS, 5 * spMs)
+      : Math.max(SLOW_ACTIVE_TTL_MS, 3 * spMs);
+    if (now - rec.last_seen_ms > ttl) state.slowRequests.delete(key);
+  }
+}
+
+function fmtElapsedMs(us) {
+  const ms = us / 1000;
+  if (ms >= 1000) return (ms / 1000).toFixed(2) + " s";
+  return ms.toFixed(0) + " ms";
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+function slowUrlFor(e) {
+  return `${e.scheme || "http"}://${e.hostname || ""}${e.script_name || ""}${e.path_info || ""}`;
+}
+
+function renderSlowRequests() {
+  const tbody = document.getElementById("slow_tbody");
+  gcSlow();
+
+  const stateFilter = document.getElementById("slow_state_filter").value;
+  const perUrlCap = parseInt(
+    document.getElementById("slow_per_url").value, 10) || 0;
+
+  // Apply process-group + state filter first so grouping counts reflect
+  // only what the user could have seen anyway.
+  const rows = [];
+  for (const { entry } of state.slowRequests.values()) {
+    const p = state.processes.get(entry.pid);
+    if (p && isHidden(p)) continue;
+    if (stateFilter === "active" && entry.state !== 0) continue;
+    if (stateFilter === "completed" && entry.state !== 1) continue;
+    rows.push(entry);
+  }
+
+  // Slowest first.
+  rows.sort((a, b) => b.duration_us - a.duration_us);
+
+  // Per-URL grouping. When perUrlCap > 0, keep the top N slowest per
+  // (method, scheme, host, script_name, path_info) and record the total
+  // hidden count so the first shown row can display an "x N" badge.
+  // When perUrlCap === 0 ("All"), no grouping, no badges.
+  let display = rows;
+  const groupCounts = new Map();
+  if (perUrlCap > 0) {
+    const seen = new Map();
+    display = [];
+    for (const e of rows) {
+      const key = `${e.method || ""}|${slowUrlFor(e)}`;
+      const n = seen.get(key) || 0;
+      groupCounts.set(key, (groupCounts.get(key) || 0) + 1);
+      if (n < perUrlCap) display.push(e);
+      seen.set(key, n + 1);
+    }
+  }
+
+  if (display.length === 0) {
+    tbody.innerHTML =
+      `<tr><td colspan="6" class="slow-empty">no slow requests</td></tr>`;
+    return;
+  }
+
+  // Rank-within-group: for each row we remember which position it occupies
+  // in its group (1 = slowest). All rows in a group carry a "k / N" badge
+  // so each row reads on its own and you can tell at a glance "this is
+  // the 2nd-slowest of 6 stacked up on this URL".
+  const groupRank = new Map();
+
+  tbody.innerHTML = display.slice(0, 200).map(e => {
+    const url = slowUrlFor(e);
+    const key = `${e.method || ""}|${url}`;
+    const total = groupCounts.get(key) || 0;
+    const rank = (groupRank.get(key) || 0) + 1;
+    groupRank.set(key, rank);
+
+    // Always render the badge when grouping is on, even for 1/1, so the
+    // URL column doesn't shift when a group gains a sibling.
+    let badge = "";
+    if (perUrlCap > 0) {
+      const badgeText = `${rank}/${total}`;
+      badge = `<span class="url-count" title="${rank} of ${total} slow requests with this URL">${badgeText}</span>`;
+    }
+    const stateLabel = e.state === 1
+      ? `<span class="state-completed">completed</span>`
+      : `<span class="state-active">active</span>`;
+    const method = e.method
+      ? `<span class="method">${escapeHtml(e.method)}</span>`
+      : `<span class="method-none">—</span>`;
+    const urlEsc = escapeHtml(url);
+    return `<tr class="${e.state === 1 ? 'completed' : ''}">
+      <td>${fmtElapsedMs(e.duration_us)}</td>
+      <td>${stateLabel}</td>
+      <td>${e.pid} / ${e.thread_id || "—"}</td>
+      <td>${method}</td>
+      <td title="${urlEsc}">${badge}<span class="url">${urlEsc}</span></td>
+      <td title="${escapeHtml(e.log_id || "")}">${escapeHtml(e.log_id || "")}</td>
+    </tr>`;
+  }).join("");
+}
+
+function setActiveTab(name) {
+  state.activeTab = name;
+  for (const btn of document.querySelectorAll(".tab")) {
+    btn.classList.toggle("active", btn.dataset.panel === name);
+  }
+  document.getElementById("panel_overview").classList.toggle("hidden", name !== "overview");
+  document.getElementById("panel_slow").classList.toggle("hidden", name !== "slow");
+  redraw();
 }
 
 // Pick a sensible number of decimals given the magnitude of the axis.
@@ -604,6 +939,7 @@ function setLive(id, text) {
 function redraw() {
   rebuildGroupFilter();
   renderProcs();
+  renderSlowRequests();
 
   const rps = drawChart(document.getElementById("c_rps"), f => f.request_throughput);
   setLive("live_rps",
@@ -662,12 +998,18 @@ function connect() {
       state.totalReceived = msg.total_received;
       state.decodeErrors = msg.decode_errors;
       state.processes.clear();
+      state.slowRequests.clear();
       for (const p of msg.processes) {
         for (const s of p.samples) addSample(s);
+      }
+      if (msg.slow_requests) {
+        for (const r of msg.slow_requests) upsertSlow(r.entry);
       }
     } else if (msg.type === "sample") {
       state.totalReceived += 1;
       addSample(msg);
+    } else if (msg.type === "slow_request") {
+      upsertSlow(msg.entry);
     }
   };
 }
@@ -678,6 +1020,11 @@ window.addEventListener("resize", redraw);
 document.getElementById("group_filter").addEventListener("change", redraw);
 document.getElementById("dist_window").addEventListener("change", redraw);
 document.getElementById("dist_field").addEventListener("change", redraw);
+document.getElementById("slow_state_filter").addEventListener("change", redraw);
+document.getElementById("slow_per_url").addEventListener("change", redraw);
+for (const btn of document.querySelectorAll(".tab")) {
+  btn.addEventListener("click", () => setActiveTab(btn.dataset.panel));
+}
 
 // Histogram hover tooltip: shows bucket range, request count in that
 // bucket, share of the current window, and the cumulative share at the

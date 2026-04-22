@@ -34,9 +34,11 @@ extern int wsgi_parse_option(apr_pool_t *p, const char **line,
 
 extern const char *wsgi_add_script_alias(cmd_parms *cmd, void *mconfig,
                                          const char *args);
-extern const char *wsgi_set_telemetry_reporter(cmd_parms *cmd, void *mconfig,
-                                               const char *arg1,
-                                               const char *arg2);
+extern const char *wsgi_set_metrics_service(cmd_parms *cmd, void *mconfig,
+                                            const char *arg1,
+                                            const char *arg2);
+extern const char *wsgi_set_slow_requests(cmd_parms *cmd, void *mconfig,
+                                          const char *arg);
 
 extern const char *wsgi_set_verbose_debugging(cmd_parms *cmd, void *mconfig,
                                               const char *f);

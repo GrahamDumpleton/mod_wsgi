@@ -55,9 +55,10 @@
 
 #define WSGI_METRICS_VERSION 1
 
-#define WSGI_METRICS_KIND_PROCESS 1
-#define WSGI_METRICS_KIND_REQUEST 2
-#define WSGI_METRICS_KIND_SERVER  3
+#define WSGI_METRICS_KIND_PROCESS      1
+#define WSGI_METRICS_KIND_REQUEST      2
+#define WSGI_METRICS_KIND_SERVER       3
+#define WSGI_METRICS_KIND_SLOW_REQUEST 4
 
 #define WSGI_METRICS_T_U64       0x01
 #define WSGI_METRICS_T_F64       0x02
@@ -102,6 +103,21 @@
 #define WSGI_METRICS_F_APPLICATION_TIME_BUCKETS    63
 #define WSGI_METRICS_F_REQUEST_THREADS_BUCKETS     64
 
+/* Slow-request fields. Only present in WSGI_METRICS_KIND_SLOW_REQUEST
+ * datagrams; identity (hostname, process_group) is looked up via the
+ * accompanying KIND_REQUEST stream on the ingester. */
+
+#define WSGI_METRICS_F_SLOW_STATE                  80   /* u64: 0=active, 1=completed */
+#define WSGI_METRICS_F_SLOW_START_STAMP_US         81   /* u64 */
+#define WSGI_METRICS_F_SLOW_DURATION_US            82   /* u64 */
+#define WSGI_METRICS_F_SLOW_THREAD_ID              83   /* u64 */
+#define WSGI_METRICS_F_SLOW_LOG_ID                 84   /* bytes */
+#define WSGI_METRICS_F_SLOW_METHOD                 85   /* bytes */
+#define WSGI_METRICS_F_SLOW_SCHEME                 86   /* bytes */
+#define WSGI_METRICS_F_SLOW_HOSTNAME               87   /* bytes */
+#define WSGI_METRICS_F_SLOW_SCRIPT_NAME            88   /* bytes */
+#define WSGI_METRICS_F_SLOW_PATH_INFO              89   /* bytes */
+
 /* ------------------------------------------------------------------------- */
 
 /*
@@ -145,6 +161,36 @@ typedef struct {
     int      has_daemon_timing;  /* queue_time / daemon_time valid? */
     int      seeded;             /* false on first call; telemetry skips send */
 } wsgi_telemetry_sample_t;
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Plain-C snapshot of a slow-request record. Filled by
+ * wsgi_metrics_snapshot_slow_active() (for still-running requests scanned
+ * out of the per-thread active-slot array) or popped from the completed
+ * ring with wsgi_metrics_pop_slow_completed(). Strings are always
+ * null-terminated; the encoder writes up to strlen() bytes on the wire.
+ */
+
+#define WSGI_SLOW_LOG_ID_MAX      64
+#define WSGI_SLOW_METHOD_MAX      16
+#define WSGI_SLOW_SCHEME_MAX      16
+#define WSGI_SLOW_HOSTNAME_MAX    256
+#define WSGI_SLOW_SCRIPT_NAME_MAX 256
+#define WSGI_SLOW_PATH_INFO_MAX   512
+
+typedef struct {
+    uint64_t start_stamp_us;     /* wall-clock when request started */
+    uint64_t duration_us;        /* elapsed (active) or final (completed) */
+    uint32_t thread_id;
+    uint8_t  state;              /* 0=active, 1=completed */
+    char     log_id[WSGI_SLOW_LOG_ID_MAX];
+    char     method[WSGI_SLOW_METHOD_MAX];
+    char     scheme[WSGI_SLOW_SCHEME_MAX];
+    char     hostname[WSGI_SLOW_HOSTNAME_MAX];
+    char     script_name[WSGI_SLOW_SCRIPT_NAME_MAX];
+    char     path_info[WSGI_SLOW_PATH_INFO_MAX];
+} wsgi_slow_request_t;
 
 /* ------------------------------------------------------------------------- */
 

@@ -20,7 +20,19 @@ import socket
 import sys
 import time
 
-from .wire import KIND_REQUEST, Sample, encode
+from .wire import KIND_REQUEST, KIND_SLOW_REQUEST, Sample, encode
+
+
+# Handler paths the simulator cycles through so the Slow Requests tab
+# shows variety. Includes one with a URL long enough to exercise the
+# ellipsis-truncation path in the UI.
+_SLOW_PATHS = [
+    ("GET",  "/api/reports/render"),
+    ("POST", "/api/orders/checkout"),
+    ("GET",  "/admin/users/export"),
+    ("POST", "/api/image/thumbnail"),
+    ("GET",  "/api/search/" + "aaa/" * 60 + "end"),
+]
 
 
 def parse_target(spec: str) -> tuple[int, tuple]:
@@ -94,6 +106,32 @@ def make_sample(pid: int, seq: int, phase: float, interval: float) -> Sample:
     )
 
 
+def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
+                     log_id: str, method: str, path: str,
+                     start_stamp_us: int, duration_us: int) -> Sample:
+    """Build one synthetic slow_request record."""
+    fields = {
+        "slow_state": state,                    # 0=active, 1=completed
+        "slow_start_stamp_us": start_stamp_us,
+        "slow_duration_us": duration_us,
+        "slow_thread_id": thread_id,
+        "slow_log_id": log_id,
+        "slow_method": method,
+        "slow_scheme": "http",
+        "slow_hostname": socket.gethostname(),
+        "slow_script_name": "",
+        "slow_path_info": path,
+    }
+    return Sample(
+        version=1,
+        kind=KIND_SLOW_REQUEST,
+        pid=pid,
+        seq=seq,
+        stamp_us=int(time.time() * 1_000_000),
+        fields=fields,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--target", required=True,
@@ -111,6 +149,12 @@ def main(argv: list[str] | None = None) -> int:
     seqs = [0] * args.processes
     phases = [random.uniform(0, 2 * math.pi) for _ in range(args.processes)]
 
+    # Per-process in-flight slow requests so heartbeats + completions are
+    # correlated. Keyed by a synthetic log_id so the ingester's (pid,
+    # log_id) map stays consistent across ticks.
+    in_flight: list[dict] = [dict() for _ in range(args.processes)]
+    next_log = [1] * args.processes
+
     start = time.monotonic()
     sent = 0
     try:
@@ -126,6 +170,61 @@ def main(argv: list[str] | None = None) -> int:
                     sent += 1
                 except OSError as e:
                     print(f"sendto failed: {e}", file=sys.stderr)
+
+                # --- Slow requests ------------------------------------
+                # Start a new one ~30% of the time, capped at 5 per process.
+                if len(in_flight[i]) < 5 and random.random() < 0.30:
+                    log_id = f"s{pids[i]}-{next_log[i]:06d}"
+                    next_log[i] += 1
+                    method, path = random.choice(_SLOW_PATHS)
+                    in_flight[i][log_id] = {
+                        "method": method,
+                        "path": path,
+                        "thread_id": random.randint(1, 5),
+                        "start_us": int(time.time() * 1_000_000),
+                    }
+
+                now_us = int(time.time() * 1_000_000)
+                # Heartbeat every active.
+                for log_id, rec in list(in_flight[i].items()):
+                    seqs[i] += 1
+                    sample = make_slow_sample(
+                        pids[i], seqs[i], state=0,
+                        thread_id=rec["thread_id"], log_id=log_id,
+                        method=rec["method"], path=rec["path"],
+                        start_stamp_us=rec["start_us"],
+                        duration_us=max(0, now_us - rec["start_us"]),
+                    )
+                    try:
+                        sock.sendto(encode(sample), addr)
+                        sent += 1
+                    except OSError as e:
+                        print(f"sendto failed: {e}", file=sys.stderr)
+
+                # Complete one ~25% of the time (once it's been in-flight
+                # long enough to feel plausible).
+                if in_flight[i] and random.random() < 0.25:
+                    log_id = random.choice(list(in_flight[i]))
+                    rec = in_flight[i].pop(log_id)
+                    duration = max(0, now_us - rec["start_us"])
+                    if duration >= 500_000:   # only "complete" if >= 0.5s
+                        seqs[i] += 1
+                        sample = make_slow_sample(
+                            pids[i], seqs[i], state=1,
+                            thread_id=rec["thread_id"], log_id=log_id,
+                            method=rec["method"], path=rec["path"],
+                            start_stamp_us=rec["start_us"],
+                            duration_us=duration,
+                        )
+                        try:
+                            sock.sendto(encode(sample), addr)
+                            sent += 1
+                        except OSError as e:
+                            print(f"sendto failed: {e}", file=sys.stderr)
+                    else:
+                        # Not long enough yet; put it back.
+                        in_flight[i][log_id] = rec
+
             time.sleep(args.interval)
     except KeyboardInterrupt:
         pass

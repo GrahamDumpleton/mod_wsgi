@@ -1,5 +1,6 @@
 from mod_wsgi_telemetry.wire import (
     KIND_REQUEST,
+    KIND_SLOW_REQUEST,
     Sample,
     decode,
     encode,
@@ -62,6 +63,36 @@ def test_unknown_field_preserved_as_synthetic_name():
 def test_field_table_has_no_duplicate_ids():
     # Reverse map must be 1:1 with the forward map.
     assert len(FIELDS) == len(FIELD_IDS)
+
+
+def test_roundtrip_slow_request():
+    # Carries every slow_* field so any drift in the id table fails loud.
+    fields = {
+        "slow_state": 0,
+        "slow_start_stamp_us": 1_700_000_000_000_000,
+        "slow_duration_us": 1_234_000,
+        "slow_thread_id": 3,
+        "slow_log_id": b"abcd-1234",
+        "slow_method": b"GET",
+        "slow_scheme": b"https",
+        "slow_hostname": b"web-01.internal",
+        "slow_script_name": b"/app",
+        "slow_path_info": b"/reports/render",
+    }
+    s = Sample(version=1, kind=KIND_SLOW_REQUEST, pid=5050, seq=3,
+               stamp_us=1_700_000_000_000_000, fields=fields)
+    got = decode(encode(s))
+    assert got.kind == KIND_SLOW_REQUEST
+    assert got.kind_name == "slow_request"
+    assert got.fields["slow_state"] == 0
+    assert got.fields["slow_duration_us"] == 1_234_000
+    assert got.fields["slow_thread_id"] == 3
+    assert got.fields["slow_log_id"] == b"abcd-1234"
+    assert got.fields["slow_method"] == b"GET"
+    assert got.fields["slow_scheme"] == b"https"
+    assert got.fields["slow_hostname"] == b"web-01.internal"
+    assert got.fields["slow_script_name"] == b"/app"
+    assert got.fields["slow_path_info"] == b"/reports/render"
 
 
 def test_rejects_bad_magic():

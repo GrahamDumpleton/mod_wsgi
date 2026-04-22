@@ -9,7 +9,7 @@ Wire layout:
   fixed header (24 bytes, little-endian):
     magic     uint32   b'WSGI'
     version   uint8
-    kind      uint8    1=process, 2=request, 3=server, 10+ events
+    kind      uint8    1=process, 2=request, 3=server, 4=slow_request, 10+ events
     flags     uint16
     pid       uint32
     seq       uint32   monotonic per process, drop detection
@@ -34,11 +34,13 @@ MAGIC = b"WSGI"
 KIND_PROCESS = 1
 KIND_REQUEST = 2
 KIND_SERVER = 3
+KIND_SLOW_REQUEST = 4
 
 KIND_NAMES = {
     KIND_PROCESS: "process_metrics",
     KIND_REQUEST: "request_metrics",
     KIND_SERVER: "server_metrics",
+    KIND_SLOW_REQUEST: "slow_request",
 }
 
 # Type tags
@@ -105,6 +107,20 @@ FIELDS = {
     77: "application_cpu_user_time",
     78: "application_cpu_system_time",
     79: "application_cpu_time",
+
+    # Slow-request fields (only present in KIND_SLOW_REQUEST datagrams).
+    # Identity (hostname, process_group) is keyed per pid from the
+    # accompanying KIND_REQUEST stream, so it is not repeated here.
+    80: "slow_state",            # 0 = active, 1 = completed
+    81: "slow_start_stamp_us",
+    82: "slow_duration_us",
+    83: "slow_thread_id",
+    84: "slow_log_id",
+    85: "slow_method",
+    86: "slow_scheme",
+    87: "slow_hostname",
+    88: "slow_script_name",
+    89: "slow_path_info",
 }
 
 # Reverse map for encoders / tests.

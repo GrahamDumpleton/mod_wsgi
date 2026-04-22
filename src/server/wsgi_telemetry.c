@@ -19,7 +19,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Telemetry reporter. When enabled via WSGITelemetryReporter, each mod_wsgi
+ * Telemetry reporter. When enabled via WSGIMetricsService, each mod_wsgi
  * process spawns a single background thread that periodically takes a
  * C-native metrics snapshot (wsgi_metrics_snapshot) and ships it as a
  * binary TLV datagram to a local socket. The encoder emits the format
@@ -187,6 +187,48 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
     return (size_t)(p - buf);
 }
 
+static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
+                                         uint32_t pid, uint32_t seq,
+                                         uint64_t stamp_us,
+                                         uint8_t *buf, size_t buflen)
+{
+    uint8_t *p = buf;
+
+    (void)buflen;  /* deterministic; WSGI_METRICS_MAX_DATAGRAM sizes it */
+
+    wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_SLOW_REQUEST, pid, seq,
+                            stamp_us);
+
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_STATE, s->state);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_START_STAMP_US,
+                         s->start_stamp_us);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_DURATION_US, s->duration_us);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_THREAD_ID, s->thread_id);
+
+    if (s->log_id[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SLOW_LOG_ID, s->log_id,
+                               (uint16_t)strlen(s->log_id));
+    if (s->method[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SLOW_METHOD, s->method,
+                               (uint16_t)strlen(s->method));
+    if (s->scheme[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SLOW_SCHEME, s->scheme,
+                               (uint16_t)strlen(s->scheme));
+    if (s->hostname[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SLOW_HOSTNAME, s->hostname,
+                               (uint16_t)strlen(s->hostname));
+    if (s->script_name[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SLOW_SCRIPT_NAME,
+                               s->script_name,
+                               (uint16_t)strlen(s->script_name));
+    if (s->path_info[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SLOW_PATH_INFO,
+                               s->path_info,
+                               (uint16_t)strlen(s->path_info));
+
+    return (size_t)(p - buf);
+}
+
 /* ------------------------------------------------------------------------- */
 
 static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
@@ -261,6 +303,49 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
              * up. Silently drop; the ingester will pick up on next tick
              * once listening. Don't flood the error log. */
         }
+
+        /* Slow-request tracking — one datagram per record. Completed
+         * records drain first so their final duration arrives before
+         * any heartbeat that would otherwise make the UI age the entry
+         * out as "lost". Active-scan uses a consistent now_us so all
+         * elapsed values in this tick share a reference. */
+
+        if (wsgi_slow_threshold_us > 0) {
+            wsgi_slow_request_t rec;
+            wsgi_slow_request_t actives[16];
+            int n_active;
+            int i;
+            uint64_t tick_stamp_us = (uint64_t)apr_time_now();
+
+            while (wsgi_metrics_pop_slow_completed(&rec)) {
+                seq++;
+                n = wsgi_telemetry_encode_slow(&rec, pid, seq, tick_stamp_us,
+                                               buf, sizeof(buf));
+                if (n == 0)
+                    continue;
+                if (sendto(fd, buf, n, 0, (struct sockaddr *)&addr,
+                           addrlen) < 0) {
+                    /* silently drop; see comment above */
+                }
+            }
+
+            n_active = wsgi_metrics_snapshot_slow_active(
+                actives, (int)(sizeof(actives) / sizeof(actives[0])),
+                (apr_time_t)tick_stamp_us, wsgi_slow_threshold_us);
+
+            for (i = 0; i < n_active; i++) {
+                seq++;
+                n = wsgi_telemetry_encode_slow(&actives[i], pid, seq,
+                                               tick_stamp_us, buf,
+                                               sizeof(buf));
+                if (n == 0)
+                    continue;
+                if (sendto(fd, buf, n, 0, (struct sockaddr *)&addr,
+                           addrlen) < 0) {
+                    /* silently drop */
+                }
+            }
+        }
     }
 
     if (fd >= 0)
@@ -272,12 +357,12 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
 /* ------------------------------------------------------------------------- */
 
 /*
- * Directive handler: WSGITelemetryReporter <target> [interval=N]
+ * Directive handler: WSGIMetricsService <target> [interval=N]
  * Target is "unix:/path" or "udp:host:port".
  */
 
-const char *wsgi_set_telemetry_reporter(cmd_parms *cmd, void *mconfig,
-                                        const char *arg1, const char *arg2)
+const char *wsgi_set_metrics_service(cmd_parms *cmd, void *mconfig,
+                                     const char *arg1, const char *arg2)
 {
     const char *error = NULL;
 
@@ -286,10 +371,10 @@ const char *wsgi_set_telemetry_reporter(cmd_parms *cmd, void *mconfig,
         return error;
 
     if (!arg1 || !*arg1)
-        return "WSGITelemetryReporter target required";
+        return "WSGIMetricsService target required";
 
     if (strncmp(arg1, "unix:", 5) != 0 && strncmp(arg1, "udp:", 4) != 0)
-        return "WSGITelemetryReporter target must be 'unix:/path' "
+        return "WSGIMetricsService target must be 'unix:/path' "
                "or 'udp:host:port'";
 
     wsgi_telemetry_target = apr_pstrdup(cmd->pool, arg1);
@@ -300,14 +385,47 @@ const char *wsgi_set_telemetry_reporter(cmd_parms *cmd, void *mconfig,
         if (strncmp(arg2, "interval=", 9) == 0) {
             v = atof(arg2 + 9);
             if (v <= 0.0)
-                return "WSGITelemetryReporter interval must be positive";
+                return "WSGIMetricsService interval must be positive";
             wsgi_telemetry_interval = v;
         }
         else {
-            return "WSGITelemetryReporter second argument must be "
+            return "WSGIMetricsService second argument must be "
                    "'interval=N'";
         }
     }
+
+    return NULL;
+}
+
+/*
+ * Directive handler: WSGISlowRequests <seconds>
+ *
+ * Presence enables per-request "slow request" reporting in addition to
+ * the periodic KIND_REQUEST sampling. Argument is the duration threshold
+ * above which an in-flight request becomes eligible for reporting. Only
+ * meaningful when WSGIMetricsService is also configured; without a
+ * metrics service there is nowhere to send records.
+ */
+
+const char *wsgi_set_slow_requests(cmd_parms *cmd, void *mconfig,
+                                   const char *arg)
+{
+    const char *error = NULL;
+    double seconds = 0.0;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    if (!arg || !*arg)
+        return "WSGISlowRequests threshold (seconds) required";
+
+    seconds = atof(arg);
+    if (seconds < 0.0)
+        return "WSGISlowRequests threshold must be non-negative";
+
+    wsgi_slow_threshold_us =
+        (apr_time_t)(seconds * APR_USEC_PER_SEC);
 
     return NULL;
 }

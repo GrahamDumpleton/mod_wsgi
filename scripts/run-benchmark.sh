@@ -51,17 +51,21 @@
 #                             benchmark script that exposes the
 #                             /metrics/reset and /metrics/report paths
 #                             (e.g. tests/benchmark.wsgi).
-#       --telemetry-target T  Pass --telemetry-target T to mod_wsgi-express
-#                             to enable the telemetry reporter. T is
+#       --metrics-service T   Pass --metrics-service T to mod_wsgi-express
+#                             to enable the metrics reporter. T is
 #                             'unix:/path/to/sock' or 'udp:host:port'.
 #                             Start the ingester separately from the
 #                             telemetry/ directory:
 #                               uv run mod-wsgi-telemetry \\
 #                                   --listen T
-#       --telemetry-interval S
-#                             Telemetry sampling interval in seconds.
-#                             Only applies with --telemetry-target.
+#       --metrics-interval S
+#                             Metrics sampling interval in seconds.
+#                             Only applies with --metrics-service.
 #                             Default: 1.0
+#       --slow-requests SEC   Enable slow-request reporting and set the
+#                             threshold in seconds above which a still-
+#                             running request is reported. Requires
+#                             --metrics-service.
 #   -h, --help                Show this help
 
 set -e
@@ -86,8 +90,9 @@ DISTRIBUTION=fixed
 IO_SIGMA=0.6
 CPU_SIGMA=0.0
 METRICS=0
-TELEMETRY_TARGET=
-TELEMETRY_INTERVAL=1.0
+METRICS_SERVICE=
+METRICS_INTERVAL=1.0
+SLOW_REQUESTS=
 
 usage() {
     awk '/^# Benchmark/,/^$/' "$0" | sed 's/^# \{0,1\}//'
@@ -112,8 +117,9 @@ while [ $# -gt 0 ]; do
         --io-sigma)       IO_SIGMA="$2"; shift 2 ;;
         --cpu-sigma)      CPU_SIGMA="$2"; shift 2 ;;
         --metrics)        METRICS=1; shift ;;
-        --telemetry-target)   TELEMETRY_TARGET="$2"; shift 2 ;;
-        --telemetry-interval) TELEMETRY_INTERVAL="$2"; shift 2 ;;
+        --metrics-service)    METRICS_SERVICE="$2"; shift 2 ;;
+        --metrics-interval)   METRICS_INTERVAL="$2"; shift 2 ;;
+        --slow-requests)      SLOW_REQUESTS="$2"; shift 2 ;;
         -h|--help)        usage ;;
         *) echo "ERROR: Unknown option: $1" >&2; usage 1 ;;
     esac
@@ -208,9 +214,15 @@ else
     fi
 fi
 
-if [ -n "$TELEMETRY_TARGET" ]; then
-    setup_args+=(--telemetry-target "$TELEMETRY_TARGET")
-    setup_args+=(--telemetry-interval "$TELEMETRY_INTERVAL")
+if [ -n "$METRICS_SERVICE" ]; then
+    setup_args+=(--metrics-service "$METRICS_SERVICE")
+    setup_args+=(--metrics-interval "$METRICS_INTERVAL")
+    if [ -n "$SLOW_REQUESTS" ]; then
+        setup_args+=(--slow-requests "$SLOW_REQUESTS")
+    fi
+elif [ -n "$SLOW_REQUESTS" ]; then
+    echo "ERROR: --slow-requests requires --metrics-service" >&2
+    exit 1
 fi
 
 if [ "$MODE" = "daemon" ] && [ "$DISABLE_RELOADING" = "1" ]; then
@@ -231,10 +243,13 @@ else
     metrics_state="disabled"
 fi
 
-if [ -n "$TELEMETRY_TARGET" ]; then
-    telemetry_state="$TELEMETRY_TARGET (interval ${TELEMETRY_INTERVAL}s)"
+if [ -n "$METRICS_SERVICE" ]; then
+    metrics_state="$METRICS_SERVICE (interval ${METRICS_INTERVAL}s)"
+    if [ -n "$SLOW_REQUESTS" ]; then
+        metrics_state="$metrics_state, slow>=${SLOW_REQUESTS}s"
+    fi
 else
-    telemetry_state="disabled"
+    metrics_state="disabled"
 fi
 
 echo "Configuration:"
@@ -256,7 +271,7 @@ else
     echo "  distribution   : fixed"
 fi
 echo "  metrics        : $metrics_state"
-echo "  telemetry      : $telemetry_state"
+echo "  metrics        : $metrics_state"
 echo ""
 
 export BENCHMARK_DELAY="$DELAY"

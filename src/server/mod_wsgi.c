@@ -1223,9 +1223,12 @@ static const command_rec wsgi_commands[] =
         AP_INIT_TAKE1("WSGIServerMetrics", wsgi_set_server_metrics,
                       NULL, RSRC_CONF, "Enabled/Disable access to server metrics."),
 
-        AP_INIT_TAKE12("WSGITelemetryReporter", wsgi_set_telemetry_reporter,
-                       NULL, RSRC_CONF, "Enable telemetry reporter thread. "
+        AP_INIT_TAKE12("WSGIMetricsService", wsgi_set_metrics_service,
+                       NULL, RSRC_CONF, "Push telemetry to a metrics service. "
                        "Args: <unix:/path | udp:host:port> [interval=N]"),
+        AP_INIT_TAKE1("WSGISlowRequests", wsgi_set_slow_requests,
+                      NULL, RSRC_CONF, "Enable slow-request reporting. "
+                      "Arg: threshold in seconds."),
 
         {NULL}};
 

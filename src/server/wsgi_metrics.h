@@ -47,6 +47,25 @@ extern void wsgi_record_request_times(apr_time_t request_start,
 
 extern int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out);
 
+/* Slow-request tracking. threshold_us == 0 disables the feature; set
+ * from the WSGISlowRequests directive at config time. Must be written
+ * before the telemetry reporter thread starts. */
+extern apr_time_t wsgi_slow_threshold_us;
+
+/* Pop one completed slow-request record from the finalize ring. Returns 1
+ * if one was copied into *out, 0 if the ring was empty. Takes
+ * wsgi_monitor_lock internally. */
+extern int wsgi_metrics_pop_slow_completed(wsgi_slow_request_t *out);
+
+/* Snapshot up to out_cap currently-active slots whose elapsed time is at
+ * least threshold_us. now_us is the caller's current timestamp (so a
+ * consistent "elapsed" can be computed across all slots). Returns the
+ * number of records copied. Takes wsgi_monitor_lock internally. */
+extern int wsgi_metrics_snapshot_slow_active(wsgi_slow_request_t *out,
+                                             int out_cap,
+                                             apr_time_t now_us,
+                                             apr_time_t threshold_us);
+
 extern void wsgi_telemetry_start_reporter(apr_pool_t *pool);
 extern void wsgi_telemetry_stop_reporter(void);
 

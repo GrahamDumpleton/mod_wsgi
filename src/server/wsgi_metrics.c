@@ -94,6 +94,39 @@ static double wsgi_application_time_total = 0;
 static int wsgi_application_time_buckets[16];
 static int *wsgi_request_threads_buckets = NULL;
 
+/* Slow-request tracking. Threshold is written once at config time via
+ * WSGISlowRequests (0 = disabled, i.e. feature off). The active-slot
+ * array tracks one in-flight request per worker thread, holding the
+ * live request_rec pointer so URL / identity fields are read on demand
+ * rather than copied at request start. The completed ring holds fully
+ * snapshotted records for requests that finished while slow, so the
+ * reporter thread can emit a final datagram at its next tick. */
+
+#define WSGI_SLOW_COMPLETED_RING_SIZE 32
+
+apr_time_t wsgi_slow_threshold_us = 0;
+
+typedef struct
+{
+    int in_use;
+    request_rec *r; /* valid only while in_use; lives in r->pool */
+    apr_time_t start_us;
+    uint32_t thread_id; /* 1-based, matches WSGIThreadInfo.thread_id */
+} wsgi_active_slot_t;
+
+static wsgi_active_slot_t *wsgi_active_slots = NULL;
+static int wsgi_active_slots_max = 0;
+
+static wsgi_slow_request_t wsgi_completed_ring[WSGI_SLOW_COMPLETED_RING_SIZE];
+static int wsgi_completed_ring_head = 0;
+static int wsgi_completed_ring_count = 0;
+
+/* Forward declarations — implementations live after wsgi_metrics_snapshot. */
+
+static void wsgi_slow_ensure_slots_locked(void);
+static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r);
+static void wsgi_slow_push_completed_locked(const wsgi_slow_request_t *rec);
+
 void wsgi_record_time_in_buckets(int *buckets, double duration)
 {
     int index = 0;
@@ -204,6 +237,33 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
 
     wsgi_utilization_time(1, NULL);
 
+    /* Claim this thread's active-request slot while the WSGI handler runs.
+     * Holding the request_rec pointer (not a copy) lets the telemetry
+     * reporter thread read URL / identity fields on demand and keeps the
+     * hot path cheap. r->pool stays alive until after wsgi_end_request
+     * clears the slot, so reads under wsgi_monitor_lock are always
+     * against a live request_rec. */
+
+    if (wsgi_slow_threshold_us > 0 && thread_info && thread_info->thread_id >= 1)
+    {
+        apr_thread_mutex_lock(wsgi_monitor_lock);
+
+        wsgi_slow_ensure_slots_locked();
+
+        if (wsgi_active_slots &&
+            thread_info->thread_id <= wsgi_active_slots_max)
+        {
+            wsgi_active_slot_t *slot =
+                &wsgi_active_slots[thread_info->thread_id - 1];
+            slot->in_use = 1;
+            slot->r = r;
+            slot->start_us = apr_time_now();
+            slot->thread_id = (uint32_t)thread_info->thread_id;
+        }
+
+        apr_thread_mutex_unlock(wsgi_monitor_lock);
+    }
+
     return thread_info;
 }
 
@@ -245,6 +305,48 @@ void wsgi_end_request(void)
 
         if (thread_info->request_data)
             Py_CLEAR(thread_info->request_data);
+    }
+
+    /* Release this thread's active-request slot. If the request exceeded
+     * the slow threshold, snapshot a completion record into the finalize
+     * ring while r->pool is still alive (Apache destroys it only after
+     * wsgi_end_request returns). Cleared-and-copy happens under the same
+     * lock to ensure the reporter never sees a slot with a dangling r. */
+
+    if (wsgi_slow_threshold_us > 0 && thread_info && thread_info->thread_id >= 1)
+    {
+        apr_thread_mutex_lock(wsgi_monitor_lock);
+
+        if (wsgi_active_slots &&
+            thread_info->thread_id <= wsgi_active_slots_max)
+        {
+            wsgi_active_slot_t *slot =
+                &wsgi_active_slots[thread_info->thread_id - 1];
+
+            if (slot->in_use && slot->r)
+            {
+                apr_time_t now = apr_time_now();
+                apr_time_t elapsed = now - slot->start_us;
+
+                if (elapsed >= wsgi_slow_threshold_us)
+                {
+                    wsgi_slow_request_t rec;
+                    memset(&rec, 0, sizeof(rec));
+                    rec.state = 1; /* completed */
+                    rec.start_stamp_us = (uint64_t)slot->start_us;
+                    rec.duration_us = (uint64_t)elapsed;
+                    rec.thread_id = slot->thread_id;
+                    wsgi_slow_snapshot_fields(&rec, slot->r);
+                    wsgi_slow_push_completed_locked(&rec);
+                }
+            }
+
+            slot->in_use = 0;
+            slot->r = NULL;
+            slot->start_us = 0;
+        }
+
+        apr_thread_mutex_unlock(wsgi_monitor_lock);
     }
 
     wsgi_utilization_time(-1, NULL);
@@ -290,7 +392,8 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     struct tms tmsbuf;
     static double tick = 0.0;
 
-    if (!tick) {
+    if (!tick)
+    {
 #ifdef _SC_CLK_TCK
         tick = sysconf(_SC_CLK_TCK);
 #else
@@ -304,24 +407,29 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 
     memset(out, 0, sizeof(*out));
 
-    if (!telemetry_request_threads_maximum) {
+    if (!telemetry_request_threads_maximum)
+    {
         int is_threaded = 0;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-        if (wsgi_daemon_process) {
+        if (wsgi_daemon_process)
+        {
             telemetry_request_threads_maximum =
                 wsgi_daemon_process->group->threads;
         }
-        else {
+        else
+        {
             ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
-            if (is_threaded != AP_MPMQ_NOT_SUPPORTED) {
+            if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
+            {
                 ap_mpm_query(AP_MPMQ_MAX_THREADS,
                              &telemetry_request_threads_maximum);
             }
         }
 #else
         ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
-        if (is_threaded != AP_MPMQ_NOT_SUPPORTED) {
+        if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
+        {
             ap_mpm_query(AP_MPMQ_MAX_THREADS,
                          &telemetry_request_threads_maximum);
         }
@@ -340,7 +448,8 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     stop_request_busy_time = wsgi_utilization_time(0, &stop_request_count);
 
     /* First call seeds counters and returns a not-yet-seeded sample. */
-    if (!telemetry_start_time) {
+    if (!telemetry_start_time)
+    {
         telemetry_start_time = stop_time;
         telemetry_start_request_busy_time = stop_request_busy_time;
         telemetry_start_request_count = stop_request_count;
@@ -364,7 +473,8 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
         memset(&wsgi_daemon_time_buckets, 0, sizeof(wsgi_daemon_time_buckets));
         memset(&wsgi_application_time_buckets, 0,
                sizeof(wsgi_application_time_buckets));
-        if (wsgi_request_threads_buckets) {
+        if (wsgi_request_threads_buckets)
+        {
             memset(wsgi_request_threads_buckets, 0,
                    telemetry_request_threads_maximum *
                        sizeof(wsgi_request_threads_buckets[0]));
@@ -383,7 +493,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     sample_period = apr_time_sec((double)stop_time) -
                     apr_time_sec((double)telemetry_start_time);
     if (sample_period <= 0.0)
-        sample_period = 1e-9;  /* avoid divide by zero */
+        sample_period = 1e-9; /* avoid divide by zero */
 
     out->sample_period = sample_period;
 
@@ -418,8 +528,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
                                 telemetry_request_threads_maximum;
 
     out->request_count = stop_request_count - telemetry_start_request_count;
-    out->request_throughput = (sample_period > 0) ?
-        (double)out->request_count / sample_period : 0.0;
+    out->request_throughput = (sample_period > 0) ? (double)out->request_count / sample_period : 0.0;
 
     telemetry_start_time = stop_time;
     telemetry_start_request_busy_time = stop_request_busy_time;
@@ -433,15 +542,18 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     daemon_time_total = wsgi_daemon_time_total;
     application_time_total = wsgi_application_time_total;
 
-    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++) {
+    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
+    {
         out->server_time_buckets[i] = wsgi_server_time_buckets[i];
         out->queue_time_buckets[i] = wsgi_queue_time_buckets[i];
         out->daemon_time_buckets[i] = wsgi_daemon_time_buckets[i];
         out->application_time_buckets[i] = wsgi_application_time_buckets[i];
     }
 
-    if (wsgi_request_threads_buckets) {
-        for (i = 0; i < telemetry_request_threads_maximum; i++) {
+    if (wsgi_request_threads_buckets)
+    {
+        for (i = 0; i < telemetry_request_threads_maximum; i++)
+        {
             if (wsgi_request_threads_buckets[i])
                 threads_active++;
         }
@@ -459,7 +571,8 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     memset(&wsgi_application_time_buckets, 0,
            sizeof(wsgi_application_time_buckets));
 
-    if (wsgi_request_threads_buckets) {
+    if (wsgi_request_threads_buckets)
+    {
         memset(wsgi_request_threads_buckets, 0,
                telemetry_request_threads_maximum *
                    sizeof(wsgi_request_threads_buckets[0]));
@@ -469,11 +582,13 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 
     out->request_threads_active = (uint32_t)threads_active;
 
-    if (interval_requests) {
+    if (interval_requests)
+    {
         out->server_time = server_time_total / interval_requests;
         out->application_time = application_time_total / interval_requests;
 #if defined(MOD_WSGI_WITH_DAEMONS)
-        if (wsgi_daemon_process) {
+        if (wsgi_daemon_process)
+        {
             out->queue_time = queue_time_total / interval_requests;
             out->daemon_time = daemon_time_total / interval_requests;
             out->has_daemon_timing = 1;
@@ -482,6 +597,242 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     }
 
     return 1;
+}
+
+/* ------------------------------------------------------------------------- */
+
+/* Slow-request helpers. Lazy-allocate the slot array on first request so
+ * there is no cost when the feature is off. Copy strings out of a
+ * live request_rec under wsgi_monitor_lock, truncating each field with
+ * an "..." suffix so the UI can show where the cut was made. */
+
+static void wsgi_slow_ensure_slots_locked(void)
+{
+    int max = 0;
+    int is_threaded = 0;
+
+    if (wsgi_active_slots)
+        return;
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_daemon_process)
+    {
+        max = wsgi_daemon_process->group->threads;
+    }
+    else
+    {
+        ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
+        if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
+            ap_mpm_query(AP_MPMQ_MAX_THREADS, &max);
+    }
+#else
+    ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
+    if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
+        ap_mpm_query(AP_MPMQ_MAX_THREADS, &max);
+#endif
+
+    if (max <= 0)
+        max = 1;
+
+    wsgi_active_slots = (wsgi_active_slot_t *)apr_pcalloc(
+        wsgi_server_config->pool, max * sizeof(*wsgi_active_slots));
+    wsgi_active_slots_max = max;
+}
+
+static void wsgi_slow_copy_str(char *dst, size_t cap, const char *src)
+{
+    size_t n;
+
+    if (cap == 0)
+        return;
+
+    if (!src)
+    {
+        dst[0] = '\0';
+        return;
+    }
+
+    n = strlen(src);
+
+    if (n >= cap)
+    {
+        if (cap >= 4)
+        {
+            memcpy(dst, src, cap - 4);
+            dst[cap - 4] = '.';
+            dst[cap - 3] = '.';
+            dst[cap - 2] = '.';
+            dst[cap - 1] = '\0';
+        }
+        else
+        {
+            memcpy(dst, src, cap - 1);
+            dst[cap - 1] = '\0';
+        }
+    }
+    else
+    {
+        memcpy(dst, src, n);
+        dst[n] = '\0';
+    }
+}
+
+/* Pull URL / identity out of a request_rec into a snapshot record. Does
+ * no allocation and never touches r->pool; safe to call under lock. */
+
+static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
+{
+    const char *script_name = NULL;
+    const char *path_info = NULL;
+    const char *scheme_env = NULL;
+    const char *scheme = "http";
+
+    wsgi_slow_copy_str(rec->log_id, sizeof(rec->log_id),
+                       r->log_id ? r->log_id : "");
+    wsgi_slow_copy_str(rec->hostname, sizeof(rec->hostname),
+                       r->hostname ? r->hostname : "");
+
+    /* In daemon mode r->method is NULL — the daemon-side request_rec is
+     * synthesised from the subprocess_env stream and wsgi_read_request
+     * never fills r->method. REQUEST_METHOD in subprocess_env is the
+     * canonical source (ap_add_cgi_vars sets it on the parent) and works
+     * in both daemon and embedded modes. */
+
+    const char *method = NULL;
+
+    if (r->subprocess_env)
+    {
+        method = apr_table_get(r->subprocess_env, "REQUEST_METHOD");
+
+        /* HTTPS in subprocess_env is the authoritative scheme decision
+         * after trusted-proxy handling + mod_ssl detection. mod_wsgi
+         * strips it from the Python WSGI environ dict later, but the
+         * apr_table value survives for the lifetime of the request. */
+
+        scheme_env = apr_table_get(r->subprocess_env, "HTTPS");
+        if (scheme_env && (!strcasecmp(scheme_env, "On") ||
+                           !strcmp(scheme_env, "1")))
+            scheme = "https";
+
+        script_name = apr_table_get(r->subprocess_env, "mod_wsgi.script_name");
+        if (!script_name)
+            script_name = apr_table_get(r->subprocess_env, "SCRIPT_NAME");
+
+        path_info = apr_table_get(r->subprocess_env, "mod_wsgi.path_info");
+        if (!path_info)
+            path_info = apr_table_get(r->subprocess_env, "PATH_INFO");
+    }
+
+    if (!method)
+        method = r->method; /* embedded-mode fallback */
+
+    wsgi_slow_copy_str(rec->method, sizeof(rec->method),
+                       method ? method : "");
+
+    wsgi_slow_copy_str(rec->scheme, sizeof(rec->scheme), scheme);
+    wsgi_slow_copy_str(rec->script_name, sizeof(rec->script_name),
+                       script_name ? script_name : "");
+
+    /* Fall back to r->uri (always query-stripped) when the env keys are
+     * absent; never read r->unparsed_uri or r->args so query strings
+     * can't leak into telemetry. */
+
+    wsgi_slow_copy_str(rec->path_info, sizeof(rec->path_info),
+                       path_info ? path_info : (r->uri ? r->uri : ""));
+}
+
+/* Caller must hold wsgi_monitor_lock. */
+
+static void wsgi_slow_push_completed_locked(const wsgi_slow_request_t *rec)
+{
+    int idx;
+
+    if (wsgi_completed_ring_count < WSGI_SLOW_COMPLETED_RING_SIZE)
+    {
+        idx = (wsgi_completed_ring_head + wsgi_completed_ring_count) %
+              WSGI_SLOW_COMPLETED_RING_SIZE;
+        wsgi_completed_ring_count++;
+    }
+    else
+    {
+        /* Ring full — drop oldest so recent slow completions aren't lost. */
+
+        idx = wsgi_completed_ring_head;
+        wsgi_completed_ring_head = (wsgi_completed_ring_head + 1) %
+                                   WSGI_SLOW_COMPLETED_RING_SIZE;
+    }
+
+    wsgi_completed_ring[idx] = *rec;
+}
+
+int wsgi_metrics_pop_slow_completed(wsgi_slow_request_t *out)
+{
+    int got = 0;
+
+    if (!out)
+        return 0;
+
+    apr_thread_mutex_lock(wsgi_monitor_lock);
+
+    if (wsgi_completed_ring_count > 0)
+    {
+        *out = wsgi_completed_ring[wsgi_completed_ring_head];
+        wsgi_completed_ring_head = (wsgi_completed_ring_head + 1) %
+                                   WSGI_SLOW_COMPLETED_RING_SIZE;
+        wsgi_completed_ring_count--;
+        got = 1;
+    }
+
+    apr_thread_mutex_unlock(wsgi_monitor_lock);
+
+    return got;
+}
+
+int wsgi_metrics_snapshot_slow_active(wsgi_slow_request_t *out, int out_cap,
+                                      apr_time_t now_us,
+                                      apr_time_t threshold_us)
+{
+    int i;
+    int n = 0;
+
+    if (!out || out_cap <= 0)
+        return 0;
+
+    apr_thread_mutex_lock(wsgi_monitor_lock);
+
+    if (!wsgi_active_slots)
+    {
+        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        return 0;
+    }
+
+    for (i = 0; i < wsgi_active_slots_max && n < out_cap; i++)
+    {
+        wsgi_active_slot_t *slot = &wsgi_active_slots[i];
+        apr_time_t elapsed;
+        wsgi_slow_request_t *rec;
+
+        if (!slot->in_use || !slot->r)
+            continue;
+
+        elapsed = now_us - slot->start_us;
+        if (elapsed < threshold_us)
+            continue;
+
+        rec = &out[n];
+        memset(rec, 0, sizeof(*rec));
+        rec->state = 0; /* active */
+        rec->start_stamp_us = (uint64_t)slot->start_us;
+        rec->duration_us = (uint64_t)elapsed;
+        rec->thread_id = slot->thread_id;
+        wsgi_slow_snapshot_fields(rec, slot->r);
+
+        n++;
+    }
+
+    apr_thread_mutex_unlock(wsgi_monitor_lock);
+
+    return n;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1245,7 +1596,7 @@ static PyObject *wsgi_server_metrics(void)
     Py_DECREF(object);
 
     running_time = apr_time_sec((double)current_time -
-                               ap_scoreboard_image->global->restart_time);
+                                ap_scoreboard_image->global->restart_time);
 
     object = PyLong_FromLongLong(running_time);
     PyDict_SetItem(scoreboard_dict,

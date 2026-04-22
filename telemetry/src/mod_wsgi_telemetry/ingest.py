@@ -64,10 +64,55 @@ class ProcessState:
     pid: int
     hostname: str = ""
     process_group: str = ""
+    # Telemetry reporter's tick interval in seconds, as reported by the
+    # process itself on each KIND_REQUEST sample. Used to size the
+    # slow-request TTLs — a reporter ticking every 10 s needs a longer
+    # TTL than the default 5 s floor so heartbeats aren't aged out
+    # between ticks.
+    sample_period: float = 1.0
     samples: deque = field(default_factory=lambda: deque(maxlen=600))
     last_seq: int = 0
     drops: int = 0
     last_seen: float = 0.0
+
+
+@dataclass
+class SlowEntry:
+    """One slow request as currently known to the ingester.
+
+    Active heartbeats replace earlier active records for the same key; a
+    completed record marks the entry final (its duration_us is the end-of-
+    request total). last_seen is the wall-monotonic arrival time, used for
+    TTL age-out so requests from processes that died mid-flight don't
+    linger as "active" forever.
+    """
+    pid: int
+    thread_id: int
+    log_id: str
+    method: str
+    scheme: str
+    hostname: str
+    script_name: str
+    path_info: str
+    start_stamp_us: int
+    duration_us: int
+    state: int                 # 0 = active, 1 = completed
+    last_seen: float = 0.0
+
+    def to_dict(self) -> dict:
+        return {
+            "pid": self.pid,
+            "thread_id": self.thread_id,
+            "log_id": self.log_id,
+            "method": self.method,
+            "scheme": self.scheme,
+            "hostname": self.hostname,
+            "script_name": self.script_name,
+            "path_info": self.path_info,
+            "start_stamp_us": self.start_stamp_us,
+            "duration_us": self.duration_us,
+            "state": self.state,
+        }
 
 
 class Ingester:
@@ -75,10 +120,20 @@ class Ingester:
 
     STALE_SECONDS = 300  # drop processes we haven't heard from in 5 min
 
+    # Floor values for slow-request TTLs. Effective TTL per entry scales
+    # with the reporting process's telemetry interval (see _gc_slow):
+    # active   = max(FLOOR, 3 * sample_period)
+    # complete = max(FLOOR, 5 * sample_period)
+    # so a 10 s reporter interval doesn't flicker rows between ticks,
+    # while a 1 s interval keeps the tight defaults below.
+    SLOW_ACTIVE_TTL_SECONDS = 5.0
+    SLOW_COMPLETED_TTL_SECONDS = 15.0
+
     def __init__(self, listen_spec: str, *, max_subscribers: int = 64) -> None:
         self.listen_spec = listen_spec
         self.sock: socket.socket | None = None
         self.processes: dict[int, ProcessState] = {}
+        self.slow_requests: dict[tuple, SlowEntry] = {}
         self.subscribers: set[asyncio.Queue] = set()
         self.max_subscribers = max_subscribers
         self.decode_errors = 0
@@ -107,6 +162,14 @@ class Ingester:
             log.warning("decode error: %s (len=%d)", e, len(data))
             return
 
+        # Slow-request records are a separate stream. They don't share the
+        # per-process rolling sample window — they feed into slow_requests.
+        if sample.kind_name == "slow_request":
+            self._handle_slow(sample)
+            self._gc_slow()
+            self._gc_stale()
+            return
+
         state = self.processes.get(sample.pid)
         if state is None:
             state = ProcessState(pid=sample.pid)
@@ -125,12 +188,61 @@ class Ingester:
         group = sample.fields.get("process_group")
         if isinstance(group, bytes):
             state.process_group = group.decode("utf-8", errors="replace")
+        sp = sample.fields.get("sample_period")
+        if isinstance(sp, (int, float)) and sp > 0:
+            state.sample_period = float(sp)
 
         self._broadcast(sample)
+        self._gc_slow()
         self._gc_stale()
 
+    def _handle_slow(self, sample: Sample) -> None:
+        f = sample.fields
+
+        def _s(name: str) -> str:
+            v = f.get(name)
+            if isinstance(v, bytes):
+                return v.decode("utf-8", errors="replace")
+            return ""
+
+        log_id = _s("slow_log_id")
+        thread_id = int(f.get("slow_thread_id") or 0)
+        start_stamp_us = int(f.get("slow_start_stamp_us") or 0)
+
+        # Prefer Apache's per-request log_id as correlation key; fall back
+        # to a (pid, thread, start) tuple when mod_unique_id isn't loaded.
+        if log_id:
+            key: tuple = (sample.pid, log_id)
+        else:
+            key = (sample.pid, thread_id, start_stamp_us)
+
+        entry = SlowEntry(
+            pid=sample.pid,
+            thread_id=thread_id,
+            log_id=log_id,
+            method=_s("slow_method"),
+            scheme=_s("slow_scheme"),
+            hostname=_s("slow_hostname"),
+            script_name=_s("slow_script_name"),
+            path_info=_s("slow_path_info"),
+            start_stamp_us=start_stamp_us,
+            duration_us=int(f.get("slow_duration_us") or 0),
+            state=int(f.get("slow_state") or 0),
+            last_seen=time.monotonic(),
+        )
+        self.slow_requests[key] = entry
+
+        self._enqueue_all({
+            "type": "slow_request",
+            "key": list(key),
+            "entry": entry.to_dict(),
+            "stamp_us": sample.stamp_us,
+        })
+
     def _broadcast(self, sample: Sample) -> None:
-        payload = self._sample_to_dict(sample)
+        self._enqueue_all(self._sample_to_dict(sample))
+
+    def _enqueue_all(self, payload: dict) -> None:
         for q in list(self.subscribers):
             try:
                 q.put_nowait(payload)
@@ -151,6 +263,39 @@ class Ingester:
         for pid in stale:
             log.info("gc: dropping stale pid=%d", pid)
             self.processes.pop(pid, None)
+
+    def _gc_slow(self) -> None:
+        """Age out slow-request entries the reporter has stopped updating.
+
+        Active entries disappear quickly so a worker that was killed mid-
+        request doesn't leave a ghost row. Completed entries linger so a
+        user can still see recently-finished slow requests when they open
+        the UI. Both TTLs scale with the reporting process's telemetry
+        interval: a reporter ticking every 10 s only emits heartbeats
+        every 10 s, so a 5 s floor would flicker rows in and out — we
+        bump TTL to 3x the sample period in that case. Also drops all
+        entries for processes that have aged out of self.processes so
+        the list stays in sync with the sidebar.
+        """
+        if not self.slow_requests:
+            return
+        now = time.monotonic()
+        drop = []
+        live_pids = set(self.processes)
+        for key, entry in self.slow_requests.items():
+            if entry.pid not in live_pids:
+                drop.append(key)
+                continue
+            proc = self.processes.get(entry.pid)
+            sp = proc.sample_period if proc and proc.sample_period > 0 else 1.0
+            if entry.state == 1:
+                ttl = max(self.SLOW_COMPLETED_TTL_SECONDS, 5.0 * sp)
+            else:
+                ttl = max(self.SLOW_ACTIVE_TTL_SECONDS, 3.0 * sp)
+            if now - entry.last_seen > ttl:
+                drop.append(key)
+        for key in drop:
+            self.slow_requests.pop(key, None)
 
     # --- WebSocket client API -------------------------------------------------
 
@@ -178,6 +323,10 @@ class Ingester:
                     "samples": [self._sample_to_dict(s) for s in st.samples],
                 }
                 for st in self.processes.values()
+            ],
+            "slow_requests": [
+                {"key": list(k), "entry": e.to_dict()}
+                for k, e in self.slow_requests.items()
             ],
             "total_received": self.total_received,
             "decode_errors": self.decode_errors,
