@@ -48,8 +48,17 @@ def parse_target(spec: str) -> tuple[int, tuple]:
     raise ValueError(f"unknown scheme in target {spec!r}: expected unix: or udp:")
 
 
-def make_sample(pid: int, seq: int, phase: float, interval: float) -> Sample:
-    """Build one synthetic request_metrics sample."""
+_SLOT_COUNT = 5
+
+
+def make_sample(pid: int, seq: int, phase: float, interval: float,
+                slot_state: dict | None = None) -> Sample:
+    """Build one synthetic request_metrics sample.
+
+    slot_state is a per-process dict carrying stateful slot info across
+    ticks: which slot (if any) is currently "stuck" on a long request,
+    and how long it's been stuck. Mutated in place.
+    """
     base = 100 + 60 * math.sin(phase)
     jitter = random.uniform(-10, 10)
     throughput = max(0.0, base + jitter)
@@ -68,6 +77,59 @@ def make_sample(pid: int, seq: int, phase: float, interval: float) -> Sample:
             buckets[idx] += 1
         return buckets
 
+    # Per-slot capacity arrays. Each slot's base busy-fraction is a
+    # blend of the process-wide capacity and per-slot jitter, so slots
+    # diverge visibly on the heatmap even when the process average is
+    # steady. One slot may be "stuck" on a long request — its
+    # current_elapsed climbs across ticks and its busy-time saturates.
+    if slot_state is None:
+        slot_state = {}
+
+    # Randomly start or release a stuck slot so the UI shows activity.
+    stuck_slot = slot_state.get("stuck_slot")
+    stuck_since_ms = slot_state.get("stuck_since_ms", 0)
+    if stuck_slot is None:
+        if cap > 0.4 and random.random() < 0.05:
+            stuck_slot = random.randrange(_SLOT_COUNT)
+            stuck_since_ms = 0
+    else:
+        stuck_since_ms += int(interval * 1000)
+        if stuck_since_ms > 15000 or random.random() < 0.08:
+            stuck_slot = None
+            stuck_since_ms = 0
+    slot_state["stuck_slot"] = stuck_slot
+    slot_state["stuck_since_ms"] = stuck_since_ms
+
+    sample_period_us = int(interval * 1_000_000)
+    slot_request_count = [0] * _SLOT_COUNT
+    slot_busy_time_us = [0] * _SLOT_COUNT
+    slot_cpu_time_us = [0] * _SLOT_COUNT
+    slot_current_elapsed_ms = [0] * _SLOT_COUNT
+    slot_max_duration_ms = [0] * _SLOT_COUNT
+
+    for s in range(_SLOT_COUNT):
+        if s == stuck_slot:
+            # Pinned on a long request — busy near 100%, no completions,
+            # current_elapsed climbing.
+            slot_busy_time_us[s] = int(sample_period_us * random.uniform(0.92, 1.0))
+            slot_cpu_time_us[s] = int(slot_busy_time_us[s] * random.uniform(0.05, 0.25))
+            slot_current_elapsed_ms[s] = stuck_since_ms
+            slot_max_duration_ms[s] = stuck_since_ms
+            slot_request_count[s] = 0
+        else:
+            slot_cap = max(0.0, min(1.0, cap + random.uniform(-0.25, 0.25)))
+            slot_busy_time_us[s] = int(sample_period_us * slot_cap)
+            cpu_frac = random.uniform(0.3, 0.8)
+            slot_cpu_time_us[s] = int(slot_busy_time_us[s] * cpu_frac)
+            slot_request_count[s] = max(
+                0, int(slot_cap * count / max(1, _SLOT_COUNT - (1 if stuck_slot is not None else 0))
+                       + random.uniform(-2, 2)))
+            # Heavy-tailed max-duration per tick.
+            if slot_request_count[s] > 0:
+                slot_max_duration_ms[s] = int(
+                    max(5, random.lognormvariate(3.5, 0.8))
+                )
+
     rss = 120 * 1024 * 1024 + int(10 * 1024 * 1024 * math.sin(phase / 3))
 
     fields = {
@@ -82,14 +144,21 @@ def make_sample(pid: int, seq: int, phase: float, interval: float) -> Sample:
         "cpu_utilization": cpu_user + cpu_sys,
         "memory_rss": rss,
         "memory_max_rss": rss + 8 * 1024 * 1024,
-        "request_threads_maximum": 5,
-        "request_threads_active": max(1, min(5, int(cap * 5 + 1))),
+        "request_threads_maximum": _SLOT_COUNT,
+        "request_threads_active": max(1, min(_SLOT_COUNT,
+                                             sum(1 for v in slot_busy_time_us
+                                                 if v > 0))),
         "server_time": srv_time,
         "queue_time": random.uniform(0.0005, 0.003),
         "daemon_time": random.uniform(0.0005, 0.002),
         "application_time": app_time,
         "application_time_buckets": bucketise(count, concentration=6),
         "server_time_buckets": bucketise(count, concentration=7),
+        "slot_request_count": slot_request_count,
+        "slot_busy_time_us": slot_busy_time_us,
+        "slot_cpu_time_us": slot_cpu_time_us,
+        "slot_current_elapsed_ms": slot_current_elapsed_ms,
+        "slot_max_duration_ms": slot_max_duration_ms,
         "input_bytes_total": count * 256,
         "output_bytes_total": count * 1024,
         "slow_requests": random.randint(0, max(0, count // 50)),
@@ -148,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
     pids = [100000 + i for i in range(args.processes)]
     seqs = [0] * args.processes
     phases = [random.uniform(0, 2 * math.pi) for _ in range(args.processes)]
+    slot_states: list[dict] = [dict() for _ in range(args.processes)]
 
     # Per-process in-flight slow requests so heartbeats + completions are
     # correlated. Keyed by a synthetic log_id so the ingester's (pid,
@@ -164,7 +234,8 @@ def main(argv: list[str] | None = None) -> int:
             for i in range(args.processes):
                 phases[i] += args.interval / 15.0
                 seqs[i] += 1
-                sample = make_sample(pids[i], seqs[i], phases[i], args.interval)
+                sample = make_sample(pids[i], seqs[i], phases[i], args.interval,
+                                     slot_state=slot_states[i])
                 try:
                     sock.sendto(encode(sample), addr)
                     sent += 1

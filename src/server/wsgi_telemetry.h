@@ -101,7 +101,17 @@
 #define WSGI_METRICS_F_QUEUE_TIME_BUCKETS          61
 #define WSGI_METRICS_F_DAEMON_TIME_BUCKETS         62
 #define WSGI_METRICS_F_APPLICATION_TIME_BUCKETS    63
-#define WSGI_METRICS_F_REQUEST_THREADS_BUCKETS     64
+
+/* Per-slot capacity signals — one entry per worker thread, length =
+ * request_threads_maximum. Field 64 (historically reserved as
+ * "request_threads_buckets") now carries the same semantics under the
+ * clearer name slot_request_count: per-slot completed-request count
+ * for the interval. */
+#define WSGI_METRICS_F_SLOT_REQUEST_COUNT          64   /* i32 array */
+#define WSGI_METRICS_F_SLOT_BUSY_TIME_US           90   /* i32 array */
+#define WSGI_METRICS_F_SLOT_CPU_TIME_US            91   /* i32 array */
+#define WSGI_METRICS_F_SLOT_CURRENT_ELAPSED_MS     92   /* i32 array */
+#define WSGI_METRICS_F_SLOT_MAX_DURATION_MS        93   /* i32 array */
 
 /* Slow-request fields. Only present in WSGI_METRICS_KIND_SLOW_REQUEST
  * datagrams; identity (hostname, process_group) is looked up via the
@@ -127,6 +137,12 @@
  */
 
 #define WSGI_TELEMETRY_BUCKET_COUNT 16
+
+/* Upper bound on per-slot array sizing. The encoder only emits
+ * slot_count entries per tick, so oversizing the struct costs stack
+ * memory but no wire bytes. 128 is generous for any realistic
+ * WSGIDaemonProcess threads setting. */
+#define WSGI_TELEMETRY_MAX_SLOTS    128
 
 typedef struct {
     char     hostname[128];
@@ -157,6 +173,16 @@ typedef struct {
     int32_t  queue_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
     int32_t  daemon_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
     int32_t  application_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
+
+    /* Per-slot capacity signals. slot_count is the live length of each
+     * array — normally the WSGI process's request_threads_maximum, or
+     * WSGI_TELEMETRY_MAX_SLOTS if that is exceeded. */
+    uint32_t slot_count;
+    int32_t  slot_request_count      [WSGI_TELEMETRY_MAX_SLOTS];
+    int32_t  slot_busy_time_us       [WSGI_TELEMETRY_MAX_SLOTS];
+    int32_t  slot_cpu_time_us        [WSGI_TELEMETRY_MAX_SLOTS];
+    int32_t  slot_current_elapsed_ms [WSGI_TELEMETRY_MAX_SLOTS];
+    int32_t  slot_max_duration_ms    [WSGI_TELEMETRY_MAX_SLOTS];
 
     int      has_daemon_timing;  /* queue_time / daemon_time valid? */
     int      seeded;             /* false on first call; telemetry skips send */

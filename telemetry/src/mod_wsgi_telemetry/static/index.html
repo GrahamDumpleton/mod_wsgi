@@ -67,10 +67,16 @@
   }
   .process-list h2 {
     font-size: 12px;
-    margin: 0 0 8px;
+    margin: 0;
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+  .process-list .subtitle {
+    font-size: 10px;
+    color: var(--muted);
+    margin: 1px 0 8px;
+    opacity: 0.7;
   }
   .proc {
     padding: 6px 8px;
@@ -210,13 +216,90 @@
     padding: 16px 8px;
     text-align: center;
   }
-  .chart {
+  .capacity-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .capacity-card {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 4px;
     padding: 10px;
   }
+  .capacity-card .header-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .capacity-card h3 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .capacity-card .meta {
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .capacity-card canvas {
+    width: 100%;
+    background: #161616;
+    border-radius: 3px;
+  }
+  .capacity-empty {
+    color: var(--muted);
+    font-size: 12px;
+    padding: 24px 8px;
+    text-align: center;
+  }
+  .capacity-legend {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--muted);
+    padding: 6px 10px;
+    margin-bottom: 6px;
+  }
+  .capacity-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .capacity-legend .gradient {
+    width: 80px;
+    height: 10px;
+    border-radius: 2px;
+    background: linear-gradient(to right, #1e2820, #4caf50, #ffb74d, #e57373);
+    border: 1px solid var(--border);
+  }
+  .capacity-legend .stuck-swatch {
+    width: 10px;
+    height: 10px;
+    background: #ff0000;
+    border-radius: 2px;
+  }
+  .chart {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+    /* Each chart is its own layout container so the responsive rule
+     * below can force the live-stats line to wrap whenever the chart
+     * itself is narrow, regardless of what the live text currently
+     * says. Without this, a live value that briefly becomes short
+     * (e.g. "0" instead of "0.0100 mean 0.0050 cores") flips the
+     * flex-wrap decision tick by tick and the value visibly hops
+     * between "next to the unit" and "below the unit". */
+    container-type: inline-size;
+  }
   .chart.wide { grid-column: 1 / -1; }
+  @container (max-width: 420px) {
+    .chart .live {
+      flex-basis: 100%;
+    }
+  }
   .chart canvas.tall { height: 220px; }
   .chart h3 {
     margin: 0 0 4px;
@@ -227,6 +310,8 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 2px 12px;
     margin-bottom: 8px;
   }
   .chart .header-row h3 { margin: 0; }
@@ -245,6 +330,7 @@
     font-size: 12px;
     font-variant-numeric: tabular-nums;
     color: var(--fg);
+    white-space: nowrap;
   }
   .chart .live .label { color: var(--muted); margin-right: 4px; }
   .window-picker {
@@ -258,6 +344,22 @@
     font-family: inherit;
   }
   .window-picker:hover { border-color: var(--accent); }
+  .pause-btn {
+    background: #1a1a1a;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 8px;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .pause-btn:hover { border-color: var(--accent); }
+  .pause-btn.paused {
+    background: #3a2a0a;
+    border-color: #ffb74d;
+    color: #ffb74d;
+  }
   .tooltip {
     position: fixed;
     pointer-events: none;
@@ -298,11 +400,13 @@
 <main>
   <aside class="process-list">
     <h2>Processes</h2>
+    <div class="subtitle">last 1 min</div>
     <div id="procs"></div>
   </aside>
   <section class="charts-area">
     <div class="tabs" id="tabs">
       <button type="button" class="tab active" data-panel="overview">Overview</button>
+      <button type="button" class="tab" data-panel="capacity">Capacity</button>
       <button type="button" class="tab" data-panel="slow">Slow requests</button>
     </div>
     <div class="tab-panel" id="panel_overview">
@@ -342,8 +446,8 @@
               <select id="dist_window" class="window-picker">
                 <option value="10">10s</option>
                 <option value="30">30s</option>
-                <option value="60">1m</option>
-                <option value="120" selected>2m</option>
+                <option value="60" selected>1m</option>
+                <option value="120">2m</option>
                 <option value="300">5m</option>
                 <option value="600">10m</option>
               </select>
@@ -352,6 +456,28 @@
           </div>
           <canvas id="c_dist" class="tall"></canvas></div>
       </div>
+    </div>
+    <div class="tab-panel hidden" id="panel_capacity">
+      <div class="capacity-legend">
+        <span>busy fraction per slot
+          <span class="gradient"></span>
+          0 &rarr; 1
+        </span>
+        <span><span class="stuck-swatch"></span>slow requests &ge;
+          <select id="capacity_stuck_thresh" class="window-picker">
+            <option value="500">0.5 s</option>
+            <option value="1000" selected>1 s</option>
+            <option value="2000">2 s</option>
+            <option value="5000">5 s</option>
+          </select>
+        </span>
+        <span>hover for per-cell details</span>
+        <span style="margin-left:auto">
+          <button type="button" id="capacity_pause" class="pause-btn"
+                  title="Freeze the heatmap at the current instant so you can hover without the view scrolling. Unpause to resume live updates.">Pause</button>
+        </span>
+      </div>
+      <div class="capacity-grid" id="capacity_grid"></div>
     </div>
     <div class="tab-panel hidden" id="panel_slow">
       <div class="slow-panel">
@@ -406,8 +532,11 @@ const COLORS = ["#4fc3f7","#ff8a65","#81c784","#ba68c8","#fff176","#4db6ac","#e5
 // Line charts always show the most recent LINE_WINDOW_SEC. Samples are
 // retained for up to SAMPLE_RETENTION_SEC so the distribution panel's
 // window picker can reach 10 minutes even though the line charts stay
-// focused on recent activity.
-const LINE_WINDOW_SEC = 120;
+// focused on recent activity. 60s is the shared default across the UI —
+// line charts, distribution histogram, Capacity heatmap and sidebar
+// per-process stats all key off the same 1-minute window so numbers
+// read consistently across tabs.
+const LINE_WINDOW_SEC = 60;
 const SAMPLE_RETENTION_SEC = 600;
 // A process disappears from the sidebar if we haven't received a sample
 // in this many seconds. Default telemetry interval is 1s, so 10s leaves
@@ -424,6 +553,12 @@ const state = {
   totalReceived: 0,
   decodeErrors: 0,
   activeTab: "overview",
+  // Capacity heatmap pause: while paused, the heatmap window stays
+  // locked on capacityPausedAt (unix seconds) so the user can hover
+  // without cells scrolling away. Samples continue to accumulate in
+  // the background; resume reverts to the live window.
+  capacityPaused: false,
+  capacityPausedAt: 0,
 };
 
 // Floor values for slow-request TTLs (ms). Defensive second layer of
@@ -510,25 +645,53 @@ function renderProcs() {
   const live = pids.filter(pid => !isStale(state.processes.get(pid)));
   const visible = live.filter(pid => !isHidden(state.processes.get(pid)));
   const hiddenCount = live.length - visible.length;
+  const nowSec = Date.now() / 1000;
+  const windowCut = nowSec - LINE_WINDOW_SEC;
   el.innerHTML = visible.map(pid => {
     const p = state.processes.get(pid);
+    // Aggregate over the shared 1m window so the sidebar numbers match
+    // the charts. rpm is summed request_count divided by window length,
+    // which gives true throughput regardless of tick spacing; cap is the
+    // mean of capacity_utilization across samples; memory stays current.
+    let rcSum = 0;
+    let rcSamples = 0;
+    let capSum = 0;
+    let capSamples = 0;
+    for (const s of p.samples) {
+      if (s.t < windowCut) continue;
+      const f = s.fields;
+      if (typeof f.request_count === "number") {
+        rcSum += f.request_count;
+        rcSamples++;
+      }
+      if (typeof f.capacity_utilization === "number") {
+        capSum += f.capacity_utilization;
+        capSamples++;
+      }
+    }
+    const rpm = rcSamples > 0 ? Math.round((rcSum / LINE_WINDOW_SEC) * 60) : 0;
+    const cap = capSamples > 0 ? (capSum / capSamples) : 0;
     const last = p.samples[p.samples.length - 1];
     const f = last ? last.fields : {};
-    const rps = (f.request_throughput || 0).toFixed(1);
-    const cap = (f.capacity_utilization || 0).toFixed(2);
     const rss = f.memory_rss ? (f.memory_rss / 1048576).toFixed(0) + " MB" : "—";
     return `<div class="proc" style="border-left-color:${p.color}">
       <div class="pid">pid ${pid}</div>
       <div class="meta">${p.hostname || ""} ${p.process_group ? '['+p.process_group+']' : '(embedded)'}</div>
-      <div class="meta">${rps} rps · cap ${cap} · ${rss}</div>
+      <div class="meta">${rpm} rpm · cap ${(cap * 100).toFixed(0)}% · ${rss}</div>
     </div>`;
   }).join("");
   if (hiddenCount > 0) {
     el.innerHTML += `<div class="meta" style="margin-top:8px;color:var(--muted);font-size:11px">
       ${hiddenCount} filtered out</div>`;
   }
+  // Show decode errors only when non-zero — "0 errors" on the title
+  // bar is noise. The sample count is the primary "am I seeing
+  // traffic?" signal so it stays.
+  const errPart = state.decodeErrors > 0
+    ? ` · ${state.decodeErrors} decode errors`
+    : "";
   document.getElementById("stats").textContent =
-    `${state.totalReceived} samples · ${state.processes.size} processes · ${state.decodeErrors} errors`;
+    `${state.totalReceived} samples${errPart}`;
 }
 
 // --- Slow-request tracking -----------------------------------------------
@@ -665,12 +828,317 @@ function renderSlowRequests() {
   }).join("");
 }
 
+// --- Capacity (per-slot) heatmap -----------------------------------------
+
+const CAPACITY_WINDOW_SEC = 60;
+const CAPACITY_ROW_HEIGHT_PX = 18;   // one thread slot
+const CAPACITY_MIN_ROW_PX = 4;
+
+function capacityColor(frac) {
+  // frac in [0, 1]. Mirrors the CSS legend gradient: dim green at 0,
+  // through green, amber, into red at 1. Idle (frac < 0.05) is barely
+  // visible so the heatmap isn't a solid block when nothing's happening.
+  if (frac < 0.05) return "#1e2820";
+  const f = Math.max(0, Math.min(1, frac));
+  // Piecewise-linear interpolation through four stops.
+  const stops = [
+    [0.0,   [30, 40,  32]],
+    [0.4,   [76, 175, 80]],
+    [0.75,  [255, 183, 77]],
+    [1.0,   [229, 115, 115]],
+  ];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [t0, c0] = stops[i];
+    const [t1, c1] = stops[i + 1];
+    if (f <= t1) {
+      const k = (f - t0) / (t1 - t0 || 1);
+      const r = Math.round(c0[0] + (c1[0] - c0[0]) * k);
+      const g = Math.round(c0[1] + (c1[1] - c0[1]) * k);
+      const b = Math.round(c0[2] + (c1[2] - c0[2]) * k);
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+  return "#e57373";
+}
+
+function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
+  const ctx = canvas.getContext("2d");
+  const now = nowOverride !== undefined ? nowOverride : Date.now() / 1000;
+  const tmin = now - CAPACITY_WINDOW_SEC;
+
+  // Pull visible samples and determine slot count from the newest one.
+  // Clip against `now` so a paused view doesn't drift when samples keep
+  // arriving in the background.
+  const samples = p.samples.filter(s => s.t >= tmin && s.t <= now);
+  if (samples.length === 0) {
+    canvas._hitTest = null;
+    canvas.height = 1;
+    return { busyMean: 0, cpuMean: 0, busyPeak: 0, cpuPeak: 0, slowRunCount: 0 };
+  }
+  const lastSample = samples[samples.length - 1];
+  const slotCount = Math.max(
+    1,
+    (lastSample.fields.slot_busy_time_us || lastSample.fields.slot_request_count || []).length
+  );
+
+  // Layout. Each slot gets a row; width mirrors the parent canvas.
+  const padLeft = 32;
+  const padRight = 4;
+  const padTop = 4;
+  const padBottom = 14;   // axis label strip
+  const clientW = canvas.clientWidth;
+  const rowPx = Math.max(CAPACITY_MIN_ROW_PX, CAPACITY_ROW_HEIGHT_PX);
+  const h = padTop + rowPx * slotCount + padBottom;
+  canvas.style.height = h + "px";
+  canvas.width = clientW * devicePixelRatio;
+  canvas.height = h * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  ctx.clearRect(0, 0, clientW, h);
+
+  const plotW = clientW - padLeft - padRight;
+  const plotH = rowPx * slotCount;
+
+  const xOf = t => padLeft + ((t - tmin) / (now - tmin)) * plotW;
+
+  // Hit-map for hover tooltip. One entry per (sample, slot).
+  const cells = [];
+
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i];
+    const period = s.fields.sample_period || 1.0;
+    const periodUs = period * 1_000_000;
+    const busy = s.fields.slot_busy_time_us || [];
+    const cpu = s.fields.slot_cpu_time_us || [];
+    const count = s.fields.slot_request_count || [];
+    const current = s.fields.slot_current_elapsed_ms || [];
+    const maxMs = s.fields.slot_max_duration_ms || [];
+
+    // Cell spans from the previous sample's time (or one period back) to
+    // this sample's time so ticks never leave gaps on the heatmap.
+    const prevT = i > 0 ? samples[i - 1].t : Math.max(tmin, s.t - period);
+    const x0 = xOf(prevT);
+    const x1 = xOf(s.t);
+    const w = Math.max(1, x1 - x0);
+
+    for (let slot = 0; slot < slotCount; slot++) {
+      const busyUs = busy[slot] || 0;
+      const frac = periodUs > 0 ? busyUs / periodUs : 0;
+      const y = padTop + slot * rowPx;
+      ctx.fillStyle = capacityColor(frac);
+      ctx.fillRect(x0, y, w, rowPx - 1);
+
+      cells.push({
+        x0, x1, y,
+        yEnd: y + rowPx,
+        pid: p.pid,
+        slot,
+        tickT: s.t,
+        frac,
+        cpuFrac: periodUs > 0 ? (cpu[slot] || 0) / periodUs : 0,
+        count: count[slot] || 0,
+        elapsedMs: current[slot] || 0,
+        maxMs: maxMs[slot] || 0,
+      });
+    }
+  }
+
+  // Merge consecutive stuck cells on the same slot into one run. A run
+  // is a maximal span of ticks where elapsedMs >= threshold AND elapsed
+  // is monotonically non-decreasing — meaning the same long request
+  // kept running across those ticks. When elapsed drops (the old request
+  // finished and a fresh one started within the next tick) we end the
+  // run and start a new one, so distinct stuck requests stay visually
+  // separate. Every cell in a run carries a `runLast` pointer so the
+  // hover tooltip can report the most recent sample's data regardless
+  // of which cell in the run the user lands on.
+
+  const bySlot = new Map();
+  for (const c of cells) {
+    if (!bySlot.has(c.slot)) bySlot.set(c.slot, []);
+    bySlot.get(c.slot).push(c);
+  }
+  for (const arr of bySlot.values()) arr.sort((a, b) => a.x0 - b.x0);
+
+  let slowRunCount = 0;
+  for (const arr of bySlot.values()) {
+    let i = 0;
+    while (i < arr.length) {
+      if (arr[i].elapsedMs < stuckThreshMs) { i++; continue; }
+      let j = i;
+      let prevE = -1;
+      while (j < arr.length
+             && arr[j].elapsedMs >= stuckThreshMs
+             && arr[j].elapsedMs >= prevE) {
+        prevE = arr[j].elapsedMs;
+        j++;
+      }
+      const first = arr[i];
+      const last = arr[j - 1];
+      for (let k = i; k < j; k++) arr[k].runLast = last;
+      // Solid red overlay replacing the normal heatmap colour for the
+      // full run so the stuck span reads at a glance.
+      ctx.fillStyle = "#ff0000";
+      ctx.fillRect(first.x0, first.y,
+                   last.x1 - first.x0, first.yEnd - first.y - 1);
+      slowRunCount++;
+      i = j;
+    }
+  }
+
+  // Per-tick busy/cpu fractions across the visible window, so the meta
+  // line can report window-averaged figures (smooths single-tick noise
+  // and the "cpu dumped at request end" artefact) alongside the peak.
+  let busySum = 0, cpuSum = 0, busyPeak = 0, cpuPeak = 0;
+  for (const s of samples) {
+    const periodUs = (s.fields.sample_period || 1.0) * 1_000_000;
+    const sb = s.fields.slot_busy_time_us || [];
+    const sc = s.fields.slot_cpu_time_us || [];
+    const n = sb.length || 1;
+    const bFrac = sb.reduce((a, v) => a + v, 0) / n / (periodUs || 1);
+    const cFrac = sc.reduce((a, v) => a + v, 0) / n / (periodUs || 1);
+    busySum += bFrac;
+    cpuSum += cFrac;
+    if (bFrac > busyPeak) busyPeak = bFrac;
+    if (cFrac > cpuPeak) cpuPeak = cFrac;
+  }
+  const nSamples = samples.length || 1;
+  const windowStats = {
+    busyMean: busySum / nSamples,
+    cpuMean: cpuSum / nSamples,
+    busyPeak,
+    cpuPeak,
+    slowRunCount,
+  };
+
+  // Y-axis slot labels.
+  ctx.fillStyle = "#888";
+  ctx.font = "10px -apple-system, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let slot = 0; slot < slotCount; slot++) {
+    ctx.fillText(String(slot + 1),
+                 padLeft - 6, padTop + slot * rowPx + rowPx / 2);
+  }
+
+  // X-axis "now" / "-60s" labels.
+  ctx.fillStyle = "#666";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.font = "10px -apple-system, sans-serif";
+  ctx.fillText("-" + CAPACITY_WINDOW_SEC + "s",
+               padLeft + 2, padTop + plotH + 2);
+  ctx.textAlign = "right";
+  ctx.fillText("now", padLeft + plotW - 2, padTop + plotH + 2);
+
+  canvas._hitTest = { cells, pid: p.pid };
+  return windowStats;
+}
+
+function renderCapacity() {
+  const grid = document.getElementById("capacity_grid");
+  const stuckThreshMs = parseInt(
+    document.getElementById("capacity_stuck_thresh").value, 10) || 1000;
+  const nowTs = state.capacityPaused
+    ? state.capacityPausedAt
+    : Date.now() / 1000;
+
+  const pids = [...state.processes.keys()].sort((a, b) => a - b).filter(pid => {
+    const p = state.processes.get(pid);
+    if (!p) return false;
+    if (isStale(p)) return false;
+    if (isHidden(p)) return false;
+    // Only show processes that have at least one slot-capacity sample.
+    return p.samples.some(s => Array.isArray(s.fields.slot_busy_time_us));
+  });
+
+  if (pids.length === 0) {
+    grid.innerHTML = `<div class="capacity-empty">no samples available</div>`;
+    return;
+  }
+
+  // Reuse existing cards when possible so canvases don't flicker.
+  const wanted = new Set(pids.map(p => "cap_" + p));
+  for (const child of [...grid.children]) {
+    if (!wanted.has(child.id)) grid.removeChild(child);
+  }
+  for (const pid of pids) {
+    let card = document.getElementById("cap_" + pid);
+    if (!card) {
+      card = document.createElement("div");
+      card.className = "capacity-card";
+      card.id = "cap_" + pid;
+      card.innerHTML = `
+        <div class="header-row">
+          <h3>pid ${pid}</h3>
+          <div class="meta" id="cap_meta_${pid}"></div>
+        </div>
+        <canvas id="cap_cv_${pid}"></canvas>`;
+      grid.appendChild(card);
+    }
+    const p = state.processes.get(pid);
+    const canvas = document.getElementById("cap_cv_" + pid);
+    const stats = drawCapacityHeatmap(canvas, p, stuckThreshMs, nowTs);
+
+    const meta = document.getElementById("cap_meta_" + pid);
+    if (stats) {
+      // Window-averaged figures with the single-tick peak in parens.
+      // Smooths tick-to-tick noise and the "CPU dumped at request end"
+      // artefact, while the peak still surfaces transient saturation.
+      // Slow-requests count is distinct red-outlined runs across the
+      // visible window (matches what the eye picks out on the heatmap).
+      meta.textContent =
+        `${(p.process_group || "embedded")} · ` +
+        `busy ${(stats.busyMean * 100).toFixed(0)}% ` +
+        `(peak ${(stats.busyPeak * 100).toFixed(0)}%) · ` +
+        `cpu ${(stats.cpuMean * 100).toFixed(0)}% ` +
+        `(peak ${(stats.cpuPeak * 100).toFixed(0)}%) · ` +
+        `${stats.slowRunCount} slow request${stats.slowRunCount === 1 ? '' : 's'}`;
+    } else {
+      meta.textContent = "";
+    }
+  }
+}
+
+// Shared hover tooltip for heatmap cells.
+const capacityTooltipState = { cell: null, clientX: 0, clientY: 0 };
+
+function refreshCapacityTooltip() {
+  const tip = document.getElementById("tooltip");
+  const hovered = capacityTooltipState.cell;
+  if (!hovered) { tip.style.display = "none"; return; }
+  // For a cell that's part of a merged stuck run, report the run's most
+  // recent sample so the elapsed / max figures track the live request
+  // regardless of which cell the mouse landed on.
+  const c = hovered.runLast || hovered;
+  const runTag = hovered.runLast ? ` <span class="label">(run)</span>` : "";
+  tip.innerHTML =
+    `<div class="range">pid ${c.pid} &middot; slot ${c.slot + 1}${runTag}</div>` +
+    `<div><span class="label">busy</span>${(c.frac * 100).toFixed(0)}%</div>` +
+    `<div><span class="label">cpu</span>${(c.cpuFrac * 100).toFixed(0)}%</div>` +
+    `<div><span class="label">count</span>${c.count}</div>` +
+    `<div><span class="label">elapsed</span>${c.elapsedMs ? c.elapsedMs + " ms" : "—"}</div>` +
+    `<div><span class="label">max</span>${c.maxMs} ms</div>`;
+  tip.style.display = "block";
+  const rect = tip.getBoundingClientRect();
+  let left = capacityTooltipState.clientX + 12;
+  let top = capacityTooltipState.clientY + 12;
+  if (left + rect.width > window.innerWidth - 8) {
+    left = capacityTooltipState.clientX - rect.width - 12;
+  }
+  if (top + rect.height > window.innerHeight - 8) {
+    top = capacityTooltipState.clientY - rect.height - 12;
+  }
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+}
+
 function setActiveTab(name) {
   state.activeTab = name;
   for (const btn of document.querySelectorAll(".tab")) {
     btn.classList.toggle("active", btn.dataset.panel === name);
   }
   document.getElementById("panel_overview").classList.toggle("hidden", name !== "overview");
+  document.getElementById("panel_capacity").classList.toggle("hidden", name !== "capacity");
   document.getElementById("panel_slow").classList.toggle("hidden", name !== "slow");
   redraw();
 }
@@ -940,6 +1408,7 @@ function redraw() {
   rebuildGroupFilter();
   renderProcs();
   renderSlowRequests();
+  renderCapacity();
 
   const rps = drawChart(document.getElementById("c_rps"), f => f.request_throughput);
   setLive("live_rps",
@@ -1022,6 +1491,48 @@ document.getElementById("dist_window").addEventListener("change", redraw);
 document.getElementById("dist_field").addEventListener("change", redraw);
 document.getElementById("slow_state_filter").addEventListener("change", redraw);
 document.getElementById("slow_per_url").addEventListener("change", redraw);
+document.getElementById("capacity_stuck_thresh").addEventListener("change", redraw);
+
+(function () {
+  const btn = document.getElementById("capacity_pause");
+  btn.addEventListener("click", () => {
+    state.capacityPaused = !state.capacityPaused;
+    if (state.capacityPaused)
+      state.capacityPausedAt = Date.now() / 1000;
+    btn.classList.toggle("paused", state.capacityPaused);
+    btn.textContent = state.capacityPaused ? "Resume" : "Pause";
+    redraw();
+  });
+})();
+
+// Hover wiring for capacity heatmaps — delegated so the handler
+// survives canvas elements being recreated across ticks.
+(function () {
+  const grid = document.getElementById("capacity_grid");
+  grid.addEventListener("mousemove", e => {
+    const canvas = e.target.closest("canvas");
+    if (!canvas || !canvas._hitTest) {
+      capacityTooltipState.cell = null;
+      refreshCapacityTooltip();
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    let hit = null;
+    for (const c of canvas._hitTest.cells) {
+      if (x >= c.x0 && x < c.x1 && y >= c.y && y < c.yEnd) { hit = c; break; }
+    }
+    capacityTooltipState.cell = hit;
+    capacityTooltipState.clientX = e.clientX;
+    capacityTooltipState.clientY = e.clientY;
+    refreshCapacityTooltip();
+  });
+  grid.addEventListener("mouseleave", () => {
+    capacityTooltipState.cell = null;
+    refreshCapacityTooltip();
+  });
+})();
 for (const btn of document.querySelectorAll(".tab")) {
   btn.addEventListener("click", () => setActiveTab(btn.dataset.panel));
 }

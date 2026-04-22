@@ -184,6 +184,20 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
                            s->daemon_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
     }
 
+    if (s->slot_count > 0) {
+        uint16_t n = (uint16_t)s->slot_count;
+        wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SLOT_REQUEST_COUNT,
+                                   s->slot_request_count, n);
+        wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SLOT_BUSY_TIME_US,
+                                   s->slot_busy_time_us, n);
+        wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SLOT_CPU_TIME_US,
+                                   s->slot_cpu_time_us, n);
+        wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SLOT_CURRENT_ELAPSED_MS,
+                                   s->slot_current_elapsed_ms, n);
+        wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SLOT_MAX_DURATION_MS,
+                                   s->slot_max_duration_ms, n);
+    }
+
     return (size_t)(p - buf);
 }
 

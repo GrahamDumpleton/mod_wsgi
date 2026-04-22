@@ -36,6 +36,17 @@
 #                       the right-skewed fall-off typical of real HTTP
 #                       response time distributions.
 #
+#   "mixture"           Body + long-tail. 95% of requests draw from the
+#                       lognormal body centred on BENCHMARK_DELAY (sharp
+#                       peak, sigma = BENCHMARK_IO_SIGMA). The remaining
+#                       5% draw from a slow lognormal centred on 2 s,
+#                       capped at 5 s (thin but real long tail). Models
+#                       fast happy path + rare slow path (DB retries,
+#                       cache misses, GC pauses) — how real HTTP latency
+#                       decomposes in production. CPU side uses the
+#                       plain lognormal (no tail branch) to avoid
+#                       pathological stalls on rare CPU outliers.
+#
 # BENCHMARK_IO_SIGMA env var (float, default 0.6) is the log-normal
 # sigma parameter for the I/O delay when distribution is "lognormal".
 # Larger sigma => heavier tail. sigma ~ 0.6 gives roughly
@@ -126,9 +137,42 @@ def _sample_lognormal(target_mean, sigma):
     return sample
 
 
+_MIXTURE_TAIL_PROB = 0.05
+_MIXTURE_TAIL_MEAN = 2.0     # seconds; peak of the rare long-tail component
+_MIXTURE_TAIL_SIGMA = 0.4    # moderate spread for the tail
+_MIXTURE_TAIL_CAP = 5.0      # hard cap on tail samples
+
+
+def _sample_mixture(target_mean, sigma):
+    """Body + rare long-tail sampler for BENCHMARK_DISTRIBUTION=mixture.
+
+    95% of requests draw from the lognormal body centred on target_mean
+    (sharp peak near the caller's configured delay). The remaining 5%
+    draw from a slower lognormal with mean 2 s / sigma 0.4, capped hard
+    at 5 s. The tail parameters are fixed (not scaled by target_mean)
+    so the tail hump stays in a realistic 1-5 s range regardless of how
+    small the body mean is set.
+    """
+    if target_mean <= 0:
+        return target_mean
+    if random.random() < _MIXTURE_TAIL_PROB:
+        mu = math.log(_MIXTURE_TAIL_MEAN) - (_MIXTURE_TAIL_SIGMA *
+                                             _MIXTURE_TAIL_SIGMA) / 2.0
+        sample = random.lognormvariate(mu, _MIXTURE_TAIL_SIGMA)
+        return min(_MIXTURE_TAIL_CAP, sample)
+    return _sample_lognormal(target_mean, sigma)
+
+
 if _DISTRIBUTION == "lognormal":
     def _per_request_times():
         return (_sample_lognormal(_DELAY, _IO_SIGMA),
+                _sample_lognormal(_CPU, _CPU_SIGMA))
+elif _DISTRIBUTION == "mixture":
+    def _per_request_times():
+        # CPU uses plain lognormal — a rare 5 s CPU sample would stall
+        # an entire thread and saturate the host. I/O sleeps release
+        # the GIL, so long I/O tail samples are safe.
+        return (_sample_mixture(_DELAY, _IO_SIGMA),
                 _sample_lognormal(_CPU, _CPU_SIGMA))
 else:
     def _per_request_times():

@@ -95,6 +95,21 @@ def test_roundtrip_slow_request():
     assert got.fields["slow_path_info"] == b"/reports/render"
 
 
+def test_roundtrip_slot_capacity_arrays():
+    # All five per-slot capacity arrays must round-trip cleanly: reuse of
+    # wire id 64 (now carrying slot_request_count) + the new 90-93 block.
+    fields = {
+        "slot_request_count":       [0, 3, 7, 0, 1],
+        "slot_busy_time_us":        [0, 250_000, 980_000, 0, 120_000],
+        "slot_cpu_time_us":         [0,  80_000, 200_000, 0,  40_000],
+        "slot_current_elapsed_ms":  [0,       0,       0, 0,   2_500],
+        "slot_max_duration_ms":     [0,      35,     142, 0,     280],
+    }
+    got = _roundtrip(fields)
+    for name, expected in fields.items():
+        assert got.fields[name] == expected, name
+
+
 def test_rejects_bad_magic():
     s = Sample(version=1, kind=KIND_REQUEST, pid=1, seq=1,
                stamp_us=0, fields={"request_count": 1})

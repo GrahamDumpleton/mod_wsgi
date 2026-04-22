@@ -94,7 +94,17 @@ FIELDS = {
     61: "queue_time_buckets",
     62: "daemon_time_buckets",
     63: "application_time_buckets",
-    64: "request_threads_buckets",
+
+    # Per-slot capacity signals. One entry per worker thread, carried as
+    # i32 arrays whose length matches the emitting process's live
+    # request_threads_maximum. Field 64 was historically reserved as
+    # "request_threads_buckets"; its semantics (completed-request count
+    # per slot) are preserved under the clearer name slot_request_count.
+    64: "slot_request_count",
+    90: "slot_busy_time_us",
+    91: "slot_cpu_time_us",
+    92: "slot_current_elapsed_ms",
+    93: "slot_max_duration_ms",
 
     # Proposed additions from the review plan
     70: "input_bytes_total",

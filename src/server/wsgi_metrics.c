@@ -46,13 +46,15 @@ static apr_time_t wsgi_utilization_last = 0;
 
 apr_thread_mutex_t *wsgi_monitor_lock = NULL;
 
-static double wsgi_utilization_time(int adjustment,
-                                    apr_uint64_t *request_count)
+/* Caller MUST hold wsgi_monitor_lock. Touches wsgi_thread_utilization,
+ * wsgi_utilization_last, wsgi_active_requests and wsgi_total_requests —
+ * all covered by that same lock. */
+
+static double wsgi_utilization_time_locked(int adjustment,
+                                           apr_uint64_t *request_count)
 {
     apr_time_t now;
     double utilization = wsgi_thread_utilization;
-
-    apr_thread_mutex_lock(wsgi_monitor_lock);
 
     now = apr_time_now();
 
@@ -77,8 +79,6 @@ static double wsgi_utilization_time(int adjustment,
     if (request_count)
         *request_count = wsgi_total_requests;
 
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
-
     return utilization;
 }
 
@@ -92,15 +92,20 @@ static double wsgi_daemon_time_total = 0;
 static int wsgi_daemon_time_buckets[16];
 static double wsgi_application_time_total = 0;
 static int wsgi_application_time_buckets[16];
-static int *wsgi_request_threads_buckets = NULL;
 
-/* Slow-request tracking. Threshold is written once at config time via
- * WSGISlowRequests (0 = disabled, i.e. feature off). The active-slot
- * array tracks one in-flight request per worker thread, holding the
- * live request_rec pointer so URL / identity fields are read on demand
- * rather than copied at request start. The completed ring holds fully
- * snapshotted records for requests that finished while slow, so the
- * reporter thread can emit a final datagram at its next tick. */
+/* Per-thread active-slot array. One entry per worker thread (sized to the
+ * MPM max_threads in embedded mode or the daemon group's threads count in
+ * daemon mode). Each slot carries the live request_rec pointer while the
+ * thread is serving a request so the telemetry reporter can read URL /
+ * identity fields on demand without copying them at request start. The
+ * extra fields (busy_since_us, cpu_user_at_start, cpu_system_at_start)
+ * drive the per-slot capacity metrics: busy-fraction of the interval and
+ * CPU-time delta contributed by this slot.
+ *
+ * Slow-request tracking. Threshold is written once at config time via
+ * WSGISlowRequests (0 = disabled, i.e. feature off). The completed ring
+ * holds fully snapshotted records for requests that finished while slow,
+ * so the reporter thread can emit a final datagram at its next tick. */
 
 #define WSGI_SLOW_COMPLETED_RING_SIZE 32
 
@@ -112,9 +117,37 @@ typedef struct
     request_rec *r; /* valid only while in_use; lives in r->pool */
     apr_time_t start_us;
     uint32_t thread_id; /* 1-based, matches WSGIThreadInfo.thread_id */
+
+    /* Per-request baselines captured at wsgi_start_request, consumed by
+     * wsgi_end_request and wsgi_metrics_snapshot to compute per-slot
+     * interval accumulators. busy_since_us equals start_us at request
+     * start and is reset to now() at each tick while the slot stays
+     * in use, so long-running requests contribute to every tick they
+     * span (not just the tick they complete in). cpu_valid is 0 if the
+     * start-time CPU capture failed, so end_request knows not to fold
+     * a bogus (thread-lifetime-long) delta. */
+    apr_time_t busy_since_us;
+    int        cpu_valid;
+    double     cpu_user_at_start;
+    double     cpu_system_at_start;
 } wsgi_active_slot_t;
 
+/* Parallel array of per-slot interval accumulators. Drained and reset at
+ * each tick (by either the telemetry reporter or the Python accessor —
+ * whichever fires first; the remaining reader gets an empty interval).
+ * The drain-clash is accepted here and called out in the plan as a
+ * follow-up once a proper per-reader baseline scheme is in place. */
+
+typedef struct
+{
+    apr_time_t busy_time_us;    /* folded busy time this interval */
+    apr_time_t cpu_time_us;     /* folded CPU time this interval */
+    uint32_t   completed;       /* completed-request count this interval */
+    apr_time_t max_duration_us; /* longest single request this interval */
+} wsgi_slot_stats_t;
+
 static wsgi_active_slot_t *wsgi_active_slots = NULL;
+static wsgi_slot_stats_t  *wsgi_slot_stats = NULL;
 static int wsgi_active_slots_max = 0;
 
 static wsgi_slow_request_t wsgi_completed_ring[WSGI_SLOW_COMPLETED_RING_SIZE];
@@ -123,7 +156,7 @@ static int wsgi_completed_ring_count = 0;
 
 /* Forward declarations — implementations live after wsgi_metrics_snapshot. */
 
-static void wsgi_slow_ensure_slots_locked(void);
+static void wsgi_slots_ensure_locked(void);
 static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r);
 static void wsgi_slow_push_completed_locked(const wsgi_slow_request_t *rec);
 
@@ -235,34 +268,60 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
     else
         PyErr_Clear();
 
-    wsgi_utilization_time(1, NULL);
+    /* Capture per-thread CPU baselines before taking the lock — the
+     * underlying thread_info()/getrusage() syscall only reads this
+     * worker's own state and doesn't need synchronisation, and we want
+     * to keep the locked region short. */
 
-    /* Claim this thread's active-request slot while the WSGI handler runs.
-     * Holding the request_rec pointer (not a copy) lets the telemetry
-     * reporter thread read URL / identity fields on demand and keeps the
-     * hot path cheap. r->pool stays alive until after wsgi_end_request
-     * clears the slot, so reads under wsgi_monitor_lock are always
-     * against a live request_rec. */
+    WSGIThreadCPUUsage cpu_usage;
+    int have_cpu = 0;
 
-    if (wsgi_slow_threshold_us > 0 && thread_info && thread_info->thread_id >= 1)
+    if (thread_info && thread_info->thread_id >= 1)
+        have_cpu = wsgi_thread_cpu_usage(&cpu_usage);
+
+    /* Bump utilization, claim this thread's active-request slot, all
+     * under one lock acquire. Holding the request_rec pointer (not a
+     * copy) lets the telemetry reporter thread read URL / identity
+     * fields on demand and keeps the hot path cheap. r->pool stays
+     * alive until after wsgi_end_request clears the slot, so reads
+     * under wsgi_monitor_lock are always against a live request_rec. */
+
+    apr_thread_mutex_lock(wsgi_monitor_lock);
+
+    wsgi_utilization_time_locked(1, NULL);
+
+    if (thread_info && thread_info->thread_id >= 1)
     {
-        apr_thread_mutex_lock(wsgi_monitor_lock);
-
-        wsgi_slow_ensure_slots_locked();
+        wsgi_slots_ensure_locked();
 
         if (wsgi_active_slots &&
             thread_info->thread_id <= wsgi_active_slots_max)
         {
             wsgi_active_slot_t *slot =
                 &wsgi_active_slots[thread_info->thread_id - 1];
+            apr_time_t now = apr_time_now();
+
             slot->in_use = 1;
             slot->r = r;
-            slot->start_us = apr_time_now();
+            slot->start_us = now;
             slot->thread_id = (uint32_t)thread_info->thread_id;
-        }
+            slot->busy_since_us = now;
 
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
+            slot->cpu_valid = have_cpu;
+            if (have_cpu)
+            {
+                slot->cpu_user_at_start = cpu_usage.user_time;
+                slot->cpu_system_at_start = cpu_usage.system_time;
+            }
+            else
+            {
+                slot->cpu_user_at_start = 0.0;
+                slot->cpu_system_at_start = 0.0;
+            }
+        }
     }
+
+    apr_thread_mutex_unlock(wsgi_monitor_lock);
 
     return thread_info;
 }
@@ -273,13 +332,19 @@ void wsgi_end_request(void)
 
     PyObject *module = NULL;
 
+    WSGIThreadCPUUsage cpu_usage;
+    int have_cpu = 0;
+
     thread_info = wsgi_thread_info(0, 1);
+
+    /* Capture CPU baseline before the lock — getrusage / thread_info
+     * only see the current worker's state. */
+
+    if (thread_info && thread_info->thread_id >= 1)
+        have_cpu = wsgi_thread_cpu_usage(&cpu_usage);
 
     if (thread_info)
     {
-        if (wsgi_request_threads_buckets)
-            wsgi_request_threads_buckets[thread_info->thread_id - 1] += 1;
-
         module = PyImport_ImportModule("mod_wsgi");
 
         if (module)
@@ -307,49 +372,72 @@ void wsgi_end_request(void)
             Py_CLEAR(thread_info->request_data);
     }
 
-    /* Release this thread's active-request slot. If the request exceeded
-     * the slow threshold, snapshot a completion record into the finalize
-     * ring while r->pool is still alive (Apache destroys it only after
-     * wsgi_end_request returns). Cleared-and-copy happens under the same
-     * lock to ensure the reporter never sees a slot with a dangling r. */
+    /* Fold the slot's per-request metrics into the interval accumulator,
+     * release the active slot, and decrement utilization — all under one
+     * lock acquire. If the request exceeded the slow threshold, snapshot
+     * a completion record into the finalize ring while r->pool is still
+     * alive (Apache destroys it only after wsgi_end_request returns).
+     * Clearing the slot under the same lock ensures the reporter never
+     * sees a slot with a dangling r. */
 
-    if (wsgi_slow_threshold_us > 0 && thread_info && thread_info->thread_id >= 1)
+    apr_thread_mutex_lock(wsgi_monitor_lock);
+
+    if (wsgi_active_slots && thread_info && thread_info->thread_id >= 1 &&
+        thread_info->thread_id <= wsgi_active_slots_max)
     {
-        apr_thread_mutex_lock(wsgi_monitor_lock);
+        wsgi_active_slot_t *slot =
+            &wsgi_active_slots[thread_info->thread_id - 1];
+        wsgi_slot_stats_t  *stats =
+            &wsgi_slot_stats[thread_info->thread_id - 1];
 
-        if (wsgi_active_slots &&
-            thread_info->thread_id <= wsgi_active_slots_max)
+        if (slot->in_use && slot->r)
         {
-            wsgi_active_slot_t *slot =
-                &wsgi_active_slots[thread_info->thread_id - 1];
+            apr_time_t now = apr_time_now();
+            apr_time_t elapsed = now - slot->start_us;
+            apr_time_t busy_delta = now - slot->busy_since_us;
 
-            if (slot->in_use && slot->r)
+            if (busy_delta < 0)
+                busy_delta = 0;
+
+            stats->busy_time_us += busy_delta;
+            stats->completed += 1;
+            if (elapsed > stats->max_duration_us)
+                stats->max_duration_us = elapsed;
+
+            if (have_cpu && slot->cpu_valid)
             {
-                apr_time_t now = apr_time_now();
-                apr_time_t elapsed = now - slot->start_us;
-
-                if (elapsed >= wsgi_slow_threshold_us)
-                {
-                    wsgi_slow_request_t rec;
-                    memset(&rec, 0, sizeof(rec));
-                    rec.state = 1; /* completed */
-                    rec.start_stamp_us = (uint64_t)slot->start_us;
-                    rec.duration_us = (uint64_t)elapsed;
-                    rec.thread_id = slot->thread_id;
-                    wsgi_slow_snapshot_fields(&rec, slot->r);
-                    wsgi_slow_push_completed_locked(&rec);
-                }
+                double cpu_delta =
+                    (cpu_usage.user_time   - slot->cpu_user_at_start) +
+                    (cpu_usage.system_time - slot->cpu_system_at_start);
+                if (cpu_delta < 0.0)
+                    cpu_delta = 0.0;
+                stats->cpu_time_us += (apr_time_t)(cpu_delta * 1.0e6);
             }
 
-            slot->in_use = 0;
-            slot->r = NULL;
-            slot->start_us = 0;
+            if (wsgi_slow_threshold_us > 0 &&
+                elapsed >= wsgi_slow_threshold_us)
+            {
+                wsgi_slow_request_t rec;
+                memset(&rec, 0, sizeof(rec));
+                rec.state = 1; /* completed */
+                rec.start_stamp_us = (uint64_t)slot->start_us;
+                rec.duration_us = (uint64_t)elapsed;
+                rec.thread_id = slot->thread_id;
+                wsgi_slow_snapshot_fields(&rec, slot->r);
+                wsgi_slow_push_completed_locked(&rec);
+            }
         }
 
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        slot->in_use = 0;
+        slot->r = NULL;
+        slot->start_us = 0;
+        slot->busy_since_us = 0;
+        slot->cpu_valid = 0;
     }
 
-    wsgi_utilization_time(-1, NULL);
+    wsgi_utilization_time_locked(-1, NULL);
+
+    apr_thread_mutex_unlock(wsgi_monitor_lock);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -371,7 +459,6 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     static double telemetry_start_cpu_system_time = 0.0;
 
     static int telemetry_request_threads_maximum = 0;
-    static int *telemetry_request_threads_buckets = NULL;
 
     apr_time_t stop_time;
     double stop_request_busy_time = 0.0;
@@ -386,6 +473,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     double application_time_total = 0.0;
 
     int i;
+    int emitted_slots = 0;
     int threads_active = 0;
 
 #ifdef HAVE_TIMES
@@ -437,31 +525,24 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 
         if (telemetry_request_threads_maximum <= 0)
             telemetry_request_threads_maximum = 1;
-
-        telemetry_request_threads_buckets = (int *)apr_pcalloc(
-            wsgi_server_config->pool,
-            telemetry_request_threads_maximum *
-                sizeof(telemetry_request_threads_buckets[0]));
     }
 
     stop_time = apr_time_now();
-    stop_request_busy_time = wsgi_utilization_time(0, &stop_request_count);
+
+    apr_thread_mutex_lock(wsgi_monitor_lock);
+
+    stop_request_busy_time = wsgi_utilization_time_locked(0,
+                                                          &stop_request_count);
+
+    /* Ensure slot arrays exist even before the first request so a tick
+     * that fires on an idle worker can still emit a well-formed
+     * (all-zero) slot payload. Idempotent. */
+
+    wsgi_slots_ensure_locked();
 
     /* First call seeds counters and returns a not-yet-seeded sample. */
     if (!telemetry_start_time)
     {
-        telemetry_start_time = stop_time;
-        telemetry_start_request_busy_time = stop_request_busy_time;
-        telemetry_start_request_count = stop_request_count;
-
-#ifdef HAVE_TIMES
-        times(&tmsbuf);
-        telemetry_start_cpu_user_time = tmsbuf.tms_utime / tick;
-        telemetry_start_cpu_system_time = tmsbuf.tms_stime / tick;
-#endif
-
-        apr_thread_mutex_lock(wsgi_monitor_lock);
-
         wsgi_sample_requests = 0;
         wsgi_server_time_total = 0.0;
         wsgi_queue_time_total = 0.0;
@@ -473,20 +554,113 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
         memset(&wsgi_daemon_time_buckets, 0, sizeof(wsgi_daemon_time_buckets));
         memset(&wsgi_application_time_buckets, 0,
                sizeof(wsgi_application_time_buckets));
-        if (wsgi_request_threads_buckets)
+
+        if (wsgi_slot_stats && wsgi_active_slots_max > 0)
         {
-            memset(wsgi_request_threads_buckets, 0,
-                   telemetry_request_threads_maximum *
-                       sizeof(wsgi_request_threads_buckets[0]));
+            memset(wsgi_slot_stats, 0,
+                   wsgi_active_slots_max * sizeof(wsgi_slot_stats[0]));
         }
 
         wsgi_request_metrics_enabled = 1;
 
         apr_thread_mutex_unlock(wsgi_monitor_lock);
 
+        telemetry_start_time = stop_time;
+        telemetry_start_request_busy_time = stop_request_busy_time;
+        telemetry_start_request_count = stop_request_count;
+
+#ifdef HAVE_TIMES
+        times(&tmsbuf);
+        telemetry_start_cpu_user_time = tmsbuf.tms_utime / tick;
+        telemetry_start_cpu_system_time = tmsbuf.tms_stime / tick;
+#endif
+
         out->seeded = 0;
         return 1;
     }
+
+    interval_requests = wsgi_sample_requests;
+    server_time_total = wsgi_server_time_total;
+    queue_time_total = wsgi_queue_time_total;
+    daemon_time_total = wsgi_daemon_time_total;
+    application_time_total = wsgi_application_time_total;
+
+    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
+    {
+        out->server_time_buckets[i] = wsgi_server_time_buckets[i];
+        out->queue_time_buckets[i] = wsgi_queue_time_buckets[i];
+        out->daemon_time_buckets[i] = wsgi_daemon_time_buckets[i];
+        out->application_time_buckets[i] = wsgi_application_time_buckets[i];
+    }
+
+    /* Per-slot capacity drain. Fold any in-flight busy-tail so a long
+     * request contributes to every tick it spans, not just the tick it
+     * completes in. CPU-time tails can't be folded here because
+     * getrusage(RUSAGE_THREAD) / thread_info() only sees the current
+     * thread; worker threads publish their CPU delta at request-end. */
+
+    emitted_slots = telemetry_request_threads_maximum;
+    if (emitted_slots > WSGI_TELEMETRY_MAX_SLOTS)
+        emitted_slots = WSGI_TELEMETRY_MAX_SLOTS;
+    if (wsgi_active_slots && emitted_slots > wsgi_active_slots_max)
+        emitted_slots = wsgi_active_slots_max;
+
+    if (wsgi_active_slots && wsgi_slot_stats && emitted_slots > 0)
+    {
+        apr_time_t now = apr_time_now();
+
+        for (i = 0; i < emitted_slots; i++)
+        {
+            wsgi_active_slot_t *slot = &wsgi_active_slots[i];
+            wsgi_slot_stats_t  *stats = &wsgi_slot_stats[i];
+            apr_time_t busy_tail = 0;
+            apr_time_t current_elapsed = 0;
+
+            if (slot->in_use)
+            {
+                busy_tail = now - slot->busy_since_us;
+                if (busy_tail < 0)
+                    busy_tail = 0;
+                slot->busy_since_us = now;
+                current_elapsed = now - slot->start_us;
+                if (current_elapsed < 0)
+                    current_elapsed = 0;
+            }
+
+            out->slot_request_count[i]      = (int32_t)stats->completed;
+            out->slot_busy_time_us[i]       =
+                (int32_t)(stats->busy_time_us + busy_tail);
+            out->slot_cpu_time_us[i]        = (int32_t)stats->cpu_time_us;
+            out->slot_current_elapsed_ms[i] =
+                (int32_t)(current_elapsed / 1000);
+            out->slot_max_duration_ms[i]    =
+                (int32_t)(stats->max_duration_us / 1000);
+
+            if (stats->completed || slot->in_use)
+                threads_active++;
+
+            stats->busy_time_us = 0;
+            stats->cpu_time_us = 0;
+            stats->completed = 0;
+            stats->max_duration_us = 0;
+        }
+    }
+
+    out->slot_count = (uint32_t)emitted_slots;
+
+    wsgi_sample_requests = 0;
+    wsgi_server_time_total = 0.0;
+    wsgi_queue_time_total = 0.0;
+    wsgi_daemon_time_total = 0.0;
+    wsgi_application_time_total = 0.0;
+
+    memset(&wsgi_server_time_buckets, 0, sizeof(wsgi_server_time_buckets));
+    memset(&wsgi_queue_time_buckets, 0, sizeof(wsgi_queue_time_buckets));
+    memset(&wsgi_daemon_time_buckets, 0, sizeof(wsgi_daemon_time_buckets));
+    memset(&wsgi_application_time_buckets, 0,
+           sizeof(wsgi_application_time_buckets));
+
+    apr_thread_mutex_unlock(wsgi_monitor_lock);
 
     out->seeded = 1;
 
@@ -534,52 +708,6 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     telemetry_start_request_busy_time = stop_request_busy_time;
     telemetry_start_request_count = stop_request_count;
 
-    apr_thread_mutex_lock(wsgi_monitor_lock);
-
-    interval_requests = wsgi_sample_requests;
-    server_time_total = wsgi_server_time_total;
-    queue_time_total = wsgi_queue_time_total;
-    daemon_time_total = wsgi_daemon_time_total;
-    application_time_total = wsgi_application_time_total;
-
-    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
-    {
-        out->server_time_buckets[i] = wsgi_server_time_buckets[i];
-        out->queue_time_buckets[i] = wsgi_queue_time_buckets[i];
-        out->daemon_time_buckets[i] = wsgi_daemon_time_buckets[i];
-        out->application_time_buckets[i] = wsgi_application_time_buckets[i];
-    }
-
-    if (wsgi_request_threads_buckets)
-    {
-        for (i = 0; i < telemetry_request_threads_maximum; i++)
-        {
-            if (wsgi_request_threads_buckets[i])
-                threads_active++;
-        }
-    }
-
-    wsgi_sample_requests = 0;
-    wsgi_server_time_total = 0.0;
-    wsgi_queue_time_total = 0.0;
-    wsgi_daemon_time_total = 0.0;
-    wsgi_application_time_total = 0.0;
-
-    memset(&wsgi_server_time_buckets, 0, sizeof(wsgi_server_time_buckets));
-    memset(&wsgi_queue_time_buckets, 0, sizeof(wsgi_queue_time_buckets));
-    memset(&wsgi_daemon_time_buckets, 0, sizeof(wsgi_daemon_time_buckets));
-    memset(&wsgi_application_time_buckets, 0,
-           sizeof(wsgi_application_time_buckets));
-
-    if (wsgi_request_threads_buckets)
-    {
-        memset(wsgi_request_threads_buckets, 0,
-               telemetry_request_threads_maximum *
-                   sizeof(wsgi_request_threads_buckets[0]));
-    }
-
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
-
     out->request_threads_active = (uint32_t)threads_active;
 
     if (interval_requests)
@@ -606,7 +734,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
  * live request_rec under wsgi_monitor_lock, truncating each field with
  * an "..." suffix so the UI can show where the cut was made. */
 
-static void wsgi_slow_ensure_slots_locked(void)
+static void wsgi_slots_ensure_locked(void)
 {
     int max = 0;
     int is_threaded = 0;
@@ -636,6 +764,8 @@ static void wsgi_slow_ensure_slots_locked(void)
 
     wsgi_active_slots = (wsgi_active_slot_t *)apr_pcalloc(
         wsgi_server_config->pool, max * sizeof(*wsgi_active_slots));
+    wsgi_slot_stats = (wsgi_slot_stats_t *)apr_pcalloc(
+        wsgi_server_config->pool, max * sizeof(*wsgi_slot_stats));
     wsgi_active_slots_max = max;
 }
 
@@ -892,6 +1022,10 @@ WSGI_STATIC_INTERNED_STRING(queue_time_buckets);
 WSGI_STATIC_INTERNED_STRING(daemon_time_buckets);
 WSGI_STATIC_INTERNED_STRING(application_time_buckets);
 WSGI_STATIC_INTERNED_STRING(request_threads_buckets);
+WSGI_STATIC_INTERNED_STRING(slot_busy_time_us);
+WSGI_STATIC_INTERNED_STRING(slot_cpu_time_us);
+WSGI_STATIC_INTERNED_STRING(slot_current_elapsed_ms);
+WSGI_STATIC_INTERNED_STRING(slot_max_duration_ms);
 
 static PyObject *wsgi_status_flags[SERVER_NUM_STATUS];
 
@@ -957,6 +1091,10 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(queue_time_buckets);
         WSGI_CREATE_INTERNED_STRING_ID(application_time_buckets);
         WSGI_CREATE_INTERNED_STRING_ID(request_threads_buckets);
+        WSGI_CREATE_INTERNED_STRING_ID(slot_busy_time_us);
+        WSGI_CREATE_INTERNED_STRING_ID(slot_cpu_time_us);
+        WSGI_CREATE_INTERNED_STRING_ID(slot_current_elapsed_ms);
+        WSGI_CREATE_INTERNED_STRING_ID(slot_max_duration_ms);
 
         WSGI_CREATE_STATUS_FLAG(SERVER_DEAD, ".");
         WSGI_CREATE_STATUS_FLAG(SERVER_READY, "_");
@@ -1006,6 +1144,11 @@ static PyObject *wsgi_request_metrics(void)
     double total_cpu_time = 0.0;
 
     static int request_threads_maximum = 0;
+    static int *slot_completed_snap = NULL;
+    static int *slot_busy_us_snap = NULL;
+    static int *slot_cpu_us_snap = NULL;
+    static int *slot_current_ms_snap = NULL;
+    static int *slot_max_ms_snap = NULL;
 
     apr_uint64_t interval_requests = 0;
     double server_time_total = 0;
@@ -1016,6 +1159,11 @@ static PyObject *wsgi_request_metrics(void)
     double daemon_time_avg = 0;
     double application_time_total = 0;
     double application_time_avg = 0;
+
+    int server_time_buckets_snap[16];
+    int queue_time_buckets_snap[16];
+    int daemon_time_buckets_snap[16];
+    int application_time_buckets_snap[16];
 
     int request_threads_active = 0;
 
@@ -1065,46 +1213,162 @@ static PyObject *wsgi_request_metrics(void)
 
         request_threads_maximum = ((request_threads_maximum <= 0) ? 1 : request_threads_maximum);
 
-        wsgi_request_threads_buckets = (int *)apr_pcalloc(
-            wsgi_server_config->pool, request_threads_maximum * sizeof(
-                                                                    wsgi_request_threads_buckets[0]));
+        slot_completed_snap = (int *)apr_pcalloc(
+            wsgi_server_config->pool,
+            request_threads_maximum * sizeof(slot_completed_snap[0]));
+        slot_busy_us_snap = (int *)apr_pcalloc(
+            wsgi_server_config->pool,
+            request_threads_maximum * sizeof(slot_busy_us_snap[0]));
+        slot_cpu_us_snap = (int *)apr_pcalloc(
+            wsgi_server_config->pool,
+            request_threads_maximum * sizeof(slot_cpu_us_snap[0]));
+        slot_current_ms_snap = (int *)apr_pcalloc(
+            wsgi_server_config->pool,
+            request_threads_maximum * sizeof(slot_current_ms_snap[0]));
+        slot_max_ms_snap = (int *)apr_pcalloc(
+            wsgi_server_config->pool,
+            request_threads_maximum * sizeof(slot_max_ms_snap[0]));
     }
 
     result = PyDict_New();
 
     stop_time = apr_time_now();
-    stop_request_busy_time = wsgi_utilization_time(0, &stop_request_count);
+
+#ifdef HAVE_TIMES
+    times(&tmsbuf);
+    stop_cpu_user_time = tmsbuf.tms_utime / tick;
+    stop_cpu_system_time = tmsbuf.tms_stime / tick;
+#endif
+
+    /* One locked region covers the utilization read AND the accumulator
+     * drain so the emitted sample is internally consistent. Python object
+     * construction happens afterwards, using the local snapshots. */
+
+    apr_thread_mutex_lock(wsgi_monitor_lock);
+
+    stop_request_busy_time = wsgi_utilization_time_locked(0,
+                                                          &stop_request_count);
+
+    /* Ensure slot arrays exist even if no request has been served yet. */
+    wsgi_slots_ensure_locked();
 
     if (!start_time)
     {
-        start_time = stop_time;
-        start_request_busy_time = stop_request_busy_time;
-        start_request_count = stop_request_count;
-
-#ifdef HAVE_TIMES
-        times(&tmsbuf);
-
-        start_cpu_user_time = tmsbuf.tms_utime / tick;
-        start_cpu_system_time = tmsbuf.tms_stime / tick;
-#else
-        start_cpu_user_time = 0.0;
-        start_cpu_system_time = 0.0;
-#endif
-
-        apr_thread_mutex_lock(wsgi_monitor_lock);
-
         wsgi_sample_requests = 0;
         wsgi_server_time_total = 0.0;
         wsgi_queue_time_total = 0.0;
         wsgi_daemon_time_total = 0.0;
         wsgi_application_time_total = 0.0;
 
+        if (wsgi_slot_stats && wsgi_active_slots_max > 0)
+        {
+            memset(wsgi_slot_stats, 0,
+                   wsgi_active_slots_max * sizeof(wsgi_slot_stats[0]));
+        }
+
         wsgi_request_metrics_enabled = 1;
 
         apr_thread_mutex_unlock(wsgi_monitor_lock);
 
+        start_time = stop_time;
+        start_request_busy_time = stop_request_busy_time;
+        start_request_count = stop_request_count;
+#ifdef HAVE_TIMES
+        start_cpu_user_time = stop_cpu_user_time;
+        start_cpu_system_time = stop_cpu_system_time;
+#else
+        start_cpu_user_time = 0.0;
+        start_cpu_system_time = 0.0;
+#endif
+
         return result;
     }
+
+    interval_requests = wsgi_sample_requests;
+    server_time_total = wsgi_server_time_total;
+    queue_time_total = wsgi_queue_time_total;
+    daemon_time_total = wsgi_daemon_time_total;
+    application_time_total = wsgi_application_time_total;
+
+    memcpy(server_time_buckets_snap, wsgi_server_time_buckets,
+           sizeof(server_time_buckets_snap));
+    memcpy(queue_time_buckets_snap, wsgi_queue_time_buckets,
+           sizeof(queue_time_buckets_snap));
+    memcpy(daemon_time_buckets_snap, wsgi_daemon_time_buckets,
+           sizeof(daemon_time_buckets_snap));
+    memcpy(application_time_buckets_snap, wsgi_application_time_buckets,
+           sizeof(application_time_buckets_snap));
+
+    /* Per-slot capacity drain. Fold in-flight busy-tail so a long request
+     * contributes to every interval it spans. CPU tails can't be folded
+     * here (cross-thread CPU time isn't available); request-end publishes
+     * the final CPU delta. */
+    {
+        apr_time_t now = apr_time_now();
+        int slot_n = request_threads_maximum;
+        if (wsgi_active_slots && slot_n > wsgi_active_slots_max)
+            slot_n = wsgi_active_slots_max;
+
+        for (i = 0; i < request_threads_maximum; i++)
+        {
+            slot_completed_snap[i] = 0;
+            slot_busy_us_snap[i] = 0;
+            slot_cpu_us_snap[i] = 0;
+            slot_current_ms_snap[i] = 0;
+            slot_max_ms_snap[i] = 0;
+        }
+
+        if (wsgi_active_slots && wsgi_slot_stats)
+        {
+            for (i = 0; i < slot_n; i++)
+            {
+                wsgi_active_slot_t *slot = &wsgi_active_slots[i];
+                wsgi_slot_stats_t  *stats = &wsgi_slot_stats[i];
+                apr_time_t busy_tail = 0;
+                apr_time_t current_elapsed = 0;
+
+                if (slot->in_use)
+                {
+                    busy_tail = now - slot->busy_since_us;
+                    if (busy_tail < 0)
+                        busy_tail = 0;
+                    slot->busy_since_us = now;
+                    current_elapsed = now - slot->start_us;
+                    if (current_elapsed < 0)
+                        current_elapsed = 0;
+                }
+
+                slot_completed_snap[i] = (int)stats->completed;
+                slot_busy_us_snap[i] =
+                    (int)(stats->busy_time_us + busy_tail);
+                slot_cpu_us_snap[i] = (int)stats->cpu_time_us;
+                slot_current_ms_snap[i] = (int)(current_elapsed / 1000);
+                slot_max_ms_snap[i] = (int)(stats->max_duration_us / 1000);
+
+                stats->busy_time_us = 0;
+                stats->cpu_time_us = 0;
+                stats->completed = 0;
+                stats->max_duration_us = 0;
+            }
+        }
+    }
+
+    wsgi_sample_requests = 0;
+    wsgi_server_time_total = 0.0;
+    wsgi_queue_time_total = 0.0;
+    wsgi_daemon_time_total = 0.0;
+    wsgi_application_time_total = 0.0;
+
+    memset(&wsgi_server_time_buckets, 0,
+           sizeof(wsgi_server_time_buckets));
+    memset(&wsgi_queue_time_buckets, 0,
+           sizeof(wsgi_queue_time_buckets));
+    memset(&wsgi_daemon_time_buckets, 0,
+           sizeof(wsgi_daemon_time_buckets));
+    memset(&wsgi_application_time_buckets, 0,
+           sizeof(wsgi_application_time_buckets));
+
+    apr_thread_mutex_unlock(wsgi_monitor_lock);
 
     object = PyLong_FromLong(getpid());
     PyDict_SetItem(result,
@@ -1130,11 +1394,6 @@ static PyObject *wsgi_request_metrics(void)
     Py_DECREF(object);
 
 #ifdef HAVE_TIMES
-    times(&tmsbuf);
-
-    stop_cpu_user_time = tmsbuf.tms_utime / tick;
-    stop_cpu_system_time = tmsbuf.tms_stime / tick;
-
     cpu_user_time = ((stop_cpu_user_time - start_cpu_user_time) /
                      sample_period);
     cpu_system_time = ((stop_cpu_system_time - start_cpu_system_time) /
@@ -1225,24 +1484,11 @@ static PyObject *wsgi_request_metrics(void)
                    WSGI_INTERNED_STRING(request_throughput), object);
     Py_DECREF(object);
 
-    start_time = stop_time;
-    start_request_busy_time = stop_request_busy_time;
-    start_request_count = stop_request_count;
-    start_cpu_user_time = stop_cpu_user_time;
-    start_cpu_system_time = stop_cpu_system_time;
-
-    apr_thread_mutex_lock(wsgi_monitor_lock);
-
-    interval_requests = wsgi_sample_requests;
-    server_time_total = wsgi_server_time_total;
-    queue_time_total = wsgi_queue_time_total;
-    daemon_time_total = wsgi_daemon_time_total;
-    application_time_total = wsgi_application_time_total;
-
     object = PyList_New(16);
     for (i = 0; i < 16; i++)
     {
-        PyList_SET_ITEM(object, i, PyLong_FromLong(wsgi_server_time_buckets[i]));
+        PyList_SET_ITEM(object, i,
+                        PyLong_FromLong(server_time_buckets_snap[i]));
     }
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(server_time_buckets), object);
@@ -1251,7 +1497,8 @@ static PyObject *wsgi_request_metrics(void)
     object = PyList_New(16);
     for (i = 0; i < 16; i++)
     {
-        PyList_SET_ITEM(object, i, PyLong_FromLong(wsgi_queue_time_buckets[i]));
+        PyList_SET_ITEM(object, i,
+                        PyLong_FromLong(queue_time_buckets_snap[i]));
     }
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(queue_time_buckets), object);
@@ -1260,7 +1507,8 @@ static PyObject *wsgi_request_metrics(void)
     object = PyList_New(16);
     for (i = 0; i < 16; i++)
     {
-        PyList_SET_ITEM(object, i, PyLong_FromLong(wsgi_daemon_time_buckets[i]));
+        PyList_SET_ITEM(object, i,
+                        PyLong_FromLong(daemon_time_buckets_snap[i]));
     }
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(daemon_time_buckets), object);
@@ -1269,7 +1517,8 @@ static PyObject *wsgi_request_metrics(void)
     object = PyList_New(16);
     for (i = 0; i < 16; i++)
     {
-        PyList_SET_ITEM(object, i, PyLong_FromLong(wsgi_application_time_buckets[i]));
+        PyList_SET_ITEM(object, i,
+                        PyLong_FromLong(application_time_buckets_snap[i]));
     }
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(application_time_buckets), object);
@@ -1278,12 +1527,45 @@ static PyObject *wsgi_request_metrics(void)
     object = PyList_New(request_threads_maximum);
     for (i = 0; i < request_threads_maximum; i++)
     {
-        PyList_SET_ITEM(object, i, PyLong_FromLong(wsgi_request_threads_buckets[i]));
-        if (wsgi_request_threads_buckets[i])
+        PyList_SET_ITEM(object, i,
+                        PyLong_FromLong(slot_completed_snap[i]));
+        if (slot_completed_snap[i] || slot_current_ms_snap[i])
             request_threads_active++;
     }
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(request_threads_buckets), object);
+    Py_DECREF(object);
+
+    object = PyList_New(request_threads_maximum);
+    for (i = 0; i < request_threads_maximum; i++)
+        PyList_SET_ITEM(object, i,
+                        PyLong_FromLong(slot_busy_us_snap[i]));
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(slot_busy_time_us), object);
+    Py_DECREF(object);
+
+    object = PyList_New(request_threads_maximum);
+    for (i = 0; i < request_threads_maximum; i++)
+        PyList_SET_ITEM(object, i,
+                        PyLong_FromLong(slot_cpu_us_snap[i]));
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(slot_cpu_time_us), object);
+    Py_DECREF(object);
+
+    object = PyList_New(request_threads_maximum);
+    for (i = 0; i < request_threads_maximum; i++)
+        PyList_SET_ITEM(object, i,
+                        PyLong_FromLong(slot_current_ms_snap[i]));
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(slot_current_elapsed_ms), object);
+    Py_DECREF(object);
+
+    object = PyList_New(request_threads_maximum);
+    for (i = 0; i < request_threads_maximum; i++)
+        PyList_SET_ITEM(object, i,
+                        PyLong_FromLong(slot_max_ms_snap[i]));
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(slot_max_duration_ms), object);
     Py_DECREF(object);
 
     object = PyLong_FromLong(request_threads_active);
@@ -1291,24 +1573,11 @@ static PyObject *wsgi_request_metrics(void)
                    WSGI_INTERNED_STRING(request_threads_active), object);
     Py_DECREF(object);
 
-    wsgi_sample_requests = 0;
-    wsgi_server_time_total = 0.0;
-    wsgi_queue_time_total = 0.0;
-    wsgi_daemon_time_total = 0.0;
-    wsgi_application_time_total = 0.0;
-
-    memset(&wsgi_server_time_buckets, 0,
-           sizeof(wsgi_server_time_buckets));
-    memset(&wsgi_queue_time_buckets, 0,
-           sizeof(wsgi_queue_time_buckets));
-    memset(&wsgi_daemon_time_buckets, 0,
-           sizeof(wsgi_daemon_time_buckets));
-    memset(&wsgi_application_time_buckets, 0,
-           sizeof(wsgi_application_time_buckets));
-
-    memset(wsgi_request_threads_buckets, 0, request_threads_maximum * sizeof(wsgi_request_threads_buckets[0]));
-
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    start_time = stop_time;
+    start_request_busy_time = stop_request_busy_time;
+    start_request_count = stop_request_count;
+    start_cpu_user_time = stop_cpu_user_time;
+    start_cpu_system_time = stop_cpu_system_time;
 
     server_time_avg = 0;
     queue_time_avg = 0;
@@ -1402,7 +1671,15 @@ static PyObject *wsgi_process_metrics(void)
                    WSGI_INTERNED_STRING(pid), object);
     Py_DECREF(object);
 
-    object = PyFloat_FromDouble(wsgi_utilization_time(0, &request_count));
+    {
+        double busy_time;
+
+        apr_thread_mutex_lock(wsgi_monitor_lock);
+        busy_time = wsgi_utilization_time_locked(0, &request_count);
+        apr_thread_mutex_unlock(wsgi_monitor_lock);
+
+        object = PyFloat_FromDouble(busy_time);
+    }
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(request_busy_time), object);
     Py_DECREF(object);

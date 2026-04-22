@@ -8,6 +8,12 @@
 # Options:
 #   -d, --duration SECONDS    How long to run the benchmark (default: 10)
 #   -c, --concurrency N       Number of concurrent clients (default: 50)
+#   -r, --rate RPS            Cap bombardier's throughput at this many
+#                             requests per second (shared across all
+#                             concurrent clients). Default: unlimited.
+#                             Useful for CPU-heavy workloads where you
+#                             want steady, low-volume load instead of
+#                             saturating the server.
 #   -m, --mode MODE           'daemon' (default) or 'embedded'
 #   -p, --processes N         Worker processes (default: 1)
 #   -t, --threads N           Threads per process (default: 5)
@@ -32,12 +38,18 @@
 #                             request to scramble GIL acquisition timing
 #                             across threads. Requires a benchmark script
 #                             that reads BENCHMARK_CHUNKS. Default 1.
-#       --distribution DIST   'fixed' (default) or 'lognormal'. Selects
-#                             per-request sampling: fixed uses --delay /
-#                             --cpu verbatim, lognormal draws from a
-#                             distribution whose mean equals the nominal
-#                             value, matching the right-skewed fall-off
-#                             typical of real web response times.
+#       --distribution DIST   'fixed' (default), 'lognormal' or
+#                             'mixture'. Selects per-request sampling:
+#                             fixed uses --delay / --cpu verbatim,
+#                             lognormal draws from a distribution whose
+#                             mean equals the nominal value (right-
+#                             skewed fall-off typical of real web
+#                             response times), mixture adds a 5% rare
+#                             long-tail component centred around 2 s
+#                             and capped at 5 s so the distribution
+#                             has both a sharp body peak and a realistic
+#                             long thin tail. See tests/benchmark.wsgi
+#                             for parameter details.
 #       --io-sigma N          Log-normal sigma for I/O delay (default
 #                             0.6). Larger => heavier tail. Only applies
 #                             with --distribution lognormal.
@@ -76,6 +88,7 @@ SERVER_ROOT="$PROJECT_DIR/httpd-benchmark"
 
 DURATION=10
 CONCURRENCY=50
+RATE=
 MODE=daemon
 PROCESSES=1
 THREADS=5
@@ -103,6 +116,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         -d|--duration)    DURATION="$2"; shift 2 ;;
         -c|--concurrency) CONCURRENCY="$2"; shift 2 ;;
+        -r|--rate)        RATE="$2"; shift 2 ;;
         -m|--mode)        MODE="$2"; shift 2 ;;
         -p|--processes)   PROCESSES="$2"; shift 2 ;;
         -t|--threads)     THREADS="$2"; shift 2 ;;
@@ -131,8 +145,8 @@ case "$MODE" in
 esac
 
 case "$DISTRIBUTION" in
-    fixed|lognormal) ;;
-    *) echo "ERROR: --distribution must be 'fixed' or 'lognormal'" >&2; exit 1 ;;
+    fixed|lognormal|mixture) ;;
+    *) echo "ERROR: --distribution must be 'fixed', 'lognormal' or 'mixture'" >&2; exit 1 ;;
 esac
 
 if ! command -v bombardier >/dev/null 2>&1; then
@@ -258,6 +272,7 @@ echo "  mode           : $MODE"
 echo "  processes      : $PROCESSES"
 echo "  threads        : $THREADS"
 echo "  concurrency    : $CONCURRENCY"
+echo "  rate           : ${RATE:-unlimited}"
 echo "  duration       : ${DURATION}s"
 echo "  port           : $PORT"
 echo "  reloading      : $reloading_state"
@@ -267,6 +282,8 @@ echo "  cpu            : ${CPU}s"
 echo "  chunks         : $CHUNKS"
 if [ "$DISTRIBUTION" = "lognormal" ]; then
     echo "  distribution   : lognormal (io_sigma=${IO_SIGMA}, cpu_sigma=${CPU_SIGMA})"
+elif [ "$DISTRIBUTION" = "mixture" ]; then
+    echo "  distribution   : mixture (body io_sigma=${IO_SIGMA}, cpu_sigma=${CPU_SIGMA}; 5% tail ~N(2s, sigma=0.4), capped 5s)"
 else
     echo "  distribution   : fixed"
 fi
@@ -319,7 +336,11 @@ fi
 echo ""
 echo "Running benchmark..."
 echo ""
-bombardier -c "$CONCURRENCY" -d "${DURATION}s" -l "$url"
+bomb_args=(-c "$CONCURRENCY" -d "${DURATION}s" -l)
+if [ -n "$RATE" ]; then
+    bomb_args+=(-r "$RATE")
+fi
+bombardier "${bomb_args[@]}" "$url"
 
 if [ "$METRICS" = "1" ]; then
     "$PYTHON" "$SCRIPT_DIR/benchmark_metrics.py" report \
