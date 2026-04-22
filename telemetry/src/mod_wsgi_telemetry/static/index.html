@@ -1099,13 +1099,55 @@ function renderCapacity() {
   }
 }
 
-// Shared hover tooltip for heatmap cells.
-const capacityTooltipState = { cell: null, clientX: 0, clientY: 0 };
+// Shared hover tooltip for heatmap cells. isOver tracks whether the
+// cursor is currently over the capacity grid so the redraw-time
+// re-hit-test knows to bail out once the cursor has left. canvas is
+// the specific per-process canvas under the cursor; retained so the
+// periodic redraw can refresh the tooltip against the latest hit
+// test (cells shift left every tick in live mode) without waiting
+// for another mousemove event.
+const capacityTooltipState = {
+  cell: null,
+  canvas: null,
+  clientX: 0,
+  clientY: 0,
+  isOver: false,
+};
+
+function capacityHitTest(canvas, clientX, clientY) {
+  if (!canvas || !canvas._hitTest) return null;
+  const rect = canvas.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  for (const c of canvas._hitTest.cells) {
+    if (x >= c.x0 && x < c.x1 && y >= c.y && y < c.yEnd) return c;
+  }
+  return null;
+}
+
+// Called from redraw() after the heatmap has been re-drawn, so the
+// tooltip tracks whichever cell is under the stationary cursor NOW
+// rather than the cell that was there when the user last moved.
+function reapplyCapacityHover() {
+  if (!capacityTooltipState.isOver) return;
+  capacityTooltipState.cell = capacityHitTest(
+    capacityTooltipState.canvas,
+    capacityTooltipState.clientX,
+    capacityTooltipState.clientY,
+  );
+  refreshCapacityTooltip();
+}
 
 function refreshCapacityTooltip() {
   const tip = document.getElementById("tooltip");
   const hovered = capacityTooltipState.cell;
-  if (!hovered) { tip.style.display = "none"; return; }
+  if (!hovered) {
+    // Only hide the shared element if the histogram tooltip isn't
+    // actively using it — otherwise the capacity redraw would
+    // stomp on a visible histogram tooltip every tick.
+    if (tooltipState.idx === null) tip.style.display = "none";
+    return;
+  }
   // For a cell that's part of a merged stuck run, report the run's most
   // recent sample so the elapsed / max figures track the live request
   // regardless of which cell the mouse landed on.
@@ -1409,6 +1451,13 @@ function redraw() {
   renderProcs();
   renderSlowRequests();
   renderCapacity();
+  // Re-run the capacity hover hit-test after the heatmap redraws so
+  // a stationary cursor keeps tracking whichever cell is under it —
+  // essential in live mode where cells scroll left every tick, and
+  // also removes the "tooltip blinks off for 500 ms" artefact that
+  // came from the shared tooltip element being hidden by the
+  // histogram's refresh.
+  reapplyCapacityHover();
 
   const rps = drawChart(document.getElementById("c_rps"), f => f.request_throughput);
   setLive("live_rps",
@@ -1511,24 +1560,18 @@ document.getElementById("capacity_stuck_thresh").addEventListener("change", redr
   const grid = document.getElementById("capacity_grid");
   grid.addEventListener("mousemove", e => {
     const canvas = e.target.closest("canvas");
-    if (!canvas || !canvas._hitTest) {
-      capacityTooltipState.cell = null;
-      refreshCapacityTooltip();
-      return;
-    }
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    let hit = null;
-    for (const c of canvas._hitTest.cells) {
-      if (x >= c.x0 && x < c.x1 && y >= c.y && y < c.yEnd) { hit = c; break; }
-    }
-    capacityTooltipState.cell = hit;
+    capacityTooltipState.isOver = true;
+    capacityTooltipState.canvas = canvas || null;
     capacityTooltipState.clientX = e.clientX;
     capacityTooltipState.clientY = e.clientY;
+    capacityTooltipState.cell = canvas
+      ? capacityHitTest(canvas, e.clientX, e.clientY)
+      : null;
     refreshCapacityTooltip();
   });
   grid.addEventListener("mouseleave", () => {
+    capacityTooltipState.isOver = false;
+    capacityTooltipState.canvas = null;
     capacityTooltipState.cell = null;
     refreshCapacityTooltip();
   });
@@ -1547,9 +1590,16 @@ const tooltipState = { idx: null, clientX: 0, clientY: 0 };
 function refreshTooltip() {
   const canvas = document.getElementById("c_dist");
   const tip = document.getElementById("tooltip");
-  if (tooltipState.idx === null) { tip.style.display = "none"; return; }
+  // The shared tooltip element is used by both the histogram and the
+  // capacity heatmap. Only hide it from here if the capacity hover
+  // also isn't using it, otherwise the histogram's redraw would
+  // clobber a visible capacity tooltip every tick.
+  const hideIfIdle = () => {
+    if (!capacityTooltipState.cell) tip.style.display = "none";
+  };
+  if (tooltipState.idx === null) { hideIfIdle(); return; }
   const hit = canvas._hitTest;
-  if (!hit || !hit.total) { tip.style.display = "none"; return; }
+  if (!hit || !hit.total) { hideIfIdle(); return; }
 
   const idx = tooltipState.idx;
   const count = hit.hist[idx];
