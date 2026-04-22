@@ -105,6 +105,14 @@
     justify-content: space-between;
     margin-bottom: 8px;
   }
+  .chart .header-row h3 { margin: 0; }
+  .chart .phase-picker {
+    color: var(--muted);
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
   .chart .unit {
     color: var(--muted);
     font-size: 11px;
@@ -126,12 +134,6 @@
     font-family: inherit;
   }
   .window-picker:hover { border-color: var(--accent); }
-  .chart .dist-right {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
-  }
   .tooltip {
     position: fixed;
     pointer-events: none;
@@ -193,7 +195,18 @@
     <div class="chart"><h3>Queue time</h3>
       <div class="header-row"><div class="unit">average ms/request (daemon queue wait)</div><div class="live" id="live_queue"></div></div>
       <canvas id="c_queue"></canvas></div>
-    <div class="chart wide"><h3>Time distribution</h3>
+    <div class="chart wide">
+      <div class="header-row">
+        <h3>Time distribution</h3>
+        <label class="phase-picker">Phase:
+          <select id="dist_field" class="window-picker">
+            <option value="application_time_buckets" selected>application</option>
+            <option value="daemon_time_buckets">daemon</option>
+            <option value="queue_time_buckets">queue</option>
+            <option value="server_time_buckets">server</option>
+          </select>
+        </label>
+      </div>
       <div class="header-row">
         <div class="unit">log2 buckets, 5ms..&gt;40s &mdash; summed across visible processes over last
           <select id="dist_window" class="window-picker">
@@ -205,15 +218,7 @@
             <option value="600">10m</option>
           </select>
         </div>
-        <div class="dist-right">
-          <select id="dist_field" class="window-picker">
-            <option value="application_time_buckets" selected>application time</option>
-            <option value="daemon_time_buckets">daemon time</option>
-            <option value="queue_time_buckets">queue time</option>
-            <option value="server_time_buckets">server time</option>
-          </select>
-          <div class="live" id="live_dist"></div>
-        </div>
+        <div class="live" id="live_dist"></div>
       </div>
       <canvas id="c_dist" class="tall"></canvas></div>
   </section>
