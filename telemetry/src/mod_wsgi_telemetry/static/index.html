@@ -2481,11 +2481,20 @@ Three tabs:
 
 ## Process groups, daemon mode, and rollup scope
 
-One Apache instance typically hosts several **process groups**:
+One Apache instance **can** host several process groups, but the
+common case — whether configured manually or via
+\`mod_wsgi-express\` — is a single site with a single daemon
+group. Multi-group setups show up mainly when one Apache instance
+serves several WSGI applications with distinct tuning needs.
 
 - Each \`WSGIDaemonProcess name processes=N threads=M\` directive
-  defines a named daemon group. Its processes run outside Apache and
-  its \`processes=\` / \`threads=\` knobs are scoped to that group.
+  defines a named daemon group. Its processes are forked from the
+  Apache parent and managed by mod_wsgi inside Apache — they are
+  **not** external services — but they are distinct from the
+  Apache child worker processes that accept requests and proxy
+  them to the daemon processes over a Unix socket. The
+  \`processes=\` / \`threads=\` knobs are scoped to that daemon
+  group and control the daemon processes, not the Apache workers.
 - Processes with no \`WSGIDaemonProcess\` group run in **embedded
   mode** inside an Apache MPM child. The UI presents them as a
   synthetic \`(embedded)\` group. Embedded workers don't report
@@ -2496,6 +2505,15 @@ One Apache instance typically hosts several **process groups**:
   groups. Tuning advice is always **per-group**: a CPU-bound app in
   group A doesn't want the same numbers as an I/O-bound app in
   group B.
+- \`mod_wsgi-express\` is a launcher that generates the Apache
+  configuration from command-line flags. Default is daemon mode
+  with a group named after the listen address (e.g.
+  \`localhost:8000\`); \`--embedded-mode\` switches to embedded.
+  Either way, \`--processes\` and \`--threads\` are the knobs — in
+  daemon mode they size the daemon group (the proxying MPM is
+  auto-sized), in embedded mode they size the MPM workers
+  directly. Timeout flags (\`--request-timeout\`, etc.) map
+  one-to-one onto the equivalent \`WSGIDaemonProcess\` options.
 
 The sidebar has three tiers:
 
@@ -2670,18 +2688,36 @@ can't trip them.
 
 ## Tuning levers
 
-- \`WSGIDaemonProcess name processes=N threads=M\` — primary knob.
-  - CPU-bound app: N ≈ cores, M small (1–4).
-  - I/O-bound app: N moderate, M can be higher (10–25).
+Two ways the same knobs surface depending on how mod_wsgi is being
+configured:
+
+- **Raw Apache config** — directives in \`httpd.conf\` or a vhost
+  fragment: \`WSGIDaemonProcess <name> processes=N threads=M\` for
+  daemon mode, or MPM directives (\`ServerLimit\`,
+  \`MaxRequestWorkers\`, \`ThreadsPerChild\`) for embedded mode.
+- **\`mod_wsgi-express\`** — command-line flags that auto-generate
+  the Apache config. Default is daemon mode; \`--embedded-mode\`
+  switches to embedded mode. \`--processes N --threads M\` sets the
+  knobs directly: in daemon mode they control the daemon group
+  (Apache MPM for proxying is sized automatically); in embedded
+  mode they control the Apache MPM workers. \`--request-timeout\`,
+  \`--graceful-timeout\`, \`--queue-timeout\`, \`--connect-timeout\`,
+  \`--socket-timeout\`, \`--maximum-requests\` each map one-to-one to
+  the identically-named \`WSGIDaemonProcess\` option. Both forms
+  produce the same runtime behaviour — tune whichever the
+  operator is actually using.
+
+Primary knob — processes × threads:
+
+- CPU-bound app: N ≈ cores, M small (1–4).
+- I/O-bound app: N moderate, M can be higher (10–25).
 - \`queue-timeout=\` — maximum time a request may sit in the
   Apache-to-daemon queue before the daemon dequeues it. Exceeded
-  requests are rejected with a gateway-timeout-style response when
-  they are finally picked up (the internal hop uses a \`200 Timeout\`
-  reason-phrase that mod_wsgi intercepts and rewrites on the Apache
-  side — deliberate, not a bug). Per-request rejection only; no
-  process-level consequence. Protects the daemon from pathological
-  backpressure but does **not** bound application time once a request
-  has started running.
+  requests are rejected with a gateway-timeout-style response.
+  Per-request rejection only; no process-level consequence.
+  Protects the daemon from pathological backpressure but does
+  **not** bound application time once a request has started
+  running.
 - \`request-timeout=\` — **process-level fail-safe, not a per-request
   SLA knob.** Every second the monitor thread averages the age of
   in-flight requests across **all** threads in the process
@@ -2737,13 +2773,33 @@ When pasted alongside a screenshot:
    → GIL; slot cpu / slot busy near 1.0 with no daemon elevation
    → CPU. State the call as a lean, not a certainty — the two are
    indistinguishable from outside in the general case.
-5. Recommend a concrete change to
-   \`WSGIDaemonProcess <group> processes=N threads=M\` with
-   proposed new numbers **naming the specific group**, plus
-   timeout adjustments appropriate to the observed failure mode.
-   If the snapshot warns about multi-host fan-in, note that
-   \`processes=N\` applies per-host and headroom counts all hosts
-   combined.
+5. Recommend a concrete change scoped to the **mode** of the
+   processes in question, and phrase it in whichever form the
+   operator is actually using (raw Apache directives vs
+   \`mod_wsgi-express\` flags — ideally offer both when unsure):
+   - **Daemon mode** (per-process header says
+     \`daemon mode, group "<name>"\`):
+     - Raw Apache: edit the matching
+       \`WSGIDaemonProcess <name> processes=N threads=M\` directive.
+       Always name the specific group.
+     - \`mod_wsgi-express\`: pass \`--processes N --threads M\` on
+       the command line (default is daemon mode).
+   - **Embedded mode** (per-process header says \`embedded mode\`):
+     \`WSGIDaemonProcess\` does **not** apply — these processes are
+     Apache MPM children running WSGI in-process.
+     - Raw Apache: tune the MPM — \`ServerLimit\`,
+       \`MaxRequestWorkers\`, and for prefork/worker/event the
+       relevant \`ThreadsPerChild\`.
+     - \`mod_wsgi-express\`: pass \`--embedded-mode --processes N
+       --threads M\`; those flags drive the generated MPM config.
+     Moving an embedded app to daemon mode is itself a reasonable
+     recommendation when GIL contention is the issue — with
+     \`mod_wsgi-express\`, that's simply dropping \`--embedded-mode\`.
+   Plus timeout adjustments appropriate to the observed failure
+   mode (both forms accept \`request-timeout\` /
+   \`--request-timeout\`, etc.). If the snapshot warns about
+   multi-host fan-in, note that \`processes=N\` applies per-host
+   and headroom counts all hosts combined.
 6. Consult the **Time distributions** section to separate
    mean-driven problems from tail-driven ones. Compare p50 to p99
    per phase:
@@ -2878,6 +2934,29 @@ function buildCurrentStatsMarkdown() {
   lines.push("- processes: " + totals.procCount
     + " across " + totals.groups.size + " group"
     + (totals.groups.size === 1 ? "" : "s"));
+  // Mode breakdown: daemon vs embedded is an important distinction for
+  // an LLM recommending tuning — daemon-group processes tune via
+  // WSGIDaemonProcess processes=/threads=, embedded processes tune
+  // via Apache MPM directives (ServerLimit/MaxRequestWorkers/
+  // ThreadsPerChild). The empty-string key in totals.groups is the
+  // embedded bucket; every other key is a daemon group name.
+  let daemonProcs = 0;
+  let daemonGroups = 0;
+  let embeddedProcs = 0;
+  for (const [g, gpids] of totals.groups) {
+    if (g === "") embeddedProcs += gpids.length;
+    else { daemonProcs += gpids.length; daemonGroups++; }
+  }
+  const modeBits = [];
+  if (daemonProcs > 0)
+    modeBits.push(daemonProcs + " daemon process"
+      + (daemonProcs === 1 ? "" : "es")
+      + " across " + daemonGroups + " group"
+      + (daemonGroups === 1 ? "" : "s"));
+  if (embeddedProcs > 0)
+    modeBits.push(embeddedProcs + " embedded MPM child"
+      + (embeddedProcs === 1 ? "" : "ren"));
+  lines.push("- mode: " + modeBits.join(", "));
   lines.push("- state: "
     + totals.stateCounts.saturated + " saturated, "
     + totals.stateCounts.cpuGilBound + " CPU/GIL-bound, "
@@ -2899,9 +2978,12 @@ function buildCurrentStatsMarkdown() {
     for (const g of sortedGroups) {
       const gPids = totals.groups.get(g);
       const gr = rollupAcross(gPids, LINE_WINDOW_SEC);
-      const label = g === "" ? "(embedded)" : g;
-      lines.push("### " + label + " (" + gr.procCount + " process"
-        + (gr.procCount === 1 ? "" : "es") + ")");
+      const heading = g === ""
+        ? `embedded mode (${gr.procCount} MPM child`
+          + (gr.procCount === 1 ? ")" : "ren)")
+        : `daemon group "${g}" (${gr.procCount} process`
+          + (gr.procCount === 1 ? ")" : "es)");
+      lines.push("### " + heading);
       lines.push("");
       lines.push("- rpm: " + gr.rpm);
       lines.push("- cpu: " + gr.cpuCores.toFixed(2) + " cores");
@@ -2926,9 +3008,11 @@ function buildCurrentStatsMarkdown() {
     p.pid = pid;
     const ps = computeProcessStats(p, LINE_WINDOW_SEC);
     if (!ps) continue;
-    const group = ps.group || "(embedded)";
+    const modeLabel = ps.group
+      ? `daemon mode, group "${ps.group}"`
+      : "embedded mode";
     lines.push("### pid " + pid + " — " + (ps.hostname || "?")
-      + " [" + group + "]");
+      + " — " + modeLabel);
     lines.push("");
     lines.push("- rpm: " + ps.rpm);
     lines.push("- threads: " + (ps.nThreads > 0 ? ps.nThreads : "—"));
