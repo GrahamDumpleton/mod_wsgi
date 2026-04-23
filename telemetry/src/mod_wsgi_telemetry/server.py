@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -42,6 +43,8 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
     ws = web.WebSocketResponse(heartbeat=30)
     await ws.prepare(request)
 
+    websockets: set[web.WebSocketResponse] = request.app["websockets"]
+    websockets.add(ws)
     q = ingester.subscribe()
     try:
         await ws.send_json(ingester.snapshot())
@@ -59,10 +62,14 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
                 payload = await asyncio.wait_for(q.get(), timeout=30)
             except asyncio.TimeoutError:
                 continue
-            await ws.send_json(payload)
+            try:
+                await ws.send_json(payload)
+            except ConnectionResetError:
+                break
 
         reader_task.cancel()
     finally:
+        websockets.discard(ws)
         ingester.unsubscribe(q)
         if not ws.closed:
             await ws.close()
@@ -74,6 +81,7 @@ async def build_app(listen_spec: str) -> web.Application:
     ingester = Ingester(listen_spec)
     app = web.Application()
     app["ingester"] = ingester
+    app["websockets"] = set()
     app.router.add_get("/", index)
     app.router.add_get("/ws", websocket)
     app.router.add_get("/api/state", api_state)
@@ -81,6 +89,10 @@ async def build_app(listen_spec: str) -> web.Application:
 
     async def start_ingester(_: web.Application) -> None:
         app["ingester_task"] = asyncio.create_task(ingester.run())
+
+    async def close_websockets(_: web.Application) -> None:
+        for ws in list(app["websockets"]):
+            await ws.close(code=1001, message=b"server shutdown")
 
     async def stop_ingester(_: web.Application) -> None:
         task: asyncio.Task = app["ingester_task"]
@@ -91,6 +103,7 @@ async def build_app(listen_spec: str) -> web.Application:
             pass
 
     app.on_startup.append(start_ingester)
+    app.on_shutdown.append(close_websockets)
     app.on_cleanup.append(stop_ingester)
     return app
 
@@ -118,15 +131,27 @@ def main(argv: list[str] | None = None) -> int:
         site = web.TCPSite(runner, args.http_host, args.http_port)
         await site.start()
         log.info("UI on http://%s:%d/", args.http_host, args.http_port)
+
+        loop = asyncio.get_running_loop()
+        stop = loop.create_future()
+
+        def request_stop(sig: int) -> None:
+            if not stop.done():
+                log.info("received %s, shutting down", signal.Signals(sig).name)
+                stop.set_result(None)
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, request_stop, sig)
+            except NotImplementedError:
+                signal.signal(sig, lambda s, _f: request_stop(s))
+
         try:
-            await asyncio.Event().wait()
+            await stop
         finally:
             await runner.cleanup()
 
-    try:
-        asyncio.run(run())
-    except KeyboardInterrupt:
-        pass
+    asyncio.run(run())
     return 0
 
 
