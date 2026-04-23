@@ -183,6 +183,8 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
         wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_DAEMON_TIME_BUCKETS,
                            s->daemon_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
     }
+    wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_REQUEST_TIME_BUCKETS,
+                       s->request_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
 
     if (s->slot_count > 0) {
         uint16_t n = (uint16_t)s->slot_count;

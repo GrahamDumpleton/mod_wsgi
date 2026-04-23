@@ -50,6 +50,12 @@ def test_roundtrip_i32_array():
     assert got.fields["application_time_buckets"] == buckets
 
 
+def test_roundtrip_request_time_buckets():
+    buckets = [1, 4, 9, 12, 5, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    got = _roundtrip({"request_time_buckets": buckets})
+    assert got.fields["request_time_buckets"] == buckets
+
+
 def test_unknown_field_preserved_as_synthetic_name():
     # Emulate a newer emitter: reach past the known field ID map.
     fields = {f"id9999": 42}

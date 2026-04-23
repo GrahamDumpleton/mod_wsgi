@@ -92,6 +92,11 @@ static double wsgi_daemon_time_total = 0;
 static int wsgi_daemon_time_buckets[16];
 static double wsgi_application_time_total = 0;
 static int wsgi_application_time_buckets[16];
+/* Total response time = server + queue + daemon + application, bucketed
+ * once per request so the UI can show the distribution as the caller
+ * actually sees it rather than any single phase. Apache's accept-queue
+ * wait isn't measurable from within, so this is still a lower bound. */
+static int wsgi_request_time_buckets[16];
 
 /* Per-thread active-slot array. One entry per worker thread (sized to the
  * MPM max_threads in embedded mode or the daemon group's threads count in
@@ -231,6 +236,10 @@ void wsgi_record_request_times(apr_time_t request_start,
 #endif
 
     wsgi_record_time_in_buckets(&wsgi_application_time_buckets[0],
+                                application_time);
+
+    wsgi_record_time_in_buckets(&wsgi_request_time_buckets[0],
+                                server_time + queue_time + daemon_time +
                                 application_time);
 
     apr_thread_mutex_unlock(wsgi_monitor_lock);
@@ -554,6 +563,8 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
         memset(&wsgi_daemon_time_buckets, 0, sizeof(wsgi_daemon_time_buckets));
         memset(&wsgi_application_time_buckets, 0,
                sizeof(wsgi_application_time_buckets));
+        memset(&wsgi_request_time_buckets, 0,
+               sizeof(wsgi_request_time_buckets));
 
         if (wsgi_slot_stats && wsgi_active_slots_max > 0)
         {
@@ -591,6 +602,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
         out->queue_time_buckets[i] = wsgi_queue_time_buckets[i];
         out->daemon_time_buckets[i] = wsgi_daemon_time_buckets[i];
         out->application_time_buckets[i] = wsgi_application_time_buckets[i];
+        out->request_time_buckets[i] = wsgi_request_time_buckets[i];
     }
 
     /* Per-slot capacity drain. Fold any in-flight busy-tail so a long
@@ -659,6 +671,8 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     memset(&wsgi_daemon_time_buckets, 0, sizeof(wsgi_daemon_time_buckets));
     memset(&wsgi_application_time_buckets, 0,
            sizeof(wsgi_application_time_buckets));
+    memset(&wsgi_request_time_buckets, 0,
+           sizeof(wsgi_request_time_buckets));
 
     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
@@ -1021,6 +1035,7 @@ WSGI_STATIC_INTERNED_STRING(server_time_buckets);
 WSGI_STATIC_INTERNED_STRING(queue_time_buckets);
 WSGI_STATIC_INTERNED_STRING(daemon_time_buckets);
 WSGI_STATIC_INTERNED_STRING(application_time_buckets);
+WSGI_STATIC_INTERNED_STRING(request_time_buckets);
 WSGI_STATIC_INTERNED_STRING(request_threads_buckets);
 WSGI_STATIC_INTERNED_STRING(slot_busy_time_us);
 WSGI_STATIC_INTERNED_STRING(slot_cpu_time_us);
@@ -1090,6 +1105,7 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(daemon_time_buckets);
         WSGI_CREATE_INTERNED_STRING_ID(queue_time_buckets);
         WSGI_CREATE_INTERNED_STRING_ID(application_time_buckets);
+        WSGI_CREATE_INTERNED_STRING_ID(request_time_buckets);
         WSGI_CREATE_INTERNED_STRING_ID(request_threads_buckets);
         WSGI_CREATE_INTERNED_STRING_ID(slot_busy_time_us);
         WSGI_CREATE_INTERNED_STRING_ID(slot_cpu_time_us);
@@ -1164,6 +1180,7 @@ static PyObject *wsgi_request_metrics(void)
     int queue_time_buckets_snap[16];
     int daemon_time_buckets_snap[16];
     int application_time_buckets_snap[16];
+    int request_time_buckets_snap[16];
 
     int request_threads_active = 0;
 
@@ -1298,6 +1315,8 @@ static PyObject *wsgi_request_metrics(void)
            sizeof(daemon_time_buckets_snap));
     memcpy(application_time_buckets_snap, wsgi_application_time_buckets,
            sizeof(application_time_buckets_snap));
+    memcpy(request_time_buckets_snap, wsgi_request_time_buckets,
+           sizeof(request_time_buckets_snap));
 
     /* Per-slot capacity drain. Fold in-flight busy-tail so a long request
      * contributes to every interval it spans. CPU tails can't be folded
@@ -1367,6 +1386,8 @@ static PyObject *wsgi_request_metrics(void)
            sizeof(wsgi_daemon_time_buckets));
     memset(&wsgi_application_time_buckets, 0,
            sizeof(wsgi_application_time_buckets));
+    memset(&wsgi_request_time_buckets, 0,
+           sizeof(wsgi_request_time_buckets));
 
     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
@@ -1522,6 +1543,16 @@ static PyObject *wsgi_request_metrics(void)
     }
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(application_time_buckets), object);
+    Py_DECREF(object);
+
+    object = PyList_New(16);
+    for (i = 0; i < 16; i++)
+    {
+        PyList_SET_ITEM(object, i,
+                        PyLong_FromLong(request_time_buckets_snap[i]));
+    }
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(request_time_buckets), object);
     Py_DECREF(object);
 
     object = PyList_New(request_threads_maximum);

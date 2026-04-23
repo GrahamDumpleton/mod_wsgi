@@ -51,6 +51,88 @@
   }
   .conn.ok { background: #264d2b; color: #a8e6b0; }
   .conn.bad { background: #4d2626; color: #e6a8a8; }
+  header .help-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: #1c1c1c;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  header .help-btn:hover { color: var(--fg); background: #252525; }
+  .help-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.65);
+    display: none;
+    z-index: 100;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 20px;
+    overflow-y: auto;
+  }
+  .help-backdrop.open { display: flex; }
+  .help-modal {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    max-width: 820px;
+    width: 100%;
+    color: var(--fg);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  }
+  .help-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .help-head h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 500;
+    flex: 1;
+  }
+  .help-head button {
+    background: #1c1c1c;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 4px 10px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .help-head button:hover { background: #252525; }
+  .help-head .copied { color: #a8e6b0; }
+  .help-body {
+    padding: 16px 20px;
+    max-height: 70vh;
+    overflow-y: auto;
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+  .help-body h3 {
+    margin: 18px 0 6px;
+    font-size: 13px;
+    color: #cfd5d8;
+  }
+  .help-body h3:first-child { margin-top: 0; }
+  .help-body p { margin: 4px 0 8px; }
+  .help-body ul { margin: 4px 0 10px; padding-left: 20px; }
+  .help-body li { margin: 2px 0; }
+  .help-body code {
+    background: #1c1c1c;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0 4px;
+    font: 12px ui-monospace, Menlo, monospace;
+  }
+  .help-body em { color: var(--muted); font-style: normal; }
   main {
     display: grid;
     grid-template-columns: 240px 1fr;
@@ -226,7 +308,56 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     padding: 10px;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    /* Responsive meta-line layout — see @container rule below. */
+    container-type: inline-size;
   }
+  .capacity-card h3 {
+    /* Keep "pid NNNN SATURATED" on a single line; the meta is
+     * already wrapping enough on the right. */
+    white-space: nowrap;
+  }
+  .capacity-card .meta .meta-primary,
+  .capacity-card .meta .meta-secondary {
+    white-space: nowrap;
+  }
+  @container (max-width: 900px) {
+    /* When the card isn't wide enough to show busy / cpu / queue /
+     * slow-requests all on one line, drop queue-time and slow-request
+     * stats to a second line under the primary busy/cpu readout so
+     * nothing wraps mid-word. */
+    .capacity-card .meta { text-align: right; }
+    .capacity-card .meta .meta-sep { display: none; }
+    .capacity-card .meta .meta-secondary { display: block; }
+  }
+  /* Saturated: queue time growing, busy sustained near 100%, or
+   * slow requests under load. Adding threads probably won't help —
+   * this process can't serve what it's already been given. */
+  .capacity-card.saturated {
+    border-color: #e53935;
+    box-shadow: 0 0 0 1px rgba(229, 57, 53, 0.4),
+                inset 0 0 24px rgba(229, 57, 53, 0.08);
+  }
+  /* CPU/GIL-bound: process pinned to ~one core with multiple threads.
+   * Indistinguishable from outside whether the bottleneck is the GIL
+   * or genuine per-request CPU work — the fix is the same: add
+   * processes, not threads. */
+  .capacity-card.cpu-gil-bound {
+    border-color: #ffb300;
+    box-shadow: 0 0 0 1px rgba(255, 179, 0, 0.4),
+                inset 0 0 24px rgba(255, 179, 0, 0.06);
+  }
+  .capacity-card .card-flag {
+    display: inline;
+    font-size: 11px;
+    font-weight: 500;
+    margin-left: 8px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .capacity-card.saturated .card-flag { color: #ef5350; }
+  .capacity-card.cpu-gil-bound .card-flag { color: #ffb74d; }
   .capacity-card .header-row {
     display: flex;
     align-items: baseline;
@@ -306,6 +437,22 @@
     font-size: 13px;
     font-weight: 500;
   }
+  /* Title rows exist in two shapes: a bare h3, and a header-row that
+   * also carries a <select> (Time breakdown, Time distribution). The
+   * select forces that row ~6 px taller than a bare h3, and the two
+   * shapes have different margin-bottom values (4 vs 8 px). Left
+   * alone, those differences cascade into offset canvas positions
+   * across the grid. Pinning both shapes to the same min-height,
+   * line-height, and margin-bottom keeps every chart's canvas at
+   * the same y. Applies only to the title slot; the secondary
+   * unit/live header-row below is unaffected. */
+  .chart > h3,
+  .chart > .header-row:first-child {
+    min-height: 22px;
+    line-height: 22px;
+    margin: 0 0 8px;
+  }
+  .chart > .header-row:first-child { align-items: center; }
   .chart .header-row {
     display: flex;
     align-items: baseline;
@@ -395,8 +542,21 @@
       <option value="*">All</option>
     </select>
   </label>
+  <button type="button" class="help-btn" id="help_btn"
+          title="What does this UI show? (help + LLM prompt)">?</button>
   <div class="conn bad" id="conn">disconnected</div>
 </header>
+<div class="help-backdrop" id="help_backdrop" role="dialog" aria-modal="true">
+  <div class="help-modal">
+    <div class="help-head">
+      <h2>mod_wsgi telemetry &mdash; reference</h2>
+      <button type="button" id="help_copy">Copy help</button>
+      <button type="button" id="help_copy_stats">Copy current stats (last 1 min)</button>
+      <button type="button" id="help_close">Close</button>
+    </div>
+    <div class="help-body" id="help_body"></div>
+  </div>
+</div>
 <main>
   <aside class="process-list">
     <h2>Processes</h2>
@@ -420,21 +580,33 @@
         <div class="chart"><h3>CPU utilization</h3>
           <div class="header-row"><div class="unit">cores (user + system)</div><div class="live" id="live_cpu"></div></div>
           <canvas id="c_cpu"></canvas></div>
-        <div class="chart"><h3>Application time</h3>
-          <div class="header-row"><div class="unit">average ms/request</div><div class="live" id="live_app"></div></div>
-          <canvas id="c_app"></canvas></div>
+        <div class="chart"><h3>Response time</h3>
+          <div class="header-row"><div class="unit">average ms/request (all phases)</div><div class="live" id="live_resp"></div></div>
+          <canvas id="c_resp"></canvas></div>
         <div class="chart"><h3>Memory RSS</h3>
           <div class="header-row"><div class="unit">MB per process</div><div class="live" id="live_mem"></div></div>
           <canvas id="c_mem"></canvas></div>
-        <div class="chart"><h3>Queue time</h3>
-          <div class="header-row"><div class="unit">average ms/request (daemon queue wait)</div><div class="live" id="live_queue"></div></div>
-          <canvas id="c_queue"></canvas></div>
+        <div class="chart">
+          <div class="header-row">
+            <h3>Time breakdown</h3>
+            <label class="phase-picker">Phase:
+              <select id="phase_field" class="window-picker">
+                <option value="application_time" selected>application</option>
+                <option value="daemon_time">daemon</option>
+                <option value="queue_time">queue</option>
+                <option value="server_time">server</option>
+              </select>
+            </label>
+          </div>
+          <div class="header-row"><div class="unit">average ms/request</div><div class="live" id="live_phase"></div></div>
+          <canvas id="c_phase"></canvas></div>
         <div class="chart wide">
           <div class="header-row">
             <h3>Time distribution</h3>
             <label class="phase-picker">Phase:
               <select id="dist_field" class="window-picker">
-                <option value="application_time_buckets" selected>application</option>
+                <option value="request_time_buckets" selected>total</option>
+                <option value="application_time_buckets">application</option>
                 <option value="daemon_time_buckets">daemon</option>
                 <option value="queue_time_buckets">queue</option>
                 <option value="server_time_buckets">server</option>
@@ -657,6 +829,18 @@ function renderProcs() {
     let rcSamples = 0;
     let capSum = 0;
     let capSamples = 0;
+    // CPU = process-wide cpu_utilization (fraction of a single CPU
+    // core). GIL-bound Python tops out near 1.0; C extensions that
+    // release the GIL can exceed 1.0 on multi-core. Matches what the
+    // Capacity tab's header now reports. Per-thread CPU detail is
+    // available via cell hover on the Capacity tab.
+    let cpuSum = 0;
+    let cpuSamples = 0;
+    // Mean response time is additive across phases, so summing phase
+    // means over the window gives the caller-visible average. Percentiles
+    // would need the request_time_buckets histogram (distribution panel).
+    let respSum = 0;
+    let respSamples = 0;
     for (const s of p.samples) {
       if (s.t < windowCut) continue;
       const f = s.fields;
@@ -668,16 +852,31 @@ function renderProcs() {
         capSum += f.capacity_utilization;
         capSamples++;
       }
+      if (typeof f.cpu_utilization === "number") {
+        cpuSum += f.cpu_utilization;
+        cpuSamples++;
+      }
+      if (typeof f.application_time === "number") {
+        respSum += (f.server_time || 0) + (f.queue_time || 0) +
+                   (f.daemon_time || 0) + (f.application_time || 0);
+        respSamples++;
+      }
     }
     const rpm = rcSamples > 0 ? Math.round((rcSum / LINE_WINDOW_SEC) * 60) : 0;
     const cap = capSamples > 0 ? (capSum / capSamples) : 0;
+    const cpu = cpuSamples > 0 ? (cpuSum / cpuSamples) : 0;
+    const respMs = respSamples > 0 ? (respSum / respSamples) * 1000 : null;
     const last = p.samples[p.samples.length - 1];
     const f = last ? last.fields : {};
-    const rss = f.memory_rss ? (f.memory_rss / 1048576).toFixed(0) + " MB" : "—";
+    const rss = f.memory_rss ? (f.memory_rss / 1048576).toFixed(0) : "—";
+    const respPart = respMs !== null
+      ? ` · resp ${respMs >= 10 ? respMs.toFixed(0) : respMs.toFixed(1)} ms`
+      : "";
     return `<div class="proc" style="border-left-color:${p.color}">
       <div class="pid">pid ${pid}</div>
       <div class="meta">${p.hostname || ""} ${p.process_group ? '['+p.process_group+']' : '(embedded)'}</div>
-      <div class="meta">${rpm} rpm · cap ${(cap * 100).toFixed(0)}% · ${rss}</div>
+      <div class="meta">${rpm} rpm · cap ${(cap * 100).toFixed(0)}%${respPart}</div>
+      <div class="meta">cpu ${(cpu * 100).toFixed(0)}% · ${rss} MB</div>
     </div>`;
   }).join("");
   if (hiddenCount > 0) {
@@ -873,7 +1072,13 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
   if (samples.length === 0) {
     canvas._hitTest = null;
     canvas.height = 1;
-    return { busyMean: 0, cpuMean: 0, busyPeak: 0, cpuPeak: 0, slowRunCount: 0 };
+    return {
+      busyMean: 0, cpuMean: 0, cpuSlotMean: 0, busyPeak: 0, cpuPeak: 0,
+      slowRunCount: 0, hasQueueTime: false,
+      queueMsMean: 0, queueMsPeak: 0,
+      hasDaemonTime: false, daemonMsMean: 0, daemonMsPeak: 0,
+      daemonMean: 0, requestMean: 0, requestRpm: 0,
+    };
   }
   const lastSample = samples[samples.length - 1];
   const slotCount = Math.max(
@@ -988,26 +1193,122 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
   // Per-tick busy/cpu fractions across the visible window, so the meta
   // line can report window-averaged figures (smooths single-tick noise
   // and the "cpu dumped at request end" artefact) alongside the peak.
-  let busySum = 0, cpuSum = 0, busyPeak = 0, cpuPeak = 0;
+  // Also roll up queue time, throughput and sample period so
+  // renderCapacity can score the process for saturation / CPU-GIL-bound
+  // status without iterating the samples again.
+  //
+  // busy is normalised against total slot capacity (1.0 = every slot
+  // busy the whole tick). cpu is process-wide (cpu_utilization), i.e.
+  // fraction of a single CPU core — pure-Python workloads top out
+  // near 1.0 (GIL-serialised), C extensions that release the GIL can
+  // exceed 1.0. The CPU/GIL-bound heuristic still needs a
+  // slot-normalised cpu figure so the cpu/busy ratio is dimensionally
+  // meaningful; we compute both.
+  let busySum = 0, busyPeak = 0;
+  let cpuProcSum = 0, cpuProcPeak = 0;
+  let cpuSlotSum = 0;
+  let queueTimeSum = 0, queueTimeSamples = 0, queueTimePeak = 0;
+  let daemonTimeSum = 0, daemonTimeSamples = 0, daemonTimePeak = 0;
+  let requestTimeSum = 0, requestTimeSamples = 0;
+  let hasDaemonTime = false;
+  let requestTotal = 0;
+  let hasQueueTime = false;
+  let windowDuration = 0;
+  // Raw totals so slot-cpu/slot-busy can be computed as a weighted
+  // ratio across the window rather than a mean-of-per-tick-ratios that
+  // would over-weight low-busy ticks.
+  let slotBusyUsTotal = 0, slotCpuUsTotal = 0;
+  let nThreadsMax = 0;
   for (const s of samples) {
-    const periodUs = (s.fields.sample_period || 1.0) * 1_000_000;
+    const period = s.fields.sample_period || 1.0;
+    const periodUs = period * 1_000_000;
     const sb = s.fields.slot_busy_time_us || [];
     const sc = s.fields.slot_cpu_time_us || [];
     const n = sb.length || 1;
-    const bFrac = sb.reduce((a, v) => a + v, 0) / n / (periodUs || 1);
-    const cFrac = sc.reduce((a, v) => a + v, 0) / n / (periodUs || 1);
+    const sbSum = sb.reduce((a, v) => a + v, 0);
+    const scSum = sc.reduce((a, v) => a + v, 0);
+    const bFrac = sbSum / n / (periodUs || 1);
+    const cSlotFrac = scSum / n / (periodUs || 1);
+    const cProcFrac = typeof s.fields.cpu_utilization === "number"
+      ? s.fields.cpu_utilization : 0;
     busySum += bFrac;
-    cpuSum += cFrac;
+    cpuProcSum += cProcFrac;
+    cpuSlotSum += cSlotFrac;
+    slotBusyUsTotal += sbSum;
+    slotCpuUsTotal += scSum;
+    const tMax = s.fields.request_threads_maximum;
+    if (typeof tMax === "number" && tMax > nThreadsMax) nThreadsMax = tMax;
     if (bFrac > busyPeak) busyPeak = bFrac;
-    if (cFrac > cpuPeak) cpuPeak = cFrac;
+    if (cProcFrac > cpuProcPeak) cpuProcPeak = cProcFrac;
+    // Daemon-mode only; embedded processes don't report queue_time at
+    // all. Treat null / absent as "no queue telemetry available".
+    const qt = s.fields.queue_time;
+    if (typeof qt === "number") {
+      queueTimeSum += qt;
+      queueTimeSamples++;
+      if (qt > queueTimePeak) queueTimePeak = qt;
+      hasQueueTime = true;
+    }
+    // Daemon handoff time (application_start - daemon_start). High
+    // relative to request_time is the classic fingerprint of GIL
+    // contention on the dispatch path. Daemon-mode only.
+    const dt = s.fields.daemon_time;
+    if (typeof dt === "number") {
+      daemonTimeSum += dt;
+      daemonTimeSamples++;
+      if (dt > daemonTimePeak) daemonTimePeak = dt;
+      hasDaemonTime = true;
+    }
+    // Mean total response time, summed from the four phase means.
+    // Kept alongside daemon mean so the meta line can report a stable
+    // response-time figure even if phases drop in/out of samples.
+    if (typeof s.fields.application_time === "number") {
+      requestTimeSum += (s.fields.server_time || 0) +
+                        (s.fields.queue_time || 0) +
+                        (s.fields.daemon_time || 0) +
+                        (s.fields.application_time || 0);
+      requestTimeSamples++;
+    }
+    if (typeof s.fields.request_count === "number")
+      requestTotal += s.fields.request_count;
+    windowDuration += period;
   }
   const nSamples = samples.length || 1;
   const windowStats = {
     busyMean: busySum / nSamples,
-    cpuMean: cpuSum / nSamples,
+    cpuMean: cpuProcSum / nSamples,
+    cpuSlotMean: cpuSlotSum / nSamples,
     busyPeak,
-    cpuPeak,
+    cpuPeak: cpuProcPeak,
     slowRunCount,
+    hasQueueTime,
+    queueMsMean: queueTimeSamples > 0
+      ? (queueTimeSum / queueTimeSamples) * 1000
+      : 0,
+    queueMsPeak: queueTimePeak * 1000,
+    hasDaemonTime,
+    daemonMsMean: daemonTimeSamples > 0
+      ? (daemonTimeSum / daemonTimeSamples) * 1000
+      : 0,
+    daemonMsPeak: daemonTimePeak * 1000,
+    daemonMean: daemonTimeSamples > 0
+      ? daemonTimeSum / daemonTimeSamples
+      : 0,
+    requestMean: requestTimeSamples > 0
+      ? requestTimeSum / requestTimeSamples
+      : 0,
+    requestRpm: windowDuration > 0
+      ? (requestTotal / windowDuration) * 60
+      : 0,
+    nThreads: nThreadsMax,
+    // Weighted slot-cpu / slot-busy: near 1.0 means threads are on-CPU
+    // whenever assigned (real CPU work); near 0 means slots appear
+    // busy but threads aren't running (I/O wait or GIL blocking).
+    // Used to colour the CPU/GIL-bound tooltip — a weak hint, not a
+    // hard classifier, because I/O-with-GIL-release looks the same.
+    slotCpuBusyRatio: slotBusyUsTotal > 0
+      ? slotCpuUsTotal / slotBusyUsTotal
+      : 0,
   };
 
   // Y-axis slot labels.
@@ -1069,7 +1370,7 @@ function renderCapacity() {
       card.id = "cap_" + pid;
       card.innerHTML = `
         <div class="header-row">
-          <h3>pid ${pid}</h3>
+          <h3>pid ${pid}<span class="card-flag" id="cap_flag_${pid}"></span></h3>
           <div class="meta" id="cap_meta_${pid}"></div>
         </div>
         <canvas id="cap_cv_${pid}"></canvas>`;
@@ -1080,23 +1381,175 @@ function renderCapacity() {
     const stats = drawCapacityHeatmap(canvas, p, stuckThreshMs, nowTs);
 
     const meta = document.getElementById("cap_meta_" + pid);
+    const flag = document.getElementById("cap_flag_" + pid);
     if (stats) {
       // Window-averaged figures with the single-tick peak in parens.
       // Smooths tick-to-tick noise and the "CPU dumped at request end"
       // artefact, while the peak still surfaces transient saturation.
       // Slow-requests count is distinct red-outlined runs across the
       // visible window (matches what the eye picks out on the heatmap).
-      meta.textContent =
+      // fmtQ formats queue-time compactly: sub-ms shows as "0.04 ms",
+      // seconds-scale as "1.2 s", so the meta line stays scannable
+      // whether the process is idle or deeply queued.
+      const fmtQ = ms =>
+        ms >= 1000 ? (ms / 1000).toFixed(1) + " s"
+        : ms >= 10 ? ms.toFixed(0) + " ms"
+        : ms.toFixed(2) + " ms";
+      // Render as three spans — primary (busy/cpu), a separator, and
+      // secondary (queue + slow). A @container rule on narrow cards
+      // hides the separator and promotes secondary to display:block
+      // so queue and slow-requests drop onto a second line instead
+      // of wrapping mid-phrase.
+      const queuePart = stats.hasQueueTime
+        ? `queue ${fmtQ(stats.queueMsMean)} ` +
+          `(peak ${fmtQ(stats.queueMsPeak)}) · `
+        : "";
+      const daemonPart = stats.hasDaemonTime
+        ? `daemon ${fmtQ(stats.daemonMsMean)} ` +
+          `(peak ${fmtQ(stats.daemonMsPeak)}) · `
+        : "";
+      const primary =
         `${(p.process_group || "embedded")} · ` +
         `busy ${(stats.busyMean * 100).toFixed(0)}% ` +
         `(peak ${(stats.busyPeak * 100).toFixed(0)}%) · ` +
         `cpu ${(stats.cpuMean * 100).toFixed(0)}% ` +
-        `(peak ${(stats.cpuPeak * 100).toFixed(0)}%) · ` +
+        `(peak ${(stats.cpuPeak * 100).toFixed(0)}%)`;
+      const secondary = queuePart + daemonPart +
         `${stats.slowRunCount} slow request${stats.slowRunCount === 1 ? '' : 's'}`;
+      meta.innerHTML =
+        `<span class="meta-primary">${primary}</span>` +
+        `<span class="meta-sep"> · </span>` +
+        `<span class="meta-secondary">${secondary}</span>`;
+      applyCapacityCardState(card, flag, stats);
     } else {
       meta.textContent = "";
+      applyCapacityCardState(card, flag, null);
     }
   }
+}
+
+// Pure classifier — takes a stats object (as produced by the capacity
+// heatmap rollup) and returns {saturated, cpuGilBound, reasons,
+// gilReasons, lean}. Shared by the capacity card renderer (visual
+// state + tooltip) and the snapshot copy (text for LLM paste) so both
+// produce the same verdict and wording.
+//
+//   Saturated        — busy_avg ≥ 80% sustained, daemon queue_time ≥
+//                      50 ms, or multiple slow runs with high busy.
+//                      Gate on a minimum request rate so a near-idle
+//                      process doesn't flag red because one long
+//                      request briefly spiked the window average.
+//   CPU/GIL-bound    — process pinned to ~one core's worth of CPU
+//                      with multiple threads. Could be the GIL
+//                      serialising Python work, or per-request CPU
+//                      exhausting one core; indistinguishable from
+//                      outside and the fix is the same either way
+//                      (add processes, not threads). Reported as
+//                      amber, independent of overload. Carve-out:
+//                      if cpu clearly exceeds one core with threads
+//                      busy, that's healthy multi-core via C
+//                      extensions releasing the GIL — no flag.
+//
+// Independent CPU/GIL-bound fingerprints (any one triggers):
+//   (a) slot-normalised cpu / busy ratio is low under moderate+
+//       load — threads appear busy but aren't consuming CPU.
+//   (b) absolute dispatch daemon time is high — first-GIL-acquire
+//       after worker pickup is waiting behind other threads.
+//   (c) process cpu is pegged near one core with multiple threads
+//       and non-trivial busy — the unambiguous "one-core, many
+//       threads" fingerprint, catches cases where busy and daemon
+//       ratios are both flattened because application_time is
+//       itself stretched by the same contention.
+function classifyCapacity(stats) {
+  const out = {
+    saturated: false, cpuGilBound: false,
+    reasons: [], gilReasons: [], lean: null,
+    triggers: { ratio: false, daemon: false, peg: false, multiCore: false },
+  };
+  if (!stats) return out;
+  const gated = stats.requestRpm >= 3;
+  let score = 0;
+  if (gated) {
+    if (stats.busyMean > 0.80) {
+      score += Math.min((stats.busyMean - 0.80) * 5, 1);
+      out.reasons.push(`busy ${(stats.busyMean * 100).toFixed(0)}% sustained`);
+    }
+    if (stats.hasQueueTime && stats.queueMsMean > 50) {
+      score += Math.min((stats.queueMsMean - 50) / 200, 1);
+      out.reasons.push(`queue time ${stats.queueMsMean.toFixed(0)} ms`);
+    }
+    if (stats.slowRunCount >= 3 && stats.busyMean >= 0.70) {
+      score += Math.min((stats.slowRunCount - 2) / 8, 1);
+      out.reasons.push(`${stats.slowRunCount} slow requests under load`);
+    }
+  }
+  out.saturated = score >= 1.0;
+
+  const multiCore = stats.cpuMean > 1.2 && stats.busyMean > 0.5;
+  const gilRatioTrigger = stats.busyMean > 0.5
+    && stats.cpuSlotMean / Math.max(stats.busyMean, 0.01) < 0.5;
+  const gilDaemonTrigger = stats.hasDaemonTime
+    && stats.daemonMsMean > 50;
+  const gilPegTrigger = stats.cpuMean > 0.9
+    && stats.nThreads >= 2
+    && stats.busyMean > 0.3;
+  out.triggers = { ratio: gilRatioTrigger, daemon: gilDaemonTrigger,
+                   peg: gilPegTrigger, multiCore };
+  out.cpuGilBound = gated && !multiCore
+    && (gilRatioTrigger || gilDaemonTrigger || gilPegTrigger);
+
+  if (gilPegTrigger)
+    out.gilReasons.push(
+      `cpu ${Math.round(stats.cpuMean * 100)}% on ${stats.nThreads} threads`);
+  if (gilRatioTrigger) {
+    const ratio = stats.cpuSlotMean / Math.max(stats.busyMean, 0.01);
+    out.gilReasons.push(
+      `slot cpu/busy ${ratio < 0.01 ? "~0" : ratio.toFixed(2)}`);
+  }
+  if (gilDaemonTrigger)
+    out.gilReasons.push(`daemon handoff ${stats.daemonMsMean.toFixed(0)} ms`);
+
+  // Lean CPU vs GIL using slot_cpu/slot_busy. Weak signal —
+  // I/O-with-GIL-release also shows low ratio — so used only to tune
+  // wording, not the label.
+  if (out.cpuGilBound) {
+    if (stats.slotCpuBusyRatio >= 0.7)
+      out.lean = "threads burning CPU under GIL serialisation — add processes for more cores";
+    else if (stats.slotCpuBusyRatio < 0.4
+      && (gilDaemonTrigger || stats.slotCpuBusyRatio > 0))
+      out.lean = "threads waiting on GIL or I/O, not on CPU — add processes to reduce contention";
+    else
+      out.lean = "one core saturated with multiple threads — add processes, not threads";
+  }
+  return out;
+}
+
+function applyCapacityCardState(card, flag, stats) {
+  if (!stats) {
+    card.classList.remove("saturated", "cpu-gil-bound");
+    card.removeAttribute("title");
+    if (flag) flag.textContent = "";
+    return;
+  }
+  const verdict = classifyCapacity(stats);
+  card.classList.toggle("saturated", verdict.saturated);
+  card.classList.toggle("cpu-gil-bound",
+                        !verdict.saturated && verdict.cpuGilBound);
+  if (flag) {
+    if (verdict.saturated) flag.textContent = " saturated";
+    else if (verdict.cpuGilBound) flag.textContent = " CPU/GIL-bound";
+    else flag.textContent = "";
+  }
+  const tooltip = [];
+  if (verdict.saturated)
+    tooltip.push("Saturated: " + verdict.reasons.join("; "));
+  if (verdict.cpuGilBound && !verdict.saturated)
+    tooltip.push("CPU/GIL-bound: " + verdict.gilReasons.join("; ") +
+                 " — " + verdict.lean);
+  if (tooltip.length)
+    card.title = tooltip.join("\n");
+  else
+    card.removeAttribute("title");
 }
 
 // Shared hover tooltip for heatmap cells. isOver tracks whether the
@@ -1470,19 +1923,23 @@ function redraw() {
   setLive("live_cpu",
     `<span class="label">total</span>${fmt(cpu.sum)} <span class="label">mean</span>${fmt(cpu.mean)} cores`);
 
-  const app = drawChart(document.getElementById("c_app"), f => (f.application_time || 0) * 1000);
-  setLive("live_app", `<span class="label">mean</span>${fmt(app.mean)} ms`);
+  const resp = drawChart(document.getElementById("c_resp"),
+    f => ((f.server_time || 0) + (f.queue_time || 0) +
+          (f.daemon_time || 0) + (f.application_time || 0)) * 1000);
+  setLive("live_resp", `<span class="label">mean</span>${fmt(resp.mean)} ms`);
 
   const mem = drawChart(document.getElementById("c_mem"), f => (f.memory_rss || 0) / 1048576);
   setLive("live_mem",
     `<span class="label">total</span>${fmt(mem.sum, 0)} <span class="label">mean</span>${fmt(mem.mean, 0)} MB`);
 
-  const queue = drawChart(document.getElementById("c_queue"), f => (f.queue_time || 0) * 1000);
-  setLive("live_queue", `<span class="label">mean</span>${fmt(queue.mean)} ms`);
+  const phaseField = document.getElementById("phase_field").value || "application_time";
+  const phase = drawChart(document.getElementById("c_phase"),
+    f => (f[phaseField] || 0) * 1000);
+  setLive("live_phase", `<span class="label">mean</span>${fmt(phase.mean)} ms`);
 
   const distWindowSec = parseInt(
     document.getElementById("dist_window").value, 10) || LINE_WINDOW_SEC;
-  const distField = document.getElementById("dist_field").value || "application_time_buckets";
+  const distField = document.getElementById("dist_field").value || "request_time_buckets";
   const hist = aggregateBuckets(distField, distWindowSec);
   const dist = drawHistogram(document.getElementById("c_dist"), hist);
   if (dist.total > 0) {
@@ -1538,6 +1995,7 @@ window.addEventListener("resize", redraw);
 document.getElementById("group_filter").addEventListener("change", redraw);
 document.getElementById("dist_window").addEventListener("change", redraw);
 document.getElementById("dist_field").addEventListener("change", redraw);
+document.getElementById("phase_field").addEventListener("change", redraw);
 document.getElementById("slow_state_filter").addEventListener("change", redraw);
 document.getElementById("slow_per_url").addEventListener("change", redraw);
 document.getElementById("capacity_stuck_thresh").addEventListener("change", redraw);
@@ -1653,6 +2111,477 @@ function refreshTooltip() {
     refreshTooltip();
   });
   canvas.addEventListener("mouseleave", clear);
+})();
+
+// -----------------------------------------------------------------
+// Help modal + LLM-paste artefacts.
+// -----------------------------------------------------------------
+
+const HELP_MARKDOWN = `# mod_wsgi telemetry — UI reference
+
+## What this UI shows
+
+Live per-process metrics for an Apache + mod_wsgi deployment. Each
+mod_wsgi worker process (embedded MPM children, and/or daemon
+processes from \`WSGIDaemonProcess\` groups) reports telemetry over
+UDP every second. The UI aggregates across currently-visible
+processes over the last minute.
+
+Three tabs:
+
+- **Overview** — line charts over the last minute: request throughput,
+  capacity utilization, CPU utilization, response time, memory RSS,
+  and a time-breakdown chart with a phase selector. A time-distribution
+  histogram (with phase selector, defaulting to total response) caps
+  the tab.
+- **Capacity** — per-process heatmap of per-slot (thread) busy / slow /
+  empty state over the last 60 s. One row per worker thread. Hover a
+  cell for completed-count, busy ms, cpu ms, elapsed ms.
+- **Slow requests** — live list of requests whose wall-clock elapsed
+  has crossed the \`WSGISlowRequests\` threshold. Shows in-flight and
+  recently-finished entries.
+
+## Statistics glossary
+
+- **samples** — total telemetry datagrams received since the collector
+  started.
+- **rpm** — requests per minute for a process, averaged over the
+  visible 1 min window.
+- **cap / capacity utilization** — \`capacity_utilization\` field:
+  fraction of the process's worker threads busy serving requests,
+  window-averaged. 100% = every thread busy every tick.
+- **busy** (Capacity tab) — fraction of total slot capacity consumed
+  by in-flight requests, computed from per-slot \`slot_busy_time_us\`.
+  Same quantity as \`cap\` via a different path, so the Capacity
+  header and heatmap cells agree.
+- **cpu** — \`cpu_utilization\`: process-wide CPU seconds (user +
+  system) divided by wall-clock, expressed as fraction of **one**
+  CPU core. 1.0 = one core saturated. GIL-bound Python tops out
+  near 1.0; C extensions that release the GIL can exceed 1.0 on
+  multi-core.
+- **resp / response time** — mean of (server + queue + daemon +
+  application) time, window-averaged. Closest approximation to what
+  the caller experiences; does **not** include the external Apache
+  accept-queue wait (not observable from inside the worker).
+- **server time** — Apache-side processing before handoff to the
+  daemon socket queue. Embedded-mode requests never leave this
+  phase.
+- **queue time** — time the request sat in the daemon group's
+  socket queue waiting to be picked up by a daemon worker.
+  Daemon-mode only. High queue time = process can't accept requests
+  fast enough.
+- **daemon time** — time between a daemon worker picking the
+  request off its queue and the WSGI callable being invoked.
+  Includes request parsing, environ/subprocess_env setup, thread
+  dispatch, and the thread's **first GIL acquisition**. High
+  daemon time under load is a classic fingerprint of GIL contention
+  on the dispatch path. Daemon-mode only.
+- **application time** — wall-clock time inside the WSGI callable.
+  What the app code owns.
+- **slow requests** (sidebar / meta) — number of distinct slow
+  "runs" observed on the process's Capacity heatmap in the visible
+  window. A run is a sequence of consecutive red-tinted cells — a
+  single long request spanning many ticks is one run.
+
+## Card state flags (Capacity tab)
+
+Each process card can be tinted red (saturated) or amber
+(CPU/GIL-bound). Both are gated on rpm ≥ 3, so near-idle processes
+can't trip them.
+
+- **saturated** — score ≥ 1.0, contributions from:
+  - busy mean > 80% (up to +1.0 as busy approaches 100%)
+  - queue time > 50 ms mean (up to +1.0 as queue approaches 250 ms)
+  - slow requests ≥ 3 **and** busy ≥ 70%
+- **CPU/GIL-bound** — any of (and not clearly multi-core, i.e. not
+  cpu > 120% with busy > 50%):
+  - busy > 50% **and** slot-normalised cpu / busy < 0.5 — threads
+    appear busy but aren't on-CPU (GIL wait or I/O).
+  - daemon_mean > 50 ms — dispatch phase carrying sustained
+    first-GIL-acquire wait.
+  - cpu_mean > 90% **and** threads ≥ 2 **and** busy > 30% — one
+    core pegged with multiple threads, the unambiguous "single-core,
+    many threads" fingerprint.
+
+  From outside the process, pure-Python CPU-bound work and
+  GIL-contended I/O work produce the same telemetry (one core used,
+  threads waiting). The tooltip uses slot cpu/busy to hint which
+  way it leans, but the fix — add processes, not threads — is the
+  same in both cases.
+
+## Diagnostic patterns
+
+- **\`daemon\` sustained above ~50 ms, modest \`queue\`** — first-GIL
+  acquisition at dispatch is backing up behind in-flight threads.
+  More threads won't help; add processes.
+- **High \`queue\`, low \`daemon\`** — daemon can't accept requests
+  fast enough. Add processes; increase \`threads=\` **only** if the
+  workload is I/O-bound (threads release the GIL during I/O and
+  scale). CPU-bound + more threads = more contention, not more
+  throughput.
+- **cpu ~100% (one core) with multiple threads, busy moderate+** —
+  the process is pinned to a single core. Could be CPU-bound work
+  (threads want CPU but GIL serialises them) or GIL-contended
+  I/O work (threads waiting for GIL on re-acquire). Telemetry can't
+  tell them apart from outside; both flag **CPU/GIL-bound** and
+  both want more processes. If \`daemon\` is also elevated, lean
+  GIL. If slot cpu / slot busy (hover a cell) is near 1.0, lean CPU.
+- **cpu > ~120% with busy high** — healthy multi-core work via C
+  extensions releasing the GIL. No label fires; still scale
+  processes when cpu approaches (cores − 1) × 100%.
+- **busy high, cpu << busy, no slow requests, daemon low** —
+  threads waiting on I/O. Fine as long as response stays
+  acceptable; more threads can help if demand is short of
+  throughput.
+- **\`response\` spike without \`rpm\` change** — use the time
+  distribution panel's phase selector to find which phase carries
+  the tail: \`application\` = app regression or external dependency;
+  \`daemon\` = GIL pressure; \`queue\` = backpressure from upstream.
+
+## Tuning levers
+
+- \`WSGIDaemonProcess name processes=N threads=M\` — primary knob.
+  - CPU-bound app: N ≈ cores, M small (1–4).
+  - I/O-bound app: N moderate, M can be higher (10–25).
+- \`queue-timeout=\` — cap on queue time; requests that wait longer
+  are rejected. Protects the daemon from pathological backpressure.
+- \`request-timeout=\` — cap on per-request wall time (includes
+  application_time). Kills stuck workers.
+- \`connect-timeout=\` — cap on Apache-to-daemon connect.
+- \`inactivity-timeout=\` — idle worker eviction.
+- \`WSGISlowRequests threshold=S\` — emit a slow-request record once
+  a request's wall time exceeds S seconds. Feeds the Slow requests
+  tab and the red heatmap cells.
+
+## LLM evaluation checklist
+
+When pasted alongside a screenshot:
+
+1. List visible processes and their state (saturated / CPU/GIL-bound /
+   neither).
+2. For each process cross-reference cap, busy, cpu, resp, queue,
+   daemon from the Capacity header / sidebar.
+3. Classify the bottleneck using the diagnostic patterns above.
+   When a process is **CPU/GIL-bound**, try to lean toward one cause
+   using: elevated \`daemon\` and/or low slot cpu / slot busy → GIL;
+   slot cpu / slot busy near 1.0 with no daemon elevation → CPU.
+   State the call as a lean, not a certainty — the two are
+   indistinguishable from outside in the general case.
+4. Recommend a concrete change to \`WSGIDaemonProcess processes=\` /
+   \`threads=\` with proposed new numbers, plus timeout adjustments
+   appropriate to the observed failure mode.
+5. Note if the workload shape (distribution histogram) suggests a
+   tail-latency fix (caching, async, retry budget) rather than a
+   mod_wsgi config change.
+`;
+
+// Render a conservative subset of markdown to HTML. Handles h2, lists,
+// paragraphs, inline `code` and **bold**. Deliberately minimal — the
+// help text is authored knowing these rules apply.
+function renderHelpMarkdown(md) {
+  const esc = s => s
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = s => esc(s)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  const lines = md.split("\n");
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^# /.test(line)) { i++; continue; } // modal already has title
+    if (/^## /.test(line)) {
+      out.push("<h3>" + inline(line.slice(3)) + "</h3>");
+      i++; continue;
+    }
+    if (/^- /.test(line)) {
+      const items = [];
+      while (i < lines.length && /^- /.test(lines[i])) {
+        let buf = lines[i].slice(2);
+        i++;
+        while (i < lines.length && /^  \S/.test(lines[i])) {
+          buf += " " + lines[i].trim();
+          i++;
+        }
+        items.push("<li>" + inline(buf) + "</li>");
+      }
+      out.push("<ul>" + items.join("") + "</ul>");
+      continue;
+    }
+    if (line.trim() === "") { i++; continue; }
+    let buf = line;
+    i++;
+    while (i < lines.length && lines[i].trim() !== ""
+           && !/^(#|- )/.test(lines[i])) {
+      buf += " " + lines[i].trim();
+      i++;
+    }
+    out.push("<p>" + inline(buf) + "</p>");
+  }
+  return out.join("");
+}
+
+function buildCurrentStatsMarkdown() {
+  const lines = [];
+  const now = new Date();
+  lines.push("# mod_wsgi telemetry — current state");
+  lines.push("");
+  lines.push("Snapshot at " + now.toISOString() +
+             " (local: " + now.toString() + ").");
+  lines.push("Window: last " + LINE_WINDOW_SEC + " s.");
+  lines.push("");
+  const pids = [...state.processes.keys()].sort((a, b) => a - b);
+  const visible = pids.filter(pid => {
+    const p = state.processes.get(pid);
+    return !isStale(p) && !isHidden(p);
+  });
+  if (visible.length === 0) {
+    lines.push("No active processes in the selected filter.");
+    return lines.join("\n");
+  }
+  const nowSec = Date.now() / 1000;
+  const windowCut = nowSec - LINE_WINDOW_SEC;
+  for (const pid of visible) {
+    const p = state.processes.get(pid);
+    let rcSum = 0, rcSamples = 0;
+    let capSum = 0, capSamples = 0;
+    let cpuSum = 0, cpuSamples = 0;
+    let respSum = 0, respSamples = 0;
+    let srvSum = 0, queSum = 0, daeSum = 0, appSum = 0, phaseSamples = 0;
+    // Extras for the CPU/GIL-bound classifier — busy fraction across
+    // slots, slot-normalised cpu fraction, queue/daemon peaks, weighted
+    // slot cpu/busy ratio, thread count. Mirrors the rollup in
+    // drawCapacityHeatmap so the snapshot produces the same verdict
+    // even when the user hasn't opened the Capacity tab.
+    let busySum = 0, busySumSamples = 0, busyPeak = 0;
+    let cpuSlotSum = 0, cpuProcPeak = 0;
+    let slotBusyUsTotal = 0, slotCpuUsTotal = 0;
+    let queueTimePeakS = 0, daemonTimePeakS = 0;
+    let queueSamples = 0, daemonSamples = 0;
+    let nThreadsMax = 0;
+    let windowSecSum = 0;
+    for (const s of p.samples) {
+      if (s.t < windowCut) continue;
+      const f = s.fields;
+      if (typeof f.request_count === "number") {
+        rcSum += f.request_count; rcSamples++;
+      }
+      if (typeof f.capacity_utilization === "number") {
+        capSum += f.capacity_utilization; capSamples++;
+      }
+      if (typeof f.cpu_utilization === "number") {
+        cpuSum += f.cpu_utilization; cpuSamples++;
+        if (f.cpu_utilization > cpuProcPeak) cpuProcPeak = f.cpu_utilization;
+      }
+      if (typeof f.application_time === "number") {
+        srvSum += f.server_time || 0;
+        queSum += f.queue_time || 0;
+        daeSum += f.daemon_time || 0;
+        appSum += f.application_time || 0;
+        respSum += (f.server_time || 0) + (f.queue_time || 0) +
+                   (f.daemon_time || 0) + (f.application_time || 0);
+        respSamples++;
+        phaseSamples++;
+      }
+      if (typeof f.queue_time === "number") {
+        queueSamples++;
+        if (f.queue_time > queueTimePeakS) queueTimePeakS = f.queue_time;
+      }
+      if (typeof f.daemon_time === "number") {
+        daemonSamples++;
+        if (f.daemon_time > daemonTimePeakS) daemonTimePeakS = f.daemon_time;
+      }
+      const period = f.sample_period || 1.0;
+      const periodUs = period * 1_000_000;
+      const sb = f.slot_busy_time_us || [];
+      const sc = f.slot_cpu_time_us || [];
+      if (sb.length > 0) {
+        const n = sb.length;
+        const sbSum = sb.reduce((a, v) => a + v, 0);
+        const scSum = sc.reduce((a, v) => a + v, 0);
+        const bFrac = sbSum / n / (periodUs || 1);
+        const cSlotFrac = scSum / n / (periodUs || 1);
+        busySum += bFrac;
+        cpuSlotSum += cSlotFrac;
+        slotBusyUsTotal += sbSum;
+        slotCpuUsTotal += scSum;
+        busySumSamples++;
+        if (bFrac > busyPeak) busyPeak = bFrac;
+      }
+      if (typeof f.request_threads_maximum === "number"
+          && f.request_threads_maximum > nThreadsMax)
+        nThreadsMax = f.request_threads_maximum;
+      windowSecSum += period;
+    }
+    const rpm = rcSamples > 0 ? Math.round((rcSum / LINE_WINDOW_SEC) * 60) : 0;
+    const cap = capSamples > 0 ? capSum / capSamples : 0;
+    const cpu = cpuSamples > 0 ? cpuSum / cpuSamples : 0;
+    const respMs = respSamples > 0 ? (respSum / respSamples) * 1000 : null;
+    const phaseMs = k => phaseSamples > 0 ? (k / phaseSamples) * 1000 : null;
+    const last = p.samples[p.samples.length - 1];
+    const f = last ? last.fields : {};
+    const rssMb = f.memory_rss ? (f.memory_rss / 1048576).toFixed(0) : "—";
+    const group = p.process_group || "(embedded)";
+    lines.push("## pid " + pid + " — " + (p.hostname || "?") + " [" + group + "]");
+    lines.push("");
+    lines.push("- rpm: " + rpm);
+    lines.push("- threads: " + (nThreadsMax > 0 ? nThreadsMax : "—"));
+    lines.push("- cap: " + (cap * 100).toFixed(0) + "%");
+    lines.push("- cpu: " + (cpu * 100).toFixed(0) + "% (fraction of one CPU core)");
+    if (respMs !== null)
+      lines.push("- response time (mean): " + respMs.toFixed(0) + " ms");
+    lines.push("- memory RSS: " + rssMb + " MB");
+    if (phaseSamples > 0) {
+      const pm = (x, ms) => ms === null
+        ? null
+        : "- " + x + ": " + ms.toFixed(ms >= 10 ? 0 : 2) + " ms";
+      const rows = [
+        pm("server time (mean)", phaseMs(srvSum)),
+        pm("queue time (mean)",  phaseMs(queSum)),
+        pm("daemon time (mean)", phaseMs(daeSum)),
+        pm("application time (mean)", phaseMs(appSum)),
+      ].filter(Boolean);
+      lines.push(...rows);
+    }
+
+    // Build a stats object of the shape the classifier expects, then
+    // run it. Keeps the snapshot verdict in lock-step with the
+    // Capacity card tooltip.
+    const statsForClass = {
+      busyMean: busySumSamples > 0 ? busySum / busySumSamples : 0,
+      busyPeak,
+      cpuMean: cpuSamples > 0 ? cpuSum / cpuSamples : 0,
+      cpuPeak: cpuProcPeak,
+      cpuSlotMean: busySumSamples > 0 ? cpuSlotSum / busySumSamples : 0,
+      slotCpuBusyRatio: slotBusyUsTotal > 0
+        ? slotCpuUsTotal / slotBusyUsTotal : 0,
+      nThreads: nThreadsMax,
+      hasQueueTime: queueSamples > 0,
+      queueMsMean: queueSamples > 0
+        ? (queSum / Math.max(phaseSamples, 1)) * 1000 : 0,
+      queueMsPeak: queueTimePeakS * 1000,
+      hasDaemonTime: daemonSamples > 0,
+      daemonMsMean: daemonSamples > 0
+        ? (daeSum / Math.max(phaseSamples, 1)) * 1000 : 0,
+      daemonMsPeak: daemonTimePeakS * 1000,
+      requestRpm: windowSecSum > 0 ? (rcSum / windowSecSum) * 60 : 0,
+      // slowRunCount: only the heatmap cell scan computes distinct red
+      // runs; re-deriving it here would need the same per-slot state
+      // machine. Report 0 — means the slow-run contribution to
+      // saturation is absent in the snapshot, but the two other
+      // contributions (busy, queue) still work. Noted in the caveat
+      // line below.
+      slowRunCount: 0,
+    };
+    const verdict = classifyCapacity(statsForClass);
+    lines.push("");
+    lines.push("### State");
+    lines.push("");
+    if (verdict.saturated) {
+      lines.push("- **saturated** — " + verdict.reasons.join("; "));
+    } else if (verdict.cpuGilBound) {
+      lines.push("- **CPU/GIL-bound** — " + verdict.gilReasons.join("; "));
+      lines.push("- lean: " + verdict.lean);
+    } else {
+      lines.push("- not flagged (within normal operating envelope)");
+    }
+    // Always report the signals the classifier used, so the LLM can
+    // second-guess the verdict if the thresholds look off for this
+    // workload.
+    lines.push("- signals used:");
+    lines.push("  - busy mean: "
+      + (statsForClass.busyMean * 100).toFixed(0) + "%"
+      + " (peak " + (statsForClass.busyPeak * 100).toFixed(0) + "%)");
+    lines.push("  - cpu mean: "
+      + (statsForClass.cpuMean * 100).toFixed(0) + "%"
+      + " (peak " + (statsForClass.cpuPeak * 100).toFixed(0) + "%)"
+      + ", threads: " + statsForClass.nThreads);
+    const slotRatio = statsForClass.busyMean > 0
+      ? statsForClass.cpuSlotMean / statsForClass.busyMean : 0;
+    lines.push("  - slot cpu/busy (weighted): "
+      + (statsForClass.slotCpuBusyRatio).toFixed(2)
+      + "; per-tick mean ratio: " + slotRatio.toFixed(2));
+    if (statsForClass.hasDaemonTime)
+      lines.push("  - daemon mean: "
+        + statsForClass.daemonMsMean.toFixed(0) + " ms"
+        + " (peak " + statsForClass.daemonMsPeak.toFixed(0) + " ms)");
+    if (statsForClass.hasQueueTime)
+      lines.push("  - queue mean: "
+        + statsForClass.queueMsMean.toFixed(0) + " ms"
+        + " (peak " + statsForClass.queueMsPeak.toFixed(0) + " ms)");
+    const triggerLabels = [];
+    if (verdict.triggers.peg) triggerLabels.push("cpu-peg");
+    if (verdict.triggers.ratio) triggerLabels.push("slot-ratio");
+    if (verdict.triggers.daemon) triggerLabels.push("daemon-absolute");
+    if (verdict.triggers.multiCore)
+      triggerLabels.push("multi-core carve-out (label suppressed)");
+    if (triggerLabels.length)
+      lines.push("  - CPU/GIL triggers active: " + triggerLabels.join(", "));
+    lines.push("");
+  }
+  lines.push("## Notes");
+  lines.push("");
+  lines.push("- Slow-request runs aren't reconstructed from this " +
+             "snapshot, so the saturation score per process excludes " +
+             "that contribution. If the Capacity heatmap shows red " +
+             "cells under load, treat any saturation verdict here as " +
+             "a lower bound.");
+  return lines.join("\n");
+}
+
+(function () {
+  const btn = document.getElementById("help_btn");
+  const backdrop = document.getElementById("help_backdrop");
+  const body = document.getElementById("help_body");
+  const closeBtn = document.getElementById("help_close");
+  const copyBtn = document.getElementById("help_copy");
+  const copyStatsBtn = document.getElementById("help_copy_stats");
+  let rendered = false;
+  function open() {
+    if (!rendered) {
+      body.innerHTML = renderHelpMarkdown(HELP_MARKDOWN);
+      rendered = true;
+    }
+    backdrop.classList.add("open");
+  }
+  function close() { backdrop.classList.remove("open"); }
+  btn.addEventListener("click", open);
+  closeBtn.addEventListener("click", close);
+  backdrop.addEventListener("click", e => {
+    if (e.target === backdrop) close();
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && backdrop.classList.contains("open")) close();
+  });
+  function flashCopied(sourceBtn) {
+    const original = sourceBtn.textContent;
+    sourceBtn.textContent = "Copied";
+    sourceBtn.classList.add("copied");
+    setTimeout(() => {
+      sourceBtn.textContent = original;
+      sourceBtn.classList.remove("copied");
+    }, 1200);
+  }
+  async function copyText(text, sourceBtn) {
+    try {
+      await navigator.clipboard.writeText(text);
+      flashCopied(sourceBtn);
+    } catch (err) {
+      // Fallback — dump into a textarea and exec copy. Works when the
+      // page is served over plain http where clipboard API is blocked.
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.top = "-1000px";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); flashCopied(sourceBtn); }
+      finally { document.body.removeChild(ta); }
+    }
+  }
+  copyBtn.addEventListener("click", () => copyText(HELP_MARKDOWN, copyBtn));
+  copyStatsBtn.addEventListener("click",
+    () => copyText(buildCurrentStatsMarkdown(), copyStatsBtn));
 })();
 </script>
 </body>

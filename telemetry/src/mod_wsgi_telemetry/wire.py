@@ -106,6 +106,12 @@ FIELDS = {
     92: "slot_current_elapsed_ms",
     93: "slot_max_duration_ms",
 
+    # Total response time = server + queue + daemon + application, summed
+    # per request and bucketed. What the caller actually experienced,
+    # short of the external Apache accept-queue wait (not observable from
+    # within the worker).
+    94: "request_time_buckets",
+
     # Proposed additions from the review plan
     70: "input_bytes_total",
     71: "input_reads_total",

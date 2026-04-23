@@ -102,6 +102,11 @@
 #define WSGI_METRICS_F_DAEMON_TIME_BUCKETS         62
 #define WSGI_METRICS_F_APPLICATION_TIME_BUCKETS    63
 
+/* Total response time = server + queue + daemon + application, summed
+ * per request at end-of-request and bucketed. Lets the UI show the
+ * distribution users actually experience rather than any single phase. */
+#define WSGI_METRICS_F_REQUEST_TIME_BUCKETS        94   /* i32 array */
+
 /* Per-slot capacity signals — one entry per worker thread, length =
  * request_threads_maximum. Field 64 (historically reserved as
  * "request_threads_buckets") now carries the same semantics under the
@@ -173,6 +178,7 @@ typedef struct {
     int32_t  queue_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
     int32_t  daemon_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
     int32_t  application_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
+    int32_t  request_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
 
     /* Per-slot capacity signals. slot_count is the live length of each
      * array — normally the WSGI process's request_threads_maximum, or
