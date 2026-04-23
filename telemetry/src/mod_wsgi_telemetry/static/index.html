@@ -2632,38 +2632,32 @@ can't trip them.
   SLA knob.** Every second the monitor thread averages the age of
   in-flight requests across **all** threads in the process
   (sum / \`threads\`, not sum / busy-threads); if the average exceeds
-  the timeout the daemon restarts. Behaviour when it fires depends
-  on the process group configuration:
-  - **\`processes > 1\` with \`graceful-timeout > 0\`**: the daemon
-    enters a drain state — it stops competing for the accept mutex,
-    so peer daemons in the group absorb new work while the stuck
-    daemon lets healthy in-flight requests finish. If the drain
-    completes before \`graceful-timeout\` expires the process
-    restarts cleanly; otherwise the still-wedged request is
-    interrupted when the graceful timer expires.
-  - **\`processes == 1\` or \`graceful-timeout == 0\`**: the process is
-    stopped immediately. Every in-flight request on it is
-    interrupted, healthy and stuck alike, and Apache retries on the
-    next request once the process has restarted.
-  Two properties to keep in mind regardless of which branch fires:
-  - **Dilution with thread count.** With \`threads=10\`, one thread
-    stuck 60 s while the others are idle averages to 6 s — so a
-    stuck worker can silently reduce capacity for a long time
-    before restart fires. Raising \`threads\` raises the effective
-    trigger.
-  - **No staggering across processes.** Each daemon in the group
-    decides independently; a deterministic bad endpoint can send
-    every daemon into drain (or, for single-process groups, into
-    restart) concurrently.
-  Sizing: set it a few × above the p99 of normal request time —
-  enough headroom that steady-state traffic doesn't trip it, but no
-  higher. **Do not multiply by \`threads\`**: the average-across-threads
-  rule already dilutes the trigger, so a single wedged thread takes
-  roughly \`threads\` × \`request-timeout\` seconds to fire. Padding the
-  value further only lengthens detection time. For user-visible
-  per-request enforcement, prefer **application-level timeouts**
-  (HTTP client timeouts, DB statement timeouts, \`signal.alarm\` in
-  request code) and let \`queue-timeout=\` handle backpressure.
+  the timeout the daemon restarts. Behaviour on firing depends on
+  the process group: with \`processes > 1\` and \`graceful-timeout > 0\`
+  the daemon enters a drain state — it stops competing for the
+  accept mutex so peer daemons absorb new work, healthy in-flight
+  requests finish, and if the drain completes before
+  \`graceful-timeout\` expires the process restarts cleanly (otherwise
+  the still-wedged request is interrupted at expiry). With
+  \`processes == 1\` or \`graceful-timeout == 0\` the process is stopped
+  immediately; every in-flight request on it is interrupted, healthy
+  and stuck alike, and Apache retries once the process has
+  restarted. Two properties regardless of branch: **dilution with
+  thread count** — with \`threads=10\`, one thread stuck 60 s while
+  the others are idle averages to 6 s, so raising \`threads\` raises
+  the effective trigger; **no staggering across processes** — each
+  daemon decides independently, so a deterministic bad endpoint can
+  send every daemon into drain (or into restart, for single-process
+  groups) concurrently. Sizing: set it a few × above the p99 of
+  normal request time — enough headroom that steady-state traffic
+  doesn't trip it, but no higher. **Do not multiply by \`threads\`**:
+  the average-across-threads rule already dilutes the trigger, so a
+  single wedged thread takes roughly \`threads\` × \`request-timeout\`
+  seconds to fire; padding the value further only lengthens
+  detection time. For user-visible per-request enforcement prefer
+  **application-level timeouts** (HTTP client timeouts, DB statement
+  timeouts, \`signal.alarm\` in request code) and let \`queue-timeout=\`
+  handle backpressure.
 - \`connect-timeout=\` — cap on Apache-to-daemon connect.
 - \`inactivity-timeout=\` — idle worker eviction.
 - \`WSGISlowRequests threshold=S\` — emit a slow-request record once
