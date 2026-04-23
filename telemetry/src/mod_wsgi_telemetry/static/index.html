@@ -154,6 +154,26 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
+  .process-list .groups-head,
+  .process-list .procs-head { margin-top: 12px; }
+  .totals-row {
+    padding: 6px 8px;
+    margin-bottom: 4px;
+    border-left: 3px solid var(--muted);
+    background: rgba(255,255,255,0.02);
+    font-size: 12px;
+  }
+  .totals-row .headline { font-weight: 600; }
+  .totals-row .meta { color: var(--muted); font-size: 11px; }
+  .group-row {
+    padding: 4px 8px;
+    margin-bottom: 3px;
+    border-left: 2px solid var(--accent);
+    background: rgba(255,255,255,0.02);
+    font-size: 11px;
+  }
+  .group-row .name { font-weight: 600; font-size: 12px; }
+  .group-row .meta { color: var(--muted); }
   .process-list .subtitle {
     font-size: 10px;
     color: var(--muted);
@@ -559,8 +579,12 @@
 </div>
 <main>
   <aside class="process-list">
-    <h2>Processes</h2>
+    <h2>Totals</h2>
     <div class="subtitle">last 1 min</div>
+    <div id="totals"></div>
+    <h2 id="groups_head" class="groups-head" hidden>Groups</h2>
+    <div id="groups"></div>
+    <h2 class="procs-head">Processes</h2>
     <div id="procs"></div>
   </aside>
   <section class="charts-area">
@@ -811,12 +835,93 @@ function addSample(s) {
   while (p.samples.length && p.samples[0].t < cutoff) p.samples.shift();
 }
 
+// Format a cpu-utilization value as "N.N cores" for multi-core-ish
+// totals. Used wherever the UI is aggregating cpu_utilization across
+// processes, where the result can exceed 1.0.
+function formatCores(x) {
+  if (x >= 1.0) return x.toFixed(1) + " cores";
+  return (x * 100).toFixed(0) + "%";
+}
+
+// Compact state summary (e.g. "1 sat · 2 CPU/GIL · 6 normal"). Skip
+// zero-count segments so the line stays readable.
+function formatStateCounts(sc) {
+  const bits = [];
+  if (sc.saturated > 0) bits.push(sc.saturated + " sat");
+  if (sc.cpuGilBound > 0) bits.push(sc.cpuGilBound + " CPU/GIL");
+  if (sc.normal > 0) bits.push(sc.normal + " normal");
+  return bits.join(" · ");
+}
+
+function renderTotals(visible) {
+  const el = document.getElementById("totals");
+  if (visible.length === 0) { el.innerHTML = ""; return; }
+  const rollup = rollupAcross(visible, LINE_WINDOW_SEC);
+  const respPart = rollup.respMs !== null
+    ? ` · resp ${rollup.respMs >= 10
+        ? rollup.respMs.toFixed(0)
+        : rollup.respMs.toFixed(1)} ms`
+    : "";
+  const hostLine = rollup.hostnames.size === 0
+    ? ""
+    : `<div class="meta">host: ${[...rollup.hostnames].join(", ")}${
+        rollup.hostnames.size > 1 ? " (multi-host)" : ""}</div>`;
+  const groupCount = rollup.groups.size;
+  el.innerHTML = `<div class="totals-row">
+    <div class="headline">${rollup.rpm} rpm${respPart}</div>
+    ${hostLine}
+    <div class="meta">cpu ${formatCores(rollup.cpuCores)} · ${
+      Math.round(rollup.rssMb)} MB</div>
+    <div class="meta">${rollup.procCount} proc${
+      rollup.procCount === 1 ? "" : "s"} across ${groupCount} group${
+      groupCount === 1 ? "" : "s"}</div>
+    <div class="meta">${formatStateCounts(rollup.stateCounts)}</div>
+  </div>`;
+}
+
+function renderGroups(visible) {
+  const head = document.getElementById("groups_head");
+  const el = document.getElementById("groups");
+  // Only show the Groups section when filter is "all" AND there are
+  // multiple groups live; otherwise it is redundant with the scoped
+  // Totals line above.
+  const filter = document.getElementById("group_filter").value;
+  const rollup = rollupAcross(visible, LINE_WINDOW_SEC);
+  if (filter !== "*" || rollup.groups.size <= 1) {
+    head.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  head.hidden = false;
+  const rows = [];
+  const sortedGroups = [...rollup.groups.keys()].sort((a, b) => {
+    if (a === "") return -1;
+    if (b === "") return 1;
+    return a.localeCompare(b);
+  });
+  for (const g of sortedGroups) {
+    const gPids = rollup.groups.get(g);
+    const gRollup = rollupAcross(gPids, LINE_WINDOW_SEC);
+    const label = g === "" ? "(embedded)" : g;
+    rows.push(`<div class="group-row">
+      <div class="name">${label}</div>
+      <div class="meta">${gRollup.rpm} rpm · cpu ${
+        formatCores(gRollup.cpuCores)} · ${gRollup.procCount} proc${
+        gRollup.procCount === 1 ? "" : "s"} · ${
+        formatStateCounts(gRollup.stateCounts)}</div>
+    </div>`);
+  }
+  el.innerHTML = rows.join("");
+}
+
 function renderProcs() {
   const el = document.getElementById("procs");
   const pids = [...state.processes.keys()].sort((a, b) => a - b);
   const live = pids.filter(pid => !isStale(state.processes.get(pid)));
   const visible = live.filter(pid => !isHidden(state.processes.get(pid)));
   const hiddenCount = live.length - visible.length;
+  renderTotals(visible);
+  renderGroups(visible);
   const nowSec = Date.now() / 1000;
   const windowCut = nowSec - LINE_WINDOW_SEC;
   el.innerHTML = visible.map(pid => {
@@ -1428,6 +1533,158 @@ function renderCapacity() {
   }
 }
 
+// Roll up one process over the last `windowSec` seconds into the stats
+// object shape consumed by classifyCapacity(), plus the headline
+// figures used by the snapshot and the totals strip. Returns null if
+// no samples fall in the window. Shared between the snapshot and the
+// sidebar Totals rollup so both see the same numbers.
+function computeProcessStats(p, windowSec) {
+  const nowSec = Date.now() / 1000;
+  const windowCut = nowSec - windowSec;
+  let rcSum = 0;
+  let capSum = 0, capSamples = 0;
+  let cpuSum = 0, cpuSamples = 0, cpuProcPeak = 0;
+  let respSum = 0, respSamples = 0;
+  let srvSum = 0, queSum = 0, daeSum = 0, appSum = 0, phaseSamples = 0;
+  let busySum = 0, busySamples = 0, busyPeak = 0;
+  let cpuSlotSum = 0;
+  let slotBusyUsTotal = 0, slotCpuUsTotal = 0;
+  let queueTimePeakS = 0, daemonTimePeakS = 0;
+  let queueSamples = 0, daemonSamples = 0;
+  let nThreadsMax = 0;
+  let windowSecSum = 0;
+  let hasAny = false;
+  for (const s of p.samples) {
+    if (s.t < windowCut) continue;
+    hasAny = true;
+    const f = s.fields;
+    if (typeof f.request_count === "number") rcSum += f.request_count;
+    if (typeof f.capacity_utilization === "number") {
+      capSum += f.capacity_utilization; capSamples++;
+    }
+    if (typeof f.cpu_utilization === "number") {
+      cpuSum += f.cpu_utilization; cpuSamples++;
+      if (f.cpu_utilization > cpuProcPeak) cpuProcPeak = f.cpu_utilization;
+    }
+    if (typeof f.application_time === "number") {
+      srvSum += f.server_time || 0;
+      queSum += f.queue_time || 0;
+      daeSum += f.daemon_time || 0;
+      appSum += f.application_time || 0;
+      respSum += (f.server_time || 0) + (f.queue_time || 0) +
+                 (f.daemon_time || 0) + (f.application_time || 0);
+      respSamples++;
+      phaseSamples++;
+    }
+    if (typeof f.queue_time === "number") {
+      queueSamples++;
+      if (f.queue_time > queueTimePeakS) queueTimePeakS = f.queue_time;
+    }
+    if (typeof f.daemon_time === "number") {
+      daemonSamples++;
+      if (f.daemon_time > daemonTimePeakS) daemonTimePeakS = f.daemon_time;
+    }
+    const period = f.sample_period || 1.0;
+    const periodUs = period * 1_000_000;
+    const sb = f.slot_busy_time_us || [];
+    const sc = f.slot_cpu_time_us || [];
+    if (sb.length > 0) {
+      const n = sb.length;
+      const sbSumLocal = sb.reduce((a, v) => a + v, 0);
+      const scSumLocal = sc.reduce((a, v) => a + v, 0);
+      const bFrac = sbSumLocal / n / (periodUs || 1);
+      const cSlotFrac = scSumLocal / n / (periodUs || 1);
+      busySum += bFrac;
+      cpuSlotSum += cSlotFrac;
+      slotBusyUsTotal += sbSumLocal;
+      slotCpuUsTotal += scSumLocal;
+      busySamples++;
+      if (bFrac > busyPeak) busyPeak = bFrac;
+    }
+    if (typeof f.request_threads_maximum === "number"
+        && f.request_threads_maximum > nThreadsMax)
+      nThreadsMax = f.request_threads_maximum;
+    windowSecSum += period;
+  }
+  if (!hasAny) return null;
+  const last = p.samples[p.samples.length - 1];
+  const f = last ? last.fields : {};
+  return {
+    pid: p.pid,
+    hostname: p.hostname || "",
+    group: p.process_group || "",
+    rpm: Math.round((rcSum / windowSec) * 60),
+    rcSum,
+    cap: capSamples > 0 ? capSum / capSamples : 0,
+    cpuMean: cpuSamples > 0 ? cpuSum / cpuSamples : 0,
+    cpuPeak: cpuProcPeak,
+    respMs: respSamples > 0 ? (respSum / respSamples) * 1000 : null,
+    rssMb: f.memory_rss ? f.memory_rss / 1048576 : 0,
+    nThreads: nThreadsMax,
+    hasApplicationTime: phaseSamples > 0,
+    srvMs: phaseSamples > 0 ? (srvSum / phaseSamples) * 1000 : 0,
+    queMs: phaseSamples > 0 ? (queSum / phaseSamples) * 1000 : 0,
+    daeMs: phaseSamples > 0 ? (daeSum / phaseSamples) * 1000 : 0,
+    appMs: phaseSamples > 0 ? (appSum / phaseSamples) * 1000 : 0,
+    // Fields consumed by classifyCapacity:
+    busyMean: busySamples > 0 ? busySum / busySamples : 0,
+    busyPeak,
+    cpuSlotMean: busySamples > 0 ? cpuSlotSum / busySamples : 0,
+    slotCpuBusyRatio: slotBusyUsTotal > 0
+      ? slotCpuUsTotal / slotBusyUsTotal : 0,
+    hasQueueTime: queueSamples > 0,
+    queueMsMean: queueSamples > 0
+      ? (queSum / Math.max(phaseSamples, 1)) * 1000 : 0,
+    queueMsPeak: queueTimePeakS * 1000,
+    hasDaemonTime: daemonSamples > 0,
+    daemonMsMean: daemonSamples > 0
+      ? (daeSum / Math.max(phaseSamples, 1)) * 1000 : 0,
+    daemonMsPeak: daemonTimePeakS * 1000,
+    requestRpm: windowSecSum > 0 ? (rcSum / windowSecSum) * 60 : 0,
+    slowRunCount: 0,   // only the heatmap cell scan reconstructs runs
+  };
+}
+
+// Aggregate per-process stats into a deployment / group rollup.
+// stateCounts is derived from classifyCapacity() so a per-process
+// card and its contribution here stay in lock-step.
+function rollupAcross(pids, windowSec) {
+  let rpm = 0, cpuCores = 0, rssMb = 0;
+  let respWeightedSum = 0, respWeight = 0;
+  const hostnames = new Set();
+  const groups = new Map();
+  const stateCounts = { saturated: 0, cpuGilBound: 0, normal: 0 };
+  let procCount = 0;
+  for (const pid of pids) {
+    const p = state.processes.get(pid);
+    if (!p) continue;
+    p.pid = pid;   // computeProcessStats wants p.pid; stash it
+    const ps = computeProcessStats(p, windowSec);
+    if (!ps) continue;
+    procCount++;
+    rpm += ps.rpm;
+    cpuCores += ps.cpuMean;
+    rssMb += ps.rssMb;
+    if (ps.respMs !== null && ps.rcSum > 0) {
+      respWeightedSum += ps.respMs * ps.rcSum;
+      respWeight += ps.rcSum;
+    }
+    if (ps.hostname) hostnames.add(ps.hostname);
+    const g = ps.group;
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(pid);
+    const verdict = classifyCapacity(ps);
+    if (verdict.saturated) stateCounts.saturated++;
+    else if (verdict.cpuGilBound) stateCounts.cpuGilBound++;
+    else stateCounts.normal++;
+  }
+  return {
+    rpm, cpuCores, rssMb,
+    respMs: respWeight > 0 ? respWeightedSum / respWeight : null,
+    hostnames, groups, stateCounts, procCount,
+  };
+}
+
 // Pure classifier — takes a stats object (as produced by the capacity
 // heatmap rollup) and returns {saturated, cpuGilBound, reasons,
 // gilReasons, lean}. Shared by the capacity card renderer (visual
@@ -1525,9 +1782,15 @@ function classifyCapacity(stats) {
 }
 
 function applyCapacityCardState(card, flag, stats) {
+  // Attach the state tooltip to the header-row (above the canvas)
+  // rather than the whole card. If the native title sits on the
+  // card, hovering a heatmap cell shows both the state tooltip and
+  // the cell-hover tooltip at once; scoping it here means the state
+  // tooltip is only reachable from the info bar.
+  const header = card.querySelector(".header-row");
   if (!stats) {
     card.classList.remove("saturated", "cpu-gil-bound");
-    card.removeAttribute("title");
+    if (header) header.removeAttribute("title");
     if (flag) flag.textContent = "";
     return;
   }
@@ -1546,10 +1809,10 @@ function applyCapacityCardState(card, flag, stats) {
   if (verdict.cpuGilBound && !verdict.saturated)
     tooltip.push("CPU/GIL-bound: " + verdict.gilReasons.join("; ") +
                  " — " + verdict.lean);
-  if (tooltip.length)
-    card.title = tooltip.join("\n");
-  else
-    card.removeAttribute("title");
+  if (header) {
+    if (tooltip.length) header.title = tooltip.join("\n");
+    else header.removeAttribute("title");
+  }
 }
 
 // Shared hover tooltip for heatmap cells. isOver tracks whether the
@@ -2141,6 +2404,48 @@ Three tabs:
   has crossed the \`WSGISlowRequests\` threshold. Shows in-flight and
   recently-finished entries.
 
+## Process groups, daemon mode, and rollup scope
+
+One Apache instance typically hosts several **process groups**:
+
+- Each \`WSGIDaemonProcess name processes=N threads=M\` directive
+  defines a named daemon group. Its processes run outside Apache and
+  its \`processes=\` / \`threads=\` knobs are scoped to that group.
+- Processes with no \`WSGIDaemonProcess\` group run in **embedded
+  mode** inside an Apache MPM child. The UI presents them as a
+  synthetic \`(embedded)\` group. Embedded workers don't report
+  \`queue_time\` or \`daemon_time\` (no socket handoff), and they
+  come and go with Apache's own child lifecycle.
+- A single Apache server can mix daemon groups and embedded mode,
+  and different applications may be mapped to different daemon
+  groups. Tuning advice is always **per-group**: a CPU-bound app in
+  group A doesn't want the same numbers as an I/O-bound app in
+  group B.
+
+The sidebar has three tiers:
+
+- **Totals** — rollup across every process matching the current
+  process-group filter. \`cpu\` is summed across processes, so a
+  4-process deployment at 1.0 core each reads \`4.0 cores\`.
+- **Groups** — one line per daemon group (shown only when the
+  filter is "All" and more than one group is live). Roll up is
+  restricted to that group's processes.
+- **Processes** — one card per live process. Matches the
+  per-pid detail available elsewhere.
+
+The stats snapshot mirrors these three tiers and scopes the Totals
+section to whatever the filter is set to when the button is pressed.
+
+## Single-host assumption
+
+The telemetry collector is intended to run against one Apache
+instance — i.e. one hostname. If multiple hostnames appear in a
+snapshot (multi-host fan-in), the Totals section sums across hosts
+and any \`processes=N\` advice derived from them is **per-host**
+and must be mirrored on every host. Total deployment headroom is
+the sum across all hosts. The snapshot emits an explicit warning
+when this situation is detected.
+
 ## Statistics glossary
 
 - **samples** — total telemetry datagrams received since the collector
@@ -2257,20 +2562,29 @@ can't trip them.
 
 When pasted alongside a screenshot:
 
-1. List visible processes and their state (saturated / CPU/GIL-bound /
-   neither).
-2. For each process cross-reference cap, busy, cpu, resp, queue,
-   daemon from the Capacity header / sidebar.
-3. Classify the bottleneck using the diagnostic patterns above.
-   When a process is **CPU/GIL-bound**, try to lean toward one cause
-   using: elevated \`daemon\` and/or low slot cpu / slot busy → GIL;
-   slot cpu / slot busy near 1.0 with no daemon elevation → CPU.
-   State the call as a lean, not a certainty — the two are
+1. Start at the **Totals** section. Note the deployment-level rpm,
+   cpu cores, and state counts — these set expectations before
+   diving into individual processes.
+2. If a **Groups** section is present, read it next. Tuning is
+   always per-group, so the right scope for any
+   \`WSGIDaemonProcess\` recommendation is a single group.
+3. For each listed process note its state (saturated /
+   CPU/GIL-bound / neither) and cross-reference cap, busy, cpu,
+   resp, queue, daemon from its own block.
+4. Classify the bottleneck using the diagnostic patterns above.
+   When a process is **CPU/GIL-bound**, try to lean toward one
+   cause using: elevated \`daemon\` and/or low slot cpu / slot busy
+   → GIL; slot cpu / slot busy near 1.0 with no daemon elevation
+   → CPU. State the call as a lean, not a certainty — the two are
    indistinguishable from outside in the general case.
-4. Recommend a concrete change to \`WSGIDaemonProcess processes=\` /
-   \`threads=\` with proposed new numbers, plus timeout adjustments
-   appropriate to the observed failure mode.
-5. Note if the workload shape (distribution histogram) suggests a
+5. Recommend a concrete change to
+   \`WSGIDaemonProcess <group> processes=N threads=M\` with
+   proposed new numbers **naming the specific group**, plus
+   timeout adjustments appropriate to the observed failure mode.
+   If the snapshot warns about multi-host fan-in, note that
+   \`processes=N\` applies per-host and headroom counts all hosts
+   combined.
+6. Note if the workload shape (distribution histogram) suggests a
    tail-latency fix (caching, async, retry budget) rather than a
    mod_wsgi config change.
 `;
@@ -2324,11 +2638,17 @@ function renderHelpMarkdown(md) {
 function buildCurrentStatsMarkdown() {
   const lines = [];
   const now = new Date();
+  const filterSel = document.getElementById("group_filter").value;
   lines.push("# mod_wsgi telemetry — current state");
   lines.push("");
   lines.push("Snapshot at " + now.toISOString() +
              " (local: " + now.toString() + ").");
   lines.push("Window: last " + LINE_WINDOW_SEC + " s.");
+  lines.push("Filter: " + (filterSel === "*"
+    ? "all process groups"
+    : filterSel === ""
+      ? "(embedded) only"
+      : "group \"" + filterSel + "\" only"));
   lines.push("");
   const pids = [...state.processes.keys()].sort((a, b) => a - b);
   const visible = pids.filter(pid => {
@@ -2339,143 +2659,96 @@ function buildCurrentStatsMarkdown() {
     lines.push("No active processes in the selected filter.");
     return lines.join("\n");
   }
-  const nowSec = Date.now() / 1000;
-  const windowCut = nowSec - LINE_WINDOW_SEC;
+
+  // --- Totals -----------------------------------------------------
+  const totals = rollupAcross(visible, LINE_WINDOW_SEC);
+  const multiHost = totals.hostnames.size > 1;
+  lines.push("## Totals");
+  lines.push("");
+  lines.push("- host" + (multiHost ? "s" : "") + ": "
+    + (totals.hostnames.size === 0
+        ? "(unknown)"
+        : [...totals.hostnames].join(", "))
+    + (multiHost ? " (multi-host — see note below)" : ""));
+  lines.push("- rpm: " + totals.rpm);
+  lines.push("- cpu: " + totals.cpuCores.toFixed(2) + " cores "
+    + "(sum of per-process cpu_utilization, ≈ "
+    + Math.round(totals.cpuCores * 100) + "%)");
+  lines.push("- memory RSS: " + Math.round(totals.rssMb) + " MB");
+  if (totals.respMs !== null)
+    lines.push("- response time (rpm-weighted mean): "
+      + totals.respMs.toFixed(0) + " ms");
+  lines.push("- processes: " + totals.procCount
+    + " across " + totals.groups.size + " group"
+    + (totals.groups.size === 1 ? "" : "s"));
+  lines.push("- state: "
+    + totals.stateCounts.saturated + " saturated, "
+    + totals.stateCounts.cpuGilBound + " CPU/GIL-bound, "
+    + totals.stateCounts.normal + " normal");
+  lines.push("");
+
+  // --- Groups (only when filter = all AND > 1 group) --------------
+  if (filterSel === "*" && totals.groups.size > 1) {
+    lines.push("## Groups");
+    lines.push("");
+    const sortedGroups = [...totals.groups.keys()].sort((a, b) => {
+      if (a === "") return -1;
+      if (b === "") return 1;
+      return a.localeCompare(b);
+    });
+    for (const g of sortedGroups) {
+      const gPids = totals.groups.get(g);
+      const gr = rollupAcross(gPids, LINE_WINDOW_SEC);
+      const label = g === "" ? "(embedded)" : g;
+      lines.push("### " + label + " (" + gr.procCount + " process"
+        + (gr.procCount === 1 ? "" : "es") + ")");
+      lines.push("");
+      lines.push("- rpm: " + gr.rpm);
+      lines.push("- cpu: " + gr.cpuCores.toFixed(2) + " cores");
+      lines.push("- memory RSS: " + Math.round(gr.rssMb) + " MB");
+      if (gr.respMs !== null)
+        lines.push("- response time (rpm-weighted mean): "
+          + gr.respMs.toFixed(0) + " ms");
+      lines.push("- state: "
+        + gr.stateCounts.saturated + " saturated, "
+        + gr.stateCounts.cpuGilBound + " CPU/GIL-bound, "
+        + gr.stateCounts.normal + " normal");
+      lines.push("");
+    }
+  }
+
+  // --- Per-process ------------------------------------------------
+  lines.push("## Processes");
+  lines.push("");
   for (const pid of visible) {
     const p = state.processes.get(pid);
-    let rcSum = 0, rcSamples = 0;
-    let capSum = 0, capSamples = 0;
-    let cpuSum = 0, cpuSamples = 0;
-    let respSum = 0, respSamples = 0;
-    let srvSum = 0, queSum = 0, daeSum = 0, appSum = 0, phaseSamples = 0;
-    // Extras for the CPU/GIL-bound classifier — busy fraction across
-    // slots, slot-normalised cpu fraction, queue/daemon peaks, weighted
-    // slot cpu/busy ratio, thread count. Mirrors the rollup in
-    // drawCapacityHeatmap so the snapshot produces the same verdict
-    // even when the user hasn't opened the Capacity tab.
-    let busySum = 0, busySumSamples = 0, busyPeak = 0;
-    let cpuSlotSum = 0, cpuProcPeak = 0;
-    let slotBusyUsTotal = 0, slotCpuUsTotal = 0;
-    let queueTimePeakS = 0, daemonTimePeakS = 0;
-    let queueSamples = 0, daemonSamples = 0;
-    let nThreadsMax = 0;
-    let windowSecSum = 0;
-    for (const s of p.samples) {
-      if (s.t < windowCut) continue;
-      const f = s.fields;
-      if (typeof f.request_count === "number") {
-        rcSum += f.request_count; rcSamples++;
-      }
-      if (typeof f.capacity_utilization === "number") {
-        capSum += f.capacity_utilization; capSamples++;
-      }
-      if (typeof f.cpu_utilization === "number") {
-        cpuSum += f.cpu_utilization; cpuSamples++;
-        if (f.cpu_utilization > cpuProcPeak) cpuProcPeak = f.cpu_utilization;
-      }
-      if (typeof f.application_time === "number") {
-        srvSum += f.server_time || 0;
-        queSum += f.queue_time || 0;
-        daeSum += f.daemon_time || 0;
-        appSum += f.application_time || 0;
-        respSum += (f.server_time || 0) + (f.queue_time || 0) +
-                   (f.daemon_time || 0) + (f.application_time || 0);
-        respSamples++;
-        phaseSamples++;
-      }
-      if (typeof f.queue_time === "number") {
-        queueSamples++;
-        if (f.queue_time > queueTimePeakS) queueTimePeakS = f.queue_time;
-      }
-      if (typeof f.daemon_time === "number") {
-        daemonSamples++;
-        if (f.daemon_time > daemonTimePeakS) daemonTimePeakS = f.daemon_time;
-      }
-      const period = f.sample_period || 1.0;
-      const periodUs = period * 1_000_000;
-      const sb = f.slot_busy_time_us || [];
-      const sc = f.slot_cpu_time_us || [];
-      if (sb.length > 0) {
-        const n = sb.length;
-        const sbSum = sb.reduce((a, v) => a + v, 0);
-        const scSum = sc.reduce((a, v) => a + v, 0);
-        const bFrac = sbSum / n / (periodUs || 1);
-        const cSlotFrac = scSum / n / (periodUs || 1);
-        busySum += bFrac;
-        cpuSlotSum += cSlotFrac;
-        slotBusyUsTotal += sbSum;
-        slotCpuUsTotal += scSum;
-        busySumSamples++;
-        if (bFrac > busyPeak) busyPeak = bFrac;
-      }
-      if (typeof f.request_threads_maximum === "number"
-          && f.request_threads_maximum > nThreadsMax)
-        nThreadsMax = f.request_threads_maximum;
-      windowSecSum += period;
-    }
-    const rpm = rcSamples > 0 ? Math.round((rcSum / LINE_WINDOW_SEC) * 60) : 0;
-    const cap = capSamples > 0 ? capSum / capSamples : 0;
-    const cpu = cpuSamples > 0 ? cpuSum / cpuSamples : 0;
-    const respMs = respSamples > 0 ? (respSum / respSamples) * 1000 : null;
-    const phaseMs = k => phaseSamples > 0 ? (k / phaseSamples) * 1000 : null;
-    const last = p.samples[p.samples.length - 1];
-    const f = last ? last.fields : {};
-    const rssMb = f.memory_rss ? (f.memory_rss / 1048576).toFixed(0) : "—";
-    const group = p.process_group || "(embedded)";
-    lines.push("## pid " + pid + " — " + (p.hostname || "?") + " [" + group + "]");
+    p.pid = pid;
+    const ps = computeProcessStats(p, LINE_WINDOW_SEC);
+    if (!ps) continue;
+    const group = ps.group || "(embedded)";
+    lines.push("### pid " + pid + " — " + (ps.hostname || "?")
+      + " [" + group + "]");
     lines.push("");
-    lines.push("- rpm: " + rpm);
-    lines.push("- threads: " + (nThreadsMax > 0 ? nThreadsMax : "—"));
-    lines.push("- cap: " + (cap * 100).toFixed(0) + "%");
-    lines.push("- cpu: " + (cpu * 100).toFixed(0) + "% (fraction of one CPU core)");
-    if (respMs !== null)
-      lines.push("- response time (mean): " + respMs.toFixed(0) + " ms");
-    lines.push("- memory RSS: " + rssMb + " MB");
-    if (phaseSamples > 0) {
-      const pm = (x, ms) => ms === null
-        ? null
-        : "- " + x + ": " + ms.toFixed(ms >= 10 ? 0 : 2) + " ms";
-      const rows = [
-        pm("server time (mean)", phaseMs(srvSum)),
-        pm("queue time (mean)",  phaseMs(queSum)),
-        pm("daemon time (mean)", phaseMs(daeSum)),
-        pm("application time (mean)", phaseMs(appSum)),
-      ].filter(Boolean);
-      lines.push(...rows);
+    lines.push("- rpm: " + ps.rpm);
+    lines.push("- threads: " + (ps.nThreads > 0 ? ps.nThreads : "—"));
+    lines.push("- cap: " + (ps.cap * 100).toFixed(0) + "%");
+    lines.push("- cpu: " + (ps.cpuMean * 100).toFixed(0)
+      + "% (fraction of one CPU core)");
+    if (ps.respMs !== null)
+      lines.push("- response time (mean): " + ps.respMs.toFixed(0) + " ms");
+    lines.push("- memory RSS: " + Math.round(ps.rssMb) + " MB");
+    if (ps.hasApplicationTime) {
+      const pm = (x, ms) =>
+        "- " + x + ": " + ms.toFixed(ms >= 10 ? 0 : 2) + " ms";
+      lines.push(pm("server time (mean)", ps.srvMs));
+      lines.push(pm("queue time (mean)",  ps.queMs));
+      lines.push(pm("daemon time (mean)", ps.daeMs));
+      lines.push(pm("application time (mean)", ps.appMs));
     }
 
-    // Build a stats object of the shape the classifier expects, then
-    // run it. Keeps the snapshot verdict in lock-step with the
-    // Capacity card tooltip.
-    const statsForClass = {
-      busyMean: busySumSamples > 0 ? busySum / busySumSamples : 0,
-      busyPeak,
-      cpuMean: cpuSamples > 0 ? cpuSum / cpuSamples : 0,
-      cpuPeak: cpuProcPeak,
-      cpuSlotMean: busySumSamples > 0 ? cpuSlotSum / busySumSamples : 0,
-      slotCpuBusyRatio: slotBusyUsTotal > 0
-        ? slotCpuUsTotal / slotBusyUsTotal : 0,
-      nThreads: nThreadsMax,
-      hasQueueTime: queueSamples > 0,
-      queueMsMean: queueSamples > 0
-        ? (queSum / Math.max(phaseSamples, 1)) * 1000 : 0,
-      queueMsPeak: queueTimePeakS * 1000,
-      hasDaemonTime: daemonSamples > 0,
-      daemonMsMean: daemonSamples > 0
-        ? (daeSum / Math.max(phaseSamples, 1)) * 1000 : 0,
-      daemonMsPeak: daemonTimePeakS * 1000,
-      requestRpm: windowSecSum > 0 ? (rcSum / windowSecSum) * 60 : 0,
-      // slowRunCount: only the heatmap cell scan computes distinct red
-      // runs; re-deriving it here would need the same per-slot state
-      // machine. Report 0 — means the slow-run contribution to
-      // saturation is absent in the snapshot, but the two other
-      // contributions (busy, queue) still work. Noted in the caveat
-      // line below.
-      slowRunCount: 0,
-    };
-    const verdict = classifyCapacity(statsForClass);
+    const verdict = classifyCapacity(ps);
     lines.push("");
-    lines.push("### State");
+    lines.push("#### State");
     lines.push("");
     if (verdict.saturated) {
       lines.push("- **saturated** — " + verdict.reasons.join("; "));
@@ -2485,30 +2758,22 @@ function buildCurrentStatsMarkdown() {
     } else {
       lines.push("- not flagged (within normal operating envelope)");
     }
-    // Always report the signals the classifier used, so the LLM can
-    // second-guess the verdict if the thresholds look off for this
-    // workload.
     lines.push("- signals used:");
-    lines.push("  - busy mean: "
-      + (statsForClass.busyMean * 100).toFixed(0) + "%"
-      + " (peak " + (statsForClass.busyPeak * 100).toFixed(0) + "%)");
-    lines.push("  - cpu mean: "
-      + (statsForClass.cpuMean * 100).toFixed(0) + "%"
-      + " (peak " + (statsForClass.cpuPeak * 100).toFixed(0) + "%)"
-      + ", threads: " + statsForClass.nThreads);
-    const slotRatio = statsForClass.busyMean > 0
-      ? statsForClass.cpuSlotMean / statsForClass.busyMean : 0;
+    lines.push("  - busy mean: " + (ps.busyMean * 100).toFixed(0) + "%"
+      + " (peak " + (ps.busyPeak * 100).toFixed(0) + "%)");
+    lines.push("  - cpu mean: " + (ps.cpuMean * 100).toFixed(0) + "%"
+      + " (peak " + (ps.cpuPeak * 100).toFixed(0) + "%)"
+      + ", threads: " + ps.nThreads);
+    const slotRatio = ps.busyMean > 0 ? ps.cpuSlotMean / ps.busyMean : 0;
     lines.push("  - slot cpu/busy (weighted): "
-      + (statsForClass.slotCpuBusyRatio).toFixed(2)
+      + ps.slotCpuBusyRatio.toFixed(2)
       + "; per-tick mean ratio: " + slotRatio.toFixed(2));
-    if (statsForClass.hasDaemonTime)
-      lines.push("  - daemon mean: "
-        + statsForClass.daemonMsMean.toFixed(0) + " ms"
-        + " (peak " + statsForClass.daemonMsPeak.toFixed(0) + " ms)");
-    if (statsForClass.hasQueueTime)
-      lines.push("  - queue mean: "
-        + statsForClass.queueMsMean.toFixed(0) + " ms"
-        + " (peak " + statsForClass.queueMsPeak.toFixed(0) + " ms)");
+    if (ps.hasDaemonTime)
+      lines.push("  - daemon mean: " + ps.daemonMsMean.toFixed(0) + " ms"
+        + " (peak " + ps.daemonMsPeak.toFixed(0) + " ms)");
+    if (ps.hasQueueTime)
+      lines.push("  - queue mean: " + ps.queueMsMean.toFixed(0) + " ms"
+        + " (peak " + ps.queueMsPeak.toFixed(0) + " ms)");
     const triggerLabels = [];
     if (verdict.triggers.peg) triggerLabels.push("cpu-peg");
     if (verdict.triggers.ratio) triggerLabels.push("slot-ratio");
@@ -2519,6 +2784,8 @@ function buildCurrentStatsMarkdown() {
       lines.push("  - CPU/GIL triggers active: " + triggerLabels.join(", "));
     lines.push("");
   }
+
+  // --- Notes ------------------------------------------------------
   lines.push("## Notes");
   lines.push("");
   lines.push("- Slow-request runs aren't reconstructed from this " +
@@ -2526,6 +2793,15 @@ function buildCurrentStatsMarkdown() {
              "that contribution. If the Capacity heatmap shows red " +
              "cells under load, treat any saturation verdict here as " +
              "a lower bound.");
+  if (multiHost) {
+    lines.push("- **Multi-host snapshot.** This collector is intended " +
+               "for a single Apache instance but samples from " +
+               "multiple hostnames are present. Totals are summed " +
+               "across hosts. Tuning advice (`WSGIDaemonProcess " +
+               "processes=N threads=M`) is per-host and must be " +
+               "mirrored across each host; total deployment headroom " +
+               "is the sum across hosts.");
+  }
   return lines.join("\n");
 }
 
