@@ -2619,10 +2619,40 @@ can't trip them.
 - \`WSGIDaemonProcess name processes=N threads=M\` — primary knob.
   - CPU-bound app: N ≈ cores, M small (1–4).
   - I/O-bound app: N moderate, M can be higher (10–25).
-- \`queue-timeout=\` — cap on queue time; requests that wait longer
-  are rejected. Protects the daemon from pathological backpressure.
-- \`request-timeout=\` — cap on per-request wall time (includes
-  application_time). Kills stuck workers.
+- \`queue-timeout=\` — maximum time a request may sit in the
+  Apache-to-daemon queue before the daemon dequeues it. Exceeded
+  requests are rejected with a gateway-timeout-style response when
+  they are finally picked up (the internal hop uses a \`200 Timeout\`
+  reason-phrase that mod_wsgi intercepts and rewrites on the Apache
+  side — deliberate, not a bug). Per-request rejection only; no
+  process-level consequence. Protects the daemon from pathological
+  backpressure but does **not** bound application time once a request
+  has started running.
+- \`request-timeout=\` — **process-level fail-safe, not a per-request
+  SLA knob.** Every second the monitor thread averages the age of
+  in-flight requests across **all** threads in the process
+  (sum / \`threads\`, not sum / busy-threads); if the average exceeds
+  the timeout the entire daemon process is killed abruptly
+  (\`SIGINT\`, **no graceful drain**) — every in-flight request on that
+  process is interrupted, healthy and stuck alike, and Apache
+  returns 500 to those clients. Two consequences:
+  - **Dilution with thread count.** With \`threads=10\`, one thread
+    stuck 60 s while the others are idle averages to 6 s — so a
+    stuck worker can silently reduce capacity for a long time
+    before restart fires. Raising \`threads\` raises the effective
+    trigger.
+  - **No staggering across processes.** Each daemon in the group
+    decides independently; a deterministic bad endpoint can
+    thundering-herd-restart every daemon concurrently.
+  Sizing: set it a few × above the p99 of normal request time —
+  enough headroom that steady-state traffic doesn't trip it, but no
+  higher. **Do not multiply by \`threads\`**: the average-across-threads
+  rule already dilutes the trigger, so a single wedged thread takes
+  roughly \`threads\` × \`request-timeout\` seconds to fire. Padding the
+  value further only lengthens detection time. For user-visible
+  per-request enforcement, prefer **application-level timeouts**
+  (HTTP client timeouts, DB statement timeouts, \`signal.alarm\` in
+  request code) and let \`queue-timeout=\` handle backpressure.
 - \`connect-timeout=\` — cap on Apache-to-daemon connect.
 - \`inactivity-timeout=\` — idle worker eviction.
 - \`WSGISlowRequests threshold=S\` — emit a slow-request record once
@@ -2672,6 +2702,21 @@ When pasted alongside a screenshot:
    (\`processes=\`, \`threads=\`, timeouts) from application-level
    changes (caching, async I/O, query tuning). A long application
    tail won't be fixed by resizing the process pool.
+8. Timeout-knob caveats to respect when recommending changes:
+   - Do **not** recommend tightening \`request-timeout=\` to enforce a
+     per-request latency SLA. It is a process-level fail-safe: when
+     it fires the daemon is killed abruptly and **every** in-flight
+     request on that process is interrupted, including healthy ones.
+     Size it a few × the p99 of normal request time — do **not**
+     multiply by \`threads=\`. The average-across-threads rule already
+     means one wedged thread takes roughly \`threads\` ×
+     \`request-timeout\` seconds to trip the restart, so padding the
+     value further only lengthens detection. For per-request
+     enforcement, recommend application-level timeouts instead.
+   - \`queue-timeout=\` only rejects requests that have been waiting
+     in the Apache-to-daemon queue; it does not bound application
+     runtime. Use it to shed load under backpressure, not to cap
+     slow handlers.
 `;
 
 // Render a conservative subset of markdown to HTML. Handles h2, lists,
