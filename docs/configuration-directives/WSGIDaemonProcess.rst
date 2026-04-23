@@ -354,10 +354,10 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 
 **request-timeout=sss**
     Defines the maximum number of seconds that a request is allowed to run
-    before the daemon process is restarted. This can be used to recover
-    from a scenario where a request blocks indefinitely, and where if all
-    request threads were consumed in this way, would result in the whole
-    WSGI application process being blocked.
+    before the daemon process is restarted. This is a process-level
+    fail-safe for recovering from requests that block indefinitely; it is
+    not a per-request SLA mechanism (a fired timeout takes down the whole
+    process, not just the stuck request).
 
     How this option is seen to behave is different depending on whether a
     daemon process uses only one thread, or more than one thread for
@@ -373,7 +373,39 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     done to reduce the possibility of interupting other running requests,
     and causing a user to see a failure. So where there is still capacity
     to handle more requests, restarting of the process will be delayed
-    if possible.
+    if possible. One consequence is that a single stuck thread is diluted
+    by the idle ones: with ``threads=10``, one thread wedged for 60 seconds
+    while the other nine are idle averages to six seconds. Raising
+    ``threads`` therefore also raises the effective firing point in
+    wall-clock terms.
+
+    When the timeout does fire, the behaviour depends on how the daemon
+    process group is configured:
+
+    * **Multi-process group with** ``graceful-timeout`` **set**
+      (``processes > 1`` and ``graceful-timeout`` greater than zero): the
+      daemon enters a drain state. It stops competing for the
+      cross-process accept mutex, so new requests in the group are
+      absorbed by peer daemons while the stuck process lets its healthy
+      in-flight requests complete. If all in-flight requests finish
+      before the ``graceful-timeout`` expires the process restarts
+      cleanly; otherwise the process is stopped when the graceful timer
+      expires (the still-stuck request is interrupted at that point).
+    * **Single-process group, or** ``graceful-timeout=0`` **(the
+      opt-out)**: the process is stopped immediately when the timeout
+      fires. Every in-flight request on the process is interrupted,
+      including healthy ones. Apache retries on the next request once
+      the process has restarted.
+
+    Sizing guidance: set ``request-timeout`` a few times above the
+    p99 of normal request duration — enough that steady-state traffic
+    never trips it. **Do not** multiply by ``threads``: the
+    average-across-threads rule already dilutes the trigger, so a
+    single wedged thread takes roughly ``threads`` × ``request-timeout``
+    seconds to fire; padding the value further only lengthens detection
+    time. For user-visible per-request deadlines (as distinct from a
+    fail-safe) prefer application-level timeouts, such as HTTP client
+    and database statement timeouts inside the request handler itself.
 
     Note that when a process is restarted due to a request timeout, if the
     Apache ``LogLevel`` is set to ``info`` or higher, or ``wsgi:info`` applied
@@ -421,6 +453,16 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     the process doesn't reach an idle state and the graceful restart
     timeout expires, the process will be restarted, even if it means that
     requests may be interrupted.
+
+    The ``graceful-timeout`` is also used by ``request-timeout`` when the
+    daemon process group has more than one process: on firing, the stuck
+    daemon drains for up to ``graceful-timeout`` seconds while peer
+    daemons absorb new requests. Unlike the triggers listed above, the
+    draining daemon **stops** accepting new work during the drain so
+    that its wedged state cannot attract further traffic. See
+    ``request-timeout`` for details. Setting ``graceful-timeout=0``
+    opts out of the drain path and reverts ``request-timeout`` to the
+    immediate-restart behaviour.
 
 .. _eviction-timeout:
 

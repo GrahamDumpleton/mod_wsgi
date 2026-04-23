@@ -2632,18 +2632,29 @@ can't trip them.
   SLA knob.** Every second the monitor thread averages the age of
   in-flight requests across **all** threads in the process
   (sum / \`threads\`, not sum / busy-threads); if the average exceeds
-  the timeout the entire daemon process is killed abruptly
-  (\`SIGINT\`, **no graceful drain**) — every in-flight request on that
-  process is interrupted, healthy and stuck alike, and Apache
-  returns 500 to those clients. Two consequences:
+  the timeout the daemon restarts. Behaviour when it fires depends
+  on the process group configuration:
+  - **\`processes > 1\` with \`graceful-timeout > 0\`**: the daemon
+    enters a drain state — it stops competing for the accept mutex,
+    so peer daemons in the group absorb new work while the stuck
+    daemon lets healthy in-flight requests finish. If the drain
+    completes before \`graceful-timeout\` expires the process
+    restarts cleanly; otherwise the still-wedged request is
+    interrupted when the graceful timer expires.
+  - **\`processes == 1\` or \`graceful-timeout == 0\`**: the process is
+    stopped immediately. Every in-flight request on it is
+    interrupted, healthy and stuck alike, and Apache retries on the
+    next request once the process has restarted.
+  Two properties to keep in mind regardless of which branch fires:
   - **Dilution with thread count.** With \`threads=10\`, one thread
     stuck 60 s while the others are idle averages to 6 s — so a
     stuck worker can silently reduce capacity for a long time
     before restart fires. Raising \`threads\` raises the effective
     trigger.
   - **No staggering across processes.** Each daemon in the group
-    decides independently; a deterministic bad endpoint can
-    thundering-herd-restart every daemon concurrently.
+    decides independently; a deterministic bad endpoint can send
+    every daemon into drain (or, for single-process groups, into
+    restart) concurrently.
   Sizing: set it a few × above the p99 of normal request time —
   enough headroom that steady-state traffic doesn't trip it, but no
   higher. **Do not multiply by \`threads\`**: the average-across-threads
@@ -2704,15 +2715,23 @@ When pasted alongside a screenshot:
    tail won't be fixed by resizing the process pool.
 8. Timeout-knob caveats to respect when recommending changes:
    - Do **not** recommend tightening \`request-timeout=\` to enforce a
-     per-request latency SLA. It is a process-level fail-safe: when
-     it fires the daemon is killed abruptly and **every** in-flight
-     request on that process is interrupted, including healthy ones.
+     per-request latency SLA. It is a process-level fail-safe. When
+     it fires on a multi-process group with \`graceful-timeout > 0\`
+     the daemon drains (peers absorb work, healthy in-flight
+     requests finish); when it fires on a single-process group or
+     with \`graceful-timeout=0\` the process is stopped immediately,
+     interrupting every in-flight request including healthy ones.
      Size it a few × the p99 of normal request time — do **not**
      multiply by \`threads=\`. The average-across-threads rule already
      means one wedged thread takes roughly \`threads\` ×
      \`request-timeout\` seconds to trip the restart, so padding the
      value further only lengthens detection. For per-request
      enforcement, recommend application-level timeouts instead.
+   - If the deployment is single-process (\`processes=1\`) and the
+     operator needs cleaner recovery from wedged requests, the
+     right recommendation is \`processes >= 2\` plus a modest
+     \`graceful-timeout\` — that unlocks the drain path so peers
+     absorb during restart.
    - \`queue-timeout=\` only rejects requests that have been waiting
      in the Apache-to-daemon queue; it does not bound application
      runtime. Use it to shed load under backpressure, not to cap

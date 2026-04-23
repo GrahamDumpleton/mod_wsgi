@@ -56,6 +56,7 @@ apr_pool_t *wsgi_pconf_pool = NULL;
 
 int volatile wsgi_daemon_shutdown = 0;
 static int volatile wsgi_daemon_graceful = 0;
+static int volatile wsgi_daemon_draining = 0;
 static int wsgi_dump_stack_traces = 0;
 
 apr_interval_time_t wsgi_startup_timeout = 0;
@@ -1675,6 +1676,25 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
         if (wsgi_daemon_shutdown)
             break;
 
+        if (wsgi_daemon_draining)
+        {
+            /*
+             * Request-timeout drain in progress. Don't compete
+             * for the cross-process accept mutex so peer daemons
+             * in this process group absorb new connections. Hand
+             * listener status to the next worker on the stack so
+             * it can observe the drain and exit similarly. The
+             * drain-complete check below and the graceful-timer
+             * expiry in the monitor thread will take this process
+             * down once in-flight requests finish or the timer
+             * expires, respectively.
+             */
+
+            wsgi_worker_release();
+
+            break;
+        }
+
         if (group->mutex)
         {
             /*
@@ -1900,7 +1920,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
         /* Check if graceful shutdown and no active requests. */
 
-        if (wsgi_daemon_graceful && !wsgi_daemon_shutdown)
+        if ((wsgi_daemon_graceful || wsgi_daemon_draining) &&
+            !wsgi_daemon_shutdown)
         {
             if (wsgi_active_requests == 0)
             {
@@ -2112,17 +2133,57 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
         {
             if (request_time > wsgi_request_timeout)
             {
-                ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Daemon process request "
-                             "time limit exceeded, stopping process "
-                             "'%s'.",
-                             getpid(), group->name);
+                if (!wsgi_daemon_graceful && !wsgi_daemon_draining)
+                {
+                    wsgi_shutdown_reason = "request_timeout";
 
-                wsgi_shutdown_reason = "request_timeout";
+                    wsgi_dump_stack_traces = 1;
 
-                wsgi_dump_stack_traces = 1;
+                    if (group->processes > 1 && wsgi_graceful_timeout)
+                    {
+                        /*
+                         * Multi-process group with a graceful window
+                         * configured: stop accepting new work on this
+                         * daemon so peer daemons absorb the load,
+                         * letting healthy in-flight requests finish.
+                         * The stuck request(s) are interrupted when
+                         * the graceful timer expires.
+                         */
 
-                restart = 1;
+                        wsgi_daemon_draining++;
+
+                        apr_thread_mutex_lock(wsgi_monitor_lock);
+                        wsgi_graceful_shutdown_time = apr_time_now();
+                        wsgi_graceful_shutdown_time += wsgi_graceful_timeout;
+                        apr_thread_mutex_unlock(wsgi_monitor_lock);
+
+                        ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                                     "mod_wsgi (pid=%d): Daemon process "
+                                     "request time limit exceeded; draining "
+                                     "process '%s' for up to %d seconds, "
+                                     "peer daemons will absorb new requests.",
+                                     getpid(), group->name,
+                                     (int)apr_time_sec(wsgi_graceful_timeout));
+                    }
+                    else
+                    {
+                        /*
+                         * Single-process group or no graceful-timeout
+                         * configured: fall back to today's abrupt
+                         * restart. With no peer to absorb work, a
+                         * drain would just pile connections in the
+                         * OS backlog without benefit.
+                         */
+
+                        ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
+                                     "mod_wsgi (pid=%d): Daemon process "
+                                     "request time limit exceeded, stopping "
+                                     "process '%s'.",
+                                     getpid(), group->name);
+
+                        restart = 1;
+                    }
+                }
             }
         }
 
