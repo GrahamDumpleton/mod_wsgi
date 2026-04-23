@@ -1165,6 +1165,47 @@ function capacityColor(frac) {
   return "#e57373";
 }
 
+// Find the slow-request "runs" for a set of per-slot elapsed-ms arrays.
+// A run is a maximal consecutive span within one slot where elapsedMs
+// stays >= stuckThreshMs AND is monotonically non-decreasing — the
+// latter is what distinguishes "same request continuing" from "old
+// request finished, new one already stuck on the next tick". When
+// elapsedMs drops (even while still above threshold) the current run
+// ends and a new one begins, so distinct stuck requests stay counted
+// separately. Returns a flat array of {slot, firstIdx, lastIdx}
+// describing the runs. Both the heatmap-draw path and
+// computeProcessStats call this so they never disagree on count.
+function findSlowRuns(perSlotElapsedMs, stuckThreshMs) {
+  const runs = [];
+  for (const [slot, arr] of perSlotElapsedMs) {
+    let i = 0;
+    while (i < arr.length) {
+      if (arr[i] < stuckThreshMs) { i++; continue; }
+      let j = i;
+      let prevE = -1;
+      while (j < arr.length
+             && arr[j] >= stuckThreshMs
+             && arr[j] >= prevE) {
+        prevE = arr[j];
+        j++;
+      }
+      runs.push({ slot, firstIdx: i, lastIdx: j - 1 });
+      i = j;
+    }
+  }
+  return runs;
+}
+
+// Read the user-selected stuck threshold from the Capacity tab's
+// dropdown, falling back to 1 s if the control isn't present yet (very
+// early in page load, or in test harnesses).
+function getCapacityStuckThreshMs() {
+  const el = document.getElementById("capacity_stuck_thresh");
+  if (!el) return 1000;
+  const n = parseInt(el.value, 10);
+  return n > 0 ? n : 1000;
+}
+
 function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
   const ctx = canvas.getContext("2d");
   const now = nowOverride !== undefined ? nowOverride : Date.now() / 1000;
@@ -1269,31 +1310,23 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
   }
   for (const arr of bySlot.values()) arr.sort((a, b) => a.x0 - b.x0);
 
-  let slowRunCount = 0;
-  for (const arr of bySlot.values()) {
-    let i = 0;
-    while (i < arr.length) {
-      if (arr[i].elapsedMs < stuckThreshMs) { i++; continue; }
-      let j = i;
-      let prevE = -1;
-      while (j < arr.length
-             && arr[j].elapsedMs >= stuckThreshMs
-             && arr[j].elapsedMs >= prevE) {
-        prevE = arr[j].elapsedMs;
-        j++;
-      }
-      const first = arr[i];
-      const last = arr[j - 1];
-      for (let k = i; k < j; k++) arr[k].runLast = last;
-      // Solid red overlay replacing the normal heatmap colour for the
-      // full run so the stuck span reads at a glance.
-      ctx.fillStyle = "#ff0000";
-      ctx.fillRect(first.x0, first.y,
-                   last.x1 - first.x0, first.yEnd - first.y - 1);
-      slowRunCount++;
-      i = j;
-    }
+  const perSlotElapsed = new Map();
+  for (const [slot, arr] of bySlot)
+    perSlotElapsed.set(slot, arr.map(c => c.elapsedMs));
+  const runs = findSlowRuns(perSlotElapsed, stuckThreshMs);
+  for (const run of runs) {
+    const slotCells = bySlot.get(run.slot);
+    const first = slotCells[run.firstIdx];
+    const last = slotCells[run.lastIdx];
+    for (let k = run.firstIdx; k <= run.lastIdx; k++)
+      slotCells[k].runLast = last;
+    // Solid red overlay replacing the normal heatmap colour for the
+    // full run so the stuck span reads at a glance.
+    ctx.fillStyle = "#ff0000";
+    ctx.fillRect(first.x0, first.y,
+                 last.x1 - first.x0, first.yEnd - first.y - 1);
   }
+  const slowRunCount = runs.length;
 
   // Per-tick busy/cpu fractions across the visible window, so the meta
   // line can report window-averaged figures (smooths single-tick noise
@@ -1554,10 +1587,21 @@ function computeProcessStats(p, windowSec) {
   let nThreadsMax = 0;
   let windowSecSum = 0;
   let hasAny = false;
+  // Per-slot elapsed collected as {t, elapsed} pairs so we can sort by
+  // time before handing off to findSlowRuns. Mirrors what the Capacity
+  // heatmap does (it sorts its per-slot cell arrays by time), so the
+  // saturation classifier sees the same slowRunCount from either path
+  // even if samples arrive out of order over the wire.
+  const perSlotPairs = new Map();
   for (const s of p.samples) {
     if (s.t < windowCut) continue;
     hasAny = true;
     const f = s.fields;
+    const elapsed = f.slot_current_elapsed_ms || [];
+    for (let slot = 0; slot < elapsed.length; slot++) {
+      if (!perSlotPairs.has(slot)) perSlotPairs.set(slot, []);
+      perSlotPairs.get(slot).push({ t: s.t, e: elapsed[slot] || 0 });
+    }
     if (typeof f.request_count === "number") rcSum += f.request_count;
     if (typeof f.capacity_utilization === "number") {
       capSum += f.capacity_utilization; capSamples++;
@@ -1641,7 +1685,14 @@ function computeProcessStats(p, windowSec) {
       ? (daeSum / Math.max(phaseSamples, 1)) * 1000 : 0,
     daemonMsPeak: daemonTimePeakS * 1000,
     requestRpm: windowSecSum > 0 ? (rcSum / windowSecSum) * 60 : 0,
-    slowRunCount: 0,   // only the heatmap cell scan reconstructs runs
+    slowRunCount: (() => {
+      const sorted = new Map();
+      for (const [slot, pairs] of perSlotPairs) {
+        pairs.sort((a, b) => a.t - b.t);
+        sorted.set(slot, pairs.map(x => x.e));
+      }
+      return findSlowRuns(sorted, getCapacityStuckThreshMs()).length;
+    })(),
   };
 }
 
@@ -1651,6 +1702,7 @@ function computeProcessStats(p, windowSec) {
 function rollupAcross(pids, windowSec) {
   let rpm = 0, cpuCores = 0, rssMb = 0;
   let respWeightedSum = 0, respWeight = 0;
+  let slowRunsTotal = 0;
   const hostnames = new Set();
   const groups = new Map();
   const stateCounts = { saturated: 0, cpuGilBound: 0, normal: 0 };
@@ -1665,6 +1717,7 @@ function rollupAcross(pids, windowSec) {
     rpm += ps.rpm;
     cpuCores += ps.cpuMean;
     rssMb += ps.rssMb;
+    slowRunsTotal += ps.slowRunCount || 0;
     if (ps.respMs !== null && ps.rcSum > 0) {
       respWeightedSum += ps.respMs * ps.rcSum;
       respWeight += ps.rcSum;
@@ -1681,6 +1734,7 @@ function rollupAcross(pids, windowSec) {
   return {
     rpm, cpuCores, rssMb,
     respMs: respWeight > 0 ? respWeightedSum / respWeight : null,
+    slowRunsTotal,
     hostnames, groups, stateCounts, procCount,
   };
 }
@@ -2828,6 +2882,9 @@ function buildCurrentStatsMarkdown() {
     + totals.stateCounts.saturated + " saturated, "
     + totals.stateCounts.cpuGilBound + " CPU/GIL-bound, "
     + totals.stateCounts.normal + " normal");
+  lines.push("- slow-request runs (≥ "
+    + getCapacityStuckThreshMs() + " ms, window " + LINE_WINDOW_SEC
+    + " s): " + totals.slowRunsTotal);
   lines.push("");
 
   // --- Groups (only when filter = all AND > 1 group) --------------
@@ -2856,6 +2913,7 @@ function buildCurrentStatsMarkdown() {
         + gr.stateCounts.saturated + " saturated, "
         + gr.stateCounts.cpuGilBound + " CPU/GIL-bound, "
         + gr.stateCounts.normal + " normal");
+      lines.push("- slow-request runs: " + gr.slowRunsTotal);
       lines.push("");
     }
   }
@@ -2907,6 +2965,8 @@ function buildCurrentStatsMarkdown() {
     lines.push("  - cpu mean: " + (ps.cpuMean * 100).toFixed(0) + "%"
       + " (peak " + (ps.cpuPeak * 100).toFixed(0) + "%)"
       + ", threads: " + ps.nThreads);
+    lines.push("  - slow-request runs in window: " + ps.slowRunCount
+      + " (threshold " + getCapacityStuckThreshMs() + " ms)");
     const slotRatio = ps.busyMean > 0 ? ps.cpuSlotMean / ps.busyMean : 0;
     lines.push("  - slot cpu/busy (weighted): "
       + ps.slotCpuBusyRatio.toFixed(2)
@@ -2988,11 +3048,13 @@ function buildCurrentStatsMarkdown() {
   // --- Notes ------------------------------------------------------
   lines.push("## Notes");
   lines.push("");
-  lines.push("- Slow-request runs aren't reconstructed from this " +
-             "snapshot, so the saturation score per process excludes " +
-             "that contribution. If the Capacity heatmap shows red " +
-             "cells under load, treat any saturation verdict here as " +
-             "a lower bound.");
+  lines.push("- Slow-request runs are counted per process using the " +
+             "same threshold shown on the Capacity heatmap legend " +
+             "(currently " + getCapacityStuckThreshMs() + " ms). " +
+             "The saturation classifier treats 3+ slow runs under " +
+             "busy ≥ 70% as a contribution to saturation; slow-run " +
+             "counts outside that envelope are surfaced here as raw " +
+             "signal but do not by themselves flag a process.");
   if (multiHost) {
     lines.push("- **Multi-host snapshot.** This collector is intended " +
                "for a single Apache instance but samples from " +
