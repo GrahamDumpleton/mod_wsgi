@@ -543,6 +543,10 @@
   }
   .tooltip .label { color: var(--muted); margin-right: 4px; }
   .tooltip .range { color: var(--accent); margin-bottom: 2px; }
+  .tooltip.slow {
+    background: #3a1414;
+    border-color: #7a2222;
+  }
   canvas {
     display: block;
     width: 100%;
@@ -1172,12 +1176,18 @@ function capacityColor(frac) {
 // request finished, new one already stuck on the next tick". When
 // elapsedMs drops (even while still above threshold) the current run
 // ends and a new one begins, so distinct stuck requests stay counted
-// separately. Returns a flat array of {slot, firstIdx, lastIdx}
-// describing the runs. Both the heatmap-draw path and
-// computeProcessStats call this so they never disagree on count.
-function findSlowRuns(perSlotElapsedMs, stuckThreshMs) {
+// separately. If perSlotMaxMs is supplied, the cell immediately after
+// a run is also included when its slot_max_duration_ms is at least the
+// run's last elapsed — that's the tick the slow request completed in,
+// so painting it keeps the run's start/end visually symmetric instead
+// of clipping the finish edge. Returns a flat array of
+// {slot, firstIdx, lastIdx} describing the runs. Both the
+// heatmap-draw path and computeProcessStats call this so they never
+// disagree on count.
+function findSlowRuns(perSlotElapsedMs, stuckThreshMs, perSlotMaxMs) {
   const runs = [];
   for (const [slot, arr] of perSlotElapsedMs) {
+    const maxArr = perSlotMaxMs ? perSlotMaxMs.get(slot) : null;
     let i = 0;
     while (i < arr.length) {
       if (arr[i] < stuckThreshMs) { i++; continue; }
@@ -1189,7 +1199,12 @@ function findSlowRuns(perSlotElapsedMs, stuckThreshMs) {
         prevE = arr[j];
         j++;
       }
-      runs.push({ slot, firstIdx: i, lastIdx: j - 1 });
+      let lastIdx = j - 1;
+      if (maxArr && j < arr.length && maxArr[j] >= prevE) {
+        lastIdx = j;
+        j++;
+      }
+      runs.push({ slot, firstIdx: i, lastIdx });
       i = j;
     }
   }
@@ -1311,9 +1326,12 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
   for (const arr of bySlot.values()) arr.sort((a, b) => a.x0 - b.x0);
 
   const perSlotElapsed = new Map();
-  for (const [slot, arr] of bySlot)
+  const perSlotMax = new Map();
+  for (const [slot, arr] of bySlot) {
     perSlotElapsed.set(slot, arr.map(c => c.elapsedMs));
-  const runs = findSlowRuns(perSlotElapsed, stuckThreshMs);
+    perSlotMax.set(slot, arr.map(c => c.maxMs));
+  }
+  const runs = findSlowRuns(perSlotElapsed, stuckThreshMs, perSlotMax);
   for (const run of runs) {
     const slotCells = bySlot.get(run.slot);
     const first = slotCells[run.firstIdx];
@@ -1922,9 +1940,9 @@ function refreshCapacityTooltip() {
   // recent sample so the elapsed / max figures track the live request
   // regardless of which cell the mouse landed on.
   const c = hovered.runLast || hovered;
-  const runTag = hovered.runLast ? ` <span class="label">(run)</span>` : "";
+  tip.classList.toggle("slow", !!hovered.runLast);
   tip.innerHTML =
-    `<div class="range">pid ${c.pid} &middot; slot ${c.slot + 1}${runTag}</div>` +
+    `<div class="range">pid ${c.pid} &middot; slot ${c.slot + 1}</div>` +
     `<div><span class="label">busy</span>${(c.frac * 100).toFixed(0)}%</div>` +
     `<div><span class="label">cpu</span>${(c.cpuFrac * 100).toFixed(0)}%</div>` +
     `<div><span class="label">count</span>${c.count}</div>` +
@@ -2404,6 +2422,7 @@ function refreshTooltip() {
   for (let i = 0; i <= idx; i++) cum += hit.hist[i];
   const cumPct = hit.total ? (cum / hit.total) * 100 : 0;
 
+  tip.classList.remove("slow");
   tip.innerHTML =
     `<div class="range">${bucketRangeLabel(idx)}</div>` +
     `<div><span class="label">count</span>${count}</div>` +
