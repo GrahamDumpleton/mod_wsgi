@@ -1945,6 +1945,27 @@ function aggregateBuckets(fieldName, windowSec) {
   return agg;
 }
 
+// Same aggregation but scoped to an explicit pid list. Used by the
+// snapshot so Distribution matches the same visible-processes list
+// as the Totals / Groups / Processes sections above it.
+function aggregateBucketsFor(pids, fieldName, windowSec) {
+  const agg = new Array(N_BUCKETS).fill(0);
+  const cutoff = windowSec ? (Date.now() / 1000 - windowSec) : 0;
+  for (const pid of pids) {
+    const p = state.processes.get(pid);
+    if (!p) continue;
+    for (const s of p.samples) {
+      if (s.t < cutoff) continue;
+      const buckets = s.fields[fieldName];
+      if (!buckets) continue;
+      for (let i = 0; i < N_BUCKETS; i++) {
+        agg[i] += buckets[i] || 0;
+      }
+    }
+  }
+  return agg;
+}
+
 function bucketPercentileMs(hist, pct) {
   const total = hist.reduce((a, b) => a + b, 0);
   if (total === 0) return null;
@@ -2488,6 +2509,56 @@ when this situation is detected.
   window. A run is a sequence of consecutive red-tinted cells — a
   single long request spanning many ticks is one run.
 
+## Time distributions
+
+Every request contributes one count to each of five histograms:
+one per phase (server / queue / daemon / application) and one for
+the total wall time (server + queue + daemon + application).
+Buckets are log2 starting at 5 ms — i.e. ≤5 ms, 5–10 ms, 10–20 ms,
+…, 20–40 s, >40 s. The overflow bucket catches anything above the
+last finite edge.
+
+Key properties for interpreting the snapshot:
+
+- **The total-response histogram is bucketed per-request**, not
+  derived from the four phase histograms. Summing the phase
+  histograms would be wrong — each request contributes separately
+  to its phase bucket *and* to the total bucket, so the two are
+  independent snapshots of the same requests.
+- **Percentiles are bucket upper-bounds**, so they're always
+  upper estimates. p50 reported as "40 ms" means half the requests
+  finished by the top of the 40 ms bucket — they may have finished
+  anywhere between 20 ms and 40 ms.
+- **Means and percentiles disagree on purpose.** The per-process
+  mean (from the glossary figures) is blind to the shape; the
+  percentiles surface the tail. A healthy-looking mean with a
+  heavy p99 points at a few outliers eating wall time.
+- **Embedded mode** never populates queue / daemon histograms
+  (there's no socket handoff), so their sections only appear for
+  processes that are in a \`WSGIDaemonProcess\` group.
+
+### What each phase tells you in the distribution
+
+- **Total response** — caller-visible wall time. Long tails here
+  with short phase tails suggest several phases each contributed a
+  small amount to a slow request; with one phase tail dominant,
+  that phase owns the problem.
+- **Application time** — time inside the WSGI callable. Tail
+  here = app regression, external dependency latency, slow
+  queries, cold-cache effects. Fixes: caching, async I/O, tail
+  timeouts, or faster downstream services.
+- **Server time** — Apache handler work before handoff. Usually
+  small and tight; a widening tail is unusual and points at
+  Apache-layer issues (rewrites, authz modules, large request
+  bodies).
+- **Daemon time** — interval between daemon pickup and WSGI call.
+  Dominated by the first GIL acquisition. Long tail under load is
+  a fingerprint of GIL contention on the dispatch path.
+- **Queue time** — wait in the daemon socket queue. Tail here
+  means the daemon can't accept requests fast enough; backpressure
+  is upstream of the workers. Adding processes usually helps more
+  than adding threads.
+
 ## Card state flags (Capacity tab)
 
 Each process card can be tinted red (saturated) or amber
@@ -2584,9 +2655,23 @@ When pasted alongside a screenshot:
    If the snapshot warns about multi-host fan-in, note that
    \`processes=N\` applies per-host and headroom counts all hosts
    combined.
-6. Note if the workload shape (distribution histogram) suggests a
-   tail-latency fix (caching, async, retry budget) rather than a
-   mod_wsgi config change.
+6. Consult the **Time distributions** section to separate
+   mean-driven problems from tail-driven ones. Compare p50 to p99
+   per phase:
+   - Large p50-to-p99 gap in **application** → app tail (caching,
+     async, timeouts, downstream latency), not a mod_wsgi tuning
+     issue.
+   - Large gap in **daemon** → GIL pressure on dispatch; the fix
+     is processes, not threads.
+   - Large gap in **queue** → upstream backpressure; more
+     processes, tighten \`queue-timeout=\`.
+   - Large gap in **total** but small per-phase gaps → several
+     phases each contributed a little; examine the heatmap for
+     slow-request runs.
+7. When recommending changes, distinguish mod_wsgi config changes
+   (\`processes=\`, \`threads=\`, timeouts) from application-level
+   changes (caching, async I/O, query tuning). A long application
+   tail won't be fixed by resizing the process pool.
 `;
 
 // Render a conservative subset of markdown to HTML. Handles h2, lists,
@@ -2783,6 +2868,63 @@ function buildCurrentStatsMarkdown() {
     if (triggerLabels.length)
       lines.push("  - CPU/GIL triggers active: " + triggerLabels.join(", "));
     lines.push("");
+  }
+
+  // --- Time distributions ----------------------------------------
+  // One subsection per phase, plus the total. Log2 buckets (5ms
+  // doubling); we emit only the phases with any samples, and within
+  // a phase only the non-zero buckets, so the section stays tight
+  // on low-variance workloads but the full shape is preserved when
+  // a tail is present. Each phase gets p50/p90/p95/p99 percentiles
+  // (bucket upper-bounds — so they're upper estimates, always).
+  const distSpecs = [
+    { label: "Total response time (server + queue + daemon + application)",
+      field: "request_time_buckets" },
+    { label: "Application time", field: "application_time_buckets" },
+    { label: "Server time", field: "server_time_buckets" },
+    { label: "Daemon time (first-GIL-acquire + dispatch; daemon mode only)",
+      field: "daemon_time_buckets" },
+    { label: "Queue time (daemon socket-queue wait; daemon mode only)",
+      field: "queue_time_buckets" },
+  ];
+  const distSections = [];
+  for (const spec of distSpecs) {
+    const hist = aggregateBucketsFor(visible, spec.field, LINE_WINDOW_SEC);
+    const total = hist.reduce((a, b) => a + b, 0);
+    if (total === 0) continue;
+    const pctPart = [
+      "p50=" + fmtMs(bucketPercentileMs(hist, 0.5)),
+      "p90=" + fmtMs(bucketPercentileMs(hist, 0.9)),
+      "p95=" + fmtMs(bucketPercentileMs(hist, 0.95)),
+      "p99=" + fmtMs(bucketPercentileMs(hist, 0.99)),
+    ].join(", ");
+    const body = [
+      "### " + spec.label,
+      "",
+      "- requests in window: " + total.toLocaleString(),
+      "- percentiles (bucket upper-bounds): " + pctPart,
+      "- non-zero buckets:",
+    ];
+    for (let i = 0; i < N_BUCKETS; i++) {
+      if (hist[i] === 0) continue;
+      const pct = (hist[i] / total) * 100;
+      body.push("  - " + bucketRangeLabel(i) + ": "
+        + hist[i].toLocaleString()
+        + " (" + (pct >= 10 ? pct.toFixed(0) : pct.toFixed(1)) + "%)");
+    }
+    body.push("");
+    distSections.push(body.join("\n"));
+  }
+  if (distSections.length > 0) {
+    lines.push("## Time distributions");
+    lines.push("");
+    lines.push("Log2 buckets starting at 5 ms (each bucket upper-bound is");
+    lines.push("2× the previous; overflow at > 40 s). A request is counted");
+    lines.push("once per phase histogram and once in the total histogram —");
+    lines.push("the total is bucketed per-request, **not** derived by");
+    lines.push("summing the four phase histograms.");
+    lines.push("");
+    for (const s of distSections) lines.push(s);
   }
 
   // --- Notes ------------------------------------------------------
