@@ -162,8 +162,6 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
         "slot_max_duration_ms": slot_max_duration_ms,
         "input_bytes_total": count * 256,
         "output_bytes_total": count * 1024,
-        "slow_requests": random.randint(0, max(0, count // 50)),
-        "aborted_requests": random.randint(0, max(0, count // 200)),
     }
 
     return Sample(

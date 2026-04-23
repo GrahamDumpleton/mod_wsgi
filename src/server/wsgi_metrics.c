@@ -1439,6 +1439,8 @@ static PyObject *wsgi_request_metrics(void)
     object = PyFloat_FromDouble(total_cpu_time);
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(cpu_utilization), object);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(cpu_time), object);
     Py_DECREF(object);
 #else
     object = PyFloat_FromDouble(0.0);
@@ -1458,6 +1460,8 @@ static PyObject *wsgi_request_metrics(void)
     object = PyFloat_FromDouble(0.0);
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(cpu_utilization), object);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(cpu_time), object);
     Py_DECREF(object);
 #endif
 

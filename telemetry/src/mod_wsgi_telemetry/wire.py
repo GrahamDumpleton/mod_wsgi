@@ -117,12 +117,6 @@ FIELDS = {
     71: "input_reads_total",
     72: "output_bytes_total",
     73: "output_writes_total",
-    74: "slow_requests",
-    75: "slow_request_threshold",
-    76: "aborted_requests",
-    77: "application_cpu_user_time",
-    78: "application_cpu_system_time",
-    79: "application_cpu_time",
 
     # Slow-request fields (only present in KIND_SLOW_REQUEST datagrams).
     # Identity (hostname, process_group) is keyed per pid from the
