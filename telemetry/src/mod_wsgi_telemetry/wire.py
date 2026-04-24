@@ -121,6 +121,14 @@ FIELDS = {
     72: "output_bytes_total",
     73: "output_writes_total",
 
+    # Reporter / slow-request configuration, surfaced so the UI can
+    # explain matcher misses precisely and clamp/warn the heatmap
+    # stuck-threshold dropdown when set below the server's
+    # WSGISlowRequests value. slow_requests_threshold is 0 when the
+    # WSGISlowRequests directive is not configured.
+    74: "telemetry_interval",
+    75: "slow_requests_threshold",
+
     # Slow-request fields (only present in KIND_SLOW_REQUEST datagrams).
     # Identity (hostname, process_group) is keyed per pid from the
     # accompanying KIND_REQUEST stream, so it is not repeated here.

@@ -28,6 +28,8 @@
 #include "wsgi_thread.h"
 #include "wsgi_telemetry.h"
 
+#include <math.h>           /* ceil() — slow-ring sizing math */
+
 /* ------------------------------------------------------------------------- */
 
 /*
@@ -121,9 +123,20 @@ static apr_uint64_t wsgi_output_writes_total = 0;
  * holds fully snapshotted records for requests that finished while slow,
  * so the reporter thread can emit a final datagram at its next tick. */
 
-#define WSGI_SLOW_COMPLETED_RING_SIZE 32
+/* Completed-ring sizing. Floor matches the historical static size so
+ * a tiny embedded MPM (a few threads at the default reporter
+ * interval) gets the same headroom as before. Cap prevents
+ * pathological allocations when WSGISlowRequests is set very low
+ * (e.g. 0.01 s for debugging). Safety factor covers inter-tick
+ * jitter and bursts where many threads complete near-simultaneously
+ * — the formula otherwise assumes uniform distribution which real
+ * workloads don't follow. */
+#define WSGI_SLOW_RING_FLOOR   32
+#define WSGI_SLOW_RING_CAP     4096
+#define WSGI_SLOW_RING_SAFETY  5
 
 apr_time_t wsgi_slow_threshold_us = 0;
+extern double wsgi_telemetry_interval;
 
 typedef struct
 {
@@ -176,7 +189,8 @@ static wsgi_active_slot_t *wsgi_active_slots = NULL;
 static wsgi_slot_stats_t  *wsgi_slot_stats = NULL;
 static int wsgi_active_slots_max = 0;
 
-static wsgi_slow_request_t wsgi_completed_ring[WSGI_SLOW_COMPLETED_RING_SIZE];
+static wsgi_slow_request_t *wsgi_completed_ring = NULL;
+static int wsgi_completed_ring_size = 0;
 static int wsgi_completed_ring_head = 0;
 static int wsgi_completed_ring_count = 0;
 
@@ -855,6 +869,34 @@ static void wsgi_slots_ensure_locked(void)
     wsgi_slot_stats = (wsgi_slot_stats_t *)apr_pcalloc(
         wsgi_server_config->pool, max * sizeof(*wsgi_slot_stats));
     wsgi_active_slots_max = max;
+
+    /* Size the slow-completion ring from N threads × max
+     * completions-per-tick × safety. Each thread can complete at
+     * most ceil(T / S) slow requests in a tick, so total per-tick
+     * worst case is max * ceil(T / S); the safety factor absorbs
+     * inter-tick jitter and burst clustering. Floor + cap keep tiny
+     * deployments at the historical 32 and prevent pathological
+     * sizing when WSGISlowRequests is set very low. */
+
+    int ring = WSGI_SLOW_RING_FLOOR;
+    if (wsgi_slow_threshold_us > 0)
+    {
+        double tick_s = wsgi_telemetry_interval > 0
+            ? wsgi_telemetry_interval : 1.0;
+        double thresh_s = (double)wsgi_slow_threshold_us / 1.0e6;
+        if (thresh_s > 0)
+        {
+            double per_thread = ceil(tick_s / thresh_s);
+            if (per_thread < 1.0) per_thread = 1.0;
+            double sized = (double)max * per_thread *
+                           (double)WSGI_SLOW_RING_SAFETY;
+            if (sized > (double)ring) ring = (int)sized;
+            if (ring > WSGI_SLOW_RING_CAP) ring = WSGI_SLOW_RING_CAP;
+        }
+    }
+    wsgi_completed_ring = (wsgi_slow_request_t *)apr_pcalloc(
+        wsgi_server_config->pool, ring * sizeof(*wsgi_completed_ring));
+    wsgi_completed_ring_size = ring;
 }
 
 static void wsgi_slow_copy_str(char *dst, size_t cap, const char *src)
@@ -965,19 +1007,24 @@ static void wsgi_slow_push_completed_locked(const wsgi_slow_request_t *rec)
 {
     int idx;
 
-    if (wsgi_completed_ring_count < WSGI_SLOW_COMPLETED_RING_SIZE)
+    if (!wsgi_completed_ring || wsgi_completed_ring_size <= 0)
+        return;
+
+    if (wsgi_completed_ring_count < wsgi_completed_ring_size)
     {
         idx = (wsgi_completed_ring_head + wsgi_completed_ring_count) %
-              WSGI_SLOW_COMPLETED_RING_SIZE;
+              wsgi_completed_ring_size;
         wsgi_completed_ring_count++;
     }
     else
     {
-        /* Ring full — drop oldest so recent slow completions aren't lost. */
+        /* Ring full — drop oldest so recent slow completions aren't lost.
+         * With dynamic sizing this should be rare in practice; if it
+         * fires consistently the safety factor needs bumping. */
 
         idx = wsgi_completed_ring_head;
         wsgi_completed_ring_head = (wsgi_completed_ring_head + 1) %
-                                   WSGI_SLOW_COMPLETED_RING_SIZE;
+                                   wsgi_completed_ring_size;
     }
 
     wsgi_completed_ring[idx] = *rec;
@@ -992,11 +1039,11 @@ int wsgi_metrics_pop_slow_completed(wsgi_slow_request_t *out)
 
     apr_thread_mutex_lock(wsgi_monitor_lock);
 
-    if (wsgi_completed_ring_count > 0)
+    if (wsgi_completed_ring && wsgi_completed_ring_count > 0)
     {
         *out = wsgi_completed_ring[wsgi_completed_ring_head];
         wsgi_completed_ring_head = (wsgi_completed_ring_head + 1) %
-                                   WSGI_SLOW_COMPLETED_RING_SIZE;
+                                   wsgi_completed_ring_size;
         wsgi_completed_ring_count--;
         got = 1;
     }

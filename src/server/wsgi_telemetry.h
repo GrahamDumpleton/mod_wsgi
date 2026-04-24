@@ -116,6 +116,17 @@
 #define WSGI_METRICS_F_OUTPUT_BYTES_TOTAL          72   /* u64 */
 #define WSGI_METRICS_F_OUTPUT_WRITES_TOTAL         73   /* u64 */
 
+/* Reporter and slow-request configuration, surfaced so the UI can
+ * explain matcher misses precisely (e.g. "WSGISlowRequests is 2 s
+ * and this run is 1.4 s — no record was ever emitted") and so the
+ * heatmap stuck-threshold control can warn when set below the
+ * server's WSGISlowRequests value. Telemetry interval is the
+ * reporter's tick period in seconds; slow-request threshold is the
+ * configured WSGISlowRequests value (0 when the directive is not
+ * configured, so slow-request datagrams never fire). */
+#define WSGI_METRICS_F_TELEMETRY_INTERVAL          74   /* f64 */
+#define WSGI_METRICS_F_SLOW_REQUESTS_THRESHOLD     75   /* f64 */
+
 /* Per-slow-request I/O. Final values for completed records, partial
  * (current snapshot) for active records — the active record's adapter
  * may yet read more body or write more output before completion. */
@@ -204,6 +215,13 @@ typedef struct {
     uint64_t input_reads_total;
     uint64_t output_bytes_total;
     uint64_t output_writes_total;
+
+    /* Reporter / slow-request configuration. Constant over the life
+     * of the process; populated once per snapshot so the UI sees the
+     * same values as the C side. slow_requests_threshold is 0 when
+     * the WSGISlowRequests directive is not configured. */
+    double   telemetry_interval;
+    double   slow_requests_threshold;
 
     /* Per-slot capacity signals. slot_count is the live length of each
      * array — normally the WSGI process's request_threads_maximum, or

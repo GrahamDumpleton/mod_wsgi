@@ -116,6 +116,19 @@ def test_roundtrip_slot_capacity_arrays():
         assert got.fields[name] == expected, name
 
 
+def test_roundtrip_reporter_config():
+    # Telemetry reporter and slow-request configuration fields, used
+    # by the UI to explain matcher misses and clamp the heatmap
+    # stuck-threshold dropdown.
+    fields = {
+        "telemetry_interval": 1.5,
+        "slow_requests_threshold": 2.0,
+    }
+    got = _roundtrip(fields)
+    assert got.fields["telemetry_interval"] == 1.5
+    assert got.fields["slow_requests_threshold"] == 2.0
+
+
 def test_roundtrip_request_io_totals():
     # Aggregate request I/O fields drained by wsgi_metrics_snapshot.
     fields = {

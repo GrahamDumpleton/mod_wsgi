@@ -540,6 +540,12 @@
     background: #ff0000;
     border-radius: 2px;
   }
+  .server-thresh-warning {
+    color: #ffb74d;
+    font-size: 11px;
+    margin-left: 6px;
+    cursor: help;
+  }
   .chart {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -799,6 +805,7 @@
             <option value="2000">2 s</option>
             <option value="5000">5 s</option>
           </select>
+          <span id="server_thresh_warning" class="server-thresh-warning" hidden></span>
         </span>
         <span>hover for per-cell details</span>
         <span style="margin-left:auto">
@@ -1204,6 +1211,50 @@ function reporterSampleMs(pid) {
   if (!p || p.samples.length === 0) return 1000;
   const sp = p.samples[p.samples.length - 1].fields.sample_period;
   return (typeof sp === "number" && sp > 0) ? sp * 1000 : 1000;
+}
+
+// Server-side WSGISlowRequests threshold for one process, in
+// seconds. Returns 0 when the directive is not configured (so no
+// slow-request datagrams are emitted at all) and null when the
+// process hasn't reported a sample yet (pre-feature mod_wsgi or
+// fresh process).
+function serverSlowThresholdSec(pid) {
+  const p = state.processes.get(pid);
+  if (!p || p.samples.length === 0) return null;
+  const v = p.samples[p.samples.length - 1].fields.slow_requests_threshold;
+  return typeof v === "number" ? v : null;
+}
+
+// Pretty-print a threshold in seconds for inline UI labels — sub-
+// second values keep two decimals ("0.5 s"), seconds drop trailing
+// zeros for whole values ("1 s", "2 s") and otherwise show one
+// decimal ("1.5 s"). Used in the heatmap dropdown warning and the
+// drill-down modal's "no record" notice so the same value reads
+// the same way everywhere.
+function formatThresholdSec(s) {
+  if (typeof s !== "number" || !isFinite(s)) return String(s);
+  if (s < 1) return s.toFixed(2).replace(/0+$/, "").replace(/\.$/, "") + " s";
+  if (s === Math.floor(s)) return s.toFixed(0) + " s";
+  return s.toFixed(1) + " s";
+}
+
+// Highest server-side WSGISlowRequests threshold across visible
+// processes, in seconds. Returns 0 when every visible process has
+// the directive disabled, or null when the field hasn't been
+// reported yet by any visible process. Used to warn when the
+// heatmap stuck-threshold dropdown is set below what any visible
+// process can actually capture.
+function maxVisibleServerSlowThresholdSec() {
+  let any = false;
+  let max = 0;
+  for (const [pid, p] of state.processes) {
+    if (isStale(p) || isHidden(p)) continue;
+    const v = serverSlowThresholdSec(pid);
+    if (v === null) continue;
+    any = true;
+    if (v > max) max = v;
+  }
+  return any ? max : null;
 }
 
 // Storage prune: deletes entries from state.slowRequests once they
@@ -1613,44 +1664,56 @@ function getCapacityStuckThreshMs() {
   return n > 0 ? n : 1000;
 }
 
-// Tolerance (seconds) when matching a heatmap-detected slow run to a
-// slow-request entry. Reporter ticks aren't sample-aligned with
-// request boundaries, so the run's first cell can land up to one
-// sample period after the actual start_stamp_us. Cap the slack at
-// 2 s so spurious matches don't pull in unrelated requests on a
-// heavily-overloaded thread that's churning lots of slow requests.
-const SLOW_RUN_MATCH_TOLERANCE_S = 2.0;
+// Slack (seconds) added to each side of the run's time window when
+// looking for a matching slow-request entry. Reporter ticks aren't
+// sample-aligned with request boundaries, so an entry's
+// start_stamp_us / end can fall a fraction of a second outside the
+// estimated run bounds without being a different request. 1 s is
+// usually enough for a reporter ticking at the default interval;
+// bumping higher risks pulling in unrelated requests on a slot
+// churning many short slow requests.
+const SLOW_RUN_MATCH_SLACK_S = 1.0;
 
 // Find the slow-request entry (from state.slowRequests storage) that
 // best corresponds to a heatmap-detected slow run, given the run's
-// pid + slot + visible time bounds. Returns the entry record or null
-// when no match is found (e.g. WSGISlowRequests not configured, or
-// the entry has been pruned from storage).
+// pid + slot + estimated time bounds. Returns the entry record or
+// null when no match is found.
 //
-// Match criteria, in priority order:
-//   1. pid matches
-//   2. thread_id == slot + 1
-//   3. start_stamp_us falls within [runStartT - tol, runEndT + tol]
-//   4. when more than one entry passes 1-3, pick the one whose start
-//      time is nearest the run's leading edge — handles the case of
-//      multiple short slow requests rolling through the same slot in
-//      quick succession.
+// Matching is overlap-based rather than start-time-window-based: an
+// entry matches when its lifetime [start, end] overlaps the run's
+// window [runStartT, runEndT] (inflated by SLOW_RUN_MATCH_SLACK_S
+// on each side for sampling jitter). This is more semantically
+// correct than the previous "entry's start within ±tol of run's
+// start": a long request whose lifetime overlaps the run is the
+// run's request, regardless of where its start falls relative to
+// the heuristic-detected first cell. For active records the entry
+// end is treated as "now" since the request is still in progress.
+//
+// Match selection: when multiple entries qualify, pick the one with
+// the largest absolute overlap with the run window — handles
+// multiple short slow requests rolling through the same slot in
+// quick succession by preferring the one most contained by the run.
 function findSlowEntryForRun(pid, slot, runStartT, runEndT) {
   const wantThread = slot + 1;
+  const nowSec = Date.now() / 1000;
+  const lo = runStartT - SLOW_RUN_MATCH_SLACK_S;
+  const hi = runEndT + SLOW_RUN_MATCH_SLACK_S;
   let best = null;
-  let bestDelta = Infinity;
-  const lo = runStartT - SLOW_RUN_MATCH_TOLERANCE_S;
-  const hi = runEndT + SLOW_RUN_MATCH_TOLERANCE_S;
+  let bestOverlap = 0;
   for (const rec of state.slowRequests.values()) {
     const e = rec.entry;
     if (e.pid !== pid) continue;
     if (e.thread_id !== wantThread) continue;
     const startT = (e.start_stamp_us || 0) / 1e6;
-    if (startT < lo || startT > hi) continue;
-    const delta = Math.abs(startT - runStartT);
-    if (delta < bestDelta) {
+    const endT = e.state === 1
+      ? startT + (e.duration_us || 0) / 1e6
+      : nowSec;
+    // Overlap of [startT, endT] with the slack-inflated run window.
+    const overlap = Math.min(endT, hi) - Math.max(startT, lo);
+    if (overlap <= 0) continue;
+    if (overlap > bestOverlap) {
       best = e;
-      bestDelta = delta;
+      bestOverlap = overlap;
     }
   }
   return best;
@@ -2084,6 +2147,38 @@ function renderCapacity() {
   const nowTs = state.capacityPaused
     ? state.capacityPausedAt
     : Date.now() / 1000;
+
+  // Server-side WSGISlowRequests warning: when the heatmap stuck-
+  // threshold dropdown is set below the highest server threshold
+  // across visible processes, runs in that band cannot be matched
+  // to a real record (the C side never emitted one). Tell the user
+  // explicitly so they know the matcher isn't broken.
+  const warnEl = document.getElementById("server_thresh_warning");
+  if (warnEl) {
+    const serverMaxSec = maxVisibleServerSlowThresholdSec();
+    const stuckSec = stuckThreshMs / 1000;
+    if (serverMaxSec === null) {
+      warnEl.hidden = true;
+    } else if (serverMaxSec === 0) {
+      warnEl.hidden = false;
+      warnEl.textContent = "(WSGISlowRequests not configured — every run is heuristic)";
+      warnEl.title = "No process visible has WSGISlowRequests configured, " +
+                     "so no slow-request records are emitted. Capacity " +
+                     "heatmap runs are detected from per-slot signals only.";
+    } else if (stuckSec < serverMaxSec) {
+      warnEl.hidden = false;
+      warnEl.textContent = "(below server's WSGISlowRequests = "
+                           + formatThresholdSec(serverMaxSec) + ")";
+      warnEl.title = "The selected stuck threshold is below " +
+                     "WSGISlowRequests on at least one visible process. " +
+                     "Runs between " + formatThresholdSec(stuckSec) +
+                     " and " + formatThresholdSec(serverMaxSec) +
+                     " can be detected from per-slot signals but never " +
+                     "have a captured slow-request record to drill into.";
+    } else {
+      warnEl.hidden = true;
+    }
+  }
 
   const pids = [...state.processes.keys()].sort((a, b) => a - b).filter(pid => {
     const p = state.processes.get(pid);
@@ -4063,13 +4158,42 @@ function renderSlowDetailModal() {
       `drill-down windows.` +
       `</div>`;
   } else {
+    // Use the per-process WSGISlowRequests value (sent on the wire
+    // with each KIND_REQUEST sample) to tell the user *exactly*
+    // why the matcher couldn't find a record. The three cases —
+    // directive disabled, run below server threshold, or
+    // datagram/match miss despite eligibility — point at very
+    // different fixes.
+    const serverThreshSec = serverSlowThresholdSec(hit.pid);
+    const runDurationSec = liveDurationMs / 1000;
+    let note;
+    if (serverThreshSec === null) {
+      note = `No slow-request record matched this run. The reporting ` +
+             `process hasn't sent its configuration yet (or is running ` +
+             `a mod_wsgi build older than this UI expects).`;
+    } else if (serverThreshSec === 0) {
+      note = `<code>WSGISlowRequests</code> is not configured on this ` +
+             `process, so no per-request records are being captured. ` +
+             `Set <code>WSGISlowRequests</code> in the Apache config ` +
+             `to enable drill-down for runs &ge; that threshold.`;
+    } else if (runDurationSec < serverThreshSec) {
+      note = `This run is ` + formatThresholdSec(runDurationSec) +
+             `, but the server's <code>WSGISlowRequests</code> is set ` +
+             `to ` + formatThresholdSec(serverThreshSec) +
+             ` &mdash; so no record was ever emitted. Lower ` +
+             `<code>WSGISlowRequests</code> (or raise the heatmap ` +
+             `stuck threshold) if you want drill-down for runs in ` +
+             `this band.`;
+    } else {
+      note = `The run lasted ` + formatThresholdSec(runDurationSec) +
+             ` (above this process's <code>WSGISlowRequests</code> ` +
+             `of ` + formatThresholdSec(serverThreshSec) + `), so a ` +
+             `record should have been emitted. Possible causes: the ` +
+             `datagram was dropped, the record aged out of storage, ` +
+             `or the matcher couldn't pair it with this run.`;
+    }
     bodyEl.innerHTML = meta +
-      `<div class="heuristic-note">` +
-      `No slow-request record matched this run. Either ` +
-      `<code>WSGISlowRequests</code> is not configured (so per-request ` +
-      `details aren't being captured), or the run was detected from ` +
-      `per-slot elapsed signals only.` +
-      `</div>`;
+      `<div class="heuristic-note">` + note + `</div>`;
   }
 }
 (function () {

@@ -168,6 +168,13 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
         "input_reads_total": count,
         "output_bytes_total": count * 1024,
         "output_writes_total": count + (count // 5) * 50,
+        # Mirror what a real reporter emits: telemetry interval is the
+        # tick we're simulating, slow_requests_threshold pretends a
+        # WSGISlowRequests of 1 s so the UI's "below server threshold"
+        # warning can be exercised by setting the heatmap stuck
+        # threshold to 0.5 s.
+        "telemetry_interval": float(interval),
+        "slow_requests_threshold": 1.0,
     }
 
     return Sample(

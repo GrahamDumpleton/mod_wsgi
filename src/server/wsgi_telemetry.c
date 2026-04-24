@@ -48,7 +48,10 @@
 /* ------------------------------------------------------------------------- */
 
 static const char *wsgi_telemetry_target = NULL;
-static double wsgi_telemetry_interval = 1.0;
+/* Non-static so wsgi_metrics.c can read it when sizing the slow-
+ * completion ring (worst-case completions per tick depends on the
+ * reporter interval). */
+double wsgi_telemetry_interval = 1.0;
 static int wsgi_telemetry_enabled = 0;
 static int wsgi_telemetry_started = 0;
 
@@ -154,6 +157,11 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_REQUEST_COUNT, s->request_count);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_REQUEST_THROUGHPUT, s->request_throughput);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_CAPACITY_UTILIZATION, s->capacity_utilization);
+
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_TELEMETRY_INTERVAL,
+                         s->telemetry_interval);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_REQUESTS_THRESHOLD,
+                         s->slow_requests_threshold);
 
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_CPU_USER_UTILIZATION, s->cpu_user_utilization);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_CPU_SYSTEM_UTILIZATION, s->cpu_system_utilization);
@@ -314,12 +322,19 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
         if (!wsgi_metrics_snapshot(&sample))
             continue;
 
-        /* Populate identity that the snapshot function does not fill. */
+        /* Populate identity + reporter config that the snapshot
+         * function does not fill. wsgi_slow_threshold_us is in
+         * microseconds, exposed as seconds on the wire so the UI can
+         * compare directly with the heatmap stuck-threshold dropdown
+         * (also in seconds). */
         strncpy(sample.hostname, hostname, sizeof(sample.hostname) - 1);
         sample.hostname[sizeof(sample.hostname) - 1] = '\0';
         strncpy(sample.process_group, group_name,
                 sizeof(sample.process_group) - 1);
         sample.process_group[sizeof(sample.process_group) - 1] = '\0';
+        sample.telemetry_interval = wsgi_telemetry_interval;
+        sample.slow_requests_threshold =
+            (double)wsgi_slow_threshold_us / 1.0e6;
 
         if (!sample.seeded)
             continue;  /* first call seeded counters; skip send */
