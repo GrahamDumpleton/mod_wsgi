@@ -1232,19 +1232,18 @@ function formatThresholdSec(s) {
 }
 
 // Build the heatmap stuck-threshold dropdown options (in ms) for a
-// given server-side WSGISlowRequests value (in seconds). Below the
-// server threshold there is no point selecting — the C side never
-// emits records for runs that short, so the heatmap would detect
-// runs the drill-down can never resolve. The lowest option is
-// always the server threshold itself; higher options are taken
-// from a sensible default ladder (1s, 2s, 5s, 10s, 30s) deduped
-// against the threshold so the dropdown stays compact.
-const STUCK_THRESHOLD_DEFAULTS_MS = [500, 1000, 2000, 5000];
-const STUCK_THRESHOLD_LADDER_MS = [1000, 2000, 5000, 10000, 30000];
+// given server-side WSGISlowRequests value (in seconds). A single
+// ladder feeds both modes so the dropdown's scale is consistent
+// whether or not the directive is set. When a server threshold is
+// known, entries below it are dropped (the C side never emits
+// records for runs that short, so the heatmap would detect runs
+// the drill-down can never resolve) and the threshold itself is
+// pinned as the lowest option.
+const STUCK_THRESHOLD_LADDER_MS = [500, 1000, 2000, 5000, 10000, 30000];
 
 function buildStuckThresholdOptions(serverThresholdSec) {
   if (!serverThresholdSec || serverThresholdSec <= 0) {
-    return STUCK_THRESHOLD_DEFAULTS_MS.slice();
+    return STUCK_THRESHOLD_LADDER_MS.slice();
   }
   const serverMs = Math.max(1, Math.round(serverThresholdSec * 1000));
   const opts = new Set([serverMs]);
