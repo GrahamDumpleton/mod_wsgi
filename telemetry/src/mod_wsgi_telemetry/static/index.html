@@ -2256,8 +2256,14 @@ function renderCapacity() {
   const pids = [...state.processes.keys()].sort((a, b) => a - b).filter(pid => {
     const p = state.processes.get(pid);
     if (!p) return false;
-    if (isStale(p)) return false;
     if (isHidden(p)) return false;
+    // Keep the card visible until the heatmap's window can no longer
+    // cover any sample for this process — the global isStale (10s)
+    // would hide the card while there are still cells to render in
+    // the 60s window.
+    const last = p.samples[p.samples.length - 1];
+    if (!last) return false;
+    if (nowTs - last.t > CAPACITY_WINDOW_SEC) return false;
     // Only show processes that have at least one slot-capacity sample.
     return p.samples.some(s => Array.isArray(s.fields.slot_busy_time_us));
   });
