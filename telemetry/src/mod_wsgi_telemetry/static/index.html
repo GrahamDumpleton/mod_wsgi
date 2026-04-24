@@ -421,6 +421,7 @@
     white-space: normal;
   }
   .slow-details .io-amber { color: #ffb74d; }
+  .slow-details .cpu-multi { color: #4fc3f7; }
   .slow-empty {
     color: var(--muted);
     font-size: 12px;
@@ -539,12 +540,6 @@
     height: 10px;
     background: #ff0000;
     border-radius: 2px;
-  }
-  .server-thresh-warning {
-    color: #ffb74d;
-    font-size: 11px;
-    margin-left: 6px;
-    cursor: help;
   }
   .chart {
     background: var(--panel);
@@ -805,9 +800,7 @@
             <option value="2000">2 s</option>
             <option value="5000">5 s</option>
           </select>
-          <span id="server_thresh_warning" class="server-thresh-warning" hidden></span>
         </span>
-        <span>hover for per-cell details</span>
         <span style="margin-left:auto">
           <button type="button" id="capacity_pause" class="pause-btn"
                   title="Freeze the heatmap at the current instant so you can hover without the view scrolling. Unpause to resume live updates.">Pause</button>
@@ -1238,12 +1231,63 @@ function formatThresholdSec(s) {
   return s.toFixed(1) + " s";
 }
 
+// Build the heatmap stuck-threshold dropdown options (in ms) for a
+// given server-side WSGISlowRequests value (in seconds). Below the
+// server threshold there is no point selecting — the C side never
+// emits records for runs that short, so the heatmap would detect
+// runs the drill-down can never resolve. The lowest option is
+// always the server threshold itself; higher options are taken
+// from a sensible default ladder (1s, 2s, 5s, 10s, 30s) deduped
+// against the threshold so the dropdown stays compact.
+const STUCK_THRESHOLD_DEFAULTS_MS = [500, 1000, 2000, 5000];
+const STUCK_THRESHOLD_LADDER_MS = [1000, 2000, 5000, 10000, 30000];
+
+function buildStuckThresholdOptions(serverThresholdSec) {
+  if (!serverThresholdSec || serverThresholdSec <= 0) {
+    return STUCK_THRESHOLD_DEFAULTS_MS.slice();
+  }
+  const serverMs = Math.max(1, Math.round(serverThresholdSec * 1000));
+  const opts = new Set([serverMs]);
+  for (const ms of STUCK_THRESHOLD_LADDER_MS) {
+    if (ms >= serverMs) opts.add(ms);
+  }
+  return [...opts].sort((a, b) => a - b);
+}
+
+// Reconcile the dropdown's <option> set with what the visible
+// processes' WSGISlowRequests values say should be selectable.
+// Preserves the user's selection when still valid; otherwise falls
+// back to the lowest option (which is the server threshold). Bails
+// out without touching the DOM when nothing changed so this is
+// safe to call every redraw.
+function rebuildStuckThresholdDropdown() {
+  const select = document.getElementById("capacity_stuck_thresh");
+  if (!select) return;
+  const serverSec = maxVisibleServerSlowThresholdSec();
+  const wantOpts = buildStuckThresholdOptions(serverSec);
+  const currentOpts = [...select.options].map(o => parseInt(o.value, 10));
+  const same = currentOpts.length === wantOpts.length &&
+               currentOpts.every((v, i) => v === wantOpts[i]);
+  if (same) return;
+
+  const previousValue = parseInt(select.value, 10);
+  select.innerHTML = "";
+  for (const ms of wantOpts) {
+    const opt = document.createElement("option");
+    opt.value = String(ms);
+    opt.textContent = formatThresholdSec(ms / 1000);
+    select.appendChild(opt);
+  }
+  select.value = wantOpts.includes(previousValue)
+    ? String(previousValue) : String(wantOpts[0]);
+}
+
 // Highest server-side WSGISlowRequests threshold across visible
 // processes, in seconds. Returns 0 when every visible process has
 // the directive disabled, or null when the field hasn't been
-// reported yet by any visible process. Used to warn when the
-// heatmap stuck-threshold dropdown is set below what any visible
-// process can actually capture.
+// reported yet by any visible process. Used by
+// rebuildStuckThresholdDropdown to clamp the dropdown's lowest
+// option, and by the drill-down modal's "no record" copy.
 function maxVisibleServerSlowThresholdSec() {
   let any = false;
   let max = 0;
@@ -1331,6 +1375,25 @@ function avgChunk(bytes, calls) {
 // means a generator yielding tiny tokens (output) or a reader pulling
 // bytes one at a time (input). Tinted amber in the expand panel.
 const IO_SMELL_BYTES_PER_CALL = 64;
+
+// CPU% bands used for tinting in the slow-request drill-down panel.
+// Below the heavy threshold reads as I/O-bound or mixed; at/above
+// reads as CPU-bound. Above multi indicates the request used more
+// than one core's worth of wall time (rare in WSGI; usually a C
+// extension that releases the GIL and spawns worker threads).
+const CPU_HEAVY_PCT = 80;
+const CPU_MULTI_PCT = 100;
+
+// Format an absolute CPU duration (microseconds) for display.
+// Mirrors fmtElapsedMs but with smaller units and a millisecond
+// floor so 0 reads as "0 ms" rather than the seconds form.
+function fmtCpuUs(us) {
+  if (typeof us !== "number" || !isFinite(us) || us < 0) return "—";
+  const ms = us / 1000;
+  if (ms >= 1000) return (ms / 1000).toFixed(2) + " s";
+  if (ms >= 10)   return ms.toFixed(0) + " ms";
+  return ms.toFixed(2) + " ms";
+}
 
 // Convert a per-tick byte total to bytes/sec by dividing by the
 // reporter's sample_period. Returns 0 when sample_period is missing
@@ -1437,6 +1500,36 @@ function renderSlowExpandPanel(e) {
   const ioBadge = noIO && e.state === 1
     ? ' <span class="label">(no body in or out)</span>'
     : ioNote;
+  // CPU. Active records carry zero on the wire (getrusage on a
+  // worker thread can only be done from that worker, and the
+  // active snapshot runs from the reporter); say so explicitly.
+  const cpuUserUs = e.cpu_user_us || 0;
+  const cpuSystemUs = e.cpu_system_us || 0;
+  const cpuTotalUs = cpuUserUs + cpuSystemUs;
+  const durationUs = e.duration_us || 0;
+  let cpuLine, cpuBreakdownLine;
+  if (e.state === 0) {
+    cpuLine = `\u2014 <span class="label">(reported at completion)</span>`;
+    cpuBreakdownLine = "";
+  } else if (durationUs <= 0 || cpuTotalUs === 0) {
+    cpuLine = `${fmtCpuUs(cpuTotalUs)} <span class="label">(no CPU consumed)</span>`;
+    cpuBreakdownLine = "";
+  } else {
+    const pct = (cpuTotalUs / durationUs) * 100;
+    let cpuCls = "";
+    if (pct >= CPU_MULTI_PCT) cpuCls = " cpu-multi";
+    else if (pct >= CPU_HEAVY_PCT) cpuCls = " io-amber";
+    const pctText = pct >= 100 ? pct.toFixed(0) : pct.toFixed(0);
+    const multiNote = pct >= CPU_MULTI_PCT
+      ? " <span class=\"label\">(multi-core / GIL released)</span>"
+      : "";
+    cpuLine = `${fmtCpuUs(cpuTotalUs)} ` +
+              `<span class="${cpuCls.trim()}">(${pctText}% of wall)</span>` +
+              multiNote;
+    cpuBreakdownLine = `<div class="label">CPU split</div>` +
+      `<div>user ${fmtCpuUs(cpuUserUs)} \u00b7 ` +
+      `system ${fmtCpuUs(cpuSystemUs)}</div>`;
+  }
   return `<div class="slow-details">
     <div class="label">URL</div>
     <div class="url-full">${escapeHtml(url)}</div>
@@ -1448,6 +1541,9 @@ function renderSlowExpandPanel(e) {
     <div class="label">Body out</div>
     <div>${fmtIO(outBytes, outCalls, outAvg, "writes")}${
       e.state === 1 ? ioBadge : ""}</div>
+    <div class="label">CPU</div>
+    <div>${cpuLine}</div>
+    ${cpuBreakdownLine}
   </div>`;
 }
 
@@ -1911,10 +2007,14 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
         actualEndT = actualStartT + (entry.duration_us || 0) / 1e6;
         endIsKnown = true;
       } else {
-        // Active request — extend the fill to the heatmap's "now"
-        // since the request is in progress right now. No end marker
-        // (endIsKnown stays false) so the right edge stays open.
-        actualEndT = now;
+        // Active request — end the fill at the latest sample's
+        // tick time, not at `now`. The cells in this slot row also
+        // end at the latest sample, so this keeps the bar aligned
+        // with the cells instead of protruding into the empty
+        // post-latest-sample strip. The "still active" cue is the
+        // missing right-edge marker (endIsKnown stays false), not
+        // an extended bar.
+        actualEndT = last.tickT;
         endIsKnown = false;
       }
     } else {
@@ -2142,43 +2242,16 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
 
 function renderCapacity() {
   const grid = document.getElementById("capacity_grid");
+  // Reconcile the stuck-threshold dropdown with the server-side
+  // WSGISlowRequests value before reading the selected threshold,
+  // so a freshly-arrived sample can clamp out below-threshold
+  // options before the heatmap renders against the old selection.
+  rebuildStuckThresholdDropdown();
   const stuckThreshMs = parseInt(
     document.getElementById("capacity_stuck_thresh").value, 10) || 1000;
   const nowTs = state.capacityPaused
     ? state.capacityPausedAt
     : Date.now() / 1000;
-
-  // Server-side WSGISlowRequests warning: when the heatmap stuck-
-  // threshold dropdown is set below the highest server threshold
-  // across visible processes, runs in that band cannot be matched
-  // to a real record (the C side never emitted one). Tell the user
-  // explicitly so they know the matcher isn't broken.
-  const warnEl = document.getElementById("server_thresh_warning");
-  if (warnEl) {
-    const serverMaxSec = maxVisibleServerSlowThresholdSec();
-    const stuckSec = stuckThreshMs / 1000;
-    if (serverMaxSec === null) {
-      warnEl.hidden = true;
-    } else if (serverMaxSec === 0) {
-      warnEl.hidden = false;
-      warnEl.textContent = "(WSGISlowRequests not configured — every run is heuristic)";
-      warnEl.title = "No process visible has WSGISlowRequests configured, " +
-                     "so no slow-request records are emitted. Capacity " +
-                     "heatmap runs are detected from per-slot signals only.";
-    } else if (stuckSec < serverMaxSec) {
-      warnEl.hidden = false;
-      warnEl.textContent = "(below server's WSGISlowRequests = "
-                           + formatThresholdSec(serverMaxSec) + ")";
-      warnEl.title = "The selected stuck threshold is below " +
-                     "WSGISlowRequests on at least one visible process. " +
-                     "Runs between " + formatThresholdSec(stuckSec) +
-                     " and " + formatThresholdSec(serverMaxSec) +
-                     " can be detected from per-slot signals but never " +
-                     "have a captured slow-request record to drill into.";
-    } else {
-      warnEl.hidden = true;
-    }
-  }
 
   const pids = [...state.processes.keys()].sort((a, b) => a - b).filter(pid => {
     const p = state.processes.get(pid);
@@ -2689,6 +2762,18 @@ function refreshCapacityTooltip() {
       lines.push(`<div><span class="label">${escapeHtml(e.method || "—")}</span>${escapeHtml(urlShort)}</div>`);
       if (e.log_id)
         lines.push(`<div><span class="label">log id</span>${escapeHtml(e.log_id)}</div>`);
+      // CPU% hint — concise, no breakdown. Active records carry
+      // zero CPU on the wire today; show "(at completion)" so the
+      // reader knows the value isn't suppressed in error.
+      const cpuTotalUs = (e.cpu_user_us || 0) + (e.cpu_system_us || 0);
+      if (e.state === 0) {
+        lines.push(`<div><span class="label">cpu</span>(at completion)</div>`);
+      } else if ((e.duration_us || 0) > 0 && cpuTotalUs > 0) {
+        const pct = Math.round((cpuTotalUs / e.duration_us) * 100);
+        lines.push(`<div><span class="label">cpu</span>${pct}%</div>`);
+      } else {
+        lines.push(`<div><span class="label">cpu</span>0%</div>`);
+      }
     } else {
       lines.push(`<div><span class="label">no record</span>heuristic detection only</div>`);
     }
@@ -4158,12 +4243,12 @@ function renderSlowDetailModal() {
       `drill-down windows.` +
       `</div>`;
   } else {
-    // Use the per-process WSGISlowRequests value (sent on the wire
-    // with each KIND_REQUEST sample) to tell the user *exactly*
-    // why the matcher couldn't find a record. The three cases —
-    // directive disabled, run below server threshold, or
-    // datagram/match miss despite eligibility — point at very
-    // different fixes.
+    // The heatmap stuck-threshold dropdown is clamped at this
+    // process's WSGISlowRequests, so any detected run is by
+    // construction at or above that threshold. The remaining
+    // "no record" cases all point at infrastructure (directive
+    // not configured, sample not yet received, or eligible-but-
+    // missed) rather than threshold mismatch.
     const serverThreshSec = serverSlowThresholdSec(hit.pid);
     const runDurationSec = liveDurationMs / 1000;
     let note;
@@ -4176,14 +4261,6 @@ function renderSlowDetailModal() {
              `process, so no per-request records are being captured. ` +
              `Set <code>WSGISlowRequests</code> in the Apache config ` +
              `to enable drill-down for runs &ge; that threshold.`;
-    } else if (runDurationSec < serverThreshSec) {
-      note = `This run is ` + formatThresholdSec(runDurationSec) +
-             `, but the server's <code>WSGISlowRequests</code> is set ` +
-             `to ` + formatThresholdSec(serverThreshSec) +
-             ` &mdash; so no record was ever emitted. Lower ` +
-             `<code>WSGISlowRequests</code> (or raise the heatmap ` +
-             `stuck threshold) if you want drill-down for runs in ` +
-             `this band.`;
     } else {
       note = `The run lasted ` + formatThresholdSec(runDurationSec) +
              ` (above this process's <code>WSGISlowRequests</code> ` +

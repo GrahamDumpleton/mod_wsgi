@@ -50,6 +50,11 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
         await ws.send_json(ingester.snapshot())
 
         async def reader() -> None:
+            # Drains incoming frames; exits when the client closes
+            # the connection, errors, or the server calls ws.close()
+            # from close_websockets during shutdown. Reaching the
+            # end of this coroutine is the signal the writer loop
+            # below uses to know the ws is going away.
             async for msg in ws:
                 if msg.type == WSMsgType.ERROR:
                     log.warning("ws client error: %s", ws.exception())
@@ -57,17 +62,37 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
 
         reader_task = asyncio.create_task(reader())
 
+        # Writer loop: race each q.get() against the reader exiting
+        # so a shutdown (or client disconnect) wakes the writer
+        # immediately rather than waiting for the queue to produce
+        # something. Previously this loop polled q.get() on a 30 s
+        # timeout, which delayed server shutdown by up to that long
+        # whenever no metrics were arriving.
         while not ws.closed:
-            try:
-                payload = await asyncio.wait_for(q.get(), timeout=30)
-            except asyncio.TimeoutError:
-                continue
+            get_task = asyncio.create_task(q.get())
+            done, _ = await asyncio.wait(
+                {get_task, reader_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if reader_task in done:
+                get_task.cancel()
+                try:
+                    await get_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                break
+            payload = get_task.result()
             try:
                 await ws.send_json(payload)
             except ConnectionResetError:
                 break
 
-        reader_task.cancel()
+        if not reader_task.done():
+            reader_task.cancel()
+            try:
+                await reader_task
+            except (asyncio.CancelledError, Exception):
+                pass
     finally:
         websockets.discard(ws)
         ingester.unsubscribe(q)

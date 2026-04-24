@@ -245,6 +245,11 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_OUTPUT_WRITES,
                          s->output_writes);
 
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_CPU_USER_US,
+                         s->cpu_user_us);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_CPU_SYSTEM_US,
+                         s->cpu_system_us);
+
     if (s->log_id[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SLOW_LOG_ID, s->log_id,
                                (uint16_t)strlen(s->log_id));

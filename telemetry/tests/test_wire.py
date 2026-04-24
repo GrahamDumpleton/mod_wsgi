@@ -165,6 +165,24 @@ def test_roundtrip_slow_request_io():
     assert got.fields["slow_output_writes"] == 60_000
 
 
+def test_roundtrip_slow_request_cpu():
+    # Per-slow-request CPU time, broken out user/system so the UI's
+    # drill-down can show both. Active records carry zero on the wire
+    # (getrusage on a worker thread can only run from that worker).
+    fields = {
+        "slow_state": 1,
+        "slow_duration_us": 5_000_000,
+        "slow_thread_id": 2,
+        "slow_cpu_user_us": 4_200_000,
+        "slow_cpu_system_us": 300_000,
+    }
+    s = Sample(version=1, kind=KIND_SLOW_REQUEST, pid=7777, seq=5,
+               stamp_us=1_700_000_000_000_000, fields=fields)
+    got = decode(encode(s))
+    assert got.fields["slow_cpu_user_us"] == 4_200_000
+    assert got.fields["slow_cpu_system_us"] == 300_000
+
+
 def test_rejects_bad_magic():
     s = Sample(version=1, kind=KIND_REQUEST, pid=1, seq=1,
                stamp_us=0, fields={"request_count": 1})

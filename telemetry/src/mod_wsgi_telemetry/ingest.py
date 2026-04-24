@@ -105,6 +105,8 @@ class SlowEntry:
     input_reads: int = 0
     output_bytes: int = 0
     output_writes: int = 0
+    cpu_user_us: int = 0
+    cpu_system_us: int = 0
     last_seen: float = 0.0
 
     def to_dict(self) -> dict:
@@ -124,6 +126,8 @@ class SlowEntry:
             "input_reads": self.input_reads,
             "output_bytes": self.output_bytes,
             "output_writes": self.output_writes,
+            "cpu_user_us": self.cpu_user_us,
+            "cpu_system_us": self.cpu_system_us,
         }
 
 
@@ -253,6 +257,8 @@ class Ingester:
             input_reads=int(f.get("slow_input_reads") or 0),
             output_bytes=int(f.get("slow_output_bytes") or 0),
             output_writes=int(f.get("slow_output_writes") or 0),
+            cpu_user_us=int(f.get("slow_cpu_user_us") or 0),
+            cpu_system_us=int(f.get("slow_cpu_system_us") or 0),
             last_seen=time.monotonic(),
         )
         self.slow_requests[key] = entry

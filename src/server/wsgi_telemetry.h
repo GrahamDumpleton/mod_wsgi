@@ -135,6 +135,15 @@
 #define WSGI_METRICS_F_SLOW_OUTPUT_BYTES           97   /* u64 */
 #define WSGI_METRICS_F_SLOW_OUTPUT_WRITES          98   /* u64 */
 
+/* Per-slow-request CPU time. Computed at end-of-request from the
+ * worker thread's getrusage delta, so only completed records carry
+ * non-zero values — getrusage(RUSAGE_THREAD) only works from the
+ * request's own thread, and the active-record snapshot runs from
+ * the telemetry reporter thread. UI shows (user+system) / wall as
+ * a CPU-bound vs I/O-bound indicator. Values in microseconds. */
+#define WSGI_METRICS_F_SLOW_CPU_USER_US            99   /* u64 */
+#define WSGI_METRICS_F_SLOW_CPU_SYSTEM_US         100   /* u64 */
+
 /* Per-slot capacity signals — one entry per worker thread, length =
  * request_threads_maximum. Field 64 (historically reserved as
  * "request_threads_buckets") now carries the same semantics under the
@@ -266,6 +275,13 @@ typedef struct {
     uint64_t input_reads;
     uint64_t output_bytes;
     uint64_t output_writes;
+
+    /* Per-request CPU time (microseconds). Final at completion;
+     * zero for active records — getrusage on this thread can only be
+     * called from the request's own worker, not from the reporter
+     * snapshot path that produces active records. */
+    uint64_t cpu_user_us;
+    uint64_t cpu_system_us;
 
     char     log_id[WSGI_SLOW_LOG_ID_MAX];
     char     method[WSGI_SLOW_METHOD_MAX];

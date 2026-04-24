@@ -206,6 +206,26 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
                 else random.randint(2_000, 200_000)
     out_writes = random.randint(40_000, 120_000) if streaming \
                  else random.randint(1, 10)
+    # Synthesise plausible CPU time so the UI's CPU% indicator (and
+    # its amber / multi-core tinting) is exercisable on demo data.
+    # Streaming endpoints look I/O-bound (low CPU%); checkout looks
+    # multi-core (>100% via C-extension threading); the rest land in
+    # the mixed band so the colouring isn't all one shade.
+    if state == 1:
+        if streaming:
+            cpu_total_us = int(duration_us * random.uniform(0.05, 0.20))
+        elif "checkout" in path:
+            cpu_total_us = int(duration_us * random.uniform(1.10, 1.40))
+        elif "thumbnail" in path:
+            cpu_total_us = int(duration_us * random.uniform(0.85, 0.98))
+        else:
+            cpu_total_us = int(duration_us * random.uniform(0.30, 0.60))
+        cpu_user_us = int(cpu_total_us * random.uniform(0.85, 0.95))
+        cpu_system_us = cpu_total_us - cpu_user_us
+    else:
+        # Active records carry zero CPU on the wire today (see C side).
+        cpu_user_us = 0
+        cpu_system_us = 0
     fields = {
         "slow_state": state,                    # 0=active, 1=completed
         "slow_start_stamp_us": start_stamp_us,
@@ -221,6 +241,8 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
         "slow_input_reads": in_reads,
         "slow_output_bytes": out_bytes,
         "slow_output_writes": out_writes,
+        "slow_cpu_user_us": cpu_user_us,
+        "slow_cpu_system_us": cpu_system_us,
     }
     return Sample(
         version=1,

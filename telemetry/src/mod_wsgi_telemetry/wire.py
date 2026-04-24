@@ -149,6 +149,12 @@ FIELDS = {
     96: "slow_input_reads",
     97: "slow_output_bytes",
     98: "slow_output_writes",
+
+    # Per-slow-request CPU time (microseconds). Final at completion;
+    # zero for active records (getrusage on the worker thread can
+    # only be called from the request's own thread).
+    99: "slow_cpu_user_us",
+    100: "slow_cpu_system_us",
 }
 
 # Reverse map for encoders / tests.

@@ -478,14 +478,23 @@ void wsgi_end_request(void)
             if (elapsed > stats->max_duration_us)
                 stats->max_duration_us = elapsed;
 
+            /* CPU deltas computed once and reused: per-slot stats
+             * accumulator gets the sum, slow-record snapshot below
+             * gets user/system separately so the UI can show the
+             * breakdown in drill-down. */
+            double cpu_user_delta = 0.0;
+            double cpu_system_delta = 0.0;
             if (have_cpu && slot->cpu_valid)
             {
-                double cpu_delta =
-                    (cpu_usage.user_time   - slot->cpu_user_at_start) +
-                    (cpu_usage.system_time - slot->cpu_system_at_start);
-                if (cpu_delta < 0.0)
-                    cpu_delta = 0.0;
-                stats->cpu_time_us += (apr_time_t)(cpu_delta * 1.0e6);
+                cpu_user_delta = cpu_usage.user_time -
+                                 slot->cpu_user_at_start;
+                cpu_system_delta = cpu_usage.system_time -
+                                   slot->cpu_system_at_start;
+                if (cpu_user_delta < 0.0) cpu_user_delta = 0.0;
+                if (cpu_system_delta < 0.0) cpu_system_delta = 0.0;
+                stats->cpu_time_us +=
+                    (apr_time_t)((cpu_user_delta + cpu_system_delta) *
+                                 1.0e6);
             }
 
             if (wsgi_slow_threshold_us > 0 &&
@@ -501,6 +510,8 @@ void wsgi_end_request(void)
                 rec.input_reads = (uint64_t)slot->io_input_reads;
                 rec.output_bytes = (uint64_t)slot->io_output_bytes;
                 rec.output_writes = (uint64_t)slot->io_output_writes;
+                rec.cpu_user_us = (uint64_t)(cpu_user_delta * 1.0e6);
+                rec.cpu_system_us = (uint64_t)(cpu_system_delta * 1.0e6);
                 wsgi_slow_snapshot_fields(&rec, slot->r);
                 wsgi_slow_push_completed_locked(&rec);
             }
