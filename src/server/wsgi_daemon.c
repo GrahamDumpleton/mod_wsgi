@@ -3771,9 +3771,6 @@ int wsgi_hook_daemon_handler(conn_rec *c)
     core_request_config *req_cfg;
     core_dir_config *d;
 
-    ap_filter_t *current = NULL;
-    ap_filter_t *next = NULL;
-
     const char *item;
 
     int queue_timeout_occurred = 0;
@@ -3792,58 +3789,6 @@ int wsgi_hook_daemon_handler(conn_rec *c)
      */
 
     daemon_start = apr_time_now();
-
-    /*
-     * Remove all input/output filters except the core filters.
-     * This will ensure that any SSL filters we don't want are
-     * removed. This is a bit of a hack. Only other option is to
-     * duplicate the code for core input/output filters so can
-     * avoid full Apache connection processing, which is what is
-     * installed the SSL filters and possibly other filters for
-     * logging etc.
-     */
-
-    current = c->input_filters;
-    next = current->next;
-
-    while (current)
-    {
-        if (current->frec == ap_core_input_filter_handle)
-        {
-            current = next;
-            if (!current)
-                break;
-            next = current->next;
-            continue;
-        }
-
-        ap_remove_input_filter(current);
-
-        current = next;
-        if (current)
-            next = current->next;
-    }
-
-    current = c->output_filters;
-    next = current->next;
-
-    while (current)
-    {
-        if (current->frec == ap_core_output_filter_handle)
-        {
-            current = next;
-            if (!current)
-                break;
-            next = current->next;
-            continue;
-        }
-
-        ap_remove_output_filter(current);
-
-        current = next;
-        if (current)
-            next = current->next;
-    }
 
     /* Create and populate our own request object. */
 

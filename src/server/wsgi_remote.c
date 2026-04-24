@@ -1947,10 +1947,24 @@ static apr_status_t wsgi_socket_read(apr_socket_t *sock, void *vbuf,
 
 #define WSGI_MAX_REQUEST_FRAME (16 * 1024 * 1024)
 
+/*
+ * Size of the stack-resident preread buffer. Realistic CGI-style
+ * environments easily fit inside this, so in the common case the
+ * length prefix and the entire payload arrive in a single recv()
+ * and no second syscall is needed.
+ */
+
+#define WSGI_REQUEST_FRAME_PREREAD 4096
+
 static apr_status_t wsgi_read_strings(apr_socket_t *sock, char ***s,
                                       apr_pool_t *p)
 {
     apr_status_t rv;
+
+    char preread[WSGI_REQUEST_FRAME_PREREAD];
+    apr_size_t got;
+    apr_size_t len;
+    apr_size_t payload_have;
 
     apr_size_t total;
 
@@ -1962,8 +1976,32 @@ static apr_status_t wsgi_read_strings(apr_socket_t *sock, char ***s,
     char *end;
     char *nul;
 
-    if ((rv = wsgi_socket_read(sock, &total, sizeof(total))) != APR_SUCCESS)
+    /*
+     * Opportunistic first read into a stack buffer. Each daemon
+     * connection is per-request, so there is no risk of
+     * over-reading into a following request.
+     */
+
+    len = sizeof(preread);
+    if ((rv = apr_socket_recv(sock, preread, &len)) != APR_SUCCESS)
         return rv;
+    got = len;
+
+    /*
+     * Top up until we have at least the length prefix. In practice
+     * the first recv() already covers this, but stream sockets can
+     * deliver short reads so handle the case explicitly.
+     */
+
+    while (got < sizeof(total))
+    {
+        len = sizeof(preread) - got;
+        if ((rv = apr_socket_recv(sock, preread + got, &len)) != APR_SUCCESS)
+            return rv;
+        got += len;
+    }
+
+    memcpy(&total, preread, sizeof(total));
 
     /*
      * Reject frames too small to hold the string count or larger than
@@ -1977,8 +2015,23 @@ static apr_status_t wsgi_read_strings(apr_socket_t *sock, char ***s,
     offset = buffer;
     end = buffer + total;
 
-    if ((rv = wsgi_socket_read(sock, buffer, total)) != APR_SUCCESS)
-        return rv;
+    /*
+     * Copy whatever payload arrived with the length prefix, clamped
+     * at total defensively. Fall back to a blocking read for any
+     * remainder that did not fit in the preread buffer.
+     */
+
+    payload_have = got - sizeof(total);
+    if (payload_have > total)
+        payload_have = total;
+    memcpy(buffer, preread + sizeof(total), payload_have);
+
+    if (payload_have < total)
+    {
+        if ((rv = wsgi_socket_read(sock, buffer + payload_have,
+                                   total - payload_have)) != APR_SUCCESS)
+            return rv;
+    }
 
     memcpy(&n, offset, sizeof(n));
     offset += sizeof(n);
