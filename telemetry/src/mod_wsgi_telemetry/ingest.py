@@ -85,6 +85,10 @@ class SlowEntry:
     request total). last_seen is the wall-monotonic arrival time, used for
     TTL age-out so requests from processes that died mid-flight don't
     linger as "active" forever.
+
+    I/O counters are final at completion; for an active record they
+    are the partial values captured at scan time (the adapter may yet
+    read or write more before the request completes).
     """
     pid: int
     thread_id: int
@@ -97,6 +101,10 @@ class SlowEntry:
     start_stamp_us: int
     duration_us: int
     state: int                 # 0 = active, 1 = completed
+    input_bytes: int = 0
+    input_reads: int = 0
+    output_bytes: int = 0
+    output_writes: int = 0
     last_seen: float = 0.0
 
     def to_dict(self) -> dict:
@@ -112,6 +120,10 @@ class SlowEntry:
             "start_stamp_us": self.start_stamp_us,
             "duration_us": self.duration_us,
             "state": self.state,
+            "input_bytes": self.input_bytes,
+            "input_reads": self.input_reads,
+            "output_bytes": self.output_bytes,
+            "output_writes": self.output_writes,
         }
 
 
@@ -120,14 +132,23 @@ class Ingester:
 
     STALE_SECONDS = 300  # drop processes we haven't heard from in 5 min
 
-    # Floor values for slow-request TTLs. Effective TTL per entry scales
-    # with the reporting process's telemetry interval (see _gc_slow):
-    # active   = max(FLOOR, 3 * sample_period)
-    # complete = max(FLOOR, 5 * sample_period)
-    # so a 10 s reporter interval doesn't flicker rows between ticks,
-    # while a 1 s interval keeps the tight defaults below.
+    # Floor values for slow-request *storage* TTLs. Effective TTL per
+    # entry scales with the reporting process's telemetry interval
+    # (see _gc_slow): active = max(FLOOR, 3 * sample_period), completed
+    # = max(FLOOR, 5 * sample_period), so a 10 s reporter interval
+    # doesn't drop entries between heartbeats.
+    #
+    # Active records still age out fast so a worker that died mid-
+    # request doesn't leave a ghost row pinned forever.
+    #
+    # Completed records are kept long enough to support drill-down
+    # from the Capacity heatmap (whose visible window can outlive the
+    # 15 s display TTL the UI table uses). Initially set to match the
+    # client's SAMPLE_RETENTION_SEC (10 minutes) — kept as a separate
+    # constant so it can be adjusted independently from sample
+    # retention if the trade-off ever changes.
     SLOW_ACTIVE_TTL_SECONDS = 5.0
-    SLOW_COMPLETED_TTL_SECONDS = 15.0
+    SLOW_COMPLETED_TTL_SECONDS = 600.0
 
     def __init__(self, listen_spec: str, *, max_subscribers: int = 64) -> None:
         self.listen_spec = listen_spec
@@ -228,6 +249,10 @@ class Ingester:
             start_stamp_us=start_stamp_us,
             duration_us=int(f.get("slow_duration_us") or 0),
             state=int(f.get("slow_state") or 0),
+            input_bytes=int(f.get("slow_input_bytes") or 0),
+            input_reads=int(f.get("slow_input_reads") or 0),
+            output_bytes=int(f.get("slow_output_bytes") or 0),
+            output_writes=int(f.get("slow_output_writes") or 0),
             last_seen=time.monotonic(),
         )
         self.slow_requests[key] = entry

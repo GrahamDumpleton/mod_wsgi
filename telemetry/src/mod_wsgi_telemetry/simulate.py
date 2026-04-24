@@ -160,8 +160,14 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
         "slot_cpu_time_us": slot_cpu_time_us,
         "slot_current_elapsed_ms": slot_current_elapsed_ms,
         "slot_max_duration_ms": slot_max_duration_ms,
+        # Per-request avg ~256 B in / ~1 KB out, with a small tail of
+        # streaming responses that bump output_writes well above the
+        # request count so the UI's "bytes/write" smell threshold is
+        # exercised on demo data.
         "input_bytes_total": count * 256,
+        "input_reads_total": count,
         "output_bytes_total": count * 1024,
+        "output_writes_total": count + (count // 5) * 50,
     }
 
     return Sample(
@@ -178,6 +184,21 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
                      log_id: str, method: str, path: str,
                      start_stamp_us: int, duration_us: int) -> Sample:
     """Build one synthetic slow_request record."""
+    # Synthesise plausible per-request I/O so the slow-request expand
+    # panel shows non-zero counters in the simulator. POSTs get a body
+    # in; the long /api/search/* path streams a big response across
+    # many writes so the UI's smell tinting kicks in.
+    if method == "POST":
+        in_bytes = random.randint(2_000, 50_000)
+        in_reads = random.randint(1, 4)
+    else:
+        in_bytes = 0
+        in_reads = 0
+    streaming = "search" in path
+    out_bytes = random.randint(50_000_000, 150_000_000) if streaming \
+                else random.randint(2_000, 200_000)
+    out_writes = random.randint(40_000, 120_000) if streaming \
+                 else random.randint(1, 10)
     fields = {
         "slow_state": state,                    # 0=active, 1=completed
         "slow_start_stamp_us": start_stamp_us,
@@ -189,6 +210,10 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
         "slow_hostname": socket.gethostname(),
         "slow_script_name": "",
         "slow_path_info": path,
+        "slow_input_bytes": in_bytes,
+        "slow_input_reads": in_reads,
+        "slow_output_bytes": out_bytes,
+        "slow_output_writes": out_writes,
     }
     return Sample(
         version=1,

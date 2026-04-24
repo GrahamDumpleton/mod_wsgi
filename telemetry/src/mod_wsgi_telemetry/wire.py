@@ -112,7 +112,10 @@ FIELDS = {
     # within the worker).
     94: "request_time_buckets",
 
-    # Proposed additions from the review plan
+    # Per-interval request I/O totals. Drained from the adapter's
+    # InputObject.bytes/reads and AdapterObject.output_length/output_writes
+    # at end-of-request; in-flight requests don't contribute until they
+    # finish.
     70: "input_bytes_total",
     71: "input_reads_total",
     72: "output_bytes_total",
@@ -131,6 +134,13 @@ FIELDS = {
     87: "slow_hostname",
     88: "slow_script_name",
     89: "slow_path_info",
+
+    # Per-slow-request I/O. Final values for completed records, partial
+    # for active records (adapter may yet read or write more).
+    95: "slow_input_bytes",
+    96: "slow_input_reads",
+    97: "slow_output_bytes",
+    98: "slow_output_writes",
 }
 
 # Reverse map for encoders / tests.

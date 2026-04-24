@@ -98,6 +98,15 @@ static int wsgi_application_time_buckets[16];
  * wait isn't measurable from within, so this is still a lower bound. */
 static int wsgi_request_time_buckets[16];
 
+/* Per-interval request I/O totals. Folded at end-of-request from the
+ * adapter's InputObject/AdapterObject counters; drained and zeroed by
+ * whichever reader (telemetry snapshot or Python accessor) fires
+ * first, same drain-clash semantics as the time/bucket aggregators. */
+static apr_uint64_t wsgi_input_bytes_total = 0;
+static apr_uint64_t wsgi_input_reads_total = 0;
+static apr_uint64_t wsgi_output_bytes_total = 0;
+static apr_uint64_t wsgi_output_writes_total = 0;
+
 /* Per-thread active-slot array. One entry per worker thread (sized to the
  * MPM max_threads in embedded mode or the daemon group's threads count in
  * daemon mode). Each slot carries the live request_rec pointer while the
@@ -135,6 +144,18 @@ typedef struct
     int        cpu_valid;
     double     cpu_user_at_start;
     double     cpu_system_at_start;
+
+    /* Per-request I/O counters, written by wsgi_record_request_times
+     * once the adapter knows the final read/write totals and consumed
+     * by wsgi_end_request when snapshotting a slow-completion record.
+     * Zero while no request is in flight or the request hasn't yet
+     * reached its end-of-request hook. Active-record snapshots in
+     * wsgi_metrics_snapshot_slow_active() report these as the partial
+     * I/O so far (zero until end-of-request). */
+    apr_off_t  io_input_bytes;
+    apr_off_t  io_input_reads;
+    apr_off_t  io_output_bytes;
+    apr_off_t  io_output_writes;
 } wsgi_active_slot_t;
 
 /* Parallel array of per-slot interval accumulators. Drained and reset at
@@ -187,13 +208,16 @@ void wsgi_record_time_in_buckets(int *buckets, double duration)
 
 void wsgi_record_request_times(apr_time_t request_start,
                                apr_time_t queue_start, apr_time_t daemon_start,
-                               apr_time_t application_start, apr_time_t application_finish)
+                               apr_time_t application_start, apr_time_t application_finish,
+                               apr_off_t input_bytes, apr_off_t input_reads,
+                               apr_off_t output_bytes, apr_off_t output_writes)
 {
 
     double server_time = 0.0;
     double queue_time = 0.0;
     double daemon_time = 0.0;
     double application_time = 0.0;
+    WSGIThreadInfo *thread_info = NULL;
 
     if (wsgi_request_metrics_enabled == 0)
         return;
@@ -214,6 +238,12 @@ void wsgi_record_request_times(apr_time_t request_start,
     application_time = (apr_time_sec((double)(application_finish -
                                               application_start)));
 
+    /* Identify this thread's slot so I/O totals can be stashed where
+     * wsgi_end_request will pick them up for a slow-record snapshot.
+     * Looked up before taking the lock — wsgi_thread_info() touches
+     * only the current thread's APR threadkey storage. */
+    thread_info = wsgi_thread_info(0, 1);
+
     apr_thread_mutex_lock(wsgi_monitor_lock);
 
     wsgi_sample_requests += 1;
@@ -221,6 +251,27 @@ void wsgi_record_request_times(apr_time_t request_start,
     wsgi_queue_time_total += queue_time;
     wsgi_daemon_time_total += daemon_time;
     wsgi_application_time_total += application_time;
+
+    if (input_bytes > 0)
+        wsgi_input_bytes_total += (apr_uint64_t)input_bytes;
+    if (input_reads > 0)
+        wsgi_input_reads_total += (apr_uint64_t)input_reads;
+    if (output_bytes > 0)
+        wsgi_output_bytes_total += (apr_uint64_t)output_bytes;
+    if (output_writes > 0)
+        wsgi_output_writes_total += (apr_uint64_t)output_writes;
+
+    if (wsgi_active_slots && thread_info && thread_info->thread_id >= 1 &&
+        thread_info->thread_id <= wsgi_active_slots_max)
+    {
+        wsgi_active_slot_t *slot =
+            &wsgi_active_slots[thread_info->thread_id - 1];
+
+        slot->io_input_bytes = input_bytes > 0 ? input_bytes : 0;
+        slot->io_input_reads = input_reads > 0 ? input_reads : 0;
+        slot->io_output_bytes = output_bytes > 0 ? output_bytes : 0;
+        slot->io_output_writes = output_writes > 0 ? output_writes : 0;
+    }
 
     wsgi_record_time_in_buckets(&wsgi_server_time_buckets[0],
                                 server_time);
@@ -432,6 +483,10 @@ void wsgi_end_request(void)
                 rec.start_stamp_us = (uint64_t)slot->start_us;
                 rec.duration_us = (uint64_t)elapsed;
                 rec.thread_id = slot->thread_id;
+                rec.input_bytes = (uint64_t)slot->io_input_bytes;
+                rec.input_reads = (uint64_t)slot->io_input_reads;
+                rec.output_bytes = (uint64_t)slot->io_output_bytes;
+                rec.output_writes = (uint64_t)slot->io_output_writes;
                 wsgi_slow_snapshot_fields(&rec, slot->r);
                 wsgi_slow_push_completed_locked(&rec);
             }
@@ -442,6 +497,10 @@ void wsgi_end_request(void)
         slot->start_us = 0;
         slot->busy_since_us = 0;
         slot->cpu_valid = 0;
+        slot->io_input_bytes = 0;
+        slot->io_input_reads = 0;
+        slot->io_output_bytes = 0;
+        slot->io_output_writes = 0;
     }
 
     wsgi_utilization_time_locked(-1, NULL);
@@ -558,6 +617,11 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
         wsgi_daemon_time_total = 0.0;
         wsgi_application_time_total = 0.0;
 
+        wsgi_input_bytes_total = 0;
+        wsgi_input_reads_total = 0;
+        wsgi_output_bytes_total = 0;
+        wsgi_output_writes_total = 0;
+
         memset(&wsgi_server_time_buckets, 0, sizeof(wsgi_server_time_buckets));
         memset(&wsgi_queue_time_buckets, 0, sizeof(wsgi_queue_time_buckets));
         memset(&wsgi_daemon_time_buckets, 0, sizeof(wsgi_daemon_time_buckets));
@@ -595,6 +659,11 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     queue_time_total = wsgi_queue_time_total;
     daemon_time_total = wsgi_daemon_time_total;
     application_time_total = wsgi_application_time_total;
+
+    out->input_bytes_total = wsgi_input_bytes_total;
+    out->input_reads_total = wsgi_input_reads_total;
+    out->output_bytes_total = wsgi_output_bytes_total;
+    out->output_writes_total = wsgi_output_writes_total;
 
     for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
     {
@@ -665,6 +734,11 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     wsgi_queue_time_total = 0.0;
     wsgi_daemon_time_total = 0.0;
     wsgi_application_time_total = 0.0;
+
+    wsgi_input_bytes_total = 0;
+    wsgi_input_reads_total = 0;
+    wsgi_output_bytes_total = 0;
+    wsgi_output_writes_total = 0;
 
     memset(&wsgi_server_time_buckets, 0, sizeof(wsgi_server_time_buckets));
     memset(&wsgi_queue_time_buckets, 0, sizeof(wsgi_queue_time_buckets));
@@ -969,6 +1043,10 @@ int wsgi_metrics_snapshot_slow_active(wsgi_slow_request_t *out, int out_cap,
         rec->start_stamp_us = (uint64_t)slot->start_us;
         rec->duration_us = (uint64_t)elapsed;
         rec->thread_id = slot->thread_id;
+        rec->input_bytes = (uint64_t)slot->io_input_bytes;
+        rec->input_reads = (uint64_t)slot->io_input_reads;
+        rec->output_bytes = (uint64_t)slot->io_output_bytes;
+        rec->output_writes = (uint64_t)slot->io_output_writes;
         wsgi_slow_snapshot_fields(rec, slot->r);
 
         n++;
@@ -1377,6 +1455,15 @@ static PyObject *wsgi_request_metrics(void)
     wsgi_queue_time_total = 0.0;
     wsgi_daemon_time_total = 0.0;
     wsgi_application_time_total = 0.0;
+
+    /* Drain (zero-only) the I/O totals so the telemetry reporter
+     * doesn't leak counts across the Python accessor's interval. The
+     * Python accessor doesn't currently expose the I/O totals — same
+     * drain-clash semantics as wsgi_sample_requests above. */
+    wsgi_input_bytes_total = 0;
+    wsgi_input_reads_total = 0;
+    wsgi_output_bytes_total = 0;
+    wsgi_output_writes_total = 0;
 
     memset(&wsgi_server_time_buckets, 0,
            sizeof(wsgi_server_time_buckets));

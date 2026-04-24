@@ -133,6 +133,71 @@
     font: 12px ui-monospace, Menlo, monospace;
   }
   .help-body em { color: var(--muted); font-style: normal; }
+  /* Drill-down modal for a slow request opened from the Capacity tab.
+   * Shares the help-backdrop placement convention but a tighter
+   * width and its own header so the two never get visually
+   * confused if both ever rendered together. */
+  .slow-detail-modal {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    max-width: 720px;
+    width: 100%;
+    color: var(--fg);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  }
+  .slow-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .slow-detail-head h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 500;
+    flex: 1;
+  }
+  .slow-detail-head .pill {
+    display: inline-block;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-size: 10px;
+    color: var(--muted);
+    margin-right: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .slow-detail-head .pill.active { color: #81c784; border-color: #81c784; }
+  .slow-detail-head .pill.completed { color: var(--muted); }
+  .slow-detail-head button {
+    background: #1c1c1c;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 4px 10px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .slow-detail-head button:hover { background: #252525; }
+  .slow-detail-body { padding: 14px 18px; font-size: 12.5px; }
+  .slow-detail-body .meta-row {
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .slow-detail-body .heuristic-note {
+    color: #ffb74d;
+    font-size: 11px;
+    margin-top: 8px;
+    padding: 6px 8px;
+    border: 1px dashed rgba(255,183,77,0.4);
+    border-radius: 3px;
+    background: rgba(255,183,77,0.05);
+  }
   main {
     display: grid;
     grid-template-columns: 240px 1fr;
@@ -262,6 +327,7 @@
     font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
+  .slow-table .col-expand  { width: 22px; }
   .slow-table .col-elapsed { width: 80px; }
   .slow-table .col-state   { width: 90px; }
   .slow-table .col-pid     { width: 110px; }
@@ -312,6 +378,49 @@
   .slow-table .method-none { color: var(--muted); }
   .slow-table .state-active { color: #81c784; }
   .slow-table .state-completed { color: var(--muted); }
+  .slow-table tr.summary { cursor: pointer; }
+  .slow-table tr.summary:hover td { background: rgba(255,255,255,0.02); }
+  .slow-table tr.summary.expanded td { background: rgba(255,255,255,0.04); }
+  .slow-table .expand-toggle {
+    background: none;
+    border: 0;
+    color: var(--muted);
+    font: inherit;
+    padding: 0 4px;
+    cursor: pointer;
+    line-height: 1;
+    width: 100%;
+    text-align: left;
+  }
+  .slow-table .expand-toggle:hover { color: var(--accent); }
+  .slow-table .expand-toggle.expanded { color: var(--accent); }
+  .slow-table tr.details td {
+    padding: 8px 12px 12px 28px;
+    background: #131313;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+  .slow-details {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 12px;
+    font-size: 12px;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+  }
+  .slow-details .label {
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 10px;
+  }
+  .slow-details .url-full {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all;
+    white-space: normal;
+  }
+  .slow-details .io-amber { color: #ffb74d; }
   .slow-empty {
     color: var(--muted);
     font-size: 12px;
@@ -581,6 +690,15 @@
     <div class="help-body" id="help_body"></div>
   </div>
 </div>
+<div class="help-backdrop" id="slow_detail_backdrop" role="dialog" aria-modal="true">
+  <div class="slow-detail-modal">
+    <div class="slow-detail-head">
+      <h2 id="slow_detail_title">Slow request</h2>
+      <button type="button" id="slow_detail_close">Close</button>
+    </div>
+    <div class="slow-detail-body" id="slow_detail_body"></div>
+  </div>
+</div>
 <main>
   <aside class="process-list">
     <h2>Totals</h2>
@@ -599,8 +717,19 @@
     </div>
     <div class="tab-panel" id="panel_overview">
       <div class="charts">
-        <div class="chart"><h3>Request throughput</h3>
-          <div class="header-row"><div class="unit">requests / second</div><div class="live" id="live_rps"></div></div>
+        <div class="chart">
+          <div class="header-row">
+            <h3>Throughput</h3>
+            <label class="phase-picker">Metric:
+              <select id="throughput_field" class="window-picker">
+                <option value="requests" selected>requests / sec</option>
+                <option value="body_in">body in / sec</option>
+                <option value="body_out">body out / sec</option>
+                <option value="body_total">body in+out / sec</option>
+              </select>
+            </label>
+          </div>
+          <div class="header-row"><div class="unit" id="throughput_unit">requests / second</div><div class="live" id="live_rps"></div></div>
           <canvas id="c_rps"></canvas></div>
         <div class="chart"><h3>Capacity utilization</h3>
           <div class="header-row"><div class="unit">fraction of worker threads busy</div><div class="live" id="live_cap"></div></div>
@@ -699,11 +828,14 @@
                 <option value="0">All</option>
               </select>
             </label>
+            <button type="button" id="slow_pause" class="pause-btn"
+                    title="Freeze the table at the current snapshot so an entry doesn't disappear while you read it. Live samples continue to arrive in the background.">Pause</button>
           </div>
         </div>
         <div class="subtitle" id="slow_subtitle">sorted slowest first; filtered by selected process group</div>
         <table class="slow-table">
           <colgroup>
+            <col class="col-expand">
             <col class="col-elapsed">
             <col class="col-state">
             <col class="col-pid">
@@ -712,6 +844,7 @@
             <col class="col-logid">
           </colgroup>
           <thead><tr>
+            <th aria-label="expand"></th>
             <th>Elapsed</th>
             <th>State</th>
             <th>PID / thread</th>
@@ -759,16 +892,43 @@ const state = {
   // the background; resume reverts to the live window.
   capacityPaused: false,
   capacityPausedAt: 0,
+  // Slow-request expand state. slowExpanded holds the slowKeyFor()
+  // strings for rows whose details panel is open; survives
+  // re-renders so the panel doesn't collapse on every tick.
+  slowExpanded: new Set(),
+  // Slow-requests pause: while paused the table is rendered from a
+  // frozen snapshot of slow-request entries (frozen at pause time)
+  // and the GC pass that would evict aged-out rows is suppressed.
+  // New samples still accumulate in state.slowRequests in the
+  // background — resume drops the snapshot and the live view returns.
+  slowPaused: false,
+  slowPausedSnapshot: null,
 };
 
-// Floor values for slow-request TTLs (ms). Defensive second layer of
-// age-out: the server already prunes these, but if the browser misses
-// a tick (tab hidden, throttled) we still drop stale rows. Effective
-// per-entry TTL is scaled up by the reporting process's sample_period
-// in gcSlow, so a 10 s reporter interval uses TTL ≥ 30 s and rows
-// don't flicker in and out between heartbeats.
-const SLOW_ACTIVE_TTL_MS = 5000;
-const SLOW_COMPLETED_TTL_MS = 15000;
+// Slow-request retention is split into two roles so the table stays
+// tidy while click-through correlation (e.g. from the Capacity
+// heatmap) can reach back further than the visible table window.
+//
+//   STORAGE  — how long state.slowRequests holds an entry. Pruned by
+//              pruneSlowStorage(). The Capacity tab's drill-down
+//              consults storage, so this needs to outlive the
+//              heatmap's visible window plus a comfortable
+//              pause-and-browse buffer.
+//
+//   DISPLAY  — how long the Slow Requests table shows a row.
+//              Filtered inside renderSlowRequests(); does not
+//              delete from storage. Keeps the live table compact.
+//
+// Both are floors that scale up with the reporting process's
+// sample_period in their respective prune/filter passes so a 10 s
+// reporter interval doesn't drop or flicker rows between heartbeats.
+//
+// Storage TTL is initially the same number of seconds as
+// SAMPLE_RETENTION_SEC but kept as a separate constant so the two
+// can be tuned independently if the trade-off ever changes.
+const SLOW_STORAGE_TTL_MS = 600_000;            // storage (10 min)
+const SLOW_ACTIVE_TTL_MS = 5000;                // display + storage (active)
+const SLOW_COMPLETED_TTL_MS = 15000;            // display only (completed)
 
 function colorFor(pid) {
   const p = state.processes.get(pid);
@@ -950,6 +1110,12 @@ function renderProcs() {
     // would need the request_time_buckets histogram (distribution panel).
     let respSum = 0;
     let respSamples = 0;
+    // Body-byte rates: sum the per-tick *_total over the window and
+    // divide by the window's sample-period sum so a slow telemetry
+    // tick (e.g. interval=5) doesn't inflate the rate.
+    let inBytesSum = 0;
+    let outBytesSum = 0;
+    let periodSum = 0;
     for (const s of p.samples) {
       if (s.t < windowCut) continue;
       const f = s.fields;
@@ -970,6 +1136,13 @@ function renderProcs() {
                    (f.daemon_time || 0) + (f.application_time || 0);
         respSamples++;
       }
+      if (typeof f.sample_period === "number" && f.sample_period > 0) {
+        periodSum += f.sample_period;
+        if (typeof f.input_bytes_total === "number")
+          inBytesSum += f.input_bytes_total;
+        if (typeof f.output_bytes_total === "number")
+          outBytesSum += f.output_bytes_total;
+      }
     }
     const rpm = rcSamples > 0 ? Math.round((rcSum / LINE_WINDOW_SEC) * 60) : 0;
     const cap = capSamples > 0 ? (capSum / capSamples) : 0;
@@ -981,11 +1154,17 @@ function renderProcs() {
     const respPart = respMs !== null
       ? ` · resp ${respMs >= 10 ? respMs.toFixed(0) : respMs.toFixed(1)} ms`
       : "";
+    const inRate = periodSum > 0 ? inBytesSum / periodSum : 0;
+    const outRate = periodSum > 0 ? outBytesSum / periodSum : 0;
+    const ioPart = (inRate > 0 || outRate > 0)
+      ? `<div class="meta">in ${humanBytes(Math.round(inRate))}/s · out ${humanBytes(Math.round(outRate))}/s</div>`
+      : "";
     return `<div class="proc" style="border-left-color:${p.color}">
       <div class="pid">pid ${pid}</div>
       <div class="meta">${p.hostname || ""} ${p.process_group ? '['+p.process_group+']' : '(embedded)'}</div>
       <div class="meta">${rpm} rpm · cap ${(cap * 100).toFixed(0)}%${respPart}</div>
       <div class="meta">cpu ${(cpu * 100).toFixed(0)}% · ${rss} MB</div>
+      ${ioPart}
     </div>`;
   }).join("");
   if (hiddenCount > 0) {
@@ -1017,23 +1196,45 @@ function upsertSlow(entry) {
   state.slowRequests.set(key, { entry, last_seen_ms: Date.now() });
 }
 
-function gcSlow() {
+// Look up the reporting process's telemetry interval from its most
+// recent KIND_REQUEST sample. Falls back to 1 s when the process
+// isn't known yet (very early in page load).
+function reporterSampleMs(pid) {
+  const p = state.processes.get(pid);
+  if (!p || p.samples.length === 0) return 1000;
+  const sp = p.samples[p.samples.length - 1].fields.sample_period;
+  return (typeof sp === "number" && sp > 0) ? sp * 1000 : 1000;
+}
+
+// Storage prune: deletes entries from state.slowRequests once they
+// outlive their storage TTL. Active records still age out fast
+// (5 s floor) so a worker that died mid-request doesn't leave a
+// ghost row pinned forever; completed records get the longer
+// SLOW_STORAGE_TTL_MS so the Capacity tab's drill-down can still
+// resolve them after the table-level display TTL has expired. Run
+// this once per redraw before any consumer reads state.slowRequests.
+function pruneSlowStorage() {
   const now = Date.now();
   for (const [key, rec] of state.slowRequests) {
-    // Derive TTL from the reporting process's telemetry interval, read
-    // off its most recent KIND_REQUEST sample. Falls back to 1 s when
-    // the process isn't known yet.
-    const p = state.processes.get(rec.entry.pid);
-    let spMs = 1000;
-    if (p && p.samples.length > 0) {
-      const sp = p.samples[p.samples.length - 1].fields.sample_period;
-      if (typeof sp === "number" && sp > 0) spMs = sp * 1000;
-    }
+    const spMs = reporterSampleMs(rec.entry.pid);
     const ttl = rec.entry.state === 1
-      ? Math.max(SLOW_COMPLETED_TTL_MS, 5 * spMs)
+      ? Math.max(SLOW_STORAGE_TTL_MS, 5 * spMs)
       : Math.max(SLOW_ACTIVE_TTL_MS, 3 * spMs);
     if (now - rec.last_seen_ms > ttl) state.slowRequests.delete(key);
   }
+}
+
+// Display filter for the Slow Requests table. Returns true when the
+// row should be visible right now: completed rows hide after the
+// display TTL even though the underlying entry is still in storage,
+// active rows stay until the storage prune drops them. Capacity-tab
+// drill-downs do NOT consult this filter — they read storage
+// directly so an aged-out display row can still be resolved.
+function isSlowDisplayFresh(rec) {
+  if (rec.entry.state !== 1) return true;
+  const spMs = reporterSampleMs(rec.entry.pid);
+  const ttl = Math.max(SLOW_COMPLETED_TTL_MS, 5 * spMs);
+  return (Date.now() - rec.last_seen_ms) <= ttl;
 }
 
 function fmtElapsedMs(us) {
@@ -1041,6 +1242,94 @@ function fmtElapsedMs(us) {
   if (ms >= 1000) return (ms / 1000).toFixed(2) + " s";
   return ms.toFixed(0) + " ms";
 }
+
+// Compact binary-prefix byte formatter. KB/MB/GB use IEC base-1024
+// values throughout the UI to match free/top conventions for memory.
+function humanBytes(n) {
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return "—";
+  if (n < 1024) return n + " B";
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2))
+    + " " + units[i];
+}
+
+// Compact count formatter — keeps small counts exact, abbreviates
+// large counts so a high-write streaming response doesn't blow out the
+// expand panel ("60 042 writes" vs "60k writes" reads the same way).
+function humanCount(n) {
+  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return (n / 1000).toFixed(n < 10000 ? 1 : 0) + "k";
+  return (n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0) + "M";
+}
+
+// Average chunk size for an I/O stream (bytes per call). Returns null
+// when no calls were issued so the caller can omit the line entirely.
+function avgChunk(bytes, calls) {
+  if (typeof bytes !== "number" || typeof calls !== "number" ||
+      !Number.isFinite(bytes) || !Number.isFinite(calls) || calls <= 0) {
+    return null;
+  }
+  return bytes / calls;
+}
+
+// Smell threshold for tiny per-call payloads — under 64 B/call usually
+// means a generator yielding tiny tokens (output) or a reader pulling
+// bytes one at a time (input). Tinted amber in the expand panel.
+const IO_SMELL_BYTES_PER_CALL = 64;
+
+// Convert a per-tick byte total to bytes/sec by dividing by the
+// reporter's sample_period. Returns 0 when sample_period is missing
+// or zero so the chart still draws an axis instead of NaN-ing out.
+function bytesPerSec(f, key) {
+  const v = f[key];
+  const p = f.sample_period;
+  if (typeof v !== "number" || typeof p !== "number" || p <= 0) return 0;
+  return v / p;
+}
+
+function fmtBytesPerSec(v) {
+  return humanBytes(Math.round(v)) + "/s";
+}
+
+// Throughput chart selector definitions. Each entry supplies an
+// extractor (per-sample value), a y-axis label formatter, a unit
+// string for the chart subtitle, and a live-readout formatter.
+// Sharing one chart slot avoids growing the Overview grid.
+const THROUGHPUT_SPECS = {
+  requests: {
+    unit: "requests / second",
+    unitShort: "rps",
+    extract: f => f.request_throughput,
+    fmt: v => fmt(v, 1),
+    opts: {},
+  },
+  body_in: {
+    unit: "request body bytes / second",
+    unitShort: "in",
+    extract: f => bytesPerSec(f, "input_bytes_total"),
+    fmt: fmtBytesPerSec,
+    opts: { formatY: fmtBytesPerSec },
+  },
+  body_out: {
+    unit: "response body bytes / second",
+    unitShort: "out",
+    extract: f => bytesPerSec(f, "output_bytes_total"),
+    fmt: fmtBytesPerSec,
+    opts: { formatY: fmtBytesPerSec },
+  },
+  body_total: {
+    unit: "request + response body bytes / second",
+    unitShort: "total",
+    extract: f => bytesPerSec(f, "input_bytes_total") +
+                  bytesPerSec(f, "output_bytes_total"),
+    fmt: fmtBytesPerSec,
+    opts: { formatY: fmtBytesPerSec },
+  },
+};
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({
@@ -1052,9 +1341,67 @@ function slowUrlFor(e) {
   return `${e.scheme || "http"}://${e.hostname || ""}${e.script_name || ""}${e.path_info || ""}`;
 }
 
+function slowEntriesForRender() {
+  // Pause freezes the entry list at the moment of pause so a row the
+  // user is reading doesn't disappear when its display TTL expires.
+  // Live samples keep arriving in state.slowRequests in the
+  // background; resume drops the snapshot and the live view returns.
+  if (state.slowPaused && state.slowPausedSnapshot) {
+    return state.slowPausedSnapshot;
+  }
+  // Display filter only — storage pruning runs separately in the
+  // redraw tick (pruneSlowStorage) so click-through drill-down can
+  // see entries the table has aged out.
+  const out = [];
+  for (const rec of state.slowRequests.values()) {
+    if (isSlowDisplayFresh(rec)) out.push(rec.entry);
+  }
+  return out;
+}
+
+function renderSlowExpandPanel(e) {
+  const url = slowUrlFor(e);
+  const inBytes = e.input_bytes || 0;
+  const inCalls = e.input_reads || 0;
+  const outBytes = e.output_bytes || 0;
+  const outCalls = e.output_writes || 0;
+  const inAvg = avgChunk(inBytes, inCalls);
+  const outAvg = avgChunk(outBytes, outCalls);
+  const fmtIO = (bytes, calls, avg, callNoun) => {
+    if (bytes === 0 && calls === 0) return "—";
+    let s = humanBytes(bytes) + " / " + humanCount(calls) + " " + callNoun;
+    if (avg !== null) {
+      const cls = avg < IO_SMELL_BYTES_PER_CALL ? " io-amber" : "";
+      s += ` <span class="${cls.trim()}">(\u2248 ${humanBytes(Math.round(avg))}/${callNoun.replace(/s$/, "")})</span>`;
+    }
+    return s;
+  };
+  // Active records show partial I/O so far; flag that so users don't
+  // mistake a low number for "this request did nothing".
+  const ioNote = e.state === 0 && (inBytes || outBytes || inCalls || outCalls)
+    ? ' <span class="label">(in flight; counters partial)</span>'
+    : "";
+  const noIO = inBytes === 0 && outBytes === 0 &&
+               inCalls === 0 && outCalls === 0;
+  const ioBadge = noIO && e.state === 1
+    ? ' <span class="label">(no body in or out)</span>'
+    : ioNote;
+  return `<div class="slow-details">
+    <div class="label">URL</div>
+    <div class="url-full">${escapeHtml(url)}</div>
+    <div class="label">Log ID</div>
+    <div>${escapeHtml(e.log_id || "—")}</div>
+    <div class="label">Body in</div>
+    <div>${fmtIO(inBytes, inCalls, inAvg, "reads")}${
+      e.state === 0 ? ioBadge : ""}</div>
+    <div class="label">Body out</div>
+    <div>${fmtIO(outBytes, outCalls, outAvg, "writes")}${
+      e.state === 1 ? ioBadge : ""}</div>
+  </div>`;
+}
+
 function renderSlowRequests() {
   const tbody = document.getElementById("slow_tbody");
-  gcSlow();
 
   const stateFilter = document.getElementById("slow_state_filter").value;
   const perUrlCap = parseInt(
@@ -1063,7 +1410,7 @@ function renderSlowRequests() {
   // Apply process-group + state filter first so grouping counts reflect
   // only what the user could have seen anyway.
   const rows = [];
-  for (const { entry } of state.slowRequests.values()) {
+  for (const entry of slowEntriesForRender()) {
     const p = state.processes.get(entry.pid);
     if (p && isHidden(p)) continue;
     if (stateFilter === "active" && entry.state !== 0) continue;
@@ -1094,9 +1441,13 @@ function renderSlowRequests() {
 
   if (display.length === 0) {
     tbody.innerHTML =
-      `<tr><td colspan="6" class="slow-empty">no slow requests</td></tr>`;
+      `<tr><td colspan="7" class="slow-empty">no slow requests</td></tr>`;
     return;
   }
+
+  // Drop expanded keys whose row no longer renders so the set doesn't
+  // grow without bound across long sessions.
+  const renderedKeys = new Set();
 
   // Rank-within-group: for each row we remember which position it occupies
   // in its group (1 = slowest). All rows in a group carry a "k / N" badge
@@ -1104,7 +1455,8 @@ function renderSlowRequests() {
   // the 2nd-slowest of 6 stacked up on this URL".
   const groupRank = new Map();
 
-  tbody.innerHTML = display.slice(0, 200).map(e => {
+  const html = [];
+  for (const e of display.slice(0, 200)) {
     const url = slowUrlFor(e);
     const key = `${e.method || ""}|${url}`;
     const total = groupCounts.get(key) || 0;
@@ -1125,15 +1477,34 @@ function renderSlowRequests() {
       ? `<span class="method">${escapeHtml(e.method)}</span>`
       : `<span class="method-none">—</span>`;
     const urlEsc = escapeHtml(url);
-    return `<tr class="${e.state === 1 ? 'completed' : ''}">
+
+    const expandKey = slowKeyFor(e);
+    renderedKeys.add(expandKey);
+    const isOpen = state.slowExpanded.has(expandKey);
+    const chev = isOpen ? "\u25be" : "\u25b8";
+    const summaryClasses = ["summary"];
+    if (e.state === 1) summaryClasses.push("completed");
+    if (isOpen) summaryClasses.push("expanded");
+    html.push(`<tr class="${summaryClasses.join(' ')}" data-key="${escapeHtml(expandKey)}">
+      <td><button type="button" class="expand-toggle${isOpen ? ' expanded' : ''}" aria-expanded="${isOpen}" aria-label="${isOpen ? 'Collapse details' : 'Expand details'}">${chev}</button></td>
       <td>${fmtElapsedMs(e.duration_us)}</td>
       <td>${stateLabel}</td>
       <td>${e.pid} / ${e.thread_id || "—"}</td>
       <td>${method}</td>
       <td title="${urlEsc}">${badge}<span class="url">${urlEsc}</span></td>
       <td title="${escapeHtml(e.log_id || "")}">${escapeHtml(e.log_id || "")}</td>
-    </tr>`;
-  }).join("");
+    </tr>`);
+    if (isOpen) {
+      html.push(`<tr class="details" data-key="${escapeHtml(expandKey)}">
+        <td colspan="7">${renderSlowExpandPanel(e)}</td>
+      </tr>`);
+    }
+  }
+  tbody.innerHTML = html.join("");
+
+  for (const key of state.slowExpanded) {
+    if (!renderedKeys.has(key)) state.slowExpanded.delete(key);
+  }
 }
 
 // --- Capacity (per-slot) heatmap -----------------------------------------
@@ -1188,6 +1559,7 @@ function findSlowRuns(perSlotElapsedMs, stuckThreshMs, perSlotMaxMs) {
   const runs = [];
   for (const [slot, arr] of perSlotElapsedMs) {
     const maxArr = perSlotMaxMs ? perSlotMaxMs.get(slot) : null;
+    const claimed = new Set();
     let i = 0;
     while (i < arr.length) {
       if (arr[i] < stuckThreshMs) { i++; continue; }
@@ -1204,8 +1576,28 @@ function findSlowRuns(perSlotElapsedMs, stuckThreshMs, perSlotMaxMs) {
         lastIdx = j;
         j++;
       }
+      for (let k = i; k <= lastIdx; k++) claimed.add(k);
       runs.push({ slot, firstIdx: i, lastIdx });
       i = j;
+    }
+
+    // Second pass: catch requests that started and ended between
+    // ticks so no sampled `current_elapsed` ever crossed the
+    // threshold, but `slot_max_duration_ms` for the post-completion
+    // tick says a slow request finished in that interval. Without
+    // this, a 1.8 s request can be invisible at threshold = 1 s
+    // while showing at threshold = 0.5 s — exactly because the
+    // 0.5 s threshold catches the inter-tick `elapsed` and 1 s
+    // doesn't. Marked with viaMaxMs so the painter knows to derive
+    // bounds from the max-duration value (the cell's own elapsed
+    // belongs to a different / next request).
+    if (maxArr) {
+      for (let k = 0; k < maxArr.length; k++) {
+        if (claimed.has(k)) continue;
+        if ((maxArr[k] || 0) >= stuckThreshMs) {
+          runs.push({ slot, firstIdx: k, lastIdx: k, viaMaxMs: true });
+        }
+      }
     }
   }
   return runs;
@@ -1219,6 +1611,49 @@ function getCapacityStuckThreshMs() {
   if (!el) return 1000;
   const n = parseInt(el.value, 10);
   return n > 0 ? n : 1000;
+}
+
+// Tolerance (seconds) when matching a heatmap-detected slow run to a
+// slow-request entry. Reporter ticks aren't sample-aligned with
+// request boundaries, so the run's first cell can land up to one
+// sample period after the actual start_stamp_us. Cap the slack at
+// 2 s so spurious matches don't pull in unrelated requests on a
+// heavily-overloaded thread that's churning lots of slow requests.
+const SLOW_RUN_MATCH_TOLERANCE_S = 2.0;
+
+// Find the slow-request entry (from state.slowRequests storage) that
+// best corresponds to a heatmap-detected slow run, given the run's
+// pid + slot + visible time bounds. Returns the entry record or null
+// when no match is found (e.g. WSGISlowRequests not configured, or
+// the entry has been pruned from storage).
+//
+// Match criteria, in priority order:
+//   1. pid matches
+//   2. thread_id == slot + 1
+//   3. start_stamp_us falls within [runStartT - tol, runEndT + tol]
+//   4. when more than one entry passes 1-3, pick the one whose start
+//      time is nearest the run's leading edge — handles the case of
+//      multiple short slow requests rolling through the same slot in
+//      quick succession.
+function findSlowEntryForRun(pid, slot, runStartT, runEndT) {
+  const wantThread = slot + 1;
+  let best = null;
+  let bestDelta = Infinity;
+  const lo = runStartT - SLOW_RUN_MATCH_TOLERANCE_S;
+  const hi = runEndT + SLOW_RUN_MATCH_TOLERANCE_S;
+  for (const rec of state.slowRequests.values()) {
+    const e = rec.entry;
+    if (e.pid !== pid) continue;
+    if (e.thread_id !== wantThread) continue;
+    const startT = (e.start_stamp_us || 0) / 1e6;
+    if (startT < lo || startT > hi) continue;
+    const delta = Math.abs(startT - runStartT);
+    if (delta < bestDelta) {
+      best = e;
+      bestDelta = delta;
+    }
+  }
+  return best;
 }
 
 function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
@@ -1332,17 +1767,168 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
     perSlotMax.set(slot, arr.map(c => c.maxMs));
   }
   const runs = findSlowRuns(perSlotElapsed, stuckThreshMs, perSlotMax);
+  // Hit regions for slow-run hover/click. One per run, with a precise
+  // x range that may be narrower than the cells the run spans (so two
+  // back-to-back slow requests in adjacent ticks don't merge
+  // visually). Checked before the per-cell hit list in
+  // capacityHitTest() so hover/click on the red overlay routes here.
+  const runHits = [];
   for (const run of runs) {
     const slotCells = bySlot.get(run.slot);
     const first = slotCells[run.firstIdx];
     const last = slotCells[run.lastIdx];
     for (let k = run.firstIdx; k <= run.lastIdx; k++)
       slotCells[k].runLast = last;
-    // Solid red overlay replacing the normal heatmap colour for the
-    // full run so the stuck span reads at a glance.
+
+    // Pick precise actual-start / actual-end times for the run.
+    //
+    // 1. If a slow-request entry exists in storage, its start_stamp_us
+    //    is the authoritative start; (start + duration) is the end
+    //    when completed, otherwise (active) the run continues to the
+    //    rightmost cell edge.
+    //
+    // 2. Otherwise estimate from the slot arrays:
+    //      start ≈ firstCellTime − slot_current_elapsed_ms[first]/1000
+    //      end   ≈ firstCellTime + slot_max_duration_ms[completionCell]/1000
+    //              when the run's last cell looks like a completion tick
+    //              (max ≥ prev elapsed); otherwise end = lastCellTime.
+    //    Bounded by the sample period (~1 s typically) so usable for
+    //    painting boundaries even without WSGISlowRequests configured.
+
+    // Estimate the request's actual start/end from the slot
+    // signals alone. These bounds drive both the matcher query
+    // (so long requests still find their entry — see below) and
+    // the painter when no matching entry exists.
+    let estStartT, estEndT, estEndKnown;
+    if (run.viaMaxMs) {
+      // Single-cell run materialised by the max_ms second pass.
+      // The cell's own `elapsed` belongs to a different request
+      // (typically the next one in the slot), so we anchor off
+      // max_ms: the request finished within this tick's interval
+      // (≈ first.tickT) and lasted max_ms.
+      const maxMs = first.maxMs || 0;
+      estEndT = first.tickT;
+      estStartT = estEndT - (maxMs / 1000);
+      estEndKnown = true;
+    }
+    else {
+      const firstElapsedMs = first.elapsedMs || 0;
+      estStartT = first.tickT - (firstElapsedMs / 1000);
+      // Detect a completion cell at the trailing edge by checking
+      // whether slot_max_duration_ms grew. Same heuristic that
+      // findSlowRuns uses to decide whether to extend lastIdx.
+      const lastMaxMs = last.maxMs || 0;
+      const prevElapsedMs = run.lastIdx > run.firstIdx
+        ? slotCells[run.lastIdx - 1].elapsedMs : 0;
+      if (lastMaxMs >= prevElapsedMs && lastMaxMs > 0) {
+        estEndT = estStartT + (lastMaxMs / 1000);
+        if (estEndT < last.tickT) estEndT = last.tickT;
+        estEndKnown = true;
+      } else {
+        estEndT = last.tickT;
+        estEndKnown = false;
+      }
+    }
+
+    // Match against captured slow-request entries using the
+    // estimated bounds. Using cell-time bounds (first.tickT,
+    // last.tickT) instead would clamp the match window to the
+    // detected cell range, so a long request detected from a
+    // single late cell — or from the viaMaxMs second pass —
+    // would have a real entry in storage but the matcher would
+    // refuse it because start_stamp_us falls outside the window.
+    const entry = findSlowEntryForRun(p.pid, run.slot, estStartT, estEndT);
+
+    // If the matcher found a real record, use its precise bounds;
+    // otherwise fall back to the estimate.
+    let actualStartT, actualEndT, endIsKnown;
+    if (entry) {
+      actualStartT = (entry.start_stamp_us || 0) / 1e6;
+      if (entry.state === 1) {
+        actualEndT = actualStartT + (entry.duration_us || 0) / 1e6;
+        endIsKnown = true;
+      } else {
+        // Active request — extend the fill to the heatmap's "now"
+        // since the request is in progress right now. No end marker
+        // (endIsKnown stays false) so the right edge stays open.
+        actualEndT = now;
+        endIsKnown = false;
+      }
+    } else {
+      actualStartT = estStartT;
+      actualEndT = estEndT;
+      endIsKnown = estEndKnown;
+    }
+
+    // Translate to canvas x using the actual request bounds, then
+    // clamp to the heatmap drawing area (NOT to cellLeftX/cellRightX
+    // — clamping there is what made the fill snap to the first
+    // threshold-crossing cell instead of the real start, so lowering
+    // the stuck-threshold made the fill visibly jump left). With
+    // bounds tied to the actual request, threshold changes only
+    // affect which runs qualify, not where a qualifying run paints.
+    //
+    // drewLeft/drewRight: only draw the boundary marker when the
+    // edge is the *real* request boundary inside the visible
+    // window, not a window clamp or a still-active request.
+    const heatmapLeftX = padLeft;
+    const heatmapRightX = padLeft + plotW;
+    const rawStartX = xOf(actualStartT);
+    const rawEndX = xOf(actualEndT);
+    let startX = rawStartX;
+    let endX = rawEndX;
+    let drewLeft = rawStartX >= heatmapLeftX;
+    let drewRight = endIsKnown && rawEndX <= heatmapRightX;
+    if (startX < heatmapLeftX) startX = heatmapLeftX;
+    if (endX > heatmapRightX) endX = heatmapRightX;
+    if (endX - startX < 1) endX = startX + 1;
+
+    const y0 = first.y;
+    const yh = first.yEnd - first.y - 1;
+
+    // Solid red span for the precise duration of the run.
     ctx.fillStyle = "#ff0000";
-    ctx.fillRect(first.x0, first.y,
-                 last.x1 - first.x0, first.yEnd - first.y - 1);
+    ctx.fillRect(startX, y0, endX - startX, yh);
+
+    // 1 px border around the run so two back-to-back runs in the
+    // same cell row remain visually distinct, and the bounds of a
+    // single run read as a discrete event rather than a smear.
+    // Top/bottom always draw; left/right only when that edge is the
+    // request's actual boundary (not a window clamp). A muted
+    // darker-red picks the boundary out without harshness.
+    ctx.fillStyle = "#a01818";
+    const w = endX - startX;
+    ctx.fillRect(startX, y0, w, 1);                 // top
+    ctx.fillRect(startX, y0 + yh - 1, w, 1);        // bottom
+    if (drewLeft) ctx.fillRect(startX, y0, 1, yh);  // left
+    if (drewRight && w > 1)
+      ctx.fillRect(endX - 1, y0, 1, yh);            // right
+
+    // Top-left "captured" marker: a small white square indicating
+    // this run is backed by a real slow-request record (so the
+    // drill-down popup has actual data — URL, log_id, I/O — not
+    // just heuristic detection). Skipped on very narrow runs to
+    // avoid eating the bar itself.
+    if (entry && w >= 8) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(startX + 2, y0 + 2, 3, 3);
+    }
+
+    runHits.push({
+      kind: "run",
+      x0: startX,
+      x1: endX,
+      y: y0,
+      yEnd: y0 + yh,
+      pid: p.pid,
+      slot: run.slot,
+      runStartT: actualStartT,
+      runEndT: actualEndT,
+      durationMs: Math.max(0, (actualEndT - actualStartT) * 1000),
+      entry,
+      elapsedMs: (last.runLast || last).elapsedMs || 0,
+      maxMs: last.maxMs || 0,
+    });
   }
   const slowRunCount = runs.length;
 
@@ -1487,7 +2073,7 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
   ctx.textAlign = "right";
   ctx.fillText("now", padLeft + plotW - 2, padTop + plotH + 2);
 
-  canvas._hitTest = { cells, pid: p.pid };
+  canvas._hitTest = { cells, runs: runHits, pid: p.pid };
   return windowStats;
 }
 
@@ -1605,6 +2191,13 @@ function computeProcessStats(p, windowSec) {
   let nThreadsMax = 0;
   let windowSecSum = 0;
   let hasAny = false;
+  // I/O totals across the window. Each tick's *_total field is an
+  // interval count; summing then dividing by the summed sample_period
+  // yields a true rate even when telemetry interval drifts.
+  let inBytesSum = 0, inReadsSum = 0;
+  let outBytesSum = 0, outWritesSum = 0;
+  let ioPeriodSum = 0;
+  let ioSamples = 0;
   // Per-slot elapsed collected as {t, elapsed} pairs so we can sort by
   // time before handing off to findSlowRuns. Mirrors what the Capacity
   // heatmap does (it sorts its per-slot cell arrays by time), so the
@@ -1667,6 +2260,20 @@ function computeProcessStats(p, windowSec) {
         && f.request_threads_maximum > nThreadsMax)
       nThreadsMax = f.request_threads_maximum;
     windowSecSum += period;
+    if (typeof f.sample_period === "number" && f.sample_period > 0 &&
+        (typeof f.input_bytes_total === "number" ||
+         typeof f.output_bytes_total === "number")) {
+      ioPeriodSum += f.sample_period;
+      ioSamples++;
+      if (typeof f.input_bytes_total === "number")
+        inBytesSum += f.input_bytes_total;
+      if (typeof f.input_reads_total === "number")
+        inReadsSum += f.input_reads_total;
+      if (typeof f.output_bytes_total === "number")
+        outBytesSum += f.output_bytes_total;
+      if (typeof f.output_writes_total === "number")
+        outWritesSum += f.output_writes_total;
+    }
   }
   if (!hasAny) return null;
   const last = p.samples[p.samples.length - 1];
@@ -1703,6 +2310,15 @@ function computeProcessStats(p, windowSec) {
       ? (daeSum / Math.max(phaseSamples, 1)) * 1000 : 0,
     daemonMsPeak: daemonTimePeakS * 1000,
     requestRpm: windowSecSum > 0 ? (rcSum / windowSecSum) * 60 : 0,
+    hasIO: ioSamples > 0,
+    inBytesRate: ioPeriodSum > 0 ? inBytesSum / ioPeriodSum : 0,
+    outBytesRate: ioPeriodSum > 0 ? outBytesSum / ioPeriodSum : 0,
+    inReadsRate: ioPeriodSum > 0 ? inReadsSum / ioPeriodSum : 0,
+    outWritesRate: ioPeriodSum > 0 ? outWritesSum / ioPeriodSum : 0,
+    inBytesTotal: inBytesSum,
+    outBytesTotal: outBytesSum,
+    inReadsTotal: inReadsSum,
+    outWritesTotal: outWritesSum,
     slowRunCount: (() => {
       const sorted = new Map();
       for (const [slot, pairs] of perSlotPairs) {
@@ -1725,6 +2341,11 @@ function rollupAcross(pids, windowSec) {
   const groups = new Map();
   const stateCounts = { saturated: 0, cpuGilBound: 0, normal: 0 };
   let procCount = 0;
+  let inBytesRate = 0, outBytesRate = 0;
+  let inReadsRate = 0, outWritesRate = 0;
+  let inBytesTotal = 0, outBytesTotal = 0;
+  let inReadsTotal = 0, outWritesTotal = 0;
+  let hasIO = false;
   for (const pid of pids) {
     const p = state.processes.get(pid);
     if (!p) continue;
@@ -1748,12 +2369,26 @@ function rollupAcross(pids, windowSec) {
     if (verdict.saturated) stateCounts.saturated++;
     else if (verdict.cpuGilBound) stateCounts.cpuGilBound++;
     else stateCounts.normal++;
+    if (ps.hasIO) {
+      hasIO = true;
+      inBytesRate += ps.inBytesRate;
+      outBytesRate += ps.outBytesRate;
+      inReadsRate += ps.inReadsRate;
+      outWritesRate += ps.outWritesRate;
+      inBytesTotal += ps.inBytesTotal;
+      outBytesTotal += ps.outBytesTotal;
+      inReadsTotal += ps.inReadsTotal;
+      outWritesTotal += ps.outWritesTotal;
+    }
   }
   return {
     rpm, cpuCores, rssMb,
     respMs: respWeight > 0 ? respWeightedSum / respWeight : null,
     slowRunsTotal,
     hostnames, groups, stateCounts, procCount,
+    hasIO,
+    inBytesRate, outBytesRate, inReadsRate, outWritesRate,
+    inBytesTotal, outBytesTotal, inReadsTotal, outWritesTotal,
   };
 }
 
@@ -1907,6 +2542,14 @@ function capacityHitTest(canvas, clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   const x = clientX - rect.left;
   const y = clientY - rect.top;
+  // Slow-run hit regions are checked first so hover/click on the red
+  // overlay reaches the per-run handler. They're always narrower than
+  // (or equal to) the cell they sit on, so a fall-through to cells
+  // still works for the area outside any run.
+  const runs = canvas._hitTest.runs || [];
+  for (const r of runs) {
+    if (x >= r.x0 && x < r.x1 && y >= r.y && y < r.yEnd) return r;
+  }
   for (const c of canvas._hitTest.cells) {
     if (x >= c.x0 && x < c.x1 && y >= c.y && y < c.yEnd) return c;
   }
@@ -1936,18 +2579,37 @@ function refreshCapacityTooltip() {
     if (tooltipState.idx === null) tip.style.display = "none";
     return;
   }
-  // For a cell that's part of a merged stuck run, report the run's most
-  // recent sample so the elapsed / max figures track the live request
-  // regardless of which cell the mouse landed on.
-  const c = hovered.runLast || hovered;
-  tip.classList.toggle("slow", !!hovered.runLast);
-  tip.innerHTML =
-    `<div class="range">pid ${c.pid} &middot; slot ${c.slot + 1}</div>` +
-    `<div><span class="label">busy</span>${(c.frac * 100).toFixed(0)}%</div>` +
-    `<div><span class="label">cpu</span>${(c.cpuFrac * 100).toFixed(0)}%</div>` +
-    `<div><span class="label">count</span>${c.count}</div>` +
-    `<div><span class="label">elapsed</span>${c.elapsedMs ? c.elapsedMs + " ms" : "—"}</div>` +
-    `<div><span class="label">max</span>${c.maxMs} ms</div>`;
+  // Slow-run hits get a request-shaped tooltip with URL/method when
+  // the entry is known, plus a "click to drill down" hint. Cell hits
+  // keep the existing per-tick tooltip.
+  if (hovered.kind === "run") {
+    tip.classList.add("slow");
+    const e = hovered.entry;
+    const lines = [];
+    lines.push(`<div class="range">pid ${hovered.pid} &middot; slot ${hovered.slot + 1} &middot; slow request</div>`);
+    lines.push(`<div><span class="label">duration</span>${fmtElapsedMs(hovered.durationMs * 1000)}${e && e.state === 0 ? " (active)" : ""}</div>`);
+    if (e) {
+      const url = slowUrlFor(e);
+      const urlShort = url.length > 60 ? url.slice(0, 57) + "\u2026" : url;
+      lines.push(`<div><span class="label">${escapeHtml(e.method || "—")}</span>${escapeHtml(urlShort)}</div>`);
+      if (e.log_id)
+        lines.push(`<div><span class="label">log id</span>${escapeHtml(e.log_id)}</div>`);
+    } else {
+      lines.push(`<div><span class="label">no record</span>heuristic detection only</div>`);
+    }
+    lines.push(`<div><span class="label">click</span>open details</div>`);
+    tip.innerHTML = lines.join("");
+  } else {
+    const c = hovered.runLast || hovered;
+    tip.classList.toggle("slow", !!hovered.runLast);
+    tip.innerHTML =
+      `<div class="range">pid ${c.pid} &middot; slot ${c.slot + 1}</div>` +
+      `<div><span class="label">busy</span>${(c.frac * 100).toFixed(0)}%</div>` +
+      `<div><span class="label">cpu</span>${(c.cpuFrac * 100).toFixed(0)}%</div>` +
+      `<div><span class="label">count</span>${c.count}</div>` +
+      `<div><span class="label">elapsed</span>${c.elapsedMs ? c.elapsedMs + " ms" : "—"}</div>` +
+      `<div><span class="label">max</span>${c.maxMs} ms</div>`;
+  }
   tip.style.display = "block";
   const rect = tip.getBoundingClientRect();
   let left = capacityTooltipState.clientX + 12;
@@ -2219,15 +2881,18 @@ function drawChart(canvas, extract, opts = {}) {
   ctx.lineTo(w, h - 1);
   ctx.stroke();
 
-  // y-axis labels — adaptive precision
+  // y-axis labels — adaptive precision, or caller-supplied formatter
+  // (used by the byte-rate Throughput selections so the axis reads
+  // "12 KB/s" instead of "12000").
   const prec = opts.precision !== undefined ? opts.precision : autoPrecision(vmax);
+  const formatY = opts.formatY || (v => v.toFixed(prec));
   ctx.fillStyle = "#666";
   ctx.font = (10 * devicePixelRatio) + "px -apple-system, sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  ctx.fillText(vmax.toFixed(prec), 4, 4);
+  ctx.fillText(formatY(vmax), 4, 4);
   ctx.textBaseline = "bottom";
-  ctx.fillText((0).toFixed(prec), 4, h - 4);
+  ctx.fillText(formatY(0), 4, h - 4);
 
   const xOf = t => ((t - tmin) / (tmax - tmin)) * w;
   const yOf = v => h - (v / vmax) * h;
@@ -2257,9 +2922,17 @@ function setLive(id, text) {
 
 function redraw() {
   rebuildGroupFilter();
+  // Storage prune runs once per tick, before any consumer reads
+  // state.slowRequests, so display filters and click-through
+  // drill-down both see a consistent post-prune set.
+  pruneSlowStorage();
   renderProcs();
   renderSlowRequests();
   renderCapacity();
+  // Refresh the slow-request drill-down modal (if open) so an
+  // active request's duration and partial I/O numbers tick live
+  // alongside the rest of the UI.
+  if (isSlowDetailOpen()) renderSlowDetailModal();
   // Re-run the capacity hover hit-test after the heatmap redraws so
   // a stationary cursor keeps tracking whichever cell is under it —
   // essential in live mode where cells scroll left every tick, and
@@ -2268,9 +2941,15 @@ function redraw() {
   // histogram's refresh.
   reapplyCapacityHover();
 
-  const rps = drawChart(document.getElementById("c_rps"), f => f.request_throughput);
+  const tpField = (document.getElementById("throughput_field") || {}).value
+    || "requests";
+  const tpSpec = THROUGHPUT_SPECS[tpField] || THROUGHPUT_SPECS.requests;
+  const tpUnitEl = document.getElementById("throughput_unit");
+  if (tpUnitEl) tpUnitEl.textContent = tpSpec.unit;
+  const rps = drawChart(document.getElementById("c_rps"), tpSpec.extract,
+                        tpSpec.opts);
   setLive("live_rps",
-    `<span class="label">total</span>${fmt(rps.sum, 1)} <span class="label">mean</span>${fmt(rps.mean, 1)} rps`);
+    `<span class="label">total</span>${tpSpec.fmt(rps.sum)} <span class="label">mean</span>${tpSpec.fmt(rps.mean)} ${tpSpec.unitShort}`);
 
   const cap = drawChart(document.getElementById("c_cap"), f => f.capacity_utilization);
   setLive("live_cap", `<span class="label">mean</span>${fmt(cap.mean)}`);
@@ -2352,6 +3031,7 @@ document.getElementById("group_filter").addEventListener("change", redraw);
 document.getElementById("dist_window").addEventListener("change", redraw);
 document.getElementById("dist_field").addEventListener("change", redraw);
 document.getElementById("phase_field").addEventListener("change", redraw);
+document.getElementById("throughput_field").addEventListener("change", redraw);
 document.getElementById("slow_state_filter").addEventListener("change", redraw);
 document.getElementById("slow_per_url").addEventListener("change", redraw);
 document.getElementById("capacity_stuck_thresh").addEventListener("change", redraw);
@@ -2368,8 +3048,43 @@ document.getElementById("capacity_stuck_thresh").addEventListener("change", redr
   });
 })();
 
-// Hover wiring for capacity heatmaps — delegated so the handler
-// survives canvas elements being recreated across ticks.
+(function () {
+  const btn = document.getElementById("slow_pause");
+  btn.addEventListener("click", () => {
+    state.slowPaused = !state.slowPaused;
+    if (state.slowPaused) {
+      // Snapshot live entries by value so background TTL eviction
+      // doesn't mutate what the user is now staring at.
+      state.slowPausedSnapshot = [
+        ...state.slowRequests.values()
+      ].map(rec => ({ ...rec.entry }));
+    } else {
+      state.slowPausedSnapshot = null;
+    }
+    btn.classList.toggle("paused", state.slowPaused);
+    btn.textContent = state.slowPaused ? "Resume" : "Pause";
+    redraw();
+  });
+
+  // Click-to-expand on a summary row toggles the details row beneath
+  // it. Delegated on tbody so the handler survives every re-render —
+  // the table rebuilds its rows on each tick. Click on any cell of
+  // the summary row, or the chevron button itself, both work; touch
+  // displays get the same behaviour.
+  const tbody = document.getElementById("slow_tbody");
+  tbody.addEventListener("click", e => {
+    const tr = e.target.closest("tr.summary");
+    if (!tr) return;
+    const key = tr.dataset.key;
+    if (!key) return;
+    if (state.slowExpanded.has(key)) state.slowExpanded.delete(key);
+    else state.slowExpanded.add(key);
+    renderSlowRequests();
+  });
+})();
+
+// Hover + click wiring for capacity heatmaps — delegated so the
+// handlers survive canvas elements being recreated across ticks.
 (function () {
   const grid = document.getElementById("capacity_grid");
   grid.addEventListener("mousemove", e => {
@@ -2381,6 +3096,12 @@ document.getElementById("capacity_stuck_thresh").addEventListener("change", redr
     capacityTooltipState.cell = canvas
       ? capacityHitTest(canvas, e.clientX, e.clientY)
       : null;
+    // Cursor cue: only the slow-run hits are clickable, so reflect
+    // that with a pointer when over one and the default elsewhere.
+    if (canvas) {
+      const hit = capacityTooltipState.cell;
+      canvas.style.cursor = hit && hit.kind === "run" ? "pointer" : "";
+    }
     refreshCapacityTooltip();
   });
   grid.addEventListener("mouseleave", () => {
@@ -2388,6 +3109,13 @@ document.getElementById("capacity_stuck_thresh").addEventListener("change", redr
     capacityTooltipState.canvas = null;
     capacityTooltipState.cell = null;
     refreshCapacityTooltip();
+  });
+  grid.addEventListener("click", e => {
+    const canvas = e.target.closest("canvas");
+    if (!canvas) return;
+    const hit = capacityHitTest(canvas, e.clientX, e.clientY);
+    if (!hit || hit.kind !== "run") return;
+    openSlowDetailModal(hit);
   });
 })();
 for (const btn of document.querySelectorAll(".tab")) {
@@ -2983,6 +3711,16 @@ function buildCurrentStatsMarkdown() {
   lines.push("- slow-request runs (≥ "
     + getCapacityStuckThreshMs() + " ms, window " + LINE_WINDOW_SEC
     + " s): " + totals.slowRunsTotal);
+  if (totals.hasIO) {
+    lines.push("- body in: "
+      + humanBytes(Math.round(totals.inBytesRate)) + "/s ("
+      + humanBytes(totals.inBytesTotal) + " in window, "
+      + humanCount(totals.inReadsTotal) + " reads)");
+    lines.push("- body out: "
+      + humanBytes(Math.round(totals.outBytesRate)) + "/s ("
+      + humanBytes(totals.outBytesTotal) + " in window, "
+      + humanCount(totals.outWritesTotal) + " writes)");
+  }
   lines.push("");
 
   // --- Groups (only when filter = all AND > 1 group) --------------
@@ -3015,6 +3753,12 @@ function buildCurrentStatsMarkdown() {
         + gr.stateCounts.cpuGilBound + " CPU/GIL-bound, "
         + gr.stateCounts.normal + " normal");
       lines.push("- slow-request runs: " + gr.slowRunsTotal);
+      if (gr.hasIO) {
+        lines.push("- body in: "
+          + humanBytes(Math.round(gr.inBytesRate)) + "/s");
+        lines.push("- body out: "
+          + humanBytes(Math.round(gr.outBytesRate)) + "/s");
+      }
       lines.push("");
     }
   }
@@ -3048,6 +3792,20 @@ function buildCurrentStatsMarkdown() {
       lines.push(pm("queue time (mean)",  ps.queMs));
       lines.push(pm("daemon time (mean)", ps.daeMs));
       lines.push(pm("application time (mean)", ps.appMs));
+    }
+    if (ps.hasIO) {
+      const inAvg = avgChunk(ps.inBytesTotal, ps.inReadsTotal);
+      const outAvg = avgChunk(ps.outBytesTotal, ps.outWritesTotal);
+      const inExtra = inAvg !== null
+        ? `, ${humanCount(ps.inReadsTotal)} reads (\u2248 ${humanBytes(Math.round(inAvg))}/read)`
+        : "";
+      const outExtra = outAvg !== null
+        ? `, ${humanCount(ps.outWritesTotal)} writes (\u2248 ${humanBytes(Math.round(outAvg))}/write)`
+        : "";
+      lines.push("- body in: "
+        + humanBytes(Math.round(ps.inBytesRate)) + "/s" + inExtra);
+      lines.push("- body out: "
+        + humanBytes(Math.round(ps.outBytesRate)) + "/s" + outExtra);
     }
 
     const verdict = classifyCapacity(ps);
@@ -3223,6 +3981,108 @@ function buildCurrentStatsMarkdown() {
   copyBtn.addEventListener("click", () => copyText(HELP_MARKDOWN, copyBtn));
   copyStatsBtn.addEventListener("click",
     () => copyText(buildCurrentStatsMarkdown(), copyStatsBtn));
+})();
+
+// Drill-down modal for a slow request opened from the Capacity tab.
+// Reuses the same expand-panel renderer as the Slow Requests table
+// so the two surfaces stay consistent. When the run was detected
+// heuristically (no slow-request entry in storage) the modal still
+// opens but shows a "no record" notice — useful when
+// WSGISlowRequests isn't configured or the storage entry has been
+// pruned.
+// Captured at click time. slowKey lets the redraw tick re-resolve
+// the entry from state.slowRequests so an active request's duration
+// and partial I/O update live while the modal is open. heuristic
+// stays true when no entry was matched at click time, so the
+// "no record" notice persists even if a record arrives later.
+let _slowDetailHit = null;
+function openSlowDetailModal(hit) {
+  _slowDetailHit = {
+    pid: hit.pid,
+    slot: hit.slot,
+    runStartT: hit.runStartT,
+    runEndT: hit.runEndT,
+    durationMs: hit.durationMs,
+    slowKey: hit.entry ? slowKeyFor(hit.entry) : null,
+    heuristic: !hit.entry,
+  };
+  renderSlowDetailModal();
+  document.getElementById("slow_detail_backdrop").classList.add("open");
+}
+function closeSlowDetailModal() {
+  _slowDetailHit = null;
+  document.getElementById("slow_detail_backdrop").classList.remove("open");
+}
+function isSlowDetailOpen() {
+  return _slowDetailHit !== null;
+}
+function fmtUnixSec(t) {
+  try { return new Date(t * 1000).toISOString().replace("T", " ").replace("Z", "Z"); }
+  catch (_) { return String(t); }
+}
+function renderSlowDetailModal() {
+  const hit = _slowDetailHit;
+  if (!hit) return;
+  const titleEl = document.getElementById("slow_detail_title");
+  const bodyEl = document.getElementById("slow_detail_body");
+  // Re-resolve the entry from storage so an active request's
+  // duration/I/O figures update live while the modal stays open.
+  // Falls back to the captured run bounds for duration when no
+  // entry is available (heuristic mode, or storage drained).
+  let e = null;
+  if (hit.slowKey) {
+    const rec = state.slowRequests.get(hit.slowKey);
+    if (rec) e = rec.entry;
+  }
+  const liveDurationMs = e
+    ? (e.duration_us || 0) / 1000
+    : hit.durationMs;
+  const stateLabel = e
+    ? (e.state === 1
+       ? `<span class="pill completed">completed</span>`
+       : `<span class="pill active">active</span>`)
+    : `<span class="pill">heuristic</span>`;
+  titleEl.innerHTML = stateLabel +
+    `pid ${hit.pid} &middot; slot ${hit.slot + 1} &middot; ${fmtElapsedMs(liveDurationMs * 1000)}`;
+  const startStampUs = e ? (e.start_stamp_us || 0) : hit.runStartT * 1e6;
+  const endStampUs = e
+    ? (e.state === 0 ? null : startStampUs + (e.duration_us || 0))
+    : hit.runEndT * 1e6;
+  const meta =
+    `<div class="meta-row">` +
+    `started ${fmtUnixSec(startStampUs / 1e6)}` +
+    ` &middot; ended ${endStampUs === null ? "(active)" : fmtUnixSec(endStampUs / 1e6)}` +
+    `</div>`;
+  if (e) {
+    bodyEl.innerHTML = meta + renderSlowExpandPanel(e);
+  } else if (hit.slowKey) {
+    bodyEl.innerHTML = meta +
+      `<div class="heuristic-note">` +
+      `The slow-request record for this run has aged out of storage. ` +
+      `Increase <code>SLOW_STORAGE_TTL_MS</code> if you need longer ` +
+      `drill-down windows.` +
+      `</div>`;
+  } else {
+    bodyEl.innerHTML = meta +
+      `<div class="heuristic-note">` +
+      `No slow-request record matched this run. Either ` +
+      `<code>WSGISlowRequests</code> is not configured (so per-request ` +
+      `details aren't being captured), or the run was detected from ` +
+      `per-slot elapsed signals only.` +
+      `</div>`;
+  }
+}
+(function () {
+  const backdrop = document.getElementById("slow_detail_backdrop");
+  const closeBtn = document.getElementById("slow_detail_close");
+  closeBtn.addEventListener("click", closeSlowDetailModal);
+  backdrop.addEventListener("click", e => {
+    if (e.target === backdrop) closeSlowDetailModal();
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && backdrop.classList.contains("open"))
+      closeSlowDetailModal();
+  });
 })();
 </script>
 </body>

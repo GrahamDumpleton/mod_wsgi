@@ -116,6 +116,42 @@ def test_roundtrip_slot_capacity_arrays():
         assert got.fields[name] == expected, name
 
 
+def test_roundtrip_request_io_totals():
+    # Aggregate request I/O fields drained by wsgi_metrics_snapshot.
+    fields = {
+        "input_bytes_total": 12_345_678,
+        "input_reads_total": 4321,
+        "output_bytes_total": 987_654_321,
+        "output_writes_total": 56_789,
+    }
+    got = _roundtrip(fields)
+    for name, expected in fields.items():
+        assert got.fields[name] == expected, name
+
+
+def test_roundtrip_slow_request_io():
+    # Per-slow-request I/O fields populated from the slot at end-of-request
+    # (final, completed) or scanned from the still-live adapter (partial,
+    # active). Both share the same wire IDs.
+    fields = {
+        "slow_state": 1,
+        "slow_start_stamp_us": 1_700_000_000_000_000,
+        "slow_duration_us": 8_000_000,
+        "slow_thread_id": 7,
+        "slow_input_bytes": 4096,
+        "slow_input_reads": 1,
+        "slow_output_bytes": 120 * 1024 * 1024,
+        "slow_output_writes": 60_000,
+    }
+    s = Sample(version=1, kind=KIND_SLOW_REQUEST, pid=9090, seq=4,
+               stamp_us=1_700_000_000_000_000, fields=fields)
+    got = decode(encode(s))
+    assert got.fields["slow_input_bytes"] == 4096
+    assert got.fields["slow_input_reads"] == 1
+    assert got.fields["slow_output_bytes"] == 120 * 1024 * 1024
+    assert got.fields["slow_output_writes"] == 60_000
+
+
 def test_rejects_bad_magic():
     s = Sample(version=1, kind=KIND_REQUEST, pid=1, seq=1,
                stamp_us=0, fields={"request_count": 1})

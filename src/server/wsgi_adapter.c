@@ -2756,7 +2756,10 @@ event_error:
 
     wsgi_record_request_times(self->config->request_start,
                               self->config->queue_start, self->config->daemon_start,
-                              self->start_time, finish_time);
+                              self->start_time, finish_time,
+                              self->input ? self->input->bytes : 0,
+                              self->input ? self->input->reads : 0,
+                              self->output_length, self->output_writes);
 
     /*
      * If result indicates an internal server error, then

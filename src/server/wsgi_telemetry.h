@@ -107,6 +107,23 @@
  * distribution users actually experience rather than any single phase. */
 #define WSGI_METRICS_F_REQUEST_TIME_BUCKETS        94   /* i32 array */
 
+/* Per-interval request I/O totals. Drained from the same accumulator
+ * that wsgi_record_request_times() updates at end-of-request, so the
+ * counts cover requests that completed during this tick (in-flight
+ * requests do not contribute until they finish). */
+#define WSGI_METRICS_F_INPUT_BYTES_TOTAL           70   /* u64 */
+#define WSGI_METRICS_F_INPUT_READS_TOTAL           71   /* u64 */
+#define WSGI_METRICS_F_OUTPUT_BYTES_TOTAL          72   /* u64 */
+#define WSGI_METRICS_F_OUTPUT_WRITES_TOTAL         73   /* u64 */
+
+/* Per-slow-request I/O. Final values for completed records, partial
+ * (current snapshot) for active records — the active record's adapter
+ * may yet read more body or write more output before completion. */
+#define WSGI_METRICS_F_SLOW_INPUT_BYTES            95   /* u64 */
+#define WSGI_METRICS_F_SLOW_INPUT_READS            96   /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_BYTES           97   /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_WRITES          98   /* u64 */
+
 /* Per-slot capacity signals — one entry per worker thread, length =
  * request_threads_maximum. Field 64 (historically reserved as
  * "request_threads_buckets") now carries the same semantics under the
@@ -180,6 +197,14 @@ typedef struct {
     int32_t  application_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
     int32_t  request_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
 
+    /* Per-interval request I/O totals. Sum across requests that
+     * completed in this interval; in-flight requests contribute on
+     * the tick they finish. */
+    uint64_t input_bytes_total;
+    uint64_t input_reads_total;
+    uint64_t output_bytes_total;
+    uint64_t output_writes_total;
+
     /* Per-slot capacity signals. slot_count is the live length of each
      * array — normally the WSGI process's request_threads_maximum, or
      * WSGI_TELEMETRY_MAX_SLOTS if that is exceeded. */
@@ -216,6 +241,14 @@ typedef struct {
     uint64_t duration_us;        /* elapsed (active) or final (completed) */
     uint32_t thread_id;
     uint8_t  state;              /* 0=active, 1=completed */
+
+    /* Per-request I/O counters. Final at completion; partial snapshot
+     * for an active record (adapter may read/write more before end). */
+    uint64_t input_bytes;
+    uint64_t input_reads;
+    uint64_t output_bytes;
+    uint64_t output_writes;
+
     char     log_id[WSGI_SLOW_LOG_ID_MAX];
     char     method[WSGI_SLOW_METHOD_MAX];
     char     scheme[WSGI_SLOW_SCHEME_MAX];
