@@ -57,6 +57,20 @@
 #                             keep CPU constant). Set > 0 to also vary
 #                             per-request CPU under --distribution
 #                             lognormal.
+#       --body-size SPEC      Response body length. SPEC is either a
+#                             single value (e.g. 65536, 64K, 1M) or a
+#                             range sampled uniformly per request
+#                             (e.g. 1K-256K). Default 1024. Suffix K
+#                             is 1024, M is 1024*1024. Requires a
+#                             benchmark script that reads
+#                             BENCHMARK_BODY_SIZE.
+#       --body-chunks SPEC    How many pieces the body is yielded as.
+#                             SPEC is a single integer or range
+#                             (e.g. 1-128). Default 1. Equal to body
+#                             size yields one byte at a time. Clamped
+#                             to body size if larger. Requires a
+#                             benchmark script that reads
+#                             BENCHMARK_BODY_CHUNKS.
 #       --metrics             Capture mod_wsgi.request_metrics() around
 #                             the benchmark run and print a per-process
 #                             summary after bombardier. Requires a
@@ -78,6 +92,12 @@
 #                             threshold in seconds above which a still-
 #                             running request is reported. Requires
 #                             --metrics-service.
+#       --bombardier-timeout SEC
+#                             Per-request timeout passed to bombardier
+#                             as --timeout. Default 10s. Bombardier's
+#                             own default (2s) cancels long-tail
+#                             requests mid-stream, which the daemon
+#                             then reports as truncated slow records.
 #   -h, --help                Show this help
 
 set -e
@@ -102,10 +122,13 @@ CHUNKS=1
 DISTRIBUTION=fixed
 IO_SIGMA=0.6
 CPU_SIGMA=0.0
+BODY_SIZE=1024
+BODY_CHUNKS=1
 METRICS=0
 METRICS_SERVICE=
 METRICS_INTERVAL=1.0
 SLOW_REQUESTS=
+BOMBARDIER_TIMEOUT=10s
 
 usage() {
     awk '/^# Benchmark/,/^$/' "$0" | sed 's/^# \{0,1\}//'
@@ -130,10 +153,13 @@ while [ $# -gt 0 ]; do
         --distribution)   DISTRIBUTION="$2"; shift 2 ;;
         --io-sigma)       IO_SIGMA="$2"; shift 2 ;;
         --cpu-sigma)      CPU_SIGMA="$2"; shift 2 ;;
+        --body-size)      BODY_SIZE="$2"; shift 2 ;;
+        --body-chunks)    BODY_CHUNKS="$2"; shift 2 ;;
         --metrics)        METRICS=1; shift ;;
         --metrics-service)    METRICS_SERVICE="$2"; shift 2 ;;
         --metrics-interval)   METRICS_INTERVAL="$2"; shift 2 ;;
         --slow-requests)      SLOW_REQUESTS="$2"; shift 2 ;;
+        --bombardier-timeout) BOMBARDIER_TIMEOUT="$2"; shift 2 ;;
         -h|--help)        usage ;;
         *) echo "ERROR: Unknown option: $1" >&2; usage 1 ;;
     esac
@@ -274,12 +300,15 @@ echo "  threads        : $THREADS"
 echo "  concurrency    : $CONCURRENCY"
 echo "  rate           : ${RATE:-unlimited}"
 echo "  duration       : ${DURATION}s"
+echo "  client timeout : $BOMBARDIER_TIMEOUT"
 echo "  port           : $PORT"
 echo "  reloading      : $reloading_state"
 echo "  queue-timeout  : $queue_timeout_state"
 echo "  delay          : ${DELAY}s"
 echo "  cpu            : ${CPU}s"
 echo "  chunks         : $CHUNKS"
+echo "  body-size      : $BODY_SIZE"
+echo "  body-chunks    : $BODY_CHUNKS"
 if [ "$DISTRIBUTION" = "lognormal" ]; then
     echo "  distribution   : lognormal (io_sigma=${IO_SIGMA}, cpu_sigma=${CPU_SIGMA})"
 elif [ "$DISTRIBUTION" = "mixture" ]; then
@@ -287,7 +316,6 @@ elif [ "$DISTRIBUTION" = "mixture" ]; then
 else
     echo "  distribution   : fixed"
 fi
-echo "  metrics        : $metrics_state"
 echo "  metrics        : $metrics_state"
 echo ""
 
@@ -297,6 +325,8 @@ export BENCHMARK_CHUNKS="$CHUNKS"
 export BENCHMARK_DISTRIBUTION="$DISTRIBUTION"
 export BENCHMARK_IO_SIGMA="$IO_SIGMA"
 export BENCHMARK_CPU_SIGMA="$CPU_SIGMA"
+export BENCHMARK_BODY_SIZE="$BODY_SIZE"
+export BENCHMARK_BODY_CHUNKS="$BODY_CHUNKS"
 
 echo "Starting mod_wsgi-express..."
 "$MOD_WSGI_EXPRESS" setup-server "${setup_args[@]}" >/dev/null
@@ -326,7 +356,7 @@ while ! curl -s -f -o /dev/null "$url"; do
 done
 
 echo "Warming up..."
-bombardier -c "$CONCURRENCY" -d 2s -l "$url" >/dev/null
+bombardier -c "$CONCURRENCY" -d 2s -t "$BOMBARDIER_TIMEOUT" -l "$url" >/dev/null
 
 if [ "$METRICS" = "1" ]; then
     "$PYTHON" "$SCRIPT_DIR/benchmark_metrics.py" reset \
@@ -336,7 +366,7 @@ fi
 echo ""
 echo "Running benchmark..."
 echo ""
-bomb_args=(-c "$CONCURRENCY" -d "${DURATION}s" -l)
+bomb_args=(-c "$CONCURRENCY" -d "${DURATION}s" -t "$BOMBARDIER_TIMEOUT" -l)
 if [ -n "$RATE" ]; then
     bomb_args+=(-r "$RATE")
 fi

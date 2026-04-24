@@ -57,6 +57,19 @@
 # constant so the test host is not overwhelmed by pathological tail
 # samples; set > 0 to also vary CPU.
 #
+# BENCHMARK_BODY_SIZE env var sets the response body length. Accepts
+# a single value ("65536", "64K", "1M") or a range ("1K-256K") that
+# is sampled uniformly per request. Default "1024" preserves the
+# historical 1 KB body. Suffixes K and M are 1024 and 1024*1024.
+#
+# BENCHMARK_BODY_CHUNKS env var sets how many pieces the body is
+# yielded as. Accepts a single integer or a range ("1-128"). Default
+# 1 yields the whole body in one go. A value equal to the body size
+# yields one byte at a time, exposing byte-at-a-time generator
+# anti-patterns. If the value exceeds the body size it is clamped to
+# the size (one byte per chunk). Bytes are distributed evenly across
+# chunks; any remainder goes into the leading chunks one byte each.
+#
 # Paths served (all other paths fall through to the benchmark handler):
 #
 #   /                 Benchmark response (applies delay/cpu, returns body).
@@ -83,23 +96,49 @@ try:
 except ImportError:
     mod_wsgi = None
 
-_BODY = b"A" * 1024
-
-_HEADERS = [
-    ("Content-Type", "text/plain"),
-    ("Content-Length", str(len(_BODY))),
-    ("Cache-Control", "no-store"),
-    ("X-Frame-Options", "DENY"),
-    ("X-Content-Type-Options", "nosniff"),
-    ("X-Benchmark", "1"),
-]
-
 _DELAY = float(os.environ.get("BENCHMARK_DELAY", "0") or "0")
 _CPU = float(os.environ.get("BENCHMARK_CPU", "0") or "0")
 _CHUNKS = max(1, int(os.environ.get("BENCHMARK_CHUNKS", "1") or "1"))
 _DISTRIBUTION = (os.environ.get("BENCHMARK_DISTRIBUTION", "fixed") or "fixed").lower()
 _IO_SIGMA = max(0.0, float(os.environ.get("BENCHMARK_IO_SIGMA", "0.6") or "0.6"))
 _CPU_SIGMA = max(0.0, float(os.environ.get("BENCHMARK_CPU_SIGMA", "0.0") or "0.0"))
+
+
+def _parse_size(spec):
+    s = spec.strip().upper()
+    mult = 1
+    if s.endswith("K"):
+        mult, s = 1024, s[:-1]
+    elif s.endswith("M"):
+        mult, s = 1024 * 1024, s[:-1]
+    return max(0, int(float(s) * mult))
+
+
+def _parse_count(spec):
+    return max(1, int(spec.strip()))
+
+
+def _parse_range(spec, parse_one, default):
+    if not spec:
+        return (default, default)
+    spec = spec.strip()
+    if "-" in spec and not spec.startswith("-"):
+        lo, hi = spec.split("-", 1)
+        a, b = parse_one(lo), parse_one(hi)
+        return (min(a, b), max(a, b))
+    v = parse_one(spec)
+    return (v, v)
+
+
+_BODY_SIZE_LO, _BODY_SIZE_HI = _parse_range(
+    os.environ.get("BENCHMARK_BODY_SIZE", ""), _parse_size, 1024)
+_BODY_CHUNKS_LO, _BODY_CHUNKS_HI = _parse_range(
+    os.environ.get("BENCHMARK_BODY_CHUNKS", ""), _parse_count, 1)
+
+# Pre-allocated source buffer sized for the largest possible response.
+# Per-request chunks are slices of this buffer (all 'A' bytes), so we
+# avoid reallocating on every call.
+_MAX_BODY_BUFFER = b"A" * max(_BODY_SIZE_HI, 1)
 
 _PID = os.getpid()
 
@@ -179,6 +218,37 @@ else:
         return (_DELAY, _CPU)
 
 
+def _sample_body():
+    size = (_BODY_SIZE_LO if _BODY_SIZE_LO == _BODY_SIZE_HI
+            else random.randint(_BODY_SIZE_LO, _BODY_SIZE_HI))
+    chunks = (_BODY_CHUNKS_LO if _BODY_CHUNKS_LO == _BODY_CHUNKS_HI
+              else random.randint(_BODY_CHUNKS_LO, _BODY_CHUNKS_HI))
+    if size == 0:
+        return 0, 0
+    return size, min(chunks, size)
+
+
+def _build_chunks(size, chunks):
+    if size == 0:
+        return []
+    if chunks <= 1:
+        return [_MAX_BODY_BUFFER[:size]]
+    base, rem = divmod(size, chunks)
+    if rem == 0:
+        return [_MAX_BODY_BUFFER[:base]] * chunks
+    return ([_MAX_BODY_BUFFER[:base + 1]] * rem +
+            [_MAX_BODY_BUFFER[:base]] * (chunks - rem))
+
+
+_BASE_HEADERS = [
+    ("Content-Type", "text/plain"),
+    ("Cache-Control", "no-store"),
+    ("X-Frame-Options", "DENY"),
+    ("X-Content-Type-Options", "nosniff"),
+    ("X-Benchmark", "1"),
+]
+
+
 def _bench(environ, start_response):
     delay, cpu = _per_request_times()
     if delay > 0 and cpu > 0 and _CHUNKS > 1:
@@ -194,8 +264,11 @@ def _bench(environ, start_response):
         time.sleep(delay)
     elif cpu > 0:
         _cpu_burn(cpu)
-    start_response("200 OK", _HEADERS)
-    return [_BODY]
+    size, n_chunks = _sample_body()
+    body = _build_chunks(size, n_chunks)
+    headers = [("Content-Length", str(size))] + _BASE_HEADERS
+    start_response("200 OK", headers)
+    return body
 
 
 def _metrics_reset(environ, start_response):
