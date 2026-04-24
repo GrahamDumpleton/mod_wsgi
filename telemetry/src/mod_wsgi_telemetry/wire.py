@@ -50,111 +50,105 @@ T_I64 = 0x03
 T_BYTES = 0x04
 T_I32_ARRAY = 0x05
 
-# Field ID table. Mirrors wsgi_telemetry.h. Append-only; never reuse IDs.
-# When the C header is committed, a codegen script should replace this
-# block. Field IDs below are tentative pending the C-side implementation.
+# Field ID table. Mirrors wsgi_telemetry.h. Grouped in blocks of 10 by
+# concept; see the header for the authoritative groupings. IDs are kept
+# stable while the wire format is in development; once a release is cut,
+# they become append-only and renumbering is no longer permitted.
 FIELDS = {
-    # Identity
+    # 1-9: identity.
     1: "hostname",
     2: "process_group",
 
-    # Interval / counting
+    # 10-19: sampling and reporter configuration. sample_period is the
+    # measured wall-clock interval between snapshot calls (drifts with
+    # scheduling jitter); telemetry_interval is the configured
+    # WSGITelemetry directive (constant). slow_requests_threshold is
+    # the configured WSGISlowRequests value in seconds (0 when the
+    # directive is not configured).
     10: "sample_period",
-    11: "request_count",
-    12: "request_throughput",
-    13: "capacity_utilization",
+    11: "telemetry_interval",
+    12: "slow_requests_threshold",
 
-    # CPU (from wsgi_request_metrics — interval rates)
-    20: "cpu_user_utilization",
-    21: "cpu_system_utilization",
-    22: "cpu_utilization",
+    # 20-29: request rates and capacity for the interval.
+    20: "request_count",
+    21: "request_throughput",
+    22: "capacity_utilization",
 
-    # CPU (from wsgi_process_metrics — cumulative seconds)
-    25: "cpu_user_time",
-    26: "cpu_system_time",
-    27: "cpu_time",
+    # 30-39: CPU. *_utilization are interval rates from
+    # wsgi_request_metrics; *_time are cumulative seconds reserved for
+    # wsgi_process_metrics (not yet emitted on the wire).
+    30: "cpu_user_utilization",
+    31: "cpu_system_utilization",
+    32: "cpu_utilization",
+    35: "cpu_user_time",
+    36: "cpu_system_time",
+    37: "cpu_time",
 
-    # Memory
-    30: "memory_rss",
-    31: "memory_max_rss",
+    # 40-49: memory.
+    40: "memory_rss",
+    41: "memory_max_rss",
 
-    # Threads
-    40: "request_threads_maximum",
-    41: "request_threads_started",
-    42: "request_threads_active",
+    # 50-59: worker-thread counts.
+    50: "request_threads_maximum",
+    51: "request_threads_started",
+    52: "request_threads_active",
 
-    # Average per-request times (seconds)
-    50: "server_time",
-    51: "queue_time",
-    52: "daemon_time",
-    53: "application_time",
+    # 60-69: per-phase mean times for the interval (seconds).
+    60: "server_time",
+    61: "queue_time",
+    62: "daemon_time",
+    63: "application_time",
 
-    # Bucket arrays (16 slots, log2 from 5 ms)
-    60: "server_time_buckets",
-    61: "queue_time_buckets",
-    62: "daemon_time_buckets",
-    63: "application_time_buckets",
+    # 70-79: per-phase histograms (16 buckets, log2 from 5 ms).
+    # request_time = server + queue + daemon + application summed per
+    # request — what the caller actually experienced.
+    70: "server_time_buckets",
+    71: "queue_time_buckets",
+    72: "daemon_time_buckets",
+    73: "application_time_buckets",
+    74: "request_time_buckets",
 
-    # Per-slot capacity signals. One entry per worker thread, carried as
-    # i32 arrays whose length matches the emitting process's live
-    # request_threads_maximum. Field 64 was historically reserved as
-    # "request_threads_buckets"; its semantics (completed-request count
-    # per slot) are preserved under the clearer name slot_request_count.
-    64: "slot_request_count",
-    90: "slot_busy_time_us",
-    91: "slot_cpu_time_us",
-    92: "slot_current_elapsed_ms",
-    93: "slot_max_duration_ms",
-
-    # Total response time = server + queue + daemon + application, summed
-    # per request and bucketed. What the caller actually experienced,
-    # short of the external Apache accept-queue wait (not observable from
-    # within the worker).
-    94: "request_time_buckets",
-
-    # Per-interval request I/O totals. Drained from the adapter's
+    # 80-89: per-interval request I/O totals. Drained from the adapter's
     # InputObject.bytes/reads and AdapterObject.output_length/output_writes
     # at end-of-request; in-flight requests don't contribute until they
     # finish.
-    70: "input_bytes_total",
-    71: "input_reads_total",
-    72: "output_bytes_total",
-    73: "output_writes_total",
+    80: "input_bytes_total",
+    81: "input_reads_total",
+    82: "output_bytes_total",
+    83: "output_writes_total",
 
-    # Reporter / slow-request configuration, surfaced so the UI can
-    # explain matcher misses precisely and clamp/warn the heatmap
-    # stuck-threshold dropdown when set below the server's
-    # WSGISlowRequests value. slow_requests_threshold is 0 when the
-    # WSGISlowRequests directive is not configured.
-    74: "telemetry_interval",
-    75: "slow_requests_threshold",
+    # 90-99: per-slot capacity signals. One entry per worker thread,
+    # carried as i32 arrays whose length matches the emitting process's
+    # live request_threads_maximum.
+    90: "slot_request_count",
+    91: "slot_busy_time_us",
+    92: "slot_cpu_time_us",
+    93: "slot_current_elapsed_ms",
+    94: "slot_max_duration_ms",
 
-    # Slow-request fields (only present in KIND_SLOW_REQUEST datagrams).
-    # Identity (hostname, process_group) is keyed per pid from the
-    # accompanying KIND_REQUEST stream, so it is not repeated here.
-    80: "slow_state",            # 0 = active, 1 = completed
-    81: "slow_start_stamp_us",
-    82: "slow_duration_us",
-    83: "slow_thread_id",
-    84: "slow_log_id",
-    85: "slow_method",
-    86: "slow_scheme",
-    87: "slow_hostname",
-    88: "slow_script_name",
-    89: "slow_path_info",
-
-    # Per-slow-request I/O. Final values for completed records, partial
-    # for active records (adapter may yet read or write more).
-    95: "slow_input_bytes",
-    96: "slow_input_reads",
-    97: "slow_output_bytes",
-    98: "slow_output_writes",
-
-    # Per-slow-request CPU time (microseconds). Final at completion;
-    # zero for active records (getrusage on the worker thread can
-    # only be called from the request's own thread).
-    99: "slow_cpu_user_us",
-    100: "slow_cpu_system_us",
+    # 100-119: slow-request fields (only present in KIND_SLOW_REQUEST
+    # datagrams). Identity (hostname, process_group) is keyed per pid
+    # from the accompanying KIND_REQUEST stream, so it is not repeated
+    # here. 100-109: identification and timing. 110-113: per-request
+    # I/O — final at completion, partial snapshot for active records.
+    # 114-115: per-request CPU time (microseconds) — final at completion,
+    # zero for active records.
+    100: "slow_state",            # 0 = active, 1 = completed
+    101: "slow_start_stamp_us",
+    102: "slow_duration_us",
+    103: "slow_thread_id",
+    104: "slow_log_id",
+    105: "slow_method",
+    106: "slow_scheme",
+    107: "slow_hostname",
+    108: "slow_script_name",
+    109: "slow_path_info",
+    110: "slow_input_bytes",
+    111: "slow_input_reads",
+    112: "slow_output_bytes",
+    113: "slow_output_writes",
+    114: "slow_cpu_user_us",
+    115: "slow_cpu_system_us",
 }
 
 # Reverse map for encoders / tests.

@@ -154,14 +154,14 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
                        (uint16_t)strlen(s->process_group));
 
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SAMPLE_PERIOD, s->sample_period);
-    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_REQUEST_COUNT, s->request_count);
-    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_REQUEST_THROUGHPUT, s->request_throughput);
-    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_CAPACITY_UTILIZATION, s->capacity_utilization);
-
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_TELEMETRY_INTERVAL,
                          s->telemetry_interval);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_REQUESTS_THRESHOLD,
                          s->slow_requests_threshold);
+
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_REQUEST_COUNT, s->request_count);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_REQUEST_THROUGHPUT, s->request_throughput);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_CAPACITY_UTILIZATION, s->capacity_utilization);
 
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_CPU_USER_UTILIZATION, s->cpu_user_utilization);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_CPU_SYSTEM_UTILIZATION, s->cpu_system_utilization);

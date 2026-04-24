@@ -66,109 +66,113 @@
 #define WSGI_METRICS_T_BYTES     0x04
 #define WSGI_METRICS_T_I32_ARRAY 0x05
 
-/* Field IDs. Append-only; never reuse. Must stay in lockstep with the
- * Python decoder table in telemetry/src/mod_wsgi_telemetry/wire.py. */
+/* Field IDs. Grouped in blocks of 10 by concept. Must stay in lockstep
+ * with the Python decoder table in telemetry/src/mod_wsgi_telemetry/wire.py.
+ * IDs are kept stable while the wire format is in development; once a
+ * release is cut, IDs become append-only and renumbering is no longer
+ * permitted. */
 
-#define WSGI_METRICS_F_HOSTNAME                     1
-#define WSGI_METRICS_F_PROCESS_GROUP                2
+/* 1-9: Identity. */
+#define WSGI_METRICS_F_HOSTNAME                     1   /* bytes */
+#define WSGI_METRICS_F_PROCESS_GROUP                2   /* bytes */
 
-#define WSGI_METRICS_F_SAMPLE_PERIOD               10
-#define WSGI_METRICS_F_REQUEST_COUNT               11
-#define WSGI_METRICS_F_REQUEST_THROUGHPUT          12
-#define WSGI_METRICS_F_CAPACITY_UTILIZATION        13
+/* 10-19: Sampling and reporter configuration. sample_period is the
+ * measured wall-clock interval between two snapshot calls (drifts with
+ * scheduling jitter); telemetry_interval is the configured WSGITelemetry
+ * directive value (constant for the life of the process). They normally
+ * agree to within a few ms but can diverge under load.
+ * slow_requests_threshold is the configured WSGISlowRequests value in
+ * seconds (0 when the directive is not configured, in which case slow-
+ * request datagrams never fire). */
+#define WSGI_METRICS_F_SAMPLE_PERIOD               10   /* f64 */
+#define WSGI_METRICS_F_TELEMETRY_INTERVAL          11   /* f64 */
+#define WSGI_METRICS_F_SLOW_REQUESTS_THRESHOLD     12   /* f64 */
 
-#define WSGI_METRICS_F_CPU_USER_UTILIZATION        20
-#define WSGI_METRICS_F_CPU_SYSTEM_UTILIZATION      21
-#define WSGI_METRICS_F_CPU_UTILIZATION             22
+/* 20-29: Request rates and capacity for the interval. */
+#define WSGI_METRICS_F_REQUEST_COUNT               20   /* u64 */
+#define WSGI_METRICS_F_REQUEST_THROUGHPUT          21   /* f64 */
+#define WSGI_METRICS_F_CAPACITY_UTILIZATION        22   /* f64 */
 
-#define WSGI_METRICS_F_CPU_USER_TIME               25
-#define WSGI_METRICS_F_CPU_SYSTEM_TIME             26
-#define WSGI_METRICS_F_CPU_TIME                    27
+/* 30-39: CPU. *_utilization are interval rates from wsgi_request_metrics;
+ * *_time are cumulative seconds reserved for wsgi_process_metrics (not
+ * yet emitted on the wire). */
+#define WSGI_METRICS_F_CPU_USER_UTILIZATION        30   /* f64 */
+#define WSGI_METRICS_F_CPU_SYSTEM_UTILIZATION      31   /* f64 */
+#define WSGI_METRICS_F_CPU_UTILIZATION             32   /* f64 */
+#define WSGI_METRICS_F_CPU_USER_TIME               35   /* f64 */
+#define WSGI_METRICS_F_CPU_SYSTEM_TIME             36   /* f64 */
+#define WSGI_METRICS_F_CPU_TIME                    37   /* f64 */
 
-#define WSGI_METRICS_F_MEMORY_RSS                  30
-#define WSGI_METRICS_F_MEMORY_MAX_RSS              31
+/* 40-49: Memory. */
+#define WSGI_METRICS_F_MEMORY_RSS                  40   /* u64 */
+#define WSGI_METRICS_F_MEMORY_MAX_RSS              41   /* u64 */
 
-#define WSGI_METRICS_F_REQUEST_THREADS_MAXIMUM     40
-#define WSGI_METRICS_F_REQUEST_THREADS_STARTED     41
-#define WSGI_METRICS_F_REQUEST_THREADS_ACTIVE      42
+/* 50-59: Worker-thread counts. */
+#define WSGI_METRICS_F_REQUEST_THREADS_MAXIMUM     50   /* u64 */
+#define WSGI_METRICS_F_REQUEST_THREADS_STARTED     51   /* u64 */
+#define WSGI_METRICS_F_REQUEST_THREADS_ACTIVE      52   /* u64 */
 
-#define WSGI_METRICS_F_SERVER_TIME                 50
-#define WSGI_METRICS_F_QUEUE_TIME                  51
-#define WSGI_METRICS_F_DAEMON_TIME                 52
-#define WSGI_METRICS_F_APPLICATION_TIME            53
+/* 60-69: Per-phase mean times for the interval (seconds). */
+#define WSGI_METRICS_F_SERVER_TIME                 60   /* f64 */
+#define WSGI_METRICS_F_QUEUE_TIME                  61   /* f64 */
+#define WSGI_METRICS_F_DAEMON_TIME                 62   /* f64 */
+#define WSGI_METRICS_F_APPLICATION_TIME            63   /* f64 */
 
-#define WSGI_METRICS_F_SERVER_TIME_BUCKETS         60
-#define WSGI_METRICS_F_QUEUE_TIME_BUCKETS          61
-#define WSGI_METRICS_F_DAEMON_TIME_BUCKETS         62
-#define WSGI_METRICS_F_APPLICATION_TIME_BUCKETS    63
+/* 70-79: Per-phase histograms (16 buckets, log2 from 5 ms).
+ * request_time = server + queue + daemon + application summed per
+ * request at end-of-request — what the caller actually experienced. */
+#define WSGI_METRICS_F_SERVER_TIME_BUCKETS         70   /* i32 array */
+#define WSGI_METRICS_F_QUEUE_TIME_BUCKETS          71   /* i32 array */
+#define WSGI_METRICS_F_DAEMON_TIME_BUCKETS         72   /* i32 array */
+#define WSGI_METRICS_F_APPLICATION_TIME_BUCKETS    73   /* i32 array */
+#define WSGI_METRICS_F_REQUEST_TIME_BUCKETS        74   /* i32 array */
 
-/* Total response time = server + queue + daemon + application, summed
- * per request at end-of-request and bucketed. Lets the UI show the
- * distribution users actually experience rather than any single phase. */
-#define WSGI_METRICS_F_REQUEST_TIME_BUCKETS        94   /* i32 array */
+/* 80-89: Per-interval request I/O totals. Drained from the same
+ * accumulator that wsgi_record_request_times() updates at end-of-
+ * request, so the counts cover requests that completed during this
+ * tick (in-flight requests do not contribute until they finish). */
+#define WSGI_METRICS_F_INPUT_BYTES_TOTAL           80   /* u64 */
+#define WSGI_METRICS_F_INPUT_READS_TOTAL           81   /* u64 */
+#define WSGI_METRICS_F_OUTPUT_BYTES_TOTAL          82   /* u64 */
+#define WSGI_METRICS_F_OUTPUT_WRITES_TOTAL         83   /* u64 */
 
-/* Per-interval request I/O totals. Drained from the same accumulator
- * that wsgi_record_request_times() updates at end-of-request, so the
- * counts cover requests that completed during this tick (in-flight
- * requests do not contribute until they finish). */
-#define WSGI_METRICS_F_INPUT_BYTES_TOTAL           70   /* u64 */
-#define WSGI_METRICS_F_INPUT_READS_TOTAL           71   /* u64 */
-#define WSGI_METRICS_F_OUTPUT_BYTES_TOTAL          72   /* u64 */
-#define WSGI_METRICS_F_OUTPUT_WRITES_TOTAL         73   /* u64 */
+/* 90-99: Per-slot capacity signals. One entry per worker thread; array
+ * length matches the emitting process's live request_threads_maximum. */
+#define WSGI_METRICS_F_SLOT_REQUEST_COUNT          90   /* i32 array */
+#define WSGI_METRICS_F_SLOT_BUSY_TIME_US           91   /* i32 array */
+#define WSGI_METRICS_F_SLOT_CPU_TIME_US            92   /* i32 array */
+#define WSGI_METRICS_F_SLOT_CURRENT_ELAPSED_MS     93   /* i32 array */
+#define WSGI_METRICS_F_SLOT_MAX_DURATION_MS        94   /* i32 array */
 
-/* Reporter and slow-request configuration, surfaced so the UI can
- * explain matcher misses precisely (e.g. "WSGISlowRequests is 2 s
- * and this run is 1.4 s — no record was ever emitted") and so the
- * heatmap stuck-threshold control can warn when set below the
- * server's WSGISlowRequests value. Telemetry interval is the
- * reporter's tick period in seconds; slow-request threshold is the
- * configured WSGISlowRequests value (0 when the directive is not
- * configured, so slow-request datagrams never fire). */
-#define WSGI_METRICS_F_TELEMETRY_INTERVAL          74   /* f64 */
-#define WSGI_METRICS_F_SLOW_REQUESTS_THRESHOLD     75   /* f64 */
-
-/* Per-slow-request I/O. Final values for completed records, partial
- * (current snapshot) for active records — the active record's adapter
- * may yet read more body or write more output before completion. */
-#define WSGI_METRICS_F_SLOW_INPUT_BYTES            95   /* u64 */
-#define WSGI_METRICS_F_SLOW_INPUT_READS            96   /* u64 */
-#define WSGI_METRICS_F_SLOW_OUTPUT_BYTES           97   /* u64 */
-#define WSGI_METRICS_F_SLOW_OUTPUT_WRITES          98   /* u64 */
-
-/* Per-slow-request CPU time. Computed at end-of-request from the
- * worker thread's getrusage delta, so only completed records carry
- * non-zero values — getrusage(RUSAGE_THREAD) only works from the
- * request's own thread, and the active-record snapshot runs from
- * the telemetry reporter thread. UI shows (user+system) / wall as
- * a CPU-bound vs I/O-bound indicator. Values in microseconds. */
-#define WSGI_METRICS_F_SLOW_CPU_USER_US            99   /* u64 */
-#define WSGI_METRICS_F_SLOW_CPU_SYSTEM_US         100   /* u64 */
-
-/* Per-slot capacity signals — one entry per worker thread, length =
- * request_threads_maximum. Field 64 (historically reserved as
- * "request_threads_buckets") now carries the same semantics under the
- * clearer name slot_request_count: per-slot completed-request count
- * for the interval. */
-#define WSGI_METRICS_F_SLOT_REQUEST_COUNT          64   /* i32 array */
-#define WSGI_METRICS_F_SLOT_BUSY_TIME_US           90   /* i32 array */
-#define WSGI_METRICS_F_SLOT_CPU_TIME_US            91   /* i32 array */
-#define WSGI_METRICS_F_SLOT_CURRENT_ELAPSED_MS     92   /* i32 array */
-#define WSGI_METRICS_F_SLOT_MAX_DURATION_MS        93   /* i32 array */
-
-/* Slow-request fields. Only present in WSGI_METRICS_KIND_SLOW_REQUEST
- * datagrams; identity (hostname, process_group) is looked up via the
- * accompanying KIND_REQUEST stream on the ingester. */
-
-#define WSGI_METRICS_F_SLOW_STATE                  80   /* u64: 0=active, 1=completed */
-#define WSGI_METRICS_F_SLOW_START_STAMP_US         81   /* u64 */
-#define WSGI_METRICS_F_SLOW_DURATION_US            82   /* u64 */
-#define WSGI_METRICS_F_SLOW_THREAD_ID              83   /* u64 */
-#define WSGI_METRICS_F_SLOW_LOG_ID                 84   /* bytes */
-#define WSGI_METRICS_F_SLOW_METHOD                 85   /* bytes */
-#define WSGI_METRICS_F_SLOW_SCHEME                 86   /* bytes */
-#define WSGI_METRICS_F_SLOW_HOSTNAME               87   /* bytes */
-#define WSGI_METRICS_F_SLOW_SCRIPT_NAME            88   /* bytes */
-#define WSGI_METRICS_F_SLOW_PATH_INFO              89   /* bytes */
+/* 100-119: Slow-request fields. Only present in
+ * WSGI_METRICS_KIND_SLOW_REQUEST datagrams; identity (hostname,
+ * process_group) is looked up via the accompanying KIND_REQUEST stream
+ * on the ingester.
+ *
+ * 100-109: identification and timing.
+ * 110-113: per-request I/O — final at completion, partial snapshot for
+ *          active records (the adapter may yet read or write more).
+ * 114-115: per-request CPU time (microseconds), computed at end-of-
+ *          request from the worker thread's getrusage delta. Active
+ *          records carry zero — getrusage(RUSAGE_THREAD) only works
+ *          from the request's own thread, but the active-record
+ *          snapshot runs from the telemetry reporter thread. */
+#define WSGI_METRICS_F_SLOW_STATE                 100   /* u64: 0=active, 1=completed */
+#define WSGI_METRICS_F_SLOW_START_STAMP_US        101   /* u64 */
+#define WSGI_METRICS_F_SLOW_DURATION_US           102   /* u64 */
+#define WSGI_METRICS_F_SLOW_THREAD_ID             103   /* u64 */
+#define WSGI_METRICS_F_SLOW_LOG_ID                104   /* bytes */
+#define WSGI_METRICS_F_SLOW_METHOD                105   /* bytes */
+#define WSGI_METRICS_F_SLOW_SCHEME                106   /* bytes */
+#define WSGI_METRICS_F_SLOW_HOSTNAME              107   /* bytes */
+#define WSGI_METRICS_F_SLOW_SCRIPT_NAME           108   /* bytes */
+#define WSGI_METRICS_F_SLOW_PATH_INFO             109   /* bytes */
+#define WSGI_METRICS_F_SLOW_INPUT_BYTES           110   /* u64 */
+#define WSGI_METRICS_F_SLOW_INPUT_READS           111   /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_BYTES          112   /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_WRITES         113   /* u64 */
+#define WSGI_METRICS_F_SLOW_CPU_USER_US           114   /* u64 */
+#define WSGI_METRICS_F_SLOW_CPU_SYSTEM_US         115   /* u64 */
 
 /* ------------------------------------------------------------------------- */
 
