@@ -55,9 +55,16 @@ T_I32_ARRAY = 0x05
 # stable while the wire format is in development; once a release is cut,
 # they become append-only and renumbering is no longer permitted.
 FIELDS = {
-    # 1-9: identity.
-    1: "hostname",
-    2: "process_group",
+    # 1-9: identity. Build/runtime versions come first so a consumer
+    # that wants to print a "who is this" banner can reach them without
+    # scanning the whole TLV record. All six fields are static for the
+    # life of a process.
+    1: "mod_wsgi_version",
+    2: "python_version",
+    3: "apache_version",
+    4: "mpm_name",
+    5: "hostname",
+    6: "process_group",
 
     # 10-19: sampling and reporter configuration. sample_period is the
     # measured wall-clock interval between snapshot calls (drifts with

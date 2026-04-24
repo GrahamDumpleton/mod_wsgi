@@ -36,6 +36,7 @@
 #include "wsgi_daemon.h"
 #include "wsgi_metrics.h"
 #include "wsgi_telemetry.h"
+#include "wsgi_version.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -146,6 +147,21 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
 
     wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_REQUEST, pid, seq, stamp_us);
 
+    if (s->mod_wsgi_version[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_MOD_WSGI_VERSION,
+                       s->mod_wsgi_version,
+                       (uint16_t)strlen(s->mod_wsgi_version));
+    if (s->python_version[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_PYTHON_VERSION,
+                       s->python_version,
+                       (uint16_t)strlen(s->python_version));
+    if (s->apache_version[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_APACHE_VERSION,
+                       s->apache_version,
+                       (uint16_t)strlen(s->apache_version));
+    if (s->mpm_name[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_MPM_NAME, s->mpm_name,
+                       (uint16_t)strlen(s->mpm_name));
     if (s->hostname[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_HOSTNAME, s->hostname,
                        (uint16_t)strlen(s->hostname));
@@ -287,6 +303,10 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
     uint32_t pid = (uint32_t)getpid();
     char hostname[128];
     const char *group_name = "";
+    char mod_wsgi_version[32];
+    char python_version[64];
+    char apache_version[64];
+    char mpm_name[32];
     apr_interval_time_t sleep_us;
 
     if (wsgi_telemetry_open(wsgi_telemetry_target, &fd, &addr, &addrlen) != 0) {
@@ -305,6 +325,52 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
         wsgi_daemon_process->group->name)
         group_name = wsgi_daemon_process->group->name;
 #endif
+
+    /* Build / runtime identity. Populated once; these strings are
+     * static for the life of the process and are copied into each
+     * sample below. Empty values are tolerated — the encoder skips
+     * fields with a leading nul so an ingester never sees an empty
+     * string where it expects a real version. */
+    strncpy(mod_wsgi_version, MOD_WSGI_VERSION_STRING,
+            sizeof(mod_wsgi_version) - 1);
+    mod_wsgi_version[sizeof(mod_wsgi_version) - 1] = '\0';
+
+    {
+        /* Py_GetVersion() returns "3.14.0 (main, Jan 15 2026, ...)";
+         * trim to the leading version token so the banner stays
+         * compact. Same approach as wsgi_interp.c uses for the
+         * SERVER_SOFTWARE construction. */
+        const char *pv = Py_GetVersion();
+        size_t i = 0;
+        if (pv) {
+            while (i < sizeof(python_version) - 1 && pv[i] &&
+                   pv[i] != ' ' && pv[i] != '\t') {
+                python_version[i] = pv[i];
+                i++;
+            }
+        }
+        python_version[i] = '\0';
+    }
+
+    /* AP_SERVER_BASEVERSION is the compile-time Apache version
+     * ("Apache/2.4.62") and isn't subject to the ServerTokens
+     * directive — which we want here: telemetry needs the actual
+     * binary version regardless of whether the admin has redacted
+     * the public banner. */
+    strncpy(apache_version, AP_SERVER_BASEVERSION,
+            sizeof(apache_version) - 1);
+    apache_version[sizeof(apache_version) - 1] = '\0';
+
+    {
+        const char *mpm = ap_show_mpm();
+        if (mpm) {
+            strncpy(mpm_name, mpm, sizeof(mpm_name) - 1);
+            mpm_name[sizeof(mpm_name) - 1] = '\0';
+        }
+        else {
+            mpm_name[0] = '\0';
+        }
+    }
 
     sleep_us = (apr_interval_time_t)(wsgi_telemetry_interval * APR_USEC_PER_SEC);
     if (sleep_us < 100000)   /* floor at 100ms */
@@ -337,6 +403,17 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
         strncpy(sample.process_group, group_name,
                 sizeof(sample.process_group) - 1);
         sample.process_group[sizeof(sample.process_group) - 1] = '\0';
+        strncpy(sample.mod_wsgi_version, mod_wsgi_version,
+                sizeof(sample.mod_wsgi_version) - 1);
+        sample.mod_wsgi_version[sizeof(sample.mod_wsgi_version) - 1] = '\0';
+        strncpy(sample.python_version, python_version,
+                sizeof(sample.python_version) - 1);
+        sample.python_version[sizeof(sample.python_version) - 1] = '\0';
+        strncpy(sample.apache_version, apache_version,
+                sizeof(sample.apache_version) - 1);
+        sample.apache_version[sizeof(sample.apache_version) - 1] = '\0';
+        strncpy(sample.mpm_name, mpm_name, sizeof(sample.mpm_name) - 1);
+        sample.mpm_name[sizeof(sample.mpm_name) - 1] = '\0';
         sample.telemetry_interval = wsgi_telemetry_interval;
         sample.slow_requests_threshold =
             (double)wsgi_slow_threshold_us / 1.0e6;

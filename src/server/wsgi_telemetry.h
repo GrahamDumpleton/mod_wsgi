@@ -72,9 +72,16 @@
  * release is cut, IDs become append-only and renumbering is no longer
  * permitted. */
 
-/* 1-9: Identity. */
-#define WSGI_METRICS_F_HOSTNAME                     1   /* bytes */
-#define WSGI_METRICS_F_PROCESS_GROUP                2   /* bytes */
+/* 1-9: Identity. Build/runtime versions come first so a consumer that
+ * wants to print a "who is this" banner can reach them without scanning
+ * the whole TLV record. All six fields are static for the life of a
+ * process and only need to be emitted on the first sample after start. */
+#define WSGI_METRICS_F_MOD_WSGI_VERSION             1   /* bytes — e.g. "6.0.0" */
+#define WSGI_METRICS_F_PYTHON_VERSION               2   /* bytes — e.g. "3.14.0" */
+#define WSGI_METRICS_F_APACHE_VERSION               3   /* bytes — e.g. "Apache/2.4.62" */
+#define WSGI_METRICS_F_MPM_NAME                     4   /* bytes — e.g. "event", "prefork" */
+#define WSGI_METRICS_F_HOSTNAME                     5   /* bytes */
+#define WSGI_METRICS_F_PROCESS_GROUP                6   /* bytes */
 
 /* 10-19: Sampling and reporter configuration. sample_period is the
  * measured wall-clock interval between two snapshot calls (drifts with
@@ -193,6 +200,16 @@
 typedef struct {
     char     hostname[128];
     char     process_group[64];
+
+    /* Build / runtime identity. Populated once at reporter thread
+     * start and copied into the sample every tick; static for the
+     * life of the process. Emitted as bytes fields 1-4. Empty strings
+     * are skipped by the encoder so older ingesters tolerate a
+     * mod_wsgi that couldn't resolve, say, the MPM name. */
+    char     mod_wsgi_version[32];
+    char     python_version[64];
+    char     apache_version[64];
+    char     mpm_name[32];
 
     double   sample_period;
     uint64_t request_count;

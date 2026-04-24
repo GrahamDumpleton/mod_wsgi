@@ -64,6 +64,15 @@ class ProcessState:
     pid: int
     hostname: str = ""
     process_group: str = ""
+    # Build/runtime identity. Emitted by the daemon once at process
+    # start (or on every sample; the ingester doesn't care) and
+    # latched here so a mid-stream client reconnect still sees the
+    # "who is this" banner via the snapshot payload, even if the
+    # rolling sample window no longer carries the identity TLVs.
+    mod_wsgi_version: str = ""
+    python_version: str = ""
+    apache_version: str = ""
+    mpm_name: str = ""
     # Telemetry reporter's tick interval in seconds, as reported by the
     # process itself on each KIND_REQUEST sample. Used to size the
     # slow-request TTLs — a reporter ticking every 10 s needs a longer
@@ -207,12 +216,18 @@ class Ingester:
         state.last_seen = time.monotonic()
         state.samples.append(sample)
 
-        hostname = sample.fields.get("hostname")
-        if isinstance(hostname, bytes):
-            state.hostname = hostname.decode("utf-8", errors="replace")
-        group = sample.fields.get("process_group")
-        if isinstance(group, bytes):
-            state.process_group = group.decode("utf-8", errors="replace")
+        def _latch_str(field_name: str, attr: str) -> None:
+            v = sample.fields.get(field_name)
+            if isinstance(v, bytes):
+                setattr(state, attr, v.decode("utf-8", errors="replace"))
+
+        _latch_str("hostname", "hostname")
+        _latch_str("process_group", "process_group")
+        _latch_str("mod_wsgi_version", "mod_wsgi_version")
+        _latch_str("python_version", "python_version")
+        _latch_str("apache_version", "apache_version")
+        _latch_str("mpm_name", "mpm_name")
+
         sp = sample.fields.get("sample_period")
         if isinstance(sp, (int, float)) and sp > 0:
             state.sample_period = float(sp)
@@ -381,6 +396,10 @@ class Ingester:
                     "pid": st.pid,
                     "hostname": st.hostname,
                     "process_group": st.process_group,
+                    "mod_wsgi_version": st.mod_wsgi_version,
+                    "python_version": st.python_version,
+                    "apache_version": st.apache_version,
+                    "mpm_name": st.mpm_name,
                     "last_seq": st.last_seq,
                     "drops": st.drops,
                     "samples": [self._sample_to_dict(s) for s in st.samples],

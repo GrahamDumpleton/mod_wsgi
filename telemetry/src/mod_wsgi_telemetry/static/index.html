@@ -988,17 +988,49 @@ function rebuildGroupFilter() {
   select.value = wanted.includes(current) ? current : "*";
 }
 
-function addSample(s) {
-  let p = state.processes.get(s.pid);
+// Static identity fields latched onto each ProcessState. These are
+// set once by the daemon (or resent on every sample) and kept until
+// either the process ages out or the server restarts the socket.
+// Hostname/process_group are display identity; the four version /
+// runtime fields feed the "Environment" banner on the Help panel's
+// Copy-current-stats output.
+const PROCESS_IDENTITY_FIELDS = [
+  "hostname",
+  "process_group",
+  "mod_wsgi_version",
+  "python_version",
+  "apache_version",
+  "mpm_name",
+];
+
+function ensureProcess(pid) {
+  let p = state.processes.get(pid);
   if (!p) {
-    p = { color: colorFor(s.pid), samples: [], hostname: "", process_group: "" };
-    state.processes.set(s.pid, p);
+    p = { color: colorFor(pid), samples: [] };
+    for (const k of PROCESS_IDENTITY_FIELDS) p[k] = "";
+    state.processes.set(pid, p);
   }
-  p.hostname = s.fields.hostname || p.hostname;
-  p.process_group = s.fields.process_group || p.process_group;
+  return p;
+}
+
+function addSample(s) {
+  const p = ensureProcess(s.pid);
+  for (const k of PROCESS_IDENTITY_FIELDS) {
+    if (s.fields[k]) p[k] = s.fields[k];
+  }
   p.samples.push({ t: s.stamp_us / 1e6, fields: s.fields, seq: s.seq });
   const cutoff = (s.stamp_us / 1e6) - SAMPLE_RETENTION_SEC;
   while (p.samples.length && p.samples[0].t < cutoff) p.samples.shift();
+}
+
+// Seed a process from a snapshot-level payload. The ingester latches
+// identity fields on ProcessState so a mid-stream reconnect still gets
+// the banner even if the in-window samples no longer carry the TLVs.
+function seedProcessFromSnapshot(entry) {
+  const p = ensureProcess(entry.pid);
+  for (const k of PROCESS_IDENTITY_FIELDS) {
+    if (entry[k]) p[k] = entry[k];
+  }
 }
 
 // Format a cpu-utilization value as "N.N cores" for multi-core-ish
@@ -2643,7 +2675,7 @@ function classifyCapacity(stats) {
   if (gilRatioTrigger) {
     const ratio = stats.cpuSlotMean / Math.max(stats.busyMean, 0.01);
     out.gilReasons.push(
-      `slot cpu/busy ${ratio < 0.01 ? "~0" : ratio.toFixed(2)}`);
+      `slot cpu / slot busy ${ratio < 0.01 ? "~0" : ratio.toFixed(2)}`);
   }
   if (gilDaemonTrigger)
     out.gilReasons.push(`daemon handoff ${stats.daemonMsMean.toFixed(0)} ms`);
@@ -3197,6 +3229,7 @@ function connect() {
       state.processes.clear();
       state.slowRequests.clear();
       for (const p of msg.processes) {
+        seedProcessFromSnapshot(p);
         for (const s of p.samples) addSample(s);
       }
       if (msg.slow_requests) {
@@ -3408,391 +3441,487 @@ function refreshTooltip() {
 // Help modal + LLM-paste artefacts.
 // -----------------------------------------------------------------
 
-const HELP_MARKDOWN = `# mod_wsgi telemetry — UI reference
+const HELP_MARKDOWN = `# mod_wsgi telemetry — analysis reference
 
-## What this UI shows
+## Overview
 
-Live per-process metrics for an Apache + mod_wsgi deployment. Each
-mod_wsgi worker process (embedded MPM children, and/or daemon
-processes from \`WSGIDaemonProcess\` groups) reports telemetry over
-UDP every second. The UI aggregates across currently-visible
-processes over the last minute.
+This document describes the telemetry emitted by an Apache +
+mod_wsgi deployment and the rules for reasoning about it. It is
+intended to accompany a stats snapshot (copied from the UI) when
+pasted into a language model for diagnostic analysis. Screenshots
+of the UI may also be attached; the final section decodes visual
+elements a screenshot would show.
 
-Three tabs:
+Each mod_wsgi worker process — embedded MPM children, daemon
+processes from \`WSGIDaemonProcess\` groups, or both — reports
+telemetry over UDP every second. The collector aggregates samples
+into rolling per-process and deployment-level rollups exposed in the
+UI and the snapshot output.
 
-- **Overview** — line charts over the last minute: request throughput,
-  capacity utilization, CPU utilization, response time, memory RSS,
-  and a time-breakdown chart with a phase selector. A time-distribution
-  histogram (with phase selector, defaulting to total response) caps
-  the tab.
-- **Capacity** — per-process heatmap of per-slot (thread) busy / slow /
-  empty state over the last 60 s. One row per worker thread. Hover a
-  cell for completed-count, busy ms, cpu ms, elapsed ms.
-- **Slow requests** — live list of requests whose wall-clock elapsed
-  has crossed the \`WSGISlowRequests\` threshold. Shows in-flight and
-  recently-finished entries.
+## Deployment concepts
 
-## Process groups, daemon mode, and rollup scope
+### Daemon mode vs embedded mode
 
-One Apache instance **can** host several process groups, but the
-common case — whether configured manually or via
-\`mod_wsgi-express\` — is a single site with a single daemon
-group. Multi-group setups show up mainly when one Apache instance
-serves several WSGI applications with distinct tuning needs.
-
-- Each \`WSGIDaemonProcess name processes=N threads=M\` directive
-  defines a named daemon group. Its processes are forked from the
-  Apache parent and managed by mod_wsgi inside Apache — they are
-  **not** external services — but they are distinct from the
-  Apache child worker processes that accept requests and proxy
-  them to the daemon processes over a Unix socket. The
-  \`processes=\` / \`threads=\` knobs are scoped to that daemon
-  group and control the daemon processes, not the Apache workers.
-- Processes with no \`WSGIDaemonProcess\` group run in **embedded
-  mode** inside an Apache MPM child. The UI presents them as a
-  synthetic \`(embedded)\` group. Embedded workers don't report
-  \`queue_time\` or \`daemon_time\` (no socket handoff), and they
-  come and go with Apache's own child lifecycle.
-- A single Apache server can mix daemon groups and embedded mode,
-  and different applications may be mapped to different daemon
-  groups. Tuning advice is always **per-group**: a CPU-bound app in
-  group A doesn't want the same numbers as an I/O-bound app in
-  group B.
-- \`mod_wsgi-express\` is a launcher that generates the Apache
+- **Daemon mode.** \`WSGIDaemonProcess name processes=N threads=M\`
+  declares a named daemon group. Its processes are forked from
+  Apache and managed by mod_wsgi *inside* Apache — not external
+  services — but distinct from the Apache MPM child workers that
+  accept requests and proxy them to the daemon over a Unix socket.
+  \`processes=\` / \`threads=\` tune the daemon group itself, not the
+  Apache workers.
+- **Embedded mode.** Processes with no \`WSGIDaemonProcess\`
+  directive run WSGI in-process inside an Apache MPM child. The
+  snapshot labels them \`(embedded)\`. Embedded workers never cross
+  the socket handoff, so they do not report \`queue_time\` or
+  \`daemon_time\`. They come and go with Apache's child lifecycle.
+- **Mixing.** A single Apache instance can run daemon groups and
+  embedded workers simultaneously, and can host multiple daemon
+  groups with independent tuning per group. Tuning advice is
+  always **per-group** — a CPU-bound app in group A does not want
+  the same knobs as an I/O-bound app in group B.
+- **mod_wsgi-express.** A launcher that generates the Apache
   configuration from command-line flags. Default is daemon mode
-  with a group named after the listen address (e.g.
-  \`localhost:8000\`); \`--embedded-mode\` switches to embedded.
-  Either way, \`--processes\` and \`--threads\` are the knobs — in
-  daemon mode they size the daemon group (the proxying MPM is
-  auto-sized), in embedded mode they size the MPM workers
-  directly. Timeout flags (\`--request-timeout\`, etc.) map
-  one-to-one onto the equivalent \`WSGIDaemonProcess\` options.
+  with a group named after the listen address;
+  \`--embedded-mode\` switches to embedded. \`--processes\` /
+  \`--threads\` size whichever mode is active. Timeout flags
+  (\`--request-timeout\`, etc.) map one-to-one onto the
+  identically-named \`WSGIDaemonProcess\` option. Runtime behaviour
+  is identical to the raw-directive form; tune whichever the
+  operator is actually using.
 
-The sidebar has three tiers:
+### Snapshot sections
 
-- **Totals** — rollup across every process matching the current
-  process-group filter. \`cpu\` is summed across processes, so a
-  4-process deployment at 1.0 core each reads \`4.0 cores\`.
-- **Groups** — one line per daemon group (shown only when the
-  filter is "All" and more than one group is live). Roll up is
+The stats snapshot is organised into tiers. Tuning applies at each
+tier's scope:
+
+- **Totals** — rollup across every process matching the filter in
+  effect when the snapshot was taken. \`cpu\` is summed across
+  processes, so a 4-process deployment at 1.0 core each reads
+  \`4.0 cores\`.
+- **Groups** — one section per daemon group. Emitted only when
+  more than one group is live and the filter is "all". Rollup is
   restricted to that group's processes.
-- **Processes** — one card per live process. Matches the
-  per-pid detail available elsewhere.
+- **Processes** — one block per live process, with per-pid detail.
 
-The stats snapshot mirrors these three tiers and scopes the Totals
-section to whatever the filter is set to when the button is pressed.
+### Multi-host caveat
 
-## Single-host assumption
+The collector is intended for one Apache instance on one host. If
+samples from multiple hostnames are present the snapshot emits an
+explicit multi-host warning; Totals are summed across hosts, any
+\`processes=N\` recommendation applies **per-host** and must be
+mirrored on every host, and deployment headroom is the sum across
+hosts.
 
-The telemetry collector is intended to run against one Apache
-instance — i.e. one hostname. If multiple hostnames appear in a
-snapshot (multi-host fan-in), the Totals section sums across hosts
-and any \`processes=N\` advice derived from them is **per-host**
-and must be mirrored on every host. Total deployment headroom is
-the sum across all hosts. The snapshot emits an explicit warning
-when this situation is detected.
+## How to analyze a snapshot
 
-## Statistics glossary
+Expected workflow. Each step points at the section below that
+carries the detail.
 
-- **samples** — total telemetry datagrams received since the collector
-  started.
-- **rpm** — requests per minute for a process, averaged over the
-  visible 1 min window.
+1. **Establish the deployment baseline.** Start with Totals. Note
+   rpm, cpu cores, state counts, response time. These frame
+   expectations before any per-process detail.
+2. **Scope tuning to the group.** If a Groups section is present,
+   read it next — tuning is per-group. Any \`WSGIDaemonProcess\`
+   recommendation must name the specific group.
+3. **Check each process's state.** For every process block note:
+   state classification, cap, busy, cpu, resp, queue, daemon. Match
+   against the thresholds in *Process state classification*.
+4. **Classify the bottleneck.** Use the combinations in
+   *Diagnostic patterns*. When a process is CPU/GIL-bound, try to
+   lean toward one cause: elevated \`daemon\` and/or low
+   \`slot cpu / slot busy\` → GIL; slot cpu / slot busy near 1.0 with
+   no daemon elevation → CPU. Report the call as a lean, not a
+   certainty — telemetry cannot distinguish them from outside in
+   the general case.
+5. **Consult the tail, not just the mean.** Use Time distributions
+   to separate mean-driven problems from tail-driven ones. Compare
+   p50 to p99 per phase:
+   - Large gap in **application** → app tail (caching, async,
+     timeouts, downstream latency). Not a mod_wsgi tuning issue.
+   - Large gap in **daemon** → GIL pressure on dispatch. Fix is
+     processes, not threads.
+   - Large gap in **queue** → upstream backpressure. More
+     processes, tighter \`queue-timeout=\`.
+   - Large gap in **total** with small per-phase gaps → several
+     phases each contributed a little; check per-process slow-run
+     counts.
+6. **Recommend scoped to the observed mode.** Every process block
+   prints its mode in the header (\`daemon mode, group "<name>"\`
+   or \`embedded mode\`). Produce advice in the form the operator
+   is actually using (raw Apache vs \`mod_wsgi-express\` — offer
+   both when unsure):
+   - **Daemon mode.** Raw Apache: edit the matching
+     \`WSGIDaemonProcess <name> processes=N threads=M\` directive
+     (always name the group). \`mod_wsgi-express\`: pass
+     \`--processes N --threads M\` (default is daemon mode).
+   - **Embedded mode.** \`WSGIDaemonProcess\` does not apply —
+     these are Apache MPM children running WSGI in-process. Raw
+     Apache: tune the MPM (\`ServerLimit\`, \`MaxRequestWorkers\`,
+     the relevant \`ThreadsPerChild\`). \`mod_wsgi-express\`:
+     \`--embedded-mode --processes N --threads M\`. Consider
+     moving to daemon mode when GIL contention is the issue —
+     with \`mod_wsgi-express\`, that's simply dropping
+     \`--embedded-mode\`.
+7. **Apply timeout knobs carefully.** The *Tuning levers* section
+   carries full caveats. Key rules to respect:
+   \`request-timeout=\` is a **process-level fail-safe**, not a
+   per-request SLA knob; do not multiply it by \`threads=\`; for
+   per-request enforcement prefer application-level timeouts.
+   \`queue-timeout=\` sheds load under backpressure but does not
+   bound application time.
+8. **Distinguish mod_wsgi changes from application changes.**
+   Config tuning (\`processes=\`, \`threads=\`, timeouts) and
+   application work (caching, async I/O, query optimisation) are
+   independent levers. A long application tail is not fixed by
+   resizing the process pool.
+9. **Honour snapshot-emitted suggestions.** If a
+   \`## Tuning suggestion\` block is present, it is gated on
+   specific signal patterns — read the numbers it cites rather
+   than overriding it with generic advice.
+10. **If multi-host fan-in is flagged in the snapshot**, note
+    that \`processes=N\` advice applies per-host and deployment
+    headroom is the sum across hosts.
+
+## Field glossary
+
+- **samples** — total telemetry datagrams received since the
+  collector started.
+- **rpm** — requests per minute, normalised from the reporting
+  window.
 - **cap / capacity utilization** — \`capacity_utilization\` field:
   fraction of the process's worker threads busy serving requests,
-  window-averaged. 100% = every thread busy every tick.
-- **busy** (Capacity tab) — fraction of total slot capacity consumed
-  by in-flight requests, computed from per-slot \`slot_busy_time_us\`.
-  Same quantity as \`cap\` via a different path, so the Capacity
-  header and heatmap cells agree.
-- **cpu** — \`cpu_utilization\`: process-wide CPU seconds (user +
-  system) divided by wall-clock, expressed as fraction of **one**
-  CPU core. 1.0 = one core saturated. GIL-bound Python tops out
-  near 1.0; C extensions that release the GIL can exceed 1.0 on
-  multi-core.
-- **resp / response time** — mean of (server + queue + daemon +
-  application) time, window-averaged. Closest approximation to what
-  the caller experiences; does **not** include the external Apache
+  window-averaged. 1.0 = every thread busy every tick.
+- **busy** — same quantity as \`cap\` computed from per-slot
+  \`slot_busy_time_us\`. Used where per-thread resolution is
+  needed; agrees with \`cap\` by construction.
+- **cpu** — \`cpu_utilization\`: process-wide CPU seconds
+  (user + system) divided by wall-clock, expressed as fraction of
+  **one** CPU core. 1.0 = one core saturated. GIL-bound pure-Python
+  caps near 1.0; C extensions that release the GIL can exceed 1.0
+  on multi-core.
+- **resp / response time** — window-averaged mean of (server +
+  queue + daemon + application). Approximates what the caller
+  experiences; does **not** include the external Apache
   accept-queue wait (not observable from inside the worker).
 - **server time** — Apache-side processing before handoff to the
-  daemon socket queue. Embedded-mode requests never leave this
-  phase.
+  daemon socket queue. Embedded requests never leave this phase.
 - **queue time** — time the request sat in the daemon group's
-  socket queue waiting to be picked up by a daemon worker.
-  Daemon-mode only. High queue time = process can't accept requests
-  fast enough.
-- **daemon time** — time between a daemon worker picking the
-  request off its queue and the WSGI callable being invoked.
-  Includes request parsing, environ/subprocess_env setup, thread
-  dispatch, and the thread's **first GIL acquisition**. High
-  daemon time under load is a classic fingerprint of GIL contention
-  on the dispatch path. Daemon-mode only.
+  socket queue before pickup. Daemon-mode only. Sustained high
+  queue time = process can't accept requests fast enough.
+- **daemon time** — interval between a daemon worker dequeuing the
+  request and the WSGI callable being invoked. Includes request
+  parsing, environ construction, thread dispatch, and the worker
+  thread's **first GIL acquisition**. Sustained high daemon time
+  under load is the canonical fingerprint of GIL contention on the
+  dispatch path. Daemon-mode only.
 - **application time** — wall-clock time inside the WSGI callable.
   What the app code owns.
-- **slow requests** (sidebar / meta) — number of distinct slow
-  "runs" observed on the process's Capacity heatmap in the visible
-  window. A run is a sequence of consecutive red-tinted cells — a
-  single long request spanning many ticks is one run.
+- **slow-request run** — a sequence of consecutive ticks during
+  which one worker thread held the same request past the configured
+  slow threshold. One long request spanning many ticks is one run.
+- **slot cpu / slot busy** — ratio of on-CPU time to in-request
+  time across worker slots. 1.0 = pure compute; near 0 = threads
+  hold requests without running CPU work (GIL wait or blocking
+  I/O).
 
 ## Time distributions
 
-Every request contributes one count to each of five histograms:
-one per phase (server / queue / daemon / application) and one for
-the total wall time (server + queue + daemon + application).
-Buckets are log2 starting at 5 ms — i.e. ≤5 ms, 5–10 ms, 10–20 ms,
-…, 20–40 s, >40 s. The overflow bucket catches anything above the
-last finite edge.
+Each request contributes one count to each of five histograms: one
+per phase (server / queue / daemon / application) and one for the
+total wall time (server + queue + daemon + application). Buckets
+are log2 starting at 5 ms — ≤5 ms, 5–10 ms, 10–20 ms, …, 20–40 s,
+\`>\`40 s. The overflow bucket catches anything above the last
+finite edge.
 
-Key properties for interpreting the snapshot:
+Mechanics:
 
 - **The total-response histogram is bucketed per-request**, not
-  derived from the four phase histograms. Summing the phase
-  histograms would be wrong — each request contributes separately
-  to its phase bucket *and* to the total bucket, so the two are
-  independent snapshots of the same requests.
-- **Percentiles are bucket upper-bounds**, so they're always
-  upper estimates. p50 reported as "40 ms" means half the requests
-  finished by the top of the 40 ms bucket — they may have finished
-  anywhere between 20 ms and 40 ms.
-- **Means and percentiles disagree on purpose.** The per-process
-  mean (from the glossary figures) is blind to the shape; the
-  percentiles surface the tail. A healthy-looking mean with a
-  heavy p99 points at a few outliers eating wall time.
-- **Embedded mode** never populates queue / daemon histograms
-  (there's no socket handoff), so their sections only appear for
-  processes that are in a \`WSGIDaemonProcess\` group.
+  derived from the four phase histograms. Each request contributes
+  independently to its phase bucket and to the total bucket, so
+  the two are independent snapshots of the same requests. Summing
+  phase histograms to reconstruct the total is incorrect.
+- **Percentiles are bucket upper-bounds**, always upper estimates.
+  A p50 of "40 ms" means half the requests finished by the top of
+  the 40 ms bucket — they may have finished anywhere between 20 ms
+  and 40 ms.
+- **Means and percentiles disagree on purpose.** Means are blind
+  to shape; percentiles surface the tail. A healthy-looking mean
+  with a heavy p99 points at outliers eating wall time. Use both.
+- **Embedded mode never populates queue / daemon histograms** (no
+  socket handoff); those sections are emitted only for daemon
+  processes.
 
-### What each phase tells you in the distribution
+Per-phase tail interpretation:
 
-- **Total response** — caller-visible wall time. Long tails here
-  with short phase tails suggest several phases each contributed a
-  small amount to a slow request; with one phase tail dominant,
-  that phase owns the problem.
-- **Application time** — time inside the WSGI callable. Tail
-  here = app regression, external dependency latency, slow
-  queries, cold-cache effects. Fixes: caching, async I/O, tail
-  timeouts, or faster downstream services.
-- **Server time** — Apache handler work before handoff. Usually
-  small and tight; a widening tail is unusual and points at
-  Apache-layer issues (rewrites, authz modules, large request
-  bodies).
-- **Daemon time** — interval between daemon pickup and WSGI call.
-  Dominated by the first GIL acquisition. Long tail under load is
-  a fingerprint of GIL contention on the dispatch path.
-- **Queue time** — wait in the daemon socket queue. Tail here
-  means the daemon can't accept requests fast enough; backpressure
-  is upstream of the workers. Adding processes usually helps more
-  than adding threads.
+- **Total response.** Long tail with short phase tails = multiple
+  phases each contributed a small amount; one phase tail dominant
+  = that phase owns the problem.
+- **Application time.** Tail = app regression, external dependency
+  latency, slow queries, cold-cache effects. Fixes: caching, async
+  I/O, tail timeouts, faster downstream services. Not a mod_wsgi
+  tuning issue.
+- **Server time.** Usually small and tight. Widening tail is
+  unusual and points at Apache-layer issues (rewrites, authz
+  modules, large request bodies).
+- **Daemon time.** Long tail under load = GIL contention on
+  dispatch. Fix is processes, not threads.
+- **Queue time.** Tail = daemon can't accept requests fast enough.
+  Backpressure is upstream of the workers. Adding processes
+  usually helps more than adding threads.
 
-## Card state flags (Capacity tab)
+## Process state classification
 
-Each process card can be tinted red (saturated) or amber
-(CPU/GIL-bound). Both are gated on rpm ≥ 3, so near-idle processes
-can't trip them.
+Every process is classified each tick as saturated,
+CPU/GIL-bound, or normal. Both flagged states are gated on
+rpm ≥ 3 so near-idle processes cannot trip them.
 
-- **saturated** — score ≥ 1.0, contributions from:
-  - busy mean > 80% (up to +1.0 as busy approaches 100%)
-  - queue time > 50 ms mean (up to +1.0 as queue approaches 250 ms)
-  - slow requests ≥ 3 **and** busy ≥ 70%
-- **CPU/GIL-bound** — any of (and not clearly multi-core, i.e. not
-  cpu > 120% with busy > 50%):
-  - busy > 50% **and** slot-normalised cpu / busy < 0.5 — threads
-    appear busy but aren't on-CPU (GIL wait or I/O).
-  - daemon_mean > 50 ms — dispatch phase carrying sustained
-    first-GIL-acquire wait.
-  - cpu_mean > 90% **and** threads ≥ 2 **and** busy > 30% — one
-    core pegged with multiple threads, the unambiguous "single-core,
-    many threads" fingerprint.
+### Saturated
 
-  From outside the process, pure-Python CPU-bound work and
-  GIL-contended I/O work produce the same telemetry (one core used,
-  threads waiting). The tooltip uses slot cpu/busy to hint which
-  way it leans, but the fix — add processes, not threads — is the
-  same in both cases.
+Score-based; flags when score ≥ 1.0. Contributions (summed):
+
+- **busy sustained > 80%** — up to +1.0 as busy approaches 100%.
+- **queue mean > 50 ms** — up to +1.0 as queue approaches 250 ms.
+- **≥ 3 slow-request runs under busy ≥ 70%** — up to +1.0 as the
+  slow-run count grows.
+
+Remediation: add capacity (more processes, more threads, or reduce
+per-request service time).
+
+### CPU/GIL-bound
+
+Any trigger is enough to flag, unless the multi-core carve-out
+suppresses the label:
+
+- **cpu-peg** — cpu > 90% of one core with ≥ 2 threads and
+  busy > 30%. Multiple threads competing for a single core is the
+  textbook GIL-bound pattern.
+- **slot-ratio** — busy > 50% and \`slot cpu / slot busy\` < 0.5.
+  Threads are not running CPU work while holding requests, which
+  on Python usually means GIL wait (or blocking I/O — treat as
+  suggestive, not conclusive).
+- **daemon-absolute** — daemon mean > 50 ms. Dispatch stage slow
+  enough to indicate GIL contention during request entry.
+- **multi-core carve-out (exclusionary)** — cpu > 1.2 cores with
+  busy > 50%. Workload is demonstrably running across multiple
+  cores, so the GIL is not serialising; the CPU/GIL label is
+  suppressed even if other triggers fire.
+
+Remediation for all three firing triggers is the same: add
+**processes**, not threads. Additional threads on a GIL-bound
+process raise contention rather than throughput. Reducing
+per-request CPU cost is the alternative lever.
+
+From outside the process, pure-Python CPU-bound work and
+GIL-contended I/O work produce indistinguishable telemetry (one
+core used, threads waiting). Lean on
+\`slot cpu / slot busy\` — near 1.0 = CPU-bound; low with elevated
+daemon = GIL-bound — but state the call as a lean, not a
+certainty.
+
+### Normal
+
+Within the operating envelope. Snapshot prints "not flagged". No
+tuning implied.
 
 ## Diagnostic patterns
 
-- **\`daemon\` sustained above ~50 ms, modest \`queue\`** — first-GIL
-  acquisition at dispatch is backing up behind in-flight threads.
-  More threads won't help; add processes.
+Combinations that identify specific bottlenecks:
+
+- **\`daemon\` sustained above ~50 ms, modest \`queue\`** —
+  first-GIL acquisition at dispatch is backing up behind in-flight
+  threads. More threads will not help; add processes.
 - **High \`queue\`, low \`daemon\`** — daemon can't accept requests
-  fast enough. Add processes; increase \`threads=\` **only** if the
+  fast enough. Add processes. Increase \`threads=\` **only** if the
   workload is I/O-bound (threads release the GIL during I/O and
-  scale). CPU-bound + more threads = more contention, not more
-  throughput.
+  scale). CPU-bound + more threads = more contention.
 - **cpu ~100% (one core) with multiple threads, busy moderate+** —
-  the process is pinned to a single core. Could be CPU-bound work
-  (threads want CPU but GIL serialises them) or GIL-contended
-  I/O work (threads waiting for GIL on re-acquire). Telemetry can't
-  tell them apart from outside; both flag **CPU/GIL-bound** and
-  both want more processes. If \`daemon\` is also elevated, lean
-  GIL. If slot cpu / slot busy (hover a cell) is near 1.0, lean CPU.
+  process is pinned to one core. Could be CPU-bound work (threads
+  want CPU, GIL serialises) or GIL-contended I/O work (threads
+  waiting for GIL re-acquire). Telemetry cannot distinguish; both
+  flag CPU/GIL-bound and both want more processes. If \`daemon\`
+  is also elevated, lean GIL. If \`slot cpu / slot busy\` is near
+  1.0, lean CPU.
 - **cpu > ~120% with busy high** — healthy multi-core work via C
   extensions releasing the GIL. No label fires; still scale
   processes when cpu approaches (cores − 1) × 100%.
-- **busy high, cpu << busy, no slow requests, daemon low** —
+- **busy high, cpu \`<<\` busy, no slow requests, daemon low** —
   threads waiting on I/O. Fine as long as response stays
-  acceptable; more threads can help if demand is short of
-  throughput.
+  acceptable; more threads can help if demand outruns throughput.
 - **\`response\` spike without \`rpm\` change** — use the time
-  distribution panel's phase selector to find which phase carries
-  the tail: \`application\` = app regression or external dependency;
-  \`daemon\` = GIL pressure; \`queue\` = backpressure from upstream.
+  distribution to find which phase carries the tail.
+  \`application\` = app regression or downstream;
+  \`daemon\` = GIL pressure; \`queue\` = upstream backpressure.
 
 ## Tuning levers
 
-Two ways the same knobs surface depending on how mod_wsgi is being
-configured:
+### Configuration forms
 
-- **Raw Apache config** — directives in \`httpd.conf\` or a vhost
-  fragment: \`WSGIDaemonProcess <name> processes=N threads=M\` for
-  daemon mode, or MPM directives (\`ServerLimit\`,
-  \`MaxRequestWorkers\`, \`ThreadsPerChild\`) for embedded mode.
-- **\`mod_wsgi-express\`** — command-line flags that auto-generate
+mod_wsgi can be configured two ways; both produce identical
+runtime behaviour. Tune whichever form the operator is using.
+
+- **Raw Apache config.** Directives in \`httpd.conf\` or a vhost
+  fragment. Daemon mode: \`WSGIDaemonProcess <name> processes=N
+  threads=M\`. Embedded mode: MPM directives (\`ServerLimit\`,
+  \`MaxRequestWorkers\`, \`ThreadsPerChild\` depending on the MPM).
+- **\`mod_wsgi-express\`.** Command-line flags that auto-generate
   the Apache config. Default is daemon mode; \`--embedded-mode\`
-  switches to embedded mode. \`--processes N --threads M\` sets the
-  knobs directly: in daemon mode they control the daemon group
-  (Apache MPM for proxying is sized automatically); in embedded
-  mode they control the Apache MPM workers. \`--request-timeout\`,
-  \`--graceful-timeout\`, \`--queue-timeout\`, \`--connect-timeout\`,
-  \`--socket-timeout\`, \`--maximum-requests\` each map one-to-one to
-  the identically-named \`WSGIDaemonProcess\` option. Both forms
-  produce the same runtime behaviour — tune whichever the
-  operator is actually using.
+  switches. \`--processes N --threads M\` sizes the active mode
+  (in daemon mode the proxying MPM is sized automatically).
+  Timeout flags — \`--request-timeout\`, \`--graceful-timeout\`,
+  \`--queue-timeout\`, \`--connect-timeout\`, \`--socket-timeout\`,
+  \`--maximum-requests\` — map one-to-one onto the identically-named
+  \`WSGIDaemonProcess\` option.
 
-Primary knob — processes × threads:
+### Primary knob: processes × threads
 
-- CPU-bound app: N ≈ cores, M small (1–4).
-- I/O-bound app: N moderate, M can be higher (10–25).
-- \`queue-timeout=\` — maximum time a request may sit in the
-  Apache-to-daemon queue before the daemon dequeues it. Exceeded
-  requests are rejected with a gateway-timeout-style response.
+- **CPU-bound app.** N ≈ cores, M small (1–4). Threads add
+  contention past the point where CPU is saturated.
+- **I/O-bound app.** N moderate, M can be higher (10–25). Threads
+  release the GIL during I/O waits and scale cleanly.
+- **Mixed.** Start from the I/O-bound shape and narrow M if
+  profiling shows CPU contention.
+
+### Timeout knobs
+
+- **\`queue-timeout=\`** — maximum time a request may sit in the
+  Apache↔daemon socket queue before the daemon dequeues it.
+  Exceeded requests are rejected gateway-timeout-style.
   Per-request rejection only; no process-level consequence.
-  Protects the daemon from pathological backpressure but does
+  Protects the daemon from pathological backpressure. Does
   **not** bound application time once a request has started
   running.
-- \`request-timeout=\` — **process-level fail-safe, not a per-request
-  SLA knob.** Every second the monitor thread averages the age of
-  in-flight requests across **all** threads in the process
-  (sum / \`threads\`, not sum / busy-threads); if the average exceeds
-  the timeout the daemon restarts. Behaviour on firing depends on
-  the process group: with \`processes > 1\` and \`graceful-timeout > 0\`
-  the daemon enters a drain state — it stops competing for the
-  accept mutex so peer daemons absorb new work, healthy in-flight
-  requests finish, and if the drain completes before
-  \`graceful-timeout\` expires the process restarts cleanly (otherwise
-  the still-wedged request is interrupted at expiry). With
-  \`processes == 1\` or \`graceful-timeout == 0\` the process is stopped
-  immediately; every in-flight request on it is interrupted, healthy
-  and stuck alike, and Apache retries once the process has
-  restarted. Two properties regardless of branch: **dilution with
-  thread count** — with \`threads=10\`, one thread stuck 60 s while
-  the others are idle averages to 6 s, so raising \`threads\` raises
-  the effective trigger; **no staggering across processes** — each
-  daemon decides independently, so a deterministic bad endpoint can
-  send every daemon into drain (or into restart, for single-process
-  groups) concurrently. Sizing: set it a few × above the p99 of
-  normal request time — enough headroom that steady-state traffic
-  doesn't trip it, but no higher. **Do not multiply by \`threads\`**:
-  the average-across-threads rule already dilutes the trigger, so a
-  single wedged thread takes roughly \`threads\` × \`request-timeout\`
-  seconds to fire; padding the value further only lengthens
-  detection time. For user-visible per-request enforcement prefer
-  **application-level timeouts** (HTTP client timeouts, DB statement
-  timeouts, \`signal.alarm\` in request code) and let \`queue-timeout=\`
-  handle backpressure.
-- \`connect-timeout=\` — cap on Apache-to-daemon connect.
-- \`inactivity-timeout=\` — idle worker eviction.
-- \`WSGISlowRequests threshold=S\` — emit a slow-request record once
-  a request's wall time exceeds S seconds. Feeds the Slow requests
-  tab and the red heatmap cells.
+- **\`request-timeout=\`** — **process-level fail-safe, not a
+  per-request SLA knob.** Every second the monitor thread averages
+  the age of in-flight requests across **all** threads in the
+  process (sum / \`threads=\`, not sum / busy-threads); if the
+  average exceeds the timeout the daemon restarts. Firing
+  behaviour depends on the group:
+  - With \`processes > 1\` and \`graceful-timeout > 0\`, the daemon
+    enters a drain state — stops competing for the accept mutex
+    so peer daemons absorb new work, healthy in-flight requests
+    finish, and if drain completes before \`graceful-timeout\`
+    expires the process restarts cleanly (otherwise the
+    still-wedged request is interrupted at expiry).
+  - With \`processes == 1\` or \`graceful-timeout == 0\`, the
+    process is stopped immediately; every in-flight request is
+    interrupted, healthy and stuck alike; Apache retries once the
+    process restarts.
 
-## LLM evaluation checklist
+  Two properties regardless of branch:
 
-When pasted alongside a screenshot:
+  - **Dilution with thread count.** With \`threads=10\`, one
+    thread stuck 60 s while the others are idle averages to 6 s.
+    Raising \`threads=\` raises the effective trigger; a single
+    wedged thread takes roughly \`threads\` × \`request-timeout\`
+    seconds to fire. Do **not** compensate by padding
+    \`request-timeout\` — that only lengthens detection time.
+  - **No staggering across processes.** Each daemon decides
+    independently, so a deterministic bad endpoint can send every
+    daemon into drain (or restart, for single-process groups)
+    concurrently.
 
-1. Start at the **Totals** section. Note the deployment-level rpm,
-   cpu cores, and state counts — these set expectations before
-   diving into individual processes.
-2. If a **Groups** section is present, read it next. Tuning is
-   always per-group, so the right scope for any
-   \`WSGIDaemonProcess\` recommendation is a single group.
-3. For each listed process note its state (saturated /
-   CPU/GIL-bound / neither) and cross-reference cap, busy, cpu,
-   resp, queue, daemon from its own block.
-4. Classify the bottleneck using the diagnostic patterns above.
-   When a process is **CPU/GIL-bound**, try to lean toward one
-   cause using: elevated \`daemon\` and/or low slot cpu / slot busy
-   → GIL; slot cpu / slot busy near 1.0 with no daemon elevation
-   → CPU. State the call as a lean, not a certainty — the two are
-   indistinguishable from outside in the general case.
-5. Recommend a concrete change scoped to the **mode** of the
-   processes in question, and phrase it in whichever form the
-   operator is actually using (raw Apache directives vs
-   \`mod_wsgi-express\` flags — ideally offer both when unsure):
-   - **Daemon mode** (per-process header says
-     \`daemon mode, group "<name>"\`):
-     - Raw Apache: edit the matching
-       \`WSGIDaemonProcess <name> processes=N threads=M\` directive.
-       Always name the specific group.
-     - \`mod_wsgi-express\`: pass \`--processes N --threads M\` on
-       the command line (default is daemon mode).
-   - **Embedded mode** (per-process header says \`embedded mode\`):
-     \`WSGIDaemonProcess\` does **not** apply — these processes are
-     Apache MPM children running WSGI in-process.
-     - Raw Apache: tune the MPM — \`ServerLimit\`,
-       \`MaxRequestWorkers\`, and for prefork/worker/event the
-       relevant \`ThreadsPerChild\`.
-     - \`mod_wsgi-express\`: pass \`--embedded-mode --processes N
-       --threads M\`; those flags drive the generated MPM config.
-     Moving an embedded app to daemon mode is itself a reasonable
-     recommendation when GIL contention is the issue — with
-     \`mod_wsgi-express\`, that's simply dropping \`--embedded-mode\`.
-   Plus timeout adjustments appropriate to the observed failure
-   mode (both forms accept \`request-timeout\` /
-   \`--request-timeout\`, etc.). If the snapshot warns about
-   multi-host fan-in, note that \`processes=N\` applies per-host
-   and headroom counts all hosts combined.
-6. Consult the **Time distributions** section to separate
-   mean-driven problems from tail-driven ones. Compare p50 to p99
-   per phase:
-   - Large p50-to-p99 gap in **application** → app tail (caching,
-     async, timeouts, downstream latency), not a mod_wsgi tuning
-     issue.
-   - Large gap in **daemon** → GIL pressure on dispatch; the fix
-     is processes, not threads.
-   - Large gap in **queue** → upstream backpressure; more
-     processes, tighten \`queue-timeout=\`.
-   - Large gap in **total** but small per-phase gaps → several
-     phases each contributed a little; examine the heatmap for
-     slow-request runs.
-7. When recommending changes, distinguish mod_wsgi config changes
-   (\`processes=\`, \`threads=\`, timeouts) from application-level
-   changes (caching, async I/O, query tuning). A long application
-   tail won't be fixed by resizing the process pool.
-8. Timeout-knob caveats to respect when recommending changes:
-   - Do **not** recommend tightening \`request-timeout=\` to enforce a
-     per-request latency SLA. It is a process-level fail-safe. When
-     it fires on a multi-process group with \`graceful-timeout > 0\`
-     the daemon drains (peers absorb work, healthy in-flight
-     requests finish); when it fires on a single-process group or
-     with \`graceful-timeout=0\` the process is stopped immediately,
-     interrupting every in-flight request including healthy ones.
-     Size it a few × the p99 of normal request time — do **not**
-     multiply by \`threads=\`. The average-across-threads rule already
-     means one wedged thread takes roughly \`threads\` ×
-     \`request-timeout\` seconds to trip the restart, so padding the
-     value further only lengthens detection. For per-request
-     enforcement, recommend application-level timeouts instead.
-   - If the deployment is single-process (\`processes=1\`) and the
-     operator needs cleaner recovery from wedged requests, the
-     right recommendation is \`processes >= 2\` plus a modest
-     \`graceful-timeout\` — that unlocks the drain path so peers
-     absorb during restart.
-   - \`queue-timeout=\` only rejects requests that have been waiting
-     in the Apache-to-daemon queue; it does not bound application
-     runtime. Use it to shed load under backpressure, not to cap
-     slow handlers.
+  Sizing: a few × above the p99 of normal request time. Enough
+  headroom for steady-state, no higher. For user-visible
+  per-request enforcement prefer **application-level timeouts**
+  (HTTP client timeouts, DB statement timeouts, \`signal.alarm\`
+  in request code) and let \`queue-timeout=\` handle backpressure.
+- **\`graceful-timeout=\`** — upper bound on how long a draining
+  daemon waits for in-flight requests to finish before interrupting
+  them. Unlocked by \`processes >= 2\`; without a second process
+  there is no peer to absorb traffic so the drain path is skipped.
+  Single-process groups that need cleaner recovery from wedged
+  requests should move to \`processes >= 2\` plus a modest
+  \`graceful-timeout\`.
+- **\`connect-timeout=\`** — cap on Apache-to-daemon connect.
+- **\`inactivity-timeout=\`** — idle worker eviction.
+
+### Throughput-ceiling tuning (low-latency workloads)
+
+Daemon-mode defaults — \`WSGIScriptReloading On\` and a non-zero
+\`queue-timeout=\` — add a small per-request handshake. Script
+reloading runs an mtime check on the WSGI script file; a non-zero
+\`queue-timeout=\` requires an Apache↔daemon handshake at request
+start so a queued request can be cleanly rejected if it sits past
+the deadline. Both are usually what you want — code edits take
+effect without a restart, and the daemon self-recovers from
+stuck-request backlogs by timing requests out of the accept queue.
+
+On workloads with very low response times (few-ms regime) and
+controlled traffic, that handshake is a measurable share of total
+request time. When auto-reload is not required (deployments restart
+the daemons) and backpressure is not a concern, raise the
+throughput ceiling by disabling both:
+
+- Raw Apache: \`WSGIScriptReloading Off\` plus \`queue-timeout=0\`
+  on the \`WSGIDaemonProcess\` directive.
+- \`mod_wsgi-express\`: \`--disable-reloading\` plus
+  \`--queue-timeout=0\`.
+
+Trade-offs:
+
+- Code edits only take effect on process restart. Pair with a
+  deploy pipeline that restarts daemon groups explicitly, or use
+  \`maximum-requests=\` to cycle them naturally.
+- A stuck request can fill the daemon's listen queue without the
+  queue-timeout self-recovery. Application-level timeouts (HTTP
+  client, DB statement, downstream SLAs) become the only line of
+  defence.
+- The snapshot emits a \`## Tuning suggestion\` block automatically
+  when the signals warrant it; honour that signal rather than
+  recommending this tuning on generic grounds.
+
+### Slow-request emission
+
+- **\`WSGISlowRequests threshold=S\`** — emits a slow-request
+  record once a request's wall time exceeds S seconds. Feeds the
+  per-process slow-run counters visible in the snapshot and the
+  Slow requests stream in the UI.
+
+## UI reference
+
+When a screenshot is attached alongside this document, the
+following lets the reader decode the visuals. Humans using the
+UI directly can also use this as a navigation guide.
+
+### Tabs
+
+- **Overview** — line charts over the last minute: request
+  throughput, capacity utilization, CPU utilization, response time,
+  memory RSS, per-phase time breakdown, and a time-distribution
+  histogram.
+- **Capacity** — per-process heatmap of per-slot (thread) state.
+  One row per worker thread, one column per tick, showing busy /
+  slow / idle.
+- **Slow requests** — live table of requests whose wall-clock
+  elapsed has crossed the \`WSGISlowRequests\` threshold. Shows
+  in-flight and recently-finished entries.
+
+### Colour coding
+
+- **Process card tint, red** — process is flagged **saturated**.
+- **Process card tint, amber** — process is flagged
+  **CPU/GIL-bound**.
+- **Process card tint, none** — process is **normal**.
+- **Capacity heatmap cell, shades of blue** — fraction of the slot
+  occupied by a request during that tick (darker = less busy;
+  brighter = more busy).
+- **Capacity heatmap cell, red overlay** — one or more slow-request
+  runs overlapped the tick (worker thread held a request past the
+  slow threshold).
+
+### Sidebar ↔ snapshot correspondence
+
+The UI sidebar and the Copy-current-stats output show the same
+data at different fidelities:
+
+- Sidebar **Totals** tile ↔ snapshot **\`## Totals\`**.
+- Sidebar **Groups** list ↔ snapshot **\`## Groups\`** (emitted
+  only when multiple groups are live).
+- Sidebar **Processes** cards ↔ snapshot **\`## Processes\`**
+  per-pid blocks.
+
+The Overview charts and Capacity heatmap do not have a snapshot
+equivalent — they are live-only telemetry views.
 `;
 
 // Render a conservative subset of markdown to HTML. Handles h2, lists,
@@ -3855,6 +3984,15 @@ function buildCurrentStatsMarkdown() {
     : filterSel === ""
       ? "(embedded) only"
       : "group \"" + filterSel + "\" only"));
+  // `rpm` is always a per-minute rate: (requests in window / window_s) * 60.
+  // When the window isn't 60 s the number is an extrapolation, so flag that
+  // explicitly — otherwise a reader might assume the snapshot contains a
+  // full minute of data.
+  if (LINE_WINDOW_SEC !== 60) {
+    lines.push("rpm values are per-minute rates extrapolated from the "
+      + LINE_WINDOW_SEC + " s window "
+      + "(rpm = requests_in_window × 60 / " + LINE_WINDOW_SEC + ").");
+  }
   lines.push("");
   const pids = [...state.processes.keys()].sort((a, b) => a - b);
   const visible = pids.filter(pid => {
@@ -3864,6 +4002,94 @@ function buildCurrentStatsMarkdown() {
   if (visible.length === 0) {
     lines.push("No active processes in the selected filter.");
     return lines.join("\n");
+  }
+
+  // --- Environment (build / runtime identity) --------------------
+  // Latched per-process in ensureProcess(). Group visible processes
+  // by the tuple (hostname, mod_wsgi, Python, Apache, MPM) so the
+  // section stays a single compact banner when everything matches
+  // (the common case) but still surfaces divergence correctly when
+  // samples come from multiple hosts, multiple Apache instances, or
+  // a mid-window rolling upgrade. Using hostname in the key means
+  // two identical software stacks on different hosts show up as
+  // distinct entries — they may happen to run the same versions
+  // today, but operator intent is per-Apache-instance.
+  const envFields = [
+    { attr: "mod_wsgi_version", label: "mod_wsgi" },
+    { attr: "python_version",   label: "Python" },
+    { attr: "apache_version",   label: "Apache" },
+    { attr: "mpm_name",         label: "MPM" },
+  ];
+  const envGroups = new Map();
+  for (const pid of visible) {
+    const p = state.processes.get(pid);
+    if (!p) continue;
+    const key = [p.hostname || "",
+                 p.mod_wsgi_version || "",
+                 p.python_version || "",
+                 p.apache_version || "",
+                 p.mpm_name || ""].join("\u0000");
+    let g = envGroups.get(key);
+    if (!g) {
+      g = {
+        hostname: p.hostname || "",
+        mod_wsgi_version: p.mod_wsgi_version || "",
+        python_version: p.python_version || "",
+        apache_version: p.apache_version || "",
+        mpm_name: p.mpm_name || "",
+        pids: [],
+      };
+      envGroups.set(key, g);
+    }
+    g.pids.push(pid);
+  }
+  const envHasAny = [...envGroups.values()].some(g =>
+    envFields.some(f => g[f.attr]));
+  if (envHasAny) {
+    lines.push("## Environment");
+    lines.push("");
+    if (envGroups.size === 1) {
+      const g = [...envGroups.values()][0];
+      for (const { attr, label } of envFields) {
+        if (g[attr]) lines.push("- " + label + ": " + g[attr]);
+      }
+    }
+    else {
+      // Divergent build/runtime identity across the reporting set.
+      // Most commonly this is a multi-host collector or a mid-window
+      // rolling restart picking up a newer mod_wsgi build; it can
+      // also be two Apache instances on one host pointed at the same
+      // metrics socket. Each distinct tuple gets its own subsection
+      // so tuning advice can be reasoned about per-Apache-instance.
+      lines.push("Build/runtime identity differs across the reporting "
+        + "processes — listed per distinct combination below. Each "
+        + "entry corresponds to one Apache instance (or one rolling-"
+        + "upgrade generation). Tuning decisions apply per-instance.");
+      lines.push("");
+      const sorted = [...envGroups.values()].sort((a, b) => {
+        if (a.hostname !== b.hostname) return a.hostname.localeCompare(b.hostname);
+        return b.pids.length - a.pids.length;
+      });
+      for (const g of sorted) {
+        const nProc = g.pids.length;
+        const procTxt = nProc + " process" + (nProc === 1 ? "" : "es");
+        const header = g.hostname
+          ? g.hostname + " — " + procTxt
+          : "(unknown host) — " + procTxt;
+        lines.push("### " + header);
+        lines.push("");
+        for (const { attr, label } of envFields) {
+          if (g[attr]) lines.push("- " + label + ": " + g[attr]);
+        }
+        // Always list the pids so a reader can cross-reference the
+        // Processes section below — especially useful when the same
+        // hostname appears under multiple entries (rolling upgrade).
+        const pidList = [...g.pids].sort((a, b) => a - b).join(", ");
+        lines.push("- pids: " + pidList);
+        lines.push("");
+      }
+    }
+    lines.push("");
   }
 
   // --- Totals -----------------------------------------------------
@@ -3992,8 +4218,22 @@ function buildCurrentStatsMarkdown() {
       lines.push("- response time (mean): " + ps.respMs.toFixed(0) + " ms");
     lines.push("- memory RSS: " + Math.round(ps.rssMb) + " MB");
     if (ps.hasApplicationTime) {
-      const pm = (x, ms) =>
-        "- " + x + ": " + ms.toFixed(ms >= 10 ? 0 : 2) + " ms";
+      // Share of per-request wall time, computed against the sum of the
+      // four phase means (server + queue + daemon + application) rather
+      // than ps.respMs so the four percentages add up to 100% even when
+      // phase means and the rpm-weighted response time diverge by a
+      // rounding-tick's worth. Share is suppressed when the total is
+      // too small to compute meaningfully.
+      const phaseTotal = ps.srvMs + ps.queMs + ps.daeMs + ps.appMs;
+      const pm = (x, ms) => {
+        const base = "- " + x + ": " + ms.toFixed(ms >= 10 ? 0 : 2) + " ms";
+        if (phaseTotal <= 0.01) return base;
+        const pct = (ms / phaseTotal) * 100;
+        const pctTxt = pct >= 10 ? pct.toFixed(0)
+                     : pct >= 1  ? pct.toFixed(0)
+                                 : pct.toFixed(1);
+        return base + " (" + pctTxt + "% of total)";
+      };
       lines.push(pm("server time (mean)", ps.srvMs));
       lines.push(pm("queue time (mean)",  ps.queMs));
       lines.push(pm("daemon time (mean)", ps.daeMs));
@@ -4008,10 +4248,17 @@ function buildCurrentStatsMarkdown() {
       const outExtra = outAvg !== null
         ? `, ${humanCount(ps.outWritesTotal)} writes (\u2248 ${humanBytes(Math.round(outAvg))}/write)`
         : "";
-      lines.push("- body in: "
-        + humanBytes(Math.round(ps.inBytesRate)) + "/s" + inExtra);
-      lines.push("- body out: "
-        + humanBytes(Math.round(ps.outBytesRate)) + "/s" + outExtra);
+      // Suppress zero per-process lines; the Totals block already
+      // confirms the direction was idle for the whole window, and
+      // repeating `body in: 0 B/s` on every process is noise.
+      if (ps.inBytesTotal > 0 || ps.inReadsTotal > 0) {
+        lines.push("- body in: "
+          + humanBytes(Math.round(ps.inBytesRate)) + "/s" + inExtra);
+      }
+      if (ps.outBytesTotal > 0 || ps.outWritesTotal > 0) {
+        lines.push("- body out: "
+          + humanBytes(Math.round(ps.outBytesRate)) + "/s" + outExtra);
+      }
     }
 
     const verdict = classifyCapacity(ps);
@@ -4035,15 +4282,25 @@ function buildCurrentStatsMarkdown() {
     lines.push("  - slow-request runs in window: " + ps.slowRunCount
       + " (threshold " + getCapacityStuckThreshMs() + " ms)");
     const slotRatio = ps.busyMean > 0 ? ps.cpuSlotMean / ps.busyMean : 0;
-    lines.push("  - slot cpu/busy (weighted): "
-      + ps.slotCpuBusyRatio.toFixed(2)
-      + "; per-tick mean ratio: " + slotRatio.toFixed(2));
+    const weightedTxt = ps.slotCpuBusyRatio.toFixed(2);
+    const perTickTxt = slotRatio.toFixed(2);
+    // When the two agree (typical on steady workloads), one number
+    // tells the whole story. Show both only when they diverge — that
+    // divergence *is* the signal (hot ticks skew the weighted mean
+    // away from the simple per-tick average).
+    if (weightedTxt === perTickTxt) {
+      lines.push("  - slot cpu / slot busy: " + weightedTxt);
+    } else {
+      lines.push("  - slot cpu / slot busy (weighted): " + weightedTxt
+        + "; per-tick mean ratio: " + perTickTxt);
+    }
+    const fmtSubMs = ms => ms.toFixed(ms >= 10 ? 0 : 2);
     if (ps.hasDaemonTime)
-      lines.push("  - daemon mean: " + ps.daemonMsMean.toFixed(0) + " ms"
-        + " (peak " + ps.daemonMsPeak.toFixed(0) + " ms)");
+      lines.push("  - daemon mean: " + fmtSubMs(ps.daemonMsMean) + " ms"
+        + " (peak " + fmtSubMs(ps.daemonMsPeak) + " ms)");
     if (ps.hasQueueTime)
-      lines.push("  - queue mean: " + ps.queueMsMean.toFixed(0) + " ms"
-        + " (peak " + ps.queueMsPeak.toFixed(0) + " ms)");
+      lines.push("  - queue mean: " + fmtSubMs(ps.queueMsMean) + " ms"
+        + " (peak " + fmtSubMs(ps.queueMsPeak) + " ms)");
     const triggerLabels = [];
     if (verdict.triggers.peg) triggerLabels.push("cpu-peg");
     if (verdict.triggers.ratio) triggerLabels.push("slot-ratio");
@@ -4077,12 +4334,22 @@ function buildCurrentStatsMarkdown() {
     const hist = aggregateBucketsFor(visible, spec.field, LINE_WINDOW_SEC);
     const total = hist.reduce((a, b) => a + b, 0);
     if (total === 0) continue;
-    const pctPart = [
-      "p50=" + fmtMs(bucketPercentileMs(hist, 0.5)),
-      "p90=" + fmtMs(bucketPercentileMs(hist, 0.9)),
-      "p95=" + fmtMs(bucketPercentileMs(hist, 0.95)),
-      "p99=" + fmtMs(bucketPercentileMs(hist, 0.99)),
-    ].join(", ");
+    // When a homogeneous workload lands every request in one bucket,
+    // p50/p90/p95/p99 are all the same upper-bound — printing four
+    // identical numbers is just noise. Collapse to one entry in that
+    // case; keep the full breakdown as soon as any percentile diverges.
+    const pcts = [
+      bucketPercentileMs(hist, 0.5),
+      bucketPercentileMs(hist, 0.9),
+      bucketPercentileMs(hist, 0.95),
+      bucketPercentileMs(hist, 0.99),
+    ];
+    const pctPart = pcts.every(v => v === pcts[0])
+      ? "p50..p99 \u2264 " + fmtMs(pcts[0])
+      : "p50=" + fmtMs(pcts[0]) +
+        ", p90=" + fmtMs(pcts[1]) +
+        ", p95=" + fmtMs(pcts[2]) +
+        ", p99=" + fmtMs(pcts[3]);
     const body = [
       "### " + spec.label,
       "",
@@ -4093,9 +4360,15 @@ function buildCurrentStatsMarkdown() {
     for (let i = 0; i < N_BUCKETS; i++) {
       if (hist[i] === 0) continue;
       const pct = (hist[i] / total) * 100;
+      // A single request in a 10k-sample window is 0.01% — rounding
+      // that to "0.0%" reads as "nothing there" and loses the signal
+      // that a tail exists. Surface it as "<0.1%" so the reader knows
+      // the bucket is non-empty but too small to quantify at this scale.
+      const pctTxt = pct >= 10 ? pct.toFixed(0)
+                   : pct >= 0.1 ? pct.toFixed(1)
+                   : "<0.1";
       body.push("  - " + bucketRangeLabel(i) + ": "
-        + hist[i].toLocaleString()
-        + " (" + (pct >= 10 ? pct.toFixed(0) : pct.toFixed(1)) + "%)");
+        + hist[i].toLocaleString() + " (" + pctTxt + "%)");
     }
     body.push("");
     distSections.push(body.join("\n"));
@@ -4113,24 +4386,164 @@ function buildCurrentStatsMarkdown() {
   }
 
   // --- Notes ------------------------------------------------------
+  // Self-contained reference. Every label and threshold that appears
+  // in the per-process State block is defined here so the snapshot
+  // can be read on its own, without the UI or screenshots alongside.
+  // Thresholds match classifyCapacity() and the saturation scoring
+  // in the Overview code.
+  const stuckMs = getCapacityStuckThreshMs();
   lines.push("## Notes");
   lines.push("");
-  lines.push("- Slow-request runs are counted per process using the " +
-             "same threshold shown on the Capacity heatmap legend " +
-             "(currently " + getCapacityStuckThreshMs() + " ms). " +
-             "The saturation classifier treats 3+ slow runs under " +
-             "busy ≥ 70% as a contribution to saturation; slow-run " +
-             "counts outside that envelope are surfaced here as raw " +
-             "signal but do not by themselves flag a process.");
+  lines.push("Self-contained digest of the labels, thresholds, and "
+    + "signals that appear above, so the snapshot reads without "
+    + "other attachments. The UI help doc (if attached alongside) "
+    + "is the fuller reference and goes into more depth — skip "
+    + "this section if you already have it loaded.");
+  lines.push("");
+
+  lines.push("- **Slow-request run.** A slow-request run is counted "
+    + "per process each time a worker thread holds a single request "
+    + "continuously for at least the configured threshold ("
+    + stuckMs + " ms in this snapshot). The saturation classifier "
+    + "treats \u2265 3 slow runs combined with a per-process busy "
+    + "fraction \u2265 70% over the window as a saturation "
+    + "contributor. Slow-run counts outside that envelope are "
+    + "surfaced in the per-process signals block as raw signal but "
+    + "do not by themselves flag a process.");
+
+  lines.push("- **Process state labels** (per process):");
+  lines.push("  - **saturated** \u2014 the process accumulated "
+    + "enough saturation signal to cross the flag threshold. "
+    + "Contributors (each adds a partial score, summed): busy "
+    + "fraction sustained > 80%, queue-time mean > 50 ms, \u2265 3 "
+    + "slow-request runs under busy \u2265 70%. Remediation: add "
+    + "capacity \u2014 more processes (`WSGIDaemonProcess "
+    + "processes=`), more threads (`threads=`), or reduce "
+    + "per-request service time.");
+  lines.push("  - **CPU/GIL-bound** \u2014 throughput is limited by "
+    + "CPU/GIL serialisation, not by the size of the worker pool. "
+    + "Adding more *threads* to this process will not raise "
+    + "throughput and can make contention worse. Add more "
+    + "*processes* instead, or reduce per-request CPU cost. The "
+    + "label lists which trigger fired (see below).");
+  lines.push("  - **normal** \u2014 process is within the operating "
+    + "envelope; no tuning implied. Reported as \"not flagged\" in "
+    + "the per-process State block.");
+
+  lines.push("- **CPU/GIL triggers.** Any single trigger is enough "
+    + "to flag CPU/GIL-bound; the block lists whichever ones are "
+    + "currently firing. Gated by request rate \u2265 3 rpm so a "
+    + "cold process with one sample isn't classified.");
+  lines.push("  - **cpu-peg** \u2014 per-process CPU > 90% of one "
+    + "core with \u2265 2 worker threads and busy > 30%. Multiple "
+    + "threads competing for one core is the textbook GIL-bound "
+    + "pattern.");
+  lines.push("  - **slot-ratio** \u2014 busy > 50% and "
+    + "slot cpu / slot busy < 0.5. The threads are not running CPU "
+    + "work while they hold a request, which on a Python workload "
+    + "usually means GIL wait (or blocking I/O \u2014 I/O-heavy "
+    + "workloads can match this trigger too, so treat it as "
+    + "suggestive rather than conclusive).");
+  lines.push("  - **daemon-absolute** \u2014 mean daemon-phase time "
+    + "> 50 ms. The dispatch stage (first-GIL-acquire + handoff) "
+    + "is slow enough to indicate contention for the interpreter "
+    + "lock during request entry.");
+  lines.push("  - **multi-core carve-out** \u2014 *exclusionary, not "
+    + "a flag reason.* When CPU mean > 1.2 cores and busy > 50%, "
+    + "the workload is demonstrably running across multiple cores, "
+    + "so the GIL isn't serialising; the CPU/GIL label is "
+    + "suppressed even if other triggers fire. Shown in the "
+    + "trigger list as \"(label suppressed)\".");
+
+  lines.push("- **Signal glossary** (per-process \"signals used\" "
+    + "entries):");
+  lines.push("  - **busy** \u2014 fraction of worker-thread time "
+    + "spent holding a request. 1.0 = every worker slot occupied "
+    + "the whole window.");
+  lines.push("  - **cpu** \u2014 per-process CPU utilisation as a "
+    + "fraction of one core (user + system). A 4-thread process "
+    + "running flat-out on 4 cores reports 4.0.");
+  lines.push("  - **slot cpu / slot busy** \u2014 ratio of on-CPU "
+    + "time to in-request time across worker slots. 1.0 = pure "
+    + "compute; near 0 = threads hold a request without running "
+    + "CPU work (GIL wait or blocking I/O).");
+  lines.push("  - **daemon mean / peak** \u2014 mean and window-peak "
+    + "of the daemon phase (Apache handing the request to the "
+    + "daemon process, plus the daemon's first-GIL-acquire + "
+    + "dispatch).");
+  lines.push("  - **queue mean / peak** \u2014 time the request "
+    + "spent waiting in the daemon's socket-accept queue before a "
+    + "worker thread picked it up. Rises with both undersized "
+    + "pools (not enough threads) and slow-to-dispatch daemons "
+    + "(GIL contention at request entry).");
+
   if (multiHost) {
-    lines.push("- **Multi-host snapshot.** This collector is intended " +
-               "for a single Apache instance but samples from " +
-               "multiple hostnames are present. Totals are summed " +
-               "across hosts. Tuning advice (`WSGIDaemonProcess " +
-               "processes=N threads=M`) is per-host and must be " +
-               "mirrored across each host; total deployment headroom " +
-               "is the sum across hosts.");
+    lines.push("- **Multi-host snapshot.** Samples from multiple "
+      + "hostnames are present. Totals are summed across hosts. "
+      + "Tuning advice (`WSGIDaemonProcess processes=N threads=M`) "
+      + "applies per-host and must be mirrored across each host; "
+      + "total deployment headroom is the sum across hosts.");
   }
+
+  // --- Tuning suggestion: throughput-ceiling ----------------------
+  // Emit only when the numbers say the daemon handshake is plausibly
+  // a visible fraction of request time AND the deployment is healthy
+  // enough that the operator would benefit from a ceiling lift (as
+  // opposed to first needing to resolve saturation). All four gates
+  // must hold:
+  //   1. At least one daemon-mode group is present. Script-reload
+  //      and queue-timeout knobs apply only to daemon mode, so the
+  //      tip is meaningless for embedded-only deployments.
+  //   2. Every visible process is classified normal. Firing this
+  //      tip on a saturated or CPU/GIL-bound deployment would be
+  //      wrong — capacity, not handshake overhead, is the issue.
+  //   3. Mean response time is low enough that the per-request
+  //      handshake is a measurable share. 50 ms is generous; below
+  //      that the handshake is worth considering, above it the
+  //      handshake is noise against the app work.
+  //   4. Non-trivial traffic — roughly > 100 rpm — so the advice
+  //      actually matters. Idle snapshots shouldn't fire a tip.
+  let daemonModePresent = false;
+  for (const g of totals.groups.keys()) {
+    if (g !== "") { daemonModePresent = true; break; }
+  }
+  const allNormal = totals.stateCounts.saturated === 0
+    && totals.stateCounts.cpuGilBound === 0;
+  const hasLowLatency = totals.respMs !== null && totals.respMs < 50;
+  const meaningfulTraffic = totals.rpm > 100;
+  if (daemonModePresent && allNormal && hasLowLatency
+      && meaningfulTraffic) {
+    lines.push("");
+    lines.push("## Tuning suggestion: throughput ceiling");
+    lines.push("");
+    lines.push("Workload is operating below saturation with low "
+      + "response times (" + totals.respMs.toFixed(0)
+      + " ms mean, " + totals.procCount + " process"
+      + (totals.procCount === 1 ? "" : "es") + " all normal). In "
+      + "this regime the per-request daemon handshake "
+      + "(script-reload mtime check + non-zero `queue-timeout`) is "
+      + "a visible fraction of total request time.");
+    lines.push("");
+    lines.push("If **code auto-reload** and **automatic "
+      + "queue-backlog recovery** are not required (i.e. "
+      + "deployments happen via process restart and traffic is "
+      + "under control), raise the throughput ceiling by "
+      + "disabling both:");
+    lines.push("");
+    lines.push("- Raw Apache: `WSGIScriptReloading Off` plus "
+      + "`queue-timeout=0` on each `WSGIDaemonProcess` directive.");
+    lines.push("- `mod_wsgi-express`: `--disable-reloading` plus "
+      + "`--queue-timeout=0`.");
+    lines.push("");
+    lines.push("Trade-offs: code changes only take effect on "
+      + "process restart (pair with a deploy pipeline that "
+      + "restarts daemons explicitly, or use `maximum-requests=` "
+      + "to cycle them); a stuck request can fill the daemon's "
+      + "listen queue without the queue-timeout self-recovery, so "
+      + "application-level timeouts (HTTP client, DB statement, "
+      + "downstream SLAs) become the only line of defence.");
+  }
+
   return lines.join("\n");
 }
 
