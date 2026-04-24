@@ -38,6 +38,12 @@ async def api_state(request: web.Request) -> web.Response:
     return web.json_response(ingester.snapshot())
 
 
+async def api_slow_clear(request: web.Request) -> web.Response:
+    ingester: Ingester = request.app["ingester"]
+    ingester.clear_slow_requests()
+    return web.json_response({"ok": True})
+
+
 async def websocket(request: web.Request) -> web.WebSocketResponse:
     ingester: Ingester = request.app["ingester"]
     ws = web.WebSocketResponse(heartbeat=30)
@@ -110,6 +116,7 @@ async def build_app(listen_spec: str) -> web.Application:
     app.router.add_get("/", index)
     app.router.add_get("/ws", websocket)
     app.router.add_get("/api/state", api_state)
+    app.router.add_post("/api/slow/clear", api_slow_clear)
     app.router.add_static("/static/", STATIC_DIR)
 
     async def start_ingester(_: web.Application) -> None:

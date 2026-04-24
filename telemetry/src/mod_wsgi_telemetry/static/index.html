@@ -830,6 +830,8 @@
             </label>
             <button type="button" id="slow_pause" class="pause-btn"
                     title="Freeze the table at the current snapshot so an entry doesn't disappear while you read it. Live samples continue to arrive in the background.">Pause</button>
+            <button type="button" id="slow_clear" class="pause-btn"
+                    title="Drop every slow-request record the ingester is holding. New samples for any still-running request will repopulate within a tick; completed history is wiped.">Clear</button>
           </div>
         </div>
         <div class="subtitle" id="slow_subtitle">sorted slowest first; filtered by selected process group</div>
@@ -3205,6 +3207,18 @@ function connect() {
       addSample(msg);
     } else if (msg.type === "slow_request") {
       upsertSlow(msg.entry);
+    } else if (msg.type === "slow_clear") {
+      state.slowRequests.clear();
+      state.slowExpanded.clear();
+      if (msg.kept) {
+        for (const r of msg.kept) upsertSlow(r.entry);
+      }
+      if (state.slowPaused) {
+        state.slowPausedSnapshot = [
+          ...state.slowRequests.values()
+        ].map(rec => ({ ...rec.entry }));
+      }
+      redraw();
     }
   };
 }
@@ -3230,6 +3244,13 @@ document.getElementById("capacity_stuck_thresh").addEventListener("change", redr
     btn.classList.toggle("paused", state.capacityPaused);
     btn.textContent = state.capacityPaused ? "Resume" : "Pause";
     redraw();
+  });
+})();
+
+(function () {
+  const btn = document.getElementById("slow_clear");
+  btn.addEventListener("click", () => {
+    fetch("/api/slow/clear", { method: "POST" }).catch(() => {});
   });
 })();
 

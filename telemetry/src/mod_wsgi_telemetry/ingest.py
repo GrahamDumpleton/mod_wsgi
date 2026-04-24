@@ -295,6 +295,38 @@ class Ingester:
             log.info("gc: dropping stale pid=%d", pid)
             self.processes.pop(pid, None)
 
+    def clear_slow_requests(self) -> None:
+        """Drop completed history plus any active record GC would also drop.
+
+        Triggered by the Slow requests tab's Clear button. Drops every
+        completed entry outright and every active entry whose pid has died
+        or whose last_seen is already past the active TTL — so the table
+        snaps to "only requests the daemon is still actively heart-beating
+        about". Live in-flight rows are preserved.
+        """
+        now = time.monotonic()
+        live_pids = set(self.processes)
+        kept: dict[tuple, SlowEntry] = {}
+        for key, entry in self.slow_requests.items():
+            if entry.state == 1:
+                continue
+            if entry.pid not in live_pids:
+                continue
+            proc = self.processes.get(entry.pid)
+            sp = proc.sample_period if proc and proc.sample_period > 0 else 1.0
+            ttl = max(self.SLOW_ACTIVE_TTL_SECONDS, 3.0 * sp)
+            if now - entry.last_seen > ttl:
+                continue
+            kept[key] = entry
+        self.slow_requests = kept
+        self._enqueue_all({
+            "type": "slow_clear",
+            "kept": [
+                {"key": list(k), "entry": e.to_dict()}
+                for k, e in kept.items()
+            ],
+        })
+
     def _gc_slow(self) -> None:
         """Age out slow-request entries the reporter has stopped updating.
 
