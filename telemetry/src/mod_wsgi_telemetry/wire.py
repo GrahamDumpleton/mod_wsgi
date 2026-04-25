@@ -101,61 +101,87 @@ FIELDS = {
     52: "request_threads_active",
 
     # 60-69: per-phase mean times for the interval (seconds).
+    # request_time is the per-request total
+    # (server + queue + daemon + application) — what the caller actually
+    # experienced.
     60: "server_time",
     61: "queue_time",
     62: "daemon_time",
     63: "application_time",
+    64: "request_time",
 
-    # 70-79: per-phase histograms (16 buckets, log2 from 5 ms).
-    # request_time = server + queue + daemon + application summed per
-    # request — what the caller actually experienced.
-    70: "server_time_buckets",
-    71: "queue_time_buckets",
-    72: "daemon_time_buckets",
-    73: "application_time_buckets",
-    74: "request_time_buckets",
+    # 70-79: per-phase exact min times for the interval (microseconds).
+    # Only present on ticks where at least one request completed; the
+    # encoder skips the field on idle ticks. Aggregate cleanly across
+    # processes and across windows by min-of-mins — exact, no histogram
+    # approximation.
+    70: "server_time_min_us",
+    71: "queue_time_min_us",
+    72: "daemon_time_min_us",
+    73: "application_time_min_us",
+    74: "request_time_min_us",
 
-    # 80-89: per-interval request I/O totals. Drained from the adapter's
-    # InputObject.bytes/reads and AdapterObject.output_length/output_writes
-    # at end-of-request; in-flight requests don't contribute until they
-    # finish.
-    80: "input_bytes_total",
-    81: "input_reads_total",
-    82: "output_bytes_total",
-    83: "output_writes_total",
+    # 80-89: per-phase exact max times for the interval (microseconds).
+    # Same emission rule and aggregation semantics as the min block —
+    # max-of-maxes is exact. Pairs with the histograms below to give a
+    # true worst-case alongside bucket-bounded percentiles.
+    80: "server_time_max_us",
+    81: "queue_time_max_us",
+    82: "daemon_time_max_us",
+    83: "application_time_max_us",
+    84: "request_time_max_us",
 
-    # 90-99: per-slot capacity signals. One entry per worker thread,
+    # 90-99: per-phase histograms. HDR-style: 16 octaves from 1 ms to
+    # 65.5 s, each octave linearly split into 4 sub-buckets, plus one
+    # overflow bucket for >65536 ms = 65 entries per phase. Max relative
+    # error inside any sub-bucket is <=25%.
+    90: "server_time_buckets",
+    91: "queue_time_buckets",
+    92: "daemon_time_buckets",
+    93: "application_time_buckets",
+    94: "request_time_buckets",
+
+    # 100-109: per-interval request I/O totals. Drained from the
+    # adapter's InputObject.bytes/reads and
+    # AdapterObject.output_length/output_writes at end-of-request;
+    # in-flight requests don't contribute until they finish.
+    100: "input_bytes_total",
+    101: "input_reads_total",
+    102: "output_bytes_total",
+    103: "output_writes_total",
+
+    # 110-119: per-slot capacity signals. One entry per worker thread,
     # carried as i32 arrays whose length matches the emitting process's
     # live request_threads_maximum.
-    90: "slot_request_count",
-    91: "slot_busy_time_us",
-    92: "slot_cpu_time_us",
-    93: "slot_current_elapsed_ms",
-    94: "slot_max_duration_ms",
+    110: "slot_request_count",
+    111: "slot_busy_time_us",
+    112: "slot_cpu_time_us",
+    113: "slot_current_elapsed_ms",
+    114: "slot_max_duration_ms",
 
-    # 100-119: slow-request fields (only present in KIND_SLOW_REQUEST
+    # 120-139: slow-request fields (only present in KIND_SLOW_REQUEST
     # datagrams). Identity (hostname, process_group) is keyed per pid
     # from the accompanying KIND_REQUEST stream, so it is not repeated
-    # here. 100-109: identification and timing. 110-113: per-request
+    # here. 120-129: identification and timing. 130-133: per-request
     # I/O — final at completion, partial snapshot for active records.
-    # 114-115: per-request CPU time (microseconds) — final at completion,
+    # 134-135: per-request CPU time (microseconds) — final at completion,
     # zero for active records.
-    100: "slow_state",            # 0 = active, 1 = completed
-    101: "slow_start_stamp_us",
-    102: "slow_duration_us",
-    103: "slow_thread_id",
-    104: "slow_log_id",
-    105: "slow_method",
-    106: "slow_scheme",
-    107: "slow_hostname",
-    108: "slow_script_name",
-    109: "slow_path_info",
-    110: "slow_input_bytes",
-    111: "slow_input_reads",
-    112: "slow_output_bytes",
-    113: "slow_output_writes",
-    114: "slow_cpu_user_us",
-    115: "slow_cpu_system_us",
+    120: "slow_state",            # 0 = active, 1 = completed
+    121: "slow_start_stamp_us",
+    122: "slow_duration_us",
+    123: "slow_thread_id",
+    124: "slow_log_id",
+    125: "slow_method",
+    126: "slow_scheme",
+    127: "slow_hostname",
+    128: "slow_script_name",
+    129: "slow_path_info",
+    130: "slow_input_bytes",
+    131: "slow_input_reads",
+    132: "slow_output_bytes",
+    133: "slow_output_writes",
+    134: "slow_cpu_user_us",
+    135: "slow_cpu_system_us",
 }
 
 # Reverse map for encoders / tests.

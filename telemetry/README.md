@@ -19,8 +19,8 @@ uv run mod-wsgi-telemetry
 mod_wsgi-express start-server tests/hello.wsgi \
     --port 8080 \
     --processes 2 --threads 3 \
-    --telemetry-target unix:/tmp/mod_wsgi-telemetry.sock \
-    --telemetry-interval 1.0
+    --metrics-service unix:/tmp/mod_wsgi-telemetry.sock \
+    --metrics-interval 1.0
 
 # Terminal 3 — drive some traffic
 while true; do curl -s http://localhost:8080/ > /dev/null; done
@@ -51,27 +51,27 @@ uv run mod-wsgi-telemetry-simulate \
     --processes 4
 ```
 
-## Remote ingester (UDP)
+## Transport
 
-```
-# On the metrics host
-uv run mod-wsgi-telemetry --listen udp:0.0.0.0:9876
+The reporter and the ingester only support UNIX SOCK_DGRAM. The
+ingester is intended to run co-located with the mod_wsgi processes,
+which removes IP-fragmentation, MTU sizing and packet loss from the
+list of things to worry about. As a result, per-tick datagrams are
+allowed to grow well past the Ethernet MTU (peak ~4.4 KB at 128
+worker slots; the C-side stack buffer is sized at 8 KB).
 
-# On each mod_wsgi host
-mod_wsgi-express start-server app.wsgi \
-    --telemetry-target udp:metrics.internal:9876
-```
-
-UDP is cleartext; use only over trusted networks or via a tunnel. The
-default path-MTU ceiling is the practical upper bound on message size
-(roughly 1500 bytes on Ethernet). A request_metrics sample is ~400
-bytes; that's safely below the ceiling.
+Earlier `udp:host:port` targets are no longer accepted on either side
+— `WSGIMetricsService udp:...` and `--metrics-service udp:...` will be
+rejected at config-parse time with a clear error, and the ingester's
+`--listen` only accepts `unix:/path`. Use a tunnelled file-system
+mount (e.g. shared NFS path) or a sidecar relay if you genuinely need
+to ship telemetry across hosts.
 
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `mod-wsgi-telemetry` | HTTP + WebSocket server, spawns the datagram receiver. `--listen unix:/path` or `--listen udp:host:port`. UI on `--http-host` / `--http-port` (default 127.0.0.1:8877). |
+| `mod-wsgi-telemetry` | HTTP + WebSocket server, spawns the datagram receiver. `--listen unix:/path` (UNIX SOCK_DGRAM only). UI on `--http-host` / `--http-port` (default 127.0.0.1:8877). |
 | `mod-wsgi-telemetry-dump` | CLI alternative that binds the socket itself and prints decoded samples. Don't run alongside the server — they'd fight for the socket. Useful when iterating on the wire format. |
 | `mod-wsgi-telemetry-simulate` | Emits synthetic samples so the UI can be exercised without a running mod_wsgi. |
 
@@ -99,20 +99,20 @@ its own socket path:
 uv run mod-wsgi-telemetry --listen unix:/tmp/mod_wsgi-telemetry-staging.sock
 ```
 
-and point `mod_wsgi-express --telemetry-target` at the matching path.
+and point `mod_wsgi-express --metrics-service` at the matching path.
 
 ## mod_wsgi-express options
 
 | Option | Description |
 |---|---|
-| `--telemetry-target TARGET` | Enable the telemetry reporter. `unix:/path` for a local datagram socket or `udp:host:port` for a remote ingester. Off by default. |
-| `--telemetry-interval SECONDS` | Sampling interval (default `1.0`). Floor of 0.1s enforced in C. |
+| `--metrics-service TARGET` | Enable the telemetry reporter. `unix:/path` for a local datagram socket. Remote `udp:host:port` targets are not supported. Off by default. |
+| `--metrics-interval SECONDS` | Sampling interval (default `1.0`). Floor of 0.1s enforced in C. |
 
-Under the hood these translate to the `WSGITelemetryReporter` Apache
+Under the hood these translate to the `WSGIMetricsService` Apache
 directive in the generated `httpd.conf`. Equivalent manual form:
 
 ```apache
-WSGITelemetryReporter unix:/tmp/mod_wsgi-telemetry.sock interval=1.0
+WSGIMetricsService unix:/tmp/mod_wsgi-telemetry.sock interval=1.0
 ```
 
 Only activated in daemon-mode processes today. Embedded-mode support is
@@ -126,6 +126,31 @@ file mirrors `src/server/wsgi_telemetry.h` on the mod_wsgi C side —
 keep the field IDs in lockstep. Once the C header is stable, a small
 codegen script should regenerate the Python table from it; for now
 both sides are maintained by hand.
+
+Per-phase data (server, queue, daemon, application, request) is
+grouped into contiguous 10-wide field-ID blocks of five entries each
+so the layout stays symmetric as new per-phase signals are added:
+
+| Range | Block |
+|---|---|
+| 60-69 | per-phase mean times (seconds, f64) |
+| 70-79 | per-phase exact min times (microseconds, u64) |
+| 80-89 | per-phase exact max times (microseconds, u64) |
+| 90-99 | per-phase histograms (i32 array) |
+
+Time-distribution histograms use an HDR-style layout: 16 octaves from
+1 ms to 65.5 s (powers of two), each octave linearly split into 4
+sub-buckets, plus one overflow bucket for >65.5 s — 65 entries per
+phase. Maximum relative error inside any sub-bucket is ≤25%. The
+encoder in `wsgi_record_time_in_buckets` indexes via `frexp` in O(1).
+
+Min/max are skipped on idle ticks (the C-side accumulators carry a
+`UINT64_MAX` sentinel until at least one request lands in the tick),
+so absence of the field on the wire is interpreted as "no data this
+tick". Both aggregate cleanly across processes (min-of-mins,
+max-of-maxes) and across time windows; pair them with the
+bucket-derived percentiles to read true worst-case alongside the
+shape of the distribution.
 
 ## Tests
 
@@ -153,9 +178,10 @@ tests/
 - **UI shows `disconnected`.** The WebSocket couldn't reach the server.
   Check the ingester is still running and `--http-port` matches.
 - **UI connected but no data.** mod_wsgi may not be reaching the
-  socket — check that `--telemetry-target` on both sides matches
-  exactly, and that the Apache user has permission to open the socket
-  path. The ingester log prints `listening on ...` at startup.
+  socket — check that `--metrics-service` on the mod_wsgi side and
+  `--listen` on the ingester point at the same `unix:` path, and that
+  the Apache user has permission to open the socket path. The
+  ingester log prints `listening on ...` at startup.
 - **`decode_errors` climbing.** Version mismatch or corruption. Stop
   the ingester and mod_wsgi, verify both were built from the same
   tree, and restart.

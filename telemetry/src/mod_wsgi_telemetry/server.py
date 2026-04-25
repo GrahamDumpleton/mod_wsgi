@@ -145,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         description="mod_wsgi telemetry ingester + live UI."
     )
     ap.add_argument("--listen", default="unix:/tmp/mod_wsgi-telemetry.sock",
-                    help="unix:/path/to/sock  or  udp:host:port  (default: %(default)s)")
+                    help="unix:/path/to/sock  (default: %(default)s)")
     ap.add_argument("--http-host", default="127.0.0.1")
     ap.add_argument("--http-port", type=int, default=8877)
     ap.add_argument("--log-level", default="INFO")

@@ -119,67 +119,96 @@
 #define WSGI_METRICS_F_REQUEST_THREADS_STARTED     51   /* u64 */
 #define WSGI_METRICS_F_REQUEST_THREADS_ACTIVE      52   /* u64 */
 
-/* 60-69: Per-phase mean times for the interval (seconds). */
+/* 60-69: Per-phase mean times for the interval (seconds).
+ * request_time is the per-request total (server + queue + daemon +
+ * application) — what the caller actually experienced. */
 #define WSGI_METRICS_F_SERVER_TIME                 60   /* f64 */
 #define WSGI_METRICS_F_QUEUE_TIME                  61   /* f64 */
 #define WSGI_METRICS_F_DAEMON_TIME                 62   /* f64 */
 #define WSGI_METRICS_F_APPLICATION_TIME            63   /* f64 */
+#define WSGI_METRICS_F_REQUEST_TIME                64   /* f64 */
 
-/* 70-79: Per-phase histograms (16 buckets, log2 from 5 ms).
- * request_time = server + queue + daemon + application summed per
- * request at end-of-request — what the caller actually experienced. */
-#define WSGI_METRICS_F_SERVER_TIME_BUCKETS         70   /* i32 array */
-#define WSGI_METRICS_F_QUEUE_TIME_BUCKETS          71   /* i32 array */
-#define WSGI_METRICS_F_DAEMON_TIME_BUCKETS         72   /* i32 array */
-#define WSGI_METRICS_F_APPLICATION_TIME_BUCKETS    73   /* i32 array */
-#define WSGI_METRICS_F_REQUEST_TIME_BUCKETS        74   /* i32 array */
+/* 70-79: Per-phase exact min times for the interval (microseconds).
+ * Only emitted on ticks where at least one request completed; the
+ * encoder skips the field when the per-tick min sentinel
+ * (UINT64_MAX) is still in place.
+ *
+ * Aggregate cleanly across processes and across time windows by
+ * (min of mins) — exact, no histogram approximation. */
+#define WSGI_METRICS_F_SERVER_TIME_MIN_US          70   /* u64 */
+#define WSGI_METRICS_F_QUEUE_TIME_MIN_US           71   /* u64 */
+#define WSGI_METRICS_F_DAEMON_TIME_MIN_US          72   /* u64 */
+#define WSGI_METRICS_F_APPLICATION_TIME_MIN_US     73   /* u64 */
+#define WSGI_METRICS_F_REQUEST_TIME_MIN_US         74   /* u64 */
 
-/* 80-89: Per-interval request I/O totals. Drained from the same
+/* 80-89: Per-phase exact max times for the interval (microseconds).
+ * Same emission rule and aggregation semantics as the min block —
+ * (max of maxes) is exact. Pairs with the histograms below to give a
+ * true worst-case alongside the bucket-bounded percentiles. */
+#define WSGI_METRICS_F_SERVER_TIME_MAX_US          80   /* u64 */
+#define WSGI_METRICS_F_QUEUE_TIME_MAX_US           81   /* u64 */
+#define WSGI_METRICS_F_DAEMON_TIME_MAX_US          82   /* u64 */
+#define WSGI_METRICS_F_APPLICATION_TIME_MAX_US     83   /* u64 */
+#define WSGI_METRICS_F_REQUEST_TIME_MAX_US         84   /* u64 */
+
+/* 90-99: Per-phase histograms. HDR-style: 16 octaves from 1 ms to
+ * 65.5 s, each octave linearly split into 4 sub-buckets, plus one
+ * overflow bucket for >65536 ms = 65 entries per phase. Max relative
+ * error inside any sub-bucket is ≤25%. See wsgi_record_time_in_buckets
+ * for the mantissa-based O(1) index. */
+#define WSGI_METRICS_F_SERVER_TIME_BUCKETS         90   /* i32 array */
+#define WSGI_METRICS_F_QUEUE_TIME_BUCKETS          91   /* i32 array */
+#define WSGI_METRICS_F_DAEMON_TIME_BUCKETS         92   /* i32 array */
+#define WSGI_METRICS_F_APPLICATION_TIME_BUCKETS    93   /* i32 array */
+#define WSGI_METRICS_F_REQUEST_TIME_BUCKETS        94   /* i32 array */
+
+/* 100-109: Per-interval request I/O totals. Drained from the same
  * accumulator that wsgi_record_request_times() updates at end-of-
  * request, so the counts cover requests that completed during this
  * tick (in-flight requests do not contribute until they finish). */
-#define WSGI_METRICS_F_INPUT_BYTES_TOTAL           80   /* u64 */
-#define WSGI_METRICS_F_INPUT_READS_TOTAL           81   /* u64 */
-#define WSGI_METRICS_F_OUTPUT_BYTES_TOTAL          82   /* u64 */
-#define WSGI_METRICS_F_OUTPUT_WRITES_TOTAL         83   /* u64 */
+#define WSGI_METRICS_F_INPUT_BYTES_TOTAL          100   /* u64 */
+#define WSGI_METRICS_F_INPUT_READS_TOTAL          101   /* u64 */
+#define WSGI_METRICS_F_OUTPUT_BYTES_TOTAL         102   /* u64 */
+#define WSGI_METRICS_F_OUTPUT_WRITES_TOTAL        103   /* u64 */
 
-/* 90-99: Per-slot capacity signals. One entry per worker thread; array
- * length matches the emitting process's live request_threads_maximum. */
-#define WSGI_METRICS_F_SLOT_REQUEST_COUNT          90   /* i32 array */
-#define WSGI_METRICS_F_SLOT_BUSY_TIME_US           91   /* i32 array */
-#define WSGI_METRICS_F_SLOT_CPU_TIME_US            92   /* i32 array */
-#define WSGI_METRICS_F_SLOT_CURRENT_ELAPSED_MS     93   /* i32 array */
-#define WSGI_METRICS_F_SLOT_MAX_DURATION_MS        94   /* i32 array */
+/* 110-119: Per-slot capacity signals. One entry per worker thread;
+ * array length matches the emitting process's live
+ * request_threads_maximum. */
+#define WSGI_METRICS_F_SLOT_REQUEST_COUNT         110   /* i32 array */
+#define WSGI_METRICS_F_SLOT_BUSY_TIME_US          111   /* i32 array */
+#define WSGI_METRICS_F_SLOT_CPU_TIME_US           112   /* i32 array */
+#define WSGI_METRICS_F_SLOT_CURRENT_ELAPSED_MS    113   /* i32 array */
+#define WSGI_METRICS_F_SLOT_MAX_DURATION_MS       114   /* i32 array */
 
-/* 100-119: Slow-request fields. Only present in
+/* 120-139: Slow-request fields. Only present in
  * WSGI_METRICS_KIND_SLOW_REQUEST datagrams; identity (hostname,
  * process_group) is looked up via the accompanying KIND_REQUEST stream
  * on the ingester.
  *
- * 100-109: identification and timing.
- * 110-113: per-request I/O — final at completion, partial snapshot for
+ * 120-129: identification and timing.
+ * 130-133: per-request I/O — final at completion, partial snapshot for
  *          active records (the adapter may yet read or write more).
- * 114-115: per-request CPU time (microseconds), computed at end-of-
+ * 134-135: per-request CPU time (microseconds), computed at end-of-
  *          request from the worker thread's getrusage delta. Active
  *          records carry zero — getrusage(RUSAGE_THREAD) only works
  *          from the request's own thread, but the active-record
  *          snapshot runs from the telemetry reporter thread. */
-#define WSGI_METRICS_F_SLOW_STATE                 100   /* u64: 0=active, 1=completed */
-#define WSGI_METRICS_F_SLOW_START_STAMP_US        101   /* u64 */
-#define WSGI_METRICS_F_SLOW_DURATION_US           102   /* u64 */
-#define WSGI_METRICS_F_SLOW_THREAD_ID             103   /* u64 */
-#define WSGI_METRICS_F_SLOW_LOG_ID                104   /* bytes */
-#define WSGI_METRICS_F_SLOW_METHOD                105   /* bytes */
-#define WSGI_METRICS_F_SLOW_SCHEME                106   /* bytes */
-#define WSGI_METRICS_F_SLOW_HOSTNAME              107   /* bytes */
-#define WSGI_METRICS_F_SLOW_SCRIPT_NAME           108   /* bytes */
-#define WSGI_METRICS_F_SLOW_PATH_INFO             109   /* bytes */
-#define WSGI_METRICS_F_SLOW_INPUT_BYTES           110   /* u64 */
-#define WSGI_METRICS_F_SLOW_INPUT_READS           111   /* u64 */
-#define WSGI_METRICS_F_SLOW_OUTPUT_BYTES          112   /* u64 */
-#define WSGI_METRICS_F_SLOW_OUTPUT_WRITES         113   /* u64 */
-#define WSGI_METRICS_F_SLOW_CPU_USER_US           114   /* u64 */
-#define WSGI_METRICS_F_SLOW_CPU_SYSTEM_US         115   /* u64 */
+#define WSGI_METRICS_F_SLOW_STATE                 120   /* u64: 0=active, 1=completed */
+#define WSGI_METRICS_F_SLOW_START_STAMP_US        121   /* u64 */
+#define WSGI_METRICS_F_SLOW_DURATION_US           122   /* u64 */
+#define WSGI_METRICS_F_SLOW_THREAD_ID             123   /* u64 */
+#define WSGI_METRICS_F_SLOW_LOG_ID                124   /* bytes */
+#define WSGI_METRICS_F_SLOW_METHOD                125   /* bytes */
+#define WSGI_METRICS_F_SLOW_SCHEME                126   /* bytes */
+#define WSGI_METRICS_F_SLOW_HOSTNAME              127   /* bytes */
+#define WSGI_METRICS_F_SLOW_SCRIPT_NAME           128   /* bytes */
+#define WSGI_METRICS_F_SLOW_PATH_INFO             129   /* bytes */
+#define WSGI_METRICS_F_SLOW_INPUT_BYTES           130   /* u64 */
+#define WSGI_METRICS_F_SLOW_INPUT_READS           131   /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_BYTES          132   /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_WRITES         133   /* u64 */
+#define WSGI_METRICS_F_SLOW_CPU_USER_US           134   /* u64 */
+#define WSGI_METRICS_F_SLOW_CPU_SYSTEM_US         135   /* u64 */
 
 /* ------------------------------------------------------------------------- */
 
@@ -189,7 +218,11 @@
  * can be filled under wsgi_monitor_lock without taking the GIL.
  */
 
-#define WSGI_TELEMETRY_BUCKET_COUNT 16
+/* Per-phase histogram bucket count. HDR-style layout: 16 octaves
+ * (1 ms → 65.5 s) × 4 linear sub-buckets per octave + 1 overflow
+ * bucket for >65536 ms. See wsgi_record_time_in_buckets and the
+ * BUCKET_UPPER_MS table on the UI side for the exact boundaries. */
+#define WSGI_TELEMETRY_BUCKET_COUNT 65
 
 /* Upper bound on per-slot array sizing. The encoder only emits
  * slot_count entries per tick, so oversizing the struct costs stack
@@ -231,6 +264,23 @@ typedef struct {
     double   queue_time;
     double   daemon_time;
     double   application_time;
+    double   request_time;
+
+    /* Per-phase exact min/max for the interval, in microseconds. The
+     * encoder skips the corresponding wire field when min still holds
+     * its UINT64_MAX sentinel — i.e. no requests completed during the
+     * tick. Min-of-mins / max-of-maxes are exact under any cross-
+     * process or cross-window aggregation. */
+    uint64_t server_time_min_us;
+    uint64_t queue_time_min_us;
+    uint64_t daemon_time_min_us;
+    uint64_t application_time_min_us;
+    uint64_t request_time_min_us;
+    uint64_t server_time_max_us;
+    uint64_t queue_time_max_us;
+    uint64_t daemon_time_max_us;
+    uint64_t application_time_max_us;
+    uint64_t request_time_max_us;
 
     int32_t  server_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
     int32_t  queue_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
@@ -321,7 +371,7 @@ typedef struct {
  * sample.
  */
 
-#define WSGI_METRICS_MAX_DATAGRAM 4096
+#define WSGI_METRICS_MAX_DATAGRAM 8192
 
 static inline void wsgi_metrics_put_u16le(uint8_t **p, uint16_t v)
 {

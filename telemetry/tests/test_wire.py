@@ -102,8 +102,9 @@ def test_roundtrip_slow_request():
 
 
 def test_roundtrip_slot_capacity_arrays():
-    # All five per-slot capacity arrays must round-trip cleanly: reuse of
-    # wire id 64 (now carrying slot_request_count) + the new 90-93 block.
+    # All five per-slot capacity arrays must round-trip cleanly. Slot
+    # arrays now live at 110-114 after the per-phase blocks were
+    # widened to fit min/max alongside means and histograms.
     fields = {
         "slot_request_count":       [0, 3, 7, 0, 1],
         "slot_busy_time_us":        [0, 250_000, 980_000, 0, 120_000],
@@ -114,6 +115,72 @@ def test_roundtrip_slot_capacity_arrays():
     got = _roundtrip(fields)
     for name, expected in fields.items():
         assert got.fields[name] == expected, name
+
+
+def test_roundtrip_per_phase_means():
+    # Per-phase means at 60-64. request_time (id 64) was added for
+    # symmetry with the min/max/histogram blocks below — verify it
+    # round-trips alongside the four pre-existing phase means.
+    fields = {
+        "server_time": 0.0042,
+        "queue_time": 0.0011,
+        "daemon_time": 0.0008,
+        "application_time": 0.0240,
+        "request_time": 0.0301,
+    }
+    got = _roundtrip(fields)
+    for name, expected in fields.items():
+        assert got.fields[name] == expected, name
+
+
+def test_roundtrip_per_phase_min_max_us():
+    # Per-phase exact min (70-74) and max (80-84) accumulators in
+    # microseconds. Encoded by the C side only on ticks where at least
+    # one request completed; absence == "no data this tick".
+    fields = {
+        "server_time_min_us":      1_500,
+        "server_time_max_us":     12_000,
+        "queue_time_min_us":         400,
+        "queue_time_max_us":       3_200,
+        "daemon_time_min_us":        300,
+        "daemon_time_max_us":      1_900,
+        "application_time_min_us": 8_000,
+        "application_time_max_us": 95_000,
+        "request_time_min_us":    11_000,
+        "request_time_max_us":   118_000,
+    }
+    got = _roundtrip(fields)
+    for name, expected in fields.items():
+        assert got.fields[name] == expected, name
+
+
+def test_per_phase_min_max_absent_on_idle_tick():
+    # The C encoder skips the min/max fields when no requests
+    # completed in the tick. The decoder must not invent them.
+    got = _roundtrip({
+        "server_time": 0.0,
+        "request_count": 0,
+    })
+    for name in (
+        "server_time_min_us",
+        "application_time_min_us",
+        "request_time_max_us",
+    ):
+        assert name not in got.fields
+
+
+def test_roundtrip_hdr_request_time_buckets():
+    # 65-entry HDR layout: 16 octaves × 4 sub-buckets + 1 overflow.
+    # Spot-check that the wire format carries the full array intact.
+    buckets = [0] * 65
+    buckets[0] = 7        # [1, 1.25) ms
+    buckets[12] = 312     # [8, 10) ms
+    buckets[20] = 91      # [32, 40) ms
+    buckets[40] = 5       # [1024, 1280) ms
+    buckets[64] = 1       # >65536 ms (overflow)
+    got = _roundtrip({"request_time_buckets": buckets})
+    assert len(got.fields["request_time_buckets"]) == 65
+    assert got.fields["request_time_buckets"] == buckets
 
 
 def test_roundtrip_reporter_config():

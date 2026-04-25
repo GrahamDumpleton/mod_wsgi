@@ -25,9 +25,13 @@
  * binary TLV datagram to a local socket. The encoder emits the format
  * documented in wsgi_telemetry.h.
  *
- * Transport is SOCK_DGRAM, fire-and-forget. If the ingester is down or
- * restarting, the kernel discards the datagram and the reporter continues
- * without blocking.
+ * Transport is UNIX SOCK_DGRAM, fire-and-forget. If the ingester is down
+ * or restarting, the kernel discards the datagram and the reporter
+ * continues without blocking. Remote (IPv4 UDP) targets are not
+ * supported — telemetry is intended for a co-located ingester so that
+ * IP-fragmentation, MTU sizing and packet loss across a real network
+ * are all non-concerns; the per-tick datagram is allowed to grow well
+ * past the Ethernet MTU as a result.
  */
 
 #include "wsgi_python.h"
@@ -40,8 +44,6 @@
 
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
@@ -62,9 +64,10 @@ static volatile int wsgi_telemetry_shutdown = 0;
 /* ------------------------------------------------------------------------- */
 
 /*
- * Parse "unix:/path" or "udp:host:port" into a ready-to-use socket + dest
- * address. Returns a bound (for UNIX-reply, not really used) or unbound
- * socket configured for sendto(). Caller must close on failure paths.
+ * Parse "unix:/path" into a ready-to-use socket + dest address.
+ * Configures the socket for sendto(). Caller must close on failure
+ * paths. Only UNIX SOCK_DGRAM targets are accepted; remote IPv4 UDP
+ * targets are rejected at config-parse time.
  */
 
 static int wsgi_telemetry_open(const char *target,
@@ -73,61 +76,30 @@ static int wsgi_telemetry_open(const char *target,
                                socklen_t *out_addrlen)
 {
     int fd = -1;
+    const char *path;
+    struct sockaddr_un *sa;
 
     if (!target || !*target)
+        return -1;
+    if (strncmp(target, "unix:", 5) != 0)
         return -1;
 
     memset(out_addr, 0, sizeof(*out_addr));
     *out_addrlen = 0;
 
-    if (strncmp(target, "unix:", 5) == 0) {
-        const char *path = target + 5;
-        struct sockaddr_un *sa = (struct sockaddr_un *)out_addr;
+    path = target + 5;
+    sa = (struct sockaddr_un *)out_addr;
 
-        if (strlen(path) >= sizeof(sa->sun_path))
-            return -1;
-
-        fd = socket(AF_UNIX, SOCK_DGRAM, 0);
-        if (fd < 0)
-            return -1;
-
-        sa->sun_family = AF_UNIX;
-        strncpy(sa->sun_path, path, sizeof(sa->sun_path) - 1);
-        *out_addrlen = (socklen_t)sizeof(*sa);
-    }
-    else if (strncmp(target, "udp:", 4) == 0) {
-        char host[256];
-        const char *rest = target + 4;
-        const char *colon = strrchr(rest, ':');
-        int port;
-        struct sockaddr_in *sa = (struct sockaddr_in *)out_addr;
-
-        if (!colon || colon == rest)
-            return -1;
-        if ((size_t)(colon - rest) >= sizeof(host))
-            return -1;
-
-        memcpy(host, rest, colon - rest);
-        host[colon - rest] = '\0';
-        port = atoi(colon + 1);
-        if (port <= 0 || port > 65535)
-            return -1;
-
-        fd = socket(AF_INET, SOCK_DGRAM, 0);
-        if (fd < 0)
-            return -1;
-
-        sa->sin_family = AF_INET;
-        sa->sin_port = htons((uint16_t)port);
-        if (inet_pton(AF_INET, host, &sa->sin_addr) != 1) {
-            close(fd);
-            return -1;
-        }
-        *out_addrlen = (socklen_t)sizeof(*sa);
-    }
-    else {
+    if (strlen(path) >= sizeof(sa->sun_path))
         return -1;
-    }
+
+    fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (fd < 0)
+        return -1;
+
+    sa->sun_family = AF_UNIX;
+    strncpy(sa->sun_path, path, sizeof(sa->sun_path) - 1);
+    *out_addrlen = (socklen_t)sizeof(*sa);
 
     *out_fd = fd;
     return 0;
@@ -192,9 +164,47 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
 
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SERVER_TIME, s->server_time);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_APPLICATION_TIME, s->application_time);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_REQUEST_TIME, s->request_time);
     if (s->has_daemon_timing) {
         wsgi_metrics_put_f64(&p, WSGI_METRICS_F_QUEUE_TIME, s->queue_time);
         wsgi_metrics_put_f64(&p, WSGI_METRICS_F_DAEMON_TIME, s->daemon_time);
+    }
+
+    /* Per-phase exact min/max for the interval. Skip the field entirely
+     * on ticks where the phase saw no requests; the decoder treats
+     * absence as "no data this tick". Min and max are paired — if min
+     * was set, max was set too. */
+    if (s->server_time_min_us != UINT64_MAX) {
+        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SERVER_TIME_MIN_US,
+                             s->server_time_min_us);
+        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SERVER_TIME_MAX_US,
+                             s->server_time_max_us);
+    }
+    if (s->application_time_min_us != UINT64_MAX) {
+        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_APPLICATION_TIME_MIN_US,
+                             s->application_time_min_us);
+        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_APPLICATION_TIME_MAX_US,
+                             s->application_time_max_us);
+    }
+    if (s->request_time_min_us != UINT64_MAX) {
+        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_REQUEST_TIME_MIN_US,
+                             s->request_time_min_us);
+        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_REQUEST_TIME_MAX_US,
+                             s->request_time_max_us);
+    }
+    if (s->has_daemon_timing) {
+        if (s->queue_time_min_us != UINT64_MAX) {
+            wsgi_metrics_put_u64(&p, WSGI_METRICS_F_QUEUE_TIME_MIN_US,
+                                 s->queue_time_min_us);
+            wsgi_metrics_put_u64(&p, WSGI_METRICS_F_QUEUE_TIME_MAX_US,
+                                 s->queue_time_max_us);
+        }
+        if (s->daemon_time_min_us != UINT64_MAX) {
+            wsgi_metrics_put_u64(&p, WSGI_METRICS_F_DAEMON_TIME_MIN_US,
+                                 s->daemon_time_min_us);
+            wsgi_metrics_put_u64(&p, WSGI_METRICS_F_DAEMON_TIME_MAX_US,
+                                 s->daemon_time_max_us);
+        }
     }
 
     wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SERVER_TIME_BUCKETS,
@@ -487,7 +497,10 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
 
 /*
  * Directive handler: WSGIMetricsService <target> [interval=N]
- * Target is "unix:/path" or "udp:host:port".
+ * Target must be "unix:/path"; remote IPv4 UDP targets are not
+ * supported (the reporter assumes a co-located ingester so that
+ * MTU / IP-fragmentation / packet-loss across a real network are
+ * non-concerns).
  */
 
 const char *wsgi_set_metrics_service(cmd_parms *cmd, void *mconfig,
@@ -502,9 +515,9 @@ const char *wsgi_set_metrics_service(cmd_parms *cmd, void *mconfig,
     if (!arg1 || !*arg1)
         return "WSGIMetricsService target required";
 
-    if (strncmp(arg1, "unix:", 5) != 0 && strncmp(arg1, "udp:", 4) != 0)
+    if (strncmp(arg1, "unix:", 5) != 0)
         return "WSGIMetricsService target must be 'unix:/path' "
-               "or 'udp:host:port'";
+               "(remote 'udp:host:port' targets are no longer supported)";
 
     wsgi_telemetry_target = apr_pstrdup(cmd->pool, arg1);
     wsgi_telemetry_enabled = 1;

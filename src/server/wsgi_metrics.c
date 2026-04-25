@@ -87,18 +87,34 @@ static double wsgi_utilization_time_locked(int adjustment,
 static int wsgi_request_metrics_enabled = 0;
 static apr_uint64_t wsgi_sample_requests = 0;
 static double wsgi_server_time_total = 0;
-static int wsgi_server_time_buckets[16];
+static int wsgi_server_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
 static double wsgi_queue_time_total = 0;
-static int wsgi_queue_time_buckets[16];
+static int wsgi_queue_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
 static double wsgi_daemon_time_total = 0;
-static int wsgi_daemon_time_buckets[16];
+static int wsgi_daemon_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
 static double wsgi_application_time_total = 0;
-static int wsgi_application_time_buckets[16];
+static int wsgi_application_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
 /* Total response time = server + queue + daemon + application, bucketed
  * once per request so the UI can show the distribution as the caller
  * actually sees it rather than any single phase. Apache's accept-queue
  * wait isn't measurable from within, so this is still a lower bound. */
-static int wsgi_request_time_buckets[16];
+static double wsgi_request_time_total = 0;
+static int wsgi_request_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
+
+/* Per-phase exact min/max for the interval, in microseconds. UINT64_MAX
+ * sentinel on min means "no requests yet this tick"; encoder skips the
+ * field when the sentinel is still in place. Updated under
+ * wsgi_monitor_lock alongside the totals and bucket counters. */
+static apr_uint64_t wsgi_server_time_min_us       = UINT64_MAX;
+static apr_uint64_t wsgi_server_time_max_us       = 0;
+static apr_uint64_t wsgi_queue_time_min_us        = UINT64_MAX;
+static apr_uint64_t wsgi_queue_time_max_us        = 0;
+static apr_uint64_t wsgi_daemon_time_min_us       = UINT64_MAX;
+static apr_uint64_t wsgi_daemon_time_max_us       = 0;
+static apr_uint64_t wsgi_application_time_min_us  = UINT64_MAX;
+static apr_uint64_t wsgi_application_time_max_us  = 0;
+static apr_uint64_t wsgi_request_time_min_us      = UINT64_MAX;
+static apr_uint64_t wsgi_request_time_max_us      = 0;
 
 /* Per-interval request I/O totals. Folded at end-of-request from the
  * adapter's InputObject/AdapterObject counters; drained and zeroed by
@@ -202,22 +218,43 @@ static void wsgi_slow_push_completed_locked(const wsgi_slow_request_t *rec);
 
 void wsgi_record_time_in_buckets(int *buckets, double duration)
 {
-    int index = 0;
-    double threshold = 0.005;
+    /* HDR-style index: 16 octaves (1 ms .. 65536 ms) × 4 linear sub-
+     * buckets per octave, plus a single overflow bucket at index 64.
+     * Total 65 entries per phase.
+     *
+     * frexp(ms) returns mantissa in [0.5, 1.0) such that
+     *   ms = mantissa * 2^exp
+     * so exp - 1 is the octave index for ms in [1, 65536). The four
+     * sub-buckets are a linear split of [2*mantissa - 1, 1) across
+     * [0, 4). Bucket boundaries are [lo, hi) on each sub-bucket — a
+     * value equal to a boundary lands in the higher bucket. (The prior
+     * (lo, hi] convention differed only at exact boundary values, which
+     * are essentially never produced by floating-point timings.) */
+    double ms = duration * 1000.0;
+    int exp;
+    double mantissa;
+    int octave;
+    int sub;
 
-    while (index < 14)
+    if (ms < 1.0)
     {
-        if (duration <= threshold)
-        {
-            buckets[index] += 1;
-            return;
-        }
-
-        threshold *= 2;
-        index += 1;
+        buckets[0] += 1;
+        return;
     }
 
-    buckets[index] += 1;
+    if (ms >= 65536.0)
+    {
+        buckets[WSGI_TELEMETRY_BUCKET_COUNT - 1] += 1;
+        return;
+    }
+
+    mantissa = frexp(ms, &exp);
+    octave = exp - 1;
+
+    sub = (int)((2.0 * mantissa - 1.0) * 4.0);
+    if (sub > 3) sub = 3;
+
+    buckets[octave * 4 + sub] += 1;
 }
 
 void wsgi_record_request_times(apr_time_t request_start,
@@ -231,6 +268,12 @@ void wsgi_record_request_times(apr_time_t request_start,
     double queue_time = 0.0;
     double daemon_time = 0.0;
     double application_time = 0.0;
+    double request_time = 0.0;
+    apr_uint64_t server_us = 0;
+    apr_uint64_t queue_us = 0;
+    apr_uint64_t daemon_us = 0;
+    apr_uint64_t application_us = 0;
+    apr_uint64_t request_us = 0;
     WSGIThreadInfo *thread_info = NULL;
 
     if (wsgi_request_metrics_enabled == 0)
@@ -252,6 +295,16 @@ void wsgi_record_request_times(apr_time_t request_start,
     application_time = (apr_time_sec((double)(application_finish -
                                               application_start)));
 
+    request_time = server_time + queue_time + daemon_time + application_time;
+
+    /* Per-phase microseconds for the min/max accumulators. The seconds
+     * round-trip is exact for any realistic request duration. */
+    server_us      = (apr_uint64_t)(server_time      * 1000000.0);
+    queue_us       = (apr_uint64_t)(queue_time       * 1000000.0);
+    daemon_us      = (apr_uint64_t)(daemon_time      * 1000000.0);
+    application_us = (apr_uint64_t)(application_time * 1000000.0);
+    request_us     = (apr_uint64_t)(request_time     * 1000000.0);
+
     /* Identify this thread's slot so I/O totals can be stashed where
      * wsgi_end_request will pick them up for a slow-record snapshot.
      * Looked up before taking the lock — wsgi_thread_info() touches
@@ -265,6 +318,14 @@ void wsgi_record_request_times(apr_time_t request_start,
     wsgi_queue_time_total += queue_time;
     wsgi_daemon_time_total += daemon_time;
     wsgi_application_time_total += application_time;
+    wsgi_request_time_total += request_time;
+
+    if (server_us      < wsgi_server_time_min_us)      wsgi_server_time_min_us      = server_us;
+    if (server_us      > wsgi_server_time_max_us)      wsgi_server_time_max_us      = server_us;
+    if (application_us < wsgi_application_time_min_us) wsgi_application_time_min_us = application_us;
+    if (application_us > wsgi_application_time_max_us) wsgi_application_time_max_us = application_us;
+    if (request_us     < wsgi_request_time_min_us)     wsgi_request_time_min_us     = request_us;
+    if (request_us     > wsgi_request_time_max_us)     wsgi_request_time_max_us     = request_us;
 
     if (input_bytes > 0)
         wsgi_input_bytes_total += (apr_uint64_t)input_bytes;
@@ -293,6 +354,11 @@ void wsgi_record_request_times(apr_time_t request_start,
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process)
     {
+        if (queue_us  < wsgi_queue_time_min_us)  wsgi_queue_time_min_us  = queue_us;
+        if (queue_us  > wsgi_queue_time_max_us)  wsgi_queue_time_max_us  = queue_us;
+        if (daemon_us < wsgi_daemon_time_min_us) wsgi_daemon_time_min_us = daemon_us;
+        if (daemon_us > wsgi_daemon_time_max_us) wsgi_daemon_time_max_us = daemon_us;
+
         wsgi_record_time_in_buckets(&wsgi_queue_time_buckets[0],
                                     queue_time);
         wsgi_record_time_in_buckets(&wsgi_daemon_time_buckets[0],
@@ -304,8 +370,7 @@ void wsgi_record_request_times(apr_time_t request_start,
                                 application_time);
 
     wsgi_record_time_in_buckets(&wsgi_request_time_buckets[0],
-                                server_time + queue_time + daemon_time +
-                                application_time);
+                                request_time);
 
     apr_thread_mutex_unlock(wsgi_monitor_lock);
 }
@@ -564,6 +629,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     double queue_time_total = 0.0;
     double daemon_time_total = 0.0;
     double application_time_total = 0.0;
+    double request_time_total = 0.0;
 
     int i;
     int emitted_slots = 0;
@@ -641,6 +707,18 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
         wsgi_queue_time_total = 0.0;
         wsgi_daemon_time_total = 0.0;
         wsgi_application_time_total = 0.0;
+        wsgi_request_time_total = 0.0;
+
+        wsgi_server_time_min_us      = UINT64_MAX;
+        wsgi_server_time_max_us      = 0;
+        wsgi_queue_time_min_us       = UINT64_MAX;
+        wsgi_queue_time_max_us       = 0;
+        wsgi_daemon_time_min_us      = UINT64_MAX;
+        wsgi_daemon_time_max_us      = 0;
+        wsgi_application_time_min_us = UINT64_MAX;
+        wsgi_application_time_max_us = 0;
+        wsgi_request_time_min_us     = UINT64_MAX;
+        wsgi_request_time_max_us     = 0;
 
         wsgi_input_bytes_total = 0;
         wsgi_input_reads_total = 0;
@@ -684,6 +762,18 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     queue_time_total = wsgi_queue_time_total;
     daemon_time_total = wsgi_daemon_time_total;
     application_time_total = wsgi_application_time_total;
+    request_time_total = wsgi_request_time_total;
+
+    out->server_time_min_us      = wsgi_server_time_min_us;
+    out->server_time_max_us      = wsgi_server_time_max_us;
+    out->queue_time_min_us       = wsgi_queue_time_min_us;
+    out->queue_time_max_us       = wsgi_queue_time_max_us;
+    out->daemon_time_min_us      = wsgi_daemon_time_min_us;
+    out->daemon_time_max_us      = wsgi_daemon_time_max_us;
+    out->application_time_min_us = wsgi_application_time_min_us;
+    out->application_time_max_us = wsgi_application_time_max_us;
+    out->request_time_min_us     = wsgi_request_time_min_us;
+    out->request_time_max_us     = wsgi_request_time_max_us;
 
     out->input_bytes_total = wsgi_input_bytes_total;
     out->input_reads_total = wsgi_input_reads_total;
@@ -759,6 +849,18 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     wsgi_queue_time_total = 0.0;
     wsgi_daemon_time_total = 0.0;
     wsgi_application_time_total = 0.0;
+    wsgi_request_time_total = 0.0;
+
+    wsgi_server_time_min_us      = UINT64_MAX;
+    wsgi_server_time_max_us      = 0;
+    wsgi_queue_time_min_us       = UINT64_MAX;
+    wsgi_queue_time_max_us       = 0;
+    wsgi_daemon_time_min_us      = UINT64_MAX;
+    wsgi_daemon_time_max_us      = 0;
+    wsgi_application_time_min_us = UINT64_MAX;
+    wsgi_application_time_max_us = 0;
+    wsgi_request_time_min_us     = UINT64_MAX;
+    wsgi_request_time_max_us     = 0;
 
     wsgi_input_bytes_total = 0;
     wsgi_input_reads_total = 0;
@@ -827,6 +929,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     {
         out->server_time = server_time_total / interval_requests;
         out->application_time = application_time_total / interval_requests;
+        out->request_time = request_time_total / interval_requests;
 #if defined(MOD_WSGI_WITH_DAEMONS)
         if (wsgi_daemon_process)
         {
@@ -1167,6 +1270,17 @@ WSGI_STATIC_INTERNED_STRING(server_time);
 WSGI_STATIC_INTERNED_STRING(queue_time);
 WSGI_STATIC_INTERNED_STRING(daemon_time);
 WSGI_STATIC_INTERNED_STRING(application_time);
+WSGI_STATIC_INTERNED_STRING(request_time);
+WSGI_STATIC_INTERNED_STRING(server_time_min_us);
+WSGI_STATIC_INTERNED_STRING(queue_time_min_us);
+WSGI_STATIC_INTERNED_STRING(daemon_time_min_us);
+WSGI_STATIC_INTERNED_STRING(application_time_min_us);
+WSGI_STATIC_INTERNED_STRING(request_time_min_us);
+WSGI_STATIC_INTERNED_STRING(server_time_max_us);
+WSGI_STATIC_INTERNED_STRING(queue_time_max_us);
+WSGI_STATIC_INTERNED_STRING(daemon_time_max_us);
+WSGI_STATIC_INTERNED_STRING(application_time_max_us);
+WSGI_STATIC_INTERNED_STRING(request_time_max_us);
 WSGI_STATIC_INTERNED_STRING(server_time_buckets);
 WSGI_STATIC_INTERNED_STRING(queue_time_buckets);
 WSGI_STATIC_INTERNED_STRING(daemon_time_buckets);
@@ -1237,6 +1351,17 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(queue_time);
         WSGI_CREATE_INTERNED_STRING_ID(daemon_time);
         WSGI_CREATE_INTERNED_STRING_ID(application_time);
+        WSGI_CREATE_INTERNED_STRING_ID(request_time);
+        WSGI_CREATE_INTERNED_STRING_ID(server_time_min_us);
+        WSGI_CREATE_INTERNED_STRING_ID(queue_time_min_us);
+        WSGI_CREATE_INTERNED_STRING_ID(daemon_time_min_us);
+        WSGI_CREATE_INTERNED_STRING_ID(application_time_min_us);
+        WSGI_CREATE_INTERNED_STRING_ID(request_time_min_us);
+        WSGI_CREATE_INTERNED_STRING_ID(server_time_max_us);
+        WSGI_CREATE_INTERNED_STRING_ID(queue_time_max_us);
+        WSGI_CREATE_INTERNED_STRING_ID(daemon_time_max_us);
+        WSGI_CREATE_INTERNED_STRING_ID(application_time_max_us);
+        WSGI_CREATE_INTERNED_STRING_ID(request_time_max_us);
         WSGI_CREATE_INTERNED_STRING_ID(server_time_buckets);
         WSGI_CREATE_INTERNED_STRING_ID(daemon_time_buckets);
         WSGI_CREATE_INTERNED_STRING_ID(queue_time_buckets);
@@ -1311,12 +1436,25 @@ static PyObject *wsgi_request_metrics(void)
     double daemon_time_avg = 0;
     double application_time_total = 0;
     double application_time_avg = 0;
+    double request_time_total = 0;
+    double request_time_avg = 0;
 
-    int server_time_buckets_snap[16];
-    int queue_time_buckets_snap[16];
-    int daemon_time_buckets_snap[16];
-    int application_time_buckets_snap[16];
-    int request_time_buckets_snap[16];
+    apr_uint64_t server_time_min_snap_us      = UINT64_MAX;
+    apr_uint64_t server_time_max_snap_us      = 0;
+    apr_uint64_t queue_time_min_snap_us       = UINT64_MAX;
+    apr_uint64_t queue_time_max_snap_us       = 0;
+    apr_uint64_t daemon_time_min_snap_us      = UINT64_MAX;
+    apr_uint64_t daemon_time_max_snap_us      = 0;
+    apr_uint64_t application_time_min_snap_us = UINT64_MAX;
+    apr_uint64_t application_time_max_snap_us = 0;
+    apr_uint64_t request_time_min_snap_us     = UINT64_MAX;
+    apr_uint64_t request_time_max_snap_us     = 0;
+
+    int server_time_buckets_snap[WSGI_TELEMETRY_BUCKET_COUNT];
+    int queue_time_buckets_snap[WSGI_TELEMETRY_BUCKET_COUNT];
+    int daemon_time_buckets_snap[WSGI_TELEMETRY_BUCKET_COUNT];
+    int application_time_buckets_snap[WSGI_TELEMETRY_BUCKET_COUNT];
+    int request_time_buckets_snap[WSGI_TELEMETRY_BUCKET_COUNT];
 
     int request_threads_active = 0;
 
@@ -1412,6 +1550,18 @@ static PyObject *wsgi_request_metrics(void)
         wsgi_queue_time_total = 0.0;
         wsgi_daemon_time_total = 0.0;
         wsgi_application_time_total = 0.0;
+        wsgi_request_time_total = 0.0;
+
+        wsgi_server_time_min_us      = UINT64_MAX;
+        wsgi_server_time_max_us      = 0;
+        wsgi_queue_time_min_us       = UINT64_MAX;
+        wsgi_queue_time_max_us       = 0;
+        wsgi_daemon_time_min_us      = UINT64_MAX;
+        wsgi_daemon_time_max_us      = 0;
+        wsgi_application_time_min_us = UINT64_MAX;
+        wsgi_application_time_max_us = 0;
+        wsgi_request_time_min_us     = UINT64_MAX;
+        wsgi_request_time_max_us     = 0;
 
         if (wsgi_slot_stats && wsgi_active_slots_max > 0)
         {
@@ -1442,6 +1592,18 @@ static PyObject *wsgi_request_metrics(void)
     queue_time_total = wsgi_queue_time_total;
     daemon_time_total = wsgi_daemon_time_total;
     application_time_total = wsgi_application_time_total;
+    request_time_total = wsgi_request_time_total;
+
+    server_time_min_snap_us      = wsgi_server_time_min_us;
+    server_time_max_snap_us      = wsgi_server_time_max_us;
+    queue_time_min_snap_us       = wsgi_queue_time_min_us;
+    queue_time_max_snap_us       = wsgi_queue_time_max_us;
+    daemon_time_min_snap_us      = wsgi_daemon_time_min_us;
+    daemon_time_max_snap_us      = wsgi_daemon_time_max_us;
+    application_time_min_snap_us = wsgi_application_time_min_us;
+    application_time_max_snap_us = wsgi_application_time_max_us;
+    request_time_min_snap_us     = wsgi_request_time_min_us;
+    request_time_max_snap_us     = wsgi_request_time_max_us;
 
     memcpy(server_time_buckets_snap, wsgi_server_time_buckets,
            sizeof(server_time_buckets_snap));
@@ -1513,6 +1675,18 @@ static PyObject *wsgi_request_metrics(void)
     wsgi_queue_time_total = 0.0;
     wsgi_daemon_time_total = 0.0;
     wsgi_application_time_total = 0.0;
+    wsgi_request_time_total = 0.0;
+
+    wsgi_server_time_min_us      = UINT64_MAX;
+    wsgi_server_time_max_us      = 0;
+    wsgi_queue_time_min_us       = UINT64_MAX;
+    wsgi_queue_time_max_us       = 0;
+    wsgi_daemon_time_min_us      = UINT64_MAX;
+    wsgi_daemon_time_max_us      = 0;
+    wsgi_application_time_min_us = UINT64_MAX;
+    wsgi_application_time_max_us = 0;
+    wsgi_request_time_min_us     = UINT64_MAX;
+    wsgi_request_time_max_us     = 0;
 
     /* Drain (zero-only) the I/O totals so the telemetry reporter
      * doesn't leak counts across the Python accessor's interval. The
@@ -1654,8 +1828,8 @@ static PyObject *wsgi_request_metrics(void)
                    WSGI_INTERNED_STRING(request_throughput), object);
     Py_DECREF(object);
 
-    object = PyList_New(16);
-    for (i = 0; i < 16; i++)
+    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
+    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
     {
         PyList_SET_ITEM(object, i,
                         PyLong_FromLong(server_time_buckets_snap[i]));
@@ -1664,8 +1838,8 @@ static PyObject *wsgi_request_metrics(void)
                    WSGI_INTERNED_STRING(server_time_buckets), object);
     Py_DECREF(object);
 
-    object = PyList_New(16);
-    for (i = 0; i < 16; i++)
+    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
+    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
     {
         PyList_SET_ITEM(object, i,
                         PyLong_FromLong(queue_time_buckets_snap[i]));
@@ -1674,8 +1848,8 @@ static PyObject *wsgi_request_metrics(void)
                    WSGI_INTERNED_STRING(queue_time_buckets), object);
     Py_DECREF(object);
 
-    object = PyList_New(16);
-    for (i = 0; i < 16; i++)
+    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
+    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
     {
         PyList_SET_ITEM(object, i,
                         PyLong_FromLong(daemon_time_buckets_snap[i]));
@@ -1684,8 +1858,8 @@ static PyObject *wsgi_request_metrics(void)
                    WSGI_INTERNED_STRING(daemon_time_buckets), object);
     Py_DECREF(object);
 
-    object = PyList_New(16);
-    for (i = 0; i < 16; i++)
+    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
+    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
     {
         PyList_SET_ITEM(object, i,
                         PyLong_FromLong(application_time_buckets_snap[i]));
@@ -1694,8 +1868,8 @@ static PyObject *wsgi_request_metrics(void)
                    WSGI_INTERNED_STRING(application_time_buckets), object);
     Py_DECREF(object);
 
-    object = PyList_New(16);
-    for (i = 0; i < 16; i++)
+    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
+    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
     {
         PyList_SET_ITEM(object, i,
                         PyLong_FromLong(request_time_buckets_snap[i]));
@@ -1763,6 +1937,7 @@ static PyObject *wsgi_request_metrics(void)
     queue_time_avg = 0;
     daemon_time_avg = 0;
     application_time_avg = 0;
+    request_time_avg = 0;
 
     if (interval_requests)
     {
@@ -1770,6 +1945,7 @@ static PyObject *wsgi_request_metrics(void)
         queue_time_avg = queue_time_total / interval_requests;
         daemon_time_avg = daemon_time_total / interval_requests;
         application_time_avg = application_time_total / interval_requests;
+        request_time_avg = request_time_total / interval_requests;
     }
 
     object = PyFloat_FromDouble(server_time_avg);
@@ -1808,6 +1984,65 @@ static PyObject *wsgi_request_metrics(void)
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(application_time), object);
     Py_DECREF(object);
+
+    object = PyFloat_FromDouble(request_time_avg);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(request_time), object);
+    Py_DECREF(object);
+
+    /* Per-phase exact min/max for the interval, in microseconds. None
+     * for both keys if the phase did not record any requests this tick
+     * (the min accumulator still holds its UINT64_MAX sentinel).
+     * queue_time and daemon_time are also None for non-daemon
+     * configurations, matching the corresponding mean entries above. */
+#define WSGI_PUBLISH_PHASE_MINMAX(min_key, max_key, min_us, max_us)            \
+    do {                                                                       \
+        if ((min_us) == UINT64_MAX) {                                          \
+            PyDict_SetItem(result, WSGI_INTERNED_STRING(min_key), Py_None);    \
+            PyDict_SetItem(result, WSGI_INTERNED_STRING(max_key), Py_None);    \
+        } else {                                                               \
+            object = PyLong_FromUnsignedLongLong((unsigned long long)(min_us));\
+            PyDict_SetItem(result, WSGI_INTERNED_STRING(min_key), object);     \
+            Py_DECREF(object);                                                 \
+            object = PyLong_FromUnsignedLongLong((unsigned long long)(max_us));\
+            PyDict_SetItem(result, WSGI_INTERNED_STRING(max_key), object);     \
+            Py_DECREF(object);                                                 \
+        }                                                                      \
+    } while (0)
+
+    WSGI_PUBLISH_PHASE_MINMAX(server_time_min_us, server_time_max_us,
+                              server_time_min_snap_us, server_time_max_snap_us);
+    WSGI_PUBLISH_PHASE_MINMAX(application_time_min_us, application_time_max_us,
+                              application_time_min_snap_us,
+                              application_time_max_snap_us);
+    WSGI_PUBLISH_PHASE_MINMAX(request_time_min_us, request_time_max_us,
+                              request_time_min_snap_us,
+                              request_time_max_snap_us);
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_daemon_process)
+    {
+        WSGI_PUBLISH_PHASE_MINMAX(queue_time_min_us, queue_time_max_us,
+                                  queue_time_min_snap_us,
+                                  queue_time_max_snap_us);
+        WSGI_PUBLISH_PHASE_MINMAX(daemon_time_min_us, daemon_time_max_us,
+                                  daemon_time_min_snap_us,
+                                  daemon_time_max_snap_us);
+    }
+    else
+#endif
+    {
+        PyDict_SetItem(result,
+                       WSGI_INTERNED_STRING(queue_time_min_us), Py_None);
+        PyDict_SetItem(result,
+                       WSGI_INTERNED_STRING(queue_time_max_us), Py_None);
+        PyDict_SetItem(result,
+                       WSGI_INTERNED_STRING(daemon_time_min_us), Py_None);
+        PyDict_SetItem(result,
+                       WSGI_INTERNED_STRING(daemon_time_max_us), Py_None);
+    }
+
+#undef WSGI_PUBLISH_PHASE_MINMAX
 
     return result;
 }

@@ -1,8 +1,13 @@
 """Async datagram receiver + rolling per-process window.
 
-Listens on a UNIX or UDP datagram socket for TLV samples, decodes them,
-and keeps a bounded history per PID so connecting UI clients can fetch
+Listens on a UNIX SOCK_DGRAM socket for TLV samples, decodes them, and
+keeps a bounded history per PID so connecting UI clients can fetch
 recent state immediately without waiting for the next tick.
+
+Remote (IPv4 UDP) listeners are not supported — telemetry is intended
+for a co-located ingester so MTU / IP-fragmentation / packet-loss are
+non-concerns. The reporter is allowed to emit datagrams that exceed
+the Ethernet MTU as a result.
 
 Emits each decoded sample on an asyncio broadcast queue for WebSocket
 clients to pick up.
@@ -24,31 +29,24 @@ from .wire import Sample, decode
 log = logging.getLogger(__name__)
 
 
-def parse_listen(spec: str) -> tuple[int, tuple | str]:
-    """Return (family, bind_addr)."""
+def parse_listen(spec: str) -> tuple[int, str]:
+    """Return (family, bind_path) for a UNIX SOCK_DGRAM target."""
     if spec.startswith("unix:"):
         return socket.AF_UNIX, spec[len("unix:"):]
-    if spec.startswith("udp:"):
-        rest = spec[len("udp:"):]
-        host, _, port = rest.rpartition(":")
-        if not host or not port:
-            raise ValueError(f"bad udp listen spec {spec!r}")
-        return socket.AF_INET, (host, int(port))
-    raise ValueError(f"unknown scheme {spec!r}: expected unix: or udp:")
+    raise ValueError(
+        f"unknown scheme {spec!r}: expected 'unix:/path' "
+        f"(remote 'udp:host:port' targets are no longer supported)"
+    )
 
 
 def open_socket(spec: str) -> socket.socket:
     family, addr = parse_listen(spec)
     sock = socket.socket(family, socket.SOCK_DGRAM)
 
-    if family == socket.AF_UNIX:
-        if os.path.exists(addr):
-            os.unlink(addr)
-        sock.bind(addr)
-        os.chmod(addr, 0o666)
-    else:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(addr)
+    if os.path.exists(addr):
+        os.unlink(addr)
+    sock.bind(addr)
+    os.chmod(addr, 0o666)
 
     sock.setblocking(False)
     try:

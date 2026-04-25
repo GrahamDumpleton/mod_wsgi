@@ -2280,8 +2280,8 @@ add_option('all', '--metrics-service', metavar='TARGET',
         default=None, help='Target metrics service to push telemetry to. '
         'Enables WSGIMetricsService in the generated config. Use '
         '"unix:/path/to/socket" for a local datagram socket (same-host '
-        'ingester) or "udp:host:port" for a remote ingester. Off by '
-        'default.')
+        'ingester). Remote "udp:host:port" targets are not supported. '
+        'Off by default.')
 
 add_option('all', '--metrics-interval', type='float', default=1.0,
         metavar='SECONDS', help='Metrics reporter sampling interval '
@@ -2954,9 +2954,10 @@ def _cmd_setup_server(command, args, options):
 
     if options['metrics_service']:
         target = options['metrics_service']
-        if not (target.startswith('unix:') or target.startswith('udp:')):
+        if not target.startswith('unix:'):
             raise ValueError(
-                "--metrics-service must be 'unix:/path' or 'udp:host:port'")
+                "--metrics-service must be 'unix:/path' "
+                "(remote 'udp:host:port' targets are no longer supported)")
     else:
         options['metrics_service'] = ''
 

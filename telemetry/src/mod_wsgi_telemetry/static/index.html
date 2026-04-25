@@ -772,7 +772,7 @@
             </label>
           </div>
           <div class="header-row">
-            <div class="unit">log2 buckets, 5ms..&gt;40s &mdash; summed across visible processes over last
+            <div class="unit" title="HDR buckets, 1ms..65s — 16 octaves x 4 sub-buckets per octave + 1 overflow = 65 entries per phase. Max relative error inside any sub-bucket is ≤25%. Aggregated across visible processes.">HDR buckets 1ms..65s &mdash; last
               <select id="dist_window" class="window-picker">
                 <option value="10">10s</option>
                 <option value="30">30s</option>
@@ -2873,13 +2873,51 @@ function fmt(v, precision) {
 }
 
 // Bucket scheme from wsgi_record_time_in_buckets in wsgi_metrics.c.
-// Indices 0..13 are "<= threshold" where threshold starts at 5ms and
-// doubles; index 14 is the overflow (> 40.96s). Index 15 is unused.
-const BUCKET_LABELS = ["5", "10", "20", "40", "80", "160", "320", "640",
-                       "1.3k", "2.6k", "5k", "10k", "20k", "41k", ">41k"];
-const BUCKET_UPPER_MS = [5, 10, 20, 40, 80, 160, 320, 640,
-                         1280, 2560, 5120, 10240, 20480, 40960, Infinity];
-const N_BUCKETS = BUCKET_LABELS.length;
+// HDR-style: 16 octaves from 1 ms to 65.5 s, each octave linearly
+// split into 4 sub-buckets, plus one overflow bucket for >65536 ms =
+// 65 entries. Max relative error inside any sub-bucket is ≤25%.
+// BUCKET_UPPER_MS[i] is the upper edge of bucket i (Infinity for the
+// overflow bucket); a value v lands in bucket i if BUCKET_UPPER_MS[i-1]
+// <= v < BUCKET_UPPER_MS[i] (with the lower edge of bucket 0 being 0).
+const BUCKET_UPPER_MS = (() => {
+  const arr = [];
+  for (let o = 0; o < 16; o++) {
+    const L = Math.pow(2, o);
+    for (let s = 1; s <= 4; s++) {
+      arr.push(L * (1 + 0.25 * s));
+    }
+  }
+  arr.push(Infinity);
+  return arr;
+})();
+// X-axis labels — only the last sub-bucket of each octave is labelled
+// (every 4th bar) so the axis isn't a wall of numbers. Labels are the
+// upper edge of that octave, abbreviated. The final octave's label
+// is left blank because the next bar (the >65k overflow) carries the
+// same boundary value and the two strings would otherwise collide.
+const BUCKET_LABELS = (() => {
+  const octaveLabels = ["2", "4", "8", "16", "32", "64", "128", "256",
+                        "512", "1k", "2k", "4k", "8k", "16k", "32k", ""];
+  const arr = [];
+  for (let o = 0; o < 16; o++) {
+    for (let s = 0; s < 4; s++) {
+      arr.push(s === 3 ? octaveLabels[o] : "");
+    }
+  }
+  arr.push(">65k");
+  return arr;
+})();
+const N_BUCKETS = BUCKET_UPPER_MS.length;
+
+// Shared palette for percentile markers. The histogram canvas uses
+// these for the dashed lines; the live readout above the chart tints
+// the matching p50/p95/p99 spans the same way so the readout doubles
+// as the marker legend.
+const PCT_COLORS = {
+  p50: "#81c784",
+  p95: "#ff8a65",
+  p99: "#ba68c8",
+};
 
 function aggregateBuckets(fieldName, windowSec) {
   const agg = new Array(N_BUCKETS).fill(0);
@@ -2919,23 +2957,109 @@ function aggregateBucketsFor(pids, fieldName, windowSec) {
   return agg;
 }
 
+// Exact min/max for the same window as the histogram, in microseconds
+// — sourced from the per-tick min/max accumulators on the C side
+// (fields *_time_min_us and *_time_max_us) rather than derived from
+// the bucket grid. Min/max merge cleanly across processes and across
+// time windows. Returns nulls when no process recorded any requests
+// in the window.
+function aggregateMinMaxUs(bucketField, windowSec) {
+  const prefix = bucketField.replace(/_buckets$/, "");
+  const minName = prefix + "_min_us";
+  const maxName = prefix + "_max_us";
+  const cutoff = windowSec ? (Date.now() / 1000 - windowSec) : 0;
+  let minV = null, maxV = null;
+  for (const [pid, p] of state.processes) {
+    if (isHidden(p)) continue;
+    for (const s of p.samples) {
+      if (s.t < cutoff) continue;
+      const v = s.fields[minName];
+      const u = s.fields[maxName];
+      if (typeof v === "number" && (minV === null || v < minV)) minV = v;
+      if (typeof u === "number" && (maxV === null || u > maxV)) maxV = u;
+    }
+  }
+  return { minUs: minV, maxUs: maxV };
+}
+
+// Same as aggregateMinMaxUs but scoped to an explicit pid list, used
+// by the snapshot exporter alongside aggregateBucketsFor.
+function aggregateBucketsForMinMax(pids, bucketField, windowSec) {
+  const prefix = bucketField.replace(/_buckets$/, "");
+  const minName = prefix + "_min_us";
+  const maxName = prefix + "_max_us";
+  const cutoff = windowSec ? (Date.now() / 1000 - windowSec) : 0;
+  let minV = null, maxV = null;
+  for (const pid of pids) {
+    const p = state.processes.get(pid);
+    if (!p) continue;
+    for (const s of p.samples) {
+      if (s.t < cutoff) continue;
+      const v = s.fields[minName];
+      const u = s.fields[maxName];
+      if (typeof v === "number" && (minV === null || v < minV)) minV = v;
+      if (typeof u === "number" && (maxV === null || u > maxV)) maxV = u;
+    }
+  }
+  return { minUs: minV, maxUs: maxV };
+}
+
+// Interpolated percentile: locate the bucket containing the target
+// rank, then return a point inside that bucket proportional to where
+// the rank falls. Assumes uniform distribution within the containing
+// sub-bucket — best we can do without per-request data, and a much
+// closer approximation than rounding to the bucket's upper edge.
 function bucketPercentileMs(hist, pct) {
   const total = hist.reduce((a, b) => a + b, 0);
   if (total === 0) return null;
   const target = total * pct;
   let cum = 0;
   for (let i = 0; i < hist.length; i++) {
-    cum += hist[i];
-    if (cum >= target) return BUCKET_UPPER_MS[i];
+    const next = cum + hist[i];
+    if (next >= target) {
+      const lo = i === 0 ? 0 : BUCKET_UPPER_MS[i - 1];
+      const hi = BUCKET_UPPER_MS[i];
+      // Overflow bucket has no upper bound to interpolate against.
+      // Best we can say is "at least this many ms"; render with a "≥"
+      // marker via fmtMsAtLeast at the call site.
+      if (hi === Infinity) return lo;
+      const frac = (target - cum) / hist[i];
+      return lo + frac * (hi - lo);
+    }
+    cum = next;
   }
   return null;
 }
 
+// Map an interpolated ms value back to (bucket index, fraction within
+// the bar's horizontal extent). Used for placing percentile markers
+// on the histogram canvas — with interpolation, a percentile no
+// longer lines up with a bucket's upper edge, so we place the marker
+// proportionally inside the bar that contains it.
+function bucketLocator(ms) {
+  for (let i = 0; i < BUCKET_UPPER_MS.length; i++) {
+    const hi = BUCKET_UPPER_MS[i];
+    const lo = i === 0 ? 0 : BUCKET_UPPER_MS[i - 1];
+    if (hi === Infinity) {
+      return { idx: i, frac: 0 };
+    }
+    if (ms < hi) {
+      const span = hi - lo;
+      const frac = span > 0 ? Math.max(0, Math.min(1, (ms - lo) / span)) : 0;
+      return { idx: i, frac };
+    }
+  }
+  return { idx: BUCKET_UPPER_MS.length - 1, frac: 0 };
+}
+
 function fmtMs(ms) {
   if (ms === null || ms === undefined) return "—";
-  if (ms === Infinity) return ">41s";
+  if (ms === Infinity) return ">65s";
   if (ms >= 1000) return (ms / 1000).toFixed(1) + "s";
-  return ms + "ms";
+  if (ms >= 10) return Math.round(ms) + "ms";
+  // Sub-10 ms territory — keep one decimal so the new HDR sub-buckets
+  // don't all collapse to the same integer ms in tooltips and labels.
+  return (Math.round(ms * 10) / 10) + "ms";
 }
 
 // Human-readable range for a single bucket index.
@@ -2963,14 +3087,37 @@ function drawHistogram(canvas, hist) {
     return { total: 0 };
   }
 
-  // Layout: reserve space at top for percentile markers, bottom for labels.
+  // Layout constants. The percentile-marker legend lives in the
+  // readout above the chart (n / min / p50 / p95 / p99 / max), so we
+  // don't draw textual P-labels on the canvas — the dashed lines
+  // alone are enough, and dropping the labels avoids the overlap
+  // jankiness when two markers landed in adjacent bars.
   const padLeft = 46 * devicePixelRatio;
   const padRight = 12 * devicePixelRatio;
-  const padTop = 18 * devicePixelRatio;
+  const padTop = 8 * devicePixelRatio;
   const padBottom = 36 * devicePixelRatio;
   const plotW = w - padLeft - padRight;
   const plotH = h - padTop - padBottom;
   const barW = plotW / N_BUCKETS;
+
+  // Percentile marker positions — vertical dashed lines positioned
+  // inside the bar that contains the interpolated percentile,
+  // proportional to where the rank falls within that bucket's range.
+  // Colors match the tinted p50/p95/p99 spans in the live readout so
+  // the readout serves as the legend.
+  const marks = [
+    { pct: 0.50, color: PCT_COLORS.p50 },
+    { pct: 0.95, color: PCT_COLORS.p95 },
+    { pct: 0.99, color: PCT_COLORS.p99 },
+  ];
+  const markerLines = [];
+  for (const m of marks) {
+    const ms = bucketPercentileMs(hist, m.pct);
+    if (ms === null) continue;
+    const loc = bucketLocator(ms);
+    const x = padLeft + loc.idx * barW + loc.frac * barW;
+    markerLines.push({ x, color: m.color });
+  }
 
   // Stash bar geometry in CSS pixels so mouse handlers can map
   // pointer offsets to bucket indices without redoing the layout.
@@ -3018,44 +3165,18 @@ function drawHistogram(canvas, hist) {
   ctx.fillText("<= ms", padLeft + plotW / 2,
     padTop + plotH + 20 * devicePixelRatio);
 
-  // Percentile markers — vertical dashed lines through the bar whose
-  // upper bound contains the percentile. When multiple percentiles fall
-  // into the same bucket, combine into a single marker with a merged
-  // label (e.g. "P50/95/99") using the highest percentile's colour.
-  const marks = [
-    { pct: 0.50, color: "#81c784", label: "P50" },
-    { pct: 0.95, color: "#ff8a65", label: "P95" },
-    { pct: 0.99, color: "#ba68c8", label: "P99" },
-  ];
-  const groups = new Map();
-  for (const m of marks) {
-    const ms = bucketPercentileMs(hist, m.pct);
-    if (ms === null) continue;
-    const idx = BUCKET_UPPER_MS.indexOf(ms);
-    if (!groups.has(idx)) groups.set(idx, []);
-    groups.get(idx).push(m);
-  }
-  for (const [idx, members] of groups) {
-    const x = padLeft + idx * barW + barW / 2;
-    const primary = members[members.length - 1];
-    ctx.strokeStyle = primary.color;
-    ctx.lineWidth = 1 * devicePixelRatio;
-    ctx.setLineDash([3 * devicePixelRatio, 3 * devicePixelRatio]);
+  // Percentile marker lines. No on-canvas text labels — the legend
+  // is the colour-tinted p50/p95/p99 spans in the live readout above.
+  ctx.lineWidth = 1 * devicePixelRatio;
+  ctx.setLineDash([3 * devicePixelRatio, 3 * devicePixelRatio]);
+  for (const m of markerLines) {
+    ctx.strokeStyle = m.color;
     ctx.beginPath();
-    ctx.moveTo(x, padTop);
-    ctx.lineTo(x, padTop + plotH);
+    ctx.moveTo(m.x, padTop);
+    ctx.lineTo(m.x, padTop + plotH);
     ctx.stroke();
-    ctx.setLineDash([]);
-    // Combined label: "P50", "P50/95", or "P50/95/99".
-    const label = members.map((m, i) =>
-      i === 0 ? m.label : m.label.slice(1)
-    ).join("/");
-    ctx.fillStyle = primary.color;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
-    ctx.font = (10 * devicePixelRatio) + "px -apple-system, sans-serif";
-    ctx.fillText(label, x, padTop - 2 * devicePixelRatio);
   }
+  ctx.setLineDash([]);
 
   return {
     total,
@@ -3197,11 +3318,24 @@ function redraw() {
   const hist = aggregateBuckets(distField, distWindowSec);
   const dist = drawHistogram(document.getElementById("c_dist"), hist);
   if (dist.total > 0) {
+    const mm = aggregateMinMaxUs(distField, distWindowSec);
+    const minPart = mm.minUs !== null
+      ? ` <span class="label">min</span>${fmtMs(mm.minUs / 1000)}`
+      : "";
+    const maxPart = mm.maxUs !== null
+      ? ` <span class="label">max</span>${fmtMs(mm.maxUs / 1000)}`
+      : "";
+    // Tint the p50/p95/p99 LABEL spans with the same colours used for
+    // the dashed marker lines on the canvas, so the readout doubles
+    // as the marker legend (instead of carrying redundant labels on
+    // the chart itself).
+    const pctSpan = (key, value) =>
+      `<span class="label" style="color:${PCT_COLORS[key]}">${key}</span>${value}`;
     setLive("live_dist",
-      `<span class="label">n</span>${dist.total} ` +
-      `<span class="label">p50</span>&lt;=${fmtMs(dist.p50)} ` +
-      `<span class="label">p95</span>&lt;=${fmtMs(dist.p95)} ` +
-      `<span class="label">p99</span>&lt;=${fmtMs(dist.p99)}`);
+      `<span class="label">n</span>${dist.total}` + minPart +
+      ` ${pctSpan("p50", fmtMs(dist.p50))} ` +
+      `${pctSpan("p95", fmtMs(dist.p95))} ` +
+      `${pctSpan("p99", fmtMs(dist.p99))}` + maxPart);
   } else {
     setLive("live_dist", "");
   }
@@ -3629,9 +3763,10 @@ carries the detail.
 Each request contributes one count to each of five histograms: one
 per phase (server / queue / daemon / application) and one for the
 total wall time (server + queue + daemon + application). Buckets
-are log2 starting at 5 ms — ≤5 ms, 5–10 ms, 10–20 ms, …, 20–40 s,
-\`>\`40 s. The overflow bucket catches anything above the last
-finite edge.
+are HDR-style: 16 octaves from 1 ms to 65.5 s (powers of two), each
+octave linearly split into 4 sub-buckets, plus one overflow bucket
+for anything above 65.5 s. 65 entries per phase. Maximum relative
+error inside any sub-bucket is ≤25%.
 
 Mechanics:
 
@@ -3640,10 +3775,16 @@ Mechanics:
   independently to its phase bucket and to the total bucket, so
   the two are independent snapshots of the same requests. Summing
   phase histograms to reconstruct the total is incorrect.
-- **Percentiles are bucket upper-bounds**, always upper estimates.
-  A p50 of "40 ms" means half the requests finished by the top of
-  the 40 ms bucket — they may have finished anywhere between 20 ms
-  and 40 ms.
+- **Percentiles are interpolated inside the containing bucket**,
+  assuming uniform distribution across the bucket's range. The
+  printed value is a point inside the bucket proportional to the
+  rank's position within it — so p50 / p95 / p99 do not collapse
+  to a single number even when traffic is concentrated in one bar.
+  Resolution is still bounded by the bucket grid (≤25%).
+- **Exact min and max** for the same window are displayed alongside
+  the percentiles. They come from per-phase min/max accumulators
+  (not the buckets), so they are exact even when the request
+  landed in the overflow bucket.
 - **Means and percentiles disagree on purpose.** Means are blind
   to shape; percentiles surface the tail. A healthy-looking mean
   with a heavy p99 points at outliers eating wall time. Use both.
@@ -4313,9 +4454,10 @@ function buildCurrentStatsMarkdown() {
   }
 
   // --- Time distributions ----------------------------------------
-  // One subsection per phase, plus the total. Log2 buckets (5ms
-  // doubling); we emit only the phases with any samples, and within
-  // a phase only the non-zero buckets, so the section stays tight
+  // One subsection per phase, plus the total. HDR buckets (16 octaves
+  // from 1 ms to 65.5 s, 4 sub-buckets per octave); we emit only the
+  // phases with any samples, and within a phase only the non-zero
+  // buckets, so the section stays tight
   // on low-variance workloads but the full shape is preserved when
   // a tail is present. Each phase gets p50/p90/p95/p99 percentiles
   // (bucket upper-bounds — so they're upper estimates, always).
@@ -4344,17 +4486,25 @@ function buildCurrentStatsMarkdown() {
       bucketPercentileMs(hist, 0.95),
       bucketPercentileMs(hist, 0.99),
     ];
-    const pctPart = pcts.every(v => v === pcts[0])
-      ? "p50..p99 \u2264 " + fmtMs(pcts[0])
-      : "p50=" + fmtMs(pcts[0]) +
-        ", p90=" + fmtMs(pcts[1]) +
-        ", p95=" + fmtMs(pcts[2]) +
-        ", p99=" + fmtMs(pcts[3]);
+    // With interpolation, the printed percentile is a point inside
+    // the containing bucket — three identical numbers used to mean
+    // "all in one bucket" but no longer do, so always print all four.
+    const pctPart =
+      "p50=" + fmtMs(pcts[0]) +
+      ", p90=" + fmtMs(pcts[1]) +
+      ", p95=" + fmtMs(pcts[2]) +
+      ", p99=" + fmtMs(pcts[3]);
+    const mm = aggregateBucketsForMinMax(visible, spec.field, LINE_WINDOW_SEC);
+    const minMaxPart = (mm.minUs !== null && mm.maxUs !== null)
+      ? " (exact min=" + fmtMs(mm.minUs / 1000)
+        + ", max=" + fmtMs(mm.maxUs / 1000) + ")"
+      : "";
     const body = [
       "### " + spec.label,
       "",
       "- requests in window: " + total.toLocaleString(),
-      "- percentiles (bucket upper-bounds): " + pctPart,
+      "- percentiles (interpolated within containing bucket): "
+        + pctPart + minMaxPart,
       "- non-zero buckets:",
     ];
     for (let i = 0; i < N_BUCKETS; i++) {
@@ -4376,11 +4526,18 @@ function buildCurrentStatsMarkdown() {
   if (distSections.length > 0) {
     lines.push("## Time distributions");
     lines.push("");
-    lines.push("Log2 buckets starting at 5 ms (each bucket upper-bound is");
-    lines.push("2× the previous; overflow at > 40 s). A request is counted");
-    lines.push("once per phase histogram and once in the total histogram —");
-    lines.push("the total is bucketed per-request, **not** derived by");
-    lines.push("summing the four phase histograms.");
+    lines.push("HDR buckets, 1 ms to 65.5 s. 16 octaves (powers of two),");
+    lines.push("each octave linearly split into 4 sub-buckets (≤25%");
+    lines.push("relative error inside any sub-bucket), plus one overflow");
+    lines.push("bucket for >65.5 s. 65 entries per phase. Percentiles are");
+    lines.push("interpolated inside the containing bucket assuming a");
+    lines.push("uniform within-bucket distribution; exact min and max come");
+    lines.push("from per-phase accumulators (not the buckets) and are");
+    lines.push("preserved even for requests that landed in overflow.");
+    lines.push("");
+    lines.push("A request is counted once per phase histogram and once in");
+    lines.push("the total histogram — the total is bucketed per-request,");
+    lines.push("**not** derived by summing the four phase histograms.");
     lines.push("");
     for (const s of distSections) lines.push(s);
   }

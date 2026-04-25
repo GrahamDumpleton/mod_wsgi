@@ -35,17 +35,14 @@ _SLOW_PATHS = [
 ]
 
 
-def parse_target(spec: str) -> tuple[int, tuple]:
-    """Return (family, addr) for socket.sendto."""
+def parse_target(spec: str) -> tuple[int, str]:
+    """Return (family, addr) for socket.sendto. UNIX SOCK_DGRAM only."""
     if spec.startswith("unix:"):
         return socket.AF_UNIX, spec[len("unix:"):]
-    if spec.startswith("udp:"):
-        rest = spec[len("udp:"):]
-        host, _, port = rest.rpartition(":")
-        if not host or not port:
-            raise ValueError(f"bad udp target {spec!r}")
-        return socket.AF_INET, (host, int(port))
-    raise ValueError(f"unknown scheme in target {spec!r}: expected unix: or udp:")
+    raise ValueError(
+        f"unknown scheme in target {spec!r}: expected 'unix:/path' "
+        f"(remote 'udp:host:port' targets are no longer supported)"
+    )
 
 
 _SLOT_COUNT = 5
@@ -69,13 +66,45 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
     count = int(throughput * interval)
     app_time = 0.02 + 0.05 * cap + random.uniform(-0.003, 0.003)
     srv_time = app_time + random.uniform(0.001, 0.004)
+    queue_time = random.uniform(0.0005, 0.003)
+    daemon_time = random.uniform(0.0005, 0.002)
+    request_time = srv_time + queue_time + daemon_time + app_time
+
+    # HDR layout: 16 octaves × 4 sub-buckets + 1 overflow = 65. Bucket
+    # index for a duration ms is octave*4 + sub, where octave is
+    # floor(log2(ms)) and sub is which quarter of [2^o, 2^(o+1)) the
+    # value lands in. concentration here picks the centre bucket index
+    # to spread the gaussian around — e.g. concentration=18 centres
+    # around the [20, 24) ms sub-bucket of the 16-32 ms octave.
+    _N_BUCKETS = 65
 
     def bucketise(total: int, concentration: int) -> list[int]:
-        buckets = [0] * 16
+        buckets = [0] * _N_BUCKETS
         for _ in range(total):
-            idx = max(0, min(15, int(random.gauss(concentration, 1.5))))
+            idx = max(0, min(_N_BUCKETS - 1,
+                             int(random.gauss(concentration, 4.0))))
             buckets[idx] += 1
         return buckets
+
+    def minmax_us(seconds_mean: float) -> tuple[int, int]:
+        """Plausible per-tick min/max bracketing the mean (microseconds)."""
+        if count == 0:
+            # No requests this tick — encoder skips the field; mirror that
+            # by emitting the sentinel UINT64_MAX as the min, which the
+            # decoder treats as "no data". UINT64_MAX is too big for the
+            # i64 encode path; encode as None instead so the field is
+            # simply absent on the wire.
+            return None, None
+        mn = max(1, int(seconds_mean * 1_000_000 * random.uniform(0.30, 0.55)))
+        mx = max(mn + 1, int(seconds_mean * 1_000_000 *
+                             random.uniform(3.0, 8.0)))
+        return mn, mx
+
+    s_min, s_max = minmax_us(srv_time)
+    a_min, a_max = minmax_us(app_time)
+    r_min, r_max = minmax_us(request_time)
+    q_min, q_max = minmax_us(queue_time)
+    d_min, d_max = minmax_us(daemon_time)
 
     # Per-slot capacity arrays. Each slot's base busy-fraction is a
     # blend of the process-wide capacity and per-slot jitter, so slots
@@ -149,12 +178,17 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
                                              sum(1 for v in slot_busy_time_us
                                                  if v > 0))),
         "server_time": srv_time,
-        "queue_time": random.uniform(0.0005, 0.003),
-        "daemon_time": random.uniform(0.0005, 0.002),
+        "queue_time": queue_time,
+        "daemon_time": daemon_time,
         "application_time": app_time,
-        "application_time_buckets": bucketise(count, concentration=6),
-        "server_time_buckets": bucketise(count, concentration=7),
-        "request_time_buckets": bucketise(count, concentration=5),
+        "request_time": request_time,
+        # HDR concentrations: 18 ≈ [20, 24) ms, 14 ≈ [10, 12) ms,
+        # 22 ≈ [40, 48) ms — chosen to mirror the seconds_mean above.
+        "application_time_buckets": bucketise(count, concentration=18),
+        "server_time_buckets": bucketise(count, concentration=14),
+        "queue_time_buckets":     bucketise(count, concentration=8),
+        "daemon_time_buckets":    bucketise(count, concentration=8),
+        "request_time_buckets":   bucketise(count, concentration=22),
         "slot_request_count": slot_request_count,
         "slot_busy_time_us": slot_busy_time_us,
         "slot_cpu_time_us": slot_cpu_time_us,
@@ -176,6 +210,24 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
         "telemetry_interval": float(interval),
         "slow_requests_threshold": 1.0,
     }
+
+    # Per-phase exact min/max (microseconds). Skip the field on idle
+    # ticks to mirror the C encoder's "field absent when no requests
+    # this tick" behaviour.
+    for key, val in (
+        ("server_time_min_us",      s_min),
+        ("server_time_max_us",      s_max),
+        ("queue_time_min_us",       q_min),
+        ("queue_time_max_us",       q_max),
+        ("daemon_time_min_us",      d_min),
+        ("daemon_time_max_us",      d_max),
+        ("application_time_min_us", a_min),
+        ("application_time_max_us", a_max),
+        ("request_time_min_us",     r_min),
+        ("request_time_max_us",     r_max),
+    ):
+        if val is not None:
+            fields[key] = val
 
     return Sample(
         version=1,
@@ -257,7 +309,7 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--target", required=True,
-                    help="unix:/path/to/sock  or  udp:host:port")
+                    help="unix:/path/to/sock")
     ap.add_argument("--processes", type=int, default=4)
     ap.add_argument("--interval", type=float, default=1.0)
     ap.add_argument("--duration", type=float, default=0.0,
