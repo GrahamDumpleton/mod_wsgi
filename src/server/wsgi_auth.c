@@ -592,10 +592,9 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     if (!config->auth_user_script)
     {
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI user "
-                     "authentication script not provided.",
-                     getpid());
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                       "Location of WSGI user authentication script not "
+                       "provided.");
 
         return AUTH_GENERAL_ERROR;
     }
@@ -612,9 +611,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     if (!interp)
     {
-        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), group);
+        wsgi_log_rerror(APLOG_CRIT, 0, r,
+                        "Cannot acquire interpreter '%s'.", group);
 
         return AUTH_GENERAL_ERROR;
     }
@@ -818,13 +816,10 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
         }
         else
         {
-            Py_BEGIN_ALLOW_THREADS
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "mod_wsgi (pid=%d): Target WSGI user "
-                              "authentication script '%s' does not provide "
-                              "'Basic' auth provider.",
-                              getpid(), script);
-            Py_END_ALLOW_THREADS
+            wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                   "Target WSGI user authentication script "
+                                   "'%s' does not provide 'Basic' auth "
+                                   "provider.", script);
         }
     }
 
@@ -857,10 +852,9 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     if (!config->auth_user_script)
     {
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI user "
-                     "authentication script not provided.",
-                     getpid());
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                       "Location of WSGI user authentication script not "
+                       "provided.");
 
         return AUTH_GENERAL_ERROR;
     }
@@ -877,9 +871,8 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     if (!interp)
     {
-        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), group);
+        wsgi_log_rerror(APLOG_CRIT, 0, r,
+                        "Cannot acquire interpreter '%s'.", group);
 
         return AUTH_GENERAL_ERROR;
     }
@@ -1090,13 +1083,10 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
         }
         else
         {
-            Py_BEGIN_ALLOW_THREADS
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "mod_wsgi (pid=%d): Target WSGI user "
-                              "authentication script '%s' does not provide "
-                              "'Digest' auth provider.",
-                              getpid(), script);
-            Py_END_ALLOW_THREADS
+            wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                   "Target WSGI user authentication script "
+                                   "'%s' does not provide 'Digest' auth "
+                                   "provider.", script);
         }
     }
 
@@ -1132,10 +1122,9 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     if (!config->auth_group_script)
     {
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI group "
-                     "authentication script not provided.",
-                     getpid());
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                       "Location of WSGI group authentication script not "
+                       "provided.");
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -1152,9 +1141,8 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     if (!interp)
     {
-        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), group);
+        wsgi_log_rerror(APLOG_CRIT, 0, r,
+                        "Cannot acquire interpreter '%s'.", group);
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -1293,17 +1281,15 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                                 latin_item = PyUnicode_AsLatin1String(item);
                                 if (!latin_item)
                                 {
-                                    Py_BEGIN_ALLOW_THREADS
-                                        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0,
-                                                      r, "mod_wsgi (pid=%d): "
-                                                         "Groups for user returned "
-                                                         "from '%s' must be an "
-                                                         "iterable sequence of "
-                                                         "byte strings, value "
-                                                         "containing non 'latin-1' "
-                                                         "characters found",
-                                                      getpid(), script);
-                                    Py_END_ALLOW_THREADS
+                                    wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                                           "Groups for user "
+                                                           "returned from '%s' "
+                                                           "must be an iterable "
+                                                           "sequence of byte "
+                                                           "strings, value "
+                                                           "containing non "
+                                                           "'latin-1' characters "
+                                                           "found", script);
 
                                         Py_DECREF(item);
 
@@ -1320,15 +1306,12 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
                             if (!PyBytes_Check(item))
                             {
-                                Py_BEGIN_ALLOW_THREADS
-                                    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                                  "mod_wsgi (pid=%d): Groups for "
-                                                  "user returned from '%s' must "
-                                                  "be an iterable sequence of "
-                                                  "byte strings.",
-                                                  getpid(),
-                                                  script);
-                                Py_END_ALLOW_THREADS
+                                wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                                       "Groups for user "
+                                                       "returned from '%s' "
+                                                       "must be an iterable "
+                                                       "sequence of byte "
+                                                       "strings.", script);
 
                                     Py_DECREF(item);
 
@@ -1349,14 +1332,11 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                     }
                     else
                     {
-                        Py_BEGIN_ALLOW_THREADS
-                            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                          "mod_wsgi (pid=%d): Groups for user "
-                                          "returned from '%s' must be an iterable "
-                                          "sequence of byte strings.",
-                                          getpid(),
-                                          script);
-                        Py_END_ALLOW_THREADS
+                        wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                               "Groups for user returned "
+                                               "from '%s' must be an "
+                                               "iterable sequence of byte "
+                                               "strings.", script);
                     }
 
                     Py_DECREF(result);
@@ -1401,13 +1381,10 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
         }
         else
         {
-            Py_BEGIN_ALLOW_THREADS
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "mod_wsgi (pid=%d): Target WSGI group "
-                              "authentication script '%s' does not provide "
-                              "group provider.",
-                              getpid(), script);
-            Py_END_ALLOW_THREADS
+            wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                   "Target WSGI group authentication "
+                                   "script '%s' does not provide group "
+                                   "provider.", script);
         }
     }
 
@@ -1439,10 +1416,8 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
     if (!config->access_script)
     {
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI host "
-                     "access script not provided.",
-                     getpid());
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                       "Location of WSGI host access script not provided.");
 
         return 0;
     }
@@ -1459,9 +1434,8 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
     if (!interp)
     {
-        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), group);
+        wsgi_log_rerror(APLOG_CRIT, 0, r,
+                        "Cannot acquire interpreter '%s'.", group);
 
         return 0;
     }
@@ -1590,14 +1564,11 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
                     }
                     else
                     {
-                        Py_BEGIN_ALLOW_THREADS
-                            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                          "mod_wsgi (pid=%d): Indicator of "
-                                          "host accessibility returned from '%s' "
-                                          "must a boolean or None.",
-                                          getpid(),
-                                          script);
-                        Py_END_ALLOW_THREADS
+                        wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                               "Indicator of host "
+                                               "accessibility returned from "
+                                               "'%s' must a boolean or "
+                                               "None.", script);
                     }
 
                     Py_DECREF(result);
@@ -1642,13 +1613,10 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
         }
         else
         {
-            Py_BEGIN_ALLOW_THREADS
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "mod_wsgi (pid=%d): Target WSGI host "
-                              "access script '%s' does not provide "
-                              "host validator.",
-                              getpid(), script);
-            Py_END_ALLOW_THREADS
+            wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                   "Target WSGI host access script '%s' "
+                                   "does not provide host validator.",
+                                   script);
         }
     }
 
@@ -1688,9 +1656,9 @@ int wsgi_hook_access_checker(request_rec *r)
 
     if (ap_satisfies(r) != SATISFY_ANY || !ap_some_auth_required(r))
     {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "mod_wsgi (pid=%d): "
-                                                   "Client denied by server configuration: '%s'.",
-                      getpid(), r->filename);
+        wsgi_log_rerror(APLOG_ERR, 0, r,
+                        "Client denied by server configuration: '%s'.",
+                        r->filename);
     }
 
     return HTTP_FORBIDDEN;
@@ -1713,10 +1681,9 @@ static authz_status wsgi_check_authorization(request_rec *r,
 
     if (!config->auth_group_script)
     {
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI group "
-                     "authorization script not provided.",
-                     getpid());
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                       "Location of WSGI group authorization script not "
+                       "provided.");
 
         return AUTHZ_DENIED;
     }
@@ -1728,11 +1695,10 @@ static authz_status wsgi_check_authorization(request_rec *r,
 
     if (apr_table_elts(grpstatus)->nelts == 0)
     {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "mod_wsgi (pid=%d): "
-                                                   "Authorization of user '%s' to access '%s' failed. "
-                                                   "User is not a member of any groups.",
-                      getpid(),
-                      r->user, r->uri);
+        wsgi_log_rerror(APLOG_ERR, 0, r,
+                        "Authorization of user '%s' to access '%s' failed. "
+                        "User is not a member of any groups.",
+                        r->user, r->uri);
         return AUTHZ_DENIED;
     }
 
@@ -1745,11 +1711,10 @@ static authz_status wsgi_check_authorization(request_rec *r,
         }
     }
 
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "mod_wsgi (pid=%d): "
-                                               "Authorization of user '%s' to access '%s' failed. "
-                                               "User is not a member of designated groups.",
-                  getpid(),
-                  r->user, r->uri);
+    wsgi_log_rerror(APLOG_ERR, 0, r,
+                    "Authorization of user '%s' to access '%s' failed. "
+                    "User is not a member of designated groups.",
+                    r->user, r->uri);
 
     return AUTHZ_DENIED;
 }

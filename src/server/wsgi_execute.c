@@ -56,9 +56,9 @@ int wsgi_execute_script(request_rec *r)
 
     if (!interp)
     {
-        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), config->application_group);
+        wsgi_log_rerror(APLOG_CRIT, 0, r,
+                        "Cannot acquire interpreter '%s'.",
+                        config->application_group);
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -72,11 +72,10 @@ int wsgi_execute_script(request_rec *r)
         {
             if (wsgi_startup_timeout > 0)
             {
-                ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Application startup "
-                             "timer triggered '%s'.",
-                             getpid(),
-                             config->process_group);
+                wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
+                                      "Application startup timer "
+                                      "triggered '%s'.",
+                                      config->process_group);
 
                 apr_thread_mutex_lock(wsgi_monitor_lock);
                 wsgi_startup_shutdown_time = apr_time_now();
@@ -119,12 +118,10 @@ int wsgi_execute_script(request_rec *r)
             module = PyImport_ImportModule(name);
 
             if (!module) {
-                Py_BEGIN_ALLOW_THREADS
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                             "mod_wsgi (pid=%d): Failed to import handler "
-                             "via Python module reference %s.", getpid(),
-                             script);
-                Py_END_ALLOW_THREADS
+                wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                       "Failed to import handler via "
+                                       "Python module reference %s.",
+                                       script);
 
                 wsgi_log_python_error(r, NULL, r->filename, 0);
             }
@@ -188,13 +185,9 @@ int wsgi_execute_script(request_rec *r)
                      * is restarted.
                      */
 
-                    Py_BEGIN_ALLOW_THREADS
-                        ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
-                                      "mod_wsgi (pid=%d): Force restart of "
-                                      "process '%s'.",
-                                      getpid(),
-                                      config->process_group);
-                    Py_END_ALLOW_THREADS
+                    wsgi_log_rerror_locked(APLOG_INFO, 0, r,
+                                           "Force restart of process '%s'.",
+                                           config->process_group);
 
 #if APR_HAS_THREADS
                         apr_thread_mutex_unlock(wsgi_module_lock);
@@ -308,11 +301,9 @@ int wsgi_execute_script(request_rec *r)
     {
         wsgi_startup_shutdown_time = -1;
 
-        ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Application startup "
-                     "timer cancelled '%s'.",
-                     getpid(),
-                     config->process_group);
+        wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
+                              "Application startup timer cancelled '%s'.",
+                              config->process_group);
     }
 #endif
 
@@ -385,12 +376,10 @@ int wsgi_execute_script(request_rec *r)
         }
         else
         {
-            Py_BEGIN_ALLOW_THREADS
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "mod_wsgi (pid=%d): Target WSGI script '%s' does "
-                              "not contain WSGI application '%s'.",
-                              getpid(), script, config->callable_object);
-            Py_END_ALLOW_THREADS
+            wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                   "Target WSGI script '%s' does not "
+                                   "contain WSGI application '%s'.",
+                                   script, config->callable_object);
 
                 status = HTTP_NOT_FOUND;
         }

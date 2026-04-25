@@ -1496,9 +1496,8 @@ static int Adapter_output(AdapterObject *self, const char *data,
         {
             if (!exception_when_aborted)
             {
-                ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, self->r,
-                              "mod_wsgi (pid=%d): Client closed connection.",
-                              getpid());
+                wsgi_log_rerror_locked(APLOG_DEBUG, 0, self->r,
+                                       "Client closed connection.");
             }
             else
                 PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client "
@@ -1553,9 +1552,8 @@ static int Adapter_output(AdapterObject *self, const char *data,
                                              apr_strerror(rv, status_buffer,
                                                           sizeof(status_buffer) - 1));
 
-                ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, self->r,
-                              "mod_wsgi (pid=%d): %s.", getpid(),
-                              error_message);
+                wsgi_log_rerror_locked(APLOG_DEBUG, 0, self->r,
+                                       "%s.", error_message);
             }
             else
             {
@@ -1602,9 +1600,8 @@ static int Adapter_output(AdapterObject *self, const char *data,
     {
         if (!exception_when_aborted)
         {
-            ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, self->r,
-                          "mod_wsgi (pid=%d): Client closed connection.",
-                          getpid());
+            wsgi_log_rerror_locked(APLOG_DEBUG, 0, self->r,
+                                   "Client closed connection.");
         }
         else
             PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client "
@@ -2482,13 +2479,14 @@ int Adapter_run(AdapterObject *self, PyObject *object)
                                           self->output_length != self->content_length) ||
                                          (self->output_length > self->content_length)))
         {
-            ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, self->r,
-                          "mod_wsgi (pid=%d): Content length mismatch, "
-                          "expected %s, response generated %s: %s",
-                          getpid(),
-                          apr_off_t_toa(self->r->pool, self->content_length),
-                          apr_off_t_toa(self->r->pool, self->output_length),
-                          self->r->filename);
+            wsgi_log_rerror_locked(APLOG_DEBUG, 0, self->r,
+                                   "Content length mismatch, expected %s, "
+                                   "response generated %s: %s",
+                                   apr_off_t_toa(self->r->pool,
+                                                 self->content_length),
+                                   apr_off_t_toa(self->r->pool,
+                                                 self->output_length),
+                                   self->r->filename);
         }
 
         if (PyErr_Occurred())
