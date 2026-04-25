@@ -20,6 +20,7 @@
 
 #include "wsgi_remote.h"
 
+#include "wsgi_logger.h"
 #include "wsgi_server.h"
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
@@ -107,10 +108,9 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
 
         if (rv != APR_SUCCESS)
         {
-            ap_log_rerror(APLOG_MARK, APLOG_WARNING, rv, r,
-                          "mod_wsgi (pid=%d): Unable to create socket to "
-                          "connect to WSGI daemon process.",
-                          getpid());
+            wsgi_log_rerror(APLOG_WARNING, rv, r,
+                            "Unable to create socket to connect to WSGI "
+                            "daemon process.");
 
             return HTTP_INTERNAL_SERVER_ERROR;
         }
@@ -146,13 +146,12 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
                 {
                     if (wsgi_server_config->verbose_debugging)
                     {
-                        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, rv, r,
-                                      "mod_wsgi (pid=%d): Connection attempt "
-                                      "#%d to WSGI daemon process '%s' on "
-                                      "'%s' failed, sleeping before retrying "
-                                      "again.",
-                                      getpid(), retries,
-                                      daemon->name, daemon->socket_path);
+                        wsgi_log_rerror(APLOG_DEBUG, rv, r,
+                                        "Connection attempt #%d to WSGI "
+                                        "daemon process '%s' on '%s' failed, "
+                                        "sleeping before retrying again.",
+                                        retries, daemon->name,
+                                        daemon->socket_path);
                     }
 
                     apr_socket_close(daemon->socket);
@@ -174,14 +173,12 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
                 }
                 else
                 {
-                    ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                                  "mod_wsgi (pid=%d): Unable to connect to "
-                                  "WSGI daemon process '%s' on '%s' after "
-                                  "multiple attempts as listener backlog "
-                                  "limit was exceeded or the socket does "
-                                  "not exist.",
-                                  getpid(), daemon->name,
-                                  daemon->socket_path);
+                    wsgi_log_rerror(APLOG_ERR, rv, r,
+                                    "Unable to connect to WSGI daemon "
+                                    "process '%s' on '%s' after multiple "
+                                    "attempts as listener backlog limit was "
+                                    "exceeded or the socket does not exist.",
+                                    daemon->name, daemon->socket_path);
 
                     apr_socket_close(daemon->socket);
 
@@ -190,12 +187,11 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
             }
             else
             {
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                              "mod_wsgi (pid=%d): Unable to connect to "
-                              "WSGI daemon process '%s' on '%s' as user "
-                              "with uid=%ld.",
-                              getpid(), daemon->name,
-                              daemon->socket_path, (long)geteuid());
+                wsgi_log_rerror(APLOG_ERR, rv, r,
+                                "Unable to connect to WSGI daemon process "
+                                "'%s' on '%s' as user with uid=%ld.",
+                                daemon->name, daemon->socket_path,
+                                (long)geteuid());
 
                 apr_socket_close(daemon->socket);
 
@@ -952,10 +948,8 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
             if (rv == APR_TIMEUP)
             {
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                              "mod_wsgi (pid=%d): Failed to proxy response "
-                              "to client.",
-                              getpid());
+                wsgi_log_rerror(APLOG_ERR, rv, r,
+                                "Failed to proxy response to client.");
             }
 
             if (rv != APR_SUCCESS)
@@ -992,10 +986,8 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
         {
             apr_brigade_destroy(bb);
 
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                          "mod_wsgi (pid=%d): Failed to proxy response "
-                          "from daemon.",
-                          getpid());
+            wsgi_log_rerror(APLOG_ERR, rv, r,
+                            "Failed to proxy response from daemon.");
 
             /*
              * Don't flag error if couldn't read from daemon
@@ -1069,10 +1061,8 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
         if (rv == APR_TIMEUP)
         {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                          "mod_wsgi (pid=%d): Failed to proxy response "
-                          "to client.",
-                          getpid());
+            wsgi_log_rerror(APLOG_ERR, rv, r,
+                            "Failed to proxy response to client.");
         }
 
         if (rv != APR_SUCCESS)
@@ -1486,20 +1476,17 @@ int wsgi_execute_remote(request_rec *r)
 
     if (wsgi_server_config->verbose_debugging)
     {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Request server was "
-                     "'%s|%d'.",
-                     getpid(), r->server->server_hostname,
-                     r->server->port);
+        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                       "Request server was '%s|%d'.",
+                       r->server->server_hostname, r->server->port);
     }
 
     if ((rv = wsgi_send_request(r, config, daemon)) != APR_SUCCESS)
     {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                      "mod_wsgi (pid=%d): Unable to send request details "
-                      "to WSGI daemon process '%s' on '%s'.",
-                      getpid(),
-                      daemon->name, daemon->socket_path);
+        wsgi_log_rerror(APLOG_ERR, rv, r,
+                        "Unable to send request details to WSGI daemon "
+                        "process '%s' on '%s'.",
+                        daemon->name, daemon->socket_path);
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -1562,11 +1549,9 @@ int wsgi_execute_remote(request_rec *r)
 
             if (r->status != 200)
             {
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "mod_wsgi (pid=%d): Unexpected status from "
-                              "WSGI daemon process '%d'.",
-                              getpid(),
-                              r->status);
+                wsgi_log_rerror(APLOG_ERR, 0, r,
+                                "Unexpected status from WSGI daemon "
+                                "process '%d'.", r->status);
 
                 r->status_line = NULL;
 
@@ -1589,10 +1574,9 @@ int wsgi_execute_remote(request_rec *r)
 
             if (strcmp(r->status_line, "200 Rejected"))
             {
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "mod_wsgi (pid=%d): Unexpected status from "
-                              "WSGI daemon process '%d'.",
-                              getpid(), r->status);
+                wsgi_log_rerror(APLOG_ERR, 0, r,
+                                "Unexpected status from WSGI daemon "
+                                "process '%d'.", r->status);
 
                 r->status_line = NULL;
 
@@ -1613,18 +1597,15 @@ int wsgi_execute_remote(request_rec *r)
 
             if (retries >= maximum)
             {
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "mod_wsgi (pid=%d): Maximum number of WSGI "
-                              "daemon process restart connects reached '%d'.",
-                              getpid(), maximum);
+                wsgi_log_rerror(APLOG_ERR, 0, r,
+                                "Maximum number of WSGI daemon process "
+                                "restart connects reached '%d'.", maximum);
                 return HTTP_SERVICE_UNAVAILABLE;
             }
 
-            ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
-                          "mod_wsgi (pid=%d): Connect after WSGI daemon "
-                          "process restart, attempt #%d.",
-                          getpid(),
-                          retries);
+            wsgi_log_rerror(APLOG_INFO, 0, r,
+                            "Connect after WSGI daemon process restart, "
+                            "attempt #%d.", retries);
 
             /* Connect and setup connection just like before. */
 
@@ -1633,10 +1614,10 @@ int wsgi_execute_remote(request_rec *r)
 
             if ((rv = wsgi_send_request(r, config, daemon)) != APR_SUCCESS)
             {
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
-                              "mod_wsgi (pid=%d): Unable to send request "
-                              "details to WSGI daemon process '%s' on '%s'.",
-                              getpid(), daemon->name, daemon->socket_path);
+                wsgi_log_rerror(APLOG_ERR, rv, r,
+                                "Unable to send request details to WSGI "
+                                "daemon process '%s' on '%s'.",
+                                daemon->name, daemon->socket_path);
 
                 return HTTP_INTERNAL_SERVER_ERROR;
             }
@@ -1692,8 +1673,7 @@ int wsgi_execute_remote(request_rec *r)
                                                   "error when proxying data to daemon process: %s",
                                          apr_strerror(rv, status_buffer, sizeof(status_buffer) - 1));
 
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d): %s.", getpid(), error_message);
+            wsgi_log_rerror(APLOG_ERR, 0, r, "%s.", error_message);
 
             if (APR_STATUS_IS_TIMEUP(rv))
                 return HTTP_REQUEST_TIME_OUT;
@@ -1729,9 +1709,7 @@ int wsgi_execute_remote(request_rec *r)
                                                           "error when proxying data to daemon process: %s",
                                                  apr_strerror(rv, status_buffer, sizeof(status_buffer) - 1));
 
-                    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                  "mod_wsgi (pid=%d): %s.", getpid(),
-                                  error_message);
+                    wsgi_log_rerror(APLOG_ERR, 0, r, "%s.", error_message);
                 }
 
                 seen_eos = 1;
@@ -1765,9 +1743,7 @@ int wsgi_execute_remote(request_rec *r)
                                                       "error when proxying data to daemon process: %s",
                                              apr_strerror(rv, status_buffer, sizeof(status_buffer) - 1));
 
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "mod_wsgi (pid=%d): %s.", getpid(),
-                              error_message);
+                wsgi_log_rerror(APLOG_ERR, 0, r, "%s.", error_message);
 
                 break;
             }
@@ -1800,9 +1776,7 @@ int wsgi_execute_remote(request_rec *r)
                                                       "error when proxying data to daemon process: %s",
                                              apr_strerror(rv, status_buffer, sizeof(status_buffer) - 1));
 
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "mod_wsgi (pid=%d): %s.", getpid(),
-                              error_message);
+                wsgi_log_rerror(APLOG_ERR, 0, r, "%s.", error_message);
 
                 /* Daemon stopped reading, discard remainder. */
 

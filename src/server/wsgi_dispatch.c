@@ -231,10 +231,8 @@ int wsgi_execute_dispatch(request_rec *r)
 
     if (!config->dispatch_script)
     {
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Location of WSGI dispatch "
-                     "script not provided.",
-                     getpid());
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                       "Location of WSGI dispatch script not provided.");
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -251,9 +249,8 @@ int wsgi_execute_dispatch(request_rec *r)
 
     if (!interp)
     {
-        ap_log_rerror(APLOG_MARK, APLOG_CRIT, 0, r,
-                      "mod_wsgi (pid=%d): Cannot acquire interpreter '%s'.",
-                      getpid(), group);
+        wsgi_log_rerror(APLOG_CRIT, 0, r,
+                        "Cannot acquire interpreter '%s'.", group);
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
