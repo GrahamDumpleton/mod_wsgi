@@ -159,33 +159,7 @@ FIELDS = {
     113: "slot_current_elapsed_ms",
     114: "slot_max_duration_ms",
 
-    # 120-139: slow-request fields (only present in KIND_SLOW_REQUEST
-    # datagrams). Identity (hostname, process_group) is keyed per pid
-    # from the accompanying KIND_REQUEST stream, so it is not repeated
-    # here. 120-129: identification and timing. 130-133: per-request
-    # I/O — final at completion, partial snapshot for active records.
-    # 134-135: per-request CPU time (microseconds) — final at completion,
-    # zero for active records. 136: final HTTP response status — zero
-    # for active records (start_response may not have been called yet).
-    120: "slow_state",            # 0 = active, 1 = completed
-    121: "slow_start_stamp_us",
-    122: "slow_duration_us",
-    123: "slow_thread_id",
-    124: "slow_log_id",
-    125: "slow_method",
-    126: "slow_scheme",
-    127: "slow_hostname",
-    128: "slow_script_name",
-    129: "slow_path_info",
-    130: "slow_input_bytes",
-    131: "slow_input_reads",
-    132: "slow_output_bytes",
-    133: "slow_output_writes",
-    134: "slow_cpu_user_us",
-    135: "slow_cpu_system_us",
-    136: "slow_status",           # 0 = not yet known, else final WSGI status
-
-    # 140-149: per-interval HTTP response class totals. Drained from
+    # 120-129: per-interval HTTP response class totals. Drained from
     # the same accumulator that wsgi_record_request_times() updates at
     # end-of-request, sharing drain-and-reset semantics with the
     # 100-109 I/O totals block. status==0 (no start_response call) is
@@ -193,11 +167,39 @@ FIELDS = {
     # tripwire — a WSGI app should never return 1xx, so a non-zero
     # count flags a protocol violation. Sum equals request_count for
     # the same interval; consumers can use this as a sanity check.
-    140: "status_1xx_total",
-    141: "status_2xx_total",
-    142: "status_3xx_total",
-    143: "status_4xx_total",
-    144: "status_5xx_total",
+    120: "status_1xx_total",
+    121: "status_2xx_total",
+    122: "status_3xx_total",
+    123: "status_4xx_total",
+    124: "status_5xx_total",
+
+    # 130-149: slow-request fields (only present in KIND_SLOW_REQUEST
+    # datagrams). Identity (hostname, process_group) is keyed per pid
+    # from the accompanying KIND_REQUEST stream, so it is not repeated
+    # here. Kept physically last in the ID space so the REQUEST-
+    # snapshot fields above stay contiguous. 130-139: identification
+    # and timing. 140-143: per-request I/O — final at completion,
+    # partial snapshot for active records. 144-145: per-request CPU
+    # time (microseconds) — final at completion, zero for active
+    # records. 146: final HTTP response status — zero for active
+    # records (start_response may not have been called yet).
+    130: "slow_state",            # 0 = active, 1 = completed
+    131: "slow_start_stamp_us",
+    132: "slow_duration_us",
+    133: "slow_thread_id",
+    134: "slow_log_id",
+    135: "slow_method",
+    136: "slow_scheme",
+    137: "slow_hostname",
+    138: "slow_script_name",
+    139: "slow_path_info",
+    140: "slow_input_bytes",
+    141: "slow_input_reads",
+    142: "slow_output_bytes",
+    143: "slow_output_writes",
+    144: "slow_cpu_user_us",
+    145: "slow_cpu_system_us",
+    146: "slow_status",           # 0 = not yet known, else final WSGI status
 }
 
 # Reverse map for encoders / tests.

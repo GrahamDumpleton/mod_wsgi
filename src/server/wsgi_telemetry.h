@@ -180,42 +180,7 @@
 #define WSGI_METRICS_F_SLOT_CURRENT_ELAPSED_MS    113   /* i32 array */
 #define WSGI_METRICS_F_SLOT_MAX_DURATION_MS       114   /* i32 array */
 
-/* 120-139: Slow-request fields. Only present in
- * WSGI_METRICS_KIND_SLOW_REQUEST datagrams; identity (hostname,
- * process_group) is looked up via the accompanying KIND_REQUEST stream
- * on the ingester.
- *
- * 120-129: identification and timing.
- * 130-133: per-request I/O — final at completion, partial snapshot for
- *          active records (the adapter may yet read or write more).
- * 134-135: per-request CPU time (microseconds), computed at end-of-
- *          request from the worker thread's getrusage delta. Active
- *          records carry zero — getrusage(RUSAGE_THREAD) only works
- *          from the request's own thread, but the active-record
- *          snapshot runs from the telemetry reporter thread.
- * 136:     final HTTP response status (e.g. 200, 404, 500). Active
- *          records carry zero — start_response may not have been
- *          called yet. Same "0 = not yet known" convention as the
- *          CPU-time fields above. */
-#define WSGI_METRICS_F_SLOW_STATE                 120   /* u64: 0=active, 1=completed */
-#define WSGI_METRICS_F_SLOW_START_STAMP_US        121   /* u64 */
-#define WSGI_METRICS_F_SLOW_DURATION_US           122   /* u64 */
-#define WSGI_METRICS_F_SLOW_THREAD_ID             123   /* u64 */
-#define WSGI_METRICS_F_SLOW_LOG_ID                124   /* bytes */
-#define WSGI_METRICS_F_SLOW_METHOD                125   /* bytes */
-#define WSGI_METRICS_F_SLOW_SCHEME                126   /* bytes */
-#define WSGI_METRICS_F_SLOW_HOSTNAME              127   /* bytes */
-#define WSGI_METRICS_F_SLOW_SCRIPT_NAME           128   /* bytes */
-#define WSGI_METRICS_F_SLOW_PATH_INFO             129   /* bytes */
-#define WSGI_METRICS_F_SLOW_INPUT_BYTES           130   /* u64 */
-#define WSGI_METRICS_F_SLOW_INPUT_READS           131   /* u64 */
-#define WSGI_METRICS_F_SLOW_OUTPUT_BYTES          132   /* u64 */
-#define WSGI_METRICS_F_SLOW_OUTPUT_WRITES         133   /* u64 */
-#define WSGI_METRICS_F_SLOW_CPU_USER_US           134   /* u64 */
-#define WSGI_METRICS_F_SLOW_CPU_SYSTEM_US         135   /* u64 */
-#define WSGI_METRICS_F_SLOW_STATUS                136   /* u64: 0=not yet known */
-
-/* 140-149: Per-interval HTTP response status class totals. Drained
+/* 120-129: Per-interval HTTP response status class totals. Drained
  * from the same accumulators that wsgi_record_request_times() updates
  * at end-of-request, sharing drain-and-reset semantics with the
  * 100-109 I/O totals block. The five class counters partition every
@@ -232,11 +197,47 @@
  * interval. Encoder always emits all five fields (even when zero) so
  * consumers can distinguish "zero of this class" from "older encoder
  * that didn't have the field". */
-#define WSGI_METRICS_F_STATUS_1XX_TOTAL           140   /* u64 */
-#define WSGI_METRICS_F_STATUS_2XX_TOTAL           141   /* u64 */
-#define WSGI_METRICS_F_STATUS_3XX_TOTAL           142   /* u64 */
-#define WSGI_METRICS_F_STATUS_4XX_TOTAL           143   /* u64 */
-#define WSGI_METRICS_F_STATUS_5XX_TOTAL           144   /* u64 */
+#define WSGI_METRICS_F_STATUS_1XX_TOTAL           120   /* u64 */
+#define WSGI_METRICS_F_STATUS_2XX_TOTAL           121   /* u64 */
+#define WSGI_METRICS_F_STATUS_3XX_TOTAL           122   /* u64 */
+#define WSGI_METRICS_F_STATUS_4XX_TOTAL           123   /* u64 */
+#define WSGI_METRICS_F_STATUS_5XX_TOTAL           124   /* u64 */
+
+/* 130-149: Slow-request fields. Only present in
+ * WSGI_METRICS_KIND_SLOW_REQUEST datagrams; identity (hostname,
+ * process_group) is looked up via the accompanying KIND_REQUEST stream
+ * on the ingester. Kept physically last in the ID space so the
+ * REQUEST-snapshot fields above stay contiguous.
+ *
+ * 130-139: identification and timing.
+ * 140-143: per-request I/O — final at completion, partial snapshot for
+ *          active records (the adapter may yet read or write more).
+ * 144-145: per-request CPU time (microseconds), computed at end-of-
+ *          request from the worker thread's getrusage delta. Active
+ *          records carry zero — getrusage(RUSAGE_THREAD) only works
+ *          from the request's own thread, but the active-record
+ *          snapshot runs from the telemetry reporter thread.
+ * 146:     final HTTP response status (e.g. 200, 404, 500). Active
+ *          records carry zero — start_response may not have been
+ *          called yet. Same "0 = not yet known" convention as the
+ *          CPU-time fields above. */
+#define WSGI_METRICS_F_SLOW_STATE                 130   /* u64: 0=active, 1=completed */
+#define WSGI_METRICS_F_SLOW_START_STAMP_US        131   /* u64 */
+#define WSGI_METRICS_F_SLOW_DURATION_US           132   /* u64 */
+#define WSGI_METRICS_F_SLOW_THREAD_ID             133   /* u64 */
+#define WSGI_METRICS_F_SLOW_LOG_ID                134   /* bytes */
+#define WSGI_METRICS_F_SLOW_METHOD                135   /* bytes */
+#define WSGI_METRICS_F_SLOW_SCHEME                136   /* bytes */
+#define WSGI_METRICS_F_SLOW_HOSTNAME              137   /* bytes */
+#define WSGI_METRICS_F_SLOW_SCRIPT_NAME           138   /* bytes */
+#define WSGI_METRICS_F_SLOW_PATH_INFO             139   /* bytes */
+#define WSGI_METRICS_F_SLOW_INPUT_BYTES           140   /* u64 */
+#define WSGI_METRICS_F_SLOW_INPUT_READS           141   /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_BYTES          142   /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_WRITES         143   /* u64 */
+#define WSGI_METRICS_F_SLOW_CPU_USER_US           144   /* u64 */
+#define WSGI_METRICS_F_SLOW_CPU_SYSTEM_US         145   /* u64 */
+#define WSGI_METRICS_F_SLOW_STATUS                146   /* u64: 0=not yet known */
 
 /* ------------------------------------------------------------------------- */
 
