@@ -56,7 +56,7 @@ int wsgi_execute_script(request_rec *r)
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_CRIT, 0, r,
+        wsgi_log_rerror(APLOG_ERR, 0, r,
                         "Cannot acquire interpreter '%s'.",
                         config->application_group);
 

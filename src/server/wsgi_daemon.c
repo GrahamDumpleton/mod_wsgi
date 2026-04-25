@@ -1226,7 +1226,7 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
     {
         if (prctl(PR_SET_DUMPABLE, 1))
         {
-            wsgi_log_error(APLOG_ALERT, errno, wsgi_server,
+            wsgi_log_error(APLOG_WARNING, errno, wsgi_server,
                            "Set dumpable failed. This child will not "
                            "coredump after software errors.");
         }
@@ -1284,7 +1284,7 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
     if (strlen(process->socket_path) > sizeof(addr.sun_path))
     {
-        wsgi_log_error(APLOG_ALERT, 0, wsgi_server,
+        wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
                        "Length of path for daemon process socket exceeds "
                        "maxmimum allowed value and will be truncated, "
                        "resulting in likely failure to bind the socket, "
@@ -2472,7 +2472,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_ALERT, rv, wsgi_server,
+            wsgi_log_error(APLOG_ERR, rv, wsgi_server,
                            "Couldn't create monitor thread in daemon "
                            "process '%s'.", daemon->group->name);
         }
@@ -2482,7 +2482,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     {
         if (rv != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_ALERT, rv, wsgi_server,
+            wsgi_log_error(APLOG_ERR, rv, wsgi_server,
                            "Couldn't create deadlock thread in daemon "
                            "process '%s'.", daemon->group->name);
         }
@@ -2692,7 +2692,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_ALERT, rv, wsgi_server,
+            wsgi_log_error(APLOG_ERR, rv, wsgi_server,
                            "Couldn't create reaper thread in daemon "
                            "process '%s'.", daemon->group->name);
         }
@@ -2729,7 +2729,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
             rv = apr_thread_join(&thread_rv, wsgi_worker_threads[i].thread);
             if (rv != APR_SUCCESS)
             {
-                wsgi_log_error(APLOG_CRIT, rv, wsgi_server,
+                wsgi_log_error(APLOG_WARNING, rv, wsgi_server,
                                "Couldn't join with worker thread %d in "
                                "daemon process '%s'.",
                                i, daemon->group->name);
@@ -2980,7 +2980,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (status != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_EMERG, status, wsgi_server,
+            wsgi_log_error(APLOG_ALERT, status, wsgi_server,
                            "Couldn't initialise signal pipe in daemon "
                            "process '%s'.", daemon->group->name);
 
@@ -3023,7 +3023,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (result == -1)
             {
-                wsgi_log_error(APLOG_CRIT, errno, wsgi_server,
+                wsgi_log_error(APLOG_WARNING, errno, wsgi_server,
                                "Couldn't set CPU time limit of %d seconds "
                                "for process '%s'.",
                                daemon->group->cpu_time_limit,
@@ -3053,7 +3053,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (result == -1)
             {
-                wsgi_log_error(APLOG_CRIT, errno, wsgi_server,
+                wsgi_log_error(APLOG_WARNING, errno, wsgi_server,
                                "Couldn't set memory limit of %ld for "
                                "process '%s'.",
                                (long)daemon->group->memory_limit,
@@ -3085,7 +3085,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (result == -1)
             {
-                wsgi_log_error(APLOG_CRIT, errno, wsgi_server,
+                wsgi_log_error(APLOG_WARNING, errno, wsgi_server,
                                "Couldn't set virtual memory limit of %ld "
                                "for process '%s'.",
                                (long)daemon->group->virtual_memory_limit,
@@ -3735,7 +3735,7 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     if ((rv = wsgi_read_request(csd, r)) != APR_SUCCESS)
     {
-        wsgi_log_error(APLOG_CRIT, rv, wsgi_server,
+        wsgi_log_error(APLOG_ERR, rv, wsgi_server,
                        "Unable to read WSGI request.");
 
         apr_pool_destroy(p);
@@ -3808,7 +3808,7 @@ int wsgi_hook_daemon_handler(conn_rec *c)
         }
         else
         {
-            wsgi_log_error(APLOG_CRIT, rv, wsgi_server,
+            wsgi_log_error(APLOG_ERR, rv, wsgi_server,
                            "WSGI script '%s' not located within chroot "
                            "directory '%s'.", path, root);
 

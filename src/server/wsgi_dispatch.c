@@ -249,7 +249,7 @@ int wsgi_execute_dispatch(request_rec *r)
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_CRIT, 0, r,
+        wsgi_log_rerror(APLOG_ERR, 0, r,
                         "Cannot acquire interpreter '%s'.", group);
 
         return HTTP_INTERNAL_SERVER_ERROR;

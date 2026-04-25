@@ -611,7 +611,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_CRIT, 0, r,
+        wsgi_log_rerror(APLOG_ERR, 0, r,
                         "Cannot acquire interpreter '%s'.", group);
 
         return AUTH_GENERAL_ERROR;
@@ -871,7 +871,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_CRIT, 0, r,
+        wsgi_log_rerror(APLOG_ERR, 0, r,
                         "Cannot acquire interpreter '%s'.", group);
 
         return AUTH_GENERAL_ERROR;
@@ -1141,7 +1141,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_CRIT, 0, r,
+        wsgi_log_rerror(APLOG_ERR, 0, r,
                         "Cannot acquire interpreter '%s'.", group);
 
         return HTTP_INTERNAL_SERVER_ERROR;
@@ -1434,7 +1434,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_CRIT, 0, r,
+        wsgi_log_rerror(APLOG_ERR, 0, r,
                         "Cannot acquire interpreter '%s'.", group);
 
         return 0;
