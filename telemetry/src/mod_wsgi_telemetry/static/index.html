@@ -3094,7 +3094,7 @@ function drawHistogram(canvas, hist) {
   // jankiness when two markers landed in adjacent bars.
   const padLeft = 46 * devicePixelRatio;
   const padRight = 12 * devicePixelRatio;
-  const padTop = 8 * devicePixelRatio;
+  const padTop = 17 * devicePixelRatio;
   const padBottom = 36 * devicePixelRatio;
   const plotW = w - padLeft - padRight;
   const plotH = h - padTop - padBottom;
@@ -3177,6 +3177,24 @@ function drawHistogram(canvas, hist) {
     ctx.stroke();
   }
   ctx.setLineDash([]);
+
+  // Filled triangle anchors above the plot, apex pointing down at the
+  // line. Bars never extend into the top padding, so the triangle is
+  // always visible — crucial when a percentile lands inside a tall
+  // bar (e.g. p50 on the mode) where the dashed line alone blends
+  // into the bar fill.
+  const triH = 6 * devicePixelRatio;
+  const triW = 7 * devicePixelRatio;
+  const triGap = 3 * devicePixelRatio;
+  for (const m of markerLines) {
+    ctx.fillStyle = m.color;
+    ctx.beginPath();
+    ctx.moveTo(m.x - triW / 2, padTop - triGap - triH);
+    ctx.lineTo(m.x + triW / 2, padTop - triGap - triH);
+    ctx.lineTo(m.x, padTop - triGap);
+    ctx.closePath();
+    ctx.fill();
+  }
 
   return {
     total,
