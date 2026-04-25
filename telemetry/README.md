@@ -51,6 +51,54 @@ uv run mod-wsgi-telemetry-simulate \
     --processes 4
 ```
 
+## Terminal monitor (`top`-style)
+
+`mod-wsgi-telemetry-top` is a curses-based live monitor for the same
+data the browser UI shows. It connects to a running ingester over the
+existing WebSocket, so it runs alongside (not instead of) the browser
+UI — open as many TUI clients as you like.
+
+```
+# Terminal 1 — ingester + UI as before
+uv run mod-wsgi-telemetry
+
+# Terminal 2 — terminal monitor
+uv run mod-wsgi-telemetry-top
+# → connects to ws://127.0.0.1:8877/ws by default
+```
+
+Layout: a five-line header (hostname/group, throughput, capacity,
+CPU+memory, latency p50/p95/p99 + slow counts) stays visible across
+all views. The body switches with one keystroke:
+
+| Key | View | Body |
+|---|---|---|
+| `o` / `1` | overview | sparklines for RPS, capacity, CPU, RSS + per-phase mean times |
+| `p` / `2` | processes | per-PID table sortable by RPS, CPU, RSS, p95, slow count, PID |
+| `w` / `3` | workers | per-PID slot grid (`.` idle · `*` <1s · `#` 1-5s · `!` ≥ slow threshold) |
+| `l` / `4` | latency | ASCII HDR histogram for the chosen phase + p50/p95/p99 markers |
+| `s` / `5` | slow | live slow-request list with sort, state filter, URL search |
+
+Common keys: `space` pause/resume, `+` / `-` refresh rate, `<` / `>`
+sort or window, `[` / `]` cycle phase (latency view), `f` cycle
+filters (process group, or slow-state in slow view), `/` URL search
+(slow view; Enter applies, Esc clears), `r` reset slow filters, `?`
+help overlay, `q` quit.
+
+Useful options:
+
+```
+mod-wsgi-telemetry-top --url ws://host:8877/ws    # connect to a different host
+mod-wsgi-telemetry-top --view slow                # start on the slow-requests view
+mod-wsgi-telemetry-top --group app1               # filter to one process group
+mod-wsgi-telemetry-top --once                     # one-shot status to stdout, no curses
+```
+
+`--once` writes a plain-text snapshot of the header + process table
+and exits, so the monitor doubles as a scriptable status reporter for
+shell pipelines, cron healthchecks, or CI assertions. Exit code is `0`
+if a snapshot was received, `2` if the timeout elapsed without one.
+
 ## Transport
 
 The reporter and the ingester only support UNIX SOCK_DGRAM. The
@@ -72,6 +120,7 @@ to ship telemetry across hosts.
 | Command | Purpose |
 |---|---|
 | `mod-wsgi-telemetry` | HTTP + WebSocket server, spawns the datagram receiver. `--listen unix:/path` (UNIX SOCK_DGRAM only). UI on `--http-host` / `--http-port` (default 127.0.0.1:8877). |
+| `mod-wsgi-telemetry-top` | Curses terminal monitor. Connects to a running server's WebSocket and renders the same data as the browser UI in five keystroke-switchable views. `--once` for a scriptable plain-text snapshot. |
 | `mod-wsgi-telemetry-dump` | CLI alternative that binds the socket itself and prints decoded samples. Don't run alongside the server — they'd fight for the socket. Useful when iterating on the wire format. |
 | `mod-wsgi-telemetry-simulate` | Emits synthetic samples so the UI can be exercised without a running mod_wsgi. |
 
@@ -165,6 +214,7 @@ src/mod_wsgi_telemetry/
     wire.py        TLV decoder + field table (mirrors wsgi_telemetry.h)
     ingest.py      Async datagram receiver + rolling per-PID window
     server.py      aiohttp HTTP + WebSocket + static handler
+    tui.py         Curses terminal monitor (WebSocket client of server.py)
     dump.py        CLI decoded-sample printer
     simulate.py    Synthetic sample emitter
     static/

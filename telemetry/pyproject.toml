@@ -11,6 +11,7 @@ dependencies = [
 mod-wsgi-telemetry = "mod_wsgi_telemetry.server:main"
 mod-wsgi-telemetry-dump = "mod_wsgi_telemetry.dump:main"
 mod-wsgi-telemetry-simulate = "mod_wsgi_telemetry.simulate:main"
+mod-wsgi-telemetry-top = "mod_wsgi_telemetry.tui:main"
 
 [dependency-groups]
 dev = [
