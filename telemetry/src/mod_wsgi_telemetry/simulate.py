@@ -48,6 +48,35 @@ def parse_target(spec: str) -> tuple[int, str]:
 _SLOT_COUNT = 5
 
 
+def _class_split(count: int) -> dict:
+    """Partition `count` requests into per-class HTTP totals.
+
+    Mostly 2xx, a smaller share of 3xx / 4xx, a small 5xx tail so the
+    UI's error-rate panels exercise their colouring. 1xx stays at zero
+    (a WSGI app should never return 1xx — the counter is a tripwire,
+    not a baseline). Sum equals `count` exactly.
+    """
+    if count <= 0:
+        return {
+            "status_1xx_total": 0, "status_2xx_total": 0,
+            "status_3xx_total": 0, "status_4xx_total": 0,
+            "status_5xx_total": 0,
+        }
+    c5 = max(1, count // 100) if random.random() < 0.4 else 0
+    c4 = max(1, count * random.randint(2, 5) // 100)
+    c3 = max(1, count * random.randint(3, 8) // 100)
+    c2 = count - c5 - c4 - c3
+    if c2 < 0:
+        c2, c3, c4, c5 = count, 0, 0, 0
+    return {
+        "status_1xx_total": 0,
+        "status_2xx_total": c2,
+        "status_3xx_total": c3,
+        "status_4xx_total": c4,
+        "status_5xx_total": c5,
+    }
+
+
 def make_sample(pid: int, seq: int, phase: float, interval: float,
                 slot_state: dict | None = None) -> Sample:
     """Build one synthetic request_metrics sample.
@@ -202,6 +231,11 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
         "input_reads_total": count,
         "output_bytes_total": count * 1024,
         "output_writes_total": count + (count // 5) * 50,
+        # Per-class HTTP response totals. Mostly 2xx, a sprinkle of 3xx
+        # / 4xx, and a small 5xx tail so the UI's error-rate badges
+        # exercise their colouring on demo data. Sum equals the
+        # request_count above (1xx + 2xx + 3xx + 4xx + 5xx == count).
+        **_class_split(count),
         # Mirror what a real reporter emits: telemetry interval is the
         # tick we're simulating, slow_requests_threshold pretends a
         # WSGISlowRequests of 1 s so the UI's "below server threshold"
@@ -278,6 +312,13 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
         # Active records carry zero CPU on the wire today (see C side).
         cpu_user_us = 0
         cpu_system_us = 0
+    # Active records carry status 0 (start_response not yet called).
+    # Completed records mostly land at 200; sprinkle in a few 500s so
+    # the slow table's status column exercises its 5xx colouring.
+    if state == 1:
+        slow_status = 500 if random.random() < 0.05 else 200
+    else:
+        slow_status = 0
     fields = {
         "slow_state": state,                    # 0=active, 1=completed
         "slow_start_stamp_us": start_stamp_us,
@@ -295,6 +336,7 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
         "slow_output_writes": out_writes,
         "slow_cpu_user_us": cpu_user_us,
         "slow_cpu_system_us": cpu_system_us,
+        "slow_status": slow_status,
     }
     return Sample(
         version=1,

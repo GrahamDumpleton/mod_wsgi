@@ -125,6 +125,20 @@ static apr_uint64_t wsgi_input_reads_total = 0;
 static apr_uint64_t wsgi_output_bytes_total = 0;
 static apr_uint64_t wsgi_output_writes_total = 0;
 
+/* Per-interval HTTP response class totals. Same drain-clash semantics
+ * as the I/O totals above. status==0 (WSGI app raised before
+ * start_response) is folded into the 5xx bucket — that matches the
+ * user-visible outcome (mod_wsgi serves a 500). Out-of-range values
+ * (1..99 or 600+) are silently dropped; in practice
+ * AdapterObject.status is parsed from the start_response status line
+ * and shouldn't carry such values. Sum equals wsgi_sample_requests
+ * for the same interval. */
+static apr_uint64_t wsgi_status_1xx_count = 0;
+static apr_uint64_t wsgi_status_2xx_count = 0;
+static apr_uint64_t wsgi_status_3xx_count = 0;
+static apr_uint64_t wsgi_status_4xx_count = 0;
+static apr_uint64_t wsgi_status_5xx_count = 0;
+
 /* Per-thread active-slot array. One entry per worker thread (sized to the
  * MPM max_threads in embedded mode or the daemon group's threads count in
  * daemon mode). Each slot carries the live request_rec pointer while the
@@ -185,6 +199,14 @@ typedef struct
     apr_off_t  io_input_reads;
     apr_off_t  io_output_bytes;
     apr_off_t  io_output_writes;
+
+    /* Final HTTP response status (e.g. 200, 404, 500), stashed by
+     * wsgi_record_request_times from AdapterObject.status. Read by
+     * wsgi_end_request when building a slow-completion record. Zero
+     * while no request is in flight or the WSGI app hasn't yet
+     * called start_response — active-record snapshots leave this at
+     * zero, matching the "0 = not yet known" convention. */
+    int        last_status;
 } wsgi_active_slot_t;
 
 /* Parallel array of per-slot interval accumulators. Drained and reset at
@@ -261,7 +283,8 @@ void wsgi_record_request_times(apr_time_t request_start,
                                apr_time_t queue_start, apr_time_t daemon_start,
                                apr_time_t application_start, apr_time_t application_finish,
                                apr_off_t input_bytes, apr_off_t input_reads,
-                               apr_off_t output_bytes, apr_off_t output_writes)
+                               apr_off_t output_bytes, apr_off_t output_writes,
+                               int status)
 {
 
     double server_time = 0.0;
@@ -336,6 +359,24 @@ void wsgi_record_request_times(apr_time_t request_start,
     if (output_writes > 0)
         wsgi_output_writes_total += (apr_uint64_t)output_writes;
 
+    /* Classify the response status into a per-class counter.
+     * status == 0 means the WSGI app raised before calling
+     * start_response — fold it into 5xx so the error rate reflects the
+     * user-visible outcome (mod_wsgi serves a 500 in that case). */
+    if (status == 0)
+        wsgi_status_5xx_count += 1;
+    else if (status >= 100 && status < 200)
+        wsgi_status_1xx_count += 1;
+    else if (status >= 200 && status < 300)
+        wsgi_status_2xx_count += 1;
+    else if (status >= 300 && status < 400)
+        wsgi_status_3xx_count += 1;
+    else if (status >= 400 && status < 500)
+        wsgi_status_4xx_count += 1;
+    else if (status >= 500 && status < 600)
+        wsgi_status_5xx_count += 1;
+    /* else: out-of-range, silently dropped */
+
     if (wsgi_active_slots && thread_info && thread_info->thread_id >= 1 &&
         thread_info->thread_id <= wsgi_active_slots_max)
     {
@@ -346,6 +387,7 @@ void wsgi_record_request_times(apr_time_t request_start,
         slot->io_input_reads = input_reads > 0 ? input_reads : 0;
         slot->io_output_bytes = output_bytes > 0 ? output_bytes : 0;
         slot->io_output_writes = output_writes > 0 ? output_writes : 0;
+        slot->last_status = status;
     }
 
     wsgi_record_time_in_buckets(&wsgi_server_time_buckets[0],
@@ -577,6 +619,7 @@ void wsgi_end_request(void)
                 rec.output_writes = (uint64_t)slot->io_output_writes;
                 rec.cpu_user_us = (uint64_t)(cpu_user_delta * 1.0e6);
                 rec.cpu_system_us = (uint64_t)(cpu_system_delta * 1.0e6);
+                rec.status = (uint16_t)slot->last_status;
                 wsgi_slow_snapshot_fields(&rec, slot->r);
                 wsgi_slow_push_completed_locked(&rec);
             }
@@ -591,6 +634,7 @@ void wsgi_end_request(void)
         slot->io_input_reads = 0;
         slot->io_output_bytes = 0;
         slot->io_output_writes = 0;
+        slot->last_status = 0;
     }
 
     wsgi_utilization_time_locked(-1, NULL);
@@ -725,6 +769,12 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
         wsgi_output_bytes_total = 0;
         wsgi_output_writes_total = 0;
 
+        wsgi_status_1xx_count = 0;
+        wsgi_status_2xx_count = 0;
+        wsgi_status_3xx_count = 0;
+        wsgi_status_4xx_count = 0;
+        wsgi_status_5xx_count = 0;
+
         memset(&wsgi_server_time_buckets, 0, sizeof(wsgi_server_time_buckets));
         memset(&wsgi_queue_time_buckets, 0, sizeof(wsgi_queue_time_buckets));
         memset(&wsgi_daemon_time_buckets, 0, sizeof(wsgi_daemon_time_buckets));
@@ -779,6 +829,12 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     out->input_reads_total = wsgi_input_reads_total;
     out->output_bytes_total = wsgi_output_bytes_total;
     out->output_writes_total = wsgi_output_writes_total;
+
+    out->status_1xx_total = wsgi_status_1xx_count;
+    out->status_2xx_total = wsgi_status_2xx_count;
+    out->status_3xx_total = wsgi_status_3xx_count;
+    out->status_4xx_total = wsgi_status_4xx_count;
+    out->status_5xx_total = wsgi_status_5xx_count;
 
     for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
     {
@@ -866,6 +922,12 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     wsgi_input_reads_total = 0;
     wsgi_output_bytes_total = 0;
     wsgi_output_writes_total = 0;
+
+    wsgi_status_1xx_count = 0;
+    wsgi_status_2xx_count = 0;
+    wsgi_status_3xx_count = 0;
+    wsgi_status_4xx_count = 0;
+    wsgi_status_5xx_count = 0;
 
     memset(&wsgi_server_time_buckets, 0, sizeof(wsgi_server_time_buckets));
     memset(&wsgi_queue_time_buckets, 0, sizeof(wsgi_queue_time_buckets));
@@ -1292,6 +1354,12 @@ WSGI_STATIC_INTERNED_STRING(slot_cpu_time_us);
 WSGI_STATIC_INTERNED_STRING(slot_current_elapsed_ms);
 WSGI_STATIC_INTERNED_STRING(slot_max_duration_ms);
 
+WSGI_STATIC_INTERNED_STRING(status_1xx);
+WSGI_STATIC_INTERNED_STRING(status_2xx);
+WSGI_STATIC_INTERNED_STRING(status_3xx);
+WSGI_STATIC_INTERNED_STRING(status_4xx);
+WSGI_STATIC_INTERNED_STRING(status_5xx);
+
 static PyObject *wsgi_status_flags[SERVER_NUM_STATUS];
 
 #define WSGI_CREATE_STATUS_FLAG(name, val) \
@@ -1373,6 +1441,12 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(slot_current_elapsed_ms);
         WSGI_CREATE_INTERNED_STRING_ID(slot_max_duration_ms);
 
+        WSGI_CREATE_INTERNED_STRING_ID(status_1xx);
+        WSGI_CREATE_INTERNED_STRING_ID(status_2xx);
+        WSGI_CREATE_INTERNED_STRING_ID(status_3xx);
+        WSGI_CREATE_INTERNED_STRING_ID(status_4xx);
+        WSGI_CREATE_INTERNED_STRING_ID(status_5xx);
+
         WSGI_CREATE_STATUS_FLAG(SERVER_DEAD, ".");
         WSGI_CREATE_STATUS_FLAG(SERVER_READY, "_");
         WSGI_CREATE_STATUS_FLAG(SERVER_STARTING, "S");
@@ -1449,6 +1523,12 @@ static PyObject *wsgi_request_metrics(void)
     apr_uint64_t application_time_max_snap_us = 0;
     apr_uint64_t request_time_min_snap_us     = UINT64_MAX;
     apr_uint64_t request_time_max_snap_us     = 0;
+
+    apr_uint64_t status_1xx_snap = 0;
+    apr_uint64_t status_2xx_snap = 0;
+    apr_uint64_t status_3xx_snap = 0;
+    apr_uint64_t status_4xx_snap = 0;
+    apr_uint64_t status_5xx_snap = 0;
 
     int server_time_buckets_snap[WSGI_TELEMETRY_BUCKET_COUNT];
     int queue_time_buckets_snap[WSGI_TELEMETRY_BUCKET_COUNT];
@@ -1563,6 +1643,12 @@ static PyObject *wsgi_request_metrics(void)
         wsgi_request_time_min_us     = UINT64_MAX;
         wsgi_request_time_max_us     = 0;
 
+        wsgi_status_1xx_count = 0;
+        wsgi_status_2xx_count = 0;
+        wsgi_status_3xx_count = 0;
+        wsgi_status_4xx_count = 0;
+        wsgi_status_5xx_count = 0;
+
         if (wsgi_slot_stats && wsgi_active_slots_max > 0)
         {
             memset(wsgi_slot_stats, 0,
@@ -1604,6 +1690,12 @@ static PyObject *wsgi_request_metrics(void)
     application_time_max_snap_us = wsgi_application_time_max_us;
     request_time_min_snap_us     = wsgi_request_time_min_us;
     request_time_max_snap_us     = wsgi_request_time_max_us;
+
+    status_1xx_snap = wsgi_status_1xx_count;
+    status_2xx_snap = wsgi_status_2xx_count;
+    status_3xx_snap = wsgi_status_3xx_count;
+    status_4xx_snap = wsgi_status_4xx_count;
+    status_5xx_snap = wsgi_status_5xx_count;
 
     memcpy(server_time_buckets_snap, wsgi_server_time_buckets,
            sizeof(server_time_buckets_snap));
@@ -1696,6 +1788,16 @@ static PyObject *wsgi_request_metrics(void)
     wsgi_input_reads_total = 0;
     wsgi_output_bytes_total = 0;
     wsgi_output_writes_total = 0;
+
+    /* Drain the response-class counters. Snapshots were already taken
+     * above into status_Nxx_snap; zero the globals so the telemetry
+     * reporter starts a fresh interval, matching the drain-clash
+     * semantics used for the I/O totals. */
+    wsgi_status_1xx_count = 0;
+    wsgi_status_2xx_count = 0;
+    wsgi_status_3xx_count = 0;
+    wsgi_status_4xx_count = 0;
+    wsgi_status_5xx_count = 0;
 
     memset(&wsgi_server_time_buckets, 0,
            sizeof(wsgi_server_time_buckets));
@@ -1826,6 +1928,36 @@ static PyObject *wsgi_request_metrics(void)
     object = PyFloat_FromDouble(request_throughput);
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(request_throughput), object);
+    Py_DECREF(object);
+
+    /* Per-interval HTTP response class totals. status==0 (no
+     * start_response call) is folded into status_5xx; out-of-range
+     * values are silently dropped, so status_1xx + status_2xx +
+     * status_3xx + status_4xx + status_5xx == request_count for the
+     * same interval. */
+    object = PyLong_FromUnsignedLongLong(status_1xx_snap);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(status_1xx), object);
+    Py_DECREF(object);
+
+    object = PyLong_FromUnsignedLongLong(status_2xx_snap);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(status_2xx), object);
+    Py_DECREF(object);
+
+    object = PyLong_FromUnsignedLongLong(status_3xx_snap);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(status_3xx), object);
+    Py_DECREF(object);
+
+    object = PyLong_FromUnsignedLongLong(status_4xx_snap);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(status_4xx), object);
+    Py_DECREF(object);
+
+    object = PyLong_FromUnsignedLongLong(status_5xx_snap);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(status_5xx), object);
     Py_DECREF(object);
 
     object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);

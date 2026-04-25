@@ -2759,7 +2759,8 @@ event_error:
                               self->start_time, finish_time,
                               self->input ? self->input->bytes : 0,
                               self->input ? self->input->reads : 0,
-                              self->output_length, self->output_writes);
+                              self->output_length, self->output_writes,
+                              self->status);
 
     /*
      * If result indicates an internal server error, then

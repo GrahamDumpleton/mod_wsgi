@@ -229,6 +229,22 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_OUTPUT_WRITES_TOTAL,
                          s->output_writes_total);
 
+    /* Per-interval HTTP response class totals. Always emitted (even
+     * when zero) so consumers can distinguish "zero of this class"
+     * from "older encoder that didn't have the field". Sum equals
+     * request_count for the same interval, modulo the status==0 fold
+     * into 5xx. */
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_STATUS_1XX_TOTAL,
+                         s->status_1xx_total);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_STATUS_2XX_TOTAL,
+                         s->status_2xx_total);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_STATUS_3XX_TOTAL,
+                         s->status_3xx_total);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_STATUS_4XX_TOTAL,
+                         s->status_4xx_total);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_STATUS_5XX_TOTAL,
+                         s->status_5xx_total);
+
     if (s->slot_count > 0) {
         uint16_t n = (uint16_t)s->slot_count;
         wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SLOT_REQUEST_COUNT,
@@ -275,6 +291,12 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
                          s->cpu_user_us);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_CPU_SYSTEM_US,
                          s->cpu_system_us);
+
+    /* Final HTTP response status. Zero for active records (the WSGI
+     * app may not have called start_response yet); always emitted so
+     * consumers see the "0 = not yet known" sentinel rather than a
+     * missing field. */
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_STATUS, s->status);
 
     if (s->log_id[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SLOW_LOG_ID, s->log_id,

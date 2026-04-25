@@ -114,6 +114,7 @@ class SlowEntry:
     output_writes: int = 0
     cpu_user_us: int = 0
     cpu_system_us: int = 0
+    status: int = 0            # 0 = not yet known, else final WSGI status
     last_seen: float = 0.0
 
     def to_dict(self) -> dict:
@@ -135,6 +136,7 @@ class SlowEntry:
             "output_writes": self.output_writes,
             "cpu_user_us": self.cpu_user_us,
             "cpu_system_us": self.cpu_system_us,
+            "status": self.status,
         }
 
 
@@ -272,6 +274,7 @@ class Ingester:
             output_writes=int(f.get("slow_output_writes") or 0),
             cpu_user_us=int(f.get("slow_cpu_user_us") or 0),
             cpu_system_us=int(f.get("slow_cpu_system_us") or 0),
+            status=int(f.get("slow_status") or 0),
             last_seen=time.monotonic(),
         )
         self.slow_requests[key] = entry

@@ -45,7 +45,8 @@ extern void wsgi_record_request_times(apr_time_t request_start,
                                       apr_time_t queue_start, apr_time_t daemon_start,
                                       apr_time_t application_start, apr_time_t application_finish,
                                       apr_off_t input_bytes, apr_off_t input_reads,
-                                      apr_off_t output_bytes, apr_off_t output_writes);
+                                      apr_off_t output_bytes, apr_off_t output_writes,
+                                      int status);
 
 extern int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out);
 

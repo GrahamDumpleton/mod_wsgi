@@ -332,6 +332,7 @@
   .slow-table .col-state   { width: 90px; }
   .slow-table .col-pid     { width: 110px; }
   .slow-table .col-method  { width: 70px; }
+  .slow-table .col-status  { width: 60px; }
   .slow-table .col-url     { width: auto; }
   .slow-table .col-logid   { width: 140px; }
   .slow-table th {
@@ -727,6 +728,8 @@
                 <option value="body_in">body in / sec</option>
                 <option value="body_out">body out / sec</option>
                 <option value="body_total">body in+out / sec</option>
+                <option value="status_5xx">5xx / sec</option>
+                <option value="status_4xx">4xx / sec</option>
               </select>
             </label>
           </div>
@@ -842,6 +845,7 @@
             <col class="col-state">
             <col class="col-pid">
             <col class="col-method">
+            <col class="col-status">
             <col class="col-url">
             <col class="col-logid">
           </colgroup>
@@ -851,6 +855,7 @@
             <th>State</th>
             <th>PID / thread</th>
             <th>Method</th>
+            <th>Status</th>
             <th>URL</th>
             <th>Log ID</th>
           </tr></thead>
@@ -1476,6 +1481,20 @@ const THROUGHPUT_SPECS = {
     fmt: fmtBytesPerSec,
     opts: { formatY: fmtBytesPerSec },
   },
+  status_5xx: {
+    unit: "5xx responses / second",
+    unitShort: "5xx/s",
+    extract: f => bytesPerSec(f, "status_5xx_total"),
+    fmt: v => fmt(v, 2) + "/s",
+    opts: {},
+  },
+  status_4xx: {
+    unit: "4xx responses / second",
+    unitShort: "4xx/s",
+    extract: f => bytesPerSec(f, "status_4xx_total"),
+    fmt: v => fmt(v, 2) + "/s",
+    opts: {},
+  },
 };
 
 function escapeHtml(s) {
@@ -1621,7 +1640,7 @@ function renderSlowRequests() {
 
   if (display.length === 0) {
     tbody.innerHTML =
-      `<tr><td colspan="7" class="slow-empty">no slow requests</td></tr>`;
+      `<tr><td colspan="8" class="slow-empty">no slow requests</td></tr>`;
     return;
   }
 
@@ -1658,6 +1677,17 @@ function renderSlowRequests() {
       : `<span class="method-none">—</span>`;
     const urlEsc = escapeHtml(url);
 
+    // status==0 — no start_response yet, render a dash so it's
+    // visibly distinct from a real status. 5xx in red.
+    const statusVal = e.status || 0;
+    let statusCell;
+    if (!statusVal) {
+      statusCell = `<span class="method-none">—</span>`;
+    } else {
+      const cls = statusVal >= 500 && statusVal < 600 ? "state-active" : "";
+      statusCell = `<span class="${cls}">${statusVal}</span>`;
+    }
+
     const expandKey = slowKeyFor(e);
     renderedKeys.add(expandKey);
     const isOpen = state.slowExpanded.has(expandKey);
@@ -1671,12 +1701,13 @@ function renderSlowRequests() {
       <td>${stateLabel}</td>
       <td>${e.pid} / ${e.thread_id || "—"}</td>
       <td>${method}</td>
+      <td>${statusCell}</td>
       <td title="${urlEsc}">${badge}<span class="url">${urlEsc}</span></td>
       <td title="${escapeHtml(e.log_id || "")}">${escapeHtml(e.log_id || "")}</td>
     </tr>`);
     if (isOpen) {
       html.push(`<tr class="details" data-key="${escapeHtml(expandKey)}">
-        <td colspan="7">${renderSlowExpandPanel(e)}</td>
+        <td colspan="8">${renderSlowExpandPanel(e)}</td>
       </tr>`);
     }
   }
@@ -3306,8 +3337,39 @@ function redraw() {
   if (tpUnitEl) tpUnitEl.textContent = tpSpec.unit;
   const rps = drawChart(document.getElementById("c_rps"), tpSpec.extract,
                         tpSpec.opts);
+
+  // Sum the latest interval's class counters across visible processes
+  // so the throughput card's live readout can carry an at-a-glance
+  // error-rate badge alongside the existing total/mean text. Same row,
+  // no new layout. status==0 (no start_response) is already folded
+  // into status_5xx_total on the wire.
+  let req = 0, c4xx = 0, c5xx = 0, c1xx = 0;
+  for (const [, p] of state.processes) {
+    if (isHidden(p)) continue;
+    if (!p.samples.length) continue;
+    const f = p.samples[p.samples.length - 1].fields || {};
+    req  += +f.request_count     || 0;
+    c1xx += +f.status_1xx_total  || 0;
+    c4xx += +f.status_4xx_total  || 0;
+    c5xx += +f.status_5xx_total  || 0;
+  }
+  const pct = (n) => req > 0 ? (n / req * 100).toFixed(1) : "0.0";
+  // Just the percentage — both count and percentage was too wide for
+  // narrow panels. % is the better at-a-glance signal anyway; the
+  // exact counts are still on the wire and surfaced on the Slow tab.
+  // 5xx in red whenever > 0; 4xx dim (it's mostly noise). 1xx is a
+  // PEP 3333 tripwire — only show when non-zero, in amber.
+  const errParts = [];
+  if (c1xx > 0) {
+    errParts.push(`<span class="label" style="color:#e0a000">1xx ${c1xx}</span>`);
+  }
+  errParts.push(`<span class="label">4xx ${pct(c4xx)}%</span>`);
+  const fivexxClass = c5xx > 0 ? ' style="color:#e44"' : "";
+  errParts.push(`<span class="label"${fivexxClass}>5xx ${pct(c5xx)}%</span>`);
   setLive("live_rps",
-    `<span class="label">total</span>${tpSpec.fmt(rps.sum)} <span class="label">mean</span>${tpSpec.fmt(rps.mean)} ${tpSpec.unitShort}`);
+    `<span class="label">total</span>${tpSpec.fmt(rps.sum)} ` +
+    `<span class="label">mean</span>${tpSpec.fmt(rps.mean)} ${tpSpec.unitShort} ` +
+    `&middot; ${errParts.join(" &middot; ")}`);
 
   const cap = drawChart(document.getElementById("c_cap"), f => f.capacity_utilization);
   setLive("live_cap", `<span class="label">mean</span>${fmt(cap.mean)}`);

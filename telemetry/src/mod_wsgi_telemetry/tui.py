@@ -109,6 +109,7 @@ class SlowEntry:
     output_writes: int
     cpu_user_us: int
     cpu_system_us: int
+    status: int = 0
     last_seen: float = 0.0
 
     @classmethod
@@ -131,6 +132,7 @@ class SlowEntry:
             output_writes=int(d.get("output_writes", 0)),
             cpu_user_us=int(d.get("cpu_user_us", 0)),
             cpu_system_us=int(d.get("cpu_system_us", 0)),
+            status=int(d.get("status", 0)),
             last_seen=time.monotonic(),
         )
 
@@ -461,6 +463,12 @@ def _aggregate_header(state: State, ui: UIState) -> dict:
     queue_count = 0
 
     rps_window: dict[int, list[tuple[int, int]]] = {}
+    status_1xx = 0
+    status_2xx = 0
+    status_3xx = 0
+    status_4xx = 0
+    status_5xx = 0
+    interval_requests = 0
     for ps in state.processes.values():
         if ui.group_filter and ps.process_group != ui.group_filter:
             continue
@@ -484,6 +492,12 @@ def _aggregate_header(state: State, ui: UIState) -> dict:
         if isinstance(qt, (int, float)) and qt > 0:
             queue_mean += qt
             queue_count += 1
+        status_1xx += int(f.get("status_1xx_total") or 0)
+        status_2xx += int(f.get("status_2xx_total") or 0)
+        status_3xx += int(f.get("status_3xx_total") or 0)
+        status_4xx += int(f.get("status_4xx_total") or 0)
+        status_5xx += int(f.get("status_5xx_total") or 0)
+        interval_requests += int(f.get("request_count") or 0)
 
     # 1-min and 10-min RPS averages: total request_count over window / seconds.
     rps_1m = _avg_rps(state, ui, 60)
@@ -521,6 +535,12 @@ def _aggregate_header(state: State, ui: UIState) -> dict:
         "active_slow": active_slow,
         "recent_slow": recent_slow,
         "total_slow": total_slow,
+        "status_1xx": status_1xx,
+        "status_2xx": status_2xx,
+        "status_3xx": status_3xx,
+        "status_4xx": status_4xx,
+        "status_5xx": status_5xx,
+        "interval_requests": interval_requests,
     }
 
 
@@ -567,10 +587,12 @@ def render_header(win, state: State, ui: UIState, h: dict) -> int:
     pad = " " * max(0, width - len(title) - len(extras))
     safe_addstr(win, 0, 0, title + pad + extras, curses.color_pair(CP_HEADER) | curses.A_BOLD)
 
-    # Line 1 — throughput.
+    # Line 1 — throughput. No padding on rps_now so the value starts
+    # at column 13, lining up vertically with the labels on the rows
+    # below (Capacity:, CPU:, Status:, Latency:, Slow:).
     safe_addstr(win, 1, 0,
-        f" Throughput: {h['rps_now']:7.1f} req/s now  "
-        f"{h['rps_1m']:6.1f}/s 1m  {h['rps_10m']:6.1f}/s 10m  "
+        f" Throughput: {h['rps_now']:.1f} req/s now  "
+        f"{h['rps_1m']:.1f}/s 1m  {h['rps_10m']:.1f}/s 10m  "
         f"in {fmt_bytes(h['in_bps'])}/s  out {fmt_bytes(h['out_bps'])}/s")
 
     # Line 2 — capacity bar.
@@ -595,17 +617,50 @@ def render_header(win, state: State, ui: UIState, h: dict) -> int:
         f"total {h['cpu_user']+h['cpu_sys']:.2f} cores   "
         f"Memory: RSS {fmt_bytes(h['rss_total'])} (max {fmt_bytes(h['rss_max'])})")
 
-    # Line 4 — latency percentiles.
+    # Line 4 — per-class HTTP response distribution for the latest
+    # interval. 2xx / 3xx / 4xx / 5xx as percentages of request_count.
+    # 1xx is a PEP 3333 tripwire (a WSGI app should never return 1xx)
+    # so it carries its raw count and renders amber when > 0; dim when
+    # zero. 5xx renders red-bold when > 0; 4xx is dim (mostly noise).
+    requests = h["interval_requests"]
+    def _pct(n):
+        return (n / requests * 100.0) if requests > 0 else 0.0
+    safe_addstr(win, 4, 0, " Status:     ")
+    x = len(" Status:     ")
+    s1 = f"1xx {h['status_1xx']}"
+    s1_attr = (curses.color_pair(CP_WARN) | curses.A_BOLD) if h["status_1xx"] > 0 \
+              else curses.color_pair(CP_DIM)
+    safe_addstr(win, 4, x, s1, s1_attr)
+    x += len(s1) + 2
+    s2 = f"2xx {_pct(h['status_2xx']):5.1f}%"
+    safe_addstr(win, 4, x, s2)
+    x += len(s2) + 2
+    s3 = f"3xx {_pct(h['status_3xx']):5.1f}%"
+    safe_addstr(win, 4, x, s3)
+    x += len(s3) + 2
+    s4 = f"4xx {_pct(h['status_4xx']):5.1f}%"
+    safe_addstr(win, 4, x, s4, curses.color_pair(CP_DIM))
+    x += len(s4) + 2
+    s5 = f"5xx {_pct(h['status_5xx']):5.1f}%"
+    s5_attr = (curses.color_pair(CP_CRIT) | curses.A_BOLD) if h["status_5xx"] > 0 \
+              else curses.color_pair(CP_DIM)
+    safe_addstr(win, 4, x, s5, s5_attr)
+
+    # Line 5 — latency percentiles.
     p50 = fmt_ms(h["p50_ms"]); p95 = fmt_ms(h["p95_ms"]); p99 = fmt_ms(h["p99_ms"])
     mn = fmt_us(h["min_us"]); mx = fmt_us(h["max_us"])
-    safe_addstr(win, 4, 0,
+    safe_addstr(win, 5, 0,
         f" Latency:    p50 {p50:>8}  p95 {p95:>8}  p99 {p99:>8}   "
-        f"min {mn:>8}  max {mx:>8}   "
-        f"slow: {h['active_slow']} active / {h['recent_slow']} 1m / {h['total_slow']} total")
+        f"min {mn:>8}  max {mx:>8}")
 
-    # Line 5 — tab bar.
-    _render_tabs(win, 5, width, ui.view)
-    return 6
+    # Line 6 — slow-request counters.
+    safe_addstr(win, 6, 0,
+        f" Slow:       {h['active_slow']} active  /  "
+        f"{h['recent_slow']} 1m  /  {h['total_slow']} total")
+
+    # Line 7 — tab bar.
+    _render_tabs(win, 7, width, ui.view)
+    return 8
 
 
 def _win_label(seconds: int) -> str:
@@ -1017,7 +1072,7 @@ def render_slow(win, state: State, ui: UIState, y0: int) -> None:
                     curses.color_pair(CP_WARN))
 
     header = f"  {'STATE':<6}  {'ELAPSED':>9}  {'PID':>7}  " \
-             f"{'METHOD':<7}  {'LOG ID':<24}  URL"
+             f"{'METHOD':<7}  {'STATUS':>6}  {'LOG ID':<24}  URL"
     safe_addstr(win, y0 + 1, 0, header, curses.A_REVERSE)
     y = y0 + 2
     for elapsed_us, key, e in rows:
@@ -1026,8 +1081,12 @@ def render_slow(win, state: State, ui: UIState, y0: int) -> None:
         st = "active" if e.state == 0 else "done"
         attr = curses.color_pair(CP_CRIT) | curses.A_BOLD if e.state == 0 \
             else curses.color_pair(CP_DIM)
+        # status==0 means start_response wasn't called yet — show a
+        # dash so it's visibly distinct from a real status code.
+        status_str = "-" if not e.status else str(e.status)
         line = (f"  {st:<6}  {fmt_us(elapsed_us):>9}  {e.pid:>7}  "
-                f"{e.method:<7}  {(e.log_id or '-')[:24]:<24}  {e.url()}")
+                f"{e.method:<7}  {status_str:>6}  "
+                f"{(e.log_id or '-')[:24]:<24}  {e.url()}")
         safe_addstr(win, y, 0, line, attr)
         y += 1
 

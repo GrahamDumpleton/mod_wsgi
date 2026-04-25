@@ -70,6 +70,16 @@
 # the size (one byte per chunk). Bytes are distributed evenly across
 # chunks; any remainder goes into the leading chunks one byte each.
 #
+# BENCHMARK_4XX_RATE and BENCHMARK_5XX_RATE env vars (floats in [0, 1];
+# default 0) inject error responses at the given per-request probability.
+# 5xx is rolled first, then 4xx, then a normal 2xx — so the two rates
+# are independent probabilities of *each* error class, and their sum
+# must be <= 1. 4xx returns "404 Not Found", 5xx returns
+# "500 Internal Server Error" (the most operationally common code in
+# each class). Delay / CPU / body still apply to the error path so a
+# combined --slow-requests + --5xx-rate run produces slow records that
+# are also 5xx, exercising the slow-record status field.
+#
 # Paths served (all other paths fall through to the benchmark handler):
 #
 #   /                 Benchmark response (applies delay/cpu, returns body).
@@ -102,6 +112,31 @@ _CHUNKS = max(1, int(os.environ.get("BENCHMARK_CHUNKS", "1") or "1"))
 _DISTRIBUTION = (os.environ.get("BENCHMARK_DISTRIBUTION", "fixed") or "fixed").lower()
 _IO_SIGMA = max(0.0, float(os.environ.get("BENCHMARK_IO_SIGMA", "0.6") or "0.6"))
 _CPU_SIGMA = max(0.0, float(os.environ.get("BENCHMARK_CPU_SIGMA", "0.0") or "0.0"))
+
+
+def _clamp_rate(spec):
+    try:
+        v = float(spec)
+    except (TypeError, ValueError):
+        return 0.0
+    if v < 0.0:
+        return 0.0
+    if v > 1.0:
+        return 1.0
+    return v
+
+
+_RATE_5XX = _clamp_rate(os.environ.get("BENCHMARK_5XX_RATE", "0") or "0")
+_RATE_4XX = _clamp_rate(os.environ.get("BENCHMARK_4XX_RATE", "0") or "0")
+# If the caller asks for sum > 1, scale 4xx down so the combined error
+# rate caps at 100% rather than silently dropping samples.
+if _RATE_5XX + _RATE_4XX > 1.0:
+    _RATE_4XX = max(0.0, 1.0 - _RATE_5XX)
+
+
+_STATUS_2XX = "200 OK"
+_STATUS_4XX = "404 Not Found"
+_STATUS_5XX = "500 Internal Server Error"
 
 
 def _parse_size(spec):
@@ -249,6 +284,20 @@ _BASE_HEADERS = [
 ]
 
 
+def _pick_status():
+    """Roll the per-request response class. 5xx wins first, then 4xx,
+    then 2xx fills the rest. One uniform draw — the two rates are
+    independent probabilities, not a partition of weights."""
+    if _RATE_5XX <= 0 and _RATE_4XX <= 0:
+        return _STATUS_2XX
+    r = random.random()
+    if r < _RATE_5XX:
+        return _STATUS_5XX
+    if r < _RATE_5XX + _RATE_4XX:
+        return _STATUS_4XX
+    return _STATUS_2XX
+
+
 def _bench(environ, start_response):
     delay, cpu = _per_request_times()
     if delay > 0 and cpu > 0 and _CHUNKS > 1:
@@ -267,7 +316,7 @@ def _bench(environ, start_response):
     size, n_chunks = _sample_body()
     body = _build_chunks(size, n_chunks)
     headers = [("Content-Length", str(size))] + _BASE_HEADERS
-    start_response("200 OK", headers)
+    start_response(_pick_status(), headers)
     return body
 
 

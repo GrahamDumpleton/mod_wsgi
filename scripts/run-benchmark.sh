@@ -71,6 +71,18 @@
 #                             to body size if larger. Requires a
 #                             benchmark script that reads
 #                             BENCHMARK_BODY_CHUNKS.
+#       --4xx-rate RATE       Per-request probability (0..1) of returning
+#                             a 4xx response (404 Not Found). Default 0.
+#                             Independent of --5xx-rate; their sum must
+#                             not exceed 1. Requires a benchmark script
+#                             that reads BENCHMARK_4XX_RATE.
+#       --5xx-rate RATE       Per-request probability (0..1) of returning
+#                             a 5xx response (500 Internal Server Error).
+#                             Default 0. Combine with --slow-requests to
+#                             produce slow records that are also 5xx so
+#                             the slow-record status field is exercised.
+#                             Requires a benchmark script that reads
+#                             BENCHMARK_5XX_RATE.
 #       --metrics             Capture mod_wsgi.request_metrics() around
 #                             the benchmark run and print a per-process
 #                             summary after bombardier. Requires a
@@ -124,6 +136,8 @@ IO_SIGMA=0.6
 CPU_SIGMA=0.0
 BODY_SIZE=1024
 BODY_CHUNKS=1
+RATE_4XX=0
+RATE_5XX=0
 METRICS=0
 METRICS_SERVICE=
 METRICS_INTERVAL=1.0
@@ -155,6 +169,8 @@ while [ $# -gt 0 ]; do
         --cpu-sigma)      CPU_SIGMA="$2"; shift 2 ;;
         --body-size)      BODY_SIZE="$2"; shift 2 ;;
         --body-chunks)    BODY_CHUNKS="$2"; shift 2 ;;
+        --4xx-rate)       RATE_4XX="$2"; shift 2 ;;
+        --5xx-rate)       RATE_5XX="$2"; shift 2 ;;
         --metrics)        METRICS=1; shift ;;
         --metrics-service)    METRICS_SERVICE="$2"; shift 2 ;;
         --metrics-interval)   METRICS_INTERVAL="$2"; shift 2 ;;
@@ -174,6 +190,16 @@ case "$DISTRIBUTION" in
     fixed|lognormal|mixture) ;;
     *) echo "ERROR: --distribution must be 'fixed', 'lognormal' or 'mixture'" >&2; exit 1 ;;
 esac
+
+# Validate the error rates are in [0, 1] and combined <= 1. Shell can't
+# do float comparison directly, so delegate to awk and trust its exit
+# status as a boolean.
+if ! awk -v a="$RATE_4XX" -v b="$RATE_5XX" \
+        'BEGIN { exit !(a >= 0 && a <= 1 && b >= 0 && b <= 1 && a + b <= 1) }'
+then
+    echo "ERROR: --4xx-rate and --5xx-rate must each be in [0, 1] and their sum <= 1" >&2
+    exit 1
+fi
 
 if ! command -v bombardier >/dev/null 2>&1; then
     echo "ERROR: bombardier not found in PATH" >&2
@@ -309,6 +335,8 @@ echo "  cpu            : ${CPU}s"
 echo "  chunks         : $CHUNKS"
 echo "  body-size      : $BODY_SIZE"
 echo "  body-chunks    : $BODY_CHUNKS"
+echo "  4xx-rate       : $RATE_4XX"
+echo "  5xx-rate       : $RATE_5XX"
 if [ "$DISTRIBUTION" = "lognormal" ]; then
     echo "  distribution   : lognormal (io_sigma=${IO_SIGMA}, cpu_sigma=${CPU_SIGMA})"
 elif [ "$DISTRIBUTION" = "mixture" ]; then
@@ -327,6 +355,8 @@ export BENCHMARK_IO_SIGMA="$IO_SIGMA"
 export BENCHMARK_CPU_SIGMA="$CPU_SIGMA"
 export BENCHMARK_BODY_SIZE="$BODY_SIZE"
 export BENCHMARK_BODY_CHUNKS="$BODY_CHUNKS"
+export BENCHMARK_4XX_RATE="$RATE_4XX"
+export BENCHMARK_5XX_RATE="$RATE_5XX"
 
 echo "Starting mod_wsgi-express..."
 "$MOD_WSGI_EXPRESS" setup-server "${setup_args[@]}" >/dev/null

@@ -192,7 +192,11 @@
  *          request from the worker thread's getrusage delta. Active
  *          records carry zero — getrusage(RUSAGE_THREAD) only works
  *          from the request's own thread, but the active-record
- *          snapshot runs from the telemetry reporter thread. */
+ *          snapshot runs from the telemetry reporter thread.
+ * 136:     final HTTP response status (e.g. 200, 404, 500). Active
+ *          records carry zero — start_response may not have been
+ *          called yet. Same "0 = not yet known" convention as the
+ *          CPU-time fields above. */
 #define WSGI_METRICS_F_SLOW_STATE                 120   /* u64: 0=active, 1=completed */
 #define WSGI_METRICS_F_SLOW_START_STAMP_US        121   /* u64 */
 #define WSGI_METRICS_F_SLOW_DURATION_US           122   /* u64 */
@@ -209,6 +213,30 @@
 #define WSGI_METRICS_F_SLOW_OUTPUT_WRITES         133   /* u64 */
 #define WSGI_METRICS_F_SLOW_CPU_USER_US           134   /* u64 */
 #define WSGI_METRICS_F_SLOW_CPU_SYSTEM_US         135   /* u64 */
+#define WSGI_METRICS_F_SLOW_STATUS                136   /* u64: 0=not yet known */
+
+/* 140-149: Per-interval HTTP response status class totals. Drained
+ * from the same accumulators that wsgi_record_request_times() updates
+ * at end-of-request, sharing drain-and-reset semantics with the
+ * 100-109 I/O totals block. The five class counters partition every
+ * request that reached end-of-request, with the convention that a
+ * request whose WSGI app raised before calling start_response (status
+ * value of 0) is folded into the 5xx counter — that matches the user-
+ * visible outcome (mod_wsgi serves a 500). 1xx is included as a
+ * tripwire: PEP 3333 forbids 1xx responses from a WSGI app, so a non-
+ * zero count flags a protocol violation. Out-of-range values
+ * (1..99 or 600+) are silently dropped by the recorder.
+ *
+ * Invariant: status_1xx_total + status_2xx_total + status_3xx_total +
+ * status_4xx_total + status_5xx_total == request_count for the same
+ * interval. Encoder always emits all five fields (even when zero) so
+ * consumers can distinguish "zero of this class" from "older encoder
+ * that didn't have the field". */
+#define WSGI_METRICS_F_STATUS_1XX_TOTAL           140   /* u64 */
+#define WSGI_METRICS_F_STATUS_2XX_TOTAL           141   /* u64 */
+#define WSGI_METRICS_F_STATUS_3XX_TOTAL           142   /* u64 */
+#define WSGI_METRICS_F_STATUS_4XX_TOTAL           143   /* u64 */
+#define WSGI_METRICS_F_STATUS_5XX_TOTAL           144   /* u64 */
 
 /* ------------------------------------------------------------------------- */
 
@@ -296,6 +324,16 @@ typedef struct {
     uint64_t output_bytes_total;
     uint64_t output_writes_total;
 
+    /* Per-interval HTTP response class totals. Same drain-and-reset
+     * semantics as the I/O totals above. status==0 (no start_response
+     * call) is folded into status_5xx_total. Sum equals request_count
+     * for the interval. */
+    uint64_t status_1xx_total;
+    uint64_t status_2xx_total;
+    uint64_t status_3xx_total;
+    uint64_t status_4xx_total;
+    uint64_t status_5xx_total;
+
     /* Reporter / slow-request configuration. Constant over the life
      * of the process; populated once per snapshot so the UI sees the
      * same values as the C side. slow_requests_threshold is 0 when
@@ -353,6 +391,10 @@ typedef struct {
      * snapshot path that produces active records. */
     uint64_t cpu_user_us;
     uint64_t cpu_system_us;
+
+    /* Final HTTP response status (e.g. 200, 404, 500). Zero for active
+     * records — start_response may not have been called yet. */
+    uint16_t status;
 
     char     log_id[WSGI_SLOW_LOG_ID_MAX];
     char     method[WSGI_SLOW_METHOD_MAX];
