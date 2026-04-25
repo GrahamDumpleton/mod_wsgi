@@ -1148,13 +1148,10 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         thread_handle = wsgi_thread_info(1, 0);
 
-        if (wsgi_server_config->verbose_debugging)
-        {
-            wsgi_log_error_locked(APLOG_DEBUG, 0, wsgi_server,
-                                  "Bind thread state for thread %d against "
-                                  "interpreter '%s'.",
-                                  thread_handle->thread_id, self->name);
-        }
+        wsgi_log_error_locked(APLOG_TRACE1, 0, wsgi_server,
+                              "Bind thread state for thread %d against "
+                              "interpreter '%s'.",
+                              thread_handle->thread_id, self->name);
 
         apr_hash_set(self->tstate_table, &thread_handle->thread_id,
                      sizeof(thread_handle->thread_id), tstate);
@@ -1233,13 +1230,10 @@ static void Interpreter_dealloc(InterpreterObject *self)
         {
             tstate = PyThreadState_New(self->interp);
 
-            if (wsgi_server_config->verbose_debugging)
-            {
-                wsgi_log_error_locked(APLOG_DEBUG, 0, wsgi_server,
-                                      "Create thread state for thread %d "
-                                      "against interpreter '%s'.",
-                                      thread_handle->thread_id, self->name);
-            }
+            wsgi_log_error_locked(APLOG_TRACE1, 0, wsgi_server,
+                                  "Create thread state for thread %d "
+                                  "against interpreter '%s'.",
+                                  thread_handle->thread_id, self->name);
 
             apr_hash_set(self->tstate_table, &thread_handle->thread_id,
                          sizeof(thread_handle->thread_id), tstate);
@@ -2084,14 +2078,10 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
         {
             tstate = PyThreadState_New(interp);
 
-            if (wsgi_server_config->verbose_debugging)
-            {
-                wsgi_log_error_locked(APLOG_DEBUG, 0, wsgi_server,
-                                      "Create thread state for thread %d "
-                                      "against interpreter '%s'.",
-                                      thread_handle->thread_id,
-                                      handle->name);
-            }
+            wsgi_log_error_locked(APLOG_TRACE1, 0, wsgi_server,
+                                  "Create thread state for thread %d "
+                                  "against interpreter '%s'.",
+                                  thread_handle->thread_id, handle->name);
 
             apr_hash_set(handle->tstate_table, &thread_handle->thread_id,
                          sizeof(thread_handle->thread_id), tstate);

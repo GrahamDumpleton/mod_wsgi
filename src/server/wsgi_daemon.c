@@ -1896,18 +1896,9 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
         }
     }
 
-    if (wsgi_server_config->verbose_debugging)
-    {
-        wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                       "Exiting thread %d in daemon process '%s'.",
-                       thread->id, thread->process->group->name);
-    }
-    else
-    {
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Exiting thread %d in daemon process '%s'.",
-                       thread->id, thread->process->group->name);
-    }
+    wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                   "Exiting thread %d in daemon process '%s'.",
+                   thread->id, thread->process->group->name);
 }
 
 static void *wsgi_daemon_thread(apr_thread_t *thd, void *data)
@@ -1915,18 +1906,9 @@ static void *wsgi_daemon_thread(apr_thread_t *thd, void *data)
     WSGIDaemonThread *thread = data;
     apr_pool_t *p = apr_thread_pool_get(thd);
 
-    if (wsgi_server_config->verbose_debugging)
-    {
-        wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                       "Started thread %d in daemon process '%s'.",
-                       thread->id, thread->process->group->name);
-    }
-    else
-    {
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Started thread %d in daemon process '%s'.",
-                       thread->id, thread->process->group->name);
-    }
+    wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                   "Started thread %d in daemon process '%s'.",
+                   thread->id, thread->process->group->name);
 
     apr_thread_mutex_lock(thread->mutex);
 
@@ -1957,12 +1939,9 @@ static void *wsgi_deadlock_thread(apr_thread_t *thd, void *data)
 
     PyGILState_STATE gilstate;
 
-    if (wsgi_server_config->verbose_debugging)
-    {
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Enable deadlock thread in process '%s'.",
-                       daemon->group->name);
-    }
+    wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                   "Enable deadlock thread in process '%s'.",
+                   daemon->group->name);
 
     apr_thread_mutex_lock(wsgi_monitor_lock);
     wsgi_deadlock_shutdown_time = apr_time_now();
@@ -1999,34 +1978,30 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
 
     int restart = 0;
 
-    if (wsgi_server_config->verbose_debugging)
-    {
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Enable monitor thread in process '%s'.",
-                       group->name);
+    wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                   "Enable monitor thread in process '%s'.", group->name);
 
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Startup timeout is %d.",
-                       (int)(apr_time_sec(wsgi_startup_timeout)));
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Deadlock timeout is %d.",
-                       (int)(apr_time_sec(wsgi_deadlock_timeout)));
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Idle inactivity timeout is %d.",
-                       (int)(apr_time_sec(wsgi_idle_timeout)));
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Request time limit is %d.",
-                       (int)(apr_time_sec(wsgi_request_timeout)));
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Graceful timeout is %d.",
-                       (int)(apr_time_sec(wsgi_graceful_timeout)));
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Eviction timeout is %d.",
-                       (int)(apr_time_sec(wsgi_eviction_timeout)));
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Restart interval is %d.",
-                       (int)(apr_time_sec(wsgi_restart_interval)));
-    }
+    wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                   "Startup timeout is %d.",
+                   (int)(apr_time_sec(wsgi_startup_timeout)));
+    wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                   "Deadlock timeout is %d.",
+                   (int)(apr_time_sec(wsgi_deadlock_timeout)));
+    wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                   "Idle inactivity timeout is %d.",
+                   (int)(apr_time_sec(wsgi_idle_timeout)));
+    wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                   "Request time limit is %d.",
+                   (int)(apr_time_sec(wsgi_request_timeout)));
+    wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                   "Graceful timeout is %d.",
+                   (int)(apr_time_sec(wsgi_graceful_timeout)));
+    wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                   "Eviction timeout is %d.",
+                   (int)(apr_time_sec(wsgi_eviction_timeout)));
+    wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                   "Restart interval is %d.",
+                   (int)(apr_time_sec(wsgi_restart_interval)));
 
     /*
      * If a restart interval was specified then set up the time for
@@ -2531,23 +2506,17 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     wsgi_worker_threads = (WSGIDaemonThread *)apr_pcalloc(p,
                                                           daemon->group->threads * sizeof(WSGIDaemonThread));
 
-    if (wsgi_server_config->verbose_debugging)
-    {
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Starting %d threads in daemon process '%s'.",
-                       daemon->group->threads, daemon->group->name);
-    }
+    wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                   "Starting %d threads in daemon process '%s'.",
+                   daemon->group->threads, daemon->group->name);
 
     for (i = 0; i < daemon->group->threads; i++)
     {
         WSGIDaemonThread *thread = &wsgi_worker_threads[i];
 
-        if (wsgi_server_config->verbose_debugging)
-        {
-            wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                           "Starting thread %d in daemon process '%s'.",
-                           i + 1, daemon->group->name);
-        }
+        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                       "Starting thread %d in daemon process '%s'.",
+                       i + 1, daemon->group->name);
 
         /* Create the mutex and condition variable for this thread. */
 
@@ -3310,25 +3279,19 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (daemon->group->server)
         {
-            if (wsgi_server_config->verbose_debugging)
-            {
-                wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                               "Process '%s' logging to '%s'.",
-                               daemon->group->name,
-                               daemon->group->server->server_hostname);
-            }
+            wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                           "Process '%s' logging to '%s'.",
+                           daemon->group->name,
+                           daemon->group->server->server_hostname);
 
             wsgi_server = daemon->group->server;
         }
         else
         {
-            if (wsgi_server_config->verbose_debugging)
-            {
-                wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                               "Process '%s' forced to log to '%s'.",
-                               daemon->group->name,
-                               wsgi_server->server_hostname);
-            }
+            wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
+                           "Process '%s' forced to log to '%s'.",
+                           daemon->group->name,
+                           wsgi_server->server_hostname);
         }
 
         /* Time daemon process started waiting for requests. */
@@ -3925,21 +3888,15 @@ int wsgi_hook_daemon_handler(conn_rec *c)
                        apr_table_get(r->subprocess_env,
                                      "mod_wsgi.listener_port"));
 
-    if (wsgi_server_config->verbose_debugging)
-    {
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Server listener address '%s'.", key);
-    }
+    wsgi_log_error(APLOG_TRACE1, 0, wsgi_server,
+                   "Server listener address '%s'.", key);
 
     addr = (apr_sockaddr_t *)apr_hash_get(wsgi_daemon_listeners,
                                           key, APR_HASH_KEY_STRING);
 
-    if (wsgi_server_config->verbose_debugging)
-    {
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Server listener address '%s' was%s found.",
-                       key, addr ? "" : " not");
-    }
+    wsgi_log_error(APLOG_TRACE1, 0, wsgi_server,
+                   "Server listener address '%s' was%s found.",
+                   key, addr ? "" : " not");
 
     if (addr)
     {
@@ -3948,13 +3905,10 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     ap_update_vhost_given_ip(r->connection);
 
-    if (wsgi_server_config->verbose_debugging)
-    {
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Connection server matched was '%s|%d'.",
-                       c->base_server->server_hostname,
-                       c->base_server->port);
-    }
+    wsgi_log_error(APLOG_TRACE1, 0, wsgi_server,
+                   "Connection server matched was '%s|%d'.",
+                   c->base_server->server_hostname,
+                   c->base_server->port);
 
     r->server = c->base_server;
 
@@ -3966,12 +3920,9 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     ap_update_vhost_from_headers(r);
 
-    if (wsgi_server_config->verbose_debugging)
-    {
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Request server matched was '%s|%d'.",
-                       r->server->server_hostname, r->server->port);
-    }
+    wsgi_log_error(APLOG_TRACE1, 0, wsgi_server,
+                   "Request server matched was '%s|%d'.",
+                   r->server->server_hostname, r->server->port);
 
     /*
      * Set content length of any request content and add the

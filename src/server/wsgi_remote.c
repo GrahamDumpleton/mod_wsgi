@@ -144,15 +144,12 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
             {
                 if ((apr_time_now() - start_time) < daemon->connect_timeout)
                 {
-                    if (wsgi_server_config->verbose_debugging)
-                    {
-                        wsgi_log_rerror(APLOG_DEBUG, rv, r,
-                                        "Connection attempt #%d to WSGI "
-                                        "daemon process '%s' on '%s' failed, "
-                                        "sleeping before retrying again.",
-                                        retries, daemon->name,
-                                        daemon->socket_path);
-                    }
+                    wsgi_log_rerror(APLOG_DEBUG, rv, r,
+                                    "Connection attempt #%d to WSGI "
+                                    "daemon process '%s' on '%s' failed, "
+                                    "sleeping before retrying again.",
+                                    retries, daemon->name,
+                                    daemon->socket_path);
 
                     apr_socket_close(daemon->socket);
 
@@ -1474,12 +1471,9 @@ int wsgi_execute_remote(request_rec *r)
 
     /* Send request details and subprocess environment. */
 
-    if (wsgi_server_config->verbose_debugging)
-    {
-        wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                       "Request server was '%s|%d'.",
-                       r->server->server_hostname, r->server->port);
-    }
+    wsgi_log_error(APLOG_TRACE1, 0, wsgi_server,
+                   "Request server was '%s|%d'.",
+                   r->server->server_hostname, r->server->port);
 
     if ((rv = wsgi_send_request(r, config, daemon)) != APR_SUCCESS)
     {

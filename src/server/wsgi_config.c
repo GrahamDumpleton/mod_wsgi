@@ -22,6 +22,7 @@
 
 #include "wsgi_daemon.h"
 #include "wsgi_interp.h"
+#include "wsgi_logger.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -304,6 +305,12 @@ const char *wsgi_set_verbose_debugging(cmd_parms *cmd, void *mconfig,
         sconfig->verbose_debugging = 1;
     else
         return "WSGIVerboseDebugging must be one of: Off | On";
+
+    wsgi_log_error(APLOG_WARNING, 0, cmd->server,
+                   "WSGIVerboseDebugging is deprecated and has no effect. "
+                   "Use 'LogLevel info wsgi_module:debug' for lifecycle "
+                   "messages and 'LogLevel info wsgi_module:trace1' for "
+                   "per-request and per-thread-binding messages.");
 
     return NULL;
 }
