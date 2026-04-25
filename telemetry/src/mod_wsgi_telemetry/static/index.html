@@ -3338,38 +3338,41 @@ function redraw() {
   const rps = drawChart(document.getElementById("c_rps"), tpSpec.extract,
                         tpSpec.opts);
 
-  // Sum the latest interval's class counters across visible processes
-  // so the throughput card's live readout can carry an at-a-glance
-  // error-rate badge alongside the existing total/mean text. Same row,
-  // no new layout. status==0 (no start_response) is already folded
-  // into status_5xx_total on the wire.
-  let req = 0, c4xx = 0, c5xx = 0, c1xx = 0;
-  for (const [, p] of state.processes) {
-    if (isHidden(p)) continue;
-    if (!p.samples.length) continue;
-    const f = p.samples[p.samples.length - 1].fields || {};
-    req  += +f.request_count     || 0;
-    c1xx += +f.status_1xx_total  || 0;
-    c4xx += +f.status_4xx_total  || 0;
-    c5xx += +f.status_5xx_total  || 0;
-  }
-  const pct = (n) => req > 0 ? (n / req * 100).toFixed(1) : "0.0";
-  // Just the percentage — both count and percentage was too wide for
-  // narrow panels. % is the better at-a-glance signal anyway; the
-  // exact counts are still on the wire and surfaced on the Slow tab.
-  // 5xx in red whenever > 0; 4xx dim (it's mostly noise). 1xx is a
-  // PEP 3333 tripwire — only show when non-zero, in amber.
-  const errParts = [];
-  if (c1xx > 0) {
-    errParts.push(`<span class="label" style="color:#e0a000">1xx ${c1xx}</span>`);
-  }
-  errParts.push(`<span class="label">4xx ${pct(c4xx)}%</span>`);
-  const fivexxClass = c5xx > 0 ? ' style="color:#e44"' : "";
-  errParts.push(`<span class="label"${fivexxClass}>5xx ${pct(c5xx)}%</span>`);
-  setLive("live_rps",
+  // When the chart is showing requests / sec, append at-a-glance
+  // error-rate badges (% of requests) to the existing total/mean
+  // readout so an operator sees both the rate and the error breakdown
+  // on the same line. For the other metric selections (body bytes,
+  // 4xx/sec, 5xx/sec) the chart's own total/mean already carries the
+  // error count for that class, and the extra percentages would push
+  // the line past narrow panels — so they're dropped. Counts remain
+  // on the wire and per-request detail is surfaced on the Slow tab.
+  let liveText =
     `<span class="label">total</span>${tpSpec.fmt(rps.sum)} ` +
-    `<span class="label">mean</span>${tpSpec.fmt(rps.mean)} ${tpSpec.unitShort} ` +
-    `&middot; ${errParts.join(" &middot; ")}`);
+    `<span class="label">mean</span>${tpSpec.fmt(rps.mean)} ${tpSpec.unitShort}`;
+  if (tpField === "requests") {
+    let req = 0, c4xx = 0, c5xx = 0, c1xx = 0;
+    for (const [, p] of state.processes) {
+      if (isHidden(p)) continue;
+      if (!p.samples.length) continue;
+      const f = p.samples[p.samples.length - 1].fields || {};
+      req  += +f.request_count     || 0;
+      c1xx += +f.status_1xx_total  || 0;
+      c4xx += +f.status_4xx_total  || 0;
+      c5xx += +f.status_5xx_total  || 0;
+    }
+    const pct = (n) => req > 0 ? (n / req * 100).toFixed(1) : "0.0";
+    // 5xx red when > 0; 4xx dim (mostly noise). 1xx is a PEP 3333
+    // tripwire — only show when non-zero, in amber.
+    const errParts = [];
+    if (c1xx > 0) {
+      errParts.push(`<span class="label" style="color:#e0a000">1xx ${c1xx}</span>`);
+    }
+    errParts.push(`<span class="label">4xx ${pct(c4xx)}%</span>`);
+    const fivexxClass = c5xx > 0 ? ' style="color:#e44"' : "";
+    errParts.push(`<span class="label"${fivexxClass}>5xx ${pct(c5xx)}%</span>`);
+    liveText += ` &middot; ${errParts.join(" &middot; ")}`;
+  }
+  setLive("live_rps", liveText);
 
   const cap = drawChart(document.getElementById("c_cap"), f => f.capacity_utilization);
   setLive("live_cap", `<span class="label">mean</span>${fmt(cap.mean)}`);
