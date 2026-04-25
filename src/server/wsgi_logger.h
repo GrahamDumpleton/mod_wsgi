@@ -36,8 +36,88 @@ extern PyObject *newLogWrapperObject(PyObject *buffer);
 extern PyObject *newLogObject(request_rec *r, int level, const char *name,
                               int proxy);
 
-extern void wsgi_log_python_error(request_rec *r, PyObject *log,
-                                  const char *filename, int publish);
+extern void wsgi_log_python_error_ex(const char *file, int line,
+                                     int module_index, request_rec *r,
+                                     PyObject *log, const char *filename,
+                                     int publish);
+
+#define wsgi_log_python_error(r, log, filename, publish) \
+    wsgi_log_python_error_ex(APLOG_MARK, (r), (log), (filename), (publish))
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Logging helpers. These wrap ap_log_error / ap_log_rerror so the same
+ * call shape is used everywhere in mod_wsgi. The macros capture
+ * APLOG_MARK at the call site and forward to the _ex functions, which
+ * preserves the original caller's __FILE__ / __LINE__ in Apache's log
+ * metadata.
+ *
+ * The _locked variants release the Python GIL around the underlying
+ * Apache log call, for use from contexts where the calling thread
+ * holds the GIL. A slow piped ErrorLog must not stall every Python
+ * thread; releasing the GIL during the log call lets other Python
+ * threads run while the log write blocks.
+ *
+ * Each macro begins with a per-module log-level test, so when the
+ * configured level is below the message level (e.g. APLOG_DEBUG with
+ * the default LogLevel) nothing happens: no argument evaluation, no
+ * formatting work, and no GIL release for the _locked variants.
+ *
+ * Each macro evaluates `level`, `s`, and `r` more than once; do not
+ * pass side-effecting expressions (same convention as printf-style
+ * macros).
+ */
+
+extern void wsgi_log_error_ex(const char *file, int line, int module_index,
+                              int level, apr_status_t rv, server_rec *s,
+                              const char *fmt, ...)
+    __attribute__((format(printf, 7, 8)));
+
+extern void wsgi_log_error_locked_ex(const char *file, int line,
+                                     int module_index, int level,
+                                     apr_status_t rv, server_rec *s,
+                                     const char *fmt, ...)
+    __attribute__((format(printf, 7, 8)));
+
+extern void wsgi_log_rerror_ex(const char *file, int line, int module_index,
+                               int level, apr_status_t rv, request_rec *r,
+                               const char *fmt, ...)
+    __attribute__((format(printf, 7, 8)));
+
+extern void wsgi_log_rerror_locked_ex(const char *file, int line,
+                                      int module_index, int level,
+                                      apr_status_t rv, request_rec *r,
+                                      const char *fmt, ...)
+    __attribute__((format(printf, 7, 8)));
+
+#define wsgi_log_error(level, rv, s, ...) \
+    do { \
+        if (APLOG_MODULE_IS_LEVEL((s), APLOG_MODULE_INDEX, (level))) \
+            wsgi_log_error_ex(APLOG_MARK, (level), (rv), (s), \
+                              __VA_ARGS__); \
+    } while (0)
+
+#define wsgi_log_error_locked(level, rv, s, ...) \
+    do { \
+        if (APLOG_MODULE_IS_LEVEL((s), APLOG_MODULE_INDEX, (level))) \
+            wsgi_log_error_locked_ex(APLOG_MARK, (level), (rv), (s), \
+                                     __VA_ARGS__); \
+    } while (0)
+
+#define wsgi_log_rerror(level, rv, r, ...) \
+    do { \
+        if (APLOG_R_MODULE_IS_LEVEL((r), APLOG_MODULE_INDEX, (level))) \
+            wsgi_log_rerror_ex(APLOG_MARK, (level), (rv), (r), \
+                               __VA_ARGS__); \
+    } while (0)
+
+#define wsgi_log_rerror_locked(level, rv, r, ...) \
+    do { \
+        if (APLOG_R_MODULE_IS_LEVEL((r), APLOG_MODULE_INDEX, (level))) \
+            wsgi_log_rerror_locked_ex(APLOG_MARK, (level), (rv), (r), \
+                                      __VA_ARGS__); \
+    } while (0)
 
 /* ------------------------------------------------------------------------- */
 

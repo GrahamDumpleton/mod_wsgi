@@ -96,23 +96,13 @@ static PyObject *ShutdownInterpreter_call(
                 PyObject *traceback = NULL;
 
                 if (PyErr_ExceptionMatches(PyExc_SystemExit))
-                {
-                    Py_BEGIN_ALLOW_THREADS
-                        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                                     "mod_wsgi (pid=%d): SystemExit exception "
-                                     "raised by exit functions ignored.",
-                                     getpid());
-                    Py_END_ALLOW_THREADS
-                }
+                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                          "SystemExit exception raised by "
+                                          "exit functions ignored.");
                 else
-                {
-                    Py_BEGIN_ALLOW_THREADS
-                        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                                     "mod_wsgi (pid=%d): Exception occurred within "
-                                     "exit functions.",
-                                     getpid());
-                    Py_END_ALLOW_THREADS
-                }
+                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                          "Exception occurred within "
+                                          "exit functions.");
 
                 PyErr_Fetch(&type, &value, &traceback);
                 PyErr_NormalizeException(&type, &value, &traceback);

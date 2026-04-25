@@ -1027,11 +1027,10 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
         if (wsgi_python_init(p) != APR_SUCCESS)
         {
-            ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Python initialisation failed; "
-                         "Python based handlers will not be available in "
-                         "this child process.",
-                         getpid());
+            wsgi_log_error(APLOG_CRIT, 0, wsgi_server,
+                           "Python initialisation failed; "
+                           "Python based handlers will not be available in "
+                           "this child process.");
         }
         else
         {
@@ -1042,11 +1041,10 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
             if (wsgi_python_child_init(p) != APR_SUCCESS)
             {
-                ap_log_error(APLOG_MARK, APLOG_CRIT, 0, wsgi_server,
-                             "mod_wsgi (pid=%d): Python child "
-                             "initialisation failed; Python based "
-                             "handlers will not be available in "
-                             "this child process.", getpid());
+                wsgi_log_error(APLOG_CRIT, 0, wsgi_server,
+                               "Python child initialisation failed; "
+                               "Python based handlers will not be available "
+                               "in this child process.");
             }
         }
     }

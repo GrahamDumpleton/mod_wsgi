@@ -38,6 +38,7 @@
 #include "wsgi_apache.h"
 #include "wsgi_server.h"
 #include "wsgi_daemon.h"
+#include "wsgi_logger.h"
 #include "wsgi_metrics.h"
 #include "wsgi_telemetry.h"
 #include "wsgi_version.h"
@@ -342,9 +343,9 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
     apr_interval_time_t sleep_us;
 
     if (wsgi_telemetry_open(wsgi_telemetry_target, &fd, &addr, &addrlen) != 0) {
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Telemetry reporter could not open "
-                     "target '%s'.", (int)pid, wsgi_telemetry_target);
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                       "Telemetry reporter could not open target '%s'.",
+                       wsgi_telemetry_target);
         return NULL;
     }
 
@@ -408,10 +409,9 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
     if (sleep_us < 100000)   /* floor at 100ms */
         sleep_us = 100000;
 
-    ap_log_error(APLOG_MARK, APLOG_INFO, 0, wsgi_server,
-                 "mod_wsgi (pid=%d): Telemetry reporter started, "
-                 "target='%s', interval=%.3f",
-                 (int)pid, wsgi_telemetry_target, wsgi_telemetry_interval);
+    wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                   "Telemetry reporter started, target='%s', interval=%.3f",
+                   wsgi_telemetry_target, wsgi_telemetry_interval);
 
     while (!wsgi_telemetry_shutdown) {
         wsgi_telemetry_sample_t sample;
@@ -608,9 +608,8 @@ void wsgi_telemetry_start_reporter(apr_pool_t *pool)
     rv = apr_thread_create(&wsgi_telemetry_thread, NULL,
                            wsgi_telemetry_thread_main, NULL, pool);
     if (rv != APR_SUCCESS) {
-        ap_log_error(APLOG_MARK, APLOG_ERR, rv, wsgi_server,
-                     "mod_wsgi (pid=%d): Telemetry reporter thread "
-                     "creation failed.", getpid());
+        wsgi_log_error(APLOG_ERR, rv, wsgi_server,
+                       "Telemetry reporter thread creation failed.");
         wsgi_telemetry_started = 0;
     }
 }

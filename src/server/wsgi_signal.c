@@ -69,14 +69,10 @@ static PyObject *SignalIntercept_call(
     if (!PyArg_ParseTuple(args, "iO:signal", &n, &h))
         return NULL;
 
-    Py_BEGIN_ALLOW_THREADS
-        ap_log_error(APLOG_MARK, APLOG_WARNING, 0, wsgi_server,
-                     "mod_wsgi (pid=%d): Callback registration for "
-                     "signal %d ignored.",
-                     getpid(), n);
-    Py_END_ALLOW_THREADS
+    wsgi_log_error_locked(APLOG_WARNING, 0, wsgi_server,
+                          "Callback registration for signal %d ignored.", n);
 
-        m = PyImport_ImportModule("traceback");
+    m = PyImport_ImportModule("traceback");
 
     if (m)
     {

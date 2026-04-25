@@ -26,6 +26,77 @@
 
 /* ------------------------------------------------------------------------- */
 
+/*
+ * Buffer size for pre-formatting log messages. Mirrors Apache's own
+ * internal log line length cap; messages longer than this are silently
+ * truncated, matching ap_log_error()'s behaviour for an oversized
+ * formatted message.
+ */
+
+#define WSGI_LOG_BUFFER_SIZE 8192
+
+void wsgi_log_error_ex(const char *file, int line, int module_index,
+                       int level, apr_status_t rv, server_rec *s,
+                       const char *fmt, ...)
+{
+    char buf[WSGI_LOG_BUFFER_SIZE];
+    va_list ap;
+
+    va_start(ap, fmt);
+    apr_vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+
+    ap_log_error(file, line, module_index, level, rv, s, "%s", buf);
+}
+
+void wsgi_log_error_locked_ex(const char *file, int line, int module_index,
+                              int level, apr_status_t rv, server_rec *s,
+                              const char *fmt, ...)
+{
+    char buf[WSGI_LOG_BUFFER_SIZE];
+    va_list ap;
+
+    va_start(ap, fmt);
+    apr_vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+
+    Py_BEGIN_ALLOW_THREADS
+    ap_log_error(file, line, module_index, level, rv, s, "%s", buf);
+    Py_END_ALLOW_THREADS
+}
+
+void wsgi_log_rerror_ex(const char *file, int line, int module_index,
+                        int level, apr_status_t rv, request_rec *r,
+                        const char *fmt, ...)
+{
+    char buf[WSGI_LOG_BUFFER_SIZE];
+    va_list ap;
+
+    va_start(ap, fmt);
+    apr_vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+
+    ap_log_rerror(file, line, module_index, level, rv, r, "%s", buf);
+}
+
+void wsgi_log_rerror_locked_ex(const char *file, int line, int module_index,
+                               int level, apr_status_t rv, request_rec *r,
+                               const char *fmt, ...)
+{
+    char buf[WSGI_LOG_BUFFER_SIZE];
+    va_list ap;
+
+    va_start(ap, fmt);
+    apr_vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+
+    Py_BEGIN_ALLOW_THREADS
+    ap_log_rerror(file, line, module_index, level, rv, r, "%s", buf);
+    Py_END_ALLOW_THREADS
+}
+
+/* ------------------------------------------------------------------------- */
+
 typedef struct
 {
     PyObject_HEAD const char *name;
@@ -134,17 +205,9 @@ static void Log_call(LogObject *self, const char *s, long l)
      */
 
     if (self->r)
-    {
-        Py_BEGIN_ALLOW_THREADS
-            ap_log_rerror(APLOG_MARK, self->level, 0, self->r, "%s", s);
-        Py_END_ALLOW_THREADS
-    }
+        wsgi_log_rerror_locked(self->level, 0, self->r, "%s", s);
     else
-    {
-        Py_BEGIN_ALLOW_THREADS
-            ap_log_error(APLOG_MARK, self->level, 0, wsgi_server, "%s", s);
-        Py_END_ALLOW_THREADS
-    }
+        wsgi_log_error_locked(self->level, 0, wsgi_server, "%s", s);
 }
 
 static void Log_dealloc(LogObject *self)
@@ -549,8 +612,9 @@ PyTypeObject Log_Type = {
     0,                       /*tp_is_gc*/
 };
 
-void wsgi_log_python_error(request_rec *r, PyObject *log,
-                           const char *filename, int publish)
+void wsgi_log_python_error_ex(const char *file, int line, int module_index,
+                              request_rec *r, PyObject *log,
+                              const char *filename, int publish)
 {
     PyObject *m = NULL;
     PyObject *result = NULL;
@@ -581,39 +645,29 @@ void wsgi_log_python_error(request_rec *r, PyObject *log,
 
     if (PyErr_ExceptionMatches(PyExc_SystemExit))
     {
-        Py_BEGIN_ALLOW_THREADS if (r)
-        {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d): SystemExit exception raised by "
-                          "WSGI script '%s' ignored.",
-                          getpid(), filename);
-        }
+        if (r)
+            wsgi_log_rerror_locked_ex(file, line, module_index, APLOG_ERR,
+                                      0, r,
+                                      "SystemExit exception raised by "
+                                      "WSGI script '%s' ignored.", filename);
         else
-        {
-            ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): SystemExit exception raised by "
-                         "WSGI script '%s' ignored.",
-                         getpid(), filename);
-        }
-        Py_END_ALLOW_THREADS
+            wsgi_log_error_locked_ex(file, line, module_index, APLOG_ERR,
+                                     0, wsgi_server,
+                                     "SystemExit exception raised by "
+                                     "WSGI script '%s' ignored.", filename);
     }
     else
     {
-        Py_BEGIN_ALLOW_THREADS if (r)
-        {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "mod_wsgi (pid=%d): Exception occurred processing "
-                          "WSGI script '%s'.",
-                          getpid(), filename);
-        }
+        if (r)
+            wsgi_log_rerror_locked_ex(file, line, module_index, APLOG_ERR,
+                                      0, r,
+                                      "Exception occurred processing "
+                                      "WSGI script '%s'.", filename);
         else
-        {
-            ap_log_error(APLOG_MARK, APLOG_ERR, 0, wsgi_server,
-                         "mod_wsgi (pid=%d): Exception occurred processing "
-                         "WSGI script '%s'.",
-                         getpid(), filename);
-        }
-        Py_END_ALLOW_THREADS
+            wsgi_log_error_locked_ex(file, line, module_index, APLOG_ERR,
+                                     0, wsgi_server,
+                                     "Exception occurred processing "
+                                     "WSGI script '%s'.", filename);
     }
 
     PyErr_Fetch(&type, &value, &traceback);
