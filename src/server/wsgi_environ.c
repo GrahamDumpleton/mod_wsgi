@@ -20,6 +20,7 @@
 
 #include "wsgi_environ.h"
 
+#include "wsgi_logger.h"
 #include "wsgi_server.h"
 
 static int wsgi_http_invalid_header(const char *w)
@@ -236,10 +237,9 @@ static void wsgi_process_forwarded_for(request_rec *r,
                 }
                 else
                 {
-                    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
-                                  "mod_wsgi (pid=%d): Forwarded IP of \"%s\" is "
-                                  "not a valid IP address.",
-                                  getpid(), items[i]);
+                    wsgi_log_rerror(APLOG_DEBUG, 0, r,
+                                    "Forwarded IP of \"%s\" is not a valid "
+                                    "IP address.", items[i]);
                     break;
                 }
             }
@@ -545,10 +545,9 @@ static unsigned int wsgi_process_proxy_headers(request_rec *r)
             }
             else
             {
-                ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
-                              "mod_wsgi (pid=%d): REMOTE_ADDR of \"%s\" is "
-                              "not a valid IP address.",
-                              getpid(), client_ip);
+                wsgi_log_rerror(APLOG_DEBUG, 0, r,
+                                "REMOTE_ADDR of \"%s\" is not a valid IP "
+                                "address.", client_ip);
 
                 trusted_proxy = 0;
             }

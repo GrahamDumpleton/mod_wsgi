@@ -21,6 +21,7 @@
 #include "wsgi_apache.h"
 
 #include "wsgi_daemon.h"
+#include "wsgi_logger.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -93,7 +94,7 @@ void wsgi_log_script_error(request_rec *r, const char *e, const char *n)
 
     message = apr_psprintf(r->pool, "%s: %s", e, n);
 
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "%s", message);
+    wsgi_log_rerror(APLOG_ERR, 0, r, "%s", message);
 }
 
 /* ------------------------------------------------------------------------- */
