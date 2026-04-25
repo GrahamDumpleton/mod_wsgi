@@ -2436,6 +2436,12 @@ function computeProcessStats(p, windowSec) {
   let outBytesSum = 0, outWritesSum = 0;
   let ioPeriodSum = 0;
   let ioSamples = 0;
+  // Per-class HTTP response totals across the window. Each tick's
+  // status_*xx_total is an interval count drained from the same
+  // accumulator that updates request_count, so summing across ticks
+  // yields a window total whose sum equals rcSum (modulo the
+  // status==0 fold into 5xx already done on the C side).
+  let s1xxSum = 0, s2xxSum = 0, s3xxSum = 0, s4xxSum = 0, s5xxSum = 0;
   // Per-slot elapsed collected as {t, elapsed} pairs so we can sort by
   // time before handing off to findSlowRuns. Mirrors what the Capacity
   // heatmap does (it sorts its per-slot cell arrays by time), so the
@@ -2512,6 +2518,11 @@ function computeProcessStats(p, windowSec) {
       if (typeof f.output_writes_total === "number")
         outWritesSum += f.output_writes_total;
     }
+    if (typeof f.status_1xx_total === "number") s1xxSum += f.status_1xx_total;
+    if (typeof f.status_2xx_total === "number") s2xxSum += f.status_2xx_total;
+    if (typeof f.status_3xx_total === "number") s3xxSum += f.status_3xx_total;
+    if (typeof f.status_4xx_total === "number") s4xxSum += f.status_4xx_total;
+    if (typeof f.status_5xx_total === "number") s5xxSum += f.status_5xx_total;
   }
   if (!hasAny) return null;
   const last = p.samples[p.samples.length - 1];
@@ -2557,6 +2568,11 @@ function computeProcessStats(p, windowSec) {
     outBytesTotal: outBytesSum,
     inReadsTotal: inReadsSum,
     outWritesTotal: outWritesSum,
+    // Per-class HTTP response totals over the window. Sum equals rcSum
+    // when every sample carried the fields (which is always now);
+    // older samples missing them just contribute zero.
+    s1xx: s1xxSum, s2xx: s2xxSum, s3xx: s3xxSum,
+    s4xx: s4xxSum, s5xx: s5xxSum,
     slowRunCount: (() => {
       const sorted = new Map();
       for (const [slot, pairs] of perSlotPairs) {
@@ -2584,6 +2600,7 @@ function rollupAcross(pids, windowSec) {
   let inBytesTotal = 0, outBytesTotal = 0;
   let inReadsTotal = 0, outWritesTotal = 0;
   let hasIO = false;
+  let s1xx = 0, s2xx = 0, s3xx = 0, s4xx = 0, s5xx = 0;
   for (const pid of pids) {
     const p = state.processes.get(pid);
     if (!p) continue;
@@ -2618,6 +2635,11 @@ function rollupAcross(pids, windowSec) {
       inReadsTotal += ps.inReadsTotal;
       outWritesTotal += ps.outWritesTotal;
     }
+    s1xx += ps.s1xx || 0;
+    s2xx += ps.s2xx || 0;
+    s3xx += ps.s3xx || 0;
+    s4xx += ps.s4xx || 0;
+    s5xx += ps.s5xx || 0;
   }
   return {
     rpm, cpuCores, rssMb,
@@ -2627,6 +2649,7 @@ function rollupAcross(pids, windowSec) {
     hasIO,
     inBytesRate, outBytesRate, inReadsRate, outWritesRate,
     inBytesTotal, outBytesTotal, inReadsTotal, outWritesTotal,
+    s1xx, s2xx, s3xx, s4xx, s5xx,
   };
 }
 
@@ -3720,6 +3743,14 @@ tier's scope:
   restricted to that group's processes.
 - **Processes** — one block per live process, with per-pid detail.
 
+Every scope carries the response status breakdown
+(\`1xx / 2xx / 3xx / 4xx / 5xx\` with shares of the scope's
+request count). Use Totals to establish the deployment-wide error
+mix, then look for processes whose mix diverges — a single
+process emitting all the 5xx is a useful signal that "redeploy
+that one" or "bisect the recent code change" is the right
+response.
+
 ### Multi-host caveat
 
 The collector is intended for one Apache instance on one host. If
@@ -3735,8 +3766,12 @@ Expected workflow. Each step points at the section below that
 carries the detail.
 
 1. **Establish the deployment baseline.** Start with Totals. Note
-   rpm, cpu cores, state counts, response time. These frame
-   expectations before any per-process detail.
+   rpm, cpu cores, state counts, response time, and the response
+   status breakdown. These frame expectations before any
+   per-process detail. A non-zero 5xx share or a non-zero 1xx
+   count (which is a PEP 3333 violation) is a separate axis of
+   trouble from saturation/GIL — read it independently of the
+   capacity verdict.
 2. **Scope tuning to the group.** If a Groups section is present,
    read it next — tuning is per-group. Any \`WSGIDaemonProcess\`
    recommendation must name the specific group.
@@ -3840,6 +3875,19 @@ carries the detail.
   time across worker slots. 1.0 = pure compute; near 0 = threads
   hold requests without running CPU work (GIL wait or blocking
   I/O).
+- **response status: 1xx / 2xx / 3xx / 4xx / 5xx** — per-window
+  counts of WSGI app responses by status class, drained from the
+  same accumulator that updates \`request_count\`. Sum equals the
+  request count for the same window. Snapshot prints each class
+  with its share, e.g. \`response status: 1xx 0, 2xx 1234 (94.0%),
+  3xx 0 (0.0%), 4xx 50 (3.8%), 5xx 28 (2.1%)\`. See *Response
+  status classes* for interpretation rules.
+- **slow_status** — final HTTP response status carried on a
+  slow-request record (the per-request stream feeding the Slow
+  requests UI tab). \`0\` = active record, status not yet known
+  (\`start_response\` may not have been called). Lets an operator
+  correlate "this slow request was also a 5xx" without per-code
+  class counters in the aggregate stream.
 
 ## Time distributions
 
@@ -3874,6 +3922,63 @@ Mechanics:
 - **Embedded mode never populates queue / daemon histograms** (no
   socket handoff); those sections are emitted only for daemon
   processes.
+
+## Response status classes
+
+Each completed request increments one of five class counters
+(1xx / 2xx / 3xx / 4xx / 5xx) at end-of-request. The snapshot
+emits the breakdown per Totals / Groups / Processes scope so an
+LLM can see the deployment-wide error mix and the per-process
+divergence at the same time.
+
+Mechanics:
+
+- **Counts only what the WSGI app set.** The status comes from
+  \`AdapterObject.status\`, parsed from the \`start_response\`
+  status line. Errors generated **outside** the WSGI app — Apache
+  worker-side outcomes such as queue-overflow \`503\`,
+  daemon-unavailable \`503\`, or inactivity-timeout \`504\` — never
+  reach the recorder and are **not** in these counters. If you
+  need to investigate those, the Apache error log is the source
+  of truth, not telemetry.
+- **status==0 folds into 5xx.** A WSGI app that raises before
+  calling \`start_response\` leaves the integer status at 0;
+  mod_wsgi serves a 500 in that case, so the recorder folds it
+  into the 5xx bucket. The error rate matches what callers
+  actually saw — including unhandled-exception storms — rather
+  than only counting explicit \`start_response("500 …", …)\`
+  paths.
+- **Sum invariant.** \`1xx + 2xx + 3xx + 4xx + 5xx\` equals
+  \`request_count\` for the same window. Use this as a sanity
+  check on parsed snapshots.
+
+Interpretation:
+
+- **5xx** is the actionable signal. Sustained non-zero 5xx is the
+  deployment-wide "is something on fire" indicator. Cross-check
+  with the Slow requests stream — slow records carry their final
+  status on the wire, so an operator can see whether the slow
+  outliers were also 5xx (typical for "downstream timeout
+  manifested as exception → 500" patterns).
+- **4xx** is mostly noise (bots, scanners, broken backlinks)
+  under steady state. **Spikes** are signal: sudden 4xx
+  concentration usually points at a misrouted client, an auth
+  rotation, or an upstream rate-limit kicking in. The snapshot
+  shows the absolute count plus the share of total requests so
+  rate is preserved across rpm changes.
+- **3xx** is informational and rarely actionable.
+- **2xx** is the baseline. The percentage line surfaces erosion
+  (a steady drop in 2xx share with 4xx/5xx growing) without an
+  operator having to reconstruct the calculation.
+- **1xx** is a **PEP 3333 tripwire**. WSGI applications must not
+  return informational 1xx responses to \`start_response\`. The
+  snapshot tags any non-zero 1xx count with
+  \`(PEP 3333 violation)\` so the signal is unambiguous.
+
+Per-class counters do **not** distinguish between specific codes
+(404 vs 401 vs 410, etc.). For per-code detail on the requests
+that mattered enough to be slow, the slow-request stream's
+\`slow_status\` field carries the exact code.
 
 Per-phase tail interpretation:
 
@@ -4194,6 +4299,30 @@ function renderHelpMarkdown(md) {
   return out.join("");
 }
 
+// Format the per-class HTTP response breakdown as a single snapshot
+// line. `obj` carries s1xx..s5xx counts for the window. When every
+// class is zero (idle window), one short "no requests" line is emitted
+// so the field stays present in every snapshot rather than vanishing
+// silently on idle. status==0 (no start_response) is already folded
+// into s5xx on the C side; 1xx is a PEP 3333 tripwire.
+function statusBreakdownLine(obj) {
+  const total = (obj.s1xx || 0) + (obj.s2xx || 0) + (obj.s3xx || 0)
+              + (obj.s4xx || 0) + (obj.s5xx || 0);
+  if (total === 0) {
+    return "- response status: no requests completed in window";
+  }
+  const pct = (n) => (n / total * 100).toFixed(1);
+  const parts = [
+    `1xx ${obj.s1xx || 0}` + ((obj.s1xx || 0) > 0
+      ? ` (${pct(obj.s1xx)}%, PEP 3333 violation)` : ""),
+    `2xx ${obj.s2xx || 0} (${pct(obj.s2xx || 0)}%)`,
+    `3xx ${obj.s3xx || 0} (${pct(obj.s3xx || 0)}%)`,
+    `4xx ${obj.s4xx || 0} (${pct(obj.s4xx || 0)}%)`,
+    `5xx ${obj.s5xx || 0} (${pct(obj.s5xx || 0)}%)`,
+  ];
+  return "- response status: " + parts.join(", ");
+}
+
 function buildCurrentStatsMarkdown() {
   const lines = [];
   const now = new Date();
@@ -4367,6 +4496,7 @@ function buildCurrentStatsMarkdown() {
   lines.push("- slow-request runs (≥ "
     + getCapacityStuckThreshMs() + " ms, window " + LINE_WINDOW_SEC
     + " s): " + totals.slowRunsTotal);
+  lines.push(statusBreakdownLine(totals));
   if (totals.hasIO) {
     lines.push("- body in: "
       + humanBytes(Math.round(totals.inBytesRate)) + "/s ("
@@ -4409,6 +4539,7 @@ function buildCurrentStatsMarkdown() {
         + gr.stateCounts.cpuGilBound + " CPU/GIL-bound, "
         + gr.stateCounts.normal + " normal");
       lines.push("- slow-request runs: " + gr.slowRunsTotal);
+      lines.push(statusBreakdownLine(gr));
       if (gr.hasIO) {
         lines.push("- body in: "
           + humanBytes(Math.round(gr.inBytesRate)) + "/s");
@@ -4484,6 +4615,7 @@ function buildCurrentStatsMarkdown() {
           + humanBytes(Math.round(ps.outBytesRate)) + "/s" + outExtra);
       }
     }
+    lines.push(statusBreakdownLine(ps));
 
     const verdict = classifyCapacity(ps);
     lines.push("");

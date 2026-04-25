@@ -1418,6 +1418,20 @@ def render_once_text(state: State, ui: UIState) -> str:
                  f"queue {fmt_ms(h['queue_mean_ms']) if h['queue_mean_ms'] is not None else '-'}")
     lines.append(f"  cpu:  user {h['cpu_user']:.2f}  sys {h['cpu_sys']:.2f}   "
                  f"rss {fmt_bytes(h['rss_total'])} (max {fmt_bytes(h['rss_max'])})")
+    # status==0 (no start_response, exception path) is folded into 5xx
+    # on the C side; the percentages here are share of completed
+    # requests in the latest interval. 1xx is a PEP 3333 tripwire and
+    # only included in the line when it has fired.
+    requests = h["interval_requests"]
+    pct = lambda n: (n / requests * 100.0) if requests > 0 else 0.0
+    s_parts = []
+    if h["status_1xx"] > 0:
+        s_parts.append(f"1xx {h['status_1xx']} (PEP 3333 violation)")
+    s_parts.append(f"2xx {pct(h['status_2xx']):.1f}%")
+    s_parts.append(f"3xx {pct(h['status_3xx']):.1f}%")
+    s_parts.append(f"4xx {pct(h['status_4xx']):.1f}%")
+    s_parts.append(f"5xx {pct(h['status_5xx']):.1f}%")
+    lines.append("  stat: " + "  ".join(s_parts))
     lines.append(f"  lat:  p50 {fmt_ms(h['p50_ms'])}  p95 {fmt_ms(h['p95_ms'])}  "
                  f"p99 {fmt_ms(h['p99_ms'])}   "
                  f"min {fmt_us(h['min_us'])}  max {fmt_us(h['max_us'])}")

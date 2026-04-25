@@ -41,6 +41,24 @@ Features Changed
   payload, providing the pre-computed sum of the corresponding user and
   system CPU seconds for that scope.
 
+* The dict returned by ``mod_wsgi.request_metrics()`` now also carries
+  five HTTP response class counters — ``status_1xx``, ``status_2xx``,
+  ``status_3xx``, ``status_4xx`` and ``status_5xx`` — counting the
+  per-class responses returned by the WSGI application during the
+  sampling window. Their sum equals ``request_count`` for the same
+  window, so ``status_4xx + status_5xx`` is a ready-made error rate
+  numerator. A request whose WSGI application raised before calling
+  ``start_response`` (mod_wsgi serves a 500 in that case) is folded
+  into ``status_5xx`` so the error rate matches the user-visible
+  outcome rather than only counting explicit
+  ``start_response("500 ...", ...)`` paths. ``status_1xx`` is included
+  as a tripwire — PEP 3333 forbids a WSGI application from returning a
+  1xx response, so a non-zero count flags a protocol violation. The
+  per-class counters do not distinguish between specific codes
+  (404 vs 401 vs 410, etc.); for per-code detail on slow responses,
+  the ``WSGISlowRequests`` telemetry stream now also carries the final
+  HTTP status on each slow-request record.
+
 * When ``request-timeout`` fires on a daemon process group with
   ``processes > 1`` and ``graceful-timeout`` greater than zero, the
   affected daemon now enters a drain state — it stops competing for

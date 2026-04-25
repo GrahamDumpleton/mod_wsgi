@@ -67,9 +67,11 @@ uv run mod-wsgi-telemetry-top
 # → connects to ws://127.0.0.1:8877/ws by default
 ```
 
-Layout: a five-line header (hostname/group, throughput, capacity,
-CPU+memory, latency p50/p95/p99 + slow counts) stays visible across
-all views. The body switches with one keystroke:
+Layout: an eight-line header stays visible across all views —
+hostname/group title bar, throughput, capacity bar, CPU + memory,
+HTTP response class breakdown (`1xx / 2xx / 3xx / 4xx / 5xx`),
+latency `p50 / p95 / p99` + min/max, slow-request counters, and
+the tab bar. The body switches with one keystroke:
 
 | Key | View | Body |
 |---|---|---|
