@@ -103,7 +103,8 @@ static void wsgi_drop_invalid_headers(request_rec *r)
  * present. Adding a new synonym is a one-line registry entry.
  */
 
-typedef enum {
+typedef enum
+{
     WSGI_PROXY_CATEGORY_NONE = 0,
     WSGI_PROXY_CATEGORY_CLIENT,
     WSGI_PROXY_CATEGORY_HOST,
@@ -114,7 +115,8 @@ typedef enum {
     WSGI_PROXY_CATEGORY_MAX,
 } wsgi_proxy_category_t;
 
-typedef struct {
+typedef struct
+{
     const char *name;
     wsgi_proxy_category_t category;
     void (*apply)(request_rec *, WSGIRequestConfig *, const char *);
@@ -239,7 +241,8 @@ static void wsgi_process_forwarded_for(request_rec *r,
                 {
                     wsgi_log_rerror(APLOG_TRACE1, 0, r,
                                     "Forwarded IP of \"%s\" is not a valid "
-                                    "IP address.", items[i]);
+                                    "IP address.",
+                                    items[i]);
                     break;
                 }
             }
@@ -453,22 +456,22 @@ static void wsgi_apply_scheme_bool(request_rec *r,
 }
 
 static const wsgi_proxy_header_entry_t wsgi_proxy_header_registry[] = {
-    { "HTTP_X_FORWARDED_FOR",         WSGI_PROXY_CATEGORY_CLIENT,      wsgi_apply_forwarded_for },
-    { "HTTP_X_CLIENT_IP",             WSGI_PROXY_CATEGORY_CLIENT,      wsgi_apply_client_ip_verbatim },
-    { "HTTP_X_REAL_IP",               WSGI_PROXY_CATEGORY_CLIENT,      wsgi_apply_client_ip_verbatim },
-    { "HTTP_X_FORWARDED_HOST",        WSGI_PROXY_CATEGORY_HOST,        wsgi_apply_forwarded_host },
-    { "HTTP_X_HOST",                  WSGI_PROXY_CATEGORY_HOST,        wsgi_apply_forwarded_host },
-    { "HTTP_X_FORWARDED_SERVER",      WSGI_PROXY_CATEGORY_SERVER,      wsgi_apply_forwarded_server },
-    { "HTTP_X_FORWARDED_PORT",        WSGI_PROXY_CATEGORY_PORT,        wsgi_apply_forwarded_port },
-    { "HTTP_X_SCRIPT_NAME",           WSGI_PROXY_CATEGORY_SCRIPT_NAME, wsgi_apply_script_name },
-    { "HTTP_X_FORWARDED_SCRIPT_NAME", WSGI_PROXY_CATEGORY_SCRIPT_NAME, wsgi_apply_script_name },
-    { "HTTP_X_FORWARDED_PROTO",       WSGI_PROXY_CATEGORY_SCHEME,      wsgi_apply_scheme_string },
-    { "HTTP_X_FORWARDED_SCHEME",      WSGI_PROXY_CATEGORY_SCHEME,      wsgi_apply_scheme_string },
-    { "HTTP_X_SCHEME",                WSGI_PROXY_CATEGORY_SCHEME,      wsgi_apply_scheme_string },
-    { "HTTP_X_FORWARDED_HTTPS",       WSGI_PROXY_CATEGORY_SCHEME,      wsgi_apply_scheme_bool },
-    { "HTTP_X_FORWARDED_SSL",         WSGI_PROXY_CATEGORY_SCHEME,      wsgi_apply_scheme_bool },
-    { "HTTP_X_HTTPS",                 WSGI_PROXY_CATEGORY_SCHEME,      wsgi_apply_scheme_bool },
-    { NULL, WSGI_PROXY_CATEGORY_NONE, NULL },
+    {"HTTP_X_FORWARDED_FOR", WSGI_PROXY_CATEGORY_CLIENT, wsgi_apply_forwarded_for},
+    {"HTTP_X_CLIENT_IP", WSGI_PROXY_CATEGORY_CLIENT, wsgi_apply_client_ip_verbatim},
+    {"HTTP_X_REAL_IP", WSGI_PROXY_CATEGORY_CLIENT, wsgi_apply_client_ip_verbatim},
+    {"HTTP_X_FORWARDED_HOST", WSGI_PROXY_CATEGORY_HOST, wsgi_apply_forwarded_host},
+    {"HTTP_X_HOST", WSGI_PROXY_CATEGORY_HOST, wsgi_apply_forwarded_host},
+    {"HTTP_X_FORWARDED_SERVER", WSGI_PROXY_CATEGORY_SERVER, wsgi_apply_forwarded_server},
+    {"HTTP_X_FORWARDED_PORT", WSGI_PROXY_CATEGORY_PORT, wsgi_apply_forwarded_port},
+    {"HTTP_X_SCRIPT_NAME", WSGI_PROXY_CATEGORY_SCRIPT_NAME, wsgi_apply_script_name},
+    {"HTTP_X_FORWARDED_SCRIPT_NAME", WSGI_PROXY_CATEGORY_SCRIPT_NAME, wsgi_apply_script_name},
+    {"HTTP_X_FORWARDED_PROTO", WSGI_PROXY_CATEGORY_SCHEME, wsgi_apply_scheme_string},
+    {"HTTP_X_FORWARDED_SCHEME", WSGI_PROXY_CATEGORY_SCHEME, wsgi_apply_scheme_string},
+    {"HTTP_X_SCHEME", WSGI_PROXY_CATEGORY_SCHEME, wsgi_apply_scheme_string},
+    {"HTTP_X_FORWARDED_HTTPS", WSGI_PROXY_CATEGORY_SCHEME, wsgi_apply_scheme_bool},
+    {"HTTP_X_FORWARDED_SSL", WSGI_PROXY_CATEGORY_SCHEME, wsgi_apply_scheme_bool},
+    {"HTTP_X_HTTPS", WSGI_PROXY_CATEGORY_SCHEME, wsgi_apply_scheme_bool},
+    {NULL, WSGI_PROXY_CATEGORY_NONE, NULL},
 };
 
 static const wsgi_proxy_header_entry_t *
@@ -485,7 +488,8 @@ wsgi_lookup_proxy_header(const char *name)
     return NULL;
 }
 
-typedef struct {
+typedef struct
+{
     int matched;
     const char *trusted_header;
 } wsgi_proxy_category_state_t;
@@ -547,7 +551,8 @@ static unsigned int wsgi_process_proxy_headers(request_rec *r)
             {
                 wsgi_log_rerror(APLOG_TRACE1, 0, r,
                                 "REMOTE_ADDR of \"%s\" is not a valid IP "
-                                "address.", client_ip);
+                                "address.",
+                                client_ip);
 
                 trusted_proxy = 0;
             }
