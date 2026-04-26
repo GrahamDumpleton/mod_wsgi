@@ -2841,7 +2841,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
                                PROCESSOR_CLASS_ANY);
         if (status != OK)
         {
-            wsgi_log_error(APLOG_ERR, errno, wsgi_server,
+            wsgi_log_error(APLOG_WARNING, errno, wsgi_server,
                            "Failed to unbind processor.");
         }
 #endif
@@ -2857,7 +2857,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             if (setpriority(PRIO_PROCESS, 0,
                             daemon->group->cpu_priority) == -1)
             {
-                wsgi_log_error(APLOG_ERR, errno, wsgi_server,
+                wsgi_log_error(APLOG_WARNING, errno, wsgi_server,
                                "Couldn't set CPU priority in daemon "
                                "process '%d'.",
                                daemon->group->cpu_priority);

@@ -343,7 +343,7 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
     apr_interval_time_t sleep_us;
 
     if (wsgi_telemetry_open(wsgi_telemetry_target, &fd, &addr, &addrlen) != 0) {
-        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+        wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
                        "Telemetry reporter could not open target '%s'.",
                        wsgi_telemetry_target);
         return NULL;
@@ -608,7 +608,7 @@ void wsgi_telemetry_start_reporter(apr_pool_t *pool)
     rv = apr_thread_create(&wsgi_telemetry_thread, NULL,
                            wsgi_telemetry_thread_main, NULL, pool);
     if (rv != APR_SUCCESS) {
-        wsgi_log_error(APLOG_ERR, rv, wsgi_server,
+        wsgi_log_error(APLOG_WARNING, rv, wsgi_server,
                        "Telemetry reporter thread creation failed.");
         wsgi_telemetry_started = 0;
     }

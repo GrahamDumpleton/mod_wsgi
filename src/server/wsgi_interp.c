@@ -1535,9 +1535,8 @@ void wsgi_python_version(void)
     if (strcmp(compile, dynamic) != 0)
     {
         wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
-                       "Compiled for Python/%s.", compile);
-        wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
-                       "Runtime using Python/%s.", dynamic);
+                       "Compiled for Python/%s but runtime using "
+                       "Python/%s.", compile, dynamic);
     }
 }
 

@@ -69,7 +69,7 @@ static PyObject *SignalIntercept_call(
     if (!PyArg_ParseTuple(args, "iO:signal", &n, &h))
         return NULL;
 
-    wsgi_log_error_locked(APLOG_WARNING, 0, wsgi_server,
+    wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
                           "Callback registration for signal %d ignored.", n);
 
     m = PyImport_ImportModule("traceback");
