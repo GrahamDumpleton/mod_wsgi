@@ -649,6 +649,246 @@ void wsgi_environ_child_init(void)
     wsgi_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
 }
 
+/*
+ * Replicates the work of Apache's ap_add_cgi_vars() and ap_add_common_vars()
+ * but skips:
+ *
+ *   - PATH_TRANSLATED. ap_add_cgi_vars() computes this by issuing an Apache
+ *     subrequest via ap_sub_req_lookup_uri() against the request's PATH_INFO.
+ *     The subrequest can have surprising side effects (rerunning translation
+ *     hooks, walking the full request_rec lifecycle, touching the filesystem)
+ *     and PATH_TRANSLATED is not used by WSGI applications.
+ *
+ *   - REMOTE_HOST. ap_add_common_vars() calls ap_get_useragent_host() which
+ *     can trigger a reverse-DNS lookup when HostnameLookups is enabled.
+ *
+ *   - REMOTE_IDENT. ap_add_common_vars() calls ap_get_remote_logname() which
+ *     can issue an RFC 1413 ident protocol lookup when IdentityCheck is on.
+ *
+ *   - PATH and platform library-path variables (LD_LIBRARY_PATH,
+ *     DYLD_LIBRARY_PATH, SHLIB_PATH, LIBPATH, LIBRARY_PATH, PERLLIB_PREFIX,
+ *     SystemRoot, COMSPEC, PATHEXT, WINDIR, ETC, DPATH). These are inherited
+ *     by forked CGI children and have no role for an in-process WSGI
+ *     interpreter.
+ *
+ *   - SERVER_SIGNATURE. An HTML blob with no use to a WSGI application.
+ *
+ * Everything else from the two upstream functions is preserved, including
+ * the cgi_pass_auth gating on Authorization/Proxy-Authorization, the strip
+ * of the Proxy request header (CVE-2016-5388), the cgi_var_rules override
+ * for REQUEST_URI, and the REDIRECT_* walk over r->prev.
+ */
+
+static void wsgi_add_vars_to_environment(request_rec *r)
+{
+    apr_table_t *e;
+    server_rec *s = r->server;
+    conn_rec *c = r->connection;
+    core_dir_config *conf =
+        (core_dir_config *)ap_get_core_module_config(r->per_dir_config);
+
+    const apr_array_header_t *hdrs_arr = apr_table_elts(r->headers_in);
+    const apr_table_entry_t *hdrs = (const apr_table_entry_t *)hdrs_arr->elts;
+
+    int request_uri_from_original = 1;
+    const char *request_uri_rule = NULL;
+
+    char *q = NULL;
+    int i;
+
+    /*
+     * Build into a temp table when r->subprocess_env already has entries
+     * (e.g. set by mod_setenvif) so the final overlap-with-set replaces
+     * any pre-existing values cleanly. Mirrors ap_add_common_vars().
+     */
+
+    if (apr_is_empty_table(r->subprocess_env))
+        e = r->subprocess_env;
+    else
+        e = apr_table_make(r->pool, 25 + hdrs_arr->nelts);
+
+    /*
+     * Header copy loop, transcribed from ap_add_common_vars(). The
+     * cgi_pass_auth gating on Authorization/Proxy-Authorization and the
+     * Proxy header strip (CVE-2016-5388) match upstream verbatim.
+     * wsgi_drop_invalid_headers() runs before this so wsgi_http2env()
+     * should not return NULL, but we keep the guard for safety.
+     */
+
+    for (i = 0; i < hdrs_arr->nelts; ++i)
+    {
+        char *name;
+
+        if (!hdrs[i].key)
+            continue;
+
+        if (!strcasecmp(hdrs[i].key, "Content-type"))
+        {
+            apr_table_addn(e, "CONTENT_TYPE", hdrs[i].val);
+        }
+        else if (!strcasecmp(hdrs[i].key, "Content-length"))
+        {
+            apr_table_addn(e, "CONTENT_LENGTH", hdrs[i].val);
+        }
+        else if (!strcasecmp(hdrs[i].key, "Proxy"))
+        {
+            /* Never expose Proxy as HTTP_PROXY (httpoxy / CVE-2016-5388). */
+            continue;
+        }
+        else if (!strcasecmp(hdrs[i].key, "Authorization") ||
+                 !strcasecmp(hdrs[i].key, "Proxy-Authorization"))
+        {
+            if (conf->cgi_pass_auth == AP_CGI_PASS_AUTH_ON)
+            {
+                name = wsgi_http2env(r->pool, hdrs[i].key);
+                if (name && hdrs[i].val)
+                    apr_table_addn(e, name, hdrs[i].val);
+            }
+        }
+        else
+        {
+            name = wsgi_http2env(r->pool, hdrs[i].key);
+            if (name && hdrs[i].val)
+                apr_table_addn(e, name, hdrs[i].val);
+        }
+    }
+
+    /*
+     * Server identity and connection details. Match ap_add_common_vars()
+     * except for the deliberate omissions described in the file-level
+     * comment above (REMOTE_HOST, REMOTE_IDENT, SERVER_SIGNATURE,
+     * PATH/library-path variables).
+     */
+
+    apr_table_addn(e, "SERVER_SOFTWARE", ap_get_server_banner());
+    apr_table_addn(e, "SERVER_NAME",
+                   ap_escape_html(r->pool, ap_get_server_name_for_url(r)));
+    apr_table_addn(e, "SERVER_ADDR", c->local_ip);
+    apr_table_addn(e, "SERVER_PORT",
+                   apr_psprintf(r->pool, "%u", ap_get_server_port(r)));
+    apr_table_addn(e, "REMOTE_ADDR", r->useragent_ip);
+    apr_table_addn(e, "DOCUMENT_ROOT", ap_document_root(r));
+    apr_table_setn(e, "REQUEST_SCHEME", ap_http_scheme(r));
+    apr_table_addn(e, "CONTEXT_PREFIX", ap_context_prefix(r));
+    apr_table_addn(e, "CONTEXT_DOCUMENT_ROOT", ap_context_document_root(r));
+
+    if (s->server_admin)
+        apr_table_addn(e, "SERVER_ADMIN", s->server_admin);
+
+    if (apr_table_get(r->notes, "proxy-noquery") &&
+        (q = ap_strchr(r->filename, '?')))
+    {
+        apr_table_addn(e, "SCRIPT_FILENAME",
+                       apr_pstrmemdup(r->pool, r->filename,
+                                      q - r->filename));
+    }
+    else
+    {
+        apr_table_addn(e, "SCRIPT_FILENAME", r->filename);
+    }
+
+    apr_table_addn(e, "REMOTE_PORT",
+                   apr_itoa(r->pool, c->client_addr->port));
+
+    if (r->user)
+    {
+        apr_table_addn(e, "REMOTE_USER", r->user);
+    }
+    else if (r->prev)
+    {
+        request_rec *back = r->prev;
+
+        while (back)
+        {
+            if (back->user)
+            {
+                apr_table_addn(e, "REDIRECT_REMOTE_USER", back->user);
+                break;
+            }
+            back = back->prev;
+        }
+    }
+
+    if (r->ap_auth_type)
+        apr_table_addn(e, "AUTH_TYPE", r->ap_auth_type);
+
+    if (r->prev)
+    {
+        if (conf->qualify_redirect_url != AP_CORE_CONFIG_ON)
+        {
+            if (r->prev->uri)
+                apr_table_addn(e, "REDIRECT_URL", r->prev->uri);
+        }
+        else
+        {
+            apr_uri_t *uri = &r->prev->parsed_uri;
+
+            if (!uri->scheme)
+                uri->scheme = (char *)ap_http_scheme(r->prev);
+            if (!uri->port)
+            {
+                uri->port = ap_get_server_port(r->prev);
+                uri->port_str = apr_psprintf(r->pool, "%u", uri->port);
+            }
+            if (!uri->hostname)
+                uri->hostname = (char *)ap_get_server_name_for_url(r->prev);
+
+            apr_table_addn(e, "REDIRECT_URL",
+                           apr_uri_unparse(r->pool, uri, 0));
+        }
+
+        if (r->prev->args)
+            apr_table_addn(e, "REDIRECT_QUERY_STRING", r->prev->args);
+    }
+
+    /*
+     * CGI request-line variables, transcribed from ap_add_cgi_vars().
+     * Use setn so these win over any pre-existing entries inherited
+     * via the temp table. The PATH_TRANSLATED block is deliberately
+     * omitted — that is the subrequest we are avoiding. GATEWAY_INTERFACE
+     * is also omitted: it is not required by PEP 3333 and the "CGI/1.1"
+     * value upstream sets is misleading for a WSGI environment.
+     */
+
+    apr_table_setn(e, "SERVER_PROTOCOL", r->protocol);
+    apr_table_setn(e, "REQUEST_METHOD", r->method);
+    apr_table_setn(e, "QUERY_STRING", r->args ? r->args : "");
+
+    if (conf->cgi_var_rules)
+    {
+        request_uri_rule = apr_hash_get(conf->cgi_var_rules, "REQUEST_URI",
+                                        APR_HASH_KEY_STRING);
+        if (request_uri_rule && !strcmp(request_uri_rule, "current-uri"))
+            request_uri_from_original = 0;
+    }
+    apr_table_setn(e, "REQUEST_URI",
+                   request_uri_from_original ? wsgi_original_uri(r) : r->uri);
+
+    if (!strcmp(r->protocol, "INCLUDED"))
+    {
+        apr_table_setn(e, "SCRIPT_NAME", r->uri);
+        if (r->path_info && *r->path_info)
+            apr_table_setn(e, "PATH_INFO", r->path_info);
+    }
+    else if (!r->path_info || !*r->path_info)
+    {
+        apr_table_setn(e, "SCRIPT_NAME", r->uri);
+    }
+    else
+    {
+        int path_info_start = ap_find_path_info(r->uri, r->path_info);
+
+        apr_table_setn(e, "SCRIPT_NAME",
+                       apr_pstrndup(r->pool, r->uri, path_info_start));
+        apr_table_setn(e, "PATH_INFO", r->path_info);
+    }
+
+    /* PATH_TRANSLATED deliberately omitted (would require subrequest). */
+
+    if (e != r->subprocess_env)
+        apr_table_overlap(r->subprocess_env, e, APR_OVERLAP_TABLES_SET);
+}
+
 void wsgi_build_environment(request_rec *r)
 {
     WSGIRequestConfig *config = NULL;
@@ -683,8 +923,18 @@ void wsgi_build_environment(request_rec *r)
 
     /* Populate environment with standard CGI variables. */
 
-    ap_add_cgi_vars(r);
-    ap_add_common_vars(r);
+    /*
+     * Replaced by wsgi_add_vars_to_environment() below to avoid the
+     * subrequest that ap_add_cgi_vars() issues when computing
+     * PATH_TRANSLATED, and to skip variables irrelevant to WSGI
+     * (REMOTE_HOST, REMOTE_IDENT, PATH, library-path vars, etc.).
+     * See the comment above wsgi_add_vars_to_environment() for details.
+     */
+
+    /* ap_add_cgi_vars(r); */
+    /* ap_add_common_vars(r); */
+
+    wsgi_add_vars_to_environment(r);
 
     /*
      * Mutate a HEAD request into a GET request. This is

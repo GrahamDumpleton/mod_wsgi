@@ -137,6 +137,30 @@ Features Changed
   to load) and now emits an ``INFO``-level deprecation notice on
   startup; it will be removed in a future release.
 
+* Population of the standard CGI variables in the WSGI environment
+  no longer goes through Apache's ``ap_add_cgi_vars()`` and
+  ``ap_add_common_vars()`` helpers; mod_wsgi now sets the same
+  variables itself. The motivation is ``ap_add_cgi_vars()``: its
+  only way to compute ``PATH_TRANSLATED`` is to issue an Apache
+  subrequest via ``ap_sub_req_lookup_uri()`` against the request's
+  ``PATH_INFO``, which reruns translation hooks and can have
+  surprising side effects. ``PATH_TRANSLATED`` is not used by WSGI
+  applications and is not part of PEP 3333, but the upstream API
+  exposes no way to skip just that one variable, so the rest of
+  what the two functions do had to be replicated. The replacement
+  also drops a small set of variables that were either irrelevant
+  or actively undesirable for an in-process WSGI interpreter:
+  ``PATH_TRANSLATED`` (as above), ``GATEWAY_INTERFACE`` (PEP 3333
+  does not require it and the ``CGI/1.1`` value was misleading),
+  ``SERVER_SIGNATURE`` (an HTML blob), ``REMOTE_HOST`` (would
+  trigger a reverse-DNS lookup when ``HostnameLookups`` is on),
+  ``REMOTE_IDENT`` (would trigger an RFC 1413 ident lookup when
+  ``IdentityCheck`` is on), and ``PATH`` along with the various
+  platform library-path variables (``LD_LIBRARY_PATH``,
+  ``DYLD_LIBRARY_PATH``, etc.) that mattered only for forked CGI
+  children. Applications that depended on any of these will need
+  to source the value another way.
+
 Features Removed
 ----------------
 
