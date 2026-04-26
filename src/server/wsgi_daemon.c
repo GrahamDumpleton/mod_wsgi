@@ -2519,15 +2519,15 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
     if (wsgi_deadlock_timeout)
     {
+        rv = apr_thread_create(&reaper, thread_attr, wsgi_deadlock_thread,
+                               daemon, p);
+
         if (rv != APR_SUCCESS)
         {
             wsgi_log_error(APLOG_ERR, rv, wsgi_server,
                            "Couldn't create deadlock thread in daemon "
                            "process '%s'.", daemon->group->name);
         }
-
-        rv = apr_thread_create(&reaper, thread_attr, wsgi_deadlock_thread,
-                               daemon, p);
     }
 
     /* Start telemetry reporter if configured. */
@@ -3526,7 +3526,7 @@ int wsgi_start_daemons(apr_pool_t *p)
 
             if (status != APR_SUCCESS)
             {
-                wsgi_log_error(APLOG_CRIT, errno, wsgi_server, WSGI_APLOGNO(0030)
+                wsgi_log_error(APLOG_CRIT, status, wsgi_server, WSGI_APLOGNO(0030)
                                "Unable to create accept lock '%s'. "
                                "Daemon group will not start.",
                                entry->mutex_path);
@@ -3771,7 +3771,7 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (!magic)
     {
-        wsgi_log_error(APLOG_ALERT, rv, wsgi_server, WSGI_APLOGNO(0033)
+        wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0033)
                        "Request origin could not be validated; "
                        "missing magic token.");
 
@@ -3789,7 +3789,7 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (strcmp(magic, hash) != 0)
     {
-        wsgi_log_error(APLOG_ALERT, rv, wsgi_server, WSGI_APLOGNO(0034)
+        wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0034)
                        "Request origin could not be validated; "
                        "magic token mismatch.");
 
@@ -3829,7 +3829,7 @@ int wsgi_hook_daemon_handler(conn_rec *c)
         }
         else
         {
-            wsgi_log_error(APLOG_ERR, rv, wsgi_server,
+            wsgi_log_error(APLOG_ERR, 0, wsgi_server,
                            "WSGI script '%s' not located within chroot "
                            "directory '%s'.", path, root);
 
