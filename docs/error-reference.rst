@@ -924,3 +924,170 @@ WSGI0034 — Request origin could not be validated (magic token mismatch)
 
 :Operator action:
    Treat as a security event. Same investigation as :ref:`WSGI0033`.
+
+.. _WSGI0035:
+
+WSGI0035 — Failed to create Python sub-interpreter
+--------------------------------------------------
+
+:Severity: CRIT
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Failed to create interpreter '<name>'.``
+
+:Cause:
+   ``newInterpreterObject()`` failed during construction of a Python
+   sub-interpreter for an application group. Almost always a memory
+   exhaustion or a Python ``Py_NewInterpreter()`` failure. The
+   partially constructed sub-interpreter is cleaned up before this
+   message is logged.
+
+:Outcome:
+   The caller receives ``NULL`` and treats the application group as
+   unavailable. Subsequent attempts to acquire the same group will
+   re-attempt creation.
+
+:Operator action:
+   Check free memory and the Python build for compatibility. If
+   recurrent, raise the Apache ``LogLevel`` for the ``wsgi`` module
+   to ``debug`` to capture additional context, and check whether
+   third-party Python C extensions are misbehaving in
+   sub-interpreters.
+
+.. _WSGI0036:
+
+WSGI0036 — Python interpreter configuration failed
+--------------------------------------------------
+
+:Severity: CRIT
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Initializing Python failed: <message>``
+
+:Cause:
+   A ``PyConfig_*`` API call returned an error during ``wsgi_python_init()``.
+   The trailing ``<message>`` carries Python's own description of the
+   failure. Most often this is a memory allocation failure, an invalid
+   ``WSGIPythonHome`` value, or a Python build/version mismatch.
+
+:Outcome:
+   ``wsgi_python_init()`` returns failure; the Apache child or daemon
+   process logs the upstream :ref:`WSGI0001`, :ref:`WSGI0028`, or a
+   similar message and continues running with Python disabled.
+
+:Operator action:
+   Read the trailing Python message in the log entry; it identifies
+   the failed config step. Verify ``WSGIPythonHome`` and that the
+   Python build is compatible with this mod_wsgi build.
+
+.. _WSGI0037:
+
+WSGI0037 — Unable to initialise Python types for child process
+--------------------------------------------------------------
+
+:Severity: CRIT
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to initialise Python types for this child process.``
+
+:Cause:
+   One of mod_wsgi's internal Python type objects failed
+   ``PyType_Ready()`` during ``wsgi_python_child_init()``. This
+   normally indicates that the running Python version's C-API has
+   changed in a way mod_wsgi does not handle, or that Python state
+   is corrupted at the time of initialisation.
+
+:Outcome:
+   ``wsgi_python_initialized`` is set to 0 and the function returns
+   ``APR_EGENERAL``. The child or daemon process cannot serve Python
+   requests for the rest of its lifetime.
+
+:Operator action:
+   Verify the running Python version is supported by this build of
+   mod_wsgi. Rebuild mod_wsgi against the target Python if needed.
+   If recurrent on a supported version, escalate as a likely bug.
+
+.. _WSGI0038:
+
+WSGI0038 — Unable to create main Python interpreter wrapper
+-----------------------------------------------------------
+
+:Severity: CRIT
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to create wrapper object for main Python interpreter in
+   this child process.``
+
+:Cause:
+   ``newInterpreterObject(NULL)`` failed when creating the cached
+   wrapper for the main Python interpreter at child / daemon startup.
+   Almost always a memory exhaustion at the moment of allocation.
+
+:Outcome:
+   ``wsgi_python_initialized`` is set to 0 and the function returns
+   ``APR_EGENERAL``. The child or daemon process cannot serve Python
+   requests.
+
+:Operator action:
+   Check free memory on the host. Reduce ``threads=`` or
+   ``processes=`` on heavily configured daemon groups if the system
+   is at memory pressure during Apache startup.
+
+.. _WSGI0039:
+
+WSGI0039 — Unable to register main Python interpreter wrapper
+-------------------------------------------------------------
+
+:Severity: CRIT
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to record wrapper for main Python interpreter in
+   interpreters dictionary for this child process.``
+
+:Cause:
+   ``PyDict_SetItemString()`` failed when adding the freshly created
+   main-interpreter wrapper to mod_wsgi's interpreter cache. Almost
+   always a Python heap allocation failure.
+
+:Outcome:
+   ``wsgi_python_initialized`` is set to 0 and the function returns
+   ``APR_EGENERAL``. The child or daemon process cannot serve Python
+   requests.
+
+:Operator action:
+   Same as :ref:`WSGI0038`.
+
+.. _WSGI0040:
+
+WSGI0040 — Cannot acquire interpreter during daemon startup script preload
+--------------------------------------------------------------------------
+
+:Severity: CRIT
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Cannot acquire interpreter '<name>'.``
+
+:Cause:
+   ``wsgi_acquire_interpreter()`` returned ``NULL`` while a daemon
+   process was preloading the WSGI scripts named on
+   ``WSGIImportScript`` directives at startup. The most common upstream
+   cause is that Python initialisation failed for this daemon (see
+   :ref:`WSGI0028`) or sub-interpreter creation failed (see
+   :ref:`WSGI0035`).
+
+:Outcome:
+   The current preload entry is skipped; the daemon attempts to
+   continue with subsequent imports. If Python is broken globally,
+   most or all preloads will fail in turn.
+
+:Operator action:
+   Look earlier in the log for whichever of :ref:`WSGI0028`,
+   :ref:`WSGI0035`, :ref:`WSGI0036`, :ref:`WSGI0037`, :ref:`WSGI0038`,
+   or :ref:`WSGI0039` was emitted first; it identifies the underlying
+   cause.

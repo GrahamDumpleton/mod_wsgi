@@ -1176,7 +1176,7 @@ failure:
      * on self.
      */
 
-    wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server,
+    wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0035)
                           "Failed to create interpreter '%s'.", self->name);
 
     Py_XDECREF(module);
@@ -1644,7 +1644,7 @@ static int wsgi_python_init_failed(PyStatus status)
      * that a failure has occurred and bail out before continuing on
      * to call Py_InitializeFromConfig() with a broken config.
      */
-    wsgi_log_error(APLOG_CRIT, 0, wsgi_server,
+    wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0036)
                    "Initializing Python failed: %s", status.err_msg);
 
     return 1;
@@ -2625,7 +2625,7 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
 
     if (PyType_Ready(&Log_Type) < 0 || PyType_Ready(&Stream_Type) < 0 || PyType_Ready(&Input_Type) < 0 || PyType_Ready(&Adapter_Type) < 0 || PyType_Ready(&Restricted_Type) < 0 || PyType_Ready(&Interpreter_Type) < 0 || PyType_Ready(&Dispatch_Type) < 0 || PyType_Ready(&Auth_Type) < 0 || PyType_Ready(&SignalIntercept_Type) < 0 || PyType_Ready(&ShutdownInterpreter_Type) < 0)
     {
-        wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server,
+        wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0037)
                               "Unable to initialise Python types for this "
                               "child process.");
         PyErr_Clear();
@@ -2674,7 +2674,7 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
 
     if (!object)
     {
-        wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server,
+        wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0038)
                               "Unable to create wrapper object for main "
                               "Python interpreter in this child process.");
         PyErr_Clear();
@@ -2685,7 +2685,7 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
 
     if (PyDict_SetItemString(wsgi_interpreters, "", object) < 0)
     {
-        wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server,
+        wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0039)
                               "Unable to record wrapper for main Python "
                               "interpreter in interpreters dictionary "
                               "for this child process.");
@@ -2752,7 +2752,7 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
 
                 if (!interp)
                 {
-                    wsgi_log_error(APLOG_CRIT, 0, wsgi_server,
+                    wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0040)
                                    "Cannot acquire interpreter '%s'.",
                                    entry->application_group);
 
