@@ -130,8 +130,10 @@ WSGI0003 — Unable to change root directory for daemon process
    not exist, or the path is not a directory.
 
 :Outcome:
-   The daemon process exits. Apache will respawn it; the same failure
-   will recur until the underlying cause is fixed.
+   The daemon process exits after a 20-second anti-fork-bomb delay
+   (the failure is logged a second time via the :ref:`WSGI0025`
+   companion message). Apache respawns it; the same failure will recur
+   until the underlying cause is fixed.
 
 :Operator action:
    Verify that the chroot directory exists and that the Apache parent
@@ -158,7 +160,9 @@ WSGI0004 — Unable to set group id for daemon process
    install where the parent runs as root.
 
 :Outcome:
-   The daemon process exits. Apache respawns it.
+   The daemon process exits after a 20-second anti-fork-bomb delay
+   (the failure is logged a second time via the :ref:`WSGI0025`
+   companion message). Apache respawns it.
 
 :Operator action:
    Verify the group exists and that Apache is running with sufficient
@@ -184,7 +188,9 @@ WSGI0005 — Unable to set supplementary groups for daemon process
    groups.
 
 :Outcome:
-   The daemon process exits. Apache respawns it.
+   The daemon process exits after a 20-second anti-fork-bomb delay
+   (the failure is logged a second time via the :ref:`WSGI0025`
+   companion message). Apache respawns it.
 
 :Operator action:
    Confirm every group named in the directive exists. Verify Apache has
@@ -209,7 +215,9 @@ WSGI0006 — Unable to initialise default groups for daemon process
    process starts (NSS/LDAP unavailable, user removed, etc.).
 
 :Outcome:
-   The daemon process exits. Apache respawns it.
+   The daemon process exits after a 20-second anti-fork-bomb delay
+   (the failure is logged a second time via the :ref:`WSGI0025`
+   companion message). Apache respawns it.
 
 :Operator action:
    Verify the user named on ``WSGIDaemonProcess user=...`` resolves
@@ -234,9 +242,10 @@ WSGI0007 — Unable to change to user id for daemon process
    all.
 
 :Outcome:
-   The daemon process logs this and a follow-up :ref:`WSGI0008` message,
-   sleeps 20 seconds (anti-fork-bomb guard), and exits. Apache respawns
-   it; the same failure will recur until the cause is fixed.
+   The daemon process exits after a 20-second anti-fork-bomb delay
+   (the failure is logged a second time via the :ref:`WSGI0008`
+   companion message). Apache respawns it; the same failure will
+   recur until the cause is fixed.
 
 :Operator action:
    Check ``ulimit -u`` for the target user. If at or near the limit,
@@ -262,7 +271,8 @@ WSGI0008 — Daemon process left in unspecified state after setuid failure
    potentially elevated state.
 
 :Outcome:
-   The daemon process sleeps 20 seconds and exits. Apache respawns it.
+   The daemon process exits after a 20-second anti-fork-bomb delay.
+   Apache respawns it.
 
 :Operator action:
    See :ref:`WSGI0007`.
@@ -285,7 +295,9 @@ WSGI0009 — Unable to change working directory for daemon process
    exist, is not a directory, or is unreadable to the daemon user.
 
 :Outcome:
-   The daemon process exits. Apache respawns it.
+   The daemon process exits after a 20-second anti-fork-bomb delay
+   (the failure is logged a second time via the :ref:`WSGI0025`
+   companion message). Apache respawns it.
 
 :Operator action:
    Verify the path exists, is a directory, and is accessible to the
@@ -310,7 +322,9 @@ WSGI0010 — Unable to change working directory to user home directory
    because the home directory does not exist or is unreadable.
 
 :Outcome:
-   The daemon process exits. Apache respawns it.
+   The daemon process exits after a 20-second anti-fork-bomb delay
+   (the failure is logged a second time via the :ref:`WSGI0025`
+   companion message). Apache respawns it.
 
 :Operator action:
    Either give an explicit ``home=`` value on ``WSGIDaemonProcess``, or
@@ -335,7 +349,9 @@ WSGI0011 — Unable to determine home directory for daemon process user
    the time the daemon starts (NSS/LDAP unavailable, user removed).
 
 :Outcome:
-   The daemon process exits. Apache respawns it.
+   The daemon process exits after a 20-second anti-fork-bomb delay
+   (the failure is logged a second time via the :ref:`WSGI0025`
+   companion message). Apache respawns it.
 
 :Operator action:
    Verify the user resolves correctly (``getent passwd <uid>``), or set
@@ -565,7 +581,8 @@ WSGI0020 — Unable to create worker thread condition variable
 
 :Logged message:
    ``Unable to create worker thread <i> condition variable in daemon
-   process '<group>'. Daemon process will exit.``
+   process '<group>'. Daemon process will exit and be restarted after
+   a delay.``
 
 :Cause:
    ``apr_thread_cond_create()`` failed when initialising a worker
@@ -573,8 +590,8 @@ WSGI0020 — Unable to create worker thread condition variable
    always a memory or thread-resource exhaustion.
 
 :Outcome:
-   The daemon sends ``SIGTERM`` to its own pid and exits. Apache
-   respawns it.
+   The daemon process exits after a 20-second anti-fork-bomb delay.
+   Apache respawns it.
 
 :Operator action:
    Check memory and thread limits on the host. Reduce the
@@ -591,7 +608,8 @@ WSGI0021 — Unable to create worker thread mutex
 
 :Logged message:
    ``Unable to create worker thread <i> mutex in daemon process
-   '<group>'. Daemon process will exit.``
+   '<group>'. Daemon process will exit and be restarted after a
+   delay.``
 
 :Cause:
    ``apr_thread_mutex_create()`` failed when initialising a worker
@@ -599,8 +617,8 @@ WSGI0021 — Unable to create worker thread mutex
    memory or thread-resource exhaustion.
 
 :Outcome:
-   The daemon sends ``SIGTERM`` to its own pid and exits. Apache
-   respawns it.
+   The daemon process exits after a 20-second anti-fork-bomb delay.
+   Apache respawns it.
 
 :Operator action:
    See :ref:`WSGI0020`.
@@ -615,7 +633,7 @@ WSGI0022 — Unable to create worker thread
 
 :Logged message:
    ``Unable to create worker thread <i> in daemon process '<group>'.
-   Daemon process will exit.``
+   Daemon process will exit and be restarted after a delay.``
 
 :Cause:
    ``apr_thread_create()`` failed when starting a worker thread
@@ -623,8 +641,8 @@ WSGI0022 — Unable to create worker thread
    process or system level.
 
 :Outcome:
-   The daemon sends ``SIGTERM`` to its own pid and exits. Apache
-   respawns it.
+   The daemon process exits after a 20-second anti-fork-bomb delay.
+   Apache respawns it.
 
 :Operator action:
    Check thread limits (``ulimit -u``, ``/proc/sys/kernel/threads-max``)
@@ -703,7 +721,7 @@ WSGI0025 — Daemon process left in unspecified state after setup failure
    could not safely complete privilege-drop / chroot / chdir setup.
 
 :Outcome:
-   The daemon process sleeps 20 seconds (anti-fork-bomb) and exits.
+   The daemon process exits after a 20-second anti-fork-bomb delay.
    Apache respawns it.
 
 :Operator action:
@@ -729,8 +747,8 @@ WSGI0026 — Unable to initialise accept mutex in daemon process
    inaccessible to the daemon user after privilege drop.
 
 :Outcome:
-   The daemon process sleeps 20 seconds and exits. Apache respawns
-   it.
+   The daemon process exits after a 20-second anti-fork-bomb delay.
+   Apache respawns it.
 
 :Operator action:
    Verify ``WSGISocketPrefix`` points at a directory that is
@@ -756,7 +774,7 @@ WSGI0027 — Unable to initialise signal pipe in daemon process
    Almost always a file-descriptor or memory exhaustion.
 
 :Outcome:
-   The daemon process sleeps 20 seconds (anti-fork-bomb) and exits.
+   The daemon process exits after a 20-second anti-fork-bomb delay.
    Apache respawns it.
 
 :Operator action:

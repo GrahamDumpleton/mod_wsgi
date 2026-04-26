@@ -882,6 +882,21 @@ static void wsgi_exit_daemon_process(int status)
     exit(status);
 }
 
+/*
+ * Exit the daemon process after applying the anti-fork-bomb delay.
+ * Use only at daemon-process initialisation failures where the next
+ * fork would deterministically hit the same problem (file descriptors
+ * exhausted, RLIMIT_NPROC reached, missing user, missing socket
+ * directory, broken Python install, etc). The 20-second delay caps
+ * Apache's respawn rate at 3/minute under a persistent failure.
+ */
+
+static void wsgi_daemon_init_failure_exit(void)
+{
+    sleep(20);
+    wsgi_exit_daemon_process(-1);
+}
+
 static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon);
 
 static void wsgi_manage_process(int reason, void *data, apr_wait_t status)
@@ -1140,17 +1155,12 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
                            (long)daemon->group->uid);
 
             /*
-             * On true UNIX systems this should always succeed at
-             * this point. With certain Linux kernel versions though
-             * we can get back EAGAIN where the target user had
-             * reached their process limit. In that case will be left
-             * running as wrong user. Just exit on all failures to be
-             * safe. Don't die immediately to avoid a fork bomb.
-             *
-             * We could just return -1 here and let the caller do the
-             * sleep() and exit() but this failure is critical enough
-             * that we still do it here so it is obvious that the issue
-             * is being addressed.
+             * On true UNIX systems setuid should always succeed at
+             * this point. With certain Linux kernel versions we can
+             * get back EAGAIN where the target user has reached their
+             * process limit; the daemon would otherwise be left
+             * running as the Apache user, so just exit on any
+             * failure.
              */
 
             wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0008)
@@ -1158,9 +1168,7 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
                            "left in unspecified state. Daemon process "
                            "will exit and be restarted after a delay.");
 
-            sleep(20);
-
-            wsgi_exit_daemon_process(-1);
+            wsgi_daemon_init_failure_exit();
 
             return -1;
         }
@@ -1717,6 +1725,15 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                                    "Daemon process will shut down.",
                                    group->socket_path);
 
+                    /*
+                     * SIGTERM the daemon's main thread so it observes
+                     * the shutdown signal via the signal pipe and
+                     * starts the orderly shutdown sequence. The brief
+                     * sleep here is to give the main thread a chance
+                     * to act before this worker thread breaks out of
+                     * its loop; it is not an anti-fork-bomb guard.
+                     */
+
                     wsgi_daemon_shutdown++;
                     kill(getpid(), SIGTERM);
                     sleep(5);
@@ -1769,6 +1786,14 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                            "Unable to poll daemon socket for '%s'. "
                            "Daemon process will shut down.",
                            group->socket_path);
+
+            /*
+             * SIGTERM the daemon's main thread so it observes the
+             * shutdown signal via the signal pipe. The brief sleep
+             * gives the main thread a chance to act before this
+             * worker breaks out of its loop; it is not an
+             * anti-fork-bomb guard.
+             */
 
             wsgi_daemon_shutdown++;
             kill(getpid(), SIGTERM);
@@ -2541,16 +2566,11 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
             wsgi_log_error(APLOG_ALERT, rv, wsgi_server, WSGI_APLOGNO(0020)
                            "Unable to create worker thread %d condition "
                            "variable in daemon process '%s'. Daemon "
-                           "process will exit.",
+                           "process will exit and be restarted after "
+                           "a delay.",
                            i, daemon->group->name);
 
-            /*
-             * Try to force an exit of the process if fail
-             * to create the worker threads.
-             */
-
-            kill(getpid(), SIGTERM);
-            sleep(5);
+            wsgi_daemon_init_failure_exit();
         }
 
         rv = apr_thread_mutex_create(&thread->mutex,
@@ -2560,16 +2580,11 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
         {
             wsgi_log_error(APLOG_ALERT, rv, wsgi_server, WSGI_APLOGNO(0021)
                            "Unable to create worker thread %d mutex in "
-                           "daemon process '%s'. Daemon process will exit.",
+                           "daemon process '%s'. Daemon process will "
+                           "exit and be restarted after a delay.",
                            i, daemon->group->name);
 
-            /*
-             * Try to force an exit of the process if fail
-             * to create the worker threads.
-             */
-
-            kill(getpid(), SIGTERM);
-            sleep(5);
+            wsgi_daemon_init_failure_exit();
         }
 
         /* Now create the actual thread. */
@@ -2586,16 +2601,11 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
         {
             wsgi_log_error(APLOG_ALERT, rv, wsgi_server, WSGI_APLOGNO(0022)
                            "Unable to create worker thread %d in daemon "
-                           "process '%s'. Daemon process will exit.",
+                           "process '%s'. Daemon process will exit and "
+                           "be restarted after a delay.",
                            i, daemon->group->name);
 
-            /*
-             * Try to force an exit of the process if fail
-             * to create the worker threads.
-             */
-
-            kill(getpid(), SIGTERM);
-            sleep(5);
+            wsgi_daemon_init_failure_exit();
         }
     }
 
@@ -2858,21 +2868,12 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (wsgi_setup_access(daemon) == -1)
         {
-            /*
-             * If we get any failure from setting up the appropriate
-             * permissions or working directory for the daemon process
-             * then we exit the process. Don't die immediately to avoid
-             * a fork bomb.
-             */
-
             wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0025)
                            "Daemon process configuration failed; process "
                            "left in unspecified state. Daemon process "
                            "will exit and be restarted after a delay.");
 
-            sleep(20);
-
-            wsgi_exit_daemon_process(-1);
+            wsgi_daemon_init_failure_exit();
         }
 
         /* Reinitialise accept mutex in daemon process. */
@@ -2890,11 +2891,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
                                "exit and be restarted after a delay.",
                                daemon->group->mutex_path);
 
-                /* Don't die immediately to avoid a fork bomb. */
-
-                sleep(20);
-
-                wsgi_exit_daemon_process(-1);
+                wsgi_daemon_init_failure_exit();
             }
         }
 
@@ -3005,11 +3002,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
                            "be restarted after a delay.",
                            daemon->group->name);
 
-            /* Don't die immediately to avoid a fork bomb. */
-
-            sleep(20);
-
-            wsgi_exit_daemon_process(-1);
+            wsgi_daemon_init_failure_exit();
         }
 
         wsgi_daemon_shutdown = 0;
