@@ -108,9 +108,10 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
 
         if (rv != APR_SUCCESS)
         {
-            wsgi_log_rerror(APLOG_ERR, rv, r,
+            wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0115)
                             "Unable to create socket to connect to WSGI "
-                            "daemon process.");
+                            "daemon process '%s' on '%s'.",
+                            daemon->name, daemon->socket_path);
 
             return HTTP_INTERNAL_SERVER_ERROR;
         }

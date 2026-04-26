@@ -592,7 +592,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     if (!config->auth_user_script)
     {
-        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0041)
                        "Location of WSGI user authentication script not "
                        "provided.");
 
@@ -611,8 +611,9 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_ERR, 0, r,
-                        "Cannot acquire interpreter '%s'.", group);
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0042)
+                        "Unable to acquire Python sub-interpreter '%s' "
+                        "for user authentication hook.", group);
 
         return AUTH_GENERAL_ERROR;
     }
@@ -1332,11 +1333,12 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                     }
                     else
                     {
-                        wsgi_log_rerror_locked(APLOG_ERR, 0, r,
-                                               "Groups for user returned "
-                                               "from '%s' must be an "
-                                               "iterable sequence of byte "
-                                               "strings.", script);
+                        wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0051)
+                                               "Result returned from "
+                                               "'groups_for_user' in '%s' "
+                                               "is not iterable; expected "
+                                               "an iterable sequence of "
+                                               "byte strings.", script);
                     }
 
                     Py_DECREF(result);

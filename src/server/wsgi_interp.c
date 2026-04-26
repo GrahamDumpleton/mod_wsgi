@@ -2020,8 +2020,9 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
         if (!handle)
         {
-            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                  "Cannot create interpreter '%s'.", name);
+            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0103)
+                                  "Unable to create Python "
+                                  "sub-interpreter '%s'.", name);
 
             PyErr_Print();
             PyErr_Clear();

@@ -37,7 +37,15 @@ CRIT
 
 ERR
     An error scoped to a single request, single thread, or a degraded
-    but still-running subsystem. (Currently not assigned error codes.)
+    but still-running subsystem. The daemon process or Apache child
+    continues to run; the operation that fired the error did not
+    complete successfully.
+
+WARNING
+    A noteworthy condition that does not in itself prevent operation:
+    a configured limit could not be applied, an optional feature is
+    unavailable, a transient situation will be retried, or a
+    diagnostic check predicts a later failure.
 
 Each entry below records the severity at which the message is emitted,
 along with the cause, the immediate outcome (what mod_wsgi does next),
@@ -1130,3 +1138,208 @@ WSGI0040 — Unable to acquire Python sub-interpreter during daemon startup scri
    :ref:`WSGI0035`, :ref:`WSGI0036`, :ref:`WSGI0037`, :ref:`WSGI0038`,
    or :ref:`WSGI0039` was emitted first; it identifies the underlying
    cause.
+
+.. _WSGI0041:
+
+WSGI0041 — Location of WSGI user authentication script not provided
+-------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_auth.c``
+
+:Logged message:
+   ``Location of WSGI user authentication script not provided.``
+
+:Cause:
+   The Basic-auth password-check hook (``wsgi_check_password``) ran
+   for an authenticated request but no ``WSGIAuthUserScript``
+   directive was configured for the request's scope. Apache invoked
+   mod_wsgi as the auth provider via ``AuthBasicProvider wsgi`` but
+   mod_wsgi has no script to call.
+
+:Outcome:
+   The hook returns ``AUTH_GENERAL_ERROR``; Apache responds with
+   500 Internal Server Error to the client.
+
+:Operator action:
+   Configure ``WSGIAuthUserScript`` for the scope (typically the
+   ``<Location>`` or ``<Directory>`` that requires authentication),
+   or remove the ``AuthBasicProvider wsgi`` directive if mod_wsgi is
+   not the intended auth provider.
+
+.. _WSGI0042:
+
+WSGI0042 — Unable to acquire Python sub-interpreter for user authentication hook
+--------------------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_auth.c``
+
+:Logged message:
+   ``Unable to acquire Python sub-interpreter '<name>' for user
+   authentication hook.``
+
+:Cause:
+   ``wsgi_acquire_interpreter()`` returned ``NULL`` while the
+   Basic-auth password-check hook (``wsgi_check_password``) was
+   trying to enter the named sub-interpreter. The most common
+   upstream causes are: Python initialisation failed for this daemon
+   process (see :ref:`WSGI0028`), or the sub-interpreter could not
+   be created on demand (see :ref:`WSGI0103`).
+
+:Outcome:
+   The hook returns ``AUTH_GENERAL_ERROR``; Apache responds with
+   500 Internal Server Error to the client.
+
+:Operator action:
+   Look earlier in the log for any prior Python-initialisation or
+   sub-interpreter-creation failure in this daemon process; that
+   identifies the underlying problem. If Python initialisation has
+   succeeded, check for memory pressure on the host.
+
+.. _WSGI0051:
+
+WSGI0051 — Result of groups_for_user is not iterable
+----------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_auth.c``
+
+:Logged message:
+   ``Result returned from 'groups_for_user' in '<script>' is not
+   iterable; expected an iterable sequence of byte strings.``
+
+:Cause:
+   The Python ``groups_for_user(environ, user)`` callable in the
+   configured ``WSGIAuthGroupScript`` returned a value that does not
+   support iteration (``PyObject_GetIter()`` failed). mod_wsgi
+   expects the callable to return an iterable, typically a list or
+   tuple, whose items are byte strings naming the groups the
+   authenticated user belongs to.
+
+:Outcome:
+   Group lookup fails. ``wsgi_groups_for_user`` returns
+   ``HTTP_INTERNAL_SERVER_ERROR`` to its caller; authorization for
+   the request is denied.
+
+:Operator action:
+   Fix the application's ``groups_for_user`` callable so that it
+   returns an iterable.
+
+.. _WSGI0070:
+
+WSGI0070 — Unable to create reaper thread during daemon shutdown
+----------------------------------------------------------------
+
+:Severity: WARNING
+:Source: ``src/server/wsgi_daemon.c``
+
+:Logged message:
+   ``Unable to create reaper thread in daemon process '<group>';
+   shutdown timeout will not be enforced.``
+
+:Cause:
+   ``apr_thread_create()`` failed while the daemon process was
+   spawning the reaper thread during graceful shutdown. The reaper
+   thread aborts the daemon process if shutdown does not complete
+   within the configured ``shutdown-timeout``.
+
+:Outcome:
+   Daemon shutdown proceeds without the forced-abort timer. If the
+   daemon hangs during graceful shutdown it will not be aborted by
+   mod_wsgi; Apache or an external supervisor must terminate it.
+
+:Operator action:
+   No immediate action required for normal shutdowns. If a daemon
+   hangs at shutdown after this warning fires, ``kill`` it manually;
+   investigate the underlying APR error code (memory or thread-limit
+   pressure) reported in the log line.
+
+.. _WSGI0076:
+
+WSGI0076 — Unable to set CPU time limit for daemon process
+----------------------------------------------------------
+
+:Severity: WARNING
+:Source: ``src/server/wsgi_daemon.c``
+
+:Logged message:
+   ``Unable to set CPU time limit of <N> seconds for daemon process
+   '<group>'; daemon will run without the configured limit.``
+
+:Cause:
+   ``setrlimit(RLIMIT_CPU, ...)`` failed when the daemon was
+   applying the ``cpu-time-limit=`` directive. Either the platform
+   does not support ``RLIMIT_CPU``, the requested limit exceeds the
+   system-imposed hard limit for the daemon's user, or another
+   OS-level constraint blocked the call.
+
+:Outcome:
+   The daemon continues running without a CPU time limit. The
+   ``cpu-time-limit=`` directive has no effect for this process.
+
+:Operator action:
+   Verify the requested limit against the system's hard limit (for
+   the user the daemon runs as) using ``ulimit -t`` or
+   ``/etc/security/limits.conf``. Lower ``cpu-time-limit=`` if the
+   system disallows the requested value, or remove the directive if
+   the platform does not support ``RLIMIT_CPU``.
+
+.. _WSGI0103:
+
+WSGI0103 — Unable to create Python sub-interpreter on demand
+------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to create Python sub-interpreter '<name>'.``
+
+:Cause:
+   ``newInterpreterObject()`` returned ``NULL`` while
+   ``wsgi_acquire_interpreter()`` was lazily creating the named
+   sub-interpreter on the first request that needed it. Almost
+   always a memory exhaustion at the moment of allocation, but a
+   corrupted Python state can also surface here. Any Python-level
+   traceback is printed via ``PyErr_Print()`` to the Apache error
+   log immediately after this message.
+
+:Outcome:
+   ``wsgi_acquire_interpreter()`` returns ``NULL``. The caller
+   (typically an auth or dispatch hook) returns 500 to the client.
+   Subsequent requests for the same sub-interpreter will retry
+   creation.
+
+:Operator action:
+   Check free memory on the host. If the failure repeats, look for
+   any preceding :ref:`WSGI0001` or :ref:`WSGI0028` message
+   indicating the embedded interpreter is broken. The startup-time
+   counterpart is :ref:`WSGI0035`.
+
+.. _WSGI0115:
+
+WSGI0115 — Unable to create socket to connect to WSGI daemon process
+--------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Unable to create socket to connect to WSGI daemon process
+   '<group>' on '<path>'.``
+
+:Cause:
+   ``apr_socket_create(AF_UNIX, SOCK_STREAM, ...)`` failed in the
+   Apache child process when preparing to forward a request to the
+   named WSGI daemon. Almost always file-descriptor exhaustion or
+   memory pressure in the Apache child.
+
+:Outcome:
+   The current request fails with ``HTTP_INTERNAL_SERVER_ERROR``
+   (500). The Apache child continues serving subsequent requests.
+
+:Operator action:
+   Check the Apache child's open-file-descriptor limit (``ulimit -n``
+   for the Apache user) and overall memory pressure on the host. If
+   the failure is rare and transient, no action is required.

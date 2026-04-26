@@ -2719,9 +2719,10 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_WARNING, rv, wsgi_server,
-                           "Couldn't create reaper thread in daemon "
-                           "process '%s'.", daemon->group->name);
+            wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0070)
+                           "Unable to create reaper thread in daemon "
+                           "process '%s'; shutdown timeout will not be "
+                           "enforced.", daemon->group->name);
         }
     }
 
@@ -3037,9 +3038,10 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (result == -1)
             {
-                wsgi_log_error(APLOG_WARNING, errno, wsgi_server,
-                               "Couldn't set CPU time limit of %d seconds "
-                               "for process '%s'.",
+                wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0076)
+                               "Unable to set CPU time limit of %d seconds "
+                               "for daemon process '%s'; daemon will run "
+                               "without the configured limit.",
                                daemon->group->cpu_time_limit,
                                daemon->group->name);
             }
