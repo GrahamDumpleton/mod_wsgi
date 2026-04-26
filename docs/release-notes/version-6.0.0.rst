@@ -284,3 +284,14 @@ Bugs Fixed
   observed duplicate module loads on Windows/macOS and cache
   collisions on Linux; in practice almost no deployments mount scripts
   that way, so the bug has been latent.
+
+* Fixed ``mod_wsgi-express`` so that supplying SSL certificate options
+  (``--ssl-certificate``, ``--ssl-certificate-file``,
+  ``--ssl-certificate-key-file``, ``--ssl-ca-certificate-file``, or
+  ``--ssl-certificate-chain-file``) without also specifying
+  ``--https-port`` now fails with a clear error. Previously the SSL
+  options were silently dropped from the generated Apache configuration
+  because the HTTPS ``VirtualHost`` block is only emitted when
+  ``--https-port`` is set, leaving operators with a server that
+  listened only on plain HTTP and no indication that their TLS
+  configuration had been ignored.

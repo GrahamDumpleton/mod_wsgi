@@ -2713,6 +2713,15 @@ def _cmd_setup_server(command, args, options):
         options['ssl_certificate_chain_file'] = os.path.abspath(
                 options['ssl_certificate_chain_file'])
 
+    if (options['ssl_certificate_file'] or
+            options['ssl_certificate_key_file'] or
+            options['ssl_ca_certificate_file'] or
+            options['ssl_certificate_chain_file']) and \
+            not options['https_port']:
+        raise ValueError(
+            '--https-port must be specified when SSL certificate '
+            'options are provided.')
+
     if options['entry_point']:
         args = [options['entry_point']]
 
