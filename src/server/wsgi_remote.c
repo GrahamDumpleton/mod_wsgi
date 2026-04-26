@@ -144,7 +144,7 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
             {
                 if ((apr_time_now() - start_time) < daemon->connect_timeout)
                 {
-                    wsgi_log_rerror(APLOG_DEBUG, rv, r,
+                    wsgi_log_rerror(APLOG_TRACE1, rv, r,
                                     "Connection attempt #%d to WSGI "
                                     "daemon process '%s' on '%s' failed, "
                                     "sleeping before retrying again.",

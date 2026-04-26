@@ -237,7 +237,7 @@ static void wsgi_process_forwarded_for(request_rec *r,
                 }
                 else
                 {
-                    wsgi_log_rerror(APLOG_DEBUG, 0, r,
+                    wsgi_log_rerror(APLOG_TRACE1, 0, r,
                                     "Forwarded IP of \"%s\" is not a valid "
                                     "IP address.", items[i]);
                     break;
@@ -545,7 +545,7 @@ static unsigned int wsgi_process_proxy_headers(request_rec *r)
             }
             else
             {
-                wsgi_log_rerror(APLOG_DEBUG, 0, r,
+                wsgi_log_rerror(APLOG_TRACE1, 0, r,
                                 "REMOTE_ADDR of \"%s\" is not a valid IP "
                                 "address.", client_ip);
 

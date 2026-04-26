@@ -1496,7 +1496,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
         {
             if (!exception_when_aborted)
             {
-                wsgi_log_rerror_locked(APLOG_DEBUG, 0, self->r,
+                wsgi_log_rerror_locked(APLOG_TRACE1, 0, self->r,
                                        "Client closed connection.");
             }
             else
@@ -1552,7 +1552,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
                                              apr_strerror(rv, status_buffer,
                                                           sizeof(status_buffer) - 1));
 
-                wsgi_log_rerror_locked(APLOG_DEBUG, 0, self->r,
+                wsgi_log_rerror_locked(APLOG_TRACE1, 0, self->r,
                                        "%s.", error_message);
             }
             else
@@ -1600,7 +1600,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
     {
         if (!exception_when_aborted)
         {
-            wsgi_log_rerror_locked(APLOG_DEBUG, 0, self->r,
+            wsgi_log_rerror_locked(APLOG_TRACE1, 0, self->r,
                                    "Client closed connection.");
         }
         else
@@ -2479,7 +2479,7 @@ int Adapter_run(AdapterObject *self, PyObject *object)
                                           self->output_length != self->content_length) ||
                                          (self->output_length > self->content_length)))
         {
-            wsgi_log_rerror_locked(APLOG_DEBUG, 0, self->r,
+            wsgi_log_rerror_locked(APLOG_TRACE1, 0, self->r,
                                    "Content length mismatch, expected %s, "
                                    "response generated %s: %s",
                                    apr_off_t_toa(self->r->pool,
