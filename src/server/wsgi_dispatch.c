@@ -231,7 +231,7 @@ int wsgi_execute_dispatch(request_rec *r)
 
     if (!config->dispatch_script)
     {
-        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0085)
                        "Location of WSGI dispatch script not provided.");
 
         return HTTP_INTERNAL_SERVER_ERROR;
@@ -249,8 +249,9 @@ int wsgi_execute_dispatch(request_rec *r)
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_ERR, 0, r,
-                        "Cannot acquire interpreter '%s'.", group);
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0086)
+                        "Unable to acquire Python sub-interpreter '%s' "
+                        "for dispatch hook.", group);
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }

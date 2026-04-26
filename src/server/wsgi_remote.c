@@ -171,7 +171,7 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
                 }
                 else
                 {
-                    wsgi_log_rerror(APLOG_ERR, rv, r,
+                    wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0116)
                                     "Unable to connect to WSGI daemon "
                                     "process '%s' on '%s' after multiple "
                                     "attempts as listener backlog limit was "
@@ -185,7 +185,7 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
             }
             else
             {
-                wsgi_log_rerror(APLOG_ERR, rv, r,
+                wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0117)
                                 "Unable to connect to WSGI daemon process "
                                 "'%s' on '%s' as user with uid=%ld.",
                                 daemon->name, daemon->socket_path,
@@ -946,8 +946,9 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
             if (rv == APR_TIMEUP)
             {
-                wsgi_log_rerror(APLOG_ERR, rv, r,
-                                "Failed to proxy response to client.");
+                wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0118)
+                                "Unable to proxy response to client "
+                                "(read timeout).");
             }
 
             if (rv != APR_SUCCESS)
@@ -984,8 +985,9 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
         {
             apr_brigade_destroy(bb);
 
-            wsgi_log_rerror(APLOG_ERR, rv, r,
-                            "Failed to proxy response from daemon.");
+            wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0119)
+                            "Unable to proxy response from daemon to "
+                            "client.");
 
             /*
              * Don't flag error if couldn't read from daemon
@@ -1059,8 +1061,9 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
         if (rv == APR_TIMEUP)
         {
-            wsgi_log_rerror(APLOG_ERR, rv, r,
-                            "Failed to proxy response to client.");
+            wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0120)
+                            "Unable to proxy response to client "
+                            "(write timeout).");
         }
 
         if (rv != APR_SUCCESS)
@@ -1478,7 +1481,7 @@ int wsgi_execute_remote(request_rec *r)
 
     if ((rv = wsgi_send_request(r, config, daemon)) != APR_SUCCESS)
     {
-        wsgi_log_rerror(APLOG_ERR, rv, r,
+        wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0121)
                         "Unable to send request details to WSGI daemon "
                         "process '%s' on '%s'.",
                         daemon->name, daemon->socket_path);
@@ -1544,9 +1547,9 @@ int wsgi_execute_remote(request_rec *r)
 
             if (r->status != 200)
             {
-                wsgi_log_rerror(APLOG_ERR, 0, r,
+                wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0122)
                                 "Unexpected status from WSGI daemon "
-                                "process '%d'.", r->status);
+                                "process: %d.", r->status);
 
                 r->status_line = NULL;
 
@@ -1569,9 +1572,9 @@ int wsgi_execute_remote(request_rec *r)
 
             if (strcmp(r->status_line, "200 Rejected"))
             {
-                wsgi_log_rerror(APLOG_ERR, 0, r,
+                wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0123)
                                 "Unexpected status from WSGI daemon "
-                                "process '%d'.", r->status);
+                                "process: %d.", r->status);
 
                 r->status_line = NULL;
 
@@ -1592,9 +1595,9 @@ int wsgi_execute_remote(request_rec *r)
 
             if (retries >= maximum)
             {
-                wsgi_log_rerror(APLOG_ERR, 0, r,
+                wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0124)
                                 "Maximum number of WSGI daemon process "
-                                "restart connects reached '%d'.", maximum);
+                                "restart attempts reached: %d.", maximum);
                 return HTTP_SERVICE_UNAVAILABLE;
             }
 
@@ -1609,7 +1612,7 @@ int wsgi_execute_remote(request_rec *r)
 
             if ((rv = wsgi_send_request(r, config, daemon)) != APR_SUCCESS)
             {
-                wsgi_log_rerror(APLOG_ERR, rv, r,
+                wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0125)
                                 "Unable to send request details to WSGI "
                                 "daemon process '%s' on '%s'.",
                                 daemon->name, daemon->socket_path);
@@ -1668,7 +1671,7 @@ int wsgi_execute_remote(request_rec *r)
                                                   "error when proxying data to daemon process: %s",
                                          apr_strerror(rv, status_buffer, sizeof(status_buffer) - 1));
 
-            wsgi_log_rerror(APLOG_ERR, 0, r, "%s.", error_message);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0126) "%s.", error_message);
 
             if (APR_STATUS_IS_TIMEUP(rv))
                 return HTTP_REQUEST_TIME_OUT;
@@ -1704,7 +1707,7 @@ int wsgi_execute_remote(request_rec *r)
                                                           "error when proxying data to daemon process: %s",
                                                  apr_strerror(rv, status_buffer, sizeof(status_buffer) - 1));
 
-                    wsgi_log_rerror(APLOG_ERR, 0, r, "%s.", error_message);
+                    wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0127) "%s.", error_message);
                 }
 
                 seen_eos = 1;
@@ -1738,7 +1741,7 @@ int wsgi_execute_remote(request_rec *r)
                                                       "error when proxying data to daemon process: %s",
                                              apr_strerror(rv, status_buffer, sizeof(status_buffer) - 1));
 
-                wsgi_log_rerror(APLOG_ERR, 0, r, "%s.", error_message);
+                wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0128) "%s.", error_message);
 
                 break;
             }
@@ -1771,7 +1774,7 @@ int wsgi_execute_remote(request_rec *r)
                                                       "error when proxying data to daemon process: %s",
                                              apr_strerror(rv, status_buffer, sizeof(status_buffer) - 1));
 
-                wsgi_log_rerror(APLOG_ERR, 0, r, "%s.", error_message);
+                wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0129) "%s.", error_message);
 
                 /* Daemon stopped reading, discard remainder. */
 

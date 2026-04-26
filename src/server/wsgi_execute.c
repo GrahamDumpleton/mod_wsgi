@@ -56,8 +56,9 @@ int wsgi_execute_script(request_rec *r)
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_ERR, 0, r,
-                        "Cannot acquire interpreter '%s'.",
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0087)
+                        "Unable to acquire Python sub-interpreter '%s' "
+                        "for WSGI request handler.",
                         config->application_group);
 
         return HTTP_INTERNAL_SERVER_ERROR;
@@ -118,9 +119,9 @@ int wsgi_execute_script(request_rec *r)
             module = PyImport_ImportModule(name);
 
             if (!module) {
-                wsgi_log_rerror_locked(APLOG_ERR, 0, r,
-                                       "Failed to import handler via "
-                                       "Python module reference %s.",
+                wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0088)
+                                       "Unable to import handler via "
+                                       "Python module reference '%s'.",
                                        script);
 
                 wsgi_log_python_error(r, NULL, r->filename, 0);
@@ -376,7 +377,7 @@ int wsgi_execute_script(request_rec *r)
         }
         else
         {
-            wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+            wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0089)
                                    "Target WSGI script '%s' does not "
                                    "contain WSGI application '%s'.",
                                    script, config->callable_object);

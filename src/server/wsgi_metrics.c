@@ -2686,7 +2686,7 @@ void wsgi_call_callbacks(const char *name, PyObject *callbacks,
             PyObject *value = NULL;
             PyObject *traceback = NULL;
 
-            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0112)
                                   "Exception occurred within event "
                                   "callback.");
 
@@ -2801,7 +2801,7 @@ void wsgi_publish_event(const char *name, PyObject *event)
     }
     else
     {
-        wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+        wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0113)
                               "Unable to import mod_wsgi when publishing "
                               "events.");
 
@@ -2812,7 +2812,7 @@ void wsgi_publish_event(const char *name, PyObject *event)
 
     if (!event_callbacks || !shutdown_callbacks)
     {
-        wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+        wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0114)
                               "Unable to find event subscribers.");
 
         PyErr_Clear();

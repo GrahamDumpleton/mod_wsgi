@@ -360,10 +360,11 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                 if (!res)
                 {
-                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0090)
                                           "Call to 'signal.signal()' to "
-                                          "register exit function failed, "
-                                          "ignoring.");
+                                          "register exit-function "
+                                          "callback failed; continuing "
+                                          "without callback.");
                 }
 
                 Py_XDECREF(res);
@@ -675,9 +676,11 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                     if (!result)
                     {
-                        wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                        wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0091)
                                               "Call to 'site.addsitedir()' "
-                                              "failed for '%s', stopping.",
+                                              "failed for '%s'; remaining "
+                                              "python-path entries will "
+                                              "not be added.",
                                               value);
                     }
 
@@ -702,11 +705,13 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                         if (!result)
                         {
-                            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0092)
                                                   "Call to "
                                                   "'site.addsitedir()' "
-                                                  "failed for '%s', "
-                                                  "stopping.", value);
+                                                  "failed for '%s'; "
+                                                  "remaining python-path "
+                                                  "entries will not be "
+                                                  "added.", value);
                         }
 
                         Py_XDECREF(result);
@@ -728,7 +733,7 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                 if (!result)
                 {
-                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0093)
                                           "Call to 'site.addsitedir()' "
                                           "failed for '%s'.", start);
                 }
@@ -741,7 +746,7 @@ InterpreterObject *newInterpreterObject(const char *name)
             }
             else
             {
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0094)
                                       "Unable to locate "
                                       "'site.addsitedir()'.");
             }
@@ -783,14 +788,15 @@ InterpreterObject *newInterpreterObject(const char *name)
         {
             if (!module)
             {
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0095)
                                       "Unable to import 'site' module.");
             }
 
             if (!path)
             {
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                      "Lookup for 'sys.path' failed.");
+                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0096)
+                                      "Unable to look up 'sys.path' "
+                                      "attribute on 'sys' module.");
             }
         }
     }
@@ -1359,13 +1365,15 @@ static void Interpreter_dealloc(InterpreterObject *self)
             PyObject *traceback = NULL;
 
             if (PyErr_ExceptionMatches(PyExc_SystemExit))
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0097)
                                       "SystemExit exception raised by "
-                                      "exit functions ignored.");
+                                      "Python atexit functions; "
+                                      "ignored.");
             else
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                      "Exception occurred within exit "
-                                      "functions.");
+                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0098)
+                                      "Exception occurred within Python "
+                                      "atexit functions during "
+                                      "interpreter shutdown.");
 
             PyErr_Fetch(&type, &value, &traceback);
             PyErr_NormalizeException(&type, &value, &traceback);
@@ -1534,7 +1542,7 @@ void wsgi_python_version(void)
 
     if (strcmp(compile, dynamic) != 0)
     {
-        wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
+        wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0099)
                        "Compiled for Python/%s but runtime using "
                        "Python/%s.", compile, dynamic);
     }
@@ -1810,31 +1818,31 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
 
             if (rv != APR_SUCCESS)
             {
-                wsgi_log_error(APLOG_WARNING, rv, wsgi_server,
-                               "Unable to stat Python home %s. Python "
-                               "interpreter may not be able to be "
-                               "initialized correctly. Verify the supplied "
-                               "path and access permissions for whole of "
-                               "the path.", python_home);
+                wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0100)
+                               "Unable to stat Python home '%s'; Python "
+                               "interpreter may not initialise correctly. "
+                               "Verify the path and the access "
+                               "permissions on every component of it.",
+                               python_home);
             }
             else
             {
                 if (finfo.filetype != APR_DIR)
                 {
-                    wsgi_log_error(APLOG_WARNING, rv, wsgi_server,
-                                   "Python home %s is not a directory. "
-                                   "Python interpreter may not be able to "
-                                   "be initialized correctly. Verify the "
-                                   "supplied path.", python_home);
+                    wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0101)
+                                   "Python home '%s' is not a directory; "
+                                   "Python interpreter may not initialise "
+                                   "correctly. Verify the supplied path.",
+                                   python_home);
                 }
                 else if (access(python_home, X_OK) == -1)
                 {
-                    wsgi_log_error(APLOG_WARNING, rv, wsgi_server,
-                                   "Python home %s is not accessible. "
-                                   "Python interpreter may not be able to "
-                                   "be initialized correctly. Verify the "
-                                   "supplied path and access permissions "
-                                   "on the directory.", python_home);
+                    wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0102)
+                                   "Python home '%s' is not accessible; "
+                                   "Python interpreter may not initialise "
+                                   "correctly. Verify the access "
+                                   "permissions on the directory.",
+                                   python_home);
                 }
             }
 #endif
@@ -2192,8 +2200,8 @@ void wsgi_publish_process_stopping(char *reason)
         }
         else
         {
-            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                  "Failed to publish 'process_stopping' "
+            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0104)
+                                  "Unable to publish 'process_stopping' "
                                   "event for interpreter '%s'.",
                                   (const char *)key);
             PyErr_Clear();
@@ -2291,13 +2299,13 @@ load_source_finally:
     if (!co)
     {
         if (r)
-            wsgi_log_rerror_locked(APLOG_ERR, errno, r,
+            wsgi_log_rerror_locked(APLOG_ERR, errno, r, WSGI_APLOGNO(0105)
                                    "process='%s', application='%s': "
                                    "Could not read/compile source file "
                                    "'%s'.", process_group,
                                    application_group, filename);
         else
-            wsgi_log_error_locked(APLOG_ERR, errno, wsgi_server,
+            wsgi_log_error_locked(APLOG_ERR, errno, wsgi_server, WSGI_APLOGNO(0106)
                                   "process='%s', application='%s': "
                                   "Could not read/compile source file "
                                   "'%s'.", process_group,
@@ -2350,12 +2358,12 @@ load_source_finally:
             if (!ignore_system_exit)
             {
                 if (r)
-                    wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                    wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0107)
                                            "SystemExit exception raised "
                                            "when doing exec of Python "
                                            "script file '%s'.", filename);
                 else
-                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0108)
                                           "SystemExit exception raised "
                                           "when doing exec of Python "
                                           "script file '%s'.", filename);
@@ -2364,12 +2372,12 @@ load_source_finally:
         else
         {
             if (r)
-                wsgi_log_rerror_locked(APLOG_ERR, 0, r,
-                                       "Failed to exec Python script "
+                wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0109)
+                                       "Unable to execute Python script "
                                        "file '%s'.", filename);
             else
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                      "Failed to exec Python script "
+                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0110)
+                                      "Unable to execute Python script "
                                       "file '%s'.", filename);
 
             wsgi_log_python_error(r, NULL, filename, 0);
@@ -2561,7 +2569,7 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     }
     else
     {
-        wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
+        wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0111)
                        "Main interpreter reference is missing from "
                        "interpreters dictionary during child cleanup.");
     }
