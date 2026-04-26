@@ -306,7 +306,7 @@ const char *wsgi_set_verbose_debugging(cmd_parms *cmd, void *mconfig,
     else
         return "WSGIVerboseDebugging must be one of: Off | On";
 
-    wsgi_log_error(APLOG_WARNING, 0, cmd->server,
+    wsgi_log_error(APLOG_INFO, 0, cmd->server,
                    "WSGIVerboseDebugging is deprecated and has no effect. "
                    "Use 'LogLevel info wsgi_module:debug' for lifecycle "
                    "messages and 'LogLevel info wsgi_module:trace1' for "

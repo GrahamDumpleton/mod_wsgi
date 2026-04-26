@@ -2434,7 +2434,7 @@ static void wsgi_log_stack_traces(void)
         }
         else
         {
-            wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+            wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
                            "Failed to iterate over current frames for "
                            "active threads.");
 
@@ -2444,7 +2444,7 @@ static void wsgi_log_stack_traces(void)
     }
     else
     {
-        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+        wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
                        "Failed to get current frames for active threads.");
 
         PyErr_Print();
@@ -2719,7 +2719,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_ERR, rv, wsgi_server,
+            wsgi_log_error(APLOG_WARNING, rv, wsgi_server,
                            "Couldn't create reaper thread in daemon "
                            "process '%s'.", daemon->group->name);
         }
@@ -2778,14 +2778,14 @@ static apr_status_t wsgi_cleanup_process(void *data)
     {
         if (close(group->listener_fd) < 0)
         {
-            wsgi_log_error(APLOG_ERR, errno, wsgi_server,
+            wsgi_log_error(APLOG_WARNING, errno, wsgi_server,
                            "Couldn't close unix domain socket '%s'.",
                            group->socket_path);
         }
 
         if (unlink(group->socket_path) < 0 && errno != ENOENT)
         {
-            wsgi_log_error(APLOG_ERR, errno, wsgi_server,
+            wsgi_log_error(APLOG_WARNING, errno, wsgi_server,
                            "Couldn't unlink unix domain socket '%s'.",
                            group->socket_path);
         }
@@ -3165,7 +3165,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (!result)
             {
-                wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
                                "Unsupported locale setting %s specified "
                                "for daemon process group %s. Consider "
                                "using 'C.UTF-8' as fallback setting.",
