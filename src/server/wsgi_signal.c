@@ -70,7 +70,9 @@ static PyObject *SignalIntercept_call(
         return NULL;
 
     wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                          "Callback registration for signal %d ignored.", n);
+                          "Ignoring Python signal handler registration for "
+                          "signal %d in WSGI process; mod_wsgi manages "
+                          "signals.", n);
 
     m = PyImport_ImportModule("traceback");
 

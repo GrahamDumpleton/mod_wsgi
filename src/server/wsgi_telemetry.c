@@ -411,7 +411,8 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
         sleep_us = 100000;
 
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                   "Telemetry reporter started, target='%s', interval=%.3f",
+                   "Telemetry reporter started; target='%s', "
+                   "interval=%.3fs.",
                    wsgi_telemetry_target, wsgi_telemetry_interval);
 
     while (!wsgi_telemetry_shutdown) {

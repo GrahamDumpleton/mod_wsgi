@@ -1547,7 +1547,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
 
             if (!exception_when_aborted)
             {
-                error_message = apr_psprintf(r->pool, "Failed to write "
+                error_message = apr_psprintf(r->pool, "Unable to write "
                                                       "response data: %s",
                                              apr_strerror(rv, status_buffer,
                                                           sizeof(status_buffer) - 1));

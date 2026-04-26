@@ -74,8 +74,8 @@ int wsgi_execute_script(request_rec *r)
             if (wsgi_startup_timeout > 0)
             {
                 wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                                      "Application startup timer "
-                                      "triggered '%s'.",
+                                      "Application startup timer started "
+                                      "for daemon process '%s'.",
                                       config->process_group);
 
                 apr_thread_mutex_lock(wsgi_monitor_lock);
@@ -187,7 +187,9 @@ int wsgi_execute_script(request_rec *r)
                      */
 
                     wsgi_log_rerror_locked(APLOG_INFO, 0, r,
-                                           "Force restart of process '%s'.",
+                                           "Forcing restart of daemon "
+                                           "process '%s' due to script "
+                                           "reload.",
                                            config->process_group);
 
 #if APR_HAS_THREADS
@@ -303,7 +305,8 @@ int wsgi_execute_script(request_rec *r)
         wsgi_startup_shutdown_time = -1;
 
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "Application startup timer cancelled '%s'.",
+                              "Application startup timer cancelled for "
+                              "daemon process '%s'.",
                               config->process_group);
     }
 #endif

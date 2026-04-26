@@ -165,7 +165,7 @@ InterpreterObject *newInterpreterObject(const char *name)
          */
 
         wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                       "Attach interpreter '%s'.", name);
+                       "Attaching interpreter '%s'.", name);
 
         self->interp = interp;
         self->owner = 0;
@@ -209,7 +209,7 @@ InterpreterObject *newInterpreterObject(const char *name)
         }
 
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "Create interpreter '%s'.", name);
+                              "Creating interpreter '%s'.", name);
 
         self->interp = tstate->interp;
         self->owner = 1;
@@ -664,7 +664,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                     start = end + 1;
 
                     wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                                          "Adding '%s' to path.", value);
+                                          "Adding '%s' to Python module search path.", value);
 
                     args = Py_BuildValue("(O)", path_entry);
                     result = PyObject_CallObject(object, args);
@@ -693,7 +693,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                         start = end + 1;
 
                         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                                              "Adding '%s' to path.", value);
+                                              "Adding '%s' to Python module search path.", value);
 
                         args = Py_BuildValue("(O)", path_entry);
                         result = PyObject_CallObject(object, args);
@@ -721,7 +721,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                 value = PyUnicode_AsUTF8(path_entry);
 
                 wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                                      "Adding '%s' to path.", value);
+                                      "Adding '%s' to Python module search path.", value);
 
                 args = Py_BuildValue("(O)", path_entry);
                 result = PyObject_CallObject(object, args);
@@ -861,7 +861,8 @@ InterpreterObject *newInterpreterObject(const char *name)
     else if (!*name)
     {
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "Imported 'mod_wsgi'.");
+                              "Imported existing 'mod_wsgi' Python "
+                              "extension module.");
     }
 
     /*
@@ -1052,7 +1053,7 @@ InterpreterObject *newInterpreterObject(const char *name)
         else
         {
             wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                                  "Imported 'apache'.");
+                                  "Imported 'apache' extension module.");
         }
     }
 
@@ -1150,7 +1151,7 @@ InterpreterObject *newInterpreterObject(const char *name)
         thread_handle = wsgi_thread_info(1, 0);
 
         wsgi_log_error_locked(APLOG_TRACE1, 0, wsgi_server,
-                              "Bind thread state for thread %d against "
+                              "Binding thread state for thread %d against "
                               "interpreter '%s'.",
                               thread_handle->thread_id, self->name);
 
@@ -1233,7 +1234,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
             tstate = PyThreadState_New(self->interp);
 
             wsgi_log_error_locked(APLOG_TRACE1, 0, wsgi_server,
-                                  "Create thread state for thread %d "
+                                  "Creating thread state for thread %d "
                                   "against interpreter '%s'.",
                                   thread_handle->thread_id, self->name);
 
@@ -1257,12 +1258,12 @@ static void Interpreter_dealloc(InterpreterObject *self)
     if (self->owner)
     {
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "Destroy interpreter '%s'.", self->name);
+                              "Destroying interpreter '%s'.", self->name);
     }
     else
     {
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "Cleanup interpreter '%s'.", self->name);
+                              "Cleaning up interpreter '%s'.", self->name);
     }
 
     /*
@@ -1461,7 +1462,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
         /* Can now destroy the interpreter. */
 
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "End interpreter '%s'.", self->name);
+                              "Ending interpreter '%s'.", self->name);
 
         Py_EndInterpreter(tstate);
 
@@ -1618,7 +1619,8 @@ apr_status_t wsgi_python_term(void)
 
     wsgi_python_initialized = 0;
 
-    wsgi_log_error(APLOG_INFO, 0, wsgi_server, "Python has shutdown.");
+    wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                   "Python interpreter has shut down.");
 
     return APR_SUCCESS;
 }
@@ -1746,7 +1748,7 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
         if (python_home)
         {
             wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                           "Python home %s.", python_home);
+                           "Python home set to '%s'.", python_home);
         }
 
         if (python_home)
@@ -1806,7 +1808,7 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
              */
 
             wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                           "Python home %s.", python_home);
+                           "Python home set to '%s'.", python_home);
 
 #if !defined(WIN32)
             rv = apr_stat(&finfo, python_home, APR_FINFO_NORM, p);
@@ -1902,7 +1904,8 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
         if (wsgi_server_config->python_hash_seed != NULL)
         {
             wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
-                           "Setting hash seed to %s.",
+                           "Setting Python hash seed (PYTHONHASHSEED) to "
+                           "'%s'.",
                            wsgi_server_config->python_hash_seed);
             long seed = atol(wsgi_server_config->python_hash_seed);
             config.use_hash_seed = 1;
@@ -2084,7 +2087,7 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
             tstate = PyThreadState_New(interp);
 
             wsgi_log_error_locked(APLOG_TRACE1, 0, wsgi_server,
-                                  "Create thread state for thread %d "
+                                  "Creating thread state for thread %d "
                                   "against interpreter '%s'.",
                                   thread_handle->thread_id, handle->name);
 
@@ -2252,13 +2255,13 @@ PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
         if (r)
             wsgi_log_rerror_locked(APLOG_INFO, 0, r,
                                    "process='%s', application='%s': "
-                                   "Loading Python script file '%s'.",
+                                   "Loading WSGI script '%s'.",
                                    process_group, application_group,
                                    filename);
         else
             wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
                                   "process='%s', application='%s': "
-                                  "Loading Python script file '%s'.",
+                                  "Loading WSGI script '%s'.",
                                   process_group, application_group,
                                   filename);
     }

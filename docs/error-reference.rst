@@ -3171,8 +3171,8 @@ WSGI0124 — Maximum number of WSGI daemon process restart attempts reached
 :Source: ``src/server/wsgi_remote.c``
 
 :Logged message:
-   ``Maximum number of WSGI daemon process restart attempts
-   reached: <N>.``
+   ``Maximum number of WSGI daemon process '<group>' restart
+   attempts reached: <N>.``
 
 :Cause:
    The Apache child kept hitting ``200 Rejected`` responses

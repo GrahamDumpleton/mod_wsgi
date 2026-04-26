@@ -76,7 +76,7 @@ sleep 1
 assert_ids_equal "$s_id1" "$s_id2" \
     "static: LOAD_ID unchanged when file is not modified"
 
-assert_log_contains "Loading Python script file '$STATIC_FIXTURE'" \
+assert_log_contains "Loading WSGI script '$STATIC_FIXTURE'" \
     "static: initial load is logged"
 
 # Scenario 4: never_reload.py defines reload_required returning
@@ -92,7 +92,7 @@ sleep 1
 assert_ids_equal "$n_id1" "$n_id2" \
     "never_reload: LOAD_ID unchanged when callback returns False"
 
-assert_log_contains "Loading Python script file '$NEVER_FIXTURE'" \
+assert_log_contains "Loading WSGI script '$NEVER_FIXTURE'" \
     "never_reload: initial load is logged"
 
 # Scenario 5: raising_reload.py's reload_required callback raises
@@ -155,7 +155,7 @@ t_id4=$(fetch "$TRIGGERED_URL")
 assert_ids_equal "$t_id3" "$t_id4" \
     "triggered_reload: LOAD_ID stable after one-shot trigger is consumed"
 
-assert_log_contains "Loading Python script file '$TRIGGERED_FIXTURE'" \
+assert_log_contains "Loading WSGI script '$TRIGGERED_FIXTURE'" \
     "triggered_reload: initial load is logged"
 
 # Scenario 6: missing_mtime.py pops __mtime__ from its own module
@@ -175,7 +175,7 @@ sleep 1
 assert_ids_differ "$m_id1" "$m_id2" \
     "missing_mtime: LOAD_ID changes after __mtime__ is stripped"
 
-assert_log_contains "Loading Python script file '$MISSING_FIXTURE'" \
+assert_log_contains "Loading WSGI script '$MISSING_FIXTURE'" \
     "missing_mtime: initial load is logged"
 
 # Cleanup: remove the flag if the last request somehow left it.

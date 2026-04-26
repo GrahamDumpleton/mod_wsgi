@@ -1597,13 +1597,15 @@ int wsgi_execute_remote(request_rec *r)
             {
                 wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0124)
                                 "Maximum number of WSGI daemon process "
-                                "restart attempts reached: %d.", maximum);
+                                "'%s' restart attempts reached: %d.",
+                                daemon->name, maximum);
                 return HTTP_SERVICE_UNAVAILABLE;
             }
 
             wsgi_log_rerror(APLOG_INFO, 0, r,
-                            "Connect after WSGI daemon process restart, "
-                            "attempt #%d.", retries);
+                            "Reconnecting after WSGI daemon process '%s' "
+                            "restart, attempt #%d.",
+                            daemon->name, retries);
 
             /* Connect and setup connection just like before. */
 
