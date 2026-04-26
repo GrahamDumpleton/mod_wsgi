@@ -1027,7 +1027,7 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
         if (wsgi_python_init(p) != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_CRIT, 0, wsgi_server,
+            wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0001)
                            "Python initialisation failed; "
                            "Python based handlers will not be available in "
                            "this child process.");
@@ -1041,7 +1041,7 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
             if (wsgi_python_child_init(p) != APR_SUCCESS)
             {
-                wsgi_log_error(APLOG_CRIT, 0, wsgi_server,
+                wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0002)
                                "Python child initialisation failed; "
                                "Python based handlers will not be available "
                                "in this child process.");

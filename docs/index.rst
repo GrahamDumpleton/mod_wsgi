@@ -40,6 +40,7 @@ your terminal.
    requirements
    installation
    troubleshooting
+   error-reference
    user-guides
    configuration
    finding-help

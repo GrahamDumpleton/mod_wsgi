@@ -69,6 +69,21 @@ extern void wsgi_log_python_error_ex(const char *file, int line,
  * macros).
  */
 
+/*
+ * WSGI_APLOGNO(n) is mod_wsgi's analogue of httpd's APLOGNO(n). It expands
+ * to a string literal of the form "WSGIxxxx: " that prefixes the format
+ * string of a log call. The "WSGI" prefix gives mod_wsgi its own error-code
+ * namespace, distinct from httpd's "AH" codes. The number is allocated
+ * sequentially in source-walking order; each number maps to a docs entry
+ * in docs/error-reference.rst with the same anchor (e.g. WSGI0001).
+ *
+ * Usage:
+ *     wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0001)
+ *                    "Some message about '%s'.", value);
+ */
+
+#define WSGI_APLOGNO(n) "WSGI" #n ": "
+
 extern void wsgi_log_error_ex(const char *file, int line, int module_index,
                               int level, apr_status_t rv, server_rec *s,
                               const char *fmt, ...)
