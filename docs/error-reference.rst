@@ -55,8 +55,8 @@ WSGI0001 — Python initialisation failed in Apache child process
 :Source: ``src/server/mod_wsgi.c``
 
 :Logged message:
-   ``Python initialisation failed; Python based handlers will not be
-   available in this child process.``
+   ``Python initialisation failed in Apache child process; Python based
+   handlers will not be available.``
 
 :Cause:
    ``wsgi_python_init()`` failed when the Apache child process was
@@ -89,8 +89,8 @@ WSGI0002 — Python child initialisation failed in Apache child process
 :Source: ``src/server/mod_wsgi.c``
 
 :Logged message:
-   ``Python child initialisation failed; Python based handlers will not
-   be available in this child process.``
+   ``Python child initialisation failed in Apache child process; Python
+   based handlers will not be available.``
 
 :Cause:
    ``wsgi_python_child_init()`` failed *after* ``wsgi_python_init()``
@@ -119,7 +119,8 @@ WSGI0003 — Unable to change root directory for daemon process
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Unable to change root directory to '<root>'.``
+   ``Unable to change root directory to '<root>'. Daemon process will
+   exit.``
 
 :Cause:
    ``chroot()`` failed during daemon-process startup when the
@@ -147,7 +148,7 @@ WSGI0004 — Unable to set group id for daemon process
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Unable to set group id to gid=<gid>.``
+   ``Unable to set group id to gid=<gid>. Daemon process will exit.``
 
 :Cause:
    ``setgid()`` failed during daemon-process startup when applying the
@@ -172,7 +173,8 @@ WSGI0005 — Unable to set supplementary groups for daemon process
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Unable to set supplementary groups for uname=<user> of '<groups>'.``
+   ``Unable to set supplementary groups for uname=<user> of '<groups>'.
+   Daemon process will exit.``
 
 :Cause:
    ``setgroups()`` failed when applying the supplementary group list
@@ -197,7 +199,8 @@ WSGI0006 — Unable to initialise default groups for daemon process
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Unable to set groups for uname=<user> and gid=<gid>.``
+   ``Unable to initialise groups for uname=<user> and gid=<gid>.
+   Daemon process will exit.``
 
 :Cause:
    ``initgroups()`` failed while loading the supplementary-group list
@@ -221,7 +224,7 @@ WSGI0007 — Unable to change to user id for daemon process
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Unable to change to uid=<uid>.``
+   ``Unable to change to uid=<uid>. Daemon process will exit.``
 
 :Cause:
    ``setuid()`` failed during daemon-process startup. On Linux this is
@@ -249,8 +252,8 @@ WSGI0008 — Daemon process left in unspecified state after setuid failure
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Failure to configure the daemon process correctly and process left
-   in unspecified state. Restarting daemon process after delay.``
+   ``Daemon process configuration failed; process left in unspecified
+   state. Daemon process will exit and be restarted after a delay.``
 
 :Cause:
    Companion log message to :ref:`WSGI0007`. Emitted immediately after
@@ -273,7 +276,8 @@ WSGI0009 — Unable to change working directory for daemon process
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Unable to change working directory to '<path>'.``
+   ``Unable to change working directory to '<path>'. Daemon process
+   will exit.``
 
 :Cause:
    ``chdir()`` failed when applying the directory specified by
@@ -297,7 +301,7 @@ WSGI0010 — Unable to change working directory to user home directory
 
 :Logged message:
    ``Unable to change working directory to home directory '<path>' for
-   uid=<uid>.``
+   uid=<uid>. Daemon process will exit.``
 
 :Cause:
    No explicit ``home=`` was given on ``WSGIDaemonProcess`` and the
@@ -321,7 +325,8 @@ WSGI0011 — Unable to determine home directory for daemon process user
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Unable to determine home directory for uid=<uid>.``
+   ``Unable to determine home directory for uid=<uid>. Daemon process
+   will exit.``
 
 :Cause:
    No explicit ``home=`` was given on ``WSGIDaemonProcess`` and the
@@ -339,14 +344,15 @@ WSGI0011 — Unable to determine home directory for daemon process user
 
 .. _WSGI0012:
 
-WSGI0012 — Couldn't create UNIX domain socket for daemon process
-----------------------------------------------------------------
+WSGI0012 — Unable to create UNIX domain socket for daemon process
+-----------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't create unix domain socket.``
+   ``Unable to create unix domain socket for daemon process '<group>'.
+   Daemon group will not start.``
 
 :Cause:
    The ``socket(AF_UNIX, SOCK_STREAM, 0)`` call failed during daemon
@@ -364,14 +370,15 @@ WSGI0012 — Couldn't create UNIX domain socket for daemon process
 
 .. _WSGI0013:
 
-WSGI0013 — Couldn't bind UNIX domain socket for daemon process
---------------------------------------------------------------
+WSGI0013 — Unable to bind UNIX domain socket for daemon process
+---------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't bind unix domain socket '<path>'.``
+   ``Unable to bind unix domain socket '<path>'. Daemon group will not
+   start.``
 
 :Cause:
    ``bind()`` on the daemon's listener socket failed. Common causes:
@@ -392,14 +399,15 @@ WSGI0013 — Couldn't bind UNIX domain socket for daemon process
 
 .. _WSGI0014:
 
-WSGI0014 — Couldn't listen on UNIX domain socket for daemon process
--------------------------------------------------------------------
+WSGI0014 — Unable to listen on UNIX domain socket for daemon process
+--------------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't listen on unix domain socket.``
+   ``Unable to listen on unix domain socket '<path>'. Daemon group will
+   not start.``
 
 :Cause:
    ``listen()`` on the daemon's listener socket failed after a
@@ -416,14 +424,15 @@ WSGI0014 — Couldn't listen on UNIX domain socket for daemon process
 
 .. _WSGI0015:
 
-WSGI0015 — Couldn't change owner of UNIX domain socket for daemon process
--------------------------------------------------------------------------
+WSGI0015 — Unable to change owner of UNIX domain socket for daemon process
+--------------------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't change owner of unix domain socket '<path>' to uid=<uid>.``
+   ``Unable to change owner of unix domain socket '<path>' to uid=<uid>.
+   Daemon group will not start.``
 
 :Cause:
    ``chown()`` on the daemon listener socket failed. The Apache parent
@@ -449,7 +458,8 @@ WSGI0016 — Wait on worker thread wakeup condition variable failed
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Wait on thread <id> wakeup condition variable failed.``
+   ``Wait on thread <id> wakeup condition variable failed; worker thread
+   will exit.``
 
 :Cause:
    ``apr_thread_cond_wait()`` returned an error in the worker
@@ -469,15 +479,15 @@ WSGI0016 — Wait on worker thread wakeup condition variable failed
 
 .. _WSGI0017:
 
-WSGI0017 — Couldn't acquire accept mutex; daemon shutting down
---------------------------------------------------------------
+WSGI0017 — Unable to acquire accept mutex; daemon shutting down
+---------------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't acquire accept mutex '<path>'. Shutting down daemon
-   process.``
+   ``Unable to acquire accept mutex '<path>'. Daemon process will shut
+   down.``
 
 :Cause:
    ``apr_proc_mutex_lock()`` on the cross-process accept mutex failed
@@ -503,8 +513,8 @@ WSGI0018 — Unable to poll daemon socket; daemon shutting down
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Unable to poll daemon socket for '<path>'. Shutting down daemon
-   process.``
+   ``Unable to poll daemon socket for '<path>'. Daemon process will shut
+   down.``
 
 :Cause:
    ``apr_pollset_poll()`` on the daemon's listener socket returned a
@@ -521,14 +531,14 @@ WSGI0018 — Unable to poll daemon socket; daemon shutting down
 
 .. _WSGI0019:
 
-WSGI0019 — Couldn't release accept mutex
-----------------------------------------
+WSGI0019 — Unable to release accept mutex
+-----------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't release accept mutex '<path>'.``
+   ``Unable to release accept mutex '<path>'; worker thread will exit.``
 
 :Cause:
    ``apr_proc_mutex_unlock()`` on the cross-process accept mutex
@@ -547,15 +557,15 @@ WSGI0019 — Couldn't release accept mutex
 
 .. _WSGI0020:
 
-WSGI0020 — Couldn't create worker thread condition variable
------------------------------------------------------------
+WSGI0020 — Unable to create worker thread condition variable
+------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't create worker thread <i> state condition variable in
-   daemon process '<group>'.``
+   ``Unable to create worker thread <i> condition variable in daemon
+   process '<group>'. Daemon process will exit.``
 
 :Cause:
    ``apr_thread_cond_create()`` failed when initialising a worker
@@ -573,15 +583,15 @@ WSGI0020 — Couldn't create worker thread condition variable
 
 .. _WSGI0021:
 
-WSGI0021 — Couldn't create worker thread state mutex
-----------------------------------------------------
+WSGI0021 — Unable to create worker thread mutex
+-----------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't create worker thread <i> state mutex variable in daemon
-   process '<group>'.``
+   ``Unable to create worker thread <i> mutex in daemon process
+   '<group>'. Daemon process will exit.``
 
 :Cause:
    ``apr_thread_mutex_create()`` failed when initialising a worker
@@ -597,14 +607,15 @@ WSGI0021 — Couldn't create worker thread state mutex
 
 .. _WSGI0022:
 
-WSGI0022 — Couldn't create worker thread
-----------------------------------------
+WSGI0022 — Unable to create worker thread
+-----------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't create worker thread <i> in daemon process '<group>'.``
+   ``Unable to create worker thread <i> in daemon process '<group>'.
+   Daemon process will exit.``
 
 :Cause:
    ``apr_thread_create()`` failed when starting a worker thread
@@ -621,14 +632,15 @@ WSGI0022 — Couldn't create worker thread
 
 .. _WSGI0023:
 
-WSGI0023 — Failed read on signal pipe
--------------------------------------
+WSGI0023 — Read failed on signal pipe in daemon process
+-------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Failed read on signal pipe '<group>'.``
+   ``Read failed on signal pipe in daemon process '<group>'; daemon
+   process will shut down.``
 
 :Cause:
    The daemon process's main loop failed to read from its internal
@@ -647,14 +659,15 @@ WSGI0023 — Failed read on signal pipe
 
 .. _WSGI0024:
 
-WSGI0024 — Couldn't spawn daemon process
-----------------------------------------
+WSGI0024 — Unable to spawn daemon process
+-----------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't spawn process '<group>'.``
+   ``Unable to spawn daemon process '<group>'. Daemon group will not
+   start.``
 
 :Cause:
    ``apr_proc_fork()`` failed in the Apache parent when spawning a
@@ -679,8 +692,8 @@ WSGI0025 — Daemon process left in unspecified state after setup failure
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Failure to configure the daemon process correctly and process
-   left in unspecified state. Restarting daemon process after delay.``
+   ``Daemon process configuration failed; process left in unspecified
+   state. Daemon process will exit and be restarted after a delay.``
 
 :Cause:
    ``wsgi_setup_access()`` returned an error during daemon startup.
@@ -699,14 +712,15 @@ WSGI0025 — Daemon process left in unspecified state after setup failure
 
 .. _WSGI0026:
 
-WSGI0026 — Couldn't initialise accept mutex in daemon process
--------------------------------------------------------------
+WSGI0026 — Unable to initialise accept mutex in daemon process
+--------------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't initialise accept mutex in daemon process '<path>'.``
+   ``Unable to initialise accept mutex '<path>' in daemon process.
+   Daemon process will exit and be restarted after a delay.``
 
 :Cause:
    ``apr_proc_mutex_child_init()`` failed when re-attaching the
@@ -726,14 +740,15 @@ WSGI0026 — Couldn't initialise accept mutex in daemon process
 
 .. _WSGI0027:
 
-WSGI0027 — Couldn't initialise signal pipe in daemon process
-------------------------------------------------------------
+WSGI0027 — Unable to initialise signal pipe in daemon process
+-------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't initialise signal pipe in daemon process '<group>'.``
+   ``Unable to initialise signal pipe in daemon process '<group>'.
+   Daemon process will exit and be restarted after a delay.``
 
 :Cause:
    ``apr_file_pipe_create()`` failed when the daemon was setting up
@@ -757,7 +772,8 @@ WSGI0028 — Python initialisation failed in daemon process
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Python initialisation failed in daemon process '<group>'.``
+   ``Python initialisation failed in daemon process '<group>'; Python
+   based handlers will not be available.``
 
 :Cause:
    Same as :ref:`WSGI0001` but in a daemon-mode process rather than
@@ -781,8 +797,8 @@ WSGI0029 — Python child initialisation failed in daemon process
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Python child initialisation failed; Python based handlers will
-   not be available in this daemon process.``
+   ``Python child initialisation failed in daemon process '<group>';
+   Python based handlers will not be available.``
 
 :Cause:
    Same as :ref:`WSGI0002` but in a daemon-mode process.
@@ -797,14 +813,15 @@ WSGI0029 — Python child initialisation failed in daemon process
 
 .. _WSGI0030:
 
-WSGI0030 — Couldn't create accept lock for daemon group
--------------------------------------------------------
+WSGI0030 — Unable to create accept lock for daemon group
+--------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't create accept lock '<path>' (<mechanism>).``
+   ``Unable to create accept lock '<path>'. Daemon group will not
+   start.``
 
 :Cause:
    ``apr_proc_mutex_create()`` failed when creating the cross-process
@@ -824,14 +841,15 @@ WSGI0030 — Couldn't create accept lock for daemon group
 
 .. _WSGI0031:
 
-WSGI0031 — Couldn't set permissions on sysvsem accept mutex
------------------------------------------------------------
+WSGI0031 — Unable to set permissions on sysvsem accept mutex
+------------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't set permissions on accept mutex '<path>' (sysvsem).``
+   ``Unable to set permissions on sysvsem accept mutex '<path>'.
+   Daemon group will not start.``
 
 :Cause:
    ``semctl(IPC_SET)`` failed when applying owner and mode to the
@@ -850,14 +868,15 @@ WSGI0031 — Couldn't set permissions on sysvsem accept mutex
 
 .. _WSGI0032:
 
-WSGI0032 — Couldn't set permissions on flock accept mutex
----------------------------------------------------------
+WSGI0032 — Unable to set permissions on flock accept mutex
+----------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Couldn't set permissions on accept mutex '<path>' (flock).``
+   ``Unable to set permissions on flock accept mutex '<path>'. Daemon
+   group will not start.``
 
 :Cause:
    ``chown()`` on the flock-style accept mutex file failed. Usually a
@@ -881,7 +900,7 @@ WSGI0033 — Request origin could not be validated (no magic token)
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Request origin could not be validated.``
+   ``Request origin could not be validated; missing magic token.``
 
 :Cause:
    A request arrived at a daemon process via the listener socket but
@@ -909,7 +928,7 @@ WSGI0034 — Request origin could not be validated (magic token mismatch)
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Request origin could not be validated.``
+   ``Request origin could not be validated; magic token mismatch.``
 
 :Cause:
    The request carried a ``mod_wsgi.magic`` token but it did not
@@ -927,14 +946,14 @@ WSGI0034 — Request origin could not be validated (magic token mismatch)
 
 .. _WSGI0035:
 
-WSGI0035 — Failed to create Python sub-interpreter
+WSGI0035 — Unable to create Python sub-interpreter
 --------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Failed to create interpreter '<name>'.``
+   ``Unable to create Python sub-interpreter '<name>'.``
 
 :Cause:
    ``newInterpreterObject()`` failed during construction of a Python
@@ -964,7 +983,7 @@ WSGI0036 — Python interpreter configuration failed
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Initializing Python failed: <message>``
+   ``Python interpreter configuration failed: <message>``
 
 :Cause:
    A ``PyConfig_*`` API call returned an error during ``wsgi_python_init()``.
@@ -991,7 +1010,8 @@ WSGI0037 — Unable to initialise Python types for child process
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to initialise Python types for this child process.``
+   ``Unable to initialise Python types; Python based handlers will not
+   be available.``
 
 :Cause:
    One of mod_wsgi's internal Python type objects failed
@@ -1019,8 +1039,8 @@ WSGI0038 — Unable to create main Python interpreter wrapper
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to create wrapper object for main Python interpreter in
-   this child process.``
+   ``Unable to create wrapper object for main Python interpreter;
+   Python based handlers will not be available.``
 
 :Cause:
    ``newInterpreterObject(NULL)`` failed when creating the cached
@@ -1046,8 +1066,8 @@ WSGI0039 — Unable to register main Python interpreter wrapper
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to record wrapper for main Python interpreter in
-   interpreters dictionary for this child process.``
+   ``Unable to register wrapper for main Python interpreter in
+   interpreter cache; Python based handlers will not be available.``
 
 :Cause:
    ``PyDict_SetItemString()`` failed when adding the freshly created
@@ -1064,14 +1084,15 @@ WSGI0039 — Unable to register main Python interpreter wrapper
 
 .. _WSGI0040:
 
-WSGI0040 — Cannot acquire interpreter during daemon startup script preload
---------------------------------------------------------------------------
+WSGI0040 — Unable to acquire Python sub-interpreter during daemon startup script preload
+----------------------------------------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Cannot acquire interpreter '<name>'.``
+   ``Unable to acquire Python sub-interpreter '<name>' during daemon
+   startup script preload; skipping import.``
 
 :Cause:
    ``wsgi_acquire_interpreter()`` returned ``NULL`` while a daemon

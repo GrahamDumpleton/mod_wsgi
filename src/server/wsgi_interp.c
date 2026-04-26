@@ -1177,7 +1177,8 @@ failure:
      */
 
     wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0035)
-                          "Failed to create interpreter '%s'.", self->name);
+                          "Unable to create Python sub-interpreter '%s'.",
+                          self->name);
 
     Py_XDECREF(module);
 
@@ -1645,7 +1646,8 @@ static int wsgi_python_init_failed(PyStatus status)
      * to call Py_InitializeFromConfig() with a broken config.
      */
     wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0036)
-                   "Initializing Python failed: %s", status.err_msg);
+                   "Python interpreter configuration failed: %s",
+                   status.err_msg);
 
     return 1;
 }
@@ -2626,8 +2628,9 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
     if (PyType_Ready(&Log_Type) < 0 || PyType_Ready(&Stream_Type) < 0 || PyType_Ready(&Input_Type) < 0 || PyType_Ready(&Adapter_Type) < 0 || PyType_Ready(&Restricted_Type) < 0 || PyType_Ready(&Interpreter_Type) < 0 || PyType_Ready(&Dispatch_Type) < 0 || PyType_Ready(&Auth_Type) < 0 || PyType_Ready(&SignalIntercept_Type) < 0 || PyType_Ready(&ShutdownInterpreter_Type) < 0)
     {
         wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0037)
-                              "Unable to initialise Python types for this "
-                              "child process.");
+                              "Unable to initialise Python types; "
+                              "Python based handlers will not be "
+                              "available.");
         PyErr_Clear();
         PyGILState_Release(state);
         wsgi_python_initialized = 0;
@@ -2676,7 +2679,8 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
     {
         wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0038)
                               "Unable to create wrapper object for main "
-                              "Python interpreter in this child process.");
+                              "Python interpreter; Python based handlers "
+                              "will not be available.");
         PyErr_Clear();
         PyGILState_Release(state);
         wsgi_python_initialized = 0;
@@ -2686,9 +2690,10 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
     if (PyDict_SetItemString(wsgi_interpreters, "", object) < 0)
     {
         wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0039)
-                              "Unable to record wrapper for main Python "
-                              "interpreter in interpreters dictionary "
-                              "for this child process.");
+                              "Unable to register wrapper for main "
+                              "Python interpreter in interpreter cache; "
+                              "Python based handlers will not be "
+                              "available.");
         Py_DECREF(object);
         PyErr_Clear();
         PyGILState_Release(state);
@@ -2753,7 +2758,10 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
                 if (!interp)
                 {
                     wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0040)
-                                   "Cannot acquire interpreter '%s'.",
+                                   "Unable to acquire Python sub-"
+                                   "interpreter '%s' during daemon "
+                                   "startup script preload; skipping "
+                                   "import.",
                                    entry->application_group);
 
                     /*
