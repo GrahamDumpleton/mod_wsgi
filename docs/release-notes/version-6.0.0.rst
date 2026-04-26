@@ -87,6 +87,49 @@ Features Changed
   responses from mod_wsgi may want to adjust monitoring to include ``502``
   for upstream daemon failures.
 
+* Log messages emitted by mod_wsgi no longer carry the historic
+  ``mod_wsgi (pid=NNN): `` prefix that the module manually prepended to
+  its own output. The same information already appears in Apache's
+  standard log line decoration — the ``[wsgi:LEVEL]`` module tag and
+  the ``[pid NNN:tid NNN]`` field that Apache prepends to every entry
+  emitted via the ``ap_log_*`` family — so the manual prefix only
+  duplicated information and produced two ``pid=`` fields per line.
+  Log-scraping pipelines that previously matched on the literal
+  ``mod_wsgi (pid=`` substring should match on the ``[wsgi:`` module
+  tag instead, which is also what the ``LogLevel wsgi:LEVEL`` Apache
+  directive controls.
+
+* Log message wording, severity assignment, and identifier coverage
+  have been overhauled across the module. The severity of every site
+  at ``WARNING`` and above was reviewed against the actual operational
+  impact and corrected where needed; for example, several per-request
+  failures that were logged at ``CRIT`` are now ``ERR``, and a number
+  of configuration diagnostics that only predict a later failure were
+  demoted from ``ALERT`` to ``WARNING``. Every unique log site at
+  ``WARNING`` and above now also carries a stable ``WSGI####``
+  identifier emitted as a prefix on the rendered line, analogous to
+  Apache's own ``AHnnnnn`` convention from the ``APLOGNO`` macro, so a
+  message such as ``WSGI0061: Unable to bind socket for daemon
+  process '...'`` can be referenced by code in runbooks and bug
+  reports independent of any future wording adjustments. Each
+  identifier is documented in the new :doc:`../error-reference` page
+  describing the cause, outcome, and recommended operator action for
+  that condition. Lower-tier message wording has also been tightened
+  for consistency and accuracy, and per-request hot-path detail is
+  now consistently emitted at ``TRACE1`` to separate it from
+  process-lifecycle events (``DEBUG`` for troubleshooting, ``INFO``
+  for the operator-default view).
+
+* The ``WSGIVerboseDebugging`` directive is deprecated and now has
+  no effect. Apache's standard ``LogLevel`` directive provides
+  equivalent control with finer granularity: use ``LogLevel
+  wsgi:debug`` to enable mod_wsgi's daemon and interpreter
+  lifecycle messages, and ``LogLevel wsgi:trace1`` to additionally
+  enable per-request and per-thread-binding detail. The directive
+  itself is still parsed (a configuration using it will continue
+  to load) and now emits an ``INFO``-level deprecation notice on
+  startup; it will be removed in a future release.
+
 Features Removed
 ----------------
 
