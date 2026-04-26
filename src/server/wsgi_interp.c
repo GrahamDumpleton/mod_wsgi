@@ -314,20 +314,15 @@ InterpreterObject *newInterpreterObject(const char *name)
     Py_DECREF(object);
 
     /*
-     * Install intercept for signal handler registration
-     * if appropriate. Don't do this though if number of
-     * threads for daemon process was set as 0, indicating
-     * a potential daemon process which is running a
-     * service script.
-     */
-
-    /*
-     * If running in daemon mode and there are no threads
-     * specified, must be running with service script, in
-     * which case we register default signal handler for
-     * SIGINT which throws a SystemExit exception. If
-     * instead restricting signals, replace function for
-     * registering signal handlers so they are ignored.
+     * Install signal-handler intercept for the new interpreter. The
+     * intercept replaces signal.signal so that application code
+     * cannot register handlers that would interfere with Apache or
+     * the daemon.
+     *
+     * Daemon processes configured with threads=0 are running a
+     * service script (no request handling); for those we instead
+     * register a default SIGTERM handler that raises SystemExit, so
+     * the script can shut down cleanly.
      */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
