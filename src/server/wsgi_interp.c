@@ -165,7 +165,7 @@ InterpreterObject *newInterpreterObject(const char *name)
          */
 
         wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                       "Attaching interpreter '%s'.", name);
+                       "Attaching to Python main interpreter.");
 
         self->interp = interp;
         self->owner = 0;
@@ -209,7 +209,8 @@ InterpreterObject *newInterpreterObject(const char *name)
         }
 
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "Creating interpreter '%s'.", name);
+                              "Creating Python sub-interpreter '%s'.",
+                              name);
 
         self->interp = tstate->interp;
         self->owner = 1;
@@ -1258,12 +1259,13 @@ static void Interpreter_dealloc(InterpreterObject *self)
     if (self->owner)
     {
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "Destroying interpreter '%s'.", self->name);
+                              "Destroying Python sub-interpreter '%s'.",
+                              self->name);
     }
     else
     {
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "Cleaning up interpreter '%s'.", self->name);
+                              "Releasing Python main interpreter wrapper.");
     }
 
     /*
@@ -1461,9 +1463,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
         /* Can now destroy the interpreter. */
 
-        wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "Ending interpreter '%s'.", self->name);
-
         Py_EndInterpreter(tstate);
 
         PyThreadState_Swap(tstate_enter);
@@ -1553,7 +1552,8 @@ apr_status_t wsgi_python_term(void)
     if (wsgi_server_config->destroy_interpreter == 0)
         return APR_SUCCESS;
 
-    wsgi_log_error(APLOG_INFO, 0, wsgi_server, "Terminating Python.");
+    wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                   "Terminating embedded Python runtime.");
 
     /*
      * We should be executing in the main thread again at this
@@ -1620,7 +1620,7 @@ apr_status_t wsgi_python_term(void)
     wsgi_python_initialized = 0;
 
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                   "Python interpreter has shut down.");
+                   "Embedded Python runtime has shut down.");
 
     return APR_SUCCESS;
 }
@@ -1927,7 +1927,8 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
 
         /* Initialise Python. */
 
-        wsgi_log_error(APLOG_INFO, 0, wsgi_server, "Initializing Python.");
+        wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                       "Initializing embedded Python runtime.");
 
         status = Py_InitializeFromConfig(&config);
         if (PyStatus_Exception(status))
@@ -2578,7 +2579,8 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
      * destroying interpreters we own.
      */
 
-    wsgi_log_error(APLOG_INFO, 0, wsgi_server, "Destroying interpreters.");
+    wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                   "Destroying Python sub-interpreters.");
 
     PyDict_Clear(wsgi_interpreters);
 
