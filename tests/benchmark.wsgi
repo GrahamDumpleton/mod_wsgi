@@ -70,6 +70,21 @@
 # the size (one byte per chunk). Bytes are distributed evenly across
 # chunks; any remainder goes into the leading chunks one byte each.
 #
+# BENCHMARK_WEDGE_INTERVAL env var (seconds, default 0 = disabled). When
+# set to a positive value, this process will periodically wedge a single
+# request in an infinite sleep loop so the daemon's RequestTimeout
+# injection (interrupt-timeout) unwinds it with a 504 Gateway Timeout.
+# The value is the minimum gap between the end of one wedge and the
+# start of the next, measured per process. Goal: surface periodic 504
+# records in the slow-request telemetry stream without disrupting bulk
+# traffic. At most one request is wedged at a time; concurrent requests
+# pass through normally, and the wedged thread releases the GIL between
+# iterations so sibling threads keep serving. Sibling daemon processes
+# stagger their first wedge by a per-pid offset to avoid wedging in
+# lockstep. Requires the daemon to have a non-zero interrupt-timeout,
+# otherwise the wedged request will eventually take the entire process
+# down via the request-timeout fallback.
+#
 # BENCHMARK_4XX_RATE and BENCHMARK_5XX_RATE env vars (floats in [0, 1];
 # default 0) inject error responses at the given per-request probability.
 # 5xx is rolled first, then 4xx, then a normal 2xx — so the two rates
@@ -128,6 +143,10 @@ def _clamp_rate(spec):
 
 _RATE_5XX = _clamp_rate(os.environ.get("BENCHMARK_5XX_RATE", "0") or "0")
 _RATE_4XX = _clamp_rate(os.environ.get("BENCHMARK_4XX_RATE", "0") or "0")
+
+_WEDGE_INTERVAL = max(
+    0.0, float(os.environ.get("BENCHMARK_WEDGE_INTERVAL", "0") or "0")
+)
 # If the caller asks for sum > 1, scale 4xx down so the combined error
 # rate caps at 100% rather than silently dropping samples.
 if _RATE_5XX + _RATE_4XX > 1.0:
@@ -183,6 +202,61 @@ _PID = os.getpid()
 # accumulated benchmark data with a tiny-window reading.
 _metrics_lock = threading.Lock()
 _metrics_cache = None
+
+# Periodic-wedge state. A single wedge slot per process: one request at
+# a time may enter the spin loop and wait for the daemon's
+# RequestTimeout injection to unwind it. _last_wedge_end is monotonic
+# seconds at which the most recent wedge unwound; the next wedge is
+# eligible BENCHMARK_WEDGE_INTERVAL seconds after that.
+#
+# To stop sibling daemon processes from wedging in lockstep (which would
+# make the entire server appear frozen during the overlap), the initial
+# _last_wedge_end is offset by a deterministic per-pid jitter so each
+# process fires its first wedge at a different time within the interval.
+_wedge_lock = threading.Lock()
+_wedge_in_progress = False
+if _WEDGE_INTERVAL > 0:
+    _wedge_offset = (_PID * 0.6180339887) % 1.0 * _WEDGE_INTERVAL
+    _last_wedge_end = time.monotonic() - (_WEDGE_INTERVAL - _wedge_offset)
+else:
+    _last_wedge_end = 0.0
+
+
+def _maybe_wedge():
+    """If wedge mode is enabled and the inter-wedge gap has elapsed,
+    enter a spin loop and stay there until the daemon injects
+    mod_wsgi.RequestTimeout, which unwinds via the finally block and
+    propagates to the WSGI adapter (producing a 504 Gateway Timeout
+    response).
+
+    The loop sleeps each iteration so the wedged thread does not hog
+    the GIL — sibling threads in the same process must keep serving
+    normal requests while one thread sits here. PyThreadState_SetAsyncExc
+    only fires on bytecode dispatch, so the injected exception lands on
+    the loop iteration after sleep returns; the small sleep adds at most
+    that interval of extra latency to the unwind.
+    """
+    global _wedge_in_progress, _last_wedge_end
+
+    if _WEDGE_INTERVAL <= 0:
+        return
+
+    now = time.monotonic()
+
+    with _wedge_lock:
+        if _wedge_in_progress:
+            return
+        if (now - _last_wedge_end) < _WEDGE_INTERVAL:
+            return
+        _wedge_in_progress = True
+
+    try:
+        while True:
+            time.sleep(0.05)
+    finally:
+        with _wedge_lock:
+            _wedge_in_progress = False
+            _last_wedge_end = time.monotonic()
 
 
 def _cpu_burn(seconds):
@@ -357,4 +431,5 @@ def application(environ, start_response):
         return _metrics_reset(environ, start_response)
     if path == "/metrics/report":
         return _metrics_report(environ, start_response)
+    _maybe_wedge()
     return _bench(environ, start_response)

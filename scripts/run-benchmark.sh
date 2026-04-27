@@ -25,6 +25,33 @@
 #                             Only meaningful in daemon mode; no-op otherwise.
 #                             Setting to 0 combined with --disable-reloading
 #                             bypasses the Apache-to-daemon handshake.
+#       --request-timeout SEC
+#                             Pass --request-timeout SEC to mod_wsgi-express,
+#                             overriding its default of 60s. Combined with
+#                             --interrupt-timeout this is what bounds the
+#                             total wedge unwind time. Only meaningful in
+#                             daemon mode; no-op otherwise.
+#       --interrupt-timeout SEC
+#                             Pass --interrupt-timeout SEC to
+#                             mod_wsgi-express, overriding its default
+#                             of 10s. 0 disables per-thread RequestTimeout
+#                             injection (request-timeout reverts to the
+#                             average-across-threads behaviour). Only
+#                             meaningful in daemon mode; no-op otherwise.
+#       --wedge-interval SEC  Inject a request that spins in pure Python
+#                             until the daemon's RequestTimeout injection
+#                             unwinds it. SEC is the minimum gap (in
+#                             seconds) between wedge end and the next
+#                             wedge start, measured per process. The
+#                             goal is to surface periodic 504 Gateway
+#                             Timeout records in slow-request telemetry
+#                             without disrupting bulk traffic. Requires a
+#                             non-zero --interrupt-timeout (otherwise the
+#                             wedged request takes the daemon process
+#                             down via the request-timeout fallback).
+#                             Requires a benchmark script that reads
+#                             BENCHMARK_WEDGE_INTERVAL. Default 0
+#                             (disabled).
 #       --delay SECONDS       Sleep this many (fractional) seconds per
 #                             request inside the WSGI app to emulate I/O
 #                             wait. Requires a benchmark script that reads
@@ -110,6 +137,9 @@
 #                             own default (2s) cancels long-tail
 #                             requests mid-stream, which the daemon
 #                             then reports as truncated slow records.
+#       --log-level LEVEL     Apache LogLevel passed to mod_wsgi-express
+#                             (e.g. emerg, alert, crit, error, warn,
+#                             notice, info, debug). Default: warn.
 #   -h, --help                Show this help
 
 set -e
@@ -128,6 +158,9 @@ PORT=8765
 SCRIPT=tests/hello.wsgi
 DISABLE_RELOADING=0
 QUEUE_TIMEOUT=
+REQUEST_TIMEOUT=
+INTERRUPT_TIMEOUT=
+WEDGE_INTERVAL=0
 DELAY=0
 CPU=0
 CHUNKS=1
@@ -143,6 +176,7 @@ METRICS_SERVICE=
 METRICS_INTERVAL=1.0
 SLOW_REQUESTS=
 BOMBARDIER_TIMEOUT=10s
+LOG_LEVEL=warn
 
 usage() {
     awk '/^# Benchmark/,/^$/' "$0" | sed 's/^# \{0,1\}//'
@@ -161,6 +195,9 @@ while [ $# -gt 0 ]; do
         -s|--script)      SCRIPT="$2"; shift 2 ;;
         --disable-reloading) DISABLE_RELOADING=1; shift ;;
         --queue-timeout)  QUEUE_TIMEOUT="$2"; shift 2 ;;
+        --request-timeout) REQUEST_TIMEOUT="$2"; shift 2 ;;
+        --interrupt-timeout) INTERRUPT_TIMEOUT="$2"; shift 2 ;;
+        --wedge-interval) WEDGE_INTERVAL="$2"; shift 2 ;;
         --delay)          DELAY="$2"; shift 2 ;;
         --cpu)            CPU="$2"; shift 2 ;;
         --chunks)         CHUNKS="$2"; shift 2 ;;
@@ -176,6 +213,7 @@ while [ $# -gt 0 ]; do
         --metrics-interval)   METRICS_INTERVAL="$2"; shift 2 ;;
         --slow-requests)      SLOW_REQUESTS="$2"; shift 2 ;;
         --bombardier-timeout) BOMBARDIER_TIMEOUT="$2"; shift 2 ;;
+        --log-level)      LOG_LEVEL="$2"; shift 2 ;;
         -h|--help)        usage ;;
         *) echo "ERROR: Unknown option: $1" >&2; usage 1 ;;
     esac
@@ -266,7 +304,7 @@ setup_args=(
     --port "$PORT"
     --processes "$PROCESSES"
     --threads "$THREADS"
-    --log-level warn
+    --log-level "$LOG_LEVEL"
 )
 
 if [ "$MODE" = "embedded" ]; then
@@ -277,6 +315,12 @@ else
     fi
     if [ -n "$QUEUE_TIMEOUT" ]; then
         setup_args+=(--queue-timeout "$QUEUE_TIMEOUT")
+    fi
+    if [ -n "$REQUEST_TIMEOUT" ]; then
+        setup_args+=(--request-timeout "$REQUEST_TIMEOUT")
+    fi
+    if [ -n "$INTERRUPT_TIMEOUT" ]; then
+        setup_args+=(--interrupt-timeout "$INTERRUPT_TIMEOUT")
     fi
 fi
 
@@ -301,6 +345,24 @@ if [ "$MODE" = "daemon" ] && [ -n "$QUEUE_TIMEOUT" ]; then
     queue_timeout_state="$QUEUE_TIMEOUT"
 else
     queue_timeout_state="default"
+fi
+
+if [ "$MODE" = "daemon" ] && [ -n "$REQUEST_TIMEOUT" ]; then
+    request_timeout_state="$REQUEST_TIMEOUT"
+else
+    request_timeout_state="default"
+fi
+
+if [ "$MODE" = "daemon" ] && [ -n "$INTERRUPT_TIMEOUT" ]; then
+    interrupt_timeout_state="$INTERRUPT_TIMEOUT"
+else
+    interrupt_timeout_state="default"
+fi
+
+if [ "$WEDGE_INTERVAL" != "0" ] && [ -n "$WEDGE_INTERVAL" ]; then
+    wedge_state="${WEDGE_INTERVAL}s gap"
+else
+    wedge_state="disabled"
 fi
 
 if [ "$METRICS" = "1" ]; then
@@ -330,6 +392,9 @@ echo "  client timeout : $BOMBARDIER_TIMEOUT"
 echo "  port           : $PORT"
 echo "  reloading      : $reloading_state"
 echo "  queue-timeout  : $queue_timeout_state"
+echo "  request-tmo    : $request_timeout_state"
+echo "  interrupt-tmo  : $interrupt_timeout_state"
+echo "  wedge          : $wedge_state"
 echo "  delay          : ${DELAY}s"
 echo "  cpu            : ${CPU}s"
 echo "  chunks         : $CHUNKS"
@@ -357,6 +422,7 @@ export BENCHMARK_BODY_SIZE="$BODY_SIZE"
 export BENCHMARK_BODY_CHUNKS="$BODY_CHUNKS"
 export BENCHMARK_4XX_RATE="$RATE_4XX"
 export BENCHMARK_5XX_RATE="$RATE_5XX"
+export BENCHMARK_WEDGE_INTERVAL="$WEDGE_INTERVAL"
 
 echo "Starting mod_wsgi-express..."
 "$MOD_WSGI_EXPRESS" setup-server "${setup_args[@]}" >/dev/null
