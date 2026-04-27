@@ -19,24 +19,48 @@ in production deployments.
 New Features
 ------------
 
-* New ``interrupt-timeout`` option for ``WSGIDaemonProcess``. When set to
-  a non-zero value, ``request-timeout`` switches from averaging across
-  threads to per-thread tracking, and when any single thread crosses the
-  threshold mod_wsgi attempts to interrupt only that thread by injecting
-  a new ``mod_wsgi.RequestTimeout`` exception into it via Python's
+* ``request-timeout`` recovery overhauled, with a new ``interrupt-timeout``
+  option for opt-in injection-based recovery, a new natural-log scaling
+  rule for the per-thread fire point, and a stale-aware
+  ``graceful-timeout`` drain check.
+
+  Detection: instead of averaging elapsed time across threads (the old
+  rule, which could only fire after ``threads × request-timeout`` of
+  wedged-thread time), each thread is now compared independently
+  against ``request-timeout × (1 + ln(threads))``. At ``threads=1``
+  this collapses to ``request-timeout``; at ``threads=10`` it is ~3.3x;
+  at ``threads=25`` it is ~4.2x. The shape grants proportionally more
+  patience as parallel capacity grows without letting the threshold
+  run away. Multiple wedged threads are detected on the same schedule
+  a single wedge would be.
+
+  Recovery: when ``interrupt-timeout`` is non-zero, mod_wsgi attempts
+  to interrupt only the offending thread by injecting a new
+  ``mod_wsgi.RequestTimeout`` exception via Python's
   ``PyThreadState_SetAsyncExc``. If the injection unwinds the stuck
   request within the ``interrupt-timeout`` grace window, the WSGI
   adapter returns ``504 Gateway Timeout`` and the worker thread returns
-  to the pool to handle further requests — the daemon process keeps
-  running normally, and other threads were never disturbed. If the
-  grace expires with the request still active, the process is restarted
-  via the same path as before. ``RequestTimeout`` is a subclass of
+  to the pool — the daemon process keeps running, and other threads
+  were never disturbed. ``RequestTimeout`` is a subclass of
   ``SystemExit`` so well-written code does not catch it via
   ``except Exception:``; user code may catch it for cleanup but should
-  re-raise. The default for ``WSGIDaemonProcess`` is ``0`` (feature
-  disabled). ``mod_wsgi-express`` ships with a default of ``10`` seconds
-  to opt new deployments into the new behaviour. Daemon mode only;
-  embedded mode is unchanged.
+  re-raise. When ``interrupt-timeout`` is ``0`` (the default) injection
+  is skipped and recovery falls straight through to
+  ``graceful-timeout`` followed by ``shutdown-timeout``. Either way,
+  detection is identical — ``interrupt-timeout`` only changes the
+  recovery method.
+
+  Drain: the ``graceful-timeout`` "is the process idle yet?" check now
+  ignores any in-flight request whose elapsed time has already
+  exceeded ``request-timeout + interrupt-timeout``. A wedged thread
+  that will not unwind voluntarily no longer pins the process inside
+  graceful-timeout for its full configured duration; sibling requests
+  get the chance to finish cleanly and the wedged thread rides out
+  via ``shutdown-timeout``'s forced kill.
+
+  ``mod_wsgi-express`` ``--interrupt-timeout`` defaults to ``0``;
+  operators who want injection-based recovery opt in explicitly.
+  Daemon mode only; embedded mode is unchanged.
 
 Features Changed
 ----------------

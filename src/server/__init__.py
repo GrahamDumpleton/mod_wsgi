@@ -2047,22 +2047,25 @@ add_option('unix', '--ignore-activity', action='append',
         'checks do not prevent process restarts due to inactivity.')
 
 add_option('unix', '--request-timeout', type='int', default=60,
-        metavar='SECONDS', help='Maximum number of seconds allowed '
-        'to pass before the worker process is forcibly shutdown and '
-        'restarted when a request does not complete in the expected '
-        'time. In a multi threaded worker, the request time is '
-        'calculated as an average across all request threads. Defaults '
-        'to 60 seconds.')
+        metavar='SECONDS', help='Per-thread upper bound for how long a '
+        'request can run before recovery is triggered. The actual fire '
+        'point scales with thread count by natural log: '
+        'request-timeout * (1 + ln(threads)). At threads=1 this collapses '
+        'to request-timeout; at threads=10 it is ~3.3x; at threads=25 it '
+        'is ~4.2x. Recovery is either RequestTimeout injection (if '
+        '--interrupt-timeout is non-zero) or graceful-timeout followed '
+        'by shutdown-timeout. Defaults to 60 seconds.')
 
-add_option('unix', '--interrupt-timeout', type='int', default=10,
-        metavar='SECONDS', help='When non-zero, switches request-timeout '
-        'to per-thread tracking and attempts to interrupt only the wedged '
-        'thread by injecting a mod_wsgi.RequestTimeout exception (subclass '
-        'of SystemExit) into it. If the injection unwinds the stuck '
-        'request before this many seconds elapse, the WSGI adapter returns '
-        '504 Gateway Timeout and the worker thread continues serving '
-        'further requests; otherwise the daemon process is restarted. '
-        'Defaults to 10 seconds.')
+add_option('unix', '--interrupt-timeout', type='int', default=0,
+        metavar='SECONDS', help='When non-zero, attempts to interrupt only '
+        'the wedged thread when request-timeout fires by injecting a '
+        'mod_wsgi.RequestTimeout exception (subclass of SystemExit) into '
+        'it. If the injection unwinds the stuck request before this many '
+        'seconds elapse, the WSGI adapter returns 504 Gateway Timeout and '
+        'the worker thread continues serving further requests; otherwise '
+        'the daemon process falls through to graceful-timeout and then '
+        'shutdown-timeout. Detection is unaffected by this setting; only '
+        'the recovery method changes. Defaults to 0 (disabled).')
 
 add_option('unix', '--connect-timeout', type='int', default=15,
         metavar='SECONDS', help='Maximum number of seconds allowed '
