@@ -19,7 +19,24 @@ in production deployments.
 New Features
 ------------
 
-* ...
+* New ``interrupt-timeout`` option for ``WSGIDaemonProcess``. When set to
+  a non-zero value, ``request-timeout`` switches from averaging across
+  threads to per-thread tracking, and when any single thread crosses the
+  threshold mod_wsgi attempts to interrupt only that thread by injecting
+  a new ``mod_wsgi.RequestTimeout`` exception into it via Python's
+  ``PyThreadState_SetAsyncExc``. If the injection unwinds the stuck
+  request within the ``interrupt-timeout`` grace window, the WSGI
+  adapter returns ``504 Gateway Timeout`` and the worker thread returns
+  to the pool to handle further requests — the daemon process keeps
+  running normally, and other threads were never disturbed. If the
+  grace expires with the request still active, the process is restarted
+  via the same path as before. ``RequestTimeout`` is a subclass of
+  ``SystemExit`` so well-written code does not catch it via
+  ``except Exception:``; user code may catch it for cleanup but should
+  re-raise. The default for ``WSGIDaemonProcess`` is ``0`` (feature
+  disabled). ``mod_wsgi-express`` ships with a default of ``10`` seconds
+  to opt new deployments into the new behaviour. Daemon mode only;
+  embedded mode is unchanged.
 
 Features Changed
 ----------------
@@ -65,22 +82,6 @@ Features Changed
   (404 vs 401 vs 410, etc.); for per-code detail on slow responses,
   the ``WSGISlowRequests`` telemetry stream now also carries the final
   HTTP status on each slow-request record.
-
-* When ``request-timeout`` fires on a daemon process group with
-  ``processes > 1`` and ``graceful-timeout`` greater than zero, the
-  affected daemon now enters a drain state — it stops competing for
-  the cross-process accept mutex so peer daemons absorb new work
-  while its healthy in-flight requests finish, and it only forces a
-  restart once the drain completes or ``graceful-timeout`` expires.
-  Previously, firing ``request-timeout`` restarted the process
-  immediately and interrupted every in-flight request on it,
-  including healthy ones. The abrupt behaviour is preserved for
-  single-process groups and for groups that explicitly set
-  ``graceful-timeout=0``. A new log line, ``draining process '<name>'
-  for up to N seconds``, is emitted when the drain path is taken;
-  monitoring that alerted on the previous ``stopping process`` line
-  from ``request-timeout`` will see this replacement in the
-  multi-process case.
 
 * When a daemon process closes its connection or encounters a read error
   before returning complete response headers, the request now receives a

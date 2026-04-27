@@ -116,6 +116,7 @@ typedef struct
     apr_time_t deadlock_timeout;
     apr_time_t inactivity_timeout;
     apr_time_t request_timeout;
+    apr_time_t interrupt_timeout;
     apr_time_t graceful_timeout;
     apr_time_t eviction_timeout;
     apr_time_t restart_interval;
@@ -163,6 +164,8 @@ typedef struct
     apr_thread_cond_t *condition;
     apr_thread_mutex_t *mutex;
     apr_time_t request;
+    unsigned long python_thread_id;
+    apr_time_t injected_at;
 } WSGIDaemonThread;
 
 typedef struct

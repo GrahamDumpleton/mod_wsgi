@@ -51,6 +51,8 @@ extern const char *wsgi_python_eggs;
 
 extern PyObject *wsgi_interpreters;
 
+extern PyObject *wsgi_request_timeout_exc;
+
 extern apr_hash_t *wsgi_interpreters_index;
 
 #if APR_HAS_THREADS

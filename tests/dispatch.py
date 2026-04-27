@@ -11,6 +11,14 @@ daemon process against the same callable name.
 
 
 def process_group(environ):
+    # Tests that need a daemon group with non-default options (e.g.
+    # short request-timeout / interrupt-timeout for the
+    # interrupt_timeout test) declare it in their per-test .conf as a
+    # named WSGIDaemonProcess and dispatch to it here. The named group
+    # must exist in the harness config or routing fails.
+    if environ.get("SCRIPT_NAME", "").startswith("/test/wsgi/interrupt-timeout"):
+        return "interrupt-timeout-test"
+
     # Matches "process-group=localhost:$PORT" on the WSGIScriptAlias.
     # The harness passes MOD_WSGI_TESTS_DAEMON_PORT via SetEnv so
     # requests arriving on the HTTPS listener (where SERVER_PORT is

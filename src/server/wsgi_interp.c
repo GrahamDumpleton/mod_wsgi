@@ -885,6 +885,36 @@ InterpreterObject *newInterpreterObject(const char *name)
         goto failure;
 
     /*
+     * Add the RequestTimeout exception class. The exception is created
+     * once at process scope and shared across all interpreters that
+     * import the 'mod_wsgi' module. Subclass of SystemExit so that
+     * well-written code does not catch it via 'except Exception:'.
+     * Used by the daemon monitor thread when injecting a timeout
+     * exception into a worker via PyThreadState_SetAsyncExc().
+     */
+
+    if (!wsgi_request_timeout_exc)
+    {
+        wsgi_request_timeout_exc = PyErr_NewExceptionWithDoc(
+            "mod_wsgi.RequestTimeout",
+            "Raised by mod_wsgi when a daemon request exceeds the "
+            "configured request-timeout and exception injection is "
+            "enabled. Subclass of SystemExit so well-written code does "
+            "not catch it via 'except Exception:'. May be caught for "
+            "cleanup but should be re-raised so the WSGI adapter can "
+            "return 504.",
+            PyExc_SystemExit, NULL);
+
+        if (!wsgi_request_timeout_exc)
+            goto failure;
+    }
+
+    Py_INCREF(wsgi_request_timeout_exc);
+    if (wsgi_module_add_object(module, "RequestTimeout",
+                               wsgi_request_timeout_exc) < 0)
+        goto failure;
+
+    /*
      * Add information about process group and application
      * group to the Python 'mod_wsgi' module.
      */
@@ -1979,6 +2009,8 @@ apr_thread_mutex_t *wsgi_shutdown_lock = NULL;
 #endif
 
 PyObject *wsgi_interpreters = NULL;
+
+PyObject *wsgi_request_timeout_exc = NULL;
 
 apr_hash_t *wsgi_interpreters_index = NULL;
 

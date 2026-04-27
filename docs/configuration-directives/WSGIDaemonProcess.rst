@@ -357,61 +357,117 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     before the daemon process is restarted. This is a process-level
     fail-safe for recovering from requests that block indefinitely; it is
     not a per-request SLA mechanism (a fired timeout takes down the whole
-    process, not just the stuck request).
+    process, not just the stuck request, unless ``interrupt-timeout`` is
+    set — see below).
 
-    How this option is seen to behave is different depending on whether a
-    daemon process uses only one thread, or more than one thread for
-    handling requests, as set by the ``threads`` option.
+    How this option is seen to behave depends on whether ``interrupt-timeout``
+    has been configured.
 
-    If there is only a single thread, and so the process can only handle
-    one request at a time, as soon as the timeout has passed, a restart of
-    the process will be initiated.
+    **Default behaviour (** ``interrupt-timeout=0`` **):** the request
+    time is calculated as an average across all request threads. This
+    means that a request can run longer than the request timeout, which
+    reduces the possibility of interrupting other running requests and
+    causing a user to see a failure. The consequence is that a single
+    stuck thread is diluted by the idle ones: with ``threads=10``, one
+    thread wedged for 60 seconds while the other nine are idle averages
+    to six seconds. Raising ``threads`` therefore also raises the
+    effective firing point in wall-clock terms. When the timeout fires
+    the daemon process is restarted via ``SIGINT``, with
+    ``shutdown-timeout`` governing how long workers are given to finish
+    their current request before being force-killed.
 
-    If there is more than one thread, the request timeout is applied to
-    the average running time for any requests, across all threads. This
-    means that a request can run longer than the request timeout. This is
-    done to reduce the possibility of interupting other running requests,
-    and causing a user to see a failure. So where there is still capacity
-    to handle more requests, restarting of the process will be delayed
-    if possible. One consequence is that a single stuck thread is diluted
-    by the idle ones: with ``threads=10``, one thread wedged for 60 seconds
-    while the other nine are idle averages to six seconds. Raising
-    ``threads`` therefore also raises the effective firing point in
-    wall-clock terms.
+    **With** ``interrupt-timeout`` **set:** request times are tracked
+    per-thread, with no averaging. When a single thread crosses
+    ``request-timeout`` an attempt is made to interrupt only that thread
+    by injecting a :py:class:`mod_wsgi.RequestTimeout` exception via
+    Python's async-exception machinery. If the injection lands and the
+    request unwinds within the ``interrupt-timeout`` grace window, the
+    WSGI adapter returns 504 Gateway Timeout, the worker thread returns
+    to the pool, and the process keeps running normally. If the grace
+    window expires with the request still active, the process is
+    restarted as in the default case. See ``interrupt-timeout`` for
+    details.
 
-    When the timeout does fire, the behaviour depends on how the daemon
-    process group is configured:
-
-    * **Multi-process group with** ``graceful-timeout`` **set**
-      (``processes > 1`` and ``graceful-timeout`` greater than zero): the
-      daemon enters a drain state. It stops competing for the
-      cross-process accept mutex, so new requests in the group are
-      absorbed by peer daemons while the stuck process lets its healthy
-      in-flight requests complete. If all in-flight requests finish
-      before the ``graceful-timeout`` expires the process restarts
-      cleanly; otherwise the process is stopped when the graceful timer
-      expires (the still-stuck request is interrupted at that point).
-    * **Single-process group, or** ``graceful-timeout=0`` **(the
-      opt-out)**: the process is stopped immediately when the timeout
-      fires. Every in-flight request on the process is interrupted,
-      including healthy ones. Apache retries on the next request once
-      the process has restarted.
-
-    Sizing guidance: set ``request-timeout`` a few times above the
-    p99 of normal request duration — enough that steady-state traffic
-    never trips it. **Do not** multiply by ``threads``: the
-    average-across-threads rule already dilutes the trigger, so a
-    single wedged thread takes roughly ``threads`` × ``request-timeout``
-    seconds to fire; padding the value further only lengthens detection
-    time. For user-visible per-request deadlines (as distinct from a
-    fail-safe) prefer application-level timeouts, such as HTTP client
-    and database statement timeouts inside the request handler itself.
+    Sizing guidance: set ``request-timeout`` a few times above the p99
+    of normal request duration — enough that steady-state traffic never
+    trips it. With the default averaging behaviour, a single wedged
+    thread takes roughly ``threads`` × ``request-timeout`` seconds to
+    fire; do not pad the value further to compensate, as that only
+    lengthens detection time. For user-visible per-request deadlines (as
+    distinct from a fail-safe) prefer application-level timeouts, such
+    as HTTP client and database statement timeouts inside the request
+    handler itself.
 
     Note that when a process is restarted due to a request timeout, if the
     Apache ``LogLevel`` is set to ``info`` or higher, or ``wsgi:info`` applied
-    for ``LogLevel```, messages will be logged to the Apache error log file for
+    for ``LogLevel``, messages will be logged to the Apache error log file for
     the request which gives the Python stack trace for any request handler
     threads so you can work out where the request is blocking.
+
+    See also ``deadlock-timeout`` for handling cases where a Python C
+    extension wedges the GIL — the injection mechanism cannot recover
+    those, but ``deadlock-timeout`` will detect the wedge and restart
+    the process.
+
+.. _interrupt-timeout:
+
+**interrupt-timeout=sss**
+    Defines the maximum number of seconds allowed for an injected
+    :py:class:`mod_wsgi.RequestTimeout` exception to take effect before
+    the daemon process is restarted. Defaults to 0 (feature disabled).
+
+    When set to 0, the existing average-across-threads ``request-timeout``
+    behaviour is preserved. When set to a non-zero value, request times
+    are tracked per-thread and, when any single thread crosses
+    ``request-timeout``, mod_wsgi injects a
+    :py:class:`mod_wsgi.RequestTimeout` exception into that thread.
+    The exception is a subclass of ``SystemExit``, so well-written code
+    using ``except Exception:`` will not catch it. It may be caught for
+    cleanup purposes but should be re-raised — swallowing it is counter
+    to its purpose, similar to swallowing ``SystemExit``. If the
+    exception unwinds back to the WSGI adapter within the
+    ``interrupt-timeout`` grace window, the adapter returns
+    ``504 Gateway Timeout`` and the worker thread returns to the pool
+    to handle further requests. **The process is not restarted; other
+    threads were never disturbed.** If the grace window expires with the
+    same request still active, the process is restarted as if
+    ``interrupt-timeout`` were not set.
+
+    Recommended floor of ~10 seconds when enabled. Values significantly
+    below that may not give the injected exception time to unwind
+    through finally blocks, context managers, and the WSGI adapter.
+
+    Best-effort: the injection takes effect only when the target thread
+    next runs Python bytecode. This has implications depending on what
+    the thread is actually doing:
+
+    * **Thread running Python code** (loops, computation, etc.): the
+      exception fires on the next bytecode tick, almost immediately.
+      This is the case the mechanism is designed for.
+
+    * **Thread blocked in a C call that has released the GIL** (the
+      common case — most socket reads, database driver calls,
+      ``time.sleep``, file I/O, etc.): the injected exception is
+      queued on the thread but does not fire until the blocking call
+      returns and Python bytecode runs again. If the external service
+      eventually responds or times out, the exception fires then. **If
+      the blocking call hangs indefinitely, the injected exception
+      will never fire.** In that case the ``interrupt-timeout`` grace
+      window will expire and the daemon process will be restarted via
+      the existing fallback, taking the wedged request down with it.
+      For user-visible per-request deadlines on external calls, prefer
+      explicit application-level timeouts on the client itself (HTTP
+      client read timeouts, database statement timeouts, etc.) — those
+      bound the blocking call, which then lets ``interrupt-timeout``
+      do its job cleanly.
+
+    * **Thread blocked in a C extension that holds the GIL**: the
+      injection cannot even reach the thread, and no other Python
+      thread can run either. This is what ``deadlock-timeout`` exists
+      for.
+
+    The ``threads=0`` managed-process mode is unaffected — it has no
+    requests and no per-thread timers.
 
 .. _deadlock-timeout:
 
@@ -454,16 +510,6 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     timeout expires, the process will be restarted, even if it means that
     requests may be interrupted.
 
-    The ``graceful-timeout`` is also used by ``request-timeout`` when the
-    daemon process group has more than one process: on firing, the stuck
-    daemon drains for up to ``graceful-timeout`` seconds while peer
-    daemons absorb new requests. Unlike the triggers listed above, the
-    draining daemon **stops** accepting new work during the drain so
-    that its wedged state cannot attract further traffic. See
-    ``request-timeout`` for details. Setting ``graceful-timeout=0``
-    opts out of the drain path and reverts ``request-timeout`` to the
-    immediate-restart behaviour.
-
 .. _eviction-timeout:
 
 **eviction-timeout=sss**
@@ -483,11 +529,33 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 **shutdown-timeout=sss**
     Defines the maximum number of seconds allowed to pass when waiting for
     a daemon process to shutdown. When this timeout has been reached the
-    daemon process will be forced to exited even if there are still active
-    requests or it is still running Python exit functions. The shutdown
-    timeout is applied after any graceful restart timeout or eviction
-    timeout if they have been specified. No new requests are accepted
-    during the shutdown timeout is being applied.
+    daemon process will be forced to exit even if there are still active
+    requests or it is still running Python exit functions. No new requests
+    are accepted while the shutdown timeout is being applied.
+
+    The shutdown timeout is applied after any other trigger has decided
+    that the process should exit, regardless of which trigger initiated
+    the shutdown. This includes:
+
+    * ``graceful-timeout`` expiry (from ``maximum-requests``,
+      ``restart-interval``, ``cpu-time-limit``, or the Apache graceful
+      restart signal in the absence of ``eviction-timeout``);
+    * ``eviction-timeout`` expiry (the Apache graceful restart signal
+      with ``eviction-timeout`` set);
+    * ``request-timeout`` firing — for users who have not opted into
+      ``interrupt-timeout``, this leads directly to shutdown;
+    * ``interrupt-timeout`` grace window expiry — when an injected
+      ``RequestTimeout`` did not unwind the wedged request in time;
+    * ``deadlock-timeout`` firing;
+    * ``inactivity-timeout`` and ``startup-timeout`` firing;
+    * external ``SIGTERM`` / ``SIGINT`` from Apache parent or operator.
+
+    For request-timeout / interrupt-timeout in particular,
+    ``shutdown-timeout`` is the wait given to in-flight requests on the
+    process to finish before the process is force-killed. If the wait
+    is too short, healthy in-flight requests on other threads may be
+    interrupted; if too long, recovery from a wedged process is
+    delayed. The default of 5 seconds suits most workloads.
 
     If this option is not defined, then the shutdown timeout will be set
     to 5 seconds. Note that this option does not change the shutdown
@@ -523,7 +591,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     you to specify that a request that was queued up waiting for too long
     is discarded, allowing any transient backlog to be quickly discarded
     and not simply cause the daemon process to become even more backlogged.
-    When this occurs the user will recieve a 504 Gateway Time Out response.
+    When this occurs the user will recieve a 504 Gateway Timeout response.
 
 .. _listen-backlog:
 
@@ -762,6 +830,7 @@ out with:
 * ``socket-timeout=60``
 * ``connect-timeout=15``
 * ``request-timeout=60``
+* ``interrupt-timeout=0``
 * ``inactivity-timeout=0``
 * ``startup-timeout=15``
 * ``deadlock-timeout=60``

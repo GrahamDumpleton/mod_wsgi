@@ -348,6 +348,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    socket-timeout=%(socket_timeout)s \\
    connect-timeout=%(connect_timeout)s \\
    request-timeout=%(request_timeout)s \\
+   interrupt-timeout=%(interrupt_timeout)s \\
    inactivity-timeout=%(inactivity_timeout)s \\
    startup-timeout=%(startup_timeout)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
@@ -378,6 +379,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    socket-timeout=%(socket_timeout)s \\
    connect-timeout=%(connect_timeout)s \\
    request-timeout=%(request_timeout)s \\
+   interrupt-timeout=%(interrupt_timeout)s \\
    inactivity-timeout=%(inactivity_timeout)s \\
    startup-timeout=%(startup_timeout)s \\
    deadlock-timeout=%(deadlock_timeout)s \\
@@ -2052,6 +2054,16 @@ add_option('unix', '--request-timeout', type='int', default=60,
         'calculated as an average across all request threads. Defaults '
         'to 60 seconds.')
 
+add_option('unix', '--interrupt-timeout', type='int', default=10,
+        metavar='SECONDS', help='When non-zero, switches request-timeout '
+        'to per-thread tracking and attempts to interrupt only the wedged '
+        'thread by injecting a mod_wsgi.RequestTimeout exception (subclass '
+        'of SystemExit) into it. If the injection unwinds the stuck '
+        'request before this many seconds elapse, the WSGI adapter returns '
+        '504 Gateway Timeout and the worker thread continues serving '
+        'further requests; otherwise the daemon process is restarted. '
+        'Defaults to 10 seconds.')
+
 add_option('unix', '--connect-timeout', type='int', default=15,
         metavar='SECONDS', help='Maximum number of seconds allowed '
         'to pass before giving up on attempting to get a connection '
@@ -3446,6 +3458,9 @@ def _cmd_setup_server(command, args, options):
 
     if not options['debug_mode'] and not options['embedded_mode']:
         print('Request Timeout    : %s (seconds)' % options['request_timeout'])
+
+        if options['interrupt_timeout']:
+            print('Interrupt Timeout  : %s (seconds)' % options['interrupt_timeout'])
 
         if options['startup_timeout']:
             print('Startup Timeout    : %s (seconds)' % options['startup_timeout'])

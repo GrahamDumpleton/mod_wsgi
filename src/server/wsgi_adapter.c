@@ -23,6 +23,7 @@
 #include "wsgi_buckets.h"
 #include "wsgi_convert.h"
 #include "wsgi_daemon.h"
+#include "wsgi_interp.h"
 #include "wsgi_logger.h"
 #include "wsgi_metrics.h"
 #include "wsgi_stream.h"
@@ -2491,27 +2492,75 @@ int Adapter_run(AdapterObject *self, PyObject *object)
 
         if (PyErr_Occurred())
         {
-            /*
-             * Response content has already been sent, so cannot
-             * return an internal server error as Apache will
-             * append its own error page. Thus need to return OK
-             * and just truncate the response.
-             */
+            int is_request_timeout = 0;
 
-            if (self->status_line && !self->headers)
+            if (wsgi_request_timeout_exc &&
+                PyErr_ExceptionMatches(wsgi_request_timeout_exc))
+                is_request_timeout = 1;
+
+            if (is_request_timeout && !(self->status_line && !self->headers))
+            {
+                /*
+                 * RequestTimeout was injected and reached the adapter
+                 * before the response headers were flushed. Produce a
+                 * 504 Gateway Timeout response. The worker thread
+                 * returns to the pool; the process is not shut down.
+                 */
+
+                self->r->status = HTTP_GATEWAY_TIME_OUT;
+                self->r->status_line = "504 Gateway Timeout";
+                self->status = HTTP_GATEWAY_TIME_OUT;
                 self->result = OK;
 
-            wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
+                PyErr_Clear();
 
-            /*
-             * If response content is being chunked and an error
-             * occurred, we need to prevent the sending of the EOS
-             * bucket so a client is able to detect that the the
-             * response was incomplete.
-             */
+                wsgi_log_rerror_locked(APLOG_INFO, 0, self->r,
+                                       "Request interrupted by "
+                                       "RequestTimeout; thread "
+                                       "recovered.");
+            }
+            else
+            {
+                /*
+                 * Response content has already been sent, so cannot
+                 * return an internal server error as Apache will
+                 * append its own error page. Thus need to return OK
+                 * and just truncate the response.
+                 */
 
-            if (self->r->chunked)
-                self->r->eos_sent = 1;
+                if (self->status_line && !self->headers)
+                    self->result = OK;
+
+                if (is_request_timeout)
+                {
+                    /*
+                     * RequestTimeout but the headers were already
+                     * flushed; the wire status is committed and we
+                     * can only truncate. Clear the exception so it
+                     * isn't logged as an unhandled error.
+                     */
+
+                    PyErr_Clear();
+
+                    wsgi_log_rerror_locked(APLOG_INFO, 0, self->r,
+                                           "Request interrupted by "
+                                           "RequestTimeout after headers "
+                                           "sent; response truncated.");
+                }
+                else
+                    wsgi_log_python_error(self->r, self->log,
+                                          self->r->filename, 1);
+
+                /*
+                 * If response content is being chunked and an error
+                 * occurred, we need to prevent the sending of the EOS
+                 * bucket so a client is able to detect that the the
+                 * response was incomplete.
+                 */
+
+                if (self->r->chunked)
+                    self->r->eos_sent = 1;
+            }
         }
 
         if (PyObject_HasAttrString(self->sequence, "close"))
@@ -2537,10 +2586,44 @@ int Adapter_run(AdapterObject *self, PyObject *object)
         }
 
         if (PyErr_Occurred())
-            wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
+        {
+            if (wsgi_request_timeout_exc &&
+                PyErr_ExceptionMatches(wsgi_request_timeout_exc))
+            {
+                PyErr_Clear();
+            }
+            else
+                wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
+        }
     }
     else
-        wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
+    {
+        /*
+         * The WSGI application call itself raised (no sequence
+         * returned). If RequestTimeout was injected before
+         * start_response was called, produce a 504 directly and
+         * return the worker to the pool. Otherwise log the error
+         * normally and let the default 500 result apply.
+         */
+
+        if (wsgi_request_timeout_exc &&
+            PyErr_ExceptionMatches(wsgi_request_timeout_exc))
+        {
+            self->r->status = HTTP_GATEWAY_TIME_OUT;
+            self->r->status_line = "504 Gateway Timeout";
+            self->status = HTTP_GATEWAY_TIME_OUT;
+            self->result = OK;
+
+            PyErr_Clear();
+
+            wsgi_log_rerror_locked(APLOG_INFO, 0, self->r,
+                                   "Request interrupted by "
+                                   "RequestTimeout; thread "
+                                   "recovered.");
+        }
+        else
+            wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
+    }
 
     /* Publish event for the end of the request. */
 
