@@ -851,7 +851,10 @@ static void wsgi_signal_handler(int signum)
 
     if (signum == AP_SIG_GRACEFUL)
     {
-        apr_file_write(wsgi_signal_pipe_out, "G", &nbytes);
+        if (wsgi_eviction_timeout)
+            apr_file_write(wsgi_signal_pipe_out, "E", &nbytes);
+        else
+            apr_file_write(wsgi_signal_pipe_out, "G", &nbytes);
         apr_file_flush(wsgi_signal_pipe_out);
     }
     else if (signum == SIGXCPU)
@@ -2286,14 +2289,14 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
             }
         }
 
-        if (!restart && wsgi_graceful_timeout)
+        if (!restart && (wsgi_graceful_timeout || wsgi_eviction_timeout))
         {
             if (graceful_time)
             {
                 if (graceful_time <= now)
                 {
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                                   "Daemon process graceful timer expired "
+                                   "Daemon process restart timer expired "
                                    "in process '%s'; forcing shutdown.",
                                    group->name);
 
@@ -2303,42 +2306,18 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                 {
                     if (!period || ((graceful_time - now) < period))
                         period = graceful_time - now;
-                    else if (wsgi_graceful_timeout < period)
-                        period = wsgi_graceful_timeout;
                 }
             }
             else
             {
-                if (!period || (wsgi_graceful_timeout < period))
-                    period = wsgi_graceful_timeout;
-            }
-        }
+                apr_interval_time_t hint = wsgi_graceful_timeout;
 
-        if (!restart && wsgi_eviction_timeout)
-        {
-            if (graceful_time)
-            {
-                if (graceful_time <= now)
-                {
-                    wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                                   "Daemon process eviction timer expired "
-                                   "in process '%s'; forcing shutdown.",
-                                   group->name);
+                if (wsgi_eviction_timeout &&
+                    (!hint || wsgi_eviction_timeout < hint))
+                    hint = wsgi_eviction_timeout;
 
-                    restart = 1;
-                }
-                else
-                {
-                    if (!period || ((graceful_time - now) < period))
-                        period = graceful_time - now;
-                    else if (wsgi_eviction_timeout < period)
-                        period = wsgi_eviction_timeout;
-                }
-            }
-            else
-            {
-                if (!period || (wsgi_eviction_timeout < period))
-                    period = wsgi_eviction_timeout;
+                if (hint && (!period || hint < period))
+                    period = hint;
             }
         }
 
@@ -2682,11 +2661,11 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                 }
             }
         }
-        else if (buf[0] == 'G')
+        else if (buf[0] == 'E')
         {
             if (!wsgi_daemon_graceful)
             {
-                wsgi_shutdown_reason = "graceful_signal";
+                wsgi_shutdown_reason = "eviction_signal";
 
                 if (wsgi_active_requests)
                 {
@@ -2694,10 +2673,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
                     apr_thread_mutex_lock(wsgi_monitor_lock);
                     wsgi_graceful_shutdown_time = apr_time_now();
-                    if (wsgi_eviction_timeout)
-                        wsgi_graceful_shutdown_time += wsgi_eviction_timeout;
-                    else
-                        wsgi_graceful_shutdown_time += wsgi_graceful_timeout;
+                    wsgi_graceful_shutdown_time += wsgi_eviction_timeout;
                     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
@@ -2710,6 +2686,39 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                 {
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Process eviction requested; triggering "
+                                   "immediate shutdown of process '%s'.",
+                                   daemon->group->name);
+
+                    wsgi_daemon_shutdown++;
+                    kill(getpid(), SIGINT);
+                }
+            }
+        }
+        else if (buf[0] == 'G')
+        {
+            if (!wsgi_daemon_graceful)
+            {
+                wsgi_shutdown_reason = "graceful_signal";
+
+                if (wsgi_active_requests)
+                {
+                    wsgi_daemon_graceful++;
+
+                    apr_thread_mutex_lock(wsgi_monitor_lock);
+                    wsgi_graceful_shutdown_time = apr_time_now();
+                    wsgi_graceful_shutdown_time += wsgi_graceful_timeout;
+                    apr_thread_mutex_unlock(wsgi_monitor_lock);
+
+                    wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                                   "Graceful restart requested; waiting "
+                                   "for in-flight requests to complete in "
+                                   "process '%s'.",
+                                   daemon->group->name);
+                }
+                else
+                {
+                    wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                                   "Graceful restart requested; triggering "
                                    "immediate shutdown of process '%s'.",
                                    daemon->group->name);
 
