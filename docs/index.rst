@@ -32,6 +32,8 @@ Both approaches are suitable for production use.
 Where to start
 --------------
 
+* Want background on how mod_wsgi works with Apache and the common
+  deployment shapes? See :doc:`how-mod-wsgi-works`.
 * New to mod_wsgi? Start with :doc:`getting-started`.
 * Already running Apache and want to add WSGI support? See
   :doc:`installation` and the
@@ -48,6 +50,7 @@ Where to start
    :caption: About
    :maxdepth: 1
 
+   how-mod-wsgi-works
    project-status
    security-issues
 
