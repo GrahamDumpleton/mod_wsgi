@@ -43,7 +43,7 @@ httpd-test*
 httpd-benchmark
 
 # Documentation build output
-docs/_build
+docs/_build/
 
 # Editor swap files
 *.swp
