@@ -30,6 +30,10 @@ that process.
 
 The argument to the ``WSGIApplicationGroup`` can be either one of four
 special expanding variables or an explicit name of your own choosing.
+For an explicit name, simply pass the chosen identifier::
+
+  WSGIApplicationGroup myapp
+
 The meaning of the special variables are:
 
 **%{GLOBAL}**
@@ -113,6 +117,6 @@ then you will need to use a daemon process group with only a single process,
 or implement sticky session mechanism across a number of single process
 daemon process groups.
 
-.. _SetEnv: http://httpd.apache.org/docs/2.2/mod/mod_env.html#setenv
-.. _RewriteRule: http://httpd.apache.org/docs/2.2/mod/mod_rewrite.html#rewriterule
-.. _mod_userdir: http://httpd.apache.org/docs/2.2/mod/mod_userdir.html
+.. _SetEnv: http://httpd.apache.org/docs/2.4/mod/mod_env.html#setenv
+.. _RewriteRule: http://httpd.apache.org/docs/2.4/mod/mod_rewrite.html#rewriterule
+.. _mod_userdir: http://httpd.apache.org/docs/2.4/mod/mod_userdir.html

@@ -34,10 +34,14 @@ as follows::
 
   WSGISocketPrefix run/wsgi
 
-Note, do not put the sockets in the system temporary working directory.
-That is, do not go making the prefix '/tmp/wsgi'. The directory should be
-one that is only writable by 'root' user, or if not starting Apache as 
-'root', the user that Apache is started as.
+Do not place the sockets in the system temporary directory (for example,
+``/tmp/wsgi``). The directory used should only be writable by the
+``root`` user, or, if Apache is not started as ``root``, by the user
+that Apache is started as.
+
+The same directory is also used by mod_wsgi for any mutex lock files
+associated with daemon processes. See WSGIAcceptMutex for related
+configuration of the accept mutex used by daemon process groups.
 
 Note that the WSGISocketPrefix directive and corresponding features are not
 available on Windows.

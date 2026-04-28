@@ -90,10 +90,8 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Anything in excess of this will be truncated.
 
     This feature may not work as described on all platforms. Typically it
-    also requires a ``ps`` program with BSD heritage. Thus on some versions
-    of Solaris UNIX the ``/usr/bin/ps`` program doesn't work, but
-    ``/usr/ucb/ps`` does. Other programs which can display this value
-    include ``htop``.
+    also requires a ``ps`` program with BSD heritage. Other programs which
+    can display this value include ``htop``.
 
 .. _home:
 
@@ -116,8 +114,9 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Defines the UNIX user *name* or numeric user *uid* of the user that
     the daemon processes should be run as. If this option is not supplied
     the daemon processes will be run as the same user that Apache would
-    run child processes, as defined by the `User`_ directive, and it is
-    not necessary to set this to the Apache user yourself.
+    run child processes, as defined by the `User <ApacheHTTPDUser_>`_
+    directive, and it is not necessary to set this to the Apache user
+    yourself.
 
     Note that this option is ignored if Apache wasn't started as the root
     user, in which case no matter what the settings, the daemon processes
@@ -133,8 +132,9 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Defines the UNIX group *name* or numeric group *gid* of the primary
     group that the daemon processes should be run as. If this option is not
     supplied the daemon processes will be run as the same group that Apache
-    would run child processes, as defined by the `Group`_ directive, and it
-    is not necessary to set this to the Apache group yourself.
+    would run child processes, as defined by the `Group <ApacheHTTPDGroup_>`_
+    directive, and it is not necessary to set this to the Apache group
+    yourself.
 
     Note that this option is ignored if Apache wasn't started as the root
     user, in which case no matter what the settings, the daemon processes
@@ -191,8 +191,8 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 **chroot=directory**
     Run the daemon process group process within a chroot jail. Use of a
     chroot jail is now deprecated due to the difficulty in setting up a
-    chroot environment. It is recommended that you use more modern
-    containerisation technologies such as Docker or runC.
+    chroot environment. It is recommended that you use modern
+    containerisation technologies such as Docker instead.
 
 .. _script-user:
 
@@ -228,15 +228,17 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Set the location of the Python virtual environment to be used by the
     daemon processes. The directory to use is that which ``sys.prefix`` is
     set to for the Python virtual environment. The virtual environment can
-    have been created by ``virtualenv``, ``pyvenv`` or ``python -m venv``.
+    have been created by ``python -m venv``, ``uv venv``, or ``virtualenv``.
 
     Note that the Python virtual environment must have been created using
     the same base Python version as was used to compile the mod_wsgi
     module. You can't use this to force mod_wsgi to somehow use a different
     Python version than it was compiled for. If you want to use a different
     version of Python, you will need to reinstall mod_wsgi, compiling it
-    for the version you want. It is not possible for the one mod_wsgi
-    instance to run applications for both Python 2 and 3 at the same time.
+    for the version you want.
+
+    This option is the daemon-mode equivalent of the WSGIPythonHome
+    directive. See :doc:`WSGIPythonHome` for the full description.
 
 .. _python-path:
 
@@ -262,6 +264,9 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     You should not mix packages from different Python versions or
     installations.
 
+    This option is the daemon-mode equivalent of the WSGIPythonPath
+    directive. See :doc:`WSGIPythonPath` for the full description.
+
 .. _python-eggs:
 
 **python-eggs=directory**
@@ -272,13 +277,16 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Note that the directory specified must exist and be writable by the
     user that the daemon process run as.
 
+    This option is the daemon-mode equivalent of the WSGIPythonEggs
+    directive. See :doc:`WSGIPythonEggs` for the full description.
+
 .. _restart-interval:
 
 **restart-interval=sss**
     Defines a time limit in seconds for how long a daemon process should
     run before being restarted.
 
-    This might be use to periodically force restart the WSGI application
+    This might be used to periodically force restart the WSGI application
     processes when you have issues related to Python object reference count
     cycles, or incorrect use of in memory caching, which causes constant
     memory growth.
@@ -288,7 +296,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Apache itself is restarted or shutdown.
 
     Avoid setting this too low. This is because the constant restarting and
-    reloading of your WSGI application may cause unecessary load on your
+    reloading of your WSGI application may cause unnecessary load on your
     system and affect performance.
 
     You can use the ``graceful-timeout`` option in conjunction with this
@@ -312,7 +320,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 
     Avoid setting this to a low number of requests on a site which handles
     a lot of traffic. This is because the constant restarting and reloading
-    of your WSGI application may cause unecessary load on your system and
+    of your WSGI application may cause unnecessary load on your system and
     affect performance. Only use this option if you have no other choice
     due to a memory usage issue. Stop using it as soon as any memory issue
     has been resolved.
@@ -338,17 +346,11 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Note that after any restart of the WSGI application process, the WSGI
     application will need to be reloaded. This can mean that the first
     request received by a process after the process was restarted can be
-    slower. If you WSGI application has a very high startup cost on CPU and
+    slower. If your WSGI application has a very high startup cost on CPU and
     time, it may not be a good idea to use the option.
 
     See also the ``request-timeout`` option for forcing a process restart
     when requests block for a specified period of time.
-    
-    Note that similar functionality to that of the ``request-timeout``
-    option, for forcing a restart when requests blocked, was part of what
-    was implemented by the ``inactivity-timeout`` option. The request
-    timeout was broken out into a separate feature in version 4.1.0 of
-    mod_wsgi.
 
 .. _request-timeout:
 
@@ -356,7 +358,8 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Defines the per-thread upper bound on how long a request can run
     before recovery is triggered. This is a process-level fail-safe for
     recovering from requests that block indefinitely; it is not a
-    per-request SLA mechanism. Default is 60 seconds.
+    per-request SLA mechanism. Defaults to 0, meaning the timeout is
+    disabled.
 
     The actual fire point scales with the configured ``threads`` value
     by natural log:
@@ -559,20 +562,23 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
       restart signal in the absence of ``eviction-timeout``);
     * ``eviction-timeout`` expiry (the Apache graceful restart signal
       with ``eviction-timeout`` set);
-    * ``request-timeout`` firing — for users who have not opted into
-      ``interrupt-timeout``, this leads directly to shutdown;
-    * ``interrupt-timeout`` grace window expiry — when an injected
-      ``RequestTimeout`` did not unwind the wedged request in time;
+    * ``request-timeout`` firing (when ``interrupt-timeout`` is 0 and
+      so injection is skipped) or ``interrupt-timeout`` grace window
+      expiry — both paths run via ``graceful-timeout`` when it is set
+      and the process still has non-stale active requests, otherwise
+      they proceed straight to shutdown;
     * ``deadlock-timeout`` firing;
     * ``inactivity-timeout`` and ``startup-timeout`` firing;
     * external ``SIGTERM`` / ``SIGINT`` from Apache parent or operator.
 
-    For request-timeout / interrupt-timeout in particular,
-    ``shutdown-timeout`` is the wait given to in-flight requests on the
-    process to finish before the process is force-killed. If the wait
-    is too short, healthy in-flight requests on other threads may be
-    interrupted; if too long, recovery from a wedged process is
-    delayed. The default of 5 seconds suits most workloads.
+    The wait given to in-flight requests on other threads to finish
+    cleanly is ``graceful-timeout``, not ``shutdown-timeout``. Once
+    shutdown is actually under way, ``shutdown-timeout`` is the hard
+    cutoff before the process is force-killed regardless of remaining
+    state. The default of 5 seconds suits most workloads — too short
+    and Python ``atexit`` handlers or framework shutdown hooks may not
+    finish cleanly; too long and recovery from a wedged process is
+    delayed.
 
     If this option is not defined, then the shutdown timeout will be set
     to 5 seconds. Note that this option does not change the shutdown
@@ -616,10 +622,10 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Defines the depth of the daemon process socket listener queue. By
     default the limit is 100, although this is actually a hint, as
     different operating systems can have different limits on the maximum
-    value or otherwise treat it in special ways.a
+    value or otherwise treat it in special ways.
 
     This option can be set, along with ``queue-timeout`` to try and better
-    handle back logging when the WGSI application gets overloaded.
+    handle back logging when the WSGI application gets overloaded.
 
 .. _socket-user:
 
@@ -637,7 +643,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     This option can also be used when using third party Apache modules such
     as mod_ruid, mod_ruid2, mod_suid as well as the ITK MPM for Apache.
 
-.. _cpu-time:
+.. _cpu-time-limit:
 
 **cpu-time-limit=sss**
     Define the maximum amount of CPU time a daemon process is allowed to
@@ -664,9 +670,9 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 **memory-limit=num**
     Sets the maximum amount of memory a daemon process can use. This will
     have no affect on some platforms as ``RLIMIT_AS``/``RLIMIT_DATA`` with
-    ``setrlimit()`` isn't always implemented. For example MacOS X and older
-    Linux kernel versions do not implement this feature. You will need to
-    test whether this feature works or not before depending on it.
+    ``setrlimit()`` isn't always implemented. For example macOS does not
+    implement this feature. You will need to test whether this feature
+    works or not before depending on it.
 
 .. _virtual-memory-limit:
 
@@ -860,7 +866,7 @@ out with:
 Note that the ``WSGIDaemonProcess`` directive and corresponding features are
 not available on Windows.
 
-.. _User: http://httpd.apache.org/docs/2.4/mod/mod_unixd.html#user
-.. _Group: http://httpd.apache.org/docs/2.4/mod/mod_unixd.html#group
+.. _ApacheHTTPDUser: http://httpd.apache.org/docs/2.4/mod/mod_unixd.html#user
+.. _ApacheHTTPDGroup: http://httpd.apache.org/docs/2.4/mod/mod_unixd.html#group
 .. _Timeout: http://httpd.apache.org/docs/2.4/mod/core.html#timeout
 .. _PrivilegesMode: https://httpd.apache.org/docs/2.4/mod/mod_privileges.html#privilegesmode

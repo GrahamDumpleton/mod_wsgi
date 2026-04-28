@@ -14,8 +14,13 @@ of the same group of daemon processes.
 
 The argument to the WSGIProcessGroup can be either one of two special
 expanding variables or the actual name of a group of daemon processes setup
-using the WSGIDaemonProcess directive. The meaning of the special variables
-are:
+using the WSGIDaemonProcess directive. The most common usage is to name
+a daemon process group set up with WSGIDaemonProcess::
+
+  WSGIDaemonProcess mygroup processes=2 threads=15
+  WSGIProcessGroup mygroup
+
+The meaning of the special variables are:
 
 **%{GLOBAL}**
     The process group name will be set to the empty string.
