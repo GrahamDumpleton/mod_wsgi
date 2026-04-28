@@ -42,7 +42,7 @@ headers are:
 
 You should select only one of these headers as the authoritative source for
 the IP address of the remote HTTP client as sent by the proxy. Never select
-multiple headers because if you do which will be used is indeterminate.
+multiple headers because if you do, the result is indeterminate.
 
 The de-facto standard for this type of header is ``X-Forwarded-For`` and it
 is recommended that it be used if your proxy supports it.
@@ -60,7 +60,7 @@ This will be done following CGI convention as used by WSGI, namely in the
 For this set of headers, the ``REMOTE_ADDR`` CGI variable as used by WSGI will
 be modified and set to the IP address of the remote HTTP client. A WSGI
 application in this case should always use ``REMOTE_ADDR`` and never consult
-the original header files.
+the original header values.
 
 For passing through the protocol of the original request received by the
 trusted proxy the supported headers are:
@@ -74,7 +74,7 @@ trusted proxy the supported headers are:
 
 You should select only one of these headers as the authoritative source for what
 protocol was used by the remote HTTP client as sent by the proxy. Never select
-multiple headers because if you do which will be used is indeterminate.
+multiple headers because if you do, the result is indeterminate.
 
 The de-facto standard for this type of header is ``X-Forwarded-Proto`` and it
 is recommended that it be used if your proxy supports it.
@@ -104,7 +104,7 @@ the trusted proxy the supported headers are:
 
 You should select only one of these headers as the authoritative source for the
 host targeted by the original request as sent by the proxy. Never select
-multiple headers because if you do which will be used is indeterminate.
+multiple headers because if you do, the result is indeterminate.
 
 The de-facto standard for this type of header is ``X-Forwarded-Host`` and it
 is recommended that it be used if your proxy supports it.
@@ -132,7 +132,7 @@ trusted proxy, the only supported header is:
 
 * X-Forwarded-Port
 
-Although it is the only supported header, you still must select if as a trusted
+Although it is the only supported header, you still must select it as a trusted
 header to have it processed in the same way as other trusted headers.
 
 The configuration might therefore be::
@@ -155,7 +155,7 @@ name of the web server, the only supported header is:
 
 * X-Forwarded-Server
 
-Although it is the only supported header, you still must select if as a trusted
+Although it is the only supported header, you still must select it as a trusted
 header to have it processed in the same way as other trusted headers.
 
 The configuration might therefore be::
@@ -179,9 +179,9 @@ by the trusted proxy, the supported headers are:
 * X-Script-Name
 * X-Forwarded-Script-Name
 
-You should select only one of these headers as the authoritative source for the
-host targeted by the original request as sent by the proxy. Never select
-multiple headers because if you do which will be used is indeterminate.
+You should select only one of these headers as the authoritative source for
+the URL sub path of the WSGI application as sent by the proxy. Never select
+multiple headers because if you do, the result is indeterminate.
 
 The configuration might therefore be::
 

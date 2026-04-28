@@ -16,6 +16,12 @@ the WSGI adapter and result in corruption of the input stream.
 
 When this directive is set to ``On``, mod_wsgi replaces ``sys.stdin``
 with a restricted object that will raise an exception if an attempt is
-made to use it. This restriction is off by default since mod_wsgi 3.0,
-as the original intent of promoting portable WSGI code proved
-ineffective in practice.
+made to use it::
+
+  WSGIRestrictStdin On
+
+This restriction is off by default since mod_wsgi 3.0, as the original
+intent of promoting portable WSGI code proved ineffective in practice.
+When the restriction is off, ``sys.stdin`` is whatever the hosting
+process inherits, typically a closed or ``/dev/null`` stream, and
+reads from it will return no data.

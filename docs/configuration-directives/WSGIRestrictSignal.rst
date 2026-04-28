@@ -20,16 +20,19 @@ to register signal handlers are ignored. A warning notice will be output
 to the Apache error log indicating that this action has been taken.
 
 If for some reason there is a need for a WSGI application to register some
-special signal handler this behaviour can be turned off, however an
-application should avoid the signals ``SIGTERM``, ``SIGINT``,
-``SIGHUP``, ``SIGWINCH`` and ``SIGUSR1`` as these are all used by
-Apache.
+special signal handler this behaviour can be turned off::
+
+  WSGIRestrictSignal Off
+
+When the restriction is off an application should avoid the signals
+``SIGTERM``, ``SIGINT``, ``SIGHUP``, ``SIGWINCH`` and ``SIGUSR1`` as
+these are all used by Apache.
 
 Apache will ensure that the signal ``SIGPIPE`` is set to ``SIG_IGN``.
 If a WSGI application needs to override this, it must ensure that it is
 reset to ``SIG_IGN`` before any Apache code is run. In a multi threaded
 MPM this would be practically impossible to ensure so it is preferable that
-the handler for ``SIG_PIPE`` also not be changed.
+the handler for ``SIGPIPE`` also not be changed.
 
 Apache does not use ``SIGALRM``, but it is generally preferable that
 other techniques be used to achieve the same affect.
@@ -41,6 +44,6 @@ WSGIImportScript directive. This is because signal handlers can only be
 registered from the main Python interpreter thread, and request handlers
 when using embedded mode and a multithreaded Apache MPM would generally
 execute from secondary threads. Similarly, when using daemon mode, request
-handlers would executed from secondary threads. Only code run as a side
+handlers would execute from secondary threads. Only code run as a side
 effect of WSGIImportScript is guaranteed to be executed in main Python
 interpreter thread.

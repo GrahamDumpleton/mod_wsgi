@@ -15,7 +15,9 @@ a daemon mode process will fail with a HTTP internal server error response.
 
 This option is 'Off' by default. As daemon mode is the preferred
 deployment method, it is good practice to override the default and set
-this to 'On', ensuring you have set up and are always using daemon mode.
+this to 'On', ensuring you have set up and are always using daemon mode::
+
+  WSGIRestrictEmbedded On
 
 This option does not exist on Windows or any other configuration where
 daemon mode is not available.
