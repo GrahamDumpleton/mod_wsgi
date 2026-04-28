@@ -5,19 +5,6 @@ Frequently Asked Questions
 Apache Process Crashes
 ----------------------
 
-*Q*: When the mod_wsgi module is initially being loaded by Apache, why does
-the Apache server processes crash with a 'segmentation fault'?
-
-*A*: This is nearly always caused due to mod_python also being loaded by
-Apache at the same time as mod_wsgi and the Python installation not
-providing a shared library, or mod_python having originally being built
-against a static Python library. This is especially a problem with older
-Linux distributions before they started shipping with Python as a shared
-library.
-
-Further information on these problems can be found in various sections of
-[:doc:`../user-guides/installation-issues`].
-
 *Q*: When the first request is made against a WSGI application, why does the
 Apache server process handling the request crash with a 'segmentation
 fault'?
@@ -227,16 +214,15 @@ and the documentation for the WSGIPassAuthorization directive.
 
 *Q*: Is there a way of having a WSGI application provide user authentication
 for resources outside of the application such as static files, CGI scripts
-or even a distinct application? In other words, something akin to being able
-to define access, authentication and authorisation handlers in mod_python.
+or even a distinct application?
 
 *A*: mod_wsgi provides support for hooking into the Apache access,
-authentication and authorisation handler phases. This doesn't allow full control of how the
-Apache handler is implemented, but does allow control over how user
-credentials are validated, determination of what groups a user is a member
-of and whether specific hosts are allowed access. This is generally more
-than sufficient and makes the task somewhat simpler than needing to
-implement a full handler like in mod_python as Apache and mod_wsgi do all
-the hard work.
+authentication and authorisation handler phases. This doesn't allow full
+control of how the Apache handler is implemented, but does allow control
+over how user credentials are validated, determination of what groups a
+user is a member of and whether specific hosts are allowed access. This
+is generally more than sufficient and makes the task somewhat simpler
+than implementing a full Apache handler in C, since Apache and mod_wsgi
+do all the hard work.
 
 For further information see :doc:`../user-guides/access-control-mechanisms`.

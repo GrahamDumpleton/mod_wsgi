@@ -392,11 +392,6 @@ When listing the directives, list those for more specific URLs first. In
 practice this shouldn't actually be required as the Alias directive should
 take precedence over WSGIScriptAlias, but good practice all the same.
 
-Note that there is never a need to use SetHandler to reset the Apache
-content handler back to 'None' for URLs mapped to static files. That this
-is a requirement for mod_python is a short coming in mod_python, do not do
-the same thing for mod_wsgi.
-
 Limiting Request Content
 ------------------------
 

@@ -343,8 +343,9 @@ Python Shared Library
 
 When mod_wsgi is built, the 'mod_wsgi.so' file should be linked against
 Python via a shared library. If it isn't and it is linked against a static
-library, various issues can arise. These include additional memory usage,
-plus conflicts with mod_python if it is also loaded in same Apache.
+library, various issues can arise, including additional memory usage and
+linker relocation errors at build time when the Python static library
+was not compiled with position-independent code.
 
 To validate that 'mod_wsgi.so' is using a shared library for Python, on most
 UNIX systems the 'ldd' command is used. For example::

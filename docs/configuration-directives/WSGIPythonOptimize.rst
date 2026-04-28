@@ -33,10 +33,6 @@ library and they will be used as is, rather than them being regenerated
 with a higher level of optimisation than they might be. Use of level '2'
 optimisation is therefore discouraged.
 
-This directive will have no affect if mod_python is being loaded into Apache
-at the same time as mod_wsgi as mod_python will in that case be responsible
-for initialising Python.
-
 Overall, if you do not understand what the normal 'python' executable ``-O``
 option does, how the Python runtime changes it behaviour as a result, and
 you don't know exactly how your application would be affected by enabling

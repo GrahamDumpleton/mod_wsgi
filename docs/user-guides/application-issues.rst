@@ -15,12 +15,6 @@ The purpose of this document is to capture all the known problems that can
 arise, including workarounds if available, related to the actual running
 of a WSGI application.
 
-Note that the majority of these issues are not unique to mod_wsgi and would
-also affect mod_python as well. This is because they arise due to the fact
-that the Python interpreter is being embedded within the Apache server
-itself. Unlike mod_python, in mod_wsgi there are ways of avoiding many of
-the problems by using daemon mode.
-
 If you are having a problem which doesn't seem to be covered by this
 document, also make sure you see :doc:`../user-guides/installation-issues`
 and :doc:`../user-guides/configuration-issues`.
