@@ -5,8 +5,11 @@ User Guides
 .. toctree::
    :maxdepth: 1
 
-   user-guides/quick-installation-guide
+   user-guides/installation-from-pypi
+   user-guides/installation-on-linux
    user-guides/installation-on-macosx
+   user-guides/installation-on-windows
+   user-guides/quick-installation-guide
    user-guides/quick-configuration-guide
    user-guides/configuration-guidelines
    user-guides/installation-issues

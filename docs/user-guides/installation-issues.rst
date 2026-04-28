@@ -237,6 +237,67 @@ which outputs the values of 'sys.prefix' and 'sys.path'. For example::
 
         return [output]
 
+Anaconda Python And Virtual Environments On Windows
+----------------------------------------------------
+
+Use of the Anaconda Python distribution together with a Python
+virtual environment on Windows has been known to cause problems
+with mod_wsgi at runtime under Apache. The exact cause has not
+been identified.
+
+How well current Anaconda Python versions behave on Windows has
+not been re-verified recently. If you encounter problems, the
+recommended workaround is to use a different Python distribution
+on Windows — for example a python.org installer, ``uv``-managed
+Python, or a system-installed Python.
+
+Anaconda Python Conflicting With System Shared Libraries
+--------------------------------------------------------
+
+Anaconda Python ships its own copies of various third-party shared
+libraries inside the Anaconda installation — including SSL,
+image manipulation, cryptography, and others. When mod_wsgi is
+built against Anaconda Python and loaded into an Apache instance
+that also has another module loaded which links against the
+corresponding *system* shared library, the two modules can end up
+disagreeing about which copy of that library is in use within the
+same Apache process address space.
+
+Two examples that have been seen in practice:
+
+* **mod_ssl plus Anaconda Python's ssl module.** mod_ssl is built
+  against the host's system SSL libraries. Anaconda Python's
+  ``ssl`` module is built against Anaconda's own SSL libraries.
+  When both are loaded into the same Apache process — for example
+  when an HTTPS-serving Apache also hosts a WSGI application that
+  imports Python's ``ssl`` module — this has been observed to
+  cause crashes of the Apache worker process.
+
+* **PHP plus Anaconda Python.** mod_php (and other Apache modules)
+  link against system libraries for image manipulation and
+  similar. Loading both mod_php and an Anaconda-built mod_wsgi
+  into the same Apache instance can result in disagreements over
+  which copy of those libraries is in use.
+
+The symptoms vary widely depending on which library the conflict
+is over. They range from runtime errors out of either Python or
+the conflicting module's code through to outright crashes of the
+Apache worker process.
+
+The conflict is fundamental: there is no way for mod_wsgi to
+mediate the disagreement between Anaconda's shipped libraries and
+the system libraries the rest of Apache is using.
+
+If you must use Anaconda Python for your WSGI application, do not
+load mod_wsgi into the same Apache instance as mod_ssl, mod_php,
+or other modules that overlap with Anaconda's bundled native
+dependencies. Run the WSGI application in a separate Apache
+instance — for example via ``mod_wsgi-express`` on an
+unprivileged port behind a front-end Apache or nginx that
+terminates HTTPS — so the two sets of libraries are not loaded
+into the same process. Otherwise, use a system Python or a
+python.org installer for the mod_wsgi build instead of Anaconda.
+
 Using ModPython and ModWsgi
 ---------------------------
 

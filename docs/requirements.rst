@@ -72,9 +72,17 @@ available with::
 
 A return value of ``1`` indicates a shared build.
 
-If the build of mod_wsgi fails on the Python side, see
-:doc:`user-guides/installation-issues` for help diagnosing the
-common causes.
+The Anaconda Python distribution has historically caused specific
+problems with mod_wsgi — including a runtime issue with virtual
+environments on Windows, and shared-library conflicts (with
+``mod_ssl``, ``mod_php``, and others) when mod_wsgi is loaded into
+an Apache instance alongside other modules that link against
+system libraries Anaconda also bundles. How well current Anaconda
+versions behave has not been re-verified.
+
+If you encounter problems building or running mod_wsgi against
+your Python installation, see :doc:`user-guides/installation-issues`
+for the known causes and workarounds.
 
 Build toolchain
 ---------------
