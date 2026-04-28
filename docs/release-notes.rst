@@ -2,6 +2,9 @@
 Release Notes
 =============
 
+Release notes for current and recently-supported versions of
+mod_wsgi. See :doc:`project-status` for the version support policy.
+
 .. toctree::
    :maxdepth: 2
 
@@ -10,6 +13,15 @@ Release Notes
    release-notes/version-5.0.2
    release-notes/version-5.0.1
    release-notes/version-5.0.0
+
+Release notes for mod_wsgi 4.x and earlier are not listed here but
+remain available. Existing URLs continue to resolve and the notes
+are findable via the documentation search.
+
+.. The following older release-note files are intentionally not
+   referenced in any toctree. Each is marked ``:orphan:`` at the
+   top of its file so Sphinx still builds it into HTML and indexes
+   it for search, but it does not appear in the navigation.
 
    release-notes/version-4.9.4
    release-notes/version-4.9.3
