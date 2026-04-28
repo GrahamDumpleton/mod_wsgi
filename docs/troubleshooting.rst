@@ -2,23 +2,29 @@
 Troubleshooting
 ===============
 
-If you are having problems getting mod_wsgi to start up or do what you want
-it to do, first off ensure that you read the following documents:
+If mod_wsgi is not behaving as expected, start with the relevant
+"issues" guide based on where the problem is:
 
-* :doc:`user-guides/installation-issues`
-* :doc:`user-guides/configuration-issues`
-* :doc:`user-guides/application-issues`
+* :doc:`user-guides/installation-issues` — building and loading
+  the mod_wsgi module.
+* :doc:`user-guides/configuration-issues` — Apache configuration
+  for mod_wsgi.
+* :doc:`user-guides/application-issues` — running the WSGI
+  application once mod_wsgi is loaded.
 
-You can also do some basic checking of your installation and configuration
-to validate that how it is setup is how you expect it to be. See the
-following document:
+If you have a specific ``WSGI####`` error code in the Apache error
+log, look it up in :doc:`error-reference` for the cause and any
+recommended action.
 
-* :doc:`user-guides/checking-your-installation`
+Additional pages that may help:
 
-If none of the common issues match up with the problem you are seeing and
-are after other ideas, or you have the need to perform more low level
-debugging, check out the :doc:`user-guides`.
+* :doc:`user-guides/checking-your-installation` — sanity checks
+  for an Apache plus mod_wsgi setup.
+* :doc:`user-guides/debugging-techniques` — running Apache in the
+  foreground, inspecting daemon processes, and other diagnostic
+  approaches.
+* :doc:`user-guides/frequently-asked-questions` — common questions
+  and gotchas.
 
-If a specific error code of the form ``WSGI####`` appears in your Apache
-error log, look it up in the :doc:`error-reference` for an explanation
-of the cause, the outcome, and any operator action that may be needed.
+If none of these resolve the issue, see :doc:`finding-help` for
+where to ask.

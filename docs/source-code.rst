@@ -2,15 +2,22 @@
 Source Code
 ===========
 
-The source code repository for mod_wsgi is located on GitHub at:
+The mod_wsgi source code is hosted on GitHub:
 
 * https://github.com/GrahamDumpleton/mod_wsgi
 
-Downloadable tar balls of the source code can be found at:
+Tagged release tarballs are available from the GitHub releases page:
 
 * https://github.com/GrahamDumpleton/mod_wsgi/releases
 
-A version of the source code which can be installed using ``pip`` can
-also be found on PyPi at:
+The same releases are also published to the Python Package Index
+for installation via ``pip install mod_wsgi``:
 
-* https://pypi.python.org/pypi/mod_wsgi
+* https://pypi.org/project/mod_wsgi/
+
+A separate ``mod_wsgi-standalone`` package, useful when no Apache
+is installed on the host, is also on PyPI:
+
+* https://pypi.org/project/mod_wsgi-standalone/
+
+See :doc:`installation` for installation instructions.
