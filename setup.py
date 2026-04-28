@@ -1,18 +1,17 @@
-import os
-import sys
 import fnmatch
-import subprocess
-import tarfile
+import os
+import re
 import shutil
 import stat
-import re
-
+import subprocess
+import sys
+import tarfile
+from sysconfig import get_config_var as get_python_config
+from sysconfig import get_path as get_python_lib
 from urllib.request import urlretrieve
 
 from setuptools import setup
 from setuptools.extension import Extension
-from sysconfig import get_config_var as get_python_config
-from sysconfig import get_path as get_python_lib
 
 # First work out what all the available source code files are that should
 # be compiled.
@@ -448,12 +447,9 @@ setup(name = package_name,
     ],
     keywords = 'mod_wsgi wsgi apache',
     packages = ['mod_wsgi', 'mod_wsgi.server', 'mod_wsgi.server.management',
-        'mod_wsgi.server.management.commands', 'mod_wsgi.docs',
-        'mod_wsgi.images'],
-    package_dir = {'mod_wsgi': 'src', 'mod_wsgi.docs': 'docs/_build/html',
-        'mod_wsgi.images': 'images'},
-    package_data = {'mod_wsgi.docs': _documentation(),
-        'mod_wsgi.images': ['snake-whiskey.jpg']},
+        'mod_wsgi.server.management.commands', 'mod_wsgi.images'],
+    package_dir = {'mod_wsgi': 'src', 'mod_wsgi.images': 'images'},
+    package_data = {'mod_wsgi.images': ['snake-whiskey.jpg']},
     ext_modules = [extension],
     entry_points = { 'console_scripts':
         ['mod_wsgi-express = mod_wsgi.server:main'],},

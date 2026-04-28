@@ -1,25 +1,25 @@
-from __future__ import print_function, division, absolute_import
+from __future__ import absolute_import, division, print_function
 
-import os
-import sys
-import shutil
-import subprocess
-import optparse
-import math
-import signal
-import threading
 import atexit
-import types
-import re
+import copy
+import getpass
+import inspect
+import locale
+import math
+import optparse
+import os
+import posixpath
 import pprint
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
 import time
 import traceback
-import locale
-import inspect
-import getpass
-import tempfile
-import copy
-import posixpath
+import types
 
 try:
     import Queue as queue
@@ -2900,8 +2900,8 @@ def _cmd_setup_server(command, args, options):
     try:
         os.mkdir(options['python_eggs'])
         if os.name != 'nt' and os.getuid() == 0:
-            import pwd
             import grp
+            import pwd
             os.chown(options['python_eggs'],
                     pwd.getpwnam(options['user']).pw_uid,
                     grp.getgrnam(options['group']).gr_gid)
