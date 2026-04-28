@@ -1,102 +1,89 @@
-﻿====================
+====================
 Virtual Environments
 ====================
 
-This document contains information about how to use Python virtual
-environments with mod_wsgi. You can use a Python virtual environment
-created using `virtualenv`_ and `virtualenvwrapper`_, or if using Python 3,
-the ``pyvenv`` or ``python -m venv`` commands.
+This page covers using Python virtual environments with mod_wsgi.
 
-The purpose of a Python virtual environments is to allow one to create
-multiple distinct Python environments for the same version of Python, but
-with different sets of Python modules and packages installed. It is
-recommended that you always use Python virtual environments and not install
-additional Python packages direct into your Python installation.
+A Python virtual environment is a self-contained directory holding a
+specific Python interpreter plus its own set of installed packages.
+Using one keeps the dependencies of a WSGI application isolated from
+the system Python and from other applications on the same host. It
+is strongly recommended that you always run a WSGI application out
+of a virtual environment rather than against the system Python.
 
-A Python virtual environment is also required where it is necessary to run
-multiple WSGI applications which have conflicting requirements as to what
-version of a Python module or package needs to be installed. They can also
-be used when distinct mod_wsgi daemon process groups are used to host WSGI
-applications for different users and each user needs to be able to
-separately install their own Python modules and packages.
+A virtual environment is required when:
 
-How you configure mod_wsgi or setup your WSGI application script file for a
-Python virtual environment will depend on your specific requirements. The
-more common scenarios are explained below.
+* Multiple WSGI applications hosted by the same Apache need
+  different versions of the same package.
+* Distinct mod_wsgi daemon process groups host WSGI applications
+  for different users, and each user needs to manage their own
+  packages.
+
+Either ``python -m venv`` (Python's built-in virtual-environment
+support) or ``uv venv`` (a fast modern alternative from the ``uv``
+package manager) is suitable for creating the environment. The
+older ``virtualenv`` package also still works and you may still
+encounter it; ``virtualenvwrapper`` is no longer actively maintained
+but similarly works if you already use it.
+
+How you point mod_wsgi at the virtual environment depends on the
+deployment shape — daemon vs. embedded mode, single vs. multiple
+WSGI applications. The common scenarios are covered below.
 
 Location of the Virtual Environment
 -----------------------------------
 
-Whichever method you use to create a Python virtual environment, before you
-use it with mod_wsgi, you should validate what the location of the Python
-virtual environment is. If using `virtualenvwrapper`_ this may be a non
-obvious directory hidden away under your home directory.
-
-The way to determine the location of the Python virtual environment is to
-activate the Python virtual environment from an interactive shell so it is
-being used, and then run the command::
+Before configuring mod_wsgi, find out the on-disk path of your
+virtual environment. Activate it from a shell and run::
 
     python -c 'import sys; print(sys.prefix)'
 
-This will output the directory path you will use when setting up mod_wsgi
-to use the Python virtual environment. For the purposes of the examples
-below, it is assumed the location of any Python virtual environments are
-under the ``/usr/local/venvs`` directory. A specific Python virtual
-environment may thus return for ``sys.prefix``::
+This prints the path you will use when pointing mod_wsgi at it. The
+examples on this page assume virtual environments are stored under
+``/usr/local/venvs``, so a specific environment might be at::
 
     /usr/local/venvs/example
 
-Note that this should be the root directory of the Python virtual
-environment, which in turn contains the ``bin`` and ``lib`` directories for
-the Python virtual environment. It is a common mistake when setting up a
-Python virtual environment with mod_wsgi to use the full path to the
-``python`` executable instead of the root directory. That will not work, so
-do not use the path for the ``python`` executable as the location of the
-Python virtual environment, it has to be the root directory.
+This must be the *root* directory of the virtual environment — the
+one containing ``bin/`` and ``lib/`` — not the path to the
+``python`` executable inside it. Pointing mod_wsgi at
+``/usr/local/venvs/example/bin/python`` will not work.
 
-Do be aware that the user that Apache runs your code as will need to be
-able to access the Python virtual environment. On some Linux distributions,
-the home directory of a user account is not accessible to other users.
-Rather than change the permissions on your home directory, it might be
-better to consider locating your WSGI application code and any Python
-virtual environment outside of your home directory.
+The user Apache runs your code as must be able to read the virtual
+environment's files. On some Linux distributions a user's home
+directory is not accessible to other users, so consider locating
+WSGI application code and the virtual environment somewhere outside
+``/home/<user>/`` rather than relaxing the home directory's
+permissions.
 
 Virtual Environment and Python Version
 --------------------------------------
 
-When using a Python virtual environment with mod_wsgi, it is very important
-that it has been created using the same Python installation that mod_wsgi
-was originally compiled for. It is not possible to use a Python virtual
-environment to force mod_wsgi to use a different Python version, or even a
-different Python installation.
+The virtual environment used with mod_wsgi must have been created
+from the same Python installation that mod_wsgi was built against.
+A virtual environment cannot be used to make mod_wsgi use a
+different Python version, or even a different installation of the
+same version.
 
-You cannot for example force mod_wsgi to use a Python virtual environment
-created using Python 3.5 when mod_wsgi was originally compiled for Python
-2.7. This is because the Python library for the Python installation it was
-originally compiled against is linked directly into the mod_wsgi module.
-In other words, Python is embedded within mod_wsgi. When mod_wsgi is used
-it does not run the command line ``python`` program to run the interpreter
-and thus why you can't force it to use a different Python installation.
+For example, you cannot make a mod_wsgi built for Python 3.10 use a
+virtual environment created from Python 3.12. The Python library
+mod_wsgi links against is baked into ``mod_wsgi.so`` at build time.
+mod_wsgi embeds Python directly; it does not run a ``python``
+command-line program, so the choice of Python is fixed when
+mod_wsgi is built.
 
-The problem in trying to force mod_wsgi to use a different Python
-installation than what it was compiled for, even where it is the same
-Python version, is that the Python installation may itself not have been
-compiled with the same options. This is especially a problem when it comes
-to issues around how Python stores Unicode characters in memory.
+Even when the Python version matches, two installations of the same
+version may have been compiled with different options and the
+resulting ABIs can differ in subtle ways. Mixing them is not safe.
 
-The end result is that if you want to use a different Python installation
-or version than what mod_wsgi was originally compiled for, you would need
-to re-install mod_wsgi such that it is compiled for the Python installation
-or version you do want to use. Do not try and use a Python virtual
-environment from one Python installation or version with mod_wsgi, when
-mod_wsgi was compiled for a different one.
+If you need to switch Python version or installation, rebuild
+mod_wsgi against the new Python.
 
 Daemon Mode (Single Application)
 --------------------------------
 
-The preferred way of setting up mod_wsgi is to run each WSGI application
-in its own daemon process group. This is called daemon mode. A typical
-configuration for running a WSGI application in daemon mode would be::
+The preferred way to set up mod_wsgi is to run each WSGI application
+in its own daemon process group. A typical configuration is::
 
     WSGIDaemonProcess myapp
 
@@ -109,39 +96,28 @@ configuration for running a WSGI application in daemon mode would be::
         Require all granted
     </Directory>
 
-The ``WSGIDaemonProcess`` directive defines the daemon process group. The
-``WSGIProcessGroup`` directive indicates that the WSGI application should be
-run within the defined daemon process group.
+``WSGIDaemonProcess`` defines the daemon process group;
+``WSGIProcessGroup`` selects it for this application. Because only
+one application runs in this daemon process group,
+``WSGIApplicationGroup %{GLOBAL}`` forces it into the main Python
+interpreter context of each daemon process, which avoids issues
+with C extension modules that don't tolerate running in Python
+sub-interpreters.
 
-As only the single application is being run within the daemon process
-group, the ``WSGIApplicationGroup`` directive is also being used. When this
-is used with the ``%{GLOBAL}`` value, it forces the WSGI application to run
-in the main Python interpreter context of each process. This is preferred
-in this scenario as some third party packages for Python which include C
-extensions will not run in the Python sub interpreter contexts which
-mod_wsgi would use by default. By using the main Python interpreter context
-you eliminate the possibility of such third party packages for Python
-causing problems.
-
-To modify the configuration for this scenario to use a Python virtual
-environment, all you need to do is add the ``python-home`` option to the
-``WSGIDaemonProcess`` directive resulting in::
+To use a virtual environment, add the ``python-home`` option to
+``WSGIDaemonProcess``::
 
     WSGIDaemonProcess myapp python-home=/usr/local/venvs/myapp
 
-All the additonal Python packages and modules would then be installed into
-that Python virtual environment.
+All Python packages the application needs are then installed into
+that virtual environment.
 
 Daemon Mode (Multiple Applications)
 -----------------------------------
 
-If instead of running each WSGI application in a separate daemon process
-group as is the recommended practice, you are running multiple WSGI
-applications in one daemon process group, a different approach to using
-Python virtual environments is required.
-
-For this scenario there are various ways the configuration could be set
-up. If mounting each WSGI application explicitly you might be using::
+If multiple WSGI applications run in a single daemon process group
+(rather than each having its own — the recommended setup), the
+configuration looks something like::
 
     WSGIDaemonProcess myapps
 
@@ -149,15 +125,13 @@ up. If mounting each WSGI application explicitly you might be using::
 
     WSGIScriptAlias /myapp3 /some/path/project/myapp3.wsgi
     WSGIScriptAlias /myapp2 /some/path/project/myapp2.wsgi
-
     WSGIScriptAlias / /some/path/project/myapp1.wsgi
 
     <Directory /some/path/project>
         Require all granted
     </Directory>
 
-If instead the directory containing the WSGI application script files is
-being mounted, you might be using::
+Or, if mounting the directory directly::
 
     WSGIDaemonProcess myapps
 
@@ -169,187 +143,91 @@ being mounted, you might be using::
         Require all granted
     </Directory>
 
-The use of the ``WSGIDaemonProcess`` and ``WSGIProcessGroup`` is the same as
-before, however the ``WSGIApplicationGroup`` directive is not being used.
+``WSGIApplicationGroup`` is deliberately omitted. Without it, each
+WSGI application runs in its own Python sub-interpreter context
+inside the daemon process. Many WSGI frameworks — Django is the
+canonical example — do not support multiple instances of an
+application running in the same Python interpreter context
+concurrently, so per-application sub-interpreters are necessary.
 
-When the ``WSGIApplicationGroup`` directive isn't being used to override
-which Python interpreter context is being used, each WSGI application will
-be run in its own Python sub interpreter context of the processes. This is
-necessary as often WSGI application frameworks (Django being a prime
-example), do not support running more than one instance of a WSGI
-application using the framework, in the same Python interpreter context at
-the same time.
+If all applications can share a single virtual environment, use
+``python-home`` exactly as in the single-application case::
 
-In this scenario of running multiple WSGI applications in the same daemon
-process group, more than one change is possibly required. The changes
-required depend on whether or not all WSGI applications should share the
-same Python virtual environment.
+    WSGIDaemonProcess myapps python-home=/usr/local/venvs/myapps
 
-If all of the WSGI applications should share the same Python virtual
-environment, then the same change as was performed above for the single
-application case would be made. That is, add the ``python-home`` option
-to the ``WSGIDaemonProcess`` directive::
+Because the environment is shared, all applications must agree on
+the version of any given package.
 
-    WSGIDaemonProcess myapp python-home=/usr/local/venvs/myapps
+If each application needs its own virtual environment,
+``python-home`` alone is not enough — only one ``python-home`` value
+is allowed per daemon process group. In that case, activate the
+per-application virtual environment from inside the WSGI script
+itself.
 
-All the additonal Python packages and modules that any of the WSGI
-applications required would then be installed into that Python virtual
-environment. Because it is a shared environment, they must all use the same
-version of any specific Python package or module.
+If your virtual environment was created with ``uv venv`` or with
+``virtualenv``, it includes an ``activate_this.py`` script that
+performs a complete activation: it adds the virtual environment's
+``site-packages`` to the front of ``sys.path``, sets ``sys.prefix``
+to the virtual environment root, and sets ``VIRTUAL_ENV`` in the
+process environment. At the top of the WSGI script, before any
+other imports::
 
-If instead of all WSGI applications using the same Python virtual
-environment each needed their own, then a change will instead need to be
-made in each of the WSGI script files for the applications.
-
-How this is done will depend on how the Python virtual environment is
-created.
-
-If the Python virtual environment is created using `virtualenv`_ or
-`virtualenvwrapper`_, the WSGI script for each application should be
-modified to include code of the following form::
-
-    python_home = '/usr/local/envs/myapp1'
+    python_home = '/usr/local/venvs/myapp1'
 
     activate_this = python_home + '/bin/activate_this.py'
-    execfile(activate_this, dict(__file__=activate_this))
+    exec(open(activate_this).read(), dict(__file__=activate_this))
 
-Because each WSGI application is to use a separate Python virtual
-environment, the value of the ``python_home`` variable would be set
-differently for each WSGI script file, with it referring to the root
-directory of the respective Python virtual environments.
+Set ``python_home`` differently for each application's WSGI script.
 
-This code should be placed in the WSGI script file before any other module
-imports in the WSGI script file, with the exception of ``from __future__``
-imports used to enable Python feature flags.
+If your virtual environment was created with ``python -m venv``,
+no ``activate_this.py`` script is provided and you must add the
+``site-packages`` directory to ``sys.path`` manually::
 
-Important to note is that when the Python virtual environment is activated
-from within the WSGI script, what happens is a bit different to when the
-``python-home`` option to ``WSGIDaemonProcess`` is used.
-
-When activating the Python virtual environment from within the WSGI script
-file, only the ``site-packages`` directory from the Python virtual
-environment is being used. This directory will be added to the Python
-module search path, along with any additional directories related to the
-``site-packages`` directory registered using ``.pth`` files present in the
-``site-packages`` directory. This will be placed at the start of the
-existing ``sys.path``.
-
-The consequence of this is that the Python virtual environment isn't
-completely overriding the original Python installation the Python virtual
-environment was created from. This means that if the main Python
-installation had additional Python packages installed they will also
-potentially be visible to the WSGI application.
-
-That this occurs could cause confusion as you might for example think you
-had all the packages you require listed in your ``requirements.txt`` file
-for ``pip``, but didn't and so a package may not have been installed. If
-that package was installed in the main Python installation, it would be
-picked up from there, but it might be the wrong version and have
-dependencies on versions of other packages for which you have different
-versions installed in your Python virtual environment and which are found
-instead of those in the main Python installation.
-
-To avoid such problems, when activating the Python virtual environment
-from within the WSGI script file, it is necessary to still set the
-``python-home`` option of the ``WSGIDaemonProcess`` directive, but set it to
-an empty Python virtual environment which has had no additional packages
-installed::
-
-    WSGIDaemonProcess myapp python-home=/usr/local/venvs/empty
-
-By doing this, the main Python installation will not be consulted and
-instead it will fallback to the empty Python virtual environment. This
-Python virtual environment should remain empty and you should not install
-additional Python packages or modules into it, or you will cause the same
-sort of conflicts that can arise with the main Python installation when it
-was being used.
-
-When needing to activate the Python virtual environment from within the
-WSGI script file as described, it is preferred that you be using the either
-`virtualenv`_ or `virtualenvwrapper`_ to create the Python virtual
-environment. This is because they both provide the ``activate_this.py``
-script file which does all the work of setting up ``sys.path``. When you
-use either ``pyvenv`` or ``python -m venv`` with Python 3, no such
-activation script is provided.
-
-So use `virtualenv`_ or `virtualenvwrapper`_ if you can. If you cannot for
-some reason and are stuck with ``pyvenv`` or ``python -m venv``, you can
-instead use the following code in the WSGI script file::
-
-    python_home = '/usr/local/envs/myapp1'
+    python_home = '/usr/local/venvs/myapp1'
 
     import sys
     import site
 
-    # Calculate path to site-packages directory.
-
-    python_version = '.'.join(map(str, sys.version_info[:2]))
-    site_packages = python_home + '/lib/python%s/site-packages' % python_version
-
-    # Add the site-packages directory.
-
-    site.addsitedir(site_packages)
-
-As before this code should be placed in the WSGI script file before any
-other module imports in the WSGI script file, with the exception of ``from
-__future__`` imports used to enable Python feature flags.
-
-When using this method, do be aware that the additions to the Python module
-search path are made at the end of ``sys.path``. For that reason, you must
-set the ``python-home`` option to ``WSGIDaemonProcess`` to the location of
-an empty Python virtual environment. If you do not do this, any additional
-Python package installed in the main Python installation will hide those in
-the Python virtual environment for the application.
-
-There is extra code you could add which would reorder ``sys.path`` to make
-it work in an equivalent way to the ``activate_this.py`` script provided
-when you use `virtualenv`_ or `virtualenvwrapper`_ but it is messy and more
-trouble than it is worth::
-
-    python_home = '/usr/local/envs/myapp1'
-
-    import sys 
-    import site 
-
-    # Calculate path to site-packages directory.
-
     python_version = '.'.join(map(str, sys.version_info[:2]))
     site_packages = python_home + '/lib/python%s/site-packages' % python_version
     site.addsitedir(site_packages)
 
-    # Remember original sys.path.
+Whichever activation method is used, the underlying Python
+installation remains in view — anything installed against it is
+still importable from the WSGI application. This can lead to
+surprises: a missing entry in your ``requirements.txt`` may not
+produce an ``ImportError`` if the package happens to be installed
+against the underlying Python.
 
-    prev_sys_path = list(sys.path) 
+To prevent this, still set ``python-home`` on ``WSGIDaemonProcess``
+but point it at an *empty* virtual environment which has no packages
+installed::
 
-    # Add the site-packages directory.
+    WSGIDaemonProcess myapps python-home=/usr/local/venvs/empty
 
-    site.addsitedir(site_packages)
+This makes the underlying Python that empty virtual environment
+rather than your system Python, so per-application activations
+cleanly override it.
 
-    # Reorder sys.path so new directories at the front.
+For the manual ``site.addsitedir()`` path the empty-environment
+trick is also needed for ``sys.path`` ordering: ``site.addsitedir()``
+adds entries to the *end* of ``sys.path``, so anything installed
+into the ``python-home`` virtual environment would otherwise take
+precedence over the per-application virtual environment. Keeping
+the ``python-home`` virtual environment empty keeps that ordering
+harmless. ``activate_this.py`` already adds entries to the front of
+``sys.path``, so this concern does not apply to that path.
 
-    new_sys_path = [] 
-
-    for item in list(sys.path): 
-        if item not in prev_sys_path: 
-            new_sys_path.append(item) 
-            sys.path.remove(item) 
-
-    sys.path[:0] = new_sys_path 
-
-It is better to avoid needing to manually activate the Python virtual
-environment from inside of a WSGI script by using a separate daemon process
-group per WSGI application. At the minimum, at least avoid ``pyvenv`` and
-``python -m venv``.
+Where possible, prefer giving each WSGI application its own daemon
+process group (the previous section); that avoids in-script
+activation entirely.
 
 Embedded Mode (Single Application)
 ----------------------------------
 
-The situation for running a single WSGI application in embedded mode is not
-much different to running a single WSGI application in daemon mode. In the
-case of embedded mode, there is though no ``WSGIDaemonProcess`` directive.
-
-The typical configuration when running a single WSGI application in
-embedded module might be::
+Running a single WSGI application in embedded mode is similar to
+the daemon-mode-single-application case but without the
+``WSGIDaemonProcess`` and ``WSGIProcessGroup`` directives::
 
     WSGIScriptAlias / /some/path/project/myapp.wsgi
 
@@ -359,46 +237,40 @@ embedded module might be::
         Require all granted
     </Directory>
 
-The ``WSGIDaemonProcess`` and ``WSGIProcessGroup`` directives are gone, but
-the ``WSGIApplicationGroup`` directive is still used to force the WSGI
-application to run in the main Python interpreter context of each of the
-Apache worker processes. This is to avoid those issues with some third
-party packages for Python with C extensions as mentioned before.
+``WSGIApplicationGroup %{GLOBAL}`` still forces the application
+into the main Python interpreter context of each Apache worker
+process, for the same reason as before.
 
-In this scenario, to set the location of the Python virtual environment
-to be used, the ``WSGIPythonHome`` directive is used::
+To point at a virtual environment in embedded mode, use the
+``WSGIPythonHome`` directive::
 
-    WSGIPythonHome /usr/local/envs/myapp
+    WSGIPythonHome /usr/local/venvs/myapp
 
-Note that if the WSGI application is being setup within the context of an
-Apache ``VirtualHost``, the ``WSGIPythonHome`` cannot be placed inside of
-the ``VirtualHost``. Instead it must be placed outside of all
-``VirtualHost`` definitions. This is because it applies to the whole Apache
-instance and not just the single ``VirtualHost``.
+Note that ``WSGIPythonHome`` applies to the whole Apache instance,
+not to a single ``VirtualHost``. If your WSGI application is
+configured inside a ``VirtualHost``, the ``WSGIPythonHome``
+directive must still go at the server-config level, outside any
+``VirtualHost`` block.
 
 Embedded Mode (Multiple Applications)
 -------------------------------------
 
-Running multiple applications in embedded mode is also similar to when
-running multiple WSGI applications in one daemon process group. You still
-need to ensure each WSGI application runs in its own Python sub interpreter
-context to avoid potential issues with Python web frameworks that don't
-allow more than one WSGI application to be using it at the same time in a
-Python interpreter context.
+Running multiple WSGI applications in embedded mode mirrors the
+multiple-applications-in-one-daemon-process-group case. Each
+application runs in its own Python sub-interpreter context to
+avoid the framework-multiplicity issue.
 
-If mounting each WSGI application explicitly you might be using::
+Mounting each application explicitly::
 
     WSGIScriptAlias /myapp3 /some/path/project/myapp3.wsgi
     WSGIScriptAlias /myapp2 /some/path/project/myapp2.wsgi
-
     WSGIScriptAlias / /some/path/project/myapp1.wsgi
 
     <Directory /some/path/project>
         Require all granted
     </Directory>
 
-If instead the directory containing the WSGI application script files is
-being mounted, you might be using::
+Or mounting a directory of WSGI scripts::
 
     WSGIScriptAlias / /some/path/project/
 
@@ -406,77 +278,51 @@ being mounted, you might be using::
         Require all granted
     </Directory>
 
-In this scenario, to set the location of the Python virtual environment
-to be used by all WSGI application, the ``WSGIPythonHome`` directive is used::
+If all applications share a single virtual environment, use
+``WSGIPythonHome`` to point at it::
 
-    WSGIPythonHome /usr/local/envs/myapps
+    WSGIPythonHome /usr/local/venvs/myapps
 
-If the WSGI application is being setup within the context of an Apache
-``VirtualHost``, the ``WSGIPythonHome`` cannot be placed inside of the
-``VirtualHost``. Instead it must be placed outside of all ``VirtualHost``
-definitions. This is because it applies to the whole Apache instance and
-not just the single ``VirtualHost``.
+As before, ``WSGIPythonHome`` must be at the server-config level,
+outside any ``VirtualHost`` block.
 
-If each WSGI application needs its own Python virtual environment, then
-activation of the Python virtual environment needs to be performed in the
-WSGI script itself as explained previously for the case of daemon mode
-being used. The ``WSGIPythonHome`` directive should be used to refer to an
-empty Python virtual environment if needed to ensure that any additional
-Python packages in the main Python installation don't interfere with what
-packages are installed in the Python virtual environment for each WSGI
-application.
+If each application needs its own virtual environment, activate it
+from the WSGI script using the ``site.addsitedir()`` approach
+shown earlier for daemon mode, and set ``WSGIPythonHome`` to an
+empty virtual environment so the underlying Python's
+``site-packages`` does not interfere.
 
 Adding Additional Module Directories
 ------------------------------------
 
 The ``python-home`` option to ``WSGIDaemonProcess`` and the
-``WSGIPythonHome`` directive are the preferred way of specifying the
-location of the Python virtual environment to be used. If necessary,
-activation of the Python virtual environment can also be performed from the
-WSGI script file itself.
+``WSGIPythonHome`` directive are the right way to point at a
+virtual environment. They are not for adding other directories to
+Python's module search path.
 
-If you need to add additional directories to search for Python packages or
-modules this can also be done. You may want to do this where you need to
-specify where the actual WSGI application is located, where a WSGI script
-file needs to import application specific modules.
-
-If you are using daemon mode and want to add additional directories to the
-Python module search path, you can use the ``python-path`` option to
-``WSGIDaemonProcess``::
+If you do need to add other directories — for example a directory
+containing application modules that aren't installed as a package
+— use ``python-path`` for daemon mode::
 
     WSGIDaemonProcess myapp python-path=/some/path/project
 
-This option would be in addition to the ``python-home`` option used to
-specify where the Python virtual environment is located.
+This is added in addition to ``python-home``.
 
-If you are using embedded mode, you can use the ``WSGIPythonPath``
-directive::
+For embedded mode, use the ``WSGIPythonPath`` directive::
 
     WSGIPythonPath /some/path/project
 
-This directive is in addition to the ``WSGIPythonHome`` directive used to
-specify where the Python virtual environment is located.
+This is added in addition to ``WSGIPythonHome``.
 
-In either case, if you need to specify more than one directory, they can be
-separated using a ':' character.
+Either form accepts multiple directories, separated by ``:`` on
+UNIX-like systems and ``;`` on Windows.
 
-If you are having to activate the Python virtual enviromment from within a
-WSGI script and need to add additional directories to the Python module
-search path, you should modify ``sys.path`` directly from the WSGI script
-file.
+If you are activating a virtual environment from inside a WSGI
+script and need additional directories, modify ``sys.path``
+directly in the WSGI script.
 
-Note that prior practice was that these ways of setting the Python module
-search path were used to specify the location of the Python virtual
-environment. Specifically, they were used to add the ``site-packages``
-directory of the Python virtual environment. You should not do that.
-
-The better way to specify the location of the Python virtual environment is
-using the ``python-home`` option of the ``WSGIDaemonProcess`` directive for
-daemon mode, or the ``WSGIPythonHome`` directive for embedded mode. These
-ways of specifying the Python virtual environment have been available since
-mod_wsgi 3.0 and Linux distributions have not shipped such an old version
-of mod_wsgi for quite some time. If you are using the older way, please
-update your configurations.
-
-.. _virtualenv: http://pypi.python.org/pypi/virtualenv
-.. _virtualenvwrapper: https://pypi.python.org/pypi/virtualenvwrapper
+A note on legacy practice: ``python-path`` and ``WSGIPythonPath``
+were sometimes used to bolt the ``site-packages`` directory of a
+virtual environment onto Python's search path. Don't do that —
+use the ``python-home`` / ``WSGIPythonHome`` mechanism above
+instead.
