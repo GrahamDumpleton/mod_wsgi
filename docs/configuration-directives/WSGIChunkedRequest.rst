@@ -9,7 +9,9 @@ WSGIChunkedRequest
 
 The WSGIChunkedRequest directive can be used to enable support for chunked
 request content. Rather than Apache rejecting a request using chunked
-request content, it will be allowed to pass through.
+request content, it will be allowed to pass through::
+
+  WSGIChunkedRequest On
 
 Do note however that WSGI is technically incapable of supporting chunked
 request content without all chunked request content having to be first read
@@ -34,15 +36,14 @@ mechanisms, although if those other WSGI servers support it, you will be
 okay.
 
 That all said, although technically not permitted by the WSGI specification,
-some WSGI frameworks do now incoporate support for handling chunked request
-content, as well as where compressed request content is expanded by the web
-server such that ``CONTENT_LENGTH`` is no longer accurate. The required
-behaviour is enabled in these frameworks by the WSGI server passing through
-the non standard ``wsgi.input_terminated`` key set as ``True`` in the per
-request WSGI ``environ`` dictionary. When this is done the web frameworks
-will always read all available input and ignore ``CONTENT_LENGTH``.
+modern WSGI frameworks do now incorporate support for handling chunked
+request content, as well as the case where compressed request content is
+expanded by the web server such that ``CONTENT_LENGTH`` is no longer
+accurate. The required behaviour is enabled in these frameworks by the
+WSGI server passing through the non standard ``wsgi.input_terminated`` key
+set as ``True`` in the per request WSGI ``environ`` dictionary. When this
+is done the web frameworks will always read all available input and ignore
+``CONTENT_LENGTH``.
 
 Because mod_wsgi guarantees that an empty string is returned when all input
 is exhausted, it will always set this flag.
-
-It is known that Flask/Werkzeug supports the ``wsgi.input_terminated`` flag.

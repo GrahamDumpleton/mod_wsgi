@@ -14,5 +14,9 @@ documents to match any web site that the WSGI application may be integrated as a
 part of. This feature is akin to the ``ProxyErrorOverride`` directive of Apache
 but for mod_wsgi only.
 
+For example::
+
+  WSGIErrorOverride On
+
 Note that this directive has no effect when the WSGI application is running in
 embedded mode.
