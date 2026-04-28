@@ -23,7 +23,14 @@ the directories containing the platform-independent and platform-specific
 Python library files. The two directories should be separated by a
 ``:``. If the same directory is used for both, only one path needs to
 be supplied. The value is normally what ``sys.prefix`` reports for the
-Python installation in question.
+Python installation in question::
+
+  WSGIPythonHome /usr/local/python
+
+When ``sys.prefix`` and ``sys.exec_prefix`` differ, supply both,
+separated by a colon::
+
+  WSGIPythonHome /opt/python/lib:/opt/python/lib64
 
 The Python installation referred to by this directive must be the same
 major/minor version of Python that mod_wsgi was compiled against. To
@@ -34,7 +41,3 @@ This directive is the same as setting the environment variable
 ``PYTHONHOME`` in the environment of the user that Apache executes as.
 If the directive is used it overrides any setting of ``PYTHONHOME`` in
 that environment.
-
-This directive is not available on Windows. On Windows, Python ignores
-``PYTHONHOME`` and instead determines the location of its library files
-from the location of the Python DLL.

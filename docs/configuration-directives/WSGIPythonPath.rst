@@ -13,6 +13,10 @@ specified they should be separated by a ``:`` on UNIX-like systems, or
 character, the complete argument string to ``WSGIPythonPath`` must be
 quoted.
 
+For example, to add a single directory to the module search path::
+
+  WSGIPythonPath /usr/local/wsgi/site-packages
+
 Each directory listed is added to the end of ``sys.path`` by calling
 ``site.addsitedir()``. Because that function is used, any ``.pth`` files
 located in the directories will also be opened and processed. This means

@@ -13,13 +13,16 @@ the Python interpreter is destroyed when the process is shutdown or restarted.
 
 This directive was added due to changes in Python 3.9 where the Python cleanup
 behaviour was changed such that it would wait on daemon threads to complete.
-This could cause cleanup of the Python interpreter to hang in the some cases
-where threads were created external to Python, as is the case where Python is
-embedded in a C program such as mod_wsgi with Apache.
+This could cause cleanup of the Python interpreter to hang in some cases
+where threads were created external to Python, as is the case where Python
+is embedded in a C program such as mod_wsgi with Apache.
 
-This problem of hanging when cleanup of the Python interpreter was attempted
-was especially noticeable when using mod_wsgi to host Trac.
+If you observe daemon processes hanging at shutdown or restart, set this
+directive to ``Off`` to skip Python interpreter destruction::
 
-Note that it is not known whether versions of Python newer than 3.9 still have
-this problem or whether further changes were made in Python interpreter cleanup
-code.
+  WSGIDestroyInterpreter Off
+
+Skipping interpreter destruction means Python ``atexit`` handlers and any
+other code registered to run during interpreter finalisation will not run.
+For most WSGI applications this is acceptable, since the daemon process is
+about to exit anyway and the operating system will reclaim its resources.
