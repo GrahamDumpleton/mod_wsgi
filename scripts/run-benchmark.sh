@@ -274,7 +274,7 @@ cleanup() {
         "$SERVER_ROOT/apachectl" stop 2>/dev/null || true
     fi
 
-    # Wait up to 10s for httpd to exit cleanly. Fall back to SIGKILL on
+    # Wait up to 30s for httpd to exit cleanly. Fall back to SIGKILL on
     # its own pid only — never use lsof on $PORT, since other processes
     # (e.g. the mod-wsgi-telemetry UI on the same default port) may also
     # be bound there and must not be disturbed.
@@ -282,7 +282,7 @@ cleanup() {
         local tries=0
         while kill -0 "$httpd_pid" 2>/dev/null; do
             tries=$((tries + 1))
-            if [ $tries -gt 10 ]; then
+            if [ $tries -gt 30 ]; then
                 kill -9 "$httpd_pid" 2>/dev/null || true
                 sleep 1
                 break
