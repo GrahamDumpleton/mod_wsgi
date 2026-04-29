@@ -28,8 +28,7 @@ If it is desired that the WSGI application be responsible for handling user
 authentication, then it is necessary to explicitly configure mod_wsgi to
 pass the required headers through to the application. This can be done by
 specifying the WSGIPassAuthorization directive in the appropriate context
-and setting it to 'On'. Note that prior to mod_wsgi version 2.0c5, this
-directive could not be used in .htaccess files.
+and setting it to 'On'.
 
 When passing of authorisation information is enabled, the authorisation
 headers are passed through to a WSGI application in the
@@ -53,9 +52,9 @@ once in Apache and it wasn't necessary for each authentication module to
 duplicate it. This was particularly good for the Digest authentication
 mechanism which was non trivial to implement correctly.
 
-Using mod_wsgi 2.0 or later, it is possible using the WSGIAuthUserScript
-directive to define a Python script file containing code which performs the
-authenticating of user credentials as outlined.
+The WSGIAuthUserScript directive can be used to define a Python script file
+containing code which performs the authenticating of user credentials as
+outlined.
 
 The required Apache configuration for defining the authentication provider
 for Basic authentication would be::
@@ -81,6 +80,20 @@ that the password is correct. If the user does not exist at all, then the
 result should be 'None'. If the user does exist, the result should be
 'True' or 'False' depending on whether the password was valid.
 
+As an alternative to returning ``True``, a non-empty string can be returned
+to indicate that authentication has succeeded. The returned string is then
+used as the authenticated user name in place of the value supplied by the
+client — it becomes ``REMOTE_USER`` for the WSGI application, and is also
+what Apache records for the request in access logs and in any subsequent
+group authorisation checks. This is useful where the supplied user name
+needs canonicalising, or where an external credential (an email address,
+an LDAP attribute, a certificate subject) maps to a different internal
+user name.
+
+HTTP Digest authentication is uncommon in modern deployments — TLS plus
+HTTP Basic authentication, or application-level authentication, is
+generally preferred. Digest support is documented here for completeness.
+
 If wishing to use Digest authentication, the configuration would instead
 be::
 
@@ -99,14 +112,9 @@ realm and password::
 
     def get_realm_hash(environ, user, realm):
         if user == 'spy':
-            value = hashlib.md5()
             # user:realm:password
-            input = '%s:%s:%s' % (user, realm, 'secret')
-            if not isinstance(input, bytes):
-                input = input.encode('UTF-8')
-            value.update(input)
-            hash = value.hexdigest()
-            return hash
+            data = ('%s:%s:%s' % (user, realm, 'secret')).encode('UTF-8')
+            return hashlib.md5(data).hexdigest()
         return None
 
 By default the auth providers are executed in the context of the main
@@ -125,8 +133,9 @@ Python web frameworks often bring in a huge amount of code even if using
 only one small part of them. This will result in a lot of memory being used
 in the Apache child processes just to support the auth provider.
 
-If mod_authn_alias is being loaded into Apache, then an aliased auth
-provider can also be defined::
+An aliased auth provider can also be defined using the
+``<AuthnProviderAlias>`` directive (provided by ``mod_authn_core``, which
+is loaded by default on Apache 2.4)::
 
     <AuthnProviderAlias wsgi django>
     WSGIAuthUserScript /usr/local/django/mysite/apache/auth.wsgi \
@@ -178,7 +187,7 @@ passed as first argument is a cut down version of what would be supplied
 to the actual WSGI application. This includes the 'wsgi.errors' object for
 the purposes of logging error messages associated with the request.
 
-Any configuration defined by !SetEnv directives is not passed in the
+Any configuration defined by SetEnv directives is not passed in the
 'environ' dictionary because doing so would allow users to override the
 configuration specified in such a way from a '.htaccess' file.
 Configuration should as a result be placed into the script file itself.
@@ -193,7 +202,7 @@ be used to control access to CGI scripts.
 Apache Group Authorisation
 --------------------------
 
-As compliment to the authentication provider mechanism, mod_wsgi 2.0 also
+As complement to the authentication provider mechanism, mod_wsgi also
 provides a mechanism for implementing group authorisation using the Apache
 'Require' directive. To use this in conjunction with an inbuilt Apache
 authentication provider such as a password file, the following Apache
@@ -213,7 +222,7 @@ function with a sample as shown below::
     def groups_for_user(environ, user):
         if user == 'spy':
             return ['secret-agents']
-        return ['']
+        return []
 
 The function should supply a list of groups the user is a member of or
 an empty list otherwise.
@@ -226,7 +235,7 @@ what would be supplied to the actual WSGI application. This includes the
 'wsgi.errors' object for the purposes of logging error messages associated
 with the request.
 
-Any configuration defined by !SetEnv directives is not passed in the
+Any configuration defined by SetEnv directives is not passed in the
 'environ' dictionary because doing so would allow users to override the
 configuration specified in such a way from a '.htaccess' file.
 Configuration should as a result be placed into the script file itself.
@@ -240,10 +249,9 @@ Host Access Controls
 --------------------
 
 The authentication provider and group authorisation features help to control
-access based on the identity of a user. Using mod_wsgi 2.0 it is also
-possible to limit access based on the machine which the client is connecting
-from. The path to the script is defined using the WSGIAccessScript
-directive::
+access based on the identity of a user. It is also possible to limit access
+based on the machine which the client is connecting from. The path to the
+script is defined using the WSGIAccessScript directive::
 
     WSGIAccessScript /usr/local/wsgi/script/access.wsgi
 
@@ -258,12 +266,12 @@ what would be supplied to the actual WSGI application. This includes the
 'wsgi.errors' object for the purposes of logging error messages associated
 with the request.
 
-Any configuration defined by !SetEnv directives is not passed in the
+Any configuration defined by SetEnv directives is not passed in the
 'environ' dictionary because doing so would allow users to override the
 configuration specified in such a way from a '.htaccess' file.
 Configuration should as a result be placed into the script file itself.
 
-By default the access checking code is executed in context of the first
-interpreter created by Python, ie., '%{GLOBAL}', and always in the Apache
-child processes, never in a daemon process. The interpreter used can be
+By default the access checking code is executed in the context of the main
+Python interpreter, ie., '%{GLOBAL}', and always in the Apache child
+processes, never in a daemon process. The interpreter used can be
 overridden using the 'application-group' option to the script directive.

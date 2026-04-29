@@ -21,49 +21,33 @@ times when you might want to rely on a feature of a specific WSGI hosting
 mechanism, which although not part of the WSGI specification, allows you
 to do something you wouldn't otherwise.
 
-That said, there a few ways in which you can detect that your code is
+That said, there are a few ways in which you can detect that your code is
 running under mod_wsgi. These fall under two categories. The first being
 a general mechanism for how to detect if mod_wsgi is being used. The
 second being additional ways to detect that mod_wsgi is being used when a
 request is being handled.
 
-The simplest way of detecting if mod_wsgi is being used is to import the
-'mod_wsgi' module. This is a special embedded mode which is installed
-automatically by the Apache/mod_wsgi module into set of imported modules,
-ie., sys.modules. You can thus do::
+When mod_wsgi loads a WSGI application under Apache, it inserts a built-in
+``mod_wsgi`` module into ``sys.modules`` which exposes mod_wsgi-specific
+attributes such as ``version``.
 
-    try:
-        import mod_wsgi
-        # Put code here which should only run when mod_wsgi is being used.
-    except:
-        pass
+A bare ``import mod_wsgi`` is not a reliable test on its own, because the
+mod_wsgi project is also distributed as a Python package on PyPI (which
+provides the ``mod_wsgi-express`` tooling). With that package installed,
+``import mod_wsgi`` succeeds in any Python process even outside of Apache.
 
-Do note however that although this is an embedded mode added automatically,
-the way mod_wsgi has been implemented allows in the future for there to be
-a separate Python package/module distinct from the mod_wsgi.so file called
-'mod_wsgi' which might contain additional Python code to support use of
-mod_wsgi.
-
-What would happen if such a separate Python package/module is available is
-that it will be automatically imported and additional information setup by
-the Apache/mod_wsgi module then inserted into the global namespace of that
-Python package/module.
-
-The potential existance of this distinct Python package/module means that
-importing 'mod_wsgi' could one day actually succeed outside of code being
-run under the Apache/mod_wsgi module.
-
-A more correct test therefore is::
+A reliable check is to import an attribute that is only set when running
+under Apache::
 
     try:
         from mod_wsgi import version
         # Put code here which should only run when mod_wsgi is being used.
-    except:
+    except ImportError:
         pass
 
-This is different because the 'version' attribute will only be present when
-running under the Apache/mod_wsgi module as that version relates to the
-version of mod_wsgi.so.
+The ``version`` attribute is supplied by the built-in module that
+Apache/mod_wsgi inserts into ``sys.modules`` and reports the version of
+``mod_wsgi.so`` loaded into Apache.
 
 The above import check can be used anywhere, be that in the WSGI script file,
 or in your application code at either global scope or within the context of
@@ -82,7 +66,7 @@ example::
     if __name__ == '__main__':
         ...
 
-In contrast, were a Python code file is imported, the '__name__' attribute
+In contrast, where a Python code file is imported, the '__name__' attribute
 would be the dotted path which would be used to import the code file.
 
 In the case of mod_wsgi, although WSGI script files are imported as if they
