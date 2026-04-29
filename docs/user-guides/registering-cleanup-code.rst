@@ -81,8 +81,7 @@ if necessary, and then call the supplied cleanup callback::
             self.__callback = callback
             self.__environ = environ
         def __iter__(self):
-            for item in self.__iterable:
-                yield item
+            yield from self.__iterable
         def close(self):
             try:
                 if hasattr(self.__iterable, 'close'):
@@ -97,27 +96,43 @@ if necessary, and then call the supplied cleanup callback::
         def __call__(self, environ, start_response):
             try:
                 result = self.__application(environ, start_response)
-            except:
+            except Exception:
                 self.__callback(environ)
                 raise
             return Generator2(result, self.__callback, environ)
 
-Note that for a successfully completed request, since the cleanup task will
-be executed after the complete response has been written back to the
-client, if an error occurs there will be no evidence of this in the
-response seen by the client. As far as the client will be concerned
-everything will look okay. The only indication of an error will be found in
-the Apache error log.
+Note that for a successfully completed request the cleanup task runs
+after the complete response has already been written back to the
+client. If the cleanup function itself raises an exception, the
+client will already have seen a successful response — the failure
+will be visible only in the Apache error log.
 
-Both of the solutions above are not specific to mod_wsgi and should work
-with any WSGI hosting solution which complies with the WSGI specification.
+Both of the solutions above are not specific to mod_wsgi and should
+work with any WSGI hosting solution which complies with the WSGI
+specification.
 
 Cleanup On Process Shutdown
 ---------------------------
 
-To perform a cleanup task on shutdown of either an Apache child process
-when using 'embedded' mode of mod_wsgi, or of a daemon process when using
-'daemon' mode of mod_wsgi, the standard Python 'atexit' module can be used::
+To perform a cleanup task on shutdown of either an Apache child
+process when using ``embedded`` mode of mod_wsgi, or of a daemon
+process when using ``daemon`` mode of mod_wsgi, the recommended
+mechanism is to register a callback with ``mod_wsgi.subscribe_shutdown()``::
+
+    import mod_wsgi
+
+    def cleanup(event):
+        # Perform required cleanup task.
+        ...
+
+    mod_wsgi.subscribe_shutdown(cleanup)
+
+The callback receives a single ``event`` argument, a dictionary that
+includes a ``shutdown_reason`` key describing why the process is
+stopping (graceful shutdown, eviction, request-time-limit eviction,
+and so on).
+
+The standard Python ``atexit`` module can also be used::
 
     import atexit
 
@@ -127,18 +142,38 @@ when using 'embedded' mode of mod_wsgi, or of a daemon process when using
 
     atexit.register(cleanup)
 
-Such a registered cleanup function will also be called if the 'Interpreter'
-reload mechanism is enabled and the Python sub interpreter in which the
-cleanup function was registered was destroyed.
+However, ``atexit`` callbacks under mod_wsgi are not always
+delivered. mod_wsgi runs them by patching ``threading._shutdown`` so
+they fire when a sub interpreter is destroyed via
+``Py_EndInterpreter``. Two situations make this unreliable:
 
-Note that although mod_wsgi will ensure that cleanup functions registered
-using the 'atexit' module will be called correctly, this solution may not
-be portable to all WSGI hosting solutions.
+* If
+  :doc:`../configuration-directives/WSGIDestroyInterpreter`
+  is set to ``Off``, sub interpreters are not destroyed at process
+  shutdown and the patched ``threading._shutdown`` path is never
+  taken — registered ``atexit`` functions will not run at all.
+* Internal Python changes to the order in which threads are shut
+  down relative to ``atexit`` invocation can leave the patched
+  path unreached even when interpreter destruction is enabled.
 
-Also be aware that although one can register a cleanup function to be
-called on process shutdown, this is no absolute guarantee that it will be
-called. This is because a process may crash, or it may be forcibly killed
-off by Apache if it takes too long to shutdown normally. As a result, an
-application should not be dependent on cleanup functions being called on
-process shutdown and an application must have some means of detecting an
-abnormal shutdown when it is started up and recover from it automatically.
+By contrast, ``mod_wsgi.subscribe_shutdown()`` callbacks are
+dispatched directly by mod_wsgi early in the shutdown sequence,
+before in-flight requests are waited on and before any interpreter
+destruction is attempted. They run regardless of
+``WSGIDestroyInterpreter`` and regardless of how Python orders its
+internal thread shutdown. New code should prefer
+``mod_wsgi.subscribe_shutdown()``; existing ``atexit`` registrations
+will keep working in the cases where the patched path still fires
+but should be migrated where reliability matters.
+
+Note that ``mod_wsgi.subscribe_shutdown()`` is a mod_wsgi-specific
+extension and not portable to other WSGI hosting solutions; ``atexit``
+is portable but unreliable as described.
+
+Also be aware that even with ``mod_wsgi.subscribe_shutdown()``,
+delivery of the callback is not absolutely guaranteed. The process
+may crash, or it may be forcibly killed by Apache if it takes too
+long to shut down. An application should therefore not be entirely
+dependent on cleanup callbacks running, and should have some means
+of detecting an abnormal shutdown when it next starts up and
+recovering from it automatically.

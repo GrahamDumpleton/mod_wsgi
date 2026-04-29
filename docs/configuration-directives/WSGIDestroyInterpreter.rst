@@ -22,7 +22,16 @@ directive to ``Off`` to skip Python interpreter destruction::
 
   WSGIDestroyInterpreter Off
 
-Skipping interpreter destruction means Python ``atexit`` handlers and any
-other code registered to run during interpreter finalisation will not run.
-For most WSGI applications this is acceptable, since the daemon process is
-about to exit anyway and the operating system will reclaim its resources.
+Skipping interpreter destruction means Python ``atexit`` handlers and
+any other code registered to run during interpreter finalisation will
+not run. For most WSGI applications this is acceptable, since the
+daemon process is about to exit anyway and the operating system will
+reclaim its resources.
+
+If an application genuinely needs to run cleanup code on process
+shutdown and ``WSGIDestroyInterpreter Off`` may be in effect, register
+the cleanup callback via ``mod_wsgi.subscribe_shutdown()`` instead of
+``atexit``. ``subscribe_shutdown`` callbacks are dispatched by
+mod_wsgi directly before interpreter destruction is attempted and
+therefore run regardless of this setting. See
+:doc:`../user-guides/registering-cleanup-code` for usage.
