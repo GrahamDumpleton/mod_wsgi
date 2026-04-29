@@ -14,6 +14,8 @@ Application loading
 
    configuration-directives/WSGIScriptAlias
    configuration-directives/WSGIScriptAliasMatch
+   configuration-directives/WSGIHandlerScript
+   configuration-directives/WSGIDispatchScript
    configuration-directives/WSGICallableObject
    configuration-directives/WSGIImportScript
    configuration-directives/WSGIScriptReloading
@@ -105,9 +107,11 @@ Alphabetical index
 * :doc:`configuration-directives/WSGIChunkedRequest`
 * :doc:`configuration-directives/WSGIDaemonProcess`
 * :doc:`configuration-directives/WSGIDestroyInterpreter`
+* :doc:`configuration-directives/WSGIDispatchScript`
 * :doc:`configuration-directives/WSGIDontWriteBytecode`
 * :doc:`configuration-directives/WSGIEnableSendfile`
 * :doc:`configuration-directives/WSGIErrorOverride`
+* :doc:`configuration-directives/WSGIHandlerScript`
 * :doc:`configuration-directives/WSGIIgnoreActivity`
 * :doc:`configuration-directives/WSGIImportScript`
 * :doc:`configuration-directives/WSGIMapHEADToGET`
