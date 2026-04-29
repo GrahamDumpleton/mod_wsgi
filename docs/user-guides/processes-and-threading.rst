@@ -70,58 +70,54 @@ Multi-Processing Modules
 ------------------------
 
 The main factor which determines how Apache operates is which
-multi-processing module (MPM) is built into Apache at compile time.
-Although runtime configuration can customise the behaviour of the MPM, the
-choice of MPM will dictate whether or not multithreading is available.
+multi-processing module (MPM) is in use. The choice of MPM will dictate
+whether or not multithreading is available, although runtime
+configuration can customise the behaviour within that constraint.
 
-On UNIX based systems, Apache defaults to being built with the 'prefork'
-MPM. This can be overridden at build time by supplying
-an appropriate value in conjunction with the ``--with-mpm`` option when
-running the 'configure' script for Apache. The main alternative to the
-'prefork' MPM which can be used on UNIX systems is the 'worker' MPM.
+On UNIX based systems, three MPMs are commonly available: ``event``,
+``worker`` and ``prefork``. Under Apache 2.4 the MPMs are dynamically
+loadable modules and the active one is selected at runtime by
+loading the appropriate ``mpm_*_module`` rather than at compile time.
+On most current Linux distributions the ``event`` MPM is loaded by
+default, having displaced ``worker`` as the recommended UNIX MPM
+some years ago.
 
-If you are unsure which MPM is built into Apache, it can be determined
-by running the Apache web server executable with the ``-V`` option. The
-output from running the web server executable with this option will be
-information about how it was configured when built::
+The Apache build also has one MPM linked statically as a fallback,
+which is what gets used if no MPM module is explicitly loaded. Running
+the Apache web server executable with the ``-V`` option reports both
+the build details and the MPM that is currently active::
 
-    Server version: Apache/2.2.1
-    Server built:   Mar  4 2007 20:48:15
-    Server's Module Magic Number: 20051115:1
-    Server loaded:  APR 1.2.6, APR-Util 1.2.6
-    Compiled using: APR 1.2.6, APR-Util 1.2.6
-    Architecture:   32-bit
-    Server MPM:     Worker
-      threaded:     yes (fixed thread count)
+    $ httpd -V
+    Server version: Apache/2.4.66 (Unix)
+    Server built:   Dec  1 2025 12:44:02
+    Server's Module Magic Number: 20120211:141
+    Server loaded:  APR 1.7.6, APR-UTIL 1.6.3, PCRE 10.47 2025-10-21
+    Compiled using: APR 1.7.6, APR-UTIL 1.6.3, PCRE 10.47 2025-10-21
+    Architecture:   64-bit
+    Server MPM:     prefork
+      threaded:     no
         forked:     yes (variable process count)
     Server compiled with....
-     -D APACHE_MPM_DIR="server/mpm/worker"
-     -D APR_HAS_MMAP
-     -D APR_HAVE_IPV6 (IPv4-mapped addresses enabled)
-     -D APR_USE_SYSVSEM_SERIALIZE
-     -D APR_USE_PTHREAD_SERIALIZE
-     -D SINGLE_LISTEN_UNSERIALIZED_ACCEPT
-     -D APR_HAS_OTHER_CHILD
-     -D AP_HAVE_RELIABLE_PIPED_LOGS
-     -D DYNAMIC_MODULE_LIMIT=128
-     -D HTTPD_ROOT="/usr/local/apache-2.2"
-     -D SUEXEC_BIN="/usr/local/apache-2.2/bin/suexec"
-     -D DEFAULT_SCOREBOARD="logs/apache_runtime_status"
-     -D DEFAULT_ERRORLOG="logs/error_log"
-     -D AP_TYPES_CONFIG_FILE="conf/mime.types"
-     -D SERVER_CONFIG_FILE="conf/httpd.conf"
+     ...
 
-Which MPM is being used can be determined from the 'Server MPM' field.
+Which MPM is currently active can be determined from the
+``Server MPM`` field. On systems where the MPM is selected by loading
+a module, this field reflects the loaded MPM, not the statically
+linked one.
 
-On the Windows platform the only available MPM is 'winnt'.
+On the Windows platform the only available MPM is ``winnt``.
 
 The UNIX 'prefork' MPM
 ----------------------
 
-This MPM is the most commonly used. It is the default mode on UNIX systems. In this configuration, the main Apache process
-will at startup create multiple child processes. When a request is received
-by the parent process, it will be processed by which ever of the child
-processes is ready.
+This MPM was historically the default on UNIX systems and is still
+appropriate where the modules being loaded into Apache are not
+thread-safe. In this configuration, the main Apache process binds the
+listening socket at startup and forks multiple child processes which
+inherit it. The parent itself does not receive requests; the child
+processes share the listening socket and compete to accept incoming
+connections directly. Apache serialises ``accept()`` between children
+where necessary to avoid thundering-herd wakeups.
 
 Each child process will only handle one request at a time. If another
 request arrives at the same time, it will be handled by the next available
@@ -211,28 +207,41 @@ necessary. Apache may also still shutdown and kill off excess child
 processes, or child processes that have handled more than a set number of
 requests.
 
-Overall, use of 'worker' MPM will result in less child processes needing to
-be created, but resource usage of individual child processes will be
-greater. On modern computer systems, the 'worker' MPM would in general be
-the prefered MPM to use and should if possible be used in preference to the
-'prefork' MPM.
+Overall, use of the 'worker' MPM will result in fewer child processes
+needing to be created, but resource usage of individual child
+processes will be greater. The 'worker' MPM has now largely been
+superseded by the 'event' MPM described below, which behaves
+similarly but handles idle keep-alive connections more efficiently.
 
 Although contention for the global interpreter lock (GIL) in Python can
-causes issues for pure Python programs, it is not generally as big an issue
-when using Python within Apache. This is because all the underlying
-infrastructure for accepting requests and mapping the URL to a WSGI
-application, as well as the handling of requests against static files are
-all performed by Apache in C code. While this code is being executed the
-thread will not be holding the Python GIL, thus allowing a greater level of
-overlapping execution where a system has multiple CPUs or CPUs with
-multiple cores.
+cause issues for pure Python programs, it is not generally as big an
+issue when using Python within Apache. This is because all the
+underlying infrastructure for accepting requests and mapping the URL
+to a WSGI application, as well as the handling of requests against
+static files, is performed by Apache in C code. While this code is
+being executed the thread will not be holding the Python GIL, thus
+allowing a greater level of overlapping execution where a system has
+multiple CPUs or CPUs with multiple cores.
 
-This ability to make good use of more than processor, even when using
-multithreading, is further enchanced by the fact that Apache uses multiple
-processes for handling requests and not just a single process. Thus, even
-when there is some contention for the GIL within a specific process, it
-doesn't stop other processes from being able to run as the GIL is only
-local to a process and does not extend across processes.
+This ability to make good use of more than one processor, even when
+using multithreading, is further enhanced by the fact that Apache
+uses multiple processes for handling requests and not just a single
+process. Thus, even when there is some contention for the GIL within
+a specific process, it doesn't stop other processes from being able
+to run as the GIL is only local to a process and does not extend
+across processes.
+
+Recent Python releases have introduced two mechanisms that affect this
+picture: per-interpreter GIL state under PEP 684 (Python 3.12), where
+each Python sub interpreter gets its own GIL rather than sharing one;
+and optional free-threading under PEP 703 (Python 3.13), where the
+GIL can be disabled entirely. Neither is currently usable from
+mod_wsgi — the existing sub interpreter integration assumes the
+shared-GIL model — but support is being investigated. For the
+foreseeable future, GIL contention within a process should still be
+managed by running multiple processes (whether Apache child processes
+or mod_wsgi daemon processes) rather than relying on either of those
+new mechanisms.
 
 For the typical 'worker' configuration where multiple processes and
 multiple threads are used, the WSGI environment key/value pairs indicating
@@ -266,6 +275,40 @@ are being used will for this configuration be as follows.
 Because multiple threads are being used, there would be no problem with
 overlapping requests generated by an AJAX based web page.
 
+The UNIX 'event' MPM
+--------------------
+
+The 'event' MPM is the default MPM on most current Linux
+distributions. It is structurally similar to the 'worker' MPM —
+multiple child processes, each containing a pool of worker threads —
+but uses an event-driven listener thread to handle idle keep-alive
+connections without holding a worker thread for them. This means a
+given child process can handle a much larger number of concurrent
+clients than 'worker' for typical workloads where many connections
+are kept alive between requests.
+
+For mod_wsgi the request-handling model is the same as for 'worker':
+once a request is dispatched to a worker thread, that worker thread
+calls into the WSGI application in the usual way. The WSGI
+environment key/value pairs reflect the multiple-processes,
+multiple-threads configuration.
+
+*wsgi.multithread*
+    True
+
+*wsgi.multiprocess*
+    True
+
+The recommendation when using the 'event' MPM is to host WSGI
+applications in mod_wsgi daemon mode rather than embedded mode.
+Daemon mode keeps the WSGI application out of the Apache child
+processes that are juggling keep-alive connections, isolates the
+Python runtime from the rest of Apache, and decouples the daemon's
+process and thread counts from the MPM-level tuning. Embedded mode
+will work, but the same trade-offs that make daemon mode preferable
+generally apply more strongly under 'event' than under 'worker' or
+'prefork'.
+
 The Windows 'winnt' MPM
 -----------------------
 
@@ -286,6 +329,18 @@ are being used will for this configuration be as follows.
 
 *wsgi.multiprocess*
     False
+
+Because the 'winnt' MPM relies solely on multithreading within a
+single child process and cannot fan out to multiple processes, all
+WSGI request handling for a given Apache instance shares a single
+Python GIL. Under load this means worker threads spend significant
+time contending for the GIL rather than running in parallel, capping
+the throughput a Python WSGI application can deliver on Windows.
+mod_wsgi daemon mode, which on UNIX is the standard way to escape
+this by running multiple Python processes, is not available on
+Windows. Windows is therefore not recommended as the deployment
+platform for high-load production WSGI applications; Linux should be
+used instead.
 
 The mod_wsgi Daemon Processes
 -----------------------------
@@ -317,14 +372,17 @@ created within the process group. Although providing 'processes=1' as an
 option would also result in a single process being created, this has a
 slightly different meaning and so you should only do this if necessary.
 
-The difference between not specifying the 'processes' option and defining
-'processes=1' will be that WSGI environment attribute called
-'wsgi.multiprocess' will be set to be True when the 'processes' option
-is defined, whereas not providing the option at all will result in the
-attribute being set to be False. This distinction is to allow for where
-some form of mapping mechanism might be used to distribute requests across
-multiple process groups and thus in effect it is still a multiprocess
-application.
+The difference between not specifying the 'processes' option and
+defining 'processes=1' is in the value of the WSGI environment
+attribute ``wsgi.multiprocess``: it is set to True when the
+'processes' option is supplied (even when the value is 1), and to
+False when the option is omitted entirely. This distinction is
+provided for deployments where a load balancer distributes requests
+across multiple process groups on the same host, or across separate
+Apache installations — even though each individual daemon process
+group is configured with a single process, the application as a whole
+is still effectively running multiprocess and ``wsgi.multiprocess``
+should reflect that.
 
 In other words, if you use the configuration::
 
@@ -386,6 +444,16 @@ load, no more daemon processes are created than what is defined. You should
 therefore always plan ahead and make sure the number of processes and
 threads defined is adequate to cope with the expected load.
 
+In addition to ``processes`` and ``threads``, ``WSGIDaemonProcess``
+exposes a number of options for controlling how individual daemon
+processes are recycled — among them ``maximum-requests``,
+``inactivity-timeout``, ``request-timeout`` and ``cpu-time-limit`` —
+together with timeouts that govern shutdown and request-handling
+deadlines. See the
+:doc:`../configuration-directives/WSGIDaemonProcess` reference for
+the full set of options; this guide is concerned only with the
+process and thread counts.
+
 Sharing Of Global Data
 ----------------------
 
@@ -435,38 +503,49 @@ interpreters. When Apache is run in a mode whereby there are multiple child
 processes, each child process will contain sub interpreters for each WSGI
 application.
 
-When a sub interpreter is created for a WSGI application, it would then
-normally persist for the life of the process. The only exception to this
-would be where interpreter reloading is enabled, in which case the sub
-interpreter would be destroyed and recreated when the WSGI application
-script file has been changed.
+A sub interpreter, once created, persists for the life of the
+process. To reload code, the process itself is recycled — see
+:doc:`../user-guides/reloading-source-code` for the available
+mechanisms.
 
-For the sub interpreter created for each WSGI application, they will each
-have their own set of Python modules. In other words, a change to the
-global data within the context of one sub interpreter will not be seen from
-the sub interpreter corresponding to a different WSGI application. This
-will be the case whether or not the sub interpreters are in the same
+For the sub interpreter created for each WSGI application, they will
+each have their own set of Python modules. In other words, a change
+to the global data within the context of one sub interpreter will not
+be seen from the sub interpreter corresponding to a different WSGI
+application. This will be the case whether or not the sub interpreters
+are in the same process.
+
+This behaviour can be modified and multiple applications grouped
+together using the WSGIApplicationGroup directive. Specifically, the
+directive indicates that the marked WSGI applications should be run
+within the context of a common sub interpreter rather than being run
+in their own sub interpreters. By doing this, each WSGI application
+will then have access to the same global data. Do note though that
+this doesn't change the fact that global data will not be shared
+between processes.
+
+Some C extension modules — most prominently NumPy, SciPy and modules
+built on top of them — do not work correctly outside the main Python
+interpreter. WSGI applications using such extensions need to be run
+in the main interpreter by setting ``WSGIApplicationGroup %{GLOBAL}``
+or by being delegated to a daemon process group, which gets its own
+main interpreter. The trade-offs and failure modes are described
+under "WSGIApplicationGroup and C extension modules" in
+:doc:`../user-guides/configuration-issues` and "Multiple Python Sub
+Interpreters" in :doc:`../user-guides/application-issues`.
+
+The only other way of sharing data between sub interpreters within
+the one child process would be to use an external data store, or a
+third party C extension module for Python which allows communication
+or sharing of data between multiple interpreters within the same
 process.
-
-This behaviour can be modified and multiple applications grouped together
-using the WSGIApplicationGroup directive. Specifically, the directive
-indicates that the marked WSGI applications should be run within the
-context of a common sub interpreter rather than being run in their own sub
-interpreters. By doing this, each WSGI application will then have access
-to the same global data. Do note though that this doesn't change the fact
-that global data will not be shared between processes.
-
-The only other way of sharing data between sub interpreters within the one
-child process would be to use an external data store, or a third party
-C extension module for Python which allows communication or sharing of
-data between multiple interpreters within the same process.
 
 Building A Portable Application
 -------------------------------
 
 Taking into consideration the different process models used by Apache and the
 manner in which interpreters are used by mod_wsgi, to build a portable and
-robust application requires the following therefore be satisified.
+robust application requires the following therefore be satisfied.
 
 1. Where shared data needs to be visible to all application instances,
 regardless of which child process they execute in, and changes made to the
