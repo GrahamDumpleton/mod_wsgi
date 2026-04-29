@@ -830,26 +830,24 @@ Python Simplified GIL State API
 In an attempt to simplify management of thread state objects when coding C
 extension modules for Python, Python 2.3 introduced the simplified API for
 GIL state management. Unfortunately, this API will only work if the code is
-running against the very first Python sub interpreter created when Python
-is initialised.
+running against the main Python interpreter — the one Python creates at
+process startup, before any sub-interpreters are spawned.
 
 Because mod_wsgi by default assigns a Python sub interpreter to each WSGI
 application based on the virtual host and application mount point, code
-would normally never be executed within the context of the first Python sub
-interpreter created, instead a distinct Python sub interpreter would be
-used.
+would normally never be executed within the context of the main Python
+interpreter, instead a distinct Python sub interpreter would be used.
 
 The consequences of attempting to use a C extension module for Python which
 is implemented against the simplified API for GIL state management in
-any sub interpreter besides the first, is that the code is likely to
-deadlock or crash the process. The only way around this issue is to ensure
-that any WSGI application which makes use of C extension modules which use
-this API, only runs in the very first Python sub interpreter created when
-Python is initialised.
+any sub interpreter besides the main interpreter, is that the code is
+likely to deadlock or crash the process. The only way around this issue is
+to ensure that any WSGI application which makes use of C extension modules
+which use this API, only runs in the main Python interpreter.
 
-To force a specific WSGI application to be run within the very first Python
-sub interpreter created when Python is initialised, the WSGIApplicationGroup
-directive should be used and the group set to '%{GLOBAL}'::
+To force a specific WSGI application to be run within the main Python
+interpreter, the WSGIApplicationGroup directive should be used and the
+group set to '%{GLOBAL}'::
 
     WSGIApplicationGroup %{GLOBAL}
 
@@ -862,14 +860,14 @@ believed to have this problem in certain use cases is Xapian.
 
 There is also a bit of a question mark over the Python Subversion bindings.
 This package also uses SWIG, however it is only some versions that appear
-to require that the very first sub interpreter created when Python is
-initialised be used. It is currently believed that this may be more to do
-with coding problems than with the ``-threads`` option being passed to the
-'swig' command when the bindings were generated.
+to require that the main Python interpreter be used. It is currently
+believed that this may be more to do with coding problems than with the
+``-threads`` option being passed to the 'swig' command when the bindings
+were generated.
 
 For all the affected packages, as described above it is believed though
 that they will work when application group is set to force the application
-to run in the first interpreter created by Python as described above.
+to run in the main Python interpreter as described above.
 
 Another option for packages which use SWIG generated bindings is not to use
 the ``-threads`` option when 'swig' is used to generate the bindings. This
@@ -1003,20 +1001,20 @@ believed to have this problem in certain use cases is lxml.
 Because of the possibilty that extension module writers have not written
 their code to take into consideration it being used from multiple sub
 interpreters, the safest approach is to force all WSGI applications to run
-within the same application group, with that preferably being the
-first interpreter instance created by Python.
+within the same application group, with that preferably being the main
+Python interpreter.
 
-To force a specific WSGI application to be run within the very first Python
-sub interpreter created when Python is initialised, the WSGIApplicationGroup
-directive should be used and the group set to '%{GLOBAL}'::
+To force a specific WSGI application to be run within the main Python
+interpreter, the WSGIApplicationGroup directive should be used and the
+group set to '%{GLOBAL}'::
 
     WSGIApplicationGroup %{GLOBAL}
 
 If it is not feasible to force all WSGI applications to run in the same
 interpreter, then daemon mode of mod_wsgi should be used to assign
 different WSGI applications to their own daemon processes. Each would
-then be made to run in the first Python sub interpreter instance within
-their respective processes.
+then be made to run in the main Python interpreter within their
+respective processes.
 
 Memory Constrained VPS Systems
 ------------------------------

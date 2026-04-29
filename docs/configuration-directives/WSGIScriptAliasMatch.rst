@@ -39,6 +39,15 @@ This keeps the matched portion of the URL visible to the WSGI
 application as path information rather than having it stripped at the
 Apache layer.
 
+In both examples the choice of file extension (``.wsgi`` in the first,
+``.py`` in the second) is a convention only — ``WSGIScriptAliasMatch``
+identifies the script by the full file path produced from the regex
+substitution and any extension (or none) is acceptable. The ``.wsgi``
+convention is used in many examples to avoid clashing with any
+pre-existing ``AddHandler`` directive that may already map ``.py`` files
+to a different handler such as ``cgi-script``. If you know there is no
+such conflict, ``.py`` is acceptable.
+
 Options which can be supplied to the ``WSGIScriptAliasMatch`` directive
 are:
 
@@ -70,12 +79,12 @@ are:
     If the name is set to be ``%{GLOBAL}`` the application group will be
     set to the empty string. Any WSGI applications in the global
     application group will always be executed within the context of the
-    first interpreter created by Python when it is initialised, of the
-    process handling the request. Forcing a WSGI application to run within
-    the first interpreter can be necessary when a third party C extension
-    module for Python has used the simplified threading API for
-    manipulation of the Python GIL and thus will not run correctly within
-    any additional sub interpreters created by Python.
+    main Python interpreter of the process handling the request. Forcing
+    a WSGI application to run within the main interpreter can be
+    necessary when a third party C extension module for Python has used
+    the simplified threading API for manipulation of the Python GIL and
+    thus will not run correctly within any additional sub interpreters
+    created by Python.
 
     If the name takes the form ``%{ENV:variable}``, the application
     group name will be taken from the named Apache environment variable.

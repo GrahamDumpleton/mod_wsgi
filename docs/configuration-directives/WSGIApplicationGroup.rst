@@ -41,13 +41,12 @@ The meaning of the special variables are:
     The application group name will be set to the empty string.
 
     Any WSGI applications in the global application group will always be
-    executed within the context of the first interpreter created by Python
-    when it is initialised, of the process handling the request. Forcing a
-    WSGI application to run within the first interpreter can be necessary
-    when a third party C extension module for Python has used the
-    simplified threading API for manipulation of the Python GIL and thus
-    will not run correctly within any additional sub interpreters created
-    by Python.
+    executed within the context of the main Python interpreter of the
+    process handling the request. Forcing a WSGI application to run
+    within the main interpreter can be necessary when a third party C
+    extension module for Python has used the simplified threading API for
+    manipulation of the Python GIL and thus will not run correctly within
+    any additional sub interpreters created by Python.
 
 **%{SERVER}**
 

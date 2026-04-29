@@ -109,8 +109,8 @@ realm and password::
             return hash
         return None
 
-By default the auth providers are executed in context of first interpreter
-created by Python, ie., '%{GLOBAL}' and always in the Apache child
+By default the auth providers are executed in the context of the main
+Python interpreter, ie., '%{GLOBAL}' and always in the Apache child
 processes, never in a daemon process. The interpreter can be overridden
 using the 'application-group' option to the script directive. The namespace
 for authentication groups is shared with that for application groups
@@ -232,9 +232,9 @@ configuration specified in such a way from a '.htaccess' file.
 Configuration should as a result be placed into the script file itself.
 
 By default the group authorisation code is always executed in the context
-of the first interpreter created by Python, ie., '%{GLOBAL}', and always in
-the Apache child processes, never in a daemon process. The interpreter can
-be overridden using the 'application-group' option to the script directive.
+of the main Python interpreter, ie., '%{GLOBAL}', and always in the Apache
+child processes, never in a daemon process. The interpreter can be
+overridden using the 'application-group' option to the script directive.
 
 Host Access Controls
 --------------------

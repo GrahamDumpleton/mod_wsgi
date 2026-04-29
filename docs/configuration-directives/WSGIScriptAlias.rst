@@ -54,6 +54,14 @@ A WSGI application can also be mounted at the root of the site by using
 In this case all requests to the site will be dispatched to the
 specified WSGI script file.
 
+The ``.wsgi`` extension shown here is a convention only — when
+``WSGIScriptAlias`` is used, the script is identified by its full file
+path and any extension (or none) is acceptable. The ``.wsgi`` convention
+is used to avoid clashing with any pre-existing ``AddHandler`` directive
+that may already map ``.py`` files to a different handler such as
+``cgi-script``. If you know there is no such conflict, the script file
+can use ``.py`` like any other Python file.
+
 If possible you should avoid placing WSGI scripts under the `DocumentRoot`_
 in order to avoid accidentally revealing their source code if the
 configuration is ever changed. The WSGIScriptAlias makes this easy by
@@ -102,12 +110,12 @@ Options which can be supplied to the ``WSGIScriptAlias`` directive are:
     If the name is set to be ``%{GLOBAL}`` the application group will be
     set to the empty string. Any WSGI applications in the global
     application group will always be executed within the context of the
-    first interpreter created by Python when it is initialised, of the
-    process handling the request. Forcing a WSGI application to run within
-    the first interpreter can be necessary when a third party C extension
-    module for Python has used the simplified threading API for
-    manipulation of the Python GIL and thus will not run correctly within
-    any additional sub interpreters created by Python.
+    main Python interpreter of the process handling the request. Forcing
+    a WSGI application to run within the main interpreter can be
+    necessary when a third party C extension module for Python has used
+    the simplified threading API for manipulation of the Python GIL and
+    thus will not run correctly within any additional sub interpreters
+    created by Python.
 
     If the name takes the form ``%{ENV:variable}``, the application
     group name will be taken from the named Apache environment variable.

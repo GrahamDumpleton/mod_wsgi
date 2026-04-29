@@ -202,9 +202,9 @@ application to a named daemon process group.
 For the case of the application group as recorded by the
 'mod_wsgi.application_group' variable in the WSGI request environment, if the
 value is an empty string then the WSGI application is running in the main
-Python interpreter. That is, the very first interpreter created when Python
-was initialised. For any other value it indicates it is running in the named
-Python sub interpreter.
+Python interpreter — the one Python creates at process startup, before any
+sub-interpreters are spawned. For any other value it indicates it is
+running in the named Python sub interpreter.
 
 Note that by default WSGI applications would always run in a sub
 interpreter rather than the main interpreter. The name of this sub
@@ -721,10 +721,9 @@ The most common cause of Apache crashing, besides any still latent bugs
 that may exist in mod_wsgi, of which hopefully there aren't any, are shared
 library version mismatches. Another major cause of crashes is third party C
 extension modules for Python which are not compatible with being used in a
-Python sub interpreter which isn't the first interpreter created when
-Python is initialised, or modules which are not compatible with Python sub
-interpreters being destroyed and the module then being used in a new Python
-sub interpreter.
+Python sub interpreter which isn't the main Python interpreter, or modules
+which are not compatible with Python sub interpreters being destroyed and
+the module then being used in a new Python sub interpreter.
 
 Examples of where shared library version mismatches are known to occur are
 between the version of the 'expat' library used by Apache and that embedded

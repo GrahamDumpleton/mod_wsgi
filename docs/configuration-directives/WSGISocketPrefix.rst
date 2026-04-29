@@ -21,10 +21,14 @@ Apache child processes run as will subsequently not have the required
 permissions to access the directory to be able to connect to the sockets.
 
 When this occurs, a '503 Service Temporarily Unavailable' error response
-would be received by the client. To resolve the problem, the
-WSGISocketPrefix directive should be defined to point at an alternate
-location. The value may be a location relative to the Apache root directory,
-or an absolute path.
+would be received by the client. The Apache error log will contain a
+message tagged with mod_wsgi error code ``WSGI0117``, indicating the
+Apache user lacks permission to reach the socket directory (the EACCES
+case). See :doc:`../error-reference` for the full text of the message.
+
+To resolve the problem, the WSGISocketPrefix directive should be defined
+to point at an alternate location. The value may be a location relative
+to the Apache root directory, or an absolute path.
 
 On systems which restrict access to the standard Apache runtime directory,
 they normally provide an alternate directory for placing sockets and lock

@@ -12,7 +12,7 @@ of the process group and the application group into which the script will
 be loaded.
 
 For example, to preload a script into a daemon process group called
-``mygroup``, using the first Python sub interpreter::
+``mygroup``, using the main Python interpreter::
 
   WSGIDaemonProcess mygroup processes=2 threads=15
   WSGIImportScript /web/wsgi-scripts/myapp.wsgi \
@@ -35,9 +35,8 @@ The options which must supplied to the WSGIImportScript directive are:
 
     The name of the application group can be set to the special value
     '%{GLOBAL}' which denotes that the script file be loaded within the
-    context of the first interpreter created by Python when it is
-    initialised. Otherwise, will be loaded into the interpreter for the
-    specified application group.
+    context of the main Python interpreter. Otherwise, will be loaded
+    into the sub interpreter for the specified application group.
 
 Because the script files are loaded prior to beginning to accept any
 requests, any delay in loading the script will not cause actual requests to

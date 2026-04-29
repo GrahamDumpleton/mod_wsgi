@@ -85,6 +85,13 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     name will be ``(wsgi:group)`` where ``group`` is replaced with the name
     of the daemon process group.
 
+    If this option is not specified, no rename is performed and the daemon
+    process retains Apache's default ``argv[0]`` (typically the path to the
+    ``httpd`` binary), making it indistinguishable in ``ps`` output from
+    the parent and child Apache processes. Setting this option, most
+    commonly to ``%{GROUP}``, is recommended so the daemon processes are
+    clearly identifiable.
+
     Note that only as many characters of the supplied value can be displayed
     as were originally taken up by ``argv0`` of the executing process.
     Anything in excess of this will be truncated.

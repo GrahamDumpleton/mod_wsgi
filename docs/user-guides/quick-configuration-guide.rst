@@ -10,6 +10,14 @@ recommended that you follow the examples in this document. Make sure that
 you at least get the examples running to verify that mod_wsgi is working
 correctly before attempting to install any WSGI applications of your own.
 
+If you do not need to integrate with an existing system Apache install,
+the ``mod_wsgi-express`` command (installed alongside the ``mod_wsgi``
+PyPI package) generates a working configuration like the ones below for
+you and runs Apache directly — see :doc:`../getting-started` for that
+path. This page covers the manual case: hand-writing Apache configuration
+so that a system Apache instance you already operate can host a WSGI
+application.
+
 WSGI Application Script File
 ----------------------------
 
@@ -17,8 +25,8 @@ WSGI is a specification of a generic API for mapping between an underlying
 web server and a Python web application. WSGI itself is described by Python
 PEP 3333:
 
-  * http://www.python.org/dev/peps/pep-3333/
-    
+  * https://peps.python.org/pep-3333/
+
 The purpose of the WSGI specification is to provide a common mechanism for
 hosting a Python web application on a range of different web servers
 supporting the Python programming language.
@@ -47,6 +55,16 @@ Note that mod_wsgi requires that the WSGI application entry point be called
 configure mod_wsgi explicitly to use the other name. Thus, don't go
 arbitrarily changing the name of the function. If you do, even if you set
 up everything else correctly the application will not be found.
+
+The examples in this document name the script file with a ``.wsgi``
+extension. The extension is not significant to mod_wsgi when using
+``WSGIScriptAlias`` — the directive identifies the script by its full
+path and any extension (or none) is acceptable. The ``.wsgi`` convention
+is used to avoid clashing with any pre-existing ``AddHandler`` directive
+that may already map ``.py`` files to a different handler such as
+``cgi-script``. If you know there is no such conflict in your Apache
+configuration, the script file can use ``.py`` like any other Python
+file.
 
 Mounting The WSGI Application
 -----------------------------
@@ -125,20 +143,20 @@ therefore be something like::
         DocumentRoot /usr/local/www/documents
 
         <Directory /usr/local/www/documents>
-	Require all granted
+            Require all granted
         </Directory>
 
         WSGIScriptAlias /myapp /usr/local/www/wsgi-scripts/myapp.wsgi
 
         <Directory /usr/local/www/wsgi-scripts>
-	Require all granted
+            Require all granted
         </Directory>
 
     </VirtualHost>
 
 After appropriate changes have been made Apache will need to be restarted.
 For this example, the URL 'http://www.example.com/myapp' would then be used
-to access the the WSGI application.
+to access the WSGI application.
 
 Note that you obviously should substitute the paths and hostname with
 values appropriate for your system.
@@ -181,20 +199,20 @@ therefore be something like::
         Alias /media/ /usr/local/www/documents/media/
 
         <Directory /usr/local/www/documents>
-	Require all granted
+            Require all granted
         </Directory>
 
         WSGIScriptAlias / /usr/local/www/wsgi-scripts/myapp.wsgi
 
         <Directory /usr/local/www/wsgi-scripts>
-	Require all granted
+            Require all granted
         </Directory>
 
     </VirtualHost>
 
 After appropriate changes have been made Apache will need to be restarted.
 For this example, the URL 'http://www.example.com/' would then be used
-to access the the WSGI application.
+to access the WSGI application.
 
 Note that you obviously should substitute the paths and hostname with
 values appropriate for your system.
@@ -250,7 +268,7 @@ therefore be something like::
         Alias /media/ /usr/local/www/documents/media/
 
         <Directory /usr/local/www/documents>
-	Require all granted
+            Require all granted
         </Directory>
 
         WSGIDaemonProcess example.com processes=2 threads=15 display-name=%{GROUP}
@@ -259,14 +277,14 @@ therefore be something like::
         WSGIScriptAlias / /usr/local/www/wsgi-scripts/myapp.wsgi
 
         <Directory /usr/local/www/wsgi-scripts>
-	Require all granted
+            Require all granted
         </Directory>
 
     </VirtualHost>
 
 After appropriate changes have been made Apache will need to be restarted.
 For this example, the URL 'http://www.example.com/' would then be used
-to access the the WSGI application.
+to access the WSGI application.
 
 Note that you obviously should substitute the paths and hostname with
 values appropriate for your system.
@@ -293,16 +311,22 @@ To debug any problems one should take note of the type of error response
 being returned, but more importantly one should look at the Apache error
 logs for more detailed descriptions of a specific problem.
 
-Being new to mod_wsgi it is highly recommended that the default Apache
-LogLevel be increased from 'warn' to 'info'::
+Being new to mod_wsgi it is highly recommended to raise the Apache log
+level for mod_wsgi specifically to ``info``::
 
-    LogLevel info
+    LogLevel warn wsgi:info
 
-When this is done mod_wsgi will output additional information regarding
-when daemon processes are created, when Python sub interpreters related
-to a group of WSGI applications are created and when WSGI application
-script files are loaded and/or reloaded. This information can be quite
-valuable in determining what problem may be occuring.
+Apache 2.4 supports per-module log-level overrides — the form above
+keeps Apache's overall log level at ``warn`` but raises only
+``mod_wsgi`` to ``info``. This avoids the additional noise from
+unrelated modules and core Apache that would otherwise come from a
+bare ``LogLevel info``.
+
+With ``wsgi:info`` in effect, mod_wsgi outputs additional information
+about when daemon processes are created, when Python sub interpreters
+for application groups are created, and when WSGI application script
+files are loaded or reloaded. This information can be quite valuable
+in determining what problem may be occurring.
 
 Note that where the LogLevel directive may have been defined both in and
 outside of a VirtualHost directive, due to the VirtualHost declaring its
@@ -315,3 +339,18 @@ additional information to be recorded.
 
 In other words, even if the VirtualHost has its own error log file, also
 look in the main Apache error log file for information as well.
+
+Where To Go Next
+----------------
+
+* :doc:`configuration-guidelines` — deeper reference for the
+  configuration patterns introduced here, plus topics this page does
+  not cover (alternative ``Alias``-based mounting, application
+  groups, application configuration via ``SetEnv``, request-body
+  limits, and reverse-proxy/HTTPS termination).
+* :doc:`configuration-issues` — common configuration gotchas
+  (SELinux, file permissions, ``WSGIDaemonProcess`` scoping, C
+  extensions needing ``WSGIApplicationGroup %{GLOBAL}``, and others).
+  If something is not working as expected, look here first.
+* :doc:`../configuration` — full reference of mod_wsgi Apache
+  directives.

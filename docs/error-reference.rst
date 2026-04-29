@@ -3032,8 +3032,13 @@ WSGI0117 — Unable to connect to WSGI daemon (other failure)
 
 :Operator action:
    Verify the socket file's permissions match the daemon group's
-   ``user=`` and ``umask=``. Check that ``WSGISocketPrefix`` is
-   on a filesystem the Apache user can traverse.
+   ``user=`` and ``umask=``. Check that
+   :doc:`configuration-directives/WSGISocketPrefix` is on a
+   filesystem the Apache user can traverse — restrictive Apache
+   runtime directories on RHEL/Fedora and similar are a common
+   trigger for the EACCES variant; see
+   :doc:`user-guides/configuration-issues` for the standard
+   workaround.
 
    For ``ENOENT`` specifically, this error can also fire when an
    Apache graceful restart has rotated the daemon socket path and
