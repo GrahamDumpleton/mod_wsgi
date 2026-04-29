@@ -250,8 +250,8 @@ int wsgi_execute_dispatch(request_rec *r)
     if (!interp)
     {
         wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0086)
-                        "Unable to acquire Python sub-interpreter '%s' "
-                        "for dispatch hook.", group);
+                        "Unable to acquire %s for dispatch hook.",
+                        wsgi_format_interp_name(r->pool, group));
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }

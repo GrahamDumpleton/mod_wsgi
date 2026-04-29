@@ -979,7 +979,9 @@ WSGI0035 — Unable to create Python sub-interpreter
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to create Python sub-interpreter '<name>'.``
+   ``Unable to create sub-interpreter '<name>' in <process-context>.``
+   The process context is either ``embedded mode`` or ``daemon
+   process '<group>'``.
 
 :Cause:
    ``newInterpreterObject()`` failed during construction of a Python
@@ -1177,16 +1179,17 @@ WSGI0042 — Unable to acquire Python sub-interpreter for user authentication ho
 :Source: ``src/server/wsgi_auth.c``
 
 :Logged message:
-   ``Unable to acquire Python sub-interpreter '<name>' for user
-   authentication hook.``
+   ``Unable to acquire <interpreter> for user authentication hook.``
+   The interpreter is either ``main interpreter`` or ``sub-interpreter
+   '<name>'``.
 
 :Cause:
    ``wsgi_acquire_interpreter()`` returned ``NULL`` while the
    Basic-auth password-check hook (``wsgi_check_password``) was
-   trying to enter the named sub-interpreter. The most common
-   upstream causes are: Python initialisation failed for this daemon
-   process (see :ref:`WSGI0028`), or the sub-interpreter could not
-   be created on demand (see :ref:`WSGI0103`).
+   trying to enter the named interpreter. The most common upstream
+   causes are: Python initialisation failed for this Apache child
+   (see :ref:`WSGI0028`), or the sub-interpreter could not be
+   created on demand (see :ref:`WSGI0103`).
 
 :Outcome:
    The hook returns ``AUTH_GENERAL_ERROR``; Apache responds with
@@ -1260,13 +1263,14 @@ WSGI0045 — Unable to acquire Python sub-interpreter for user authentication ho
 :Source: ``src/server/wsgi_auth.c``
 
 :Logged message:
-   ``Unable to acquire Python sub-interpreter '<name>' for user
-   authentication hook.``
+   ``Unable to acquire <interpreter> for user authentication hook.``
+   The interpreter is either ``main interpreter`` or ``sub-interpreter
+   '<name>'``.
 
 :Cause:
    ``wsgi_acquire_interpreter()`` returned ``NULL`` while the
    Digest-auth realm-hash hook (``wsgi_get_realm_hash``) was trying
-   to enter the named sub-interpreter. Same upstream causes as
+   to enter the named interpreter. Same upstream causes as
    :ref:`WSGI0042`.
 
 :Outcome:
@@ -1333,12 +1337,13 @@ WSGI0048 — Unable to acquire Python sub-interpreter for group authentication h
 :Source: ``src/server/wsgi_auth.c``
 
 :Logged message:
-   ``Unable to acquire Python sub-interpreter '<name>' for group
-   authentication hook.``
+   ``Unable to acquire <interpreter> for group authentication hook.``
+   The interpreter is either ``main interpreter`` or ``sub-interpreter
+   '<name>'``.
 
 :Cause:
    ``wsgi_acquire_interpreter()`` returned ``NULL`` while
-   ``wsgi_groups_for_user`` was looking up the named sub-interpreter.
+   ``wsgi_groups_for_user`` was looking up the named interpreter.
    Same upstream causes as :ref:`WSGI0042`.
 
 :Outcome:
@@ -1482,12 +1487,13 @@ WSGI0054 — Unable to acquire Python sub-interpreter for host access hook
 :Source: ``src/server/wsgi_auth.c``
 
 :Logged message:
-   ``Unable to acquire Python sub-interpreter '<name>' for host
-   access hook.``
+   ``Unable to acquire <interpreter> for host access hook.`` The
+   interpreter is either ``main interpreter`` or ``sub-interpreter
+   '<name>'``.
 
 :Cause:
    ``wsgi_acquire_interpreter()`` returned ``NULL`` while
-   ``wsgi_allow_access`` was looking up the named sub-interpreter.
+   ``wsgi_allow_access`` was looking up the named interpreter.
    Same upstream causes as :ref:`WSGI0042`.
 
 :Outcome:
@@ -2266,12 +2272,13 @@ WSGI0086 — Unable to acquire Python sub-interpreter for dispatch hook
 :Source: ``src/server/wsgi_dispatch.c``
 
 :Logged message:
-   ``Unable to acquire Python sub-interpreter '<name>' for
-   dispatch hook.``
+   ``Unable to acquire <interpreter> for dispatch hook.`` The
+   interpreter is either ``main interpreter`` or ``sub-interpreter
+   '<name>'``.
 
 :Cause:
    ``wsgi_acquire_interpreter()`` returned ``NULL`` while the
-   dispatch hook was looking up the named sub-interpreter. Same
+   dispatch hook was looking up the named interpreter. Same
    upstream causes as :ref:`WSGI0042`.
 
 :Outcome:
@@ -2289,8 +2296,11 @@ WSGI0087 — Unable to acquire Python sub-interpreter for WSGI request handler
 :Source: ``src/server/wsgi_execute.c``
 
 :Logged message:
-   ``Unable to acquire Python sub-interpreter '<name>' for WSGI
-   request handler.``
+   ``Unable to acquire <interpreter> for WSGI request handler in
+   <process-context>.`` The interpreter is either ``main
+   interpreter`` or ``sub-interpreter '<name>'``; the process
+   context is either ``embedded mode`` or ``daemon process
+   '<group>'``.
 
 :Cause:
    ``wsgi_acquire_interpreter()`` returned ``NULL`` at the main
@@ -2668,7 +2678,9 @@ WSGI0103 — Unable to create Python sub-interpreter on demand
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to create Python sub-interpreter '<name>'.``
+   ``Unable to create sub-interpreter '<name>' in <process-context>.``
+   The process context is either ``embedded mode`` or ``daemon
+   process '<group>'``.
 
 :Cause:
    ``newInterpreterObject()`` returned ``NULL`` while
@@ -2720,15 +2732,17 @@ WSGI0104 — Unable to publish process_stopping event
 
 .. _WSGI0105:
 
-WSGI0105 — Could not read or compile Python source file (request context)
--------------------------------------------------------------------------
+WSGI0105 — Could not read or compile WSGI script (request context)
+------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``process='<group>', application='<app>': Could not read/compile
-   source file '<filename>'.``
+   ``Could not read or compile WSGI script '<filename>' for
+   <interpreter-context>.`` The interpreter context is of the form
+   ``main interpreter in embedded mode`` or ``sub-interpreter
+   '<app>' of daemon process '<group>'``.
 
 :Cause:
    ``io.open()`` of the script file failed, or
@@ -2746,15 +2760,16 @@ WSGI0105 — Could not read or compile Python source file (request context)
 
 .. _WSGI0106:
 
-WSGI0106 — Could not read or compile Python source file (server context)
-------------------------------------------------------------------------
+WSGI0106 — Could not read or compile WSGI script (server context)
+-----------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``process='<group>', application='<app>': Could not read/compile
-   source file '<filename>'.``
+   ``Could not read or compile WSGI script '<filename>' for
+   <interpreter-context>.`` Interpreter context shape as for
+   :ref:`WSGI0105`.
 
 :Cause:
    Same as :ref:`WSGI0105` but emitted from a non-request context

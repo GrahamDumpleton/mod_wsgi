@@ -56,9 +56,12 @@ int wsgi_execute_script(request_rec *r)
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0087) "Unable to acquire Python sub-interpreter '%s' "
-                                                            "for WSGI request handler.",
-                        config->application_group);
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0087)
+                        "Unable to acquire %s for WSGI request handler "
+                        "in %s.",
+                        wsgi_format_interp_name(r->pool,
+                                                config->application_group),
+                        wsgi_format_process_context(r->pool));
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }

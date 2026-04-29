@@ -209,8 +209,11 @@ InterpreterObject *newInterpreterObject(const char *name)
         }
 
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "Creating Python sub-interpreter '%s'.",
-                              name);
+                              "Creating %s in %s.",
+                              wsgi_format_interp_name(
+                                  wsgi_server->process->pool, name),
+                              wsgi_format_process_context(
+                                  wsgi_server->process->pool));
 
         self->interp = tstate->interp;
         self->owner = 1;
@@ -1204,8 +1207,12 @@ failure:
      * on self.
      */
 
-    wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0035) "Unable to create Python sub-interpreter '%s'.",
-                          self->name);
+    wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0035)
+                          "Unable to create %s in %s.",
+                          wsgi_format_interp_name(
+                              wsgi_server->process->pool, self->name),
+                          wsgi_format_process_context(
+                              wsgi_server->process->pool));
 
     Py_XDECREF(module);
 
@@ -1283,8 +1290,11 @@ static void Interpreter_dealloc(InterpreterObject *self)
     if (self->owner)
     {
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "Destroying Python sub-interpreter '%s'.",
-                              self->name);
+                              "Destroying %s in %s.",
+                              wsgi_format_interp_name(
+                                  wsgi_server->process->pool, self->name),
+                              wsgi_format_process_context(
+                                  wsgi_server->process->pool));
     }
     else
     {
@@ -2047,9 +2057,13 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
         if (!handle)
         {
-            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0103) "Unable to create Python "
-                                                                                "sub-interpreter '%s'.",
-                                  name);
+            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                  WSGI_APLOGNO(0103)
+                                  "Unable to create %s in %s.",
+                                  wsgi_format_interp_name(
+                                      wsgi_server->process->pool, name),
+                                  wsgi_format_process_context(
+                                      wsgi_server->process->pool));
 
             PyErr_Print();
             PyErr_Clear();
@@ -2258,18 +2272,20 @@ PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
     if (exists)
     {
         wsgi_log_error_locked(APLOG_INFO, 0, r ? r->server : wsgi_server,
-                              "process='%s', application='%s': "
-                              "Reloading WSGI script '%s'.",
-                              process_group, application_group,
-                              filename);
+                              "Reloading WSGI script '%s' into %s.",
+                              filename,
+                              wsgi_format_interp_context(pool,
+                                                         process_group,
+                                                         application_group));
     }
     else
     {
         wsgi_log_error_locked(APLOG_INFO, 0, r ? r->server : wsgi_server,
-                              "process='%s', application='%s': "
-                              "Loading WSGI script '%s'.",
-                              process_group, application_group,
-                              filename);
+                              "Loading WSGI script '%s' into %s.",
+                              filename,
+                              wsgi_format_interp_context(pool,
+                                                         process_group,
+                                                         application_group));
     }
 
     io_module = PyImport_ImportModule("io");
@@ -2303,17 +2319,20 @@ load_source_finally:
     if (!co)
     {
         if (r)
-            wsgi_log_rerror_locked(APLOG_ERR, errno, r, WSGI_APLOGNO(0105) "process='%s', application='%s': "
-                                                                           "Could not read/compile source file "
-                                                                           "'%s'.",
-                                   process_group,
-                                   application_group, filename);
+            wsgi_log_rerror_locked(APLOG_ERR, errno, r, WSGI_APLOGNO(0105)
+                                   "Could not read or compile WSGI "
+                                   "script '%s' for %s.", filename,
+                                   wsgi_format_interp_context(
+                                       pool, process_group,
+                                       application_group));
         else
-            wsgi_log_error_locked(APLOG_ERR, errno, wsgi_server, WSGI_APLOGNO(0106) "process='%s', application='%s': "
-                                                                                    "Could not read/compile source file "
-                                                                                    "'%s'.",
-                                  process_group,
-                                  application_group, filename);
+            wsgi_log_error_locked(APLOG_ERR, errno, wsgi_server,
+                                  WSGI_APLOGNO(0106)
+                                  "Could not read or compile WSGI "
+                                  "script '%s' for %s.", filename,
+                                  wsgi_format_interp_context(
+                                      pool, process_group,
+                                      application_group));
 
         wsgi_log_python_error(r, NULL, filename, 0);
 
@@ -2504,6 +2523,39 @@ char *wsgi_module_name(apr_pool_t *pool, const char *filename)
 
     hash = ap_md5(pool, (const unsigned char *)file);
     return apr_pstrcat(pool, "_mod_wsgi_", hash, NULL);
+}
+
+const char *wsgi_format_interp_name(apr_pool_t *p,
+                                    const char *application_group)
+{
+    if (application_group && *application_group)
+        return apr_psprintf(p, "sub-interpreter '%s'", application_group);
+
+    return "main interpreter";
+}
+
+const char *wsgi_format_interp_context(apr_pool_t *p,
+                                       const char *process_group,
+                                       const char *application_group)
+{
+    const char *interp = wsgi_format_interp_name(p, application_group);
+
+    if (process_group && *process_group)
+        return apr_psprintf(p, "%s of daemon process '%s'",
+                            interp, process_group);
+
+    return apr_psprintf(p, "%s in embedded mode", interp);
+}
+
+const char *wsgi_format_process_context(apr_pool_t *p)
+{
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_daemon_process)
+        return apr_psprintf(p, "daemon process '%s'",
+                            wsgi_daemon_process->group->name);
+#endif
+
+    return "embedded mode";
 }
 
 #if APR_HAS_THREADS

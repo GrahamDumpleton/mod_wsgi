@@ -63,6 +63,28 @@ extern apr_thread_mutex_t *wsgi_shutdown_lock;
 
 extern char *wsgi_module_name(apr_pool_t *pool, const char *filename);
 
+/*
+ * Helpers that format an interpreter or interpreter+process descriptor
+ * for inclusion in log messages. The returned strings are allocated
+ * from the supplied pool. Empty/NULL group names render as
+ * "main interpreter" and "embedded mode" respectively, matching the
+ * terminology used throughout the documentation.
+ *
+ * wsgi_format_process_context() inspects the wsgi_daemon_process
+ * global to describe where the calling code is currently running:
+ * "daemon process '<group>'" when invoked from a daemon process and
+ * "embedded mode" when invoked from the Apache child.
+ */
+
+extern const char *wsgi_format_interp_name(apr_pool_t *p,
+                                           const char *application_group);
+
+extern const char *wsgi_format_interp_context(apr_pool_t *p,
+                                              const char *process_group,
+                                              const char *application_group);
+
+extern const char *wsgi_format_process_context(apr_pool_t *p);
+
 extern int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
                                 const char *filename, PyObject *module,
                                 const char *resource);
