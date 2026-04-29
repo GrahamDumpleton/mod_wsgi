@@ -56,9 +56,8 @@ int wsgi_execute_script(request_rec *r)
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0087)
-                        "Unable to acquire Python sub-interpreter '%s' "
-                        "for WSGI request handler.",
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0087) "Unable to acquire Python sub-interpreter '%s' "
+                                                            "for WSGI request handler.",
                         config->application_group);
 
         return HTTP_INTERNAL_SERVER_ERROR;
@@ -186,14 +185,14 @@ int wsgi_execute_script(request_rec *r)
                      * is restarted.
                      */
 
-                    wsgi_log_rerror_locked(APLOG_INFO, 0, r,
-                                           "Forcing restart of daemon "
-                                           "process '%s' due to script "
-                                           "reload.",
-                                           config->process_group);
+                    wsgi_log_error_locked(APLOG_INFO, 0, r->server,
+                                          "Forcing restart of daemon "
+                                          "process '%s' due to "
+                                          "modification of script '%s'.",
+                                          config->process_group, script);
 
 #if APR_HAS_THREADS
-                        apr_thread_mutex_unlock(wsgi_module_lock);
+                    apr_thread_mutex_unlock(wsgi_module_lock);
 #endif
 
                     wsgi_release_interpreter(interp);
@@ -380,12 +379,11 @@ int wsgi_execute_script(request_rec *r)
         }
         else
         {
-            wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0089)
-                                   "Target WSGI script '%s' does not "
-                                   "contain WSGI application '%s'.",
+            wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0089) "Target WSGI script '%s' does not "
+                                                                       "contain WSGI application '%s'.",
                                    script, config->callable_object);
 
-                status = HTTP_NOT_FOUND;
+            status = HTTP_NOT_FOUND;
         }
     }
 

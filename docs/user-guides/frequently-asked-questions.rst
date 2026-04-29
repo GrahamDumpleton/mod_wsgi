@@ -34,12 +34,16 @@ In embedded mode the only log evidence will be the Apache
 child, since the Apache child is the same process that was running
 the WSGI application. In daemon mode the segfault is logged for the
 daemon process, and the Apache child that was proxying the request
-to the daemon will additionally log::
+to the daemon will additionally log a ``WSGI0146`` message::
 
-    Daemon process 'GROUP' closed connection before sending
-    complete response headers
+    WSGI0146: Daemon process 'GROUP' closed connection before sending
+    complete response headers.
 
 This is the typical signature of a daemon-process crash mid-request.
+The related codes ``WSGI0144`` (response header line too long),
+``WSGI0145`` (timeout reading response headers) and ``WSGI0147``
+(I/O error reading response headers) cover the other ways a daemon
+proxy connection can fail mid-response — see :doc:`../error-reference`.
 
 **Q**: Why am I seeing ``premature end of script headers`` in the
 Apache error logs?

@@ -61,7 +61,7 @@ void wsgi_log_error_locked_ex(const char *file, int line, int module_index,
     va_end(ap);
 
     Py_BEGIN_ALLOW_THREADS
-    ap_log_error(file, line, module_index, level, rv, s, "%s", buf);
+        ap_log_error(file, line, module_index, level, rv, s, "%s", buf);
     Py_END_ALLOW_THREADS
 }
 
@@ -76,7 +76,15 @@ void wsgi_log_rerror_ex(const char *file, int line, int module_index,
     apr_vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
 
-    ap_log_rerror(file, line, module_index, level, rv, r, "%s", buf);
+    if (r->filename)
+    {
+        ap_log_rerror(file, line, module_index, level, rv, r,
+                      "[script %s] %s", r->filename, buf);
+    }
+    else
+    {
+        ap_log_rerror(file, line, module_index, level, rv, r, "%s", buf);
+    }
 }
 
 void wsgi_log_rerror_locked_ex(const char *file, int line, int module_index,
@@ -90,8 +98,15 @@ void wsgi_log_rerror_locked_ex(const char *file, int line, int module_index,
     apr_vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
 
-    Py_BEGIN_ALLOW_THREADS
-    ap_log_rerror(file, line, module_index, level, rv, r, "%s", buf);
+    Py_BEGIN_ALLOW_THREADS if (r->filename)
+    {
+        ap_log_rerror(file, line, module_index, level, rv, r,
+                      "[script %s] %s", r->filename, buf);
+    }
+    else
+    {
+        ap_log_rerror(file, line, module_index, level, rv, r, "%s", buf);
+    }
     Py_END_ALLOW_THREADS
 }
 
@@ -326,7 +341,8 @@ static int Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
             n = m + q - p + 1;
 
             s = (char *)malloc(n);
-            if (!s) {
+            if (!s)
+            {
                 PyErr_NoMemory();
                 return -1;
             }
@@ -350,7 +366,8 @@ static int Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
             n = q - p + 1;
 
             s = (char *)malloc(n);
-            if (!s) {
+            if (!s)
+            {
                 PyErr_NoMemory();
                 return -1;
             }
@@ -391,7 +408,8 @@ static int Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
             n = m + e - p + 1;
 
             tmp = (char *)realloc(self->s, n);
-            if (!tmp) {
+            if (!tmp)
+            {
                 PyErr_NoMemory();
                 return -1;
             }
@@ -407,7 +425,8 @@ static int Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
             n = e - p + 1;
 
             self->s = (char *)malloc(n);
-            if (!self->s) {
+            if (!self->s)
+            {
                 PyErr_NoMemory();
                 return -1;
             }
@@ -649,12 +668,14 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
             wsgi_log_rerror_locked_ex(file, line, module_index, APLOG_ERR,
                                       0, r,
                                       "SystemExit exception raised by "
-                                      "WSGI script '%s' ignored.", filename);
+                                      "WSGI script '%s' ignored.",
+                                      filename);
         else
             wsgi_log_error_locked_ex(file, line, module_index, APLOG_ERR,
                                      0, wsgi_server,
                                      "SystemExit exception raised by "
-                                     "WSGI script '%s' ignored.", filename);
+                                     "WSGI script '%s' ignored.",
+                                     filename);
     }
     else
     {
@@ -662,12 +683,14 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
             wsgi_log_rerror_locked_ex(file, line, module_index, APLOG_ERR,
                                       0, r,
                                       "Exception occurred processing "
-                                      "WSGI script '%s'.", filename);
+                                      "WSGI script '%s'.",
+                                      filename);
         else
             wsgi_log_error_locked_ex(file, line, module_index, APLOG_ERR,
                                      0, wsgi_server,
                                      "Exception occurred processing "
-                                     "WSGI script '%s'.", filename);
+                                     "WSGI script '%s'.",
+                                     filename);
     }
 
     PyErr_Fetch(&type, &value, &traceback);

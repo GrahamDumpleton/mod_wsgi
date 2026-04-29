@@ -3417,3 +3417,944 @@ WSGI0133 — Unable to create telemetry reporter thread
 
 :Operator action:
    Investigate thread-limit pressure for the daemon's user.
+
+.. _WSGI0134:
+
+WSGI0134 — Options ExecCGI is off in this directory
+---------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/mod_wsgi.c``
+
+:Logged message:
+   ``Options ExecCGI is off in this directory.``
+
+:Cause:
+   The ``wsgi-script`` handler was matched for a request, but the
+   directory's effective ``Options`` does not include ``ExecCGI``
+   and the script is not reached via ``WSGIScriptAlias``. mod_wsgi
+   reuses ``ExecCGI`` to gate execution of script-like content, even
+   though no separate process is forked.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Add ``Options +ExecCGI`` to the relevant ``<Directory>``,
+   ``<Location>``, or ``.htaccess``, or reach the script via
+   ``WSGIScriptAlias`` which bypasses the check.
+
+.. _WSGI0135:
+
+WSGI0135 — Target WSGI script not found or unable to stat
+---------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/mod_wsgi.c``
+
+:Logged message:
+   ``Target WSGI script not found or unable to stat.``
+
+:Cause:
+   ``r->finfo.filetype`` is zero, meaning Apache's filename mapping
+   resolved to a path that ``apr_stat()`` could not classify. Either
+   the file does not exist or it is not accessible to the Apache
+   process.
+
+:Outcome:
+   The request returns ``404 Not Found``.
+
+:Operator action:
+   Verify the resolved filesystem path exists and is readable by the
+   Apache user. The path is shown in the ``[script ...]`` log prefix.
+
+.. _WSGI0136:
+
+WSGI0136 — Attempt to invoke directory as WSGI application
+----------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/mod_wsgi.c``
+
+:Logged message:
+   ``Attempt to invoke directory as WSGI application.``
+
+:Cause:
+   The resolved filename is a directory rather than a regular file.
+   This usually means the URL maps to a directory by mistake — for
+   example a ``WSGIScriptAlias`` target points at the parent
+   directory of the script, or a ``DirectoryIndex`` rule is matching
+   a directory listing.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Correct the configuration so the URL resolves to the WSGI script
+   file rather than its containing directory.
+
+.. _WSGI0137:
+
+WSGI0137 — AcceptPathInfo off disallows user's path
+---------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/mod_wsgi.c``
+
+:Logged message:
+   ``AcceptPathInfo off disallows user's path.``
+
+:Cause:
+   The request URL contains path information after the script name,
+   but ``AcceptPathInfo Off`` is configured for the location.
+
+:Outcome:
+   The request returns ``404 Not Found``.
+
+:Operator action:
+   Either remove the path-info portion of the URL, or set
+   ``AcceptPathInfo On`` (or ``Default``) for the location.
+
+.. _WSGI0138:
+
+WSGI0138 — Unexpected value for Transfer-Encoding
+-------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/mod_wsgi.c``
+
+:Logged message:
+   ``Unexpected value for Transfer-Encoding of '<value>' supplied.
+   Only 'chunked' supported.``
+
+:Cause:
+   The client supplied a ``Transfer-Encoding`` header with a value
+   other than ``chunked``. mod_wsgi only supports chunked transfer
+   encoding for request bodies.
+
+:Outcome:
+   The request returns ``501 Not Implemented``.
+
+:Operator action:
+   This is a client-side issue. Investigate the client if the value
+   is unexpected.
+
+.. _WSGI0139:
+
+WSGI0139 — Chunked transfer encoding not enabled
+------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/mod_wsgi.c``
+
+:Logged message:
+   ``Request requires chunked transfer encoding, but support for
+   chunked transfer encoding has not been enabled.``
+
+:Cause:
+   The client sent a request with ``Transfer-Encoding: chunked`` but
+   ``WSGIChunkedRequest`` is not enabled for the location. WSGI does
+   not strictly support chunked requests, so the option is off by
+   default.
+
+:Outcome:
+   The request returns ``411 Length Required``.
+
+:Operator action:
+   Set ``WSGIChunkedRequest On`` for the location if the application
+   is prepared to handle chunked input, or instruct the client to
+   send a fixed ``Content-Length``.
+
+.. _WSGI0140:
+
+WSGI0140 — Unexpected Content-Length header with chunked encoding
+-----------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/mod_wsgi.c``
+
+:Logged message:
+   ``Unexpected Content-Length header supplied where Transfer-
+   Encoding was specified as 'chunked'.``
+
+:Cause:
+   The client supplied both ``Transfer-Encoding: chunked`` and a
+   ``Content-Length`` header. RFC 7230 forbids combining them.
+
+:Outcome:
+   The request returns ``400 Bad Request``.
+
+:Operator action:
+   This is a client-side protocol violation; investigate the client.
+
+.. _WSGI0141:
+
+WSGI0141 — Invalid Content-Length header value
+----------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/mod_wsgi.c``
+
+:Logged message:
+   ``Invalid Content-Length header value of '<value>' was
+   supplied.``
+
+:Cause:
+   The ``Content-Length`` header could not be parsed as a
+   non-negative integer, or contained trailing garbage.
+
+:Outcome:
+   The request returns ``400 Bad Request``.
+
+:Operator action:
+   This is a client-side protocol violation; investigate the client.
+
+.. _WSGI0142:
+
+WSGI0142 — Embedded mode of mod_wsgi disabled at compile time
+-------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/mod_wsgi.c``
+
+:Logged message:
+   ``Embedded mode of mod_wsgi disabled at compile time.``
+
+:Cause:
+   A request reached the embedded-mode code path, but mod_wsgi was
+   built with ``MOD_WSGI_DISABLE_EMBEDDED`` and there is no daemon
+   process configured to handle it.
+
+:Outcome:
+   The request returns ``500 Internal Server Error``.
+
+:Operator action:
+   Configure a ``WSGIDaemonProcess`` and route the request to it
+   via ``WSGIProcessGroup``, or rebuild mod_wsgi without the
+   ``MOD_WSGI_DISABLE_EMBEDDED`` define.
+
+.. _WSGI0143:
+
+WSGI0143 — Embedded mode of mod_wsgi disabled by runtime configuration
+----------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/mod_wsgi.c``
+
+:Logged message:
+   ``Embedded mode of mod_wsgi disabled by runtime configuration.``
+
+:Cause:
+   A request reached the embedded-mode code path, but
+   ``WSGIRestrictEmbedded On`` is configured at the server level
+   and there is no daemon process to handle it.
+
+:Outcome:
+   The request returns ``500 Internal Server Error``.
+
+:Operator action:
+   Configure a ``WSGIDaemonProcess`` and route the request to it
+   via ``WSGIProcessGroup``, or set ``WSGIRestrictEmbedded Off``.
+
+.. _WSGI0144:
+
+WSGI0144 — Response header line too long from daemon process
+------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Response header line too long from daemon process '<group>'.``
+
+:Cause:
+   While reading the WSGI response from a daemon process, a single
+   header line exceeded the buffer mod_wsgi uses to read response
+   headers. The default buffer is 32 KiB on the request worker
+   stack; it can be overridden with the ``header-buffer-size=``
+   option on ``WSGIDaemonProcess`` (minimum 8192). The application
+   is emitting an abnormally large header value.
+
+:Outcome:
+   The request returns ``500 Internal Server Error``. The daemon
+   connection is abandoned.
+
+:Operator action:
+   Inspect the application for unusually large response headers
+   (very large cookies, generated tokens, etc.) and reduce them, or
+   raise ``header-buffer-size=`` on the relevant
+   ``WSGIDaemonProcess`` directive to accommodate the expected
+   maximum.
+
+.. _WSGI0145:
+
+WSGI0145 — Timeout reading response headers from daemon process
+---------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Timeout when reading response headers from daemon process
+   '<group>'.``
+
+:Cause:
+   The daemon process did not return response headers within the
+   configured timeout (see ``request-timeout=`` on
+   ``WSGIDaemonProcess`` and the per-server ``Timeout``). The
+   application is taking too long to begin producing a response.
+
+:Outcome:
+   The request returns ``504 Gateway Timeout``. The daemon
+   connection is abandoned but the daemon process itself is not
+   restarted.
+
+:Operator action:
+   Investigate slow application startup or blocking I/O before the
+   first WSGI ``start_response``. Tune ``request-timeout=`` on the
+   ``WSGIDaemonProcess`` directive if the application legitimately
+   needs longer.
+
+.. _WSGI0146:
+
+WSGI0146 — Daemon process closed connection before sending headers
+------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Daemon process '<group>' closed connection before sending
+   complete response headers.``
+
+:Cause:
+   The daemon process closed the proxy connection mid-response
+   (typically because it crashed, was killed, or restarted). See
+   :doc:`user-guides/frequently-asked-questions`.
+
+:Outcome:
+   The request returns ``502 Bad Gateway``.
+
+:Operator action:
+   Inspect the daemon process logs for a Python crash, signal, or
+   memory-limit kill. Check resource limits configured via
+   ``WSGIDaemonProcess`` (memory, CPU).
+
+.. _WSGI0147:
+
+WSGI0147 — Error reading response headers from daemon process
+-------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Error reading response headers from daemon process '<group>'
+   (<apr_strerror>).``
+
+:Cause:
+   An I/O error occurred while reading response headers from the
+   daemon-process socket. The APR error string in parentheses gives
+   the underlying cause.
+
+:Outcome:
+   The request returns ``502 Bad Gateway``.
+
+:Operator action:
+   Investigate the underlying APR error. Common causes are a
+   network-stack issue on a unix-domain socket, or the daemon
+   process being killed mid-response.
+
+.. _WSGI0148:
+
+WSGI0148 — Malformed header from daemon process
+-----------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Malformed header '<header>' found when reading script headers
+   from daemon process '<group>'.``
+
+:Cause:
+   A response-header line from the daemon did not contain a colon
+   separator. The application produced a malformed header.
+
+:Outcome:
+   The request returns ``500 Internal Server Error``.
+
+:Operator action:
+   Inspect the application for code paths that emit raw header
+   strings without a colon-separator (e.g. broken middleware that
+   writes directly to the response).
+
+.. _WSGI0149:
+
+WSGI0149 — Daemon process not member of allowed groups
+------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Daemon process called '<group>' cannot be accessed by this
+   WSGI application as not a member of allowed groups.``
+
+:Cause:
+   The request is configured with ``WSGIProcessGroup <group>`` but
+   the per-application ``WSGIRestrictProcess`` does not list
+   ``<group>`` among the allowed daemon groups.
+
+:Outcome:
+   The request returns ``500 Internal Server Error``.
+
+:Operator action:
+   Add ``<group>`` to the ``WSGIRestrictProcess`` list, or change
+   the ``WSGIProcessGroup`` to a permitted value.
+
+.. _WSGI0150:
+
+WSGI0150 — No WSGI daemon process configured (no daemon index)
+--------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``No WSGI daemon process called '<group>' has been configured.``
+
+:Cause:
+   ``WSGIProcessGroup`` references a daemon group, but no
+   ``WSGIDaemonProcess`` has been declared anywhere in the
+   configuration.
+
+:Outcome:
+   The request returns ``500 Internal Server Error``.
+
+:Operator action:
+   Add a matching ``WSGIDaemonProcess`` directive at server or
+   virtual-host scope.
+
+.. _WSGI0151:
+
+WSGI0151 — No WSGI daemon process configured (group lookup failed)
+------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``No WSGI daemon process called '<group>' has been configured.``
+
+:Cause:
+   ``WSGIProcessGroup`` references a daemon group name that does
+   not match any declared ``WSGIDaemonProcess``.
+
+:Outcome:
+   The request returns ``500 Internal Server Error``.
+
+:Operator action:
+   Verify the spelling of the group name in ``WSGIProcessGroup``
+   matches an existing ``WSGIDaemonProcess`` declaration.
+
+.. _WSGI0152:
+
+WSGI0152 — Daemon process not accessible from this virtual host
+---------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Daemon process called '<group>' cannot be accessed by this
+   WSGI application.``
+
+:Cause:
+   The matched daemon group was declared in a different virtual
+   host with a different ``ServerName``. Daemon processes are not
+   shared across virtual hosts unless declared at global server
+   scope.
+
+:Outcome:
+   The request returns ``500 Internal Server Error``.
+
+:Operator action:
+   Either move the ``WSGIDaemonProcess`` declaration to global
+   scope, or declare a separate daemon group inside the requesting
+   virtual host.
+
+.. _WSGI0153:
+
+WSGI0153 — Group information not available for WSGI script file
+---------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Group information not available for WSGI script file.``
+
+:Cause:
+   ``WSGIDaemonProcess script-group=`` is configured, but the
+   request's ``r->finfo`` does not include valid group information
+   (``APR_FINFO_GROUP``) for the WSGI script file.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Check the filesystem on which the WSGI script lives — group
+   metadata may be unavailable on certain remote filesystems.
+
+.. _WSGI0154:
+
+WSGI0154 — Unable to determine group of WSGI script file
+--------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Unable to determine group of WSGI script file from gid
+   <gid>.``
+
+:Cause:
+   ``getgrgid()`` failed for the script file's group id. The gid
+   has no entry in the system group database.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Ensure the script file's group id resolves to a known group, or
+   change ownership of the script file.
+
+.. _WSGI0155:
+
+WSGI0155 — WSGI script file group does not match daemon requirement
+-------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``WSGI script file group '<group>' does not match group required
+   for daemon process.``
+
+:Cause:
+   ``WSGIDaemonProcess script-group=<expected>`` is configured, but
+   the script file's actual group is ``<group>``.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Either ``chgrp`` the WSGI script file to match the configured
+   ``script-group=`` value, or correct the ``script-group=``
+   directive.
+
+.. _WSGI0156:
+
+WSGI0156 — World permissions not available for WSGI script file
+---------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``World permissions not available for WSGI script file.``
+
+:Cause:
+   ``r->finfo`` does not include world-permission information
+   (``APR_FINFO_WPROT``) for the script file. See :ref:`WSGI0153`.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Check the filesystem hosting the script — permission metadata
+   may be unavailable on certain remote filesystems.
+
+.. _WSGI0157:
+
+WSGI0157 — WSGI script file is writable to world (script-group)
+---------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``WSGI script file is writable to world.``
+
+:Cause:
+   ``WSGIDaemonProcess script-group=`` is in effect and the script
+   file has world-write permission. mod_wsgi rejects this as a
+   security check — anyone with shell access to the host could
+   overwrite the script.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Remove world-write permission from the WSGI script file
+   (``chmod o-w``).
+
+.. _WSGI0158:
+
+WSGI0158 — Unable to stat parent directory of WSGI script (script-group)
+------------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Unable to stat parent directory '<path>' of WSGI script.``
+
+:Cause:
+   ``apr_stat()`` failed on the parent directory of the WSGI script
+   file when verifying ``script-group=`` constraints.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Verify the parent directory exists and is accessible to the
+   Apache parent process.
+
+.. _WSGI0159:
+
+WSGI0159 — Unable to determine group of parent directory (script-group)
+-----------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Unable to determine group of parent directory of WSGI script
+   file from gid <gid>.``
+
+:Cause:
+   ``getgrgid()`` failed for the parent directory's group id when
+   verifying ``script-group=`` constraints.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Ensure the parent directory's group id resolves to a known
+   group.
+
+.. _WSGI0160:
+
+WSGI0160 — Parent directory group does not match daemon requirement
+-------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Parent directory of WSGI script file has group '<group>' which
+   does not match group required for daemon process.``
+
+:Cause:
+   ``WSGIDaemonProcess script-group=<expected>`` is configured, but
+   the parent directory's actual group is ``<group>``.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Either ``chgrp`` the parent directory to match ``script-group=``,
+   or correct the directive.
+
+.. _WSGI0161:
+
+WSGI0161 — Parent directory is writable to world (script-group)
+---------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Parent directory of WSGI script file is writable to world.``
+
+:Cause:
+   ``WSGIDaemonProcess script-group=`` is in effect and the parent
+   directory of the script file has world-write permission, which
+   would let attackers replace the script even if the file itself
+   is locked down.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Remove world-write permission from the parent directory.
+
+.. _WSGI0162:
+
+WSGI0162 — User information not available for WSGI script file
+--------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``User information not available for WSGI script file.``
+
+:Cause:
+   ``WSGIDaemonProcess script-user=`` is configured, but
+   ``r->finfo`` does not include valid user information
+   (``APR_FINFO_USER``) for the script file.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Check the filesystem hosting the script — owner metadata may be
+   unavailable on certain remote filesystems.
+
+.. _WSGI0163:
+
+WSGI0163 — Unable to determine owner of WSGI script file
+--------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Unable to determine owner of WSGI script file from uid
+   <uid>.``
+
+:Cause:
+   ``getpwuid()`` failed for the script file's owner uid.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Ensure the script file's owner uid resolves to a known user.
+
+.. _WSGI0164:
+
+WSGI0164 — WSGI script file owner does not match daemon requirement
+-------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``WSGI script file owner '<user>' does not match user required
+   for daemon process.``
+
+:Cause:
+   ``WSGIDaemonProcess script-user=<expected>`` is configured, but
+   the script file's actual owner is ``<user>``.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Either ``chown`` the script file to match ``script-user=``, or
+   correct the directive.
+
+.. _WSGI0165:
+
+WSGI0165 — Group permissions not available for WSGI script file
+---------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Group permissions not available for WSGI script file.``
+
+:Cause:
+   ``r->finfo`` does not include group-permission information
+   (``APR_FINFO_GPROT``) for the script file under
+   ``script-user=``. See :ref:`WSGI0153`.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Check the filesystem hosting the script.
+
+.. _WSGI0166:
+
+WSGI0166 — WSGI script file is writable to group (script-user)
+--------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``WSGI script file is writable to group.``
+
+:Cause:
+   ``WSGIDaemonProcess script-user=`` is in effect and the script
+   file has group-write permission, which would let any member of
+   the file's group modify the script.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Remove group-write permission from the script file
+   (``chmod g-w``).
+
+.. _WSGI0167:
+
+WSGI0167 — World permissions not available for WSGI script file (script-user)
+-----------------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``World permissions not available for WSGI script file.``
+
+:Cause:
+   ``r->finfo`` does not include world-permission information
+   (``APR_FINFO_WPROT``) for the script file under
+   ``script-user=``. See :ref:`WSGI0156`.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Check the filesystem hosting the script.
+
+.. _WSGI0168:
+
+WSGI0168 — WSGI script file is writable to world (script-user)
+--------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``WSGI script file is writable to world.``
+
+:Cause:
+   ``WSGIDaemonProcess script-user=`` is in effect and the script
+   file has world-write permission. See :ref:`WSGI0157`.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Remove world-write permission from the script file
+   (``chmod o-w``).
+
+.. _WSGI0169:
+
+WSGI0169 — Unable to stat parent directory of WSGI script (script-user)
+-----------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Unable to stat parent directory '<path>' of WSGI script.``
+
+:Cause:
+   ``apr_stat()`` failed on the parent directory of the WSGI script
+   file when verifying ``script-user=`` constraints.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Verify the parent directory exists and is accessible.
+
+.. _WSGI0170:
+
+WSGI0170 — Unable to determine owner of parent directory (script-user)
+----------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Unable to determine owner of parent directory of WSGI script
+   file from uid <uid>.``
+
+:Cause:
+   ``getpwuid()`` failed for the parent directory's owner uid when
+   verifying ``script-user=`` constraints.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Ensure the parent directory's owner uid resolves to a known
+   user.
+
+.. _WSGI0171:
+
+WSGI0171 — Parent directory owner does not match daemon requirement
+-------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Parent directory of WSGI script file has owner '<user>' which
+   does not match user required for daemon process.``
+
+:Cause:
+   ``WSGIDaemonProcess script-user=<expected>`` is configured, but
+   the parent directory's actual owner is ``<user>``.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Either ``chown`` the parent directory to match ``script-user=``,
+   or correct the directive.
+
+.. _WSGI0172:
+
+WSGI0172 — Parent directory is writable to world (script-user)
+--------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Parent directory of WSGI script file is writable to world.``
+
+:Cause:
+   ``WSGIDaemonProcess script-user=`` is in effect and the parent
+   directory of the script file has world-write permission. See
+   :ref:`WSGI0161`.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Remove world-write permission from the parent directory.
+
+.. _WSGI0173:
+
+WSGI0173 — Parent directory is writable to group (script-user)
+--------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_remote.c``
+
+:Logged message:
+   ``Parent directory of WSGI script file is writable to group.``
+
+:Cause:
+   ``WSGIDaemonProcess script-user=`` is in effect and the parent
+   directory of the script file has group-write permission, which
+   would let any member of the parent directory's group replace
+   the script.
+
+:Outcome:
+   The request returns ``403 Forbidden``.
+
+:Operator action:
+   Remove group-write permission from the parent directory.

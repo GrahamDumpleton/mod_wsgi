@@ -83,22 +83,6 @@ char *wsgi_http2env(apr_pool_t *a, const char *w)
 
 /* ------------------------------------------------------------------------- */
 
-/* Error reporting. */
-
-void wsgi_log_script_error(request_rec *r, const char *e, const char *n)
-{
-    char *message = NULL;
-
-    if (!n)
-        n = r->filename;
-
-    message = apr_psprintf(r->pool, "%s: %s", e, n);
-
-    wsgi_log_rerror(APLOG_ERR, 0, r, "%s", message);
-}
-
-/* ------------------------------------------------------------------------- */
-
 #if defined(WIN32) && defined(APR_HAS_UNICODE_FS)
 APR_DECLARE(apr_status_t)
 apr_conv_utf8_to_ucs2(const char *in,

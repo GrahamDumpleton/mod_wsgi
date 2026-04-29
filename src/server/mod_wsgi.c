@@ -565,9 +565,7 @@ static int wsgi_hook_handler(request_rec *r)
         if (!(ap_allow_options(r) & OPT_EXECCGI) &&
             !wsgi_is_script_aliased(r))
         {
-            wsgi_log_script_error(r, "Options ExecCGI is off in this "
-                                     "directory",
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0134) "Options ExecCGI is off in this directory.");
             return HTTP_FORBIDDEN;
         }
 
@@ -575,17 +573,15 @@ static int wsgi_hook_handler(request_rec *r)
 
         if (r->finfo.filetype == 0)
         {
-            wsgi_log_script_error(r, "Target WSGI script not found or unable "
-                                     "to stat",
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0135) "Target WSGI script not found or unable to "
+                                                                "stat.");
             return HTTP_NOT_FOUND;
         }
 
         if (r->finfo.filetype == APR_DIR)
         {
-            wsgi_log_script_error(r, "Attempt to invoke directory as WSGI "
-                                     "application",
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0136) "Attempt to invoke directory as WSGI "
+                                                                "application.");
             return HTTP_FORBIDDEN;
         }
 
@@ -660,8 +656,7 @@ static int wsgi_hook_handler(request_rec *r)
     if ((r->used_path_info == AP_REQ_REJECT_PATH_INFO) &&
         r->path_info && *r->path_info)
     {
-        wsgi_log_script_error(r, "AcceptPathInfo off disallows user's path",
-                              r->filename);
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0137) "AcceptPathInfo off disallows user's path.");
         return HTTP_NOT_FOUND;
     }
 
@@ -685,10 +680,9 @@ static int wsgi_hook_handler(request_rec *r)
 
         if (strcasecmp(tenc, "chunked"))
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Unexpected value for Transfer-Encoding of '%s' "
-                                                           "supplied. Only 'chunked' supported.",
-                                                  tenc),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0138) "Unexpected value for Transfer-Encoding of "
+                                                                "'%s' supplied. Only 'chunked' supported.",
+                            tenc);
             return HTTP_NOT_IMPLEMENTED;
         }
 
@@ -696,10 +690,9 @@ static int wsgi_hook_handler(request_rec *r)
 
         if (!config->chunked_request)
         {
-            wsgi_log_script_error(r, "Received request requiring chunked "
-                                     "transfer encoding, but optional support for chunked "
-                                     "transfer encoding has not been enabled.",
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0139) "Request requires chunked transfer encoding, "
+                                                                "but support for chunked transfer encoding "
+                                                                "has not been enabled.");
             return HTTP_LENGTH_REQUIRED;
         }
 
@@ -710,10 +703,9 @@ static int wsgi_hook_handler(request_rec *r)
 
         if (lenp)
         {
-            wsgi_log_script_error(r, "Unexpected Content-Length header "
-                                     "supplied where Transfer-Encoding was specified "
-                                     "as 'chunked'.",
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0140) "Unexpected Content-Length header supplied "
+                                                                "where Transfer-Encoding was specified as "
+                                                                "'chunked'.");
             return HTTP_BAD_REQUEST;
         }
     }
@@ -739,10 +731,9 @@ static int wsgi_hook_handler(request_rec *r)
         if (wsgi_strtoff(&length, lenp, &endstr, 10) || *endstr || length < 0)
         {
 
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Invalid Content-Length header value of '%s' was "
-                                                           "supplied.",
-                                                  lenp),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0141) "Invalid Content-Length header value of '%s' "
+                                                                "was supplied.",
+                            lenp);
 
             return HTTP_BAD_REQUEST;
         }
@@ -790,17 +781,14 @@ static int wsgi_hook_handler(request_rec *r)
 #endif
 
 #if defined(MOD_WSGI_DISABLE_EMBEDDED)
-    wsgi_log_script_error(r, "Embedded mode of mod_wsgi disabled at compile "
-                             "time",
-                          r->filename);
+    wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0142) "Embedded mode of mod_wsgi disabled at compile time.");
     return HTTP_INTERNAL_SERVER_ERROR;
 #endif
 
     if (wsgi_server_config->restrict_embedded == 1)
     {
-        wsgi_log_script_error(r, "Embedded mode of mod_wsgi disabled by "
-                                 "runtime configuration",
-                              r->filename);
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0143) "Embedded mode of mod_wsgi disabled by runtime "
+                                                            "configuration.");
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
@@ -1027,10 +1015,9 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
         if (wsgi_python_init(p) != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0001)
-                           "Python initialisation failed in Apache child "
-                           "process; Python based handlers will not be "
-                           "available.");
+            wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0001) "Python initialisation failed in Apache child "
+                                                                          "process; Python based handlers will not be "
+                                                                          "available.");
         }
         else
         {
@@ -1041,10 +1028,9 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
             if (wsgi_python_child_init(p) != APR_SUCCESS)
             {
-                wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0002)
-                               "Python child initialisation failed in "
-                               "Apache child process; Python based "
-                               "handlers will not be available.");
+                wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0002) "Python child initialisation failed in "
+                                                                              "Apache child process; Python based "
+                                                                              "handlers will not be available.");
             }
         }
     }
@@ -1223,10 +1209,10 @@ static const command_rec wsgi_commands[] =
 
         AP_INIT_TAKE12("WSGIMetricsService", wsgi_set_metrics_service,
                        NULL, RSRC_CONF, "Push telemetry to a metrics service. "
-                       "Args: <unix:/path | udp:host:port> [interval=N]"),
+                                        "Args: <unix:/path | udp:host:port> [interval=N]"),
         AP_INIT_TAKE1("WSGISlowRequests", wsgi_set_slow_requests,
                       NULL, RSRC_CONF, "Enable slow-request reporting. "
-                      "Arg: threshold in seconds."),
+                                       "Arg: threshold in seconds."),
 
         {NULL}};
 

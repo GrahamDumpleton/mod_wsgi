@@ -108,9 +108,8 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
 
         if (rv != APR_SUCCESS)
         {
-            wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0115)
-                            "Unable to create socket to connect to WSGI "
-                            "daemon process '%s' on '%s'.",
+            wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0115) "Unable to create socket to connect to WSGI "
+                                                                 "daemon process '%s' on '%s'.",
                             daemon->name, daemon->socket_path);
 
             return HTTP_INTERNAL_SERVER_ERROR;
@@ -171,11 +170,10 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
                 }
                 else
                 {
-                    wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0116)
-                                    "Unable to connect to WSGI daemon "
-                                    "process '%s' on '%s' after multiple "
-                                    "attempts as listener backlog limit was "
-                                    "exceeded or the socket does not exist.",
+                    wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0116) "Unable to connect to WSGI daemon "
+                                                                         "process '%s' on '%s' after multiple "
+                                                                         "attempts as listener backlog limit was "
+                                                                         "exceeded or the socket does not exist.",
                                     daemon->name, daemon->socket_path);
 
                     apr_socket_close(daemon->socket);
@@ -185,9 +183,8 @@ static int wsgi_connect_daemon(request_rec *r, WSGIDaemonSocket *daemon)
             }
             else
             {
-                wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0117)
-                                "Unable to connect to WSGI daemon process "
-                                "'%s' on '%s' as user with uid=%ld.",
+                wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0117) "Unable to connect to WSGI daemon process "
+                                                                     "'%s' on '%s' as user with uid=%ld.",
                                 daemon->name, daemon->socket_path,
                                 (long)geteuid());
 
@@ -446,11 +443,11 @@ static int wsgi_copy_header(void *v, const char *key, const char *val)
  * remaining values indicate why no line was produced.
  */
 
-#define WSGI_HEADER_LINE       1
-#define WSGI_HEADER_TRUNCATED  0
-#define WSGI_HEADER_TIMEOUT   -1
-#define WSGI_HEADER_CLOSED    -2
-#define WSGI_HEADER_ERROR     -3
+#define WSGI_HEADER_LINE 1
+#define WSGI_HEADER_TRUNCATED 0
+#define WSGI_HEADER_TIMEOUT -1
+#define WSGI_HEADER_CLOSED -2
+#define WSGI_HEADER_ERROR -3
 
 static int wsgi_read_header_line(char *buf, apr_size_t len,
                                  apr_bucket_brigade *bb,
@@ -599,9 +596,9 @@ static int wsgi_scan_headers_brigade(request_rec *r, apr_bucket_brigade *bb,
 
         if (rv == WSGI_HEADER_TRUNCATED)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool,
-                "Response header line too long from daemon process '%s'",
-                config->process_group), r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0144) "Response header line too long from daemon "
+                                                                "process '%s'.",
+                            config->process_group);
 
             r->status_line = NULL;
 
@@ -609,9 +606,9 @@ static int wsgi_scan_headers_brigade(request_rec *r, apr_bucket_brigade *bb,
         }
         else if (rv == WSGI_HEADER_TIMEOUT)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool,
-                "Timeout when reading response headers from daemon "
-                "process '%s'", config->process_group), r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0145) "Timeout when reading response headers from "
+                                                                "daemon process '%s'.",
+                            config->process_group);
 
             r->status_line = NULL;
 
@@ -619,10 +616,9 @@ static int wsgi_scan_headers_brigade(request_rec *r, apr_bucket_brigade *bb,
         }
         else if (rv == WSGI_HEADER_CLOSED)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool,
-                "Daemon process '%s' closed connection before sending "
-                "complete response headers", config->process_group),
-                r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0146) "Daemon process '%s' closed connection before "
+                                                                "sending complete response headers.",
+                            config->process_group);
 
             r->status_line = NULL;
 
@@ -630,12 +626,11 @@ static int wsgi_scan_headers_brigade(request_rec *r, apr_bucket_brigade *bb,
         }
         else if (rv == WSGI_HEADER_ERROR)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool,
-                "Error reading response headers from daemon process "
-                "'%s': %s", config->process_group,
-                apr_strerror(read_status, apr_error,
-                             sizeof(apr_error) - 1)),
-                r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0147) "Error reading response headers from daemon "
+                                                                "process '%s' (%s).",
+                            config->process_group,
+                            apr_strerror(read_status, apr_error,
+                                         sizeof(apr_error) - 1));
 
             r->status_line = NULL;
 
@@ -721,11 +716,9 @@ static int wsgi_scan_headers_brigade(request_rec *r, apr_bucket_brigade *bb,
                 }
             }
 
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Malformed "
-                                                           "header '%s' found when reading script "
-                                                           "headers from daemon process '%s'",
-                                                  malformed, config->process_group),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0148) "Malformed header '%s' found when reading "
+                                                                "script headers from daemon process '%s'.",
+                            malformed, config->process_group);
 
             r->status_line = NULL;
 
@@ -946,9 +939,8 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
             if (rv == APR_TIMEUP)
             {
-                wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0118)
-                                "Unable to proxy response to client "
-                                "(read timeout).");
+                wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0118) "Unable to proxy response to client "
+                                                                     "(read timeout).");
             }
 
             if (rv != APR_SUCCESS)
@@ -985,9 +977,8 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
         {
             apr_brigade_destroy(bb);
 
-            wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0119)
-                            "Unable to proxy response from daemon to "
-                            "client.");
+            wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0119) "Unable to proxy response from daemon to "
+                                                                 "client.");
 
             /*
              * Don't flag error if couldn't read from daemon
@@ -1061,9 +1052,8 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
         if (rv == APR_TIMEUP)
         {
-            wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0120)
-                            "Unable to proxy response to client "
-                            "(write timeout).");
+            wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0120) "Unable to proxy response to client "
+                                                                 "(write timeout).");
         }
 
         if (rv != APR_SUCCESS)
@@ -1132,12 +1122,10 @@ int wsgi_execute_remote(request_rec *r)
         if (!apr_table_get(config->restrict_process,
                            config->process_group))
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Daemon "
-                                                           "process called '%s' cannot be "
-                                                           "accessed by this WSGI application "
-                                                           "as not a member of allowed groups",
-                                                  config->process_group),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0149) "Daemon process called '%s' cannot be "
+                                                                "accessed by this WSGI application as not a "
+                                                                "member of allowed groups.",
+                            config->process_group);
 
             return HTTP_INTERNAL_SERVER_ERROR;
         }
@@ -1155,10 +1143,9 @@ int wsgi_execute_remote(request_rec *r)
 
     if (!wsgi_daemon_index)
     {
-        wsgi_log_script_error(r, apr_psprintf(r->pool, "No WSGI daemon "
-                                                       "process called '%s' has been configured",
-                                              config->process_group),
-                              r->filename);
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0150) "No WSGI daemon process called '%s' has been "
+                                                            "configured.",
+                        config->process_group);
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -1169,10 +1156,9 @@ int wsgi_execute_remote(request_rec *r)
 
     if (!group)
     {
-        wsgi_log_script_error(r, apr_psprintf(r->pool, "No WSGI daemon "
-                                                       "process called '%s' has been configured",
-                                              config->process_group),
-                              r->filename);
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0151) "No WSGI daemon process called '%s' has been "
+                                                            "configured.",
+                        config->process_group);
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -1189,11 +1175,9 @@ int wsgi_execute_remote(request_rec *r)
         if (strcmp(group->server->server_hostname,
                    r->server->server_hostname) != 0)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Daemon "
-                                                           "process called '%s' cannot be "
-                                                           "accessed by this WSGI application",
-                                                  config->process_group),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0152) "Daemon process called '%s' cannot be "
+                                                                "accessed by this WSGI application.",
+                            config->process_group);
 
             return HTTP_INTERNAL_SERVER_ERROR;
         }
@@ -1215,10 +1199,8 @@ int wsgi_execute_remote(request_rec *r)
 
         if (!(r->finfo.valid & APR_FINFO_GROUP))
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Group "
-                                                           "information not available for WSGI "
-                                                           "script file"),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0153) "Group information not available for WSGI "
+                                                                "script file.");
             return HTTP_FORBIDDEN;
         }
 
@@ -1226,11 +1208,9 @@ int wsgi_execute_remote(request_rec *r)
 
         if ((grent = getgrgid(gid)) == NULL)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Couldn't "
-                                                           "determine group of WSGI script file, "
-                                                           "gid=%ld",
-                                                  (long)gid),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0154) "Unable to determine group of WSGI script "
+                                                                "file from gid %ld.",
+                            (long)gid);
             return HTTP_FORBIDDEN;
         }
 
@@ -1238,28 +1218,22 @@ int wsgi_execute_remote(request_rec *r)
 
         if (strcmp(group->script_group, grname))
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Group of WSGI "
-                                                           "script file does not match required group "
-                                                           "for daemon process, group=%s",
-                                                  grname),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0155) "WSGI script file group '%s' does not match "
+                                                                "group required for daemon process.",
+                            grname);
             return HTTP_FORBIDDEN;
         }
 
         if (!(r->finfo.valid & APR_FINFO_WPROT))
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "World "
-                                                           "permissions not available for WSGI "
-                                                           "script file"),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0156) "World permissions not available for WSGI "
+                                                                "script file.");
             return HTTP_FORBIDDEN;
         }
 
         if (r->finfo.protection & APR_FPROT_WWRITE)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "WSGI script "
-                                                           "file is writable to world"),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0157) "WSGI script file is writable to world.");
             return HTTP_FORBIDDEN;
         }
 
@@ -1267,9 +1241,9 @@ int wsgi_execute_remote(request_rec *r)
 
         if (apr_stat(&finfo, path, APR_FINFO_NORM, r->pool) != APR_SUCCESS)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Unable to stat "
-                                                           "parent directory of WSGI script"),
-                                  path);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0158) "Unable to stat parent directory '%s' of "
+                                                                "WSGI script.",
+                            path);
             return HTTP_FORBIDDEN;
         }
 
@@ -1277,11 +1251,9 @@ int wsgi_execute_remote(request_rec *r)
 
         if ((grent = getgrgid(gid)) == NULL)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Couldn't "
-                                                           "determine group of parent directory of "
-                                                           "WSGI script file, gid=%ld",
-                                                  (long)gid),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0159) "Unable to determine group of parent "
+                                                                "directory of WSGI script file from gid %ld.",
+                            (long)gid);
             return HTTP_FORBIDDEN;
         }
 
@@ -1289,20 +1261,17 @@ int wsgi_execute_remote(request_rec *r)
 
         if (strcmp(group->script_group, grname))
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Group of parent "
-                                                           "directory of WSGI script file does not "
-                                                           "match required group for daemon process, "
-                                                           "group=%s",
-                                                  grname),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0160) "Parent directory of WSGI script file has "
+                                                                "group '%s' which does not match group "
+                                                                "required for daemon process.",
+                            grname);
             return HTTP_FORBIDDEN;
         }
 
         if (finfo.protection & APR_FPROT_WWRITE)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Parent directory "
-                                                           "of WSGI script file is writable to world"),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0161) "Parent directory of WSGI script file is "
+                                                                "writable to world.");
             return HTTP_FORBIDDEN;
         }
     }
@@ -1324,10 +1293,8 @@ int wsgi_execute_remote(request_rec *r)
 
         if (!(r->finfo.valid & APR_FINFO_USER))
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "User "
-                                                           "information not available for WSGI "
-                                                           "script file"),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0162) "User information not available for WSGI "
+                                                                "script file.");
             return HTTP_FORBIDDEN;
         }
 
@@ -1335,11 +1302,9 @@ int wsgi_execute_remote(request_rec *r)
 
         if ((pwent = getpwuid(uid)) == NULL)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Couldn't "
-                                                           "determine owner of WSGI script file, "
-                                                           "uid=%ld",
-                                                  (long)uid),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0163) "Unable to determine owner of WSGI script "
+                                                                "file from uid %ld.",
+                            (long)uid);
             return HTTP_FORBIDDEN;
         }
 
@@ -1347,45 +1312,35 @@ int wsgi_execute_remote(request_rec *r)
 
         if (strcmp(group->script_user, pwname))
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Owner of WSGI "
-                                                           "script file does not match required user "
-                                                           "for daemon process, user=%s",
-                                                  pwname),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0164) "WSGI script file owner '%s' does not match "
+                                                                "user required for daemon process.",
+                            pwname);
             return HTTP_FORBIDDEN;
         }
 
         if (!(r->finfo.valid & APR_FINFO_GPROT))
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Group "
-                                                           "permissions not available for WSGI "
-                                                           "script file"),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0165) "Group permissions not available for WSGI "
+                                                                "script file.");
             return HTTP_FORBIDDEN;
         }
 
         if (r->finfo.protection & APR_FPROT_GWRITE)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "WSGI script "
-                                                           "file is writable to group"),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0166) "WSGI script file is writable to group.");
             return HTTP_FORBIDDEN;
         }
 
         if (!(r->finfo.valid & APR_FINFO_WPROT))
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "World "
-                                                           "permissions not available for WSGI "
-                                                           "script file"),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0167) "World permissions not available for WSGI "
+                                                                "script file.");
             return HTTP_FORBIDDEN;
         }
 
         if (r->finfo.protection & APR_FPROT_WWRITE)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "WSGI script "
-                                                           "file is writable to world"),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0168) "WSGI script file is writable to world.");
             return HTTP_FORBIDDEN;
         }
 
@@ -1393,9 +1348,9 @@ int wsgi_execute_remote(request_rec *r)
 
         if (apr_stat(&finfo, path, APR_FINFO_NORM, r->pool) != APR_SUCCESS)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Unable to stat "
-                                                           "parent directory of WSGI script"),
-                                  path);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0169) "Unable to stat parent directory '%s' of "
+                                                                "WSGI script.",
+                            path);
             return HTTP_FORBIDDEN;
         }
 
@@ -1403,11 +1358,9 @@ int wsgi_execute_remote(request_rec *r)
 
         if ((pwent = getpwuid(uid)) == NULL)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Couldn't "
-                                                           "determine owner of parent directory of "
-                                                           "WSGI script file, uid=%ld",
-                                                  (long)uid),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0170) "Unable to determine owner of parent "
+                                                                "directory of WSGI script file from uid %ld.",
+                            (long)uid);
             return HTTP_FORBIDDEN;
         }
 
@@ -1415,28 +1368,24 @@ int wsgi_execute_remote(request_rec *r)
 
         if (strcmp(group->script_user, pwname))
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Owner of parent "
-                                                           "directory of WSGI script file does not "
-                                                           "match required user for daemon process, "
-                                                           "user=%s",
-                                                  pwname),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0171) "Parent directory of WSGI script file has "
+                                                                "owner '%s' which does not match user "
+                                                                "required for daemon process.",
+                            pwname);
             return HTTP_FORBIDDEN;
         }
 
         if (finfo.protection & APR_FPROT_WWRITE)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Parent directory "
-                                                           "of WSGI script file is writable to world"),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0172) "Parent directory of WSGI script file is "
+                                                                "writable to world.");
             return HTTP_FORBIDDEN;
         }
 
         if (finfo.protection & APR_FPROT_GWRITE)
         {
-            wsgi_log_script_error(r, apr_psprintf(r->pool, "Parent directory "
-                                                           "of WSGI script file is writable to group"),
-                                  r->filename);
+            wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0173) "Parent directory of WSGI script file is "
+                                                                "writable to group.");
             return HTTP_FORBIDDEN;
         }
     }
@@ -1481,9 +1430,8 @@ int wsgi_execute_remote(request_rec *r)
 
     if ((rv = wsgi_send_request(r, config, daemon)) != APR_SUCCESS)
     {
-        wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0121)
-                        "Unable to send request details to WSGI daemon "
-                        "process '%s' on '%s'.",
+        wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0121) "Unable to send request details to WSGI daemon "
+                                                             "process '%s' on '%s'.",
                         daemon->name, daemon->socket_path);
 
         return HTTP_INTERNAL_SERVER_ERROR;
@@ -1547,9 +1495,9 @@ int wsgi_execute_remote(request_rec *r)
 
             if (r->status != 200)
             {
-                wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0122)
-                                "Unexpected status from WSGI daemon "
-                                "process: %d.", r->status);
+                wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0122) "Unexpected status from WSGI daemon "
+                                                                    "process: %d.",
+                                r->status);
 
                 r->status_line = NULL;
 
@@ -1572,9 +1520,9 @@ int wsgi_execute_remote(request_rec *r)
 
             if (strcmp(r->status_line, "200 Rejected"))
             {
-                wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0123)
-                                "Unexpected status from WSGI daemon "
-                                "process: %d.", r->status);
+                wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0123) "Unexpected status from WSGI daemon "
+                                                                    "process: %d.",
+                                r->status);
 
                 r->status_line = NULL;
 
@@ -1595,17 +1543,16 @@ int wsgi_execute_remote(request_rec *r)
 
             if (retries >= maximum)
             {
-                wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0124)
-                                "Maximum number of WSGI daemon process "
-                                "'%s' restart attempts reached: %d.",
+                wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0124) "Maximum number of WSGI daemon process "
+                                                                    "'%s' restart attempts reached: %d.",
                                 daemon->name, maximum);
                 return HTTP_SERVICE_UNAVAILABLE;
             }
 
-            wsgi_log_rerror(APLOG_INFO, 0, r,
-                            "Reconnecting after WSGI daemon process '%s' "
-                            "restart, attempt #%d.",
-                            daemon->name, retries);
+            wsgi_log_error(APLOG_INFO, 0, r->server,
+                           "Reconnecting after WSGI daemon process '%s' "
+                           "restart, attempt #%d.",
+                           daemon->name, retries);
 
             /* Connect and setup connection just like before. */
 
@@ -1614,9 +1561,8 @@ int wsgi_execute_remote(request_rec *r)
 
             if ((rv = wsgi_send_request(r, config, daemon)) != APR_SUCCESS)
             {
-                wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0125)
-                                "Unable to send request details to WSGI "
-                                "daemon process '%s' on '%s'.",
+                wsgi_log_rerror(APLOG_ERR, rv, r, WSGI_APLOGNO(0125) "Unable to send request details to WSGI "
+                                                                     "daemon process '%s' on '%s'.",
                                 daemon->name, daemon->socket_path);
 
                 return HTTP_INTERNAL_SERVER_ERROR;

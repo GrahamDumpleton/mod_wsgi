@@ -90,9 +90,6 @@ extern apr_status_t wsgi_strtoff(apr_off_t *offset, const char *nptr,
 
 extern char *wsgi_http2env(apr_pool_t *a, const char *w);
 
-extern void wsgi_log_script_error(request_rec *r, const char *e,
-                                  const char *n);
-
 /* ------------------------------------------------------------------------- */
 
 #endif
