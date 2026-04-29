@@ -50,13 +50,5 @@ Concepts and advanced topics
    user-guides/access-control-mechanisms
    user-guides/file-wrapper-extension
    user-guides/registering-cleanup-code
-   user-guides/assorted-tips-and-tricks
-
-Legacy
-------
-
-.. toctree::
-   :maxdepth: 1
-
    user-guides/issues-with-pickle-module
-   user-guides/issues-with-expat-library
+   user-guides/assorted-tips-and-tricks
