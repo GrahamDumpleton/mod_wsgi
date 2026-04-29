@@ -1,4 +1,4 @@
-﻿===================
+===================
 Installation Issues
 ===================
 
@@ -30,11 +30,61 @@ varies by distribution but is typically the runtime package name with
 ``-dev`` appended (``python3-dev`` on Debian/Ubuntu) or ``-devel``
 (``python3-devel`` on RHEL/Fedora).
 
+.. _mixing-32-bit-and-64-bit-packages:
+
+Linker Relocation Errors Against The Python Static Library
+----------------------------------------------------------
+
+When building mod_wsgi on a 64-bit Linux system against a Python
+installation that provides only a static library
+(``libpython3.X.a``), the link step can fail with an error of the
+following shape::
+
+    /usr/bin/ld: /path/to/libpython3.X.a(abstract.o): \
+        relocation R_X86_64_32S against symbol `_Py_NoneStruct' \
+        can not be used when making a shared object; \
+        recompile with -fPIC
+    /usr/bin/ld: failed to set dynamic section sizes: bad value
+    collect2: error: ld returned 1 exit status
+
+The exact relocation type cited can be ``R_X86_64_32``,
+``R_X86_64_32S``, or ``R_X86_64_PC32`` depending on the linker
+version and which Python symbols are involved. The defining
+feature of the error is the trailing message "can not be used
+when making a shared object; recompile with -fPIC".
+
+The root cause is that the static Python library being linked
+into ``mod_wsgi.so`` was not compiled with position-independent
+code. The mod_wsgi module is itself a shared object, so every
+object linked into it must be position-independent. Object files
+inside ``libpython3.X.a`` were not, and the link fails.
+
+Historically this error appeared when a 32-bit Python static
+library was being linked into a 64-bit mod_wsgi build, which is
+where the older form of this section's title comes from. On
+modern systems the more common cause is simply that Python was
+built without ``--enable-shared``: the resulting ``libpython.a``
+is not position-independent and the same relocation error appears
+even on a fully 64-bit system.
+
+The fix is to use a Python build that provides a *shared* library
+(``libpython3.X.so``) rather than only a static one. Most
+distribution Python packages, Homebrew Python, and python.org
+installers ship Python with ``--enable-shared`` and so already
+provide a shared library. If you are using a hand-built Python
+that does not, rebuild it with::
+
+    ./configure --enable-shared
+    make
+    make install
+
+See also the "Lack Of Python Shared Library" section below.
+
 Lack Of Python Shared Library
 -----------------------------
 
-A normally-built ``mod_wsgi.so`` is under 250KB. If your build comes
-out over 1MB, the Python installation it was built against does not
+A normally-built ``mod_wsgi.so`` is under 0.5MB. If your build comes
+out well over 1MB, the Python installation it was built against does not
 provide a shared library — only a static one — and ``libtool`` has
 embedded the static Python objects directly into ``mod_wsgi.so``
 instead of linking against ``libpython3.X.so`` dynamically.
@@ -44,7 +94,7 @@ This has two practical consequences:
 * When Apache loads ``mod_wsgi.so``, the dynamic linker performs
   address relocations on the embedded Python objects. Because
   relocations modify memory, the Python library becomes private to
-  each Apache process rather than shared, adding 1-2MB per Apache
+  each Apache process rather than shared, adding 2-5MB per Apache
   child process on Linux.
 
 * Subsequent Python patch-level upgrades will not be picked up
@@ -73,6 +123,62 @@ To get a shared library, build Python with ``--enable-shared``. Most
 distribution Python packages, Homebrew Python, and python.org
 installers already do so.
 
+Unable To Find Python Shared Library
+------------------------------------
+
+When mod_wsgi is built against a Python that provides a shared
+library, that shared library must be in a directory the dynamic
+linker searches at runtime. If it is not, Apache will fail to load
+``mod_wsgi.so`` with::
+
+    error while loading shared libraries: libpython3.12.so.1.0: \
+     cannot open shared object file: No such file or directory
+
+The simplest fix is to ensure the Python shared library is on the
+system-wide library search path. ``/lib`` and ``/usr/lib`` are
+typically always searched. ``/usr/local/lib`` is also searched on
+many systems, but only if it has been added to the loader's
+configuration — on Linux this is typically ``/etc/ld.so.conf`` or a
+file under ``/etc/ld.so.conf.d/``, with ``ldconfig`` rerun
+afterwards.
+
+Alternatively, set ``LD_LIBRARY_PATH`` in Apache's startup
+environment to include the directory containing the Python shared
+library. For an unmodified Apache distribution this goes in the
+``envvars`` file in the same directory as the Apache executable. On
+RHEL-derived distributions the package may not ship an ``envvars``
+file; use ``/etc/sysconfig/httpd`` instead.
+
+A third option is to have Apache itself preload the Python shared
+library before loading mod_wsgi, using the ``LoadFile`` directive
+placed before the ``LoadModule wsgi_module`` line in the Apache
+configuration::
+
+    LoadFile /usr/local/lib/libpython3.12.so.1.0
+    LoadModule wsgi_module modules/mod_wsgi.so
+
+By the time Apache reaches ``LoadModule wsgi_module``, the Python
+shared library is already mapped into the Apache process and the
+linker resolves mod_wsgi's references to it directly, without
+consulting the system library search path. This avoids needing root
+access to update ``ld.so.conf``, avoids polluting the system
+loader's configuration with a path that is only relevant to Apache,
+and makes the dependency explicit and local to the Apache
+configuration. ``mod_wsgi-express module-config`` already emits a
+``LoadFile`` directive automatically on macOS and Windows; on Linux
+it is not emitted by default but can be added manually if needed.
+
+The same ``LoadFile`` trick is also useful when the Python shared
+library *is* findable but the dynamic linker resolves to the wrong
+copy — for example on hosts that have multiple installations of the
+same Python major version, when ``rpath`` settings baked into a
+relocated Python installation no longer point at the right place,
+or when the Python shared library exists at an unusual location
+(such as inside a virtual environment) that is not on any system
+search path. Pointing ``LoadFile`` at the exact path of the Python
+shared library that mod_wsgi was built against forces that specific
+copy to be the one used.
+
 Multiple Python Versions
 ------------------------
 
@@ -84,10 +190,11 @@ mod_wsgi to use a specific one, pass ``--with-python`` to
 
     ./configure --with-python=/usr/local/bin/python3.12
 
-This is enough when the Pythons live under the same top-level
-directory. If the version you want to use is in a different location
-(for example ``/usr/local`` while another Python is at ``/usr``),
-Apache may fail to find the Python library files at startup.
+This is enough when the chosen Python and any other Pythons on the
+host share the same installation prefix. If they do not — for
+example the chosen Python is at ``/usr/local`` while another Python
+is at ``/usr`` — Apache may fail to find the Python library files
+at startup.
 
 The Python interpreter determines its installation prefix at startup
 by looking up its own executable on ``PATH`` and taking the parent
@@ -151,6 +258,30 @@ runtime, deploy a small WSGI script that prints ``sys.prefix`` and
 
         return [output]
 
+Python Patch Level Mismatch
+---------------------------
+
+If the Python installation is upgraded to a newer patch-level revision
+without rebuilding mod_wsgi, you will likely see a warning of the
+following form (logged with the WSGI0099 error code; see
+:doc:`../error-reference`) in the Apache error log when Python is being
+initialised::
+
+    [Sat Jan 01 12:34:56.789012 2026] [wsgi:warn] [pid 12345] WSGI0099: Compiled for Python/3.12.0 but runtime using Python/3.12.1.
+
+The warning indicates that a newer Python version is now being used
+than the one mod_wsgi was originally compiled against.
+
+If both Pythons were installed with ``--enable-shared``, this is
+generally harmless: the Python library is linked dynamically at
+runtime, so the upgrade is picked up automatically.
+
+If ``--enable-shared`` was not used and the static Python library is
+embedded into ``mod_wsgi.so``, the embedded library code will be
+older than the Python modules and extension modules now present in
+the Python installation. Behaviour in this case is undefined and you
+should rebuild mod_wsgi against the upgraded Python.
+
 Anaconda Python Conflicting With System Shared Libraries
 --------------------------------------------------------
 
@@ -197,134 +328,3 @@ unprivileged port behind a front-end Apache or nginx that
 terminates HTTPS — so the two sets of libraries are not loaded
 into the same process. Otherwise, use a system Python or a
 python.org installer for the mod_wsgi build instead of Anaconda.
-
-Python Patch Level Mismatch
----------------------------
-
-If the Python installation is upgraded to a newer patch-level revision
-without rebuilding mod_wsgi, you will likely see a warning of the
-following form (logged with the WSGI0099 error code; see
-:doc:`../error-reference`) in the Apache error log when Python is being
-initialised::
-
-    [Sat Jan 01 12:34:56.789012 2026] [wsgi:warn] [pid 12345] WSGI0099: Compiled for Python/3.12.0 but runtime using Python/3.12.1.
-
-The warning indicates that a newer Python version is now being used
-than the one mod_wsgi was originally compiled against.
-
-If both Pythons were installed with ``--enable-shared``, this is
-generally harmless: the Python library is linked dynamically at
-runtime, so the upgrade is picked up automatically.
-
-If ``--enable-shared`` was not used and the static Python library is
-embedded into ``mod_wsgi.so``, the embedded library code will be
-older than the Python modules and extension modules now present in
-the Python installation. Behaviour in this case is undefined and you
-should rebuild mod_wsgi against the upgraded Python.
-
-.. _mixing-32-bit-and-64-bit-packages:
-
-Linker Relocation Errors Against The Python Static Library
-----------------------------------------------------------
-
-When building mod_wsgi on a 64-bit Linux system against a Python
-installation that provides only a static library
-(``libpython3.X.a``), the link step can fail with an error of the
-following shape::
-
-    /usr/bin/ld: /path/to/libpython3.X.a(abstract.o): \
-        relocation R_X86_64_32S against symbol `_Py_NoneStruct' \
-        can not be used when making a shared object; \
-        recompile with -fPIC
-    /usr/bin/ld: failed to set dynamic section sizes: bad value
-    collect2: error: ld returned 1 exit status
-
-The exact relocation type cited can be ``R_X86_64_32``,
-``R_X86_64_32S``, or ``R_X86_64_PC32`` depending on the linker
-version and which Python symbols are involved. The defining
-feature of the error is the trailing message "can not be used
-when making a shared object; recompile with -fPIC".
-
-The root cause is that the static Python library being linked
-into ``mod_wsgi.so`` was not compiled with position-independent
-code. The mod_wsgi module is itself a shared object, so every
-object linked into it must be position-independent. Object files
-inside ``libpython3.X.a`` were not, and the link fails.
-
-Historically this error appeared when a 32-bit Python static
-library was being linked into a 64-bit mod_wsgi build, which is
-where the older form of this section's title comes from. On
-modern systems the more common cause is simply that Python was
-built without ``--enable-shared``: the resulting ``libpython.a``
-is not position-independent and the same relocation error appears
-even on a fully 64-bit system.
-
-The fix is to use a Python build that provides a *shared* library
-(``libpython3.X.so``) rather than only a static one. Most
-distribution Python packages, Homebrew Python, and python.org
-installers ship Python with ``--enable-shared`` and so already
-provide a shared library. If you are using a hand-built Python
-that does not, rebuild it with::
-
-    ./configure --enable-shared
-    make
-    make install
-
-See also the "Lack Of Python Shared Library" section above.
-
-Unable To Find Python Shared Library
-------------------------------------
-
-When mod_wsgi is built against a Python that provides a shared
-library, that shared library must be in a directory the dynamic
-linker searches at runtime. If it is not, Apache will fail to load
-``mod_wsgi.so`` with::
-
-    error while loading shared libraries: libpython3.12.so.1.0: \
-     cannot open shared object file: No such file or directory
-
-The simplest fix is to ensure the Python shared library is on the
-system-wide library search path. ``/lib`` and ``/usr/lib`` are
-typically always searched. ``/usr/local/lib`` is also searched on
-many systems, but only if it has been added to the loader's
-configuration — on Linux this is typically ``/etc/ld.so.conf`` or a
-file under ``/etc/ld.so.conf.d/``, with ``ldconfig`` rerun
-afterwards.
-
-Alternatively, set ``LD_LIBRARY_PATH`` in Apache's startup
-environment to include the directory containing the Python shared
-library. For an unmodified Apache distribution this goes in the
-``envvars`` file in the same directory as the Apache executable. On
-RHEL-derived distributions the package may not ship an ``envvars``
-file; use ``/etc/sysconfig/httpd`` instead.
-
-A third option is to have Apache itself preload the Python shared
-library before loading mod_wsgi, using the ``LoadFile`` directive
-placed before the ``LoadModule wsgi_module`` line in the Apache
-configuration::
-
-    LoadFile /usr/local/lib/libpython3.12.so.1.0
-    LoadModule wsgi_module modules/mod_wsgi.so
-
-By the time Apache reaches ``LoadModule wsgi_module``, the Python
-shared library is already mapped into the Apache process and the
-linker resolves mod_wsgi's references to it directly, without
-consulting the system library search path. This avoids needing root
-access to update ``ld.so.conf``, avoids polluting the system
-loader's configuration with a path that is only relevant to Apache,
-and makes the dependency explicit and local to the Apache
-configuration. ``mod_wsgi-express module-config`` already emits a
-``LoadFile`` directive automatically on macOS and Windows; on Linux
-it is not emitted by default but can be added manually if needed.
-
-The same ``LoadFile`` trick is also useful when the Python shared
-library *is* findable but the dynamic linker resolves to the wrong
-copy — for example on hosts that have multiple installations of the
-same Python major version, when ``rpath`` settings baked into a
-relocated Python installation no longer point at the right place,
-or when the Python shared library exists at an unusual location
-(such as inside a virtual environment) that is not on any system
-search path. Pointing ``LoadFile`` at the exact path of the Python
-shared library that mod_wsgi was built against forces that specific
-copy to be the one used.
-
