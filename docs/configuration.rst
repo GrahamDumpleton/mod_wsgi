@@ -29,9 +29,11 @@ Process model and daemon mode
    configuration-directives/WSGIProcessGroup
    configuration-directives/WSGIApplicationGroup
    configuration-directives/WSGISocketPrefix
+   configuration-directives/WSGISocketRotation
    configuration-directives/WSGIAcceptMutex
    configuration-directives/WSGIDestroyInterpreter
    configuration-directives/WSGIRestrictProcess
+   configuration-directives/WSGIIgnoreActivity
 
 Python environment
 ------------------
@@ -43,6 +45,9 @@ Python environment
    configuration-directives/WSGIPythonPath
    configuration-directives/WSGIPythonOptimize
    configuration-directives/WSGIPythonEggs
+   configuration-directives/WSGIPythonHashSeed
+   configuration-directives/WSGIPythonWarnings
+   configuration-directives/WSGIDontWriteBytecode
 
 Authentication and access control
 ---------------------------------
@@ -64,6 +69,8 @@ Request handling
    configuration-directives/WSGIChunkedRequest
    configuration-directives/WSGIMapHEADToGET
    configuration-directives/WSGIErrorOverride
+   configuration-directives/WSGIEnableSendfile
+   configuration-directives/WSGIPassApacheRequest
 
 Reverse proxy
 -------------
@@ -98,15 +105,21 @@ Alphabetical index
 * :doc:`configuration-directives/WSGIChunkedRequest`
 * :doc:`configuration-directives/WSGIDaemonProcess`
 * :doc:`configuration-directives/WSGIDestroyInterpreter`
+* :doc:`configuration-directives/WSGIDontWriteBytecode`
+* :doc:`configuration-directives/WSGIEnableSendfile`
 * :doc:`configuration-directives/WSGIErrorOverride`
+* :doc:`configuration-directives/WSGIIgnoreActivity`
 * :doc:`configuration-directives/WSGIImportScript`
 * :doc:`configuration-directives/WSGIMapHEADToGET`
+* :doc:`configuration-directives/WSGIPassApacheRequest`
 * :doc:`configuration-directives/WSGIPassAuthorization`
 * :doc:`configuration-directives/WSGIProcessGroup`
 * :doc:`configuration-directives/WSGIPythonEggs`
+* :doc:`configuration-directives/WSGIPythonHashSeed`
 * :doc:`configuration-directives/WSGIPythonHome`
 * :doc:`configuration-directives/WSGIPythonOptimize`
 * :doc:`configuration-directives/WSGIPythonPath`
+* :doc:`configuration-directives/WSGIPythonWarnings`
 * :doc:`configuration-directives/WSGIRestrictEmbedded`
 * :doc:`configuration-directives/WSGIRestrictProcess`
 * :doc:`configuration-directives/WSGIRestrictSignal`
@@ -116,5 +129,6 @@ Alphabetical index
 * :doc:`configuration-directives/WSGIScriptAliasMatch`
 * :doc:`configuration-directives/WSGIScriptReloading`
 * :doc:`configuration-directives/WSGISocketPrefix`
+* :doc:`configuration-directives/WSGISocketRotation`
 * :doc:`configuration-directives/WSGITrustedProxies`
 * :doc:`configuration-directives/WSGITrustedProxyHeaders`

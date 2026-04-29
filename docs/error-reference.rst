@@ -3000,6 +3000,16 @@ WSGI0116 — Unable to connect to WSGI daemon (listener backlog or missing socke
    ``listen-backlog=`` or scale the daemon group (more processes
    or threads).
 
+   This error can also fire as a side effect of an Apache graceful
+   restart when ``WSGISocketRotation`` is left at its default of
+   ``On`` and old child workers, still finishing keep-alive or
+   long-running traffic, attempt to connect to a daemon socket
+   path from the previous Apache generation. If the symptom recurs
+   at the same time each day it is most often triggered by a
+   system log-rotation service such as ``logrotate`` issuing the
+   graceful restart. See
+   :doc:`configuration-directives/WSGISocketRotation` for details.
+
 .. _WSGI0117:
 
 WSGI0117 — Unable to connect to WSGI daemon (other failure)
@@ -3024,6 +3034,14 @@ WSGI0117 — Unable to connect to WSGI daemon (other failure)
    Verify the socket file's permissions match the daemon group's
    ``user=`` and ``umask=``. Check that ``WSGISocketPrefix`` is
    on a filesystem the Apache user can traverse.
+
+   For ``ENOENT`` specifically, this error can also fire when an
+   Apache graceful restart has rotated the daemon socket path and
+   an old child worker (still finishing keep-alive or long-running
+   traffic) attempts to reach a path that no longer exists. The
+   trigger is most often a system log-rotation service such as
+   ``logrotate`` issuing the graceful restart. See
+   :doc:`configuration-directives/WSGISocketRotation` for details.
 
 .. _WSGI0118:
 
