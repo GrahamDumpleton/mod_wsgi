@@ -151,20 +151,6 @@ runtime, deploy a small WSGI script that prints ``sys.prefix`` and
 
         return [output]
 
-Anaconda Python And Virtual Environments On Windows
-----------------------------------------------------
-
-Use of the Anaconda Python distribution together with a Python
-virtual environment on Windows has been known to cause problems
-with mod_wsgi at runtime under Apache. The exact cause has not
-been identified.
-
-How well current Anaconda Python versions behave on Windows has
-not been re-verified recently. If you encounter problems, the
-recommended workaround is to use a different Python distribution
-on Windows — for example a python.org installer, ``uv``-managed
-Python, or a system-installed Python.
-
 Anaconda Python Conflicting With System Shared Libraries
 --------------------------------------------------------
 
@@ -311,4 +297,34 @@ library. For an unmodified Apache distribution this goes in the
 ``envvars`` file in the same directory as the Apache executable. On
 RHEL-derived distributions the package may not ship an ``envvars``
 file; use ``/etc/sysconfig/httpd`` instead.
+
+A third option is to have Apache itself preload the Python shared
+library before loading mod_wsgi, using the ``LoadFile`` directive
+placed before the ``LoadModule wsgi_module`` line in the Apache
+configuration::
+
+    LoadFile /usr/local/lib/libpython3.12.so.1.0
+    LoadModule wsgi_module modules/mod_wsgi.so
+
+By the time Apache reaches ``LoadModule wsgi_module``, the Python
+shared library is already mapped into the Apache process and the
+linker resolves mod_wsgi's references to it directly, without
+consulting the system library search path. This avoids needing root
+access to update ``ld.so.conf``, avoids polluting the system
+loader's configuration with a path that is only relevant to Apache,
+and makes the dependency explicit and local to the Apache
+configuration. ``mod_wsgi-express module-config`` already emits a
+``LoadFile`` directive automatically on macOS and Windows; on Linux
+it is not emitted by default but can be added manually if needed.
+
+The same ``LoadFile`` trick is also useful when the Python shared
+library *is* findable but the dynamic linker resolves to the wrong
+copy — for example on hosts that have multiple installations of the
+same Python major version, when ``rpath`` settings baked into a
+relocated Python installation no longer point at the right place,
+or when the Python shared library exists at an unusual location
+(such as inside a virtual environment) that is not on any system
+search path. Pointing ``LoadFile`` at the exact path of the Python
+shared library that mod_wsgi was built against forces that specific
+copy to be the one used.
 
