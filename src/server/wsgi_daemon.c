@@ -895,7 +895,7 @@ static void wsgi_exit_daemon_process(int status)
     if (wsgi_server && wsgi_daemon_group)
     {
         wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                       "Exiting process '%s'.", wsgi_daemon_group);
+                       "Exiting daemon process '%s'.", wsgi_daemon_group);
     }
 
     exit(status);
@@ -999,8 +999,8 @@ static void wsgi_manage_process(int reason, void *data, apr_wait_t status)
     {
 
         wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                       "Deregistering process '%s' (pid=%d); server is "
-                       "restarting or shutting down.",
+                       "Deregistering daemon process '%s' (pid=%d); "
+                       "server is restarting or shutting down.",
                        daemon->group->name, daemon->process.pid);
 
         /* Deregister existing process so we stop watching it. */
@@ -1908,7 +1908,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Maximum requests reached; attempting "
-                                   "graceful shutdown of process '%s'.",
+                                   "graceful shutdown of daemon process "
+                                   "'%s'.",
                                    daemon->group->name);
                 }
                 else
@@ -1919,8 +1920,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                     {
                         wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                        "Maximum requests reached; "
-                                       "triggering immediate shutdown of "
-                                       "process '%s'.",
+                                       "triggering immediate shutdown "
+                                       "of daemon process '%s'.",
                                        daemon->group->name);
                     }
 
@@ -1945,7 +1946,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             {
                 wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                "Requests have completed; triggering "
-                               "immediate shutdown of process '%s'.",
+                               "immediate shutdown of daemon process "
+                               "'%s'.",
                                daemon->group->name);
 
                 wsgi_daemon_shutdown++;
@@ -1993,7 +1995,8 @@ static void *wsgi_reaper_thread(apr_thread_t *thd, void *data)
     sleep(daemon->group->shutdown_timeout);
 
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                   "Shutdown timeout expired; aborting process '%s'.",
+                   "Shutdown timeout expired; aborting daemon process "
+                   "'%s'.",
                    daemon->group->name);
 
     wsgi_exit_daemon_process(-1);
@@ -2345,7 +2348,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                 wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                "Daemon process request time limit "
                                "exceeded; waiting for in-flight requests "
-                               "to complete in process '%s'.",
+                               "to complete in daemon process '%s'.",
                                group->name);
             }
             else
@@ -2354,7 +2357,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
 
                 wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                "Daemon process request time limit "
-                               "exceeded, stopping process '%s'.",
+                               "exceeded, stopping daemon process '%s'.",
                                group->name);
 
                 restart = 1;
@@ -2369,7 +2372,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                 {
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Application startup timer expired, "
-                                   "stopping process '%s'.", group->name);
+                                   "stopping daemon process '%s'.",
+                                   group->name);
 
                     wsgi_shutdown_reason = "startup_timeout";
 
@@ -2440,8 +2444,9 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                 if (deadlock_time <= now)
                 {
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                                   "Daemon process deadlock timer expired, "
-                                   "stopping process '%s'.", group->name);
+                                   "Daemon process deadlock timer "
+                                   "expired, stopping daemon process "
+                                   "'%s'.", group->name);
 
                     restart = 1;
                 }
@@ -2510,8 +2515,9 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                 if (graceful_time <= now)
                 {
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                                   "Daemon process restart timer expired "
-                                   "in process '%s'; forcing shutdown.",
+                                   "Daemon process restart timer "
+                                   "expired in daemon process '%s'; "
+                                   "forcing shutdown.",
                                    group->name);
 
                     restart = 1;
@@ -2884,9 +2890,9 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                                   "Exceeded CPU time limit; waiting for "
-                                   "in-flight requests to complete in "
-                                   "process '%s'.",
+                                   "Exceeded CPU time limit; waiting "
+                                   "for in-flight requests to complete "
+                                   "in daemon process '%s'.",
                                    daemon->group->name);
                 }
                 else
@@ -2895,7 +2901,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Exceeded CPU time limit; triggering "
-                                   "immediate shutdown of process '%s'.",
+                                   "immediate shutdown of daemon "
+                                   "process '%s'.",
                                    daemon->group->name);
 
                     wsgi_daemon_shutdown++;
@@ -2924,8 +2931,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Process eviction requested; waiting "
-                                   "for in-flight requests to complete in "
-                                   "process '%s'.",
+                                   "for in-flight requests to complete "
+                                   "in daemon process '%s'.",
                                    daemon->group->name);
                 }
                 else
@@ -2933,8 +2940,9 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                                   "Process eviction requested; triggering "
-                                   "immediate shutdown of process '%s'.",
+                                   "Process eviction requested; "
+                                   "triggering immediate shutdown of "
+                                   "daemon process '%s'.",
                                    daemon->group->name);
 
                     wsgi_daemon_shutdown++;
@@ -2963,8 +2971,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Graceful restart requested; waiting "
-                                   "for in-flight requests to complete in "
-                                   "process '%s'.",
+                                   "for in-flight requests to complete "
+                                   "in daemon process '%s'.",
                                    daemon->group->name);
                 }
                 else
@@ -2972,8 +2980,9 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                                   "Graceful restart requested; triggering "
-                                   "immediate shutdown of process '%s'.",
+                                   "Graceful restart requested; "
+                                   "triggering immediate shutdown of "
+                                   "daemon process '%s'.",
                                    daemon->group->name);
 
                     wsgi_daemon_shutdown++;
@@ -2986,7 +2995,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     }
 
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                   "Shutdown requested for process '%s'.",
+                   "Shutdown requested for daemon process '%s'.",
                    daemon->group->name);
 
     /*
@@ -3103,8 +3112,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         if (!geteuid())
         {
             wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                           "Starting process '%s' with uid=%ld, gid=%u "
-                           "and threads=%d.",
+                           "Starting daemon process '%s' with uid=%ld, "
+                           "gid=%u and threads=%d.",
                            daemon->group->name, (long)daemon->group->uid,
                            (unsigned)daemon->group->gid,
                            daemon->group->threads);
@@ -3112,7 +3121,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
         else
         {
             wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                           "Starting process '%s' with threads=%d.",
+                           "Starting daemon process '%s' with "
+                           "threads=%d.",
                            daemon->group->name, daemon->group->threads);
         }
 
