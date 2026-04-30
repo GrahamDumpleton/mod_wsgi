@@ -90,6 +90,17 @@ static wsgi_telemetry_ctx_t wsgi_telemetry_ctx;
 static volatile int wsgi_telemetry_ctx_ready = 0;
 static volatile apr_uint32_t wsgi_telemetry_seq = 0;
 
+/*
+ * STOPPED-emit idempotency flag. The graceful shutdown path emits
+ * STOPPED from the daemon main thread once worker drain completes;
+ * the reaper thread (wsgi_reaper_thread) emits it before forcibly
+ * exiting when shutdown_timeout fires. Whichever fires first wins
+ * the CAS and sends the datagram; the other becomes a no-op. Without
+ * this guard we would either lose STOPPED whenever drain exceeds
+ * shutdown_timeout, or risk emitting it twice.
+ */
+static volatile apr_uint32_t wsgi_telemetry_stopped_emitted = 0;
+
 /* ------------------------------------------------------------------------- */
 
 /*
@@ -455,6 +466,7 @@ static size_t wsgi_telemetry_encode_stopped(const wsgi_telemetry_ctx_t *ctx,
                                             const char *reason,
                                             uint64_t lifetime_count,
                                             uint64_t active_at_exit,
+                                            int graceful,
                                             uint32_t seq, uint8_t *buf,
                                             size_t buflen)
 {
@@ -462,7 +474,7 @@ static size_t wsgi_telemetry_encode_stopped(const wsgi_telemetry_ctx_t *ctx,
     uint64_t now_us = (uint64_t)apr_time_now();
     double uptime = (double)(now_us - (uint64_t)ctx->process_start_us)
                     / (double)APR_USEC_PER_SEC;
-    uint64_t graceful_drain = (active_at_exit == 0) ? 1 : 0;
+    uint64_t graceful_drain = graceful ? 1 : 0;
 
     (void)buflen;
 
@@ -892,15 +904,26 @@ void wsgi_telemetry_emit_process_stopping(const char *reason)
 /* ------------------------------------------------------------------------- */
 
 /*
- * Final flush + STOPPED emit + socket close. Called once on the daemon
- * main thread after pause_reporter has joined the reporter thread.
- * Runs one more emit_tick so the partial window since the reporter's
- * last tick is on the wire (otherwise drain-and-reset semantics would
- * lose those accumulators), then encodes and sends STOPPED, then
- * closes the socket.
+ * Encode + send the STOPPED datagram. Idempotent: the first caller
+ * wins the CAS on wsgi_telemetry_stopped_emitted and sends; subsequent
+ * callers become no-ops. This is the single point of STOPPED
+ * emission, called from two paths:
+ *
+ *   - graceful path: wsgi_telemetry_emit_final_tick on the daemon
+ *     main thread after worker drain completes (graceful=1 if no
+ *     active requests remain, 0 otherwise).
+ *
+ *   - reaper path: wsgi_reaper_thread when shutdown_timeout fires
+ *     and the process is about to be force-exited (graceful=0). The
+ *     reporter thread is still running; sendto() and the seq counter
+ *     are both safe under that concurrency.
+ *
+ * Without the reaper-path emission STOPPED is silently lost whenever
+ * worker drain runs longer than shutdown_timeout, which is exactly
+ * the case operators most want to see in the lifecycle event log.
  */
 
-void wsgi_telemetry_emit_final_tick(const char *reason)
+void wsgi_telemetry_emit_process_stopped(const char *reason, int graceful)
 {
     uint8_t buf[WSGI_METRICS_MAX_DATAGRAM];
     uint32_t seq;
@@ -911,8 +934,8 @@ void wsgi_telemetry_emit_final_tick(const char *reason)
     if (!wsgi_telemetry_ctx_ready)
         return;
 
-    /* Flush the partial window the reporter didn't get to. */
-    wsgi_telemetry_emit_tick(&wsgi_telemetry_ctx);
+    if (apr_atomic_cas32(&wsgi_telemetry_stopped_emitted, 1, 0) != 0)
+        return;
 
     apr_thread_mutex_lock(wsgi_monitor_lock);
     lifetime = wsgi_total_requests;
@@ -921,8 +944,43 @@ void wsgi_telemetry_emit_final_tick(const char *reason)
 
     seq = wsgi_telemetry_next_seq();
     n = wsgi_telemetry_encode_stopped(&wsgi_telemetry_ctx, reason, lifetime,
-                                      active, seq, buf, sizeof(buf));
+                                      active, graceful, seq, buf, sizeof(buf));
     wsgi_telemetry_send(&wsgi_telemetry_ctx, buf, n);
+}
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Graceful-path final flush + STOPPED emit + socket close. Called once
+ * on the daemon main thread after pause_reporter has joined the
+ * reporter thread. Runs one more emit_tick so the partial window since
+ * the reporter's last tick is on the wire (otherwise drain-and-reset
+ * semantics would lose those accumulators), then emits STOPPED via the
+ * idempotent wsgi_telemetry_emit_process_stopped helper, then closes
+ * the socket. If the reaper has already emitted STOPPED, the
+ * idempotency guard turns the STOPPED step here into a no-op; the
+ * partial-window flush still runs since it isn't gated by the same
+ * flag (the reporter is paused, so we can't double-emit it).
+ */
+
+void wsgi_telemetry_emit_final_tick(const char *reason)
+{
+    uint64_t active;
+
+    if (!wsgi_telemetry_ctx_ready)
+        return;
+
+    /* Flush the partial window the reporter didn't get to. */
+    wsgi_telemetry_emit_tick(&wsgi_telemetry_ctx);
+
+    /* Graceful drain succeeded iff no requests are still in-flight at
+     * this point — drain has completed and pause_reporter has joined
+     * the reporter, so this is the authoritative reading. */
+    apr_thread_mutex_lock(wsgi_monitor_lock);
+    active = (uint64_t)wsgi_active_requests;
+    apr_thread_mutex_unlock(wsgi_monitor_lock);
+
+    wsgi_telemetry_emit_process_stopped(reason, active == 0);
 
     if (wsgi_telemetry_ctx.fd >= 0) {
         close(wsgi_telemetry_ctx.fd);

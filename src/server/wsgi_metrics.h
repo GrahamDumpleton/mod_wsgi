@@ -77,10 +77,19 @@ extern void wsgi_telemetry_stop_reporter(void);
  * joins the reporter thread without closing the socket; then
  * emit_final_tick flushes the partial-window accumulators, emits
  * STOPPED with the lifetime summary, and closes the socket. Pass NULL
- * for reason when no shutdown reason is available. */
+ * for reason when no shutdown reason is available.
+ *
+ * emit_process_stopped is the idempotent STOPPED emitter that
+ * emit_final_tick uses internally. It is also called directly from
+ * the reaper thread before forced exit so STOPPED still arrives when
+ * worker drain exceeds shutdown_timeout. The first caller (graceful
+ * path or reaper path) wins; subsequent calls are no-ops. graceful
+ * is non-zero if drain completed cleanly. */
 extern void wsgi_telemetry_emit_process_stopping(const char *reason);
 extern void wsgi_telemetry_pause_reporter(void);
 extern void wsgi_telemetry_emit_final_tick(const char *reason);
+extern void wsgi_telemetry_emit_process_stopped(const char *reason,
+                                                int graceful);
 
 extern PyMethodDef wsgi_server_metrics_method[];
 

@@ -2002,6 +2002,13 @@ static void *wsgi_reaper_thread(apr_thread_t *thd, void *data)
                    "'%s'.",
                    daemon->group->name);
 
+    /* Best-effort STOPPED emission before forced exit. The graceful
+     * path also emits STOPPED via wsgi_telemetry_emit_final_tick once
+     * worker drain completes; whichever path fires first wins via the
+     * idempotency guard inside the emit. graceful=0 since reaching
+     * here means drain didn't finish in time. */
+    wsgi_telemetry_emit_process_stopped(wsgi_shutdown_reason, 0);
+
     wsgi_exit_daemon_process(-1);
 
     return NULL;
