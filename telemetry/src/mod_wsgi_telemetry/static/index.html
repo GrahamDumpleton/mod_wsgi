@@ -694,6 +694,130 @@
     background: #161616;
     border-radius: 3px;
   }
+  /* Processes tab — Gantt timeline on top, event log below.
+   * The Gantt row count is unbounded, so its canvas lives inside a
+   * scrollable container with a max height; the event log is a plain
+   * table with its own scroll cap so the page stays compact when a
+   * group cycles aggressively. */
+  .processes-tab {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .gantt-panel,
+  .eventlog-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+  }
+  .gantt-panel h3,
+  .eventlog-panel h3 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .gantt-panel .subtitle,
+  .eventlog-panel .subtitle {
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 8px;
+  }
+  .gantt-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .gantt-toolbar .legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .gantt-toolbar .legend .item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .gantt-toolbar .legend .swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 1px;
+  }
+  .gantt-scroll {
+    max-height: 360px;
+    overflow-y: auto;
+    background: #161616;
+    border-radius: 3px;
+  }
+  .gantt-canvas {
+    display: block;
+    width: 100%;
+    background: #161616;
+    border-radius: 3px;
+  }
+  .eventlog-scroll {
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .eventlog-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .eventlog-table th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    background: var(--panel);
+    z-index: 1;
+  }
+  .eventlog-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #262626;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+  .eventlog-table tr.row { cursor: pointer; }
+  .eventlog-table tr.row:hover td { background: rgba(255,255,255,0.03); }
+  .eventlog-table tr.flash td { background: rgba(79,195,247,0.10); }
+  .eventlog-table .kind-pill {
+    display: inline-block;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .eventlog-table .kind-started   { color: #6ea66e; border-color: #2f4a2f; }
+  .eventlog-table .kind-stopping  { color: #c8a23a; border-color: #5a4a1a; }
+  .eventlog-table .kind-stopped   { color: #c84a4a; border-color: #5a2222; }
+  .eventlog-table .reason-planned   { color: #6ea66e; }
+  .eventlog-table .reason-tuning    { color: #c8a23a; }
+  .eventlog-table .reason-unplanned { color: #c84a4a; }
+  .eventlog-table .drain-ok  { color: #6ea66e; }
+  .eventlog-table .drain-bad { color: #c84a4a; }
+  .eventlog-table td.dim     { color: var(--muted); }
+  .eventlog-empty {
+    color: var(--muted);
+    font-size: 12px;
+    padding: 16px 8px;
+    text-align: center;
+  }
 </style>
 </head>
 <body>
@@ -750,6 +874,7 @@
     <div class="tabs" id="tabs">
       <button type="button" class="tab active" data-panel="overview">Overview</button>
       <button type="button" class="tab" data-panel="capacity">Capacity</button>
+      <button type="button" class="tab" data-panel="processes">Processes</button>
       <button type="button" class="tab" data-panel="slow">Slow requests</button>
     </div>
     <div class="tab-panel" id="panel_overview">
@@ -860,9 +985,9 @@
             </label>
             <label>Per URL:
               <select id="slow_per_url" class="window-picker">
-                <option value="1" selected>1</option>
+                <option value="1">1</option>
                 <option value="3">3</option>
-                <option value="10">10</option>
+                <option value="10" selected>10</option>
                 <option value="0">All</option>
               </select>
             </label>
@@ -896,6 +1021,57 @@
           </tr></thead>
           <tbody id="slow_tbody"></tbody>
         </table>
+      </div>
+    </div>
+    <div class="tab-panel hidden" id="panel_processes">
+      <div class="processes-tab">
+        <div class="gantt-panel">
+          <h3>Process timeline</h3>
+          <div class="gantt-toolbar">
+            <span>Window:
+              <select id="gantt_window" class="window-picker">
+                <option value="60" selected>1m</option>
+                <option value="300">5m</option>
+                <option value="600">10m</option>
+              </select>
+            </span>
+            <span class="legend">
+              <span class="item"><span class="swatch" style="background:#3a4d5e;"></span>running</span>
+              <span class="item"><span class="swatch" style="background:#6ea66e;"></span>planned</span>
+              <span class="item"><span class="swatch" style="background:#c8a23a;"></span>tuning</span>
+              <span class="item"><span class="swatch" style="background:#c84a4a;"></span>unplanned</span>
+            </span>
+            <span style="margin-left:auto">
+              <button type="button" id="processes_pause" class="pause-btn"
+                      title="Freeze the timeline and event log at the current instant so rows don't shift while you read them. Lifecycle events continue to arrive in the background.">Pause</button>
+            </span>
+          </div>
+          <div class="subtitle">one row per process; bar spans STARTED &rarr; STOPPED, dark tick marks STOPPING (drain start). Filtered by Process group + Markers selectors above.</div>
+          <div class="gantt-scroll" id="gantt_scroll">
+            <canvas id="c_gantt" class="gantt-canvas"></canvas>
+          </div>
+        </div>
+        <div class="eventlog-panel">
+          <h3>Event log</h3>
+          <div class="subtitle">click a row to highlight the matching process in the timeline above</div>
+          <div class="eventlog-scroll">
+            <table class="eventlog-table">
+              <thead><tr>
+                <th>Time</th>
+                <th>Kind</th>
+                <th>PID</th>
+                <th>PPID</th>
+                <th>Group</th>
+                <th>Reason</th>
+                <th>Uptime</th>
+                <th>Reqs</th>
+                <th>In-flight</th>
+                <th>Drain</th>
+              </tr></thead>
+              <tbody id="eventlog_tbody"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -957,7 +1133,27 @@ const state = {
   // background — resume drops the snapshot and the live view returns.
   slowPaused: false,
   slowPausedSnapshot: null,
+  // Processes tab. windowSec is the Gantt's visible time span (also
+  // used to clip event-log rows). highlightPid + highlightUntilMs
+  // drive the post-click "flash this process" affordance — the Gantt
+  // row gets a tinted backdrop and the matching event-log rows get
+  // a flash class until the deadline. scrollRequestedPid is consumed
+  // by the next Gantt redraw to scroll the matching row into view
+  // (the redraw is the only place that knows each row's Y). When
+  // paused, pausedAt freezes the "now" clock so neither surface
+  // shifts while the operator reads — lifecycle events continue to
+  // accumulate in state.lifecycleEvents in the background.
+  processesTab: {
+    windowSec: 60,
+    highlightPid: null,
+    highlightUntilMs: 0,
+    scrollRequestedPid: null,
+    paused: false,
+    pausedAt: 0,
+  },
 };
+
+const PROCESSES_HIGHLIGHT_MS = 2500;
 
 // Slow-request retention is split into two roles so the table stays
 // tidy while click-through correlation (e.g. from the Capacity
@@ -3025,6 +3221,7 @@ function setActiveTab(name) {
   document.getElementById("panel_overview").classList.toggle("hidden", name !== "overview");
   document.getElementById("panel_capacity").classList.toggle("hidden", name !== "capacity");
   document.getElementById("panel_slow").classList.toggle("hidden", name !== "slow");
+  document.getElementById("panel_processes").classList.toggle("hidden", name !== "processes");
   redraw();
 }
 
@@ -3587,6 +3784,622 @@ function setLive(id, text) {
   if (el) el.innerHTML = text;
 }
 
+// --- Processes tab: Gantt timeline + event log -------------------------------
+
+const GANTT_AXIS_H = 22;       // CSS px; height of the time-axis strip
+const GANTT_ROW_H = 22;        // CSS px; height of each pid row
+const GANTT_LABEL_W = 150;     // CSS px; left gutter for "pid NNNN group"
+const GANTT_RIGHT_PAD = 8;     // CSS px; bar-area right padding
+
+// Walk the lifecycle ring once and collapse it into one record per pid
+// holding the start / drain / stop timestamps plus the lifetime stats.
+// A pid may be missing any of the three events when its window edge
+// falls inside [tmin, tmax] (we'll then truncate the bar at the edge),
+// or when ordering is out-of-window-skewed; the renderer handles all
+// the partial cases.
+function buildPidTimelines(events) {
+  const map = new Map();
+  for (const ev of events) {
+    const t = ev.stamp_us / 1e6;
+    let rec = map.get(ev.pid);
+    if (!rec) {
+      rec = {
+        pid: ev.pid,
+        group: ev.process_group || "",
+        parent_pid: ev.process_parent_pid || 0,
+        started_t: null,
+        stopping_t: null,
+        stopped_t: null,
+        first_t: t,
+        shutdown_reason: "",
+        category: "running",
+        uptime: 0,
+        lifetime_requests: 0,
+        active_at_decision: 0,
+        active_at_exit: 0,
+        graceful_drain: 0,
+      };
+      map.set(ev.pid, rec);
+    }
+    if (t < rec.first_t) rec.first_t = t;
+    if (ev.process_group) rec.group = ev.process_group;
+    if (ev.process_parent_pid) rec.parent_pid = ev.process_parent_pid;
+    if (ev.kind === "process_started") {
+      rec.started_t = t;
+    } else if (ev.kind === "process_stopping") {
+      rec.stopping_t = t;
+      if (ev.shutdown_reason) {
+        rec.shutdown_reason = ev.shutdown_reason;
+        rec.category = categoryForReason(ev.shutdown_reason);
+      }
+      rec.active_at_decision = ev.active_requests_at_decision || 0;
+    } else if (ev.kind === "process_stopped") {
+      rec.stopped_t = t;
+      if (ev.shutdown_reason) {
+        rec.shutdown_reason = ev.shutdown_reason;
+        rec.category = categoryForReason(ev.shutdown_reason);
+      }
+      rec.uptime = ev.process_uptime || 0;
+      rec.lifetime_requests = ev.lifetime_request_count || 0;
+      rec.active_at_exit = ev.active_requests_at_exit || 0;
+      rec.graceful_drain = ev.graceful_drain || 0;
+    }
+  }
+  return [...map.values()];
+}
+
+// Filter helpers shared between the Gantt and the event log so both
+// surfaces respect the same group / category selection.
+function processesTabGroupFilter() {
+  return (document.getElementById("group_filter") || {}).value || "*";
+}
+function passesGroupFilter(group, sel) {
+  if (!sel || sel === "*") return true;
+  return (group || "(embedded)") === sel;
+}
+function passesCategoryFilter(rec) {
+  // Running rows have no category yet — always show; the Markers
+  // checkboxes only gate completed bars.
+  if (rec.stopped_t === null && rec.stopping_t === null) return true;
+  return !!state.markerFilters[rec.category];
+}
+
+// "Now" reference for the Processes tab. While paused, freezes at
+// pausedAt so the Gantt's tmax stops advancing and the event log's
+// in-window filter doesn't admit new rows past the freeze instant —
+// the two surfaces stay locked together.
+function processesNow() {
+  return state.processesTab.paused
+    ? state.processesTab.pausedAt
+    : Date.now() / 1000;
+}
+
+// Stick-to-bottom helper: an "at-bottom" scroller follows the tail as
+// new content is appended, and detaches the moment the user scrolls
+// up. Re-attaches automatically when they scroll back to the bottom —
+// no explicit toggle, just observation. Threshold gives a few pixels
+// of slack so sub-pixel rounding doesn't break the stick.
+function isAtBottom(el, threshold = 6) {
+  if (!el) return false;
+  return el.scrollHeight - (el.scrollTop + el.clientHeight) <= threshold;
+}
+
+function fmtTimeOfDay(stampUs) {
+  const d = new Date(stampUs / 1000);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  const ms = String(d.getMilliseconds()).padStart(3, "0");
+  return `${hh}:${mm}:${ss}.${ms}`;
+}
+function fmtUptimeSecs(secs) {
+  if (!secs || secs <= 0) return "—";
+  if (secs < 60) return secs.toFixed(1) + " s";
+  if (secs < 3600) return (secs / 60).toFixed(1) + " m";
+  return (secs / 3600).toFixed(2) + " h";
+}
+
+function drawProcessGantt() {
+  const canvas = document.getElementById("c_gantt");
+  if (!canvas) return;
+  // Capture the stick-to-bottom intent *before* we resize the canvas:
+  // appending a new row below the visible area would otherwise leave
+  // the operator stranded above the new content. We restore at the end
+  // unless a click-to-scroll-to-pid request is being honoured (in
+  // which case the user has explicitly navigated elsewhere).
+  const ganttScroller = document.getElementById("gantt_scroll");
+  const wasStuck = isAtBottom(ganttScroller);
+  const ctx = canvas.getContext("2d");
+  const dpr = devicePixelRatio || 1;
+  const windowSec = state.processesTab.windowSec;
+  const now = processesNow();
+  const tmin = now - windowSec;
+  const tmax = now;
+  const groupSel = processesTabGroupFilter();
+
+  // Pull every event whose stamp falls inside the window. We pass a
+  // record through even if only its STARTED is inside the window —
+  // bars that extend past tmax will just be clipped at the right
+  // edge, and bars whose STARTED is older than tmin are drawn from
+  // the left edge with a "truncated start" notch.
+  const inWin = state.lifecycleEvents.filter(ev => {
+    const t = ev.stamp_us / 1e6;
+    return t >= tmin && t <= tmax;
+  });
+  let records = buildPidTimelines(inWin);
+  records = records.filter(r => passesGroupFilter(r.group, groupSel));
+  records = records.filter(passesCategoryFilter);
+  records.sort((a, b) => {
+    const ag = a.group || "";
+    const bg = b.group || "";
+    if (ag !== bg) return ag.localeCompare(bg);
+    return a.first_t - b.first_t;
+  });
+
+  const cssWidth = canvas.parentElement.clientWidth || 600;
+  const rowCount = records.length;
+  const cssHeight = GANTT_AXIS_H +
+    Math.max(rowCount, 1) * GANTT_ROW_H + 8;
+  canvas.style.width = cssWidth + "px";
+  canvas.style.height = cssHeight + "px";
+  canvas.width = Math.round(cssWidth * dpr);
+  canvas.height = Math.round(cssHeight * dpr);
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const labelW = GANTT_LABEL_W * dpr;
+  const axisH = GANTT_AXIS_H * dpr;
+  const rowH = GANTT_ROW_H * dpr;
+  const plotL = labelW;
+  const plotR = w - GANTT_RIGHT_PAD * dpr;
+  const plotW = Math.max(1, plotR - plotL);
+  const xOf = t => plotL + ((t - tmin) / (tmax - tmin)) * plotW;
+
+  // Time-axis tick lines + labels. Grid lines bleed down through the
+  // row area so the bars can be visually correlated with wall time.
+  const tickCount = 5;
+  ctx.font = (10 * dpr) + "px -apple-system, sans-serif";
+  ctx.textBaseline = "top";
+  for (let i = 0; i <= tickCount; i++) {
+    const t = tmin + (i / tickCount) * windowSec;
+    const x = Math.round(xOf(t)) + 0.5;
+    ctx.strokeStyle = "#222";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, axisH);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+    const label = new Date(t * 1000).toLocaleTimeString();
+    ctx.fillStyle = "#777";
+    if (i === 0) ctx.textAlign = "left";
+    else if (i === tickCount) ctx.textAlign = "right";
+    else ctx.textAlign = "center";
+    const lx = i === 0 ? plotL + 2 :
+               i === tickCount ? plotR - 2 : x;
+    ctx.fillText(label, lx, 4 * dpr);
+  }
+  // Axis baseline
+  ctx.strokeStyle = "#333";
+  ctx.beginPath();
+  ctx.moveTo(plotL, axisH - 0.5);
+  ctx.lineTo(plotR, axisH - 0.5);
+  ctx.stroke();
+
+  if (rowCount === 0) {
+    ctx.fillStyle = "#666";
+    ctx.font = (12 * dpr) + "px -apple-system, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("No process events in window",
+                 plotL + plotW / 2, axisH + (h - axisH) / 2);
+    canvas._ganttHits = [];
+    canvas._ganttRowsByPid = new Map();
+    return;
+  }
+
+  const highlightActive = state.processesTab.highlightPid !== null &&
+    Date.now() < state.processesTab.highlightUntilMs;
+  const highlightPid = highlightActive ? state.processesTab.highlightPid : null;
+
+  const hits = [];
+  const rowsByPid = new Map();
+  records.forEach((rec, i) => {
+    const y = axisH + i * rowH;
+    rowsByPid.set(rec.pid, (axisH + i * rowH) / dpr);
+
+    if (highlightPid === rec.pid) {
+      ctx.fillStyle = "rgba(79,195,247,0.10)";
+      ctx.fillRect(0, y, w, rowH);
+    } else if (i % 2 === 1) {
+      // Subtle row striping to make a long list of pids easier to track.
+      ctx.fillStyle = "rgba(255,255,255,0.015)";
+      ctx.fillRect(0, y, w, rowH);
+    }
+
+    // Left gutter: pid + group
+    ctx.fillStyle = "#cfd5d8";
+    ctx.font = (11 * dpr) + "px ui-monospace, Menlo, monospace";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("pid " + rec.pid, 6 * dpr, y + rowH / 2);
+    ctx.fillStyle = "#777";
+    ctx.font = (10 * dpr) + "px -apple-system, sans-serif";
+    let groupLabel = rec.group || "(embedded)";
+    const maxLabelW = labelW - 70 * dpr;
+    if (ctx.measureText(groupLabel).width > maxLabelW) {
+      while (groupLabel.length > 1 &&
+             ctx.measureText(groupLabel + "…").width > maxLabelW) {
+        groupLabel = groupLabel.slice(0, -1);
+      }
+      groupLabel = groupLabel + "…";
+    }
+    ctx.fillText(groupLabel, 70 * dpr, y + rowH / 2);
+
+    // Bar geometry: clipped to plot area; truncation flags set so we
+    // can decorate the open edges below.
+    const startT = rec.started_t !== null ? rec.started_t : tmin;
+    let endT;
+    if (rec.stopped_t !== null) endT = rec.stopped_t;
+    else if (rec.stopping_t !== null) endT = rec.stopping_t;
+    else endT = now;
+    const truncStart = rec.started_t === null;
+    const truncEnd = rec.stopped_t === null;
+    const xStart = Math.max(plotL, xOf(startT));
+    const xEnd = Math.min(plotR, xOf(endT));
+    if (xEnd <= xStart) return;
+    const barTop = y + 4 * dpr;
+    const barH = rowH - 8 * dpr;
+
+    let fill;
+    if (rec.stopped_t !== null) {
+      fill = MARKER_COLOURS[rec.category] || "#5a6470";
+    } else {
+      fill = "#3a4d5e";
+    }
+    ctx.fillStyle = fill;
+    ctx.fillRect(xStart, barTop, xEnd - xStart, barH);
+
+    // Truncated-start notch (rec started before the visible window):
+    // chevron cut from the left edge so the bar reads as "extends past"
+    if (truncStart) {
+      ctx.fillStyle = "#161616";
+      ctx.beginPath();
+      ctx.moveTo(xStart, barTop);
+      ctx.lineTo(xStart + 5 * dpr, barTop + barH / 2);
+      ctx.lineTo(xStart, barTop + barH);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // Open-end chevron for still-running processes (no STOPPED yet).
+    if (truncEnd) {
+      ctx.fillStyle = "#161616";
+      ctx.beginPath();
+      ctx.moveTo(xEnd, barTop);
+      ctx.lineTo(xEnd - 5 * dpr, barTop + barH / 2);
+      ctx.lineTo(xEnd, barTop + barH);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // STOPPING tick — drain start, drawn as a dark vertical inside
+    // the bar so the gap between drain start and final exit is
+    // visible at a glance (graceful drain length).
+    if (rec.stopping_t !== null) {
+      const xStop = Math.max(plotL, Math.min(plotR, xOf(rec.stopping_t)));
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(xStop - dpr, barTop, 2 * dpr, barH);
+    }
+
+    hits.push({
+      x: xStart, y, w: xEnd - xStart, h: rowH, rec,
+    });
+  });
+
+  canvas._ganttHits = hits;
+  canvas._ganttRowsByPid = rowsByPid;
+
+  // Resolve any pending click-to-scroll. The row's Y is only known
+  // after layout, hence why this happens at end-of-draw. If a
+  // click-driven scroll is pending it overrides stick-to-bottom —
+  // the user has explicitly asked for a different position, and
+  // their next manual scroll back to the bottom will re-arm sticking.
+  if (state.processesTab.scrollRequestedPid !== null) {
+    const pid = state.processesTab.scrollRequestedPid;
+    state.processesTab.scrollRequestedPid = null;
+    const ycss = rowsByPid.get(pid);
+    if (ycss !== undefined && ganttScroller) {
+      const target = ycss - ganttScroller.clientHeight / 2 +
+                     (GANTT_ROW_H / 2);
+      ganttScroller.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
+    }
+  } else if (wasStuck && ganttScroller) {
+    // Bars are sorted oldest-first within each group, so the freshest
+    // pid lands at the bottom. Snap there so the operator sees new
+    // arrivals without having to chase them.
+    ganttScroller.scrollTop = ganttScroller.scrollHeight;
+  }
+}
+
+// Gantt hover state — survives between mousemove events so that
+// refreshTooltip() (which fires from the histogram's redraw) doesn't
+// blank out a tooltip the user is still parked on. Mirrors the same
+// pattern capacityTooltipState uses.
+const ganttTooltipState = {
+  isOver: false,
+  clientX: 0,
+  clientY: 0,
+  hit: null,
+};
+
+function ganttHitAt(canvas, clientX, clientY) {
+  const hits = canvas._ganttHits;
+  if (!hits || hits.length === 0) return null;
+  const rect = canvas.getBoundingClientRect();
+  const xDev = (clientX - rect.left) * devicePixelRatio;
+  const yDev = (clientY - rect.top) * devicePixelRatio;
+  for (const hit of hits) {
+    if (xDev >= hit.x && xDev <= hit.x + hit.w &&
+        yDev >= hit.y && yDev <= hit.y + hit.h) {
+      return hit;
+    }
+  }
+  return null;
+}
+
+function renderGanttTooltipForHit(hit, clientX, clientY) {
+  const tip = document.getElementById("tooltip");
+  const rec = hit.rec;
+  const lines = [];
+  lines.push(`<div class="range">pid ${rec.pid}` +
+    (rec.parent_pid ? ` &middot; parent ${rec.parent_pid}` : "") + `</div>`);
+  if (rec.group) {
+    lines.push(`<div><span class="label">group</span>${escapeHtml(rec.group)}</div>`);
+  }
+  if (rec.started_t !== null) {
+    lines.push(`<div><span class="label">started</span>${escapeHtml(new Date(rec.started_t * 1000).toLocaleTimeString())}</div>`);
+  }
+  if (rec.stopping_t !== null) {
+    lines.push(`<div><span class="label">stopping</span>${escapeHtml(new Date(rec.stopping_t * 1000).toLocaleTimeString())}</div>`);
+  }
+  if (rec.stopped_t !== null) {
+    lines.push(`<div><span class="label">stopped</span>${escapeHtml(new Date(rec.stopped_t * 1000).toLocaleTimeString())}</div>`);
+  }
+  if (rec.shutdown_reason) {
+    lines.push(`<div><span class="label">reason</span>${escapeHtml(rec.shutdown_reason)} (${escapeHtml(rec.category)})</div>`);
+  }
+  if (rec.uptime > 0) {
+    lines.push(`<div><span class="label">uptime</span>${escapeHtml(fmtUptimeSecs(rec.uptime))}</div>`);
+  }
+  if (rec.stopped_t !== null) {
+    lines.push(`<div><span class="label">requests</span>${rec.lifetime_requests}</div>`);
+  }
+  if (rec.stopping_t !== null) {
+    lines.push(`<div><span class="label">in-flight at decision</span>${rec.active_at_decision}</div>`);
+  }
+  if (rec.stopped_t !== null) {
+    lines.push(`<div><span class="label">in-flight at exit</span>${rec.active_at_exit}</div>`);
+    lines.push(`<div><span class="label">graceful drain</span>${rec.graceful_drain ? "yes" : "no"}</div>`);
+  }
+  if (rec.stopped_t === null) {
+    lines.push(`<div><span class="label">state</span>running</div>`);
+  }
+  tip.classList.remove("slow");
+  tip.innerHTML = lines.join("");
+  tip.style.display = "block";
+  const margin = 12;
+  let left = clientX + margin;
+  let top = clientY - margin;
+  const tipRect = tip.getBoundingClientRect();
+  if (left + tipRect.width > window.innerWidth - 4)
+    left = clientX - tipRect.width - margin;
+  if (top - tipRect.height < 4)
+    top = clientY + margin;
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+}
+
+function refreshGanttTooltip() {
+  const canvas = document.getElementById("c_gantt");
+  const tip = document.getElementById("tooltip");
+  if (!canvas || !ganttTooltipState.isOver) {
+    ganttTooltipState.hit = null;
+    if (canvas) canvas.style.cursor = "";
+    return;
+  }
+  const hit = ganttHitAt(canvas, ganttTooltipState.clientX,
+                         ganttTooltipState.clientY);
+  ganttTooltipState.hit = hit;
+  if (!hit) {
+    canvas.style.cursor = "";
+    // Don't hide the tooltip directly here — the cursor may be over a
+    // different consumer (capacity tab is on a different panel, but
+    // the histogram's refreshTooltip may still want to take over);
+    // refreshTooltip's hideIfIdle handles the actual hide path.
+    if (tip.innerHTML && state.activeTab === "processes") {
+      tip.style.display = "none";
+    }
+    return;
+  }
+  canvas.style.cursor = "pointer";
+  renderGanttTooltipForHit(hit, ganttTooltipState.clientX,
+                           ganttTooltipState.clientY);
+}
+
+function attachGanttHover(canvas) {
+  if (canvas._ganttHoverAttached) return;
+  canvas._ganttHoverAttached = true;
+  canvas.addEventListener("mouseenter", e => {
+    ganttTooltipState.isOver = true;
+    ganttTooltipState.clientX = e.clientX;
+    ganttTooltipState.clientY = e.clientY;
+    refreshGanttTooltip();
+  });
+  canvas.addEventListener("mousemove", e => {
+    ganttTooltipState.isOver = true;
+    ganttTooltipState.clientX = e.clientX;
+    ganttTooltipState.clientY = e.clientY;
+    refreshGanttTooltip();
+  });
+  canvas.addEventListener("mouseleave", () => {
+    ganttTooltipState.isOver = false;
+    ganttTooltipState.hit = null;
+    document.getElementById("tooltip").style.display = "none";
+    canvas.style.cursor = "";
+  });
+  canvas.addEventListener("click", e => {
+    const hits = canvas._ganttHits;
+    if (!hits) return;
+    const rect = canvas.getBoundingClientRect();
+    const xDev = (e.clientX - rect.left) * devicePixelRatio;
+    const yDev = (e.clientY - rect.top) * devicePixelRatio;
+    for (const hit of hits) {
+      if (xDev >= hit.x && xDev <= hit.x + hit.w &&
+          yDev >= hit.y && yDev <= hit.y + hit.h) {
+        triggerProcessHighlight(hit.rec.pid, /* scrollGantt */ false,
+                                /* scrollLog */ true);
+        return;
+      }
+    }
+  });
+}
+
+// Apply a transient highlight + (optionally) scroll one or both
+// surfaces so the matching row is visible. Called from event-log
+// row clicks (scroll Gantt) and from Gantt bar clicks (scroll log).
+function triggerProcessHighlight(pid, scrollGantt, scrollLog) {
+  state.processesTab.highlightPid = pid;
+  state.processesTab.highlightUntilMs = Date.now() + PROCESSES_HIGHLIGHT_MS;
+  if (scrollGantt) state.processesTab.scrollRequestedPid = pid;
+  redraw();
+  if (scrollLog) {
+    // Find the most recent event-log row for this pid and scroll it
+    // into view inside the eventlog scroller.
+    const tbody = document.getElementById("eventlog_tbody");
+    if (!tbody) return;
+    const row = tbody.querySelector(`tr.row[data-pid="${pid}"]`);
+    if (row) {
+      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }
+}
+
+function renderEventLog() {
+  const tbody = document.getElementById("eventlog_tbody");
+  if (!tbody) return;
+  // Capture stick-to-bottom intent before we replace the tbody —
+  // append-then-snap-to-tail keeps the operator on the freshest event
+  // unless they've scrolled up to inspect older history.
+  const eventScroller = tbody.closest(".eventlog-scroll");
+  const wasStuck = isAtBottom(eventScroller);
+  const windowSec = state.processesTab.windowSec;
+  const now = processesNow();
+  const tmin = now - windowSec;
+  // Cap the upper edge at "now" so events that arrive after a pause
+  // don't show up in the table while the surface is supposed to be
+  // frozen.
+  const tmax = now;
+  const groupSel = processesTabGroupFilter();
+  const cats = state.markerFilters;
+  const highlightActive = state.processesTab.highlightPid !== null &&
+    Date.now() < state.processesTab.highlightUntilMs;
+  const highlightPid = highlightActive ? state.processesTab.highlightPid : null;
+
+  // Filter: in-window, group match, category match. STARTED events
+  // have no category — they pass the category filter unconditionally
+  // so the operator can always see when a process appeared.
+  const rows = [];
+  for (const ev of state.lifecycleEvents) {
+    const t = ev.stamp_us / 1e6;
+    if (t < tmin || t > tmax) continue;
+    if (!passesGroupFilter(ev.process_group, groupSel)) continue;
+    if (ev.kind !== "process_started") {
+      const cat = categoryForReason(ev.shutdown_reason);
+      if (!cats[cat]) continue;
+    }
+    rows.push(ev);
+  }
+  // Oldest first so the freshest event lands at the bottom — pairs
+  // with the stick-to-bottom logic so the operator naturally sees
+  // new arrivals without having to scroll.
+
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td class="eventlog-empty" colspan="10">No process events in window</td></tr>`;
+    return;
+  }
+
+  const KIND_LABEL = {
+    process_started: "started",
+    process_stopping: "stopping",
+    process_stopped: "stopped",
+  };
+  const KIND_CLS = {
+    process_started: "kind-started",
+    process_stopping: "kind-stopping",
+    process_stopped: "kind-stopped",
+  };
+
+  // PPID isn't carried on the wire for STOPPING / STOPPED — only the
+  // STARTED event includes process_parent_pid. Build a pid → ppid map
+  // from every STARTED in the visible ring so the column can be
+  // populated for those rows too. Falls back to ProcessState (which
+  // also latches ppid from STARTED) for rows whose STARTED has aged
+  // out of the window. Shows "—" if neither source has it.
+  const ppidByPid = new Map();
+  for (const ev of state.lifecycleEvents) {
+    if (ev.kind === "process_started" && ev.process_parent_pid) {
+      ppidByPid.set(ev.pid, ev.process_parent_pid);
+    }
+  }
+  const ppidFor = (ev) => {
+    if (ev.process_parent_pid) return ev.process_parent_pid;
+    const fromMap = ppidByPid.get(ev.pid);
+    if (fromMap) return fromMap;
+    const proc = state.processes.get(ev.pid);
+    return (proc && proc.process_parent_pid) || 0;
+  };
+
+  const html = rows.map(ev => {
+    const kindLabel = KIND_LABEL[ev.kind] || ev.kind;
+    const kindCls = KIND_CLS[ev.kind] || "";
+    const reasonCls = ev.kind === "process_started" ? "" :
+      "reason-" + categoryForReason(ev.shutdown_reason);
+    const reason = ev.kind === "process_started" ? "—" :
+      escapeHtml(ev.shutdown_reason || "(unknown)");
+    const ppid = ppidFor(ev);
+    const ppidCell = ppid ? `${ppid}` : `<span class="dim">—</span>`;
+    const groupCell = escapeHtml(ev.process_group || "(embedded)");
+    let uptime = "—", reqs = "—", inflight = "—", drain = "—";
+    if (ev.kind === "process_stopped") {
+      uptime = escapeHtml(fmtUptimeSecs(ev.process_uptime || 0));
+      reqs = String(ev.lifetime_request_count || 0);
+      inflight = String(ev.active_requests_at_exit || 0);
+      drain = ev.graceful_drain
+        ? `<span class="drain-ok">yes</span>`
+        : `<span class="drain-bad">no</span>`;
+    } else if (ev.kind === "process_stopping") {
+      inflight = String(ev.active_requests_at_decision || 0);
+    }
+    const flashCls = (highlightPid === ev.pid) ? " flash" : "";
+    return `<tr class="row${flashCls}" data-pid="${ev.pid}" data-stamp="${ev.stamp_us}">` +
+      `<td>${escapeHtml(fmtTimeOfDay(ev.stamp_us))}</td>` +
+      `<td><span class="kind-pill ${kindCls}">${kindLabel}</span></td>` +
+      `<td>${ev.pid}</td>` +
+      `<td>${ppidCell}</td>` +
+      `<td>${groupCell}</td>` +
+      `<td class="${reasonCls}">${reason}</td>` +
+      `<td>${uptime}</td>` +
+      `<td>${reqs}</td>` +
+      `<td>${inflight}</td>` +
+      `<td>${drain}</td>` +
+      `</tr>`;
+  }).join("");
+  tbody.innerHTML = html;
+  if (wasStuck && eventScroller) {
+    eventScroller.scrollTop = eventScroller.scrollHeight;
+  }
+}
+
 function redraw() {
   rebuildGroupFilter();
   // Storage prune runs once per tick, before any consumer reads
@@ -3701,6 +4514,21 @@ function redraw() {
     setLive("live_dist", "");
   }
 
+  // Processes tab is only painted while it's the active tab; the
+  // Gantt has to size itself relative to its container's clientWidth,
+  // which is 0 while the panel is hidden, and the event log can be
+  // hundreds of rows that we'd otherwise rebuild every 500 ms for
+  // nothing.
+  if (state.activeTab === "processes") {
+    drawProcessGantt();
+    renderEventLog();
+    // Re-resolve and re-render the Gantt tooltip from the freshly
+    // recomputed _ganttHits so a stationary cursor keeps tracking
+    // whichever bar is now under it (bars shift left as wall time
+    // advances, and aged-out events drop their bar entirely).
+    refreshGanttTooltip();
+  }
+
   refreshTooltip();
 }
 
@@ -3788,6 +4616,46 @@ for (const id of ["c_rps", "c_cap", "c_cpu", "c_resp", "c_mem", "c_phase"]) {
   const c = document.getElementById(id);
   if (c) attachChartHover(c);
 }
+
+// Processes tab wiring: window selector, pause button, Gantt
+// hover/click, event-log row click. Hover is attached once; row
+// clicks delegate on tbody so the handler survives every
+// renderEventLog rebuild. The pause button freezes both the
+// timeline and the event log together via processesNow().
+(function () {
+  const sel = document.getElementById("gantt_window");
+  if (sel) {
+    sel.addEventListener("change", () => {
+      const v = parseInt(sel.value, 10);
+      if (v > 0) state.processesTab.windowSec = v;
+      redraw();
+    });
+  }
+  const pauseBtn = document.getElementById("processes_pause");
+  if (pauseBtn) {
+    pauseBtn.addEventListener("click", () => {
+      state.processesTab.paused = !state.processesTab.paused;
+      if (state.processesTab.paused)
+        state.processesTab.pausedAt = Date.now() / 1000;
+      pauseBtn.classList.toggle("paused", state.processesTab.paused);
+      pauseBtn.textContent = state.processesTab.paused ? "Resume" : "Pause";
+      redraw();
+    });
+  }
+  const gc = document.getElementById("c_gantt");
+  if (gc) attachGanttHover(gc);
+  const tbody = document.getElementById("eventlog_tbody");
+  if (tbody) {
+    tbody.addEventListener("click", e => {
+      const tr = e.target.closest("tr.row");
+      if (!tr) return;
+      const pid = parseInt(tr.dataset.pid, 10);
+      if (!Number.isFinite(pid)) return;
+      triggerProcessHighlight(pid, /* scrollGantt */ true,
+                              /* scrollLog */ false);
+    });
+  }
+})();
 
 (function () {
   const btn = document.getElementById("capacity_pause");
@@ -3892,12 +4760,14 @@ const tooltipState = { idx: null, clientX: 0, clientY: 0 };
 function refreshTooltip() {
   const canvas = document.getElementById("c_dist");
   const tip = document.getElementById("tooltip");
-  // The shared tooltip element is used by both the histogram and the
-  // capacity heatmap. Only hide it from here if the capacity hover
-  // also isn't using it, otherwise the histogram's redraw would
-  // clobber a visible capacity tooltip every tick.
+  // The shared tooltip element is used by the histogram, the capacity
+  // heatmap and the processes-tab Gantt. Only hide it from here if no
+  // other consumer is currently parked on it — otherwise a stationary
+  // cursor would lose its tooltip every redraw.
   const hideIfIdle = () => {
-    if (!capacityTooltipState.cell) tip.style.display = "none";
+    if (capacityTooltipState.cell) return;
+    if (ganttTooltipState.isOver && ganttTooltipState.hit) return;
+    tip.style.display = "none";
   };
   if (tooltipState.idx === null) { hideIfIdle(); return; }
   const hit = canvas._hitTest;
