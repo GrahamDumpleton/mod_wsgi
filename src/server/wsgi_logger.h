@@ -36,13 +36,32 @@ extern PyObject *newLogWrapperObject(PyObject *buffer);
 extern PyObject *newLogObject(request_rec *r, int level, const char *name,
                               int proxy);
 
+/*
+ * wsgi_log_python_error logs a Python exception to the Apache error log:
+ * a single header line that carries the WSGINNNN code, the script path,
+ * and the interpreter+process context, followed by the formatted
+ * traceback emitted line by line.
+ *
+ * The traceback is captured into an io.StringIO under the GIL, then the
+ * entire emission (header + traceback continuation) is performed under
+ * a single Py_BEGIN_ALLOW_THREADS / Py_END_ALLOW_THREADS pair so that a
+ * slow piped ErrorLog stalls the calling thread once rather than once
+ * per traceback line.
+ *
+ * application_group identifies the Python interpreter the exception
+ * was raised in. Pass NULL when r is non-NULL; the function will
+ * extract config->application_group from the request itself. Server-
+ * context callers (r == NULL) must pass it explicitly.
+ */
 extern void wsgi_log_python_error_ex(const char *file, int line,
                                      int module_index, request_rec *r,
-                                     PyObject *log, const char *filename,
+                                     const char *filename,
+                                     const char *application_group,
                                      int publish);
 
-#define wsgi_log_python_error(r, log, filename, publish) \
-    wsgi_log_python_error_ex(APLOG_MARK, (r), (log), (filename), (publish))
+#define wsgi_log_python_error(r, filename, application_group, publish) \
+    wsgi_log_python_error_ex(APLOG_MARK, (r), (filename), \
+                             (application_group), (publish))
 
 /* ------------------------------------------------------------------------- */
 

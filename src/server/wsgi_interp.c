@@ -2334,7 +2334,7 @@ load_source_finally:
                                       pool, process_group,
                                       application_group));
 
-        wsgi_log_python_error(r, NULL, filename, 0);
+        wsgi_log_python_error(r, filename, application_group, 0);
 
         Py_XDECREF(io_module);
         Py_XDECREF(fileobject);
@@ -2403,7 +2403,7 @@ load_source_finally:
                                                                                     "file '%s'.",
                                       filename);
 
-            wsgi_log_python_error(r, NULL, filename, 0);
+            wsgi_log_python_error(r, filename, application_group, 0);
         }
     }
 
@@ -2414,7 +2414,8 @@ load_source_finally:
 
 int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
                          const char *filename, PyObject *module,
-                         const char *resource)
+                         const char *resource,
+                         const char *application_group)
 {
     PyObject *dict = NULL;
     PyObject *object = NULL;
@@ -2489,7 +2490,7 @@ int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
              */
 
             if (PyErr_Occurred())
-                wsgi_log_python_error(r, NULL, filename, 0);
+                wsgi_log_python_error(r, filename, application_group, 0);
 
             Py_XDECREF(result);
         }
@@ -2867,7 +2868,8 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
                 if (module && wsgi_server_config->script_reloading)
                 {
                     if (wsgi_reload_required(p, NULL, entry->handler_script,
-                                             module, NULL))
+                                             module, NULL,
+                                             entry->application_group))
                     {
                         /*
                          * Script file has changed. Only support module

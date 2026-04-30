@@ -652,7 +652,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     if (module && config->script_reloading)
     {
-        if (wsgi_reload_required(r->pool, r, script, module, NULL))
+        if (wsgi_reload_required(r->pool, r, script, module, NULL, group))
         {
             /*
              * Script file has changed. Only support module
@@ -686,7 +686,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
     /* Log any details of exceptions if import failed. */
 
     if (PyErr_Occurred())
-        wsgi_log_python_error(r, NULL, script, 0);
+        wsgi_log_python_error(r, script, NULL, 0);
 
     /* Assume an internal server error unless everything okay. */
 
@@ -792,7 +792,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                 /* Log any details of exceptions if execution failed. */
 
                 if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
+                    wsgi_log_python_error(r, script, NULL, 0);
 
                 /* Close the log object so data is flushed. */
 
@@ -807,7 +807,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
                 /* Log any details of exceptions if execution failed. */
 
                 if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
+                    wsgi_log_python_error(r, script, NULL, 0);
 
                 Py_XDECREF(method);
 
@@ -914,7 +914,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     if (module && config->script_reloading)
     {
-        if (wsgi_reload_required(r->pool, r, script, module, NULL))
+        if (wsgi_reload_required(r->pool, r, script, module, NULL, group))
         {
             /*
              * Script file has changed. Only support module
@@ -948,7 +948,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
     /* Log any details of exceptions if import failed. */
 
     if (PyErr_Occurred())
-        wsgi_log_python_error(r, NULL, script, 0);
+        wsgi_log_python_error(r, script, NULL, 0);
 
     /* Assume an internal server error unless everything okay. */
 
@@ -1061,7 +1061,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                 /* Log any details of exceptions if execution failed. */
 
                 if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
+                    wsgi_log_python_error(r, script, NULL, 0);
 
                 /* Close the log object so data is flushed. */
 
@@ -1076,7 +1076,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                 /* Log any details of exceptions if execution failed. */
 
                 if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
+                    wsgi_log_python_error(r, script, NULL, 0);
 
                 Py_XDECREF(method);
 
@@ -1186,7 +1186,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     if (module && config->script_reloading)
     {
-        if (wsgi_reload_required(r->pool, r, script, module, NULL))
+        if (wsgi_reload_required(r->pool, r, script, module, NULL, group))
         {
             /*
              * Script file has changed. Only support module
@@ -1220,7 +1220,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
     /* Log any details of exceptions if import failed. */
 
     if (PyErr_Occurred())
-        wsgi_log_python_error(r, NULL, script, 0);
+        wsgi_log_python_error(r, script, NULL, 0);
 
     /* Determine if script exists and execute it. */
 
@@ -1363,7 +1363,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                 /* Log any details of exceptions if execution failed. */
 
                 if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
+                    wsgi_log_python_error(r, script, NULL, 0);
 
                 /* Close the log object so data is flushed. */
 
@@ -1378,7 +1378,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                 /* Log any details of exceptions if execution failed. */
 
                 if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
+                    wsgi_log_python_error(r, script, NULL, 0);
 
                 Py_XDECREF(method);
 
@@ -1482,7 +1482,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
     if (module && config->script_reloading)
     {
-        if (wsgi_reload_required(r->pool, r, script, module, NULL))
+        if (wsgi_reload_required(r->pool, r, script, module, NULL, group))
         {
             /*
              * Script file has changed. Only support module
@@ -1516,7 +1516,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
     /* Log any details of exceptions if import failed. */
 
     if (PyErr_Occurred())
-        wsgi_log_python_error(r, NULL, script, 0);
+        wsgi_log_python_error(r, script, NULL, 0);
 
     /* Assume not allowed unless everything okay. */
 
@@ -1596,7 +1596,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
                 /* Log any details of exceptions if execution failed. */
 
                 if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
+                    wsgi_log_python_error(r, script, NULL, 0);
 
                 /* Close the log object so data is flushed. */
 
@@ -1611,7 +1611,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
                 /* Log any details of exceptions if execution failed. */
 
                 if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
+                    wsgi_log_python_error(r, script, NULL, 0);
 
                 Py_XDECREF(method);
 

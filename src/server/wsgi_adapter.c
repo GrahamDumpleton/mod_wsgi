@@ -2548,8 +2548,8 @@ int Adapter_run(AdapterObject *self, PyObject *object)
                                            "sent; response truncated.");
                 }
                 else
-                    wsgi_log_python_error(self->r, self->log,
-                                          self->r->filename, 1);
+                    wsgi_log_python_error(self->r, self->r->filename,
+                                          NULL, 1);
 
                 /*
                  * If response content is being chunked and an error
@@ -2593,7 +2593,7 @@ int Adapter_run(AdapterObject *self, PyObject *object)
                 PyErr_Clear();
             }
             else
-                wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
+                wsgi_log_python_error(self->r, self->r->filename, NULL, 1);
         }
     }
     else
@@ -2622,7 +2622,7 @@ int Adapter_run(AdapterObject *self, PyObject *object)
                                    "recovered.");
         }
         else
-            wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
+            wsgi_log_python_error(self->r, self->r->filename, NULL, 1);
     }
 
     /* Publish event for the end of the request. */
@@ -2816,7 +2816,7 @@ int Adapter_run(AdapterObject *self, PyObject *object)
 
 event_error:
             if (PyErr_Occurred())
-                wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
+                wsgi_log_python_error(self->r, self->r->filename, NULL, 1);
             else
                 wsgi_publish_event("request_finished", event);
 
@@ -2824,7 +2824,7 @@ event_error:
             Py_CLEAR(event);
         }
         else
-            wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
+            wsgi_log_python_error(self->r, self->r->filename, NULL, 1);
     }
 
     /*
@@ -2852,7 +2852,7 @@ event_error:
 
 error:
     if (PyErr_Occurred())
-        wsgi_log_python_error(self->r, self->log, self->r->filename, 1);
+        wsgi_log_python_error(self->r, self->r->filename, NULL, 1);
 
     if (self->result == HTTP_INTERNAL_SERVER_ERROR)
         self->r->status_line = "500 Internal Server Error";

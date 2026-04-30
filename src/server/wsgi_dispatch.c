@@ -289,7 +289,7 @@ int wsgi_execute_dispatch(request_rec *r)
 
     if (module && config->script_reloading)
     {
-        if (wsgi_reload_required(r->pool, r, script, module, NULL))
+        if (wsgi_reload_required(r->pool, r, script, module, NULL, group))
         {
             /*
              * Script file has changed. Only support module
@@ -324,7 +324,7 @@ int wsgi_execute_dispatch(request_rec *r)
     /* Log any details of exceptions if import failed. */
 
     if (PyErr_Occurred())
-        wsgi_log_python_error(r, NULL, script, 0);
+        wsgi_log_python_error(r, script, NULL, 0);
 
     /* Assume everything will be okay for now. */
 
@@ -355,7 +355,7 @@ int wsgi_execute_dispatch(request_rec *r)
                 status = HTTP_INTERNAL_SERVER_ERROR;
 
                 if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
+                    wsgi_log_python_error(r, script, NULL, 0);
             }
 
             /* First check process_group(). */
@@ -444,7 +444,7 @@ int wsgi_execute_dispatch(request_rec *r)
                 /* Log any details of exceptions if execution failed. */
 
                 if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
+                    wsgi_log_python_error(r, script, NULL, 0);
 
                 object = NULL;
             }
@@ -536,7 +536,7 @@ int wsgi_execute_dispatch(request_rec *r)
                 /* Log any details of exceptions if execution failed. */
 
                 if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
+                    wsgi_log_python_error(r, script, NULL, 0);
 
                 object = NULL;
             }
@@ -627,7 +627,7 @@ int wsgi_execute_dispatch(request_rec *r)
                 /* Log any details of exceptions if execution failed. */
 
                 if (PyErr_Occurred())
-                    wsgi_log_python_error(r, NULL, script, 0);
+                    wsgi_log_python_error(r, script, NULL, 0);
 
                 object = NULL;
             }
@@ -667,7 +667,7 @@ int wsgi_execute_dispatch(request_rec *r)
             /* Log any details of exceptions if execution failed. */
 
             if (PyErr_Occurred())
-                wsgi_log_python_error(r, NULL, script, 0);
+                wsgi_log_python_error(r, script, NULL, 0);
 
             Py_XDECREF(vars);
         }

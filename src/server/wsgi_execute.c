@@ -126,7 +126,7 @@ int wsgi_execute_script(request_rec *r)
                                        "Python module reference '%s'.",
                                        script);
 
-                wsgi_log_python_error(r, NULL, r->filename, 0);
+                wsgi_log_python_error(r, r->filename, NULL, 0);
             }
         }
 #endif
@@ -160,7 +160,8 @@ int wsgi_execute_script(request_rec *r)
 
         if (module && config->script_reloading)
         {
-            if (wsgi_reload_required(r->pool, r, script, module, r->filename))
+            if (wsgi_reload_required(r->pool, r, script, module, r->filename,
+                                     config->application_group))
             {
                 /*
                  * Script file has changed. Discard reference to
@@ -393,7 +394,7 @@ int wsgi_execute_script(request_rec *r)
     /* Log any details of exceptions if execution failed. */
 
     if (PyErr_Occurred())
-        wsgi_log_python_error(r, NULL, r->filename, 0);
+        wsgi_log_python_error(r, r->filename, NULL, 0);
 
     Py_XDECREF(module);
 

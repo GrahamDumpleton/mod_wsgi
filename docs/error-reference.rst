@@ -4373,3 +4373,81 @@ WSGI0173 — Parent directory is writable to group (script-user)
 
 :Operator action:
    Remove group-write permission from the parent directory.
+
+.. _WSGI0174:
+
+WSGI0174 — Exception occurred processing WSGI script
+----------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_logger.c``
+
+:Logged message:
+   ``Exception occurred processing WSGI script '<filename>' for
+   <interpreter-context>.`` The interpreter context is of the form
+   ``main interpreter in embedded mode``, ``sub-interpreter '<name>'
+   of daemon process '<group>'``, or any combination thereof. The
+   header line is followed by the formatted Python traceback,
+   emitted line-by-line as continuation log entries.
+
+:Cause:
+   A Python exception other than ``SystemExit`` propagated out of
+   the WSGI application or one of mod_wsgi's hook scripts (auth,
+   dispatch, or handler). The traceback is captured via Python's
+   ``traceback.print_exception`` and written to the Apache error
+   log. The exception type, value, and frames are visible in the
+   continuation lines.
+
+:Outcome:
+   For request handlers the request normally returns a 500 status
+   to the client (the precise behaviour depends on whether headers
+   have already been sent — see related events
+   :ref:`WSGI0042`-:ref:`WSGI0054` and :ref:`WSGI0086`-:ref:`WSGI0087`
+   for hook-specific paths). The Apache child or daemon process
+   continues running.
+
+:Operator action:
+   Investigate the Python exception in the application code. The
+   continuation lines name the source file, line number, and frame
+   in the failing Python code. If the failures are recurrent and
+   originate inside an mod_wsgi hook (auth, dispatch), check that
+   the hook script is the right version and exports the expected
+   callable.
+
+.. _WSGI0175:
+
+WSGI0175 — SystemExit exception raised by WSGI script ignored
+-------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_logger.c``
+
+:Logged message:
+   ``SystemExit exception raised by WSGI script '<filename>' for
+   <interpreter-context> ignored.`` Interpreter context shape as
+   for :ref:`WSGI0174`. The header line is followed by the
+   formatted Python traceback, emitted line-by-line as
+   continuation log entries.
+
+:Cause:
+   The WSGI application or a hook script raised ``SystemExit``
+   (typically via ``sys.exit()`` or an unhandled ``exit()`` call
+   inside Python code). mod_wsgi traps and logs ``SystemExit``
+   rather than letting it terminate the process, since the request
+   thread surviving is more important than the application's
+   intent to exit.
+
+:Outcome:
+   The exception is caught and logged, then cleared. The request
+   handling continues as if the application had returned normally
+   from the offending point — usually the request will complete
+   with whatever response state had been set up before the
+   ``SystemExit`` was raised, or fail with a 500 if no response
+   was started.
+
+:Operator action:
+   Investigate why the application is calling ``sys.exit()``. WSGI
+   applications should never use ``sys.exit()`` for normal flow
+   control; this almost always indicates a configuration or
+   import-time error that the application is unable to recover
+   from.

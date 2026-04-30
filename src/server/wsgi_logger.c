@@ -23,6 +23,8 @@
 #include "wsgi_server.h"
 #include "wsgi_metrics.h"
 #include "wsgi_thread.h"
+#include "wsgi_interp.h"
+#include "wsgi_daemon.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -631,9 +633,31 @@ PyTypeObject Log_Type = {
     0,                       /*tp_is_gc*/
 };
 
+/*
+ * Format the interpreter+process descriptor used in the header line of
+ * a Python exception log. Mirrors wsgi_format_interp_context(), but
+ * the process side is auto-detected from the wsgi_daemon_process
+ * global rather than a passed-in process group, since the log entry
+ * describes where the exception actually occurred.
+ */
+
+static const char *wsgi_format_python_error_context(apr_pool_t *p,
+                                                    const char *application_group)
+{
+    const char *interp = wsgi_format_interp_name(p, application_group);
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_daemon_process)
+        return apr_psprintf(p, "%s of daemon process '%s'",
+                            interp, wsgi_daemon_process->group->name);
+#endif
+
+    return apr_psprintf(p, "%s in embedded mode", interp);
+}
+
 void wsgi_log_python_error_ex(const char *file, int line, int module_index,
-                              request_rec *r, PyObject *log,
-                              const char *filename, int publish)
+                              request_rec *r, const char *filename,
+                              const char *application_group, int publish)
 {
     PyObject *m = NULL;
     PyObject *result = NULL;
@@ -642,56 +666,45 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
     PyObject *value = NULL;
     PyObject *traceback = NULL;
 
-    PyObject *xlog = NULL;
+    PyObject *io_module = NULL;
+    PyObject *stringio = NULL;
+    PyObject *captured = NULL;
+
+    const char *captured_text = NULL;
+    Py_ssize_t captured_len = 0;
+
+    apr_pool_t *pool;
+    server_rec *s;
+    const char *context;
+    int is_systemexit;
 
     if (!PyErr_Occurred())
         return;
 
-    if (!log)
+    /* Resolve application_group from request config when not supplied. */
+
+    if (!application_group && r)
     {
-        PyErr_Fetch(&type, &value, &traceback);
+        WSGIRequestConfig *config = (WSGIRequestConfig *)
+            ap_get_module_config(r->request_config, &wsgi_module);
 
-        xlog = newLogObject(r, APLOG_ERR, NULL, 0);
-
-        log = xlog;
-
-        PyErr_Restore(type, value, traceback);
-
-        type = NULL;
-        value = NULL;
-        traceback = NULL;
+        if (config)
+            application_group = config->application_group;
     }
 
-    if (PyErr_ExceptionMatches(PyExc_SystemExit))
-    {
-        if (r)
-            wsgi_log_rerror_locked_ex(file, line, module_index, APLOG_ERR,
-                                      0, r,
-                                      "SystemExit exception raised by "
-                                      "WSGI script '%s' ignored.",
-                                      filename);
-        else
-            wsgi_log_error_locked_ex(file, line, module_index, APLOG_ERR,
-                                     0, wsgi_server,
-                                     "SystemExit exception raised by "
-                                     "WSGI script '%s' ignored.",
-                                     filename);
-    }
-    else
-    {
-        if (r)
-            wsgi_log_rerror_locked_ex(file, line, module_index, APLOG_ERR,
-                                      0, r,
-                                      "Exception occurred processing "
-                                      "WSGI script '%s'.",
-                                      filename);
-        else
-            wsgi_log_error_locked_ex(file, line, module_index, APLOG_ERR,
-                                     0, wsgi_server,
-                                     "Exception occurred processing "
-                                     "WSGI script '%s'.",
-                                     filename);
-    }
+    pool = r ? r->pool : wsgi_server->process->pool;
+    s = r ? r->server : wsgi_server;
+
+    context = wsgi_format_python_error_context(pool, application_group);
+
+    /*
+     * Capture the formatted traceback into an io.StringIO so that it
+     * can be emitted line by line under a single GIL release. Compute
+     * everything we need from the Python side (header classification,
+     * captured text pointer) before releasing the GIL.
+     */
+
+    is_systemexit = PyErr_ExceptionMatches(PyExc_SystemExit) ? 1 : 0;
 
     PyErr_Fetch(&type, &value, &traceback);
     PyErr_NormalizeException(&type, &value, &traceback);
@@ -708,97 +721,218 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
         Py_INCREF(traceback);
     }
 
-    m = PyImport_ImportModule("traceback");
+    io_module = PyImport_ImportModule("io");
 
-    if (m)
+    if (io_module)
     {
-        PyObject *d = NULL;
-        PyObject *o = NULL;
-        d = PyModule_GetDict(m);
-        o = PyDict_GetItemString(d, "print_exception");
-        if (o)
+        stringio = PyObject_CallMethod(io_module, "StringIO", NULL);
+    }
+
+    if (stringio)
+    {
+        m = PyImport_ImportModule("traceback");
+
+        if (m)
         {
-            PyObject *args = NULL;
-            PyObject *kwargs = NULL;
-            Py_INCREF(o);
-            args = Py_BuildValue("(O)", value);
-            kwargs = Py_BuildValue("{s:O}", "file", log);
-            result = PyObject_Call(o, args, kwargs);
-            Py_DECREF(kwargs);
-            Py_DECREF(args);
-            Py_DECREF(o);
+            PyObject *d = PyModule_GetDict(m);
+            PyObject *o = PyDict_GetItemString(d, "print_exception");
+
+            if (o)
+            {
+                PyObject *args = NULL;
+                PyObject *kwargs = NULL;
+
+                Py_INCREF(o);
+                args = Py_BuildValue("(O)", value);
+                kwargs = Py_BuildValue("{s:O}", "file", stringio);
+                result = PyObject_Call(o, args, kwargs);
+                Py_DECREF(kwargs);
+                Py_DECREF(args);
+                Py_DECREF(o);
+            }
+        }
+
+        if (result)
+        {
+            captured = PyObject_CallMethod(stringio, "getvalue", NULL);
+
+            if (captured && PyUnicode_Check(captured))
+            {
+                captured_text = PyUnicode_AsUTF8AndSize(captured,
+                                                       &captured_len);
+            }
         }
     }
 
-    if (!result)
+    /*
+     * Build the header message body before releasing the GIL. The
+     * format strings encode the WSGINNNN code, the optional [script]
+     * bracket (only present when r is non-NULL), the script filename,
+     * and the interpreter+process context.
+     */
+
     {
+        char header[WSGI_LOG_BUFFER_SIZE];
+
+        if (r)
+        {
+            apr_snprintf(header, sizeof(header),
+                         is_systemexit
+                             ? WSGI_APLOGNO(0175)
+                               "[script %s] SystemExit exception raised "
+                               "by WSGI script '%s' for %s ignored."
+                             : WSGI_APLOGNO(0174)
+                               "[script %s] Exception occurred processing "
+                               "WSGI script '%s' for %s.",
+                         r->filename ? r->filename : "(unknown)",
+                         filename, context);
+        }
+        else
+        {
+            apr_snprintf(header, sizeof(header),
+                         is_systemexit
+                             ? WSGI_APLOGNO(0175)
+                               "SystemExit exception raised by WSGI "
+                               "script '%s' for %s ignored."
+                             : WSGI_APLOGNO(0174)
+                               "Exception occurred processing WSGI "
+                               "script '%s' for %s.",
+                         filename, context);
+        }
+
         /*
-         * If can't output exception and traceback then
-         * use PyErr_Print to dump out details of the
-         * exception. For SystemExit though if we do
-         * that the process will actually be terminated
-         * so can only clear the exception information
-         * and keep going.
+         * Emit the header plus any captured traceback continuation
+         * lines under a single GIL release. Calling ap_log_rerror /
+         * ap_log_error directly (rather than via the wsgi_log_* _ex
+         * wrappers) avoids the per-call GIL release/reacquire that
+         * would otherwise happen for every traceback line. The
+         * original caller's file/line/module_index are passed to
+         * every emission so %7F reports the call site of
+         * wsgi_log_python_error rather than this function.
          */
 
-        PyErr_Restore(type, value, traceback);
+        Py_BEGIN_ALLOW_THREADS
 
-        if (!PyErr_ExceptionMatches(PyExc_SystemExit))
+        if (r)
+            ap_log_rerror(file, line, module_index, APLOG_ERR, 0, r,
+                          "%s", header);
+        else
+            ap_log_error(file, line, module_index, APLOG_ERR, 0, s,
+                         "%s", header);
+
+        if (captured_text)
         {
-            PyErr_Print();
-            PyErr_Clear();
+            const char *p = captured_text;
+            const char *end = captured_text + captured_len;
+
+            while (p < end)
+            {
+                const char *q = p;
+                size_t n;
+                char buf[WSGI_LOG_BUFFER_SIZE];
+
+                while (q < end && *q != '\n')
+                    q++;
+
+                n = (size_t)(q - p);
+
+                if (n >= sizeof(buf))
+                    n = sizeof(buf) - 1;
+
+                memcpy(buf, p, n);
+                buf[n] = '\0';
+
+                if (n > 0)
+                {
+                    if (r)
+                        ap_log_rerror(file, line, module_index, APLOG_ERR,
+                                      0, r, "%s", buf);
+                    else
+                        ap_log_error(file, line, module_index, APLOG_ERR,
+                                     0, s, "%s", buf);
+                }
+
+                p = (q < end) ? q + 1 : end;
+            }
+        }
+
+        Py_END_ALLOW_THREADS
+    }
+
+    if (!result || !captured_text)
+    {
+        /*
+         * Fallback path: traceback module unavailable, StringIO
+         * import failed, or getvalue() did not return a string. Use
+         * PyErr_Print to dump details of the exception. For
+         * SystemExit, this would terminate the process, so just
+         * clear the exception in that case.
+         */
+
+        if (!result)
+        {
+            /* Restore the exception we fetched earlier. */
+            PyErr_Restore(type, value, traceback);
+            type = NULL;
+            value = NULL;
+            traceback = NULL;
+        }
+
+        if (!is_systemexit)
+        {
+            if (PyErr_Occurred())
+            {
+                PyErr_Print();
+                PyErr_Clear();
+            }
         }
         else
         {
             PyErr_Clear();
         }
     }
-    else
+    else if (publish)
     {
-        if (publish)
+        PyObject *event = NULL;
+        PyObject *object = NULL;
+
+        if (wsgi_event_subscribers())
         {
-            PyObject *event = NULL;
-            PyObject *object = NULL;
+            WSGIThreadInfo *thread_info;
 
-            if (wsgi_event_subscribers())
+            thread_info = wsgi_thread_info(0, 0);
+
+            event = PyDict_New();
+
+            if (r && r->log_id)
             {
-                WSGIThreadInfo *thread_info;
-
-                thread_info = wsgi_thread_info(0, 0);
-
-                event = PyDict_New();
-
-                if (r->log_id)
-                {
-                    object = PyUnicode_DecodeLatin1(r->log_id,
-                                                    strlen(r->log_id), NULL);
-                    PyDict_SetItemString(event, "request_id", object);
-                    Py_DECREF(object);
-                }
-
-                object = Py_BuildValue("(OOO)", type, value, traceback);
-                PyDict_SetItemString(event, "exception_info", object);
+                object = PyUnicode_DecodeLatin1(r->log_id,
+                                                strlen(r->log_id), NULL);
+                PyDict_SetItemString(event, "request_id", object);
                 Py_DECREF(object);
-
-                PyDict_SetItemString(event, "request_data",
-                                     thread_info->request_data);
-
-                wsgi_publish_event("request_exception", event);
-
-                Py_DECREF(event);
             }
-        }
 
-        Py_DECREF(type);
-        Py_DECREF(value);
-        Py_DECREF(traceback);
+            object = Py_BuildValue("(OOO)", type, value, traceback);
+            PyDict_SetItemString(event, "exception_info", object);
+            Py_DECREF(object);
+
+            PyDict_SetItemString(event, "request_data",
+                                 thread_info->request_data);
+
+            wsgi_publish_event("request_exception", event);
+
+            Py_DECREF(event);
+        }
     }
 
+    Py_XDECREF(type);
+    Py_XDECREF(value);
+    Py_XDECREF(traceback);
     Py_XDECREF(result);
-
     Py_XDECREF(m);
-
-    Py_XDECREF(xlog);
+    Py_XDECREF(captured);
+    Py_XDECREF(stringio);
+    Py_XDECREF(io_module);
 }
 
 /* ------------------------------------------------------------------------- */

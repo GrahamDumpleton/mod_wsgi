@@ -87,7 +87,8 @@ extern const char *wsgi_format_process_context(apr_pool_t *p);
 
 extern int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
                                 const char *filename, PyObject *module,
-                                const char *resource);
+                                const char *resource,
+                                const char *application_group);
 
 extern PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
                                   const char *name, int exists,
