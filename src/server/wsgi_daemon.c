@@ -1896,6 +1896,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             {
                 int has_active;
 
+                wsgi_shutdown_reason = "maximum_requests";
+
                 apr_thread_mutex_lock(wsgi_monitor_lock);
                 has_active = wsgi_has_active_non_stale_request_locked(
                                  apr_time_now());
@@ -2448,6 +2450,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                                    "expired, stopping daemon process "
                                    "'%s'.", group->name);
 
+                    wsgi_shutdown_reason = "deadlock_timeout";
+
                     restart = 1;
                 }
                 else
@@ -2867,6 +2871,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                            "'%s'; daemon process will shut down.",
                            daemon->group->name);
 
+            wsgi_shutdown_reason = "signal_pipe_error";
+
             break;
         }
 
@@ -2991,7 +2997,11 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
             }
         }
         else
+        {
+            wsgi_shutdown_reason = "shutdown_signal";
+
             break;
+        }
     }
 
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
