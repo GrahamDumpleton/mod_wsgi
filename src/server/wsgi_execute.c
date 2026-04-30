@@ -204,7 +204,8 @@ int wsgi_execute_script(request_rec *r)
                     r->status = HTTP_INTERNAL_SERVER_ERROR;
                     r->status_line = "200 Rejected";
 
-                    wsgi_shutdown_reason = "script_reload";
+                    if (!*wsgi_shutdown_reason)
+                        wsgi_shutdown_reason = "script_reload";
 
                     wsgi_daemon_shutdown++;
                     kill(getpid(), SIGINT);

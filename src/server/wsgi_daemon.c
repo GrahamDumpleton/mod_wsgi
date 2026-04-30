@@ -1896,7 +1896,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
             {
                 int has_active;
 
-                wsgi_shutdown_reason = "maximum_requests";
+                if (!*wsgi_shutdown_reason)
+                    wsgi_shutdown_reason = "maximum_requests";
 
                 apr_thread_mutex_lock(wsgi_monitor_lock);
                 has_active = wsgi_has_active_non_stale_request_locked(
@@ -2333,7 +2334,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
         {
             int has_active;
 
-            wsgi_shutdown_reason = "request_timeout";
+            if (!*wsgi_shutdown_reason)
+                wsgi_shutdown_reason = "request_timeout";
 
             wsgi_dump_stack_traces = 1;
 
@@ -2377,7 +2379,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                                    "stopping daemon process '%s'.",
                                    group->name);
 
-                    wsgi_shutdown_reason = "startup_timeout";
+                    if (!*wsgi_shutdown_reason)
+                        wsgi_shutdown_reason = "startup_timeout";
 
                     restart = 1;
                 }
@@ -2425,7 +2428,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                                            "expired, stopping process "
                                            "'%s'.", daemon->group->name);
 
-                            wsgi_shutdown_reason = "restart_interval";
+                            if (!*wsgi_shutdown_reason)
+                                wsgi_shutdown_reason = "restart_interval";
 
                             restart = 1;
                         }
@@ -2450,7 +2454,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                                    "expired, stopping daemon process "
                                    "'%s'.", group->name);
 
-                    wsgi_shutdown_reason = "deadlock_timeout";
+                    if (!*wsgi_shutdown_reason)
+                        wsgi_shutdown_reason = "deadlock_timeout";
 
                     restart = 1;
                 }
@@ -2487,7 +2492,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                                        "timer expired, stopping process "
                                        "'%s'.", group->name);
 
-                        wsgi_shutdown_reason = "inactivity_timeout";
+                        if (!*wsgi_shutdown_reason)
+                            wsgi_shutdown_reason = "inactivity_timeout";
 
                         restart = 1;
                     }
@@ -2871,7 +2877,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                            "'%s'; daemon process will shut down.",
                            daemon->group->name);
 
-            wsgi_shutdown_reason = "signal_pipe_error";
+            if (!*wsgi_shutdown_reason)
+                wsgi_shutdown_reason = "signal_pipe_error";
 
             break;
         }
@@ -2882,7 +2889,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
             {
                 int has_active;
 
-                wsgi_shutdown_reason = "cpu_time_limit";
+                if (!*wsgi_shutdown_reason)
+                    wsgi_shutdown_reason = "cpu_time_limit";
 
                 apr_thread_mutex_lock(wsgi_monitor_lock);
                 has_active = wsgi_has_active_non_stale_request_locked(
@@ -2922,7 +2930,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
             {
                 int has_active;
 
-                wsgi_shutdown_reason = "eviction_signal";
+                if (!*wsgi_shutdown_reason)
+                    wsgi_shutdown_reason = "eviction_signal";
 
                 apr_thread_mutex_lock(wsgi_monitor_lock);
                 has_active = wsgi_has_active_non_stale_request_locked(
@@ -2962,7 +2971,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
             {
                 int has_active;
 
-                wsgi_shutdown_reason = "graceful_signal";
+                if (!*wsgi_shutdown_reason)
+                    wsgi_shutdown_reason = "graceful_signal";
 
                 apr_thread_mutex_lock(wsgi_monitor_lock);
                 has_active = wsgi_has_active_non_stale_request_locked(
@@ -2998,7 +3008,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
         }
         else
         {
-            wsgi_shutdown_reason = "shutdown_signal";
+            if (!*wsgi_shutdown_reason)
+                wsgi_shutdown_reason = "shutdown_signal";
 
             break;
         }
