@@ -20,7 +20,15 @@ import socket
 import sys
 import time
 
-from .wire import KIND_REQUEST, KIND_SLOW_REQUEST, Sample, encode
+from .wire import (
+    KIND_PROCESS_STARTED,
+    KIND_PROCESS_STOPPED,
+    KIND_PROCESS_STOPPING,
+    KIND_REQUEST,
+    KIND_SLOW_REQUEST,
+    Sample,
+    encode,
+)
 
 
 # Handler paths the simulator cycles through so the Slow Requests tab
@@ -348,6 +356,79 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
     )
 
 
+# Simulator restart-reason rotation. Order matters only for visual
+# variety in the demo; the categorisation map on the UI side is what
+# actually drives marker colour. Includes one of each category so the
+# operator immediately sees three colours of marker.
+_SIM_REASONS = [
+    "restart_interval",      # planned
+    "maximum_requests",      # planned
+    "script_reload",         # planned
+    "cpu_time_limit",        # tuning
+    "request_timeout",       # tuning
+    "graceful_signal",       # tuning
+    "deadlock_timeout",      # unplanned
+    "shutdown_signal",       # unplanned
+]
+
+
+def make_started_sample(pid: int, seq: int, parent_pid: int) -> Sample:
+    return Sample(
+        version=1,
+        kind=KIND_PROCESS_STARTED,
+        pid=pid,
+        seq=seq,
+        stamp_us=int(time.time() * 1_000_000),
+        fields={
+            "mod_wsgi_version": "6.0.0",
+            "python_version": "3.14.0",
+            "apache_version": "Apache/2.4.62",
+            "mpm_name": "event",
+            "hostname": socket.gethostname(),
+            "process_group": "demo",
+            "process_parent_pid": parent_pid,
+        },
+    )
+
+
+def make_stopping_sample(pid: int, seq: int, reason: str,
+                         active_at_decision: int) -> Sample:
+    return Sample(
+        version=1,
+        kind=KIND_PROCESS_STOPPING,
+        pid=pid,
+        seq=seq,
+        stamp_us=int(time.time() * 1_000_000),
+        fields={
+            "hostname": socket.gethostname(),
+            "process_group": "demo",
+            "shutdown_reason": reason,
+            "active_requests_at_decision": active_at_decision,
+        },
+    )
+
+
+def make_stopped_sample(pid: int, seq: int, reason: str,
+                        uptime_s: float, lifetime_count: int,
+                        active_at_exit: int) -> Sample:
+    return Sample(
+        version=1,
+        kind=KIND_PROCESS_STOPPED,
+        pid=pid,
+        seq=seq,
+        stamp_us=int(time.time() * 1_000_000),
+        fields={
+            "hostname": socket.gethostname(),
+            "process_group": "demo",
+            "shutdown_reason": reason,
+            "process_uptime": float(uptime_s),
+            "lifetime_request_count": lifetime_count,
+            "active_requests_at_exit": active_at_exit,
+            "graceful_drain": 1 if active_at_exit == 0 else 0,
+        },
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--target", required=True,
@@ -365,6 +446,14 @@ def main(argv: list[str] | None = None) -> int:
     seqs = [0] * args.processes
     phases = [random.uniform(0, 2 * math.pi) for _ in range(args.processes)]
     slot_states: list[dict] = [dict() for _ in range(args.processes)]
+    # Simulated process birth times so STOPPED can carry a plausible
+    # uptime field, and the next pid the simulator will hand out when
+    # the current one "restarts". next_pid_seed is monotonic so the
+    # consumer can tell new vs old processes apart.
+    started_at = [time.time()] * args.processes
+    next_pid_seed = 100000 + args.processes
+    parent_pid = os.getpid()
+    reason_idx = 0
 
     # Per-process in-flight slow requests so heartbeats + completions are
     # correlated. Keyed by a synthetic log_id so the ingester's (pid,
@@ -374,11 +463,71 @@ def main(argv: list[str] | None = None) -> int:
 
     start = time.monotonic()
     sent = 0
+
+    # Emit one STARTED per simulated process up-front so the UI sees the
+    # identity banner the moment the simulator connects.
+    for i in range(args.processes):
+        seqs[i] += 1
+        try:
+            sock.sendto(
+                encode(make_started_sample(pids[i], seqs[i], parent_pid)),
+                addr,
+            )
+            sent += 1
+        except OSError as e:
+            print(f"sendto failed: {e}", file=sys.stderr)
+
     try:
         while True:
             if args.duration and time.monotonic() - start > args.duration:
                 break
             for i in range(args.processes):
+                # ~1% chance per process per tick of a simulated restart
+                # so demo runs see a steady trickle of markers across
+                # all three categories. Each "restart" emits STOPPING
+                # then STOPPED, retires the pid, and STARTs a new one
+                # in its slot so the rest of the loop transparently
+                # picks up reporting the new pid.
+                if random.random() < 0.01:
+                    reason = _SIM_REASONS[reason_idx % len(_SIM_REASONS)]
+                    reason_idx += 1
+                    active_at_decision = random.randint(0, 3)
+                    seqs[i] += 1
+                    try:
+                        sock.sendto(encode(make_stopping_sample(
+                            pids[i], seqs[i], reason, active_at_decision)),
+                                    addr)
+                        sent += 1
+                    except OSError as e:
+                        print(f"sendto failed: {e}", file=sys.stderr)
+                    seqs[i] += 1
+                    uptime_s = max(0.0, time.time() - started_at[i])
+                    try:
+                        sock.sendto(encode(make_stopped_sample(
+                            pids[i], seqs[i], reason, uptime_s,
+                            random.randint(50, 5000), 0)),
+                                    addr)
+                        sent += 1
+                    except OSError as e:
+                        print(f"sendto failed: {e}", file=sys.stderr)
+                    # Retire this pid, hand out a fresh one and reset
+                    # its per-process state so the new pid looks brand
+                    # new on the UI side.
+                    pids[i] = next_pid_seed
+                    next_pid_seed += 1
+                    seqs[i] = 0
+                    started_at[i] = time.time()
+                    slot_states[i] = dict()
+                    in_flight[i] = dict()
+                    next_log[i] = 1
+                    seqs[i] += 1
+                    try:
+                        sock.sendto(encode(make_started_sample(
+                            pids[i], seqs[i], parent_pid)), addr)
+                        sent += 1
+                    except OSError as e:
+                        print(f"sendto failed: {e}", file=sys.stderr)
+
                 phases[i] += args.interval / 15.0
                 seqs[i] += 1
                 sample = make_sample(pids[i], seqs[i], phases[i], args.interval,

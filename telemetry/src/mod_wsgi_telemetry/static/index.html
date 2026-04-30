@@ -44,6 +44,35 @@
     gap: 6px;
     user-select: none;
   }
+  header .marker-filters {
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    user-select: none;
+  }
+  header .marker-filters label {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+  }
+  header .marker-filters input[type="checkbox"] {
+    accent-color: var(--accent);
+    margin: 0;
+  }
+  /* Tiny coloured swatch next to each marker-filter label so the
+   * legend matches the on-chart marker colour. */
+  header .marker-filters .swatch {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 1px;
+  }
+  header .marker-filters .swatch.planned   { background: #6ea66e; }
+  header .marker-filters .swatch.tuning    { background: #c8a23a; }
+  header .marker-filters .swatch.unplanned { background: #c84a4a; }
   header .conn {
     padding: 2px 8px;
     border-radius: 3px;
@@ -677,6 +706,12 @@
       <option value="*">All</option>
     </select>
   </label>
+  <div class="marker-filters" title="Show vertical restart markers on each line chart, coloured by reason category. Hover a marker for details.">
+    <span>Markers:</span>
+    <label><input type="checkbox" id="markers_planned" checked><span class="swatch planned"></span>planned</label>
+    <label><input type="checkbox" id="markers_tuning" checked><span class="swatch tuning"></span>tuning</label>
+    <label><input type="checkbox" id="markers_unplanned" checked><span class="swatch unplanned"></span>unplanned</label>
+  </div>
   <button type="button" class="help-btn" id="help_btn"
           title="What does this UI show? (help + LLM prompt)">?</button>
   <div class="conn bad" id="conn">disconnected</div>
@@ -890,6 +925,18 @@ const state = {
   // the ingester's key convention). Each value is { entry, last_seen_ms }
   // where entry is the same shape the server sends.
   slowRequests: new Map(),
+  // Process lifecycle events (process_started / process_stopping /
+  // process_stopped) kept as a flat array in arrival order. Bounded to
+  // match the ingester's ring (500 events) so memory stays sane on a
+  // group that restarts aggressively. STOPPING events drive the chart
+  // markers; STARTED and STOPPED are kept for future surfaces (lifetime
+  // panel, restart event log) and to drive the
+  // started-without-stopped abnormal-exit detection.
+  lifecycleEvents: [],
+  // Marker category checkboxes. Persisted to localStorage so the
+  // operator's preference survives a reload. categoryForReason() maps
+  // a shutdown_reason string to one of these three buckets.
+  markerFilters: { planned: true, tuning: true, unplanned: true },
   totalReceived: 0,
   decodeErrors: 0,
   activeTab: "overview",
@@ -936,6 +983,61 @@ const state = {
 const SLOW_STORAGE_TTL_MS = 600_000;            // storage (10 min)
 const SLOW_ACTIVE_TTL_MS = 5000;                // display + storage (active)
 const SLOW_COMPLETED_TTL_MS = 15000;            // display only (completed)
+
+// Shutdown-reason → marker category. Keep in sync with the C side's
+// wsgi_shutdown_reason assignments (see wsgi_daemon.c / wsgi_execute.c).
+// "planned" — operator-configured cycling that's expected to fire.
+// "tuning" — fired by limits the operator set to bound bad behaviour;
+//            interesting when investigating, not alarming day-to-day.
+// "unplanned" — abnormal exit paths that operators want to know about.
+const REASON_CATEGORIES = {
+  // planned
+  restart_interval:    "planned",
+  maximum_requests:    "planned",
+  inactivity_timeout:  "planned",
+  script_reload:       "planned",
+  // tuning
+  request_timeout:     "tuning",
+  cpu_time_limit:      "tuning",
+  eviction_signal:     "tuning",
+  graceful_signal:     "tuning",
+  startup_timeout:     "tuning",
+  // unplanned
+  deadlock_timeout:    "unplanned",
+  signal_pipe_error:   "unplanned",
+  shutdown_signal:     "unplanned",
+};
+const MARKER_COLOURS = {
+  planned:   "#6ea66e",
+  tuning:    "#c8a23a",
+  unplanned: "#c84a4a",
+};
+// Empty / unknown reason strings get classified as "unplanned" so an
+// operator notices something that should never have been blank.
+function categoryForReason(reason) {
+  return REASON_CATEGORIES[reason] || "unplanned";
+}
+
+// Restore marker-filter checkbox state from localStorage and write it
+// back when toggled. Three independent checkboxes (planned / tuning /
+// unplanned). Persisted under one key so a malformed older version is
+// rejected wholesale rather than half-applied.
+function loadMarkerFilters() {
+  try {
+    const raw = localStorage.getItem("mod_wsgi.markerFilters");
+    if (!raw) return;
+    const obj = JSON.parse(raw);
+    for (const k of ["planned", "tuning", "unplanned"]) {
+      if (typeof obj[k] === "boolean") state.markerFilters[k] = obj[k];
+    }
+  } catch (_) { /* ignore corrupt storage */ }
+}
+function saveMarkerFilters() {
+  try {
+    localStorage.setItem("mod_wsgi.markerFilters",
+                         JSON.stringify(state.markerFilters));
+  } catch (_) { /* ignore quota */ }
+}
 
 function colorFor(pid) {
   const p = state.processes.get(pid);
@@ -1233,6 +1335,24 @@ function slowKeyFor(entry) {
 function upsertSlow(entry) {
   const key = slowKeyFor(entry);
   state.slowRequests.set(key, { entry, last_seen_ms: Date.now() });
+}
+
+// Append one lifecycle event and trim the buffer. Mirrors the
+// ingester's bounded ring; entries older than SAMPLE_RETENTION_SEC
+// are off-screen for every chart so we drop them up-front rather
+// than filtering on every redraw.
+function addLifecycleEvent(ev) {
+  state.lifecycleEvents.push(ev);
+  const cutoffUs = (Date.now() - SAMPLE_RETENTION_SEC * 1000) * 1000;
+  // Common case: only the most recent event is fresh — fast path
+  // trims from the head. Bound the buffer at 500 events as well so a
+  // dense restart-loop doesn't grow it unbounded.
+  while (state.lifecycleEvents.length > 0 &&
+         state.lifecycleEvents[0].stamp_us < cutoffUs) {
+    state.lifecycleEvents.shift();
+  }
+  if (state.lifecycleEvents.length > 500)
+    state.lifecycleEvents.splice(0, state.lifecycleEvents.length - 500);
 }
 
 // Look up the reporting process's telemetry interval from its most
@@ -3321,10 +3441,145 @@ function drawChart(canvas, extract, opts = {}) {
     ctx.stroke();
   }
 
+  // Lifecycle markers overlaid on top of the data lines so a thin tinted
+  // vertical column reads through the data. Drawn after the lines so
+  // the icons sit above; hit-test info is stashed on the canvas for
+  // the shared mousemove handler attached in attachChartHover().
+  drawLifecycleMarkers(ctx, canvas, w, h, tmin, tmax, xOf);
+
   // Aggregate stats for the live readout.
   const sum = latest.reduce((a, b) => a + b, 0);
   const mean = latest.length ? sum / latest.length : 0;
   return { latest, mean, sum, max: vmax / 1.1 };
+}
+
+// Returns the lifecycle events visible on a chart whose x-axis spans
+// [tmin, tmax]. Filtered by the active group filter and by the
+// per-category checkboxes. Sorted by stamp so the hit-test in
+// attachChartHover() can pick the rightmost event under the cursor
+// when several stack up at the same x.
+function visibleLifecycleMarkers(tmin, tmax) {
+  const groupSel = (document.getElementById("group_filter") || {}).value || "*";
+  const cats = state.markerFilters;
+  const out = [];
+  for (const ev of state.lifecycleEvents) {
+    if (ev.kind !== "process_stopping") continue;
+    const t = ev.stamp_us / 1e6;
+    if (t < tmin || t > tmax) continue;
+    if (groupSel !== "*") {
+      const g = ev.process_group || "(embedded)";
+      if (g !== groupSel) continue;
+    }
+    const cat = categoryForReason(ev.shutdown_reason);
+    if (!cats[cat]) continue;
+    out.push({ ev, t, cat });
+  }
+  out.sort((a, b) => a.t - b.t);
+  return out;
+}
+
+function drawLifecycleMarkers(ctx, canvas, w, h, tmin, tmax, xOf) {
+  const visible = visibleLifecycleMarkers(tmin, tmax);
+  // Stash hit-test info on the canvas so the shared hover handler
+  // (attachChartHover) can locate the marker under the cursor without
+  // needing a second time-window walk every mousemove.
+  canvas._markerHits = visible.map(m => ({
+    x: xOf(m.t), ev: m.ev, cat: m.cat,
+  }));
+  if (visible.length === 0) return;
+
+  ctx.save();
+  for (const { t, cat } of visible) {
+    const x = xOf(t);
+    const colour = MARKER_COLOURS[cat];
+    // Thin tinted line through the chart so the marker can be
+    // visually correlated with what the data was doing at that
+    // moment. Low opacity keeps the underlying lines readable.
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = 1 * devicePixelRatio;
+    ctx.beginPath();
+    ctx.moveTo(x + 0.5, 0);
+    ctx.lineTo(x + 0.5, h);
+    ctx.stroke();
+    // Solid down-pointing triangle anchored to the top edge — this is
+    // the click/hover affordance, sized to be a comfortable hit
+    // target without dominating the chart.
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = colour;
+    const s = 4 * devicePixelRatio;
+    ctx.beginPath();
+    ctx.moveTo(x - s, 0);
+    ctx.lineTo(x + s, 0);
+    ctx.lineTo(x, s * 1.6);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Attach a mousemove + mouseleave handler to a chart canvas that
+// shows the shared #tooltip when the cursor is near a lifecycle
+// marker. Hit-test data is stashed on the canvas by drawChart and
+// kept fresh by every redraw, so the handler has nothing to recompute.
+function attachChartHover(canvas) {
+  if (canvas._chartHoverAttached) return;
+  canvas._chartHoverAttached = true;
+  const tip = document.getElementById("tooltip");
+  // Hit radius — the marker line is 1px wide but operators won't
+  // pixel-hunt; widen to ~6 device-px so a casual hover lands.
+  const HIT_RADIUS = 6;
+  canvas.addEventListener("mousemove", e => {
+    const hits = canvas._markerHits;
+    if (!hits || hits.length === 0) {
+      tip.style.display = "none";
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const xCss = e.clientX - rect.left;
+    const xDev = xCss * devicePixelRatio;
+    let best = null;
+    let bestDx = HIT_RADIUS * devicePixelRatio + 1;
+    // Walk from rightmost to leftmost so when markers overlap, the
+    // most recent event wins the hit (matches the chart's
+    // visual stacking).
+    for (let i = hits.length - 1; i >= 0; i--) {
+      const dx = Math.abs(hits[i].x - xDev);
+      if (dx <= bestDx) { best = hits[i]; bestDx = dx; }
+    }
+    if (!best) { tip.style.display = "none"; return; }
+    const ev = best.ev;
+    const reason = ev.shutdown_reason || "(unknown)";
+    const wallStr = new Date(ev.stamp_us / 1000).toLocaleTimeString();
+    const lines = [];
+    lines.push(`<div class="range">restart marker &middot; ${escapeHtml(best.cat)}</div>`);
+    lines.push(`<div><span class="label">time</span>${escapeHtml(wallStr)}</div>`);
+    lines.push(`<div><span class="label">reason</span>${escapeHtml(reason)}</div>`);
+    lines.push(`<div><span class="label">pid</span>${ev.pid}</div>`);
+    if (ev.process_group)
+      lines.push(`<div><span class="label">group</span>${escapeHtml(ev.process_group)}</div>`);
+    lines.push(`<div><span class="label">in-flight at decision</span>${ev.active_requests_at_decision || 0}</div>`);
+    tip.classList.remove("slow");
+    tip.innerHTML = lines.join("");
+    tip.style.display = "block";
+    // Position above-right of the cursor so the tooltip doesn't
+    // obscure the marker line itself. Clamp to the viewport so a
+    // marker near the right edge doesn't push the tooltip off-screen.
+    const margin = 12;
+    let left = e.clientX + margin;
+    let top = e.clientY - margin;
+    const tipRect = tip.getBoundingClientRect();
+    if (left + tipRect.width > window.innerWidth - 4)
+      left = e.clientX - tipRect.width - margin;
+    if (top - tipRect.height < 4)
+      top = e.clientY + margin;
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+  });
+  canvas.addEventListener("mouseleave", () => {
+    const tip = document.getElementById("tooltip");
+    tip.style.display = "none";
+  });
 }
 
 function setLive(id, text) {
@@ -3468,6 +3723,7 @@ function connect() {
       state.decodeErrors = msg.decode_errors;
       state.processes.clear();
       state.slowRequests.clear();
+      state.lifecycleEvents = [];
       for (const p of msg.processes) {
         seedProcessFromSnapshot(p);
         for (const s of p.samples) addSample(s);
@@ -3475,9 +3731,14 @@ function connect() {
       if (msg.slow_requests) {
         for (const r of msg.slow_requests) upsertSlow(r.entry);
       }
+      if (msg.lifecycle_events) {
+        for (const ev of msg.lifecycle_events) addLifecycleEvent(ev);
+      }
     } else if (msg.type === "sample") {
       state.totalReceived += 1;
       addSample(msg);
+    } else if (msg.type === "lifecycle") {
+      addLifecycleEvent(msg.event);
     } else if (msg.type === "slow_request") {
       upsertSlow(msg.entry);
     } else if (msg.type === "slow_clear") {
@@ -3507,6 +3768,26 @@ document.getElementById("throughput_field").addEventListener("change", redraw);
 document.getElementById("slow_state_filter").addEventListener("change", redraw);
 document.getElementById("slow_per_url").addEventListener("change", redraw);
 document.getElementById("capacity_stuck_thresh").addEventListener("change", redraw);
+
+// Marker-filter checkboxes. Initialise from localStorage, then wire
+// the change handlers to redraw + persist. Hover handlers are
+// attached once per chart canvas so the shared #tooltip can show
+// reason / pid / group / in-flight count when the cursor lands near
+// a marker.
+loadMarkerFilters();
+for (const cat of ["planned", "tuning", "unplanned"]) {
+  const cb = document.getElementById("markers_" + cat);
+  cb.checked = state.markerFilters[cat];
+  cb.addEventListener("change", () => {
+    state.markerFilters[cat] = cb.checked;
+    saveMarkerFilters();
+    redraw();
+  });
+}
+for (const id of ["c_rps", "c_cap", "c_cpu", "c_resp", "c_mem", "c_phase"]) {
+  const c = document.getElementById(id);
+  if (c) attachChartHover(c);
+}
 
 (function () {
   const btn = document.getElementById("capacity_pause");

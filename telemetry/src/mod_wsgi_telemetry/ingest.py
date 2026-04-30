@@ -71,6 +71,9 @@ class ProcessState:
     python_version: str = ""
     apache_version: str = ""
     mpm_name: str = ""
+    # Apache parent pid, latched from process_started. Lets the UI
+    # group sibling daemon processes under their parent.
+    process_parent_pid: int = 0
     # Telemetry reporter's tick interval in seconds, as reported by the
     # process itself on each KIND_REQUEST sample. Used to size the
     # slow-request TTLs — a reporter ticking every 10 s needs a longer
@@ -140,6 +143,46 @@ class SlowEntry:
         }
 
 
+@dataclass
+class LifecycleEvent:
+    """One process_started / process_stopping / process_stopped record.
+
+    Stored in a bounded ingester-side deque so reconnecting clients see
+    recent restart history without waiting for the next event. The
+    frontend renders STOPPING events as chart markers; STARTED and
+    STOPPED feed the (future) process-lifetime panel and the
+    forensics-style restart event log.
+    """
+    kind: str               # "process_started" | "process_stopping" | "process_stopped"
+    pid: int
+    stamp_us: int
+    hostname: str = ""
+    process_group: str = ""
+    process_parent_pid: int = 0     # STARTED only
+    shutdown_reason: str = ""       # STOPPING / STOPPED
+    process_uptime: float = 0.0     # STOPPED only — seconds
+    lifetime_request_count: int = 0  # STOPPED only
+    active_requests_at_decision: int = 0  # STOPPING only
+    active_requests_at_exit: int = 0      # STOPPED only
+    graceful_drain: int = 0          # STOPPED only — 1 if drain completed cleanly
+
+    def to_dict(self) -> dict:
+        return {
+            "kind": self.kind,
+            "pid": self.pid,
+            "stamp_us": self.stamp_us,
+            "hostname": self.hostname,
+            "process_group": self.process_group,
+            "process_parent_pid": self.process_parent_pid,
+            "shutdown_reason": self.shutdown_reason,
+            "process_uptime": self.process_uptime,
+            "lifetime_request_count": self.lifetime_request_count,
+            "active_requests_at_decision": self.active_requests_at_decision,
+            "active_requests_at_exit": self.active_requests_at_exit,
+            "graceful_drain": self.graceful_drain,
+        }
+
+
 class Ingester:
     """Owns the listening socket and all per-process state."""
 
@@ -163,11 +206,20 @@ class Ingester:
     SLOW_ACTIVE_TTL_SECONDS = 5.0
     SLOW_COMPLETED_TTL_SECONDS = 600.0
 
+    # Lifecycle events kept in a bounded ring so a reconnecting client
+    # sees recent restart history without waiting for the next event.
+    # Sized to comfortably outlive the chart's default rolling window
+    # (10 minutes) even on a process group that restarts aggressively.
+    LIFECYCLE_RING_SIZE = 500
+
     def __init__(self, listen_spec: str, *, max_subscribers: int = 64) -> None:
         self.listen_spec = listen_spec
         self.sock: socket.socket | None = None
         self.processes: dict[int, ProcessState] = {}
         self.slow_requests: dict[tuple, SlowEntry] = {}
+        self.lifecycle_events: deque[LifecycleEvent] = deque(
+            maxlen=self.LIFECYCLE_RING_SIZE
+        )
         self.subscribers: set[asyncio.Queue] = set()
         self.max_subscribers = max_subscribers
         self.decode_errors = 0
@@ -204,6 +256,15 @@ class Ingester:
             self._gc_stale()
             return
 
+        # Lifecycle events feed a separate ring buffer; the periodic
+        # sample window doesn't carry them.
+        if sample.kind_name in (
+            "process_started", "process_stopping", "process_stopped"
+        ):
+            self._handle_lifecycle(sample)
+            self._gc_stale()
+            return
+
         state = self.processes.get(sample.pid)
         if state is None:
             state = ProcessState(pid=sample.pid)
@@ -235,6 +296,68 @@ class Ingester:
         self._broadcast(sample)
         self._gc_slow()
         self._gc_stale()
+
+    def _handle_lifecycle(self, sample: Sample) -> None:
+        """Record a STARTED / STOPPING / STOPPED event.
+
+        STARTED also seeds / refreshes the per-process identity so a
+        late-joining client can render the process even if the periodic
+        stream hasn't begun yet for this pid. STOPPING and STOPPED only
+        carry the trimmed identity (hostname, group) since the consumer
+        already knows the process from STARTED + the periodic stream.
+        """
+        f = sample.fields
+
+        def _s(name: str) -> str:
+            v = f.get(name)
+            if isinstance(v, bytes):
+                return v.decode("utf-8", errors="replace")
+            return ""
+
+        ev = LifecycleEvent(
+            kind=sample.kind_name,
+            pid=sample.pid,
+            stamp_us=sample.stamp_us,
+            hostname=_s("hostname"),
+            process_group=_s("process_group"),
+            process_parent_pid=int(f.get("process_parent_pid") or 0),
+            shutdown_reason=_s("shutdown_reason"),
+            process_uptime=float(f.get("process_uptime") or 0.0),
+            lifetime_request_count=int(f.get("lifetime_request_count") or 0),
+            active_requests_at_decision=int(
+                f.get("active_requests_at_decision") or 0),
+            active_requests_at_exit=int(
+                f.get("active_requests_at_exit") or 0),
+            graceful_drain=int(f.get("graceful_drain") or 0),
+        )
+        self.lifecycle_events.append(ev)
+
+        # STARTED is the canonical place to latch the static identity
+        # banner and the parent pid. Create the ProcessState if the
+        # periodic stream hasn't arrived yet so the sidebar shows the
+        # process the moment it announces itself.
+        if sample.kind_name == "process_started":
+            state = self.processes.get(sample.pid)
+            if state is None:
+                state = ProcessState(pid=sample.pid)
+                self.processes[sample.pid] = state
+            state.last_seen = time.monotonic()
+            if ev.hostname:
+                state.hostname = ev.hostname
+            if ev.process_group:
+                state.process_group = ev.process_group
+            if ev.process_parent_pid:
+                state.process_parent_pid = ev.process_parent_pid
+            for name in ("mod_wsgi_version", "python_version",
+                         "apache_version", "mpm_name"):
+                v = _s(name)
+                if v:
+                    setattr(state, name, v)
+
+        self._enqueue_all({
+            "type": "lifecycle",
+            "event": ev.to_dict(),
+        })
 
     def _handle_slow(self, sample: Sample) -> None:
         f = sample.fields
@@ -401,6 +524,7 @@ class Ingester:
                     "python_version": st.python_version,
                     "apache_version": st.apache_version,
                     "mpm_name": st.mpm_name,
+                    "process_parent_pid": st.process_parent_pid,
                     "last_seq": st.last_seq,
                     "drops": st.drops,
                     "samples": [self._sample_to_dict(s) for s in st.samples],
@@ -411,6 +535,7 @@ class Ingester:
                 {"key": list(k), "entry": e.to_dict()}
                 for k, e in self.slow_requests.items()
             ],
+            "lifecycle_events": [ev.to_dict() for ev in self.lifecycle_events],
             "total_received": self.total_received,
             "decode_errors": self.decode_errors,
         }
