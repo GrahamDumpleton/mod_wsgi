@@ -1011,7 +1011,9 @@ WSGI0036 — Python interpreter configuration failed
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Python interpreter configuration failed: <message>``
+   ``Python interpreter configuration failed in <process-context>:
+   <message>`` The process context is either ``embedded mode`` or
+   ``daemon process '<group>'``.
 
 :Cause:
    A ``PyConfig_*`` API call returned an error during ``wsgi_python_init()``.
@@ -1038,8 +1040,9 @@ WSGI0037 — Unable to initialise Python types for child process
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to initialise Python types; Python based handlers will not
-   be available.``
+   ``Unable to initialise Python types in <process-context>; Python
+   based handlers will not be available.`` Process context shape
+   as for :ref:`WSGI0036`.
 
 :Cause:
    One of mod_wsgi's internal Python type objects failed
@@ -1067,8 +1070,9 @@ WSGI0038 — Unable to create main Python interpreter wrapper
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to create wrapper object for main Python interpreter;
-   Python based handlers will not be available.``
+   ``Unable to create wrapper object for main Python interpreter
+   in <process-context>; Python based handlers will not be
+   available.`` Process context shape as for :ref:`WSGI0036`.
 
 :Cause:
    ``newInterpreterObject(NULL)`` failed when creating the cached
@@ -1095,7 +1099,9 @@ WSGI0039 — Unable to register main Python interpreter wrapper
 
 :Logged message:
    ``Unable to register wrapper for main Python interpreter in
-   interpreter cache; Python based handlers will not be available.``
+   interpreter cache in <process-context>; Python based handlers
+   will not be available.`` Process context shape as for
+   :ref:`WSGI0036`.
 
 :Cause:
    ``PyDict_SetItemString()`` failed when adding the freshly created
@@ -1119,8 +1125,10 @@ WSGI0040 — Unable to acquire Python sub-interpreter during daemon startup scri
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to acquire Python sub-interpreter '<name>' during daemon
-   startup script preload; skipping import.``
+   ``Unable to acquire <interpreter-context> during daemon startup
+   script preload; skipping import.`` The interpreter context is of
+   the form ``main interpreter in embedded mode``, ``sub-interpreter
+   '<name>' of daemon process '<group>'``, or any combination.
 
 :Cause:
    ``wsgi_acquire_interpreter()`` returned ``NULL`` while a daemon
@@ -2399,8 +2407,10 @@ WSGI0091 — Call to site.addsitedir() failed (initial python-path entry)
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Call to 'site.addsitedir()' failed for '<path>'; remaining
-   python-path entries will not be added.``
+   ``Call to 'site.addsitedir()' failed for '<path>' in
+   <process-context>; remaining python-path entries will not be
+   added.`` Process context is either ``embedded mode`` or
+   ``daemon process '<group>'``.
 
 :Cause:
    When applying a ``python-path=`` directive, mod_wsgi calls
@@ -2425,8 +2435,9 @@ WSGI0092 — Call to site.addsitedir() failed (subsequent python-path entry)
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Call to 'site.addsitedir()' failed for '<path>'; remaining
-   python-path entries will not be added.``
+   ``Call to 'site.addsitedir()' failed for '<path>' in
+   <process-context>; remaining python-path entries will not be
+   added.`` Process context shape as for :ref:`WSGI0091`.
 
 :Cause:
    Same as :ref:`WSGI0091`, but for an entry past the first in the
@@ -2447,7 +2458,8 @@ WSGI0093 — Call to site.addsitedir() failed (final python-path entry)
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Call to 'site.addsitedir()' failed for '<path>'.``
+   ``Call to 'site.addsitedir()' failed for '<path>' in
+   <process-context>.`` Process context shape as for :ref:`WSGI0091`.
 
 :Cause:
    The final entry of the ``python-path=`` list failed in
@@ -2468,7 +2480,8 @@ WSGI0094 — Unable to locate site.addsitedir
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to locate 'site.addsitedir()'.``
+   ``Unable to locate 'site.addsitedir()' in <process-context>.``
+   Process context shape as for :ref:`WSGI0091`.
 
 :Cause:
    The ``site`` module was imported but does not expose
@@ -2491,7 +2504,8 @@ WSGI0095 — Unable to import 'site' module
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to import 'site' module.``
+   ``Unable to import 'site' module in <process-context>.``
+   Process context shape as for :ref:`WSGI0091`.
 
 :Cause:
    ``PyImport_ImportModule("site")`` failed. Indicates a deeply
@@ -2514,7 +2528,8 @@ WSGI0096 — Unable to look up sys.path attribute
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to look up 'sys.path' attribute on 'sys' module.``
+   ``Unable to look up 'sys.path' attribute on 'sys' module in
+   <process-context>.`` Process context shape as for :ref:`WSGI0091`.
 
 :Cause:
    ``PyObject_GetAttrString(sys, "path")`` failed. Highly unusual;
@@ -2535,8 +2550,10 @@ WSGI0097 — SystemExit from Python atexit functions ignored
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``SystemExit exception raised by Python atexit functions;
-   ignored.``
+   ``SystemExit exception raised by Python atexit functions for
+   <interpreter-context>; ignored.`` Interpreter context is of the
+   form ``main interpreter in embedded mode`` or ``sub-interpreter
+   '<name>' of daemon process '<group>'``.
 
 :Cause:
    A Python ``atexit``-registered function raised ``SystemExit``
@@ -2561,7 +2578,8 @@ WSGI0098 — Exception within Python atexit functions during shutdown
 
 :Logged message:
    ``Exception occurred within Python atexit functions during
-   interpreter shutdown.``
+   shutdown of <interpreter-context>.`` Interpreter context shape
+   as for :ref:`WSGI0097`.
 
 :Cause:
    An ``atexit`` handler raised a non-``SystemExit`` exception. The
@@ -2582,7 +2600,9 @@ WSGI0099 — Compile-vs-runtime Python version mismatch
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Compiled for Python/<X> but runtime using Python/<Y>.``
+   ``Compiled for Python/<X> but runtime using Python/<Y> in
+   <process-context>.`` The process context is either ``embedded
+   mode`` or ``daemon process '<group>'``.
 
 :Cause:
    The Python version mod_wsgi was compiled against differs from
@@ -2607,9 +2627,10 @@ WSGI0100 — Unable to stat Python home
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to stat Python home '<path>'; Python interpreter may
-   not initialise correctly. Verify the path and the access
-   permissions on every component of it.``
+   ``Unable to stat Python home '<path>' for <process-context>;
+   Python interpreter may not initialise correctly. Verify the
+   path and the access permissions on every component of it.``
+   Process context shape as for :ref:`WSGI0099`.
 
 :Cause:
    ``apr_stat()`` on the configured Python home (``WSGIPythonHome``
@@ -2631,8 +2652,9 @@ WSGI0101 — Python home is not a directory
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Python home '<path>' is not a directory; Python interpreter
-   may not initialise correctly. Verify the supplied path.``
+   ``Python home '<path>' for <process-context> is not a directory;
+   Python interpreter may not initialise correctly. Verify the
+   supplied path.`` Process context shape as for :ref:`WSGI0099`.
 
 :Cause:
    The configured Python home points to a file or other
@@ -2655,9 +2677,10 @@ WSGI0102 — Python home is not accessible
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Python home '<path>' is not accessible; Python interpreter
-   may not initialise correctly. Verify the access permissions on
-   the directory.``
+   ``Python home '<path>' for <process-context> is not accessible;
+   Python interpreter may not initialise correctly. Verify the
+   access permissions on the directory.`` Process context shape
+   as for :ref:`WSGI0099`.
 
 :Cause:
    ``access(path, X_OK)`` failed for the configured Python home.
@@ -2712,8 +2735,10 @@ WSGI0104 — Unable to publish process_stopping event
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to publish 'process_stopping' event for interpreter
-   '<name>'.``
+   ``Unable to publish 'process_stopping' event for
+   <interpreter-context>.`` Interpreter context is of the form
+   ``main interpreter in embedded mode`` or ``sub-interpreter
+   '<name>' of daemon process '<group>'``.
 
 :Cause:
    Building the event dict for the ``process_stopping`` callback
@@ -2879,7 +2904,9 @@ WSGI0111 — Main interpreter reference missing during child cleanup
 
 :Logged message:
    ``Main interpreter reference is missing from interpreters
-   dictionary during child cleanup.``
+   dictionary during cleanup in <process-context>.`` Process
+   context is either ``embedded mode`` or ``daemon process
+   '<group>'``.
 
 :Cause:
    The cached ``""`` key is missing from mod_wsgi's interpreters

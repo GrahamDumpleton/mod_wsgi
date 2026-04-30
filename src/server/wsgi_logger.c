@@ -633,28 +633,6 @@ PyTypeObject Log_Type = {
     0,                       /*tp_is_gc*/
 };
 
-/*
- * Format the interpreter+process descriptor used in the header line of
- * a Python exception log. Mirrors wsgi_format_interp_context(), but
- * the process side is auto-detected from the wsgi_daemon_process
- * global rather than a passed-in process group, since the log entry
- * describes where the exception actually occurred.
- */
-
-static const char *wsgi_format_python_error_context(apr_pool_t *p,
-                                                    const char *application_group)
-{
-    const char *interp = wsgi_format_interp_name(p, application_group);
-
-#if defined(MOD_WSGI_WITH_DAEMONS)
-    if (wsgi_daemon_process)
-        return apr_psprintf(p, "%s of daemon process '%s'",
-                            interp, wsgi_daemon_process->group->name);
-#endif
-
-    return apr_psprintf(p, "%s in embedded mode", interp);
-}
-
 void wsgi_log_python_error_ex(const char *file, int line, int module_index,
                               request_rec *r, const char *filename,
                               const char *application_group, int publish)
@@ -695,7 +673,7 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
     pool = r ? r->pool : wsgi_server->process->pool;
     s = r ? r->server : wsgi_server;
 
-    context = wsgi_format_python_error_context(pool, application_group);
+    context = wsgi_format_interp_context(pool, NULL, application_group);
 
     /*
      * Capture the formatted traceback into an io.StringIO so that it
@@ -759,7 +737,7 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
             if (captured && PyUnicode_Check(captured))
             {
                 captured_text = PyUnicode_AsUTF8AndSize(captured,
-                                                       &captured_len);
+                                                        &captured_len);
             }
         }
     }
@@ -778,12 +756,10 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
         {
             apr_snprintf(header, sizeof(header),
                          is_systemexit
-                             ? WSGI_APLOGNO(0175)
-                               "[script %s] SystemExit exception raised "
-                               "by WSGI script '%s' for %s ignored."
-                             : WSGI_APLOGNO(0174)
-                               "[script %s] Exception occurred processing "
-                               "WSGI script '%s' for %s.",
+                             ? WSGI_APLOGNO(0175) "[script %s] SystemExit exception raised "
+                                                  "by WSGI script '%s' for %s ignored."
+                             : WSGI_APLOGNO(0174) "[script %s] Exception occurred processing "
+                                                  "WSGI script '%s' for %s.",
                          r->filename ? r->filename : "(unknown)",
                          filename, context);
         }
@@ -791,12 +767,10 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
         {
             apr_snprintf(header, sizeof(header),
                          is_systemexit
-                             ? WSGI_APLOGNO(0175)
-                               "SystemExit exception raised by WSGI "
-                               "script '%s' for %s ignored."
-                             : WSGI_APLOGNO(0174)
-                               "Exception occurred processing WSGI "
-                               "script '%s' for %s.",
+                             ? WSGI_APLOGNO(0175) "SystemExit exception raised by WSGI "
+                                                  "script '%s' for %s ignored."
+                             : WSGI_APLOGNO(0174) "Exception occurred processing WSGI "
+                                                  "script '%s' for %s.",
                          filename, context);
         }
 
@@ -813,12 +787,11 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
 
         Py_BEGIN_ALLOW_THREADS
 
-        if (r)
-            ap_log_rerror(file, line, module_index, APLOG_ERR, 0, r,
+            if (r)
+                ap_log_rerror(file, line, module_index, APLOG_ERR, 0, r,
+                              "%s", header);
+        else ap_log_error(file, line, module_index, APLOG_ERR, 0, s,
                           "%s", header);
-        else
-            ap_log_error(file, line, module_index, APLOG_ERR, 0, s,
-                         "%s", header);
 
         if (captured_text)
         {
