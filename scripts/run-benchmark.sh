@@ -38,6 +38,21 @@
 #                             injection (request-timeout reverts to the
 #                             average-across-threads behaviour). Only
 #                             meaningful in daemon mode; no-op otherwise.
+#       --restart-interval SEC
+#                             Pass --restart-interval SEC to
+#                             mod_wsgi-express. Daemon process is
+#                             cycled after that many seconds, exposing
+#                             the 'restart_interval' shutdown reason on
+#                             telemetry STOPPING / STOPPED markers.
+#                             Only meaningful in daemon mode; no-op
+#                             otherwise.
+#       --maximum-requests N  Pass --maximum-requests N to
+#                             mod_wsgi-express. Daemon process is
+#                             cycled after serving N requests, exposing
+#                             the 'maximum_requests' shutdown reason on
+#                             telemetry STOPPING / STOPPED markers.
+#                             Only meaningful in daemon mode; no-op
+#                             otherwise.
 #       --wedge-interval SEC  Inject a request that spins in pure Python
 #                             until the daemon's RequestTimeout injection
 #                             unwinds it. SEC is the minimum gap (in
@@ -160,6 +175,8 @@ DISABLE_RELOADING=0
 QUEUE_TIMEOUT=
 REQUEST_TIMEOUT=
 INTERRUPT_TIMEOUT=
+RESTART_INTERVAL=
+MAXIMUM_REQUESTS=
 WEDGE_INTERVAL=0
 DELAY=0
 CPU=0
@@ -197,6 +214,8 @@ while [ $# -gt 0 ]; do
         --queue-timeout)  QUEUE_TIMEOUT="$2"; shift 2 ;;
         --request-timeout) REQUEST_TIMEOUT="$2"; shift 2 ;;
         --interrupt-timeout) INTERRUPT_TIMEOUT="$2"; shift 2 ;;
+        --restart-interval) RESTART_INTERVAL="$2"; shift 2 ;;
+        --maximum-requests) MAXIMUM_REQUESTS="$2"; shift 2 ;;
         --wedge-interval) WEDGE_INTERVAL="$2"; shift 2 ;;
         --delay)          DELAY="$2"; shift 2 ;;
         --cpu)            CPU="$2"; shift 2 ;;
@@ -322,6 +341,12 @@ else
     if [ -n "$INTERRUPT_TIMEOUT" ]; then
         setup_args+=(--interrupt-timeout "$INTERRUPT_TIMEOUT")
     fi
+    if [ -n "$RESTART_INTERVAL" ]; then
+        setup_args+=(--restart-interval "$RESTART_INTERVAL")
+    fi
+    if [ -n "$MAXIMUM_REQUESTS" ]; then
+        setup_args+=(--maximum-requests "$MAXIMUM_REQUESTS")
+    fi
 fi
 
 if [ -n "$METRICS_SERVICE" ]; then
@@ -359,6 +384,18 @@ else
     interrupt_timeout_state="default"
 fi
 
+if [ "$MODE" = "daemon" ] && [ -n "$RESTART_INTERVAL" ]; then
+    restart_interval_state="${RESTART_INTERVAL}s"
+else
+    restart_interval_state="default"
+fi
+
+if [ "$MODE" = "daemon" ] && [ -n "$MAXIMUM_REQUESTS" ]; then
+    maximum_requests_state="$MAXIMUM_REQUESTS"
+else
+    maximum_requests_state="default"
+fi
+
 if [ "$WEDGE_INTERVAL" != "0" ] && [ -n "$WEDGE_INTERVAL" ]; then
     wedge_state="${WEDGE_INTERVAL}s gap"
 else
@@ -394,6 +431,8 @@ echo "  reloading      : $reloading_state"
 echo "  queue-timeout  : $queue_timeout_state"
 echo "  request-tmo    : $request_timeout_state"
 echo "  interrupt-tmo  : $interrupt_timeout_state"
+echo "  restart-int    : $restart_interval_state"
+echo "  max-requests   : $maximum_requests_state"
 echo "  wedge          : $wedge_state"
 echo "  delay          : ${DELAY}s"
 echo "  cpu            : ${CPU}s"
