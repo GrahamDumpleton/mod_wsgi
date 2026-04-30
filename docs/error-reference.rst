@@ -4478,3 +4478,122 @@ WSGI0175 — SystemExit exception raised by WSGI script ignored
    control; this almost always indicates a configuration or
    import-time error that the application is unable to recover
    from.
+
+.. _WSGI0176:
+
+WSGI0176 — Basic auth provider returned empty user name string
+--------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_auth.c``
+
+:Logged message:
+   ``Basic auth provider returned empty user name string.``
+
+:Cause:
+   The ``check_password(environ, user, password)`` callable in the
+   ``WSGIAuthUserScript`` returned a string, which mod_wsgi treats
+   as the authenticated user name to install into ``r->user``, but
+   the string was empty. An empty user name would leave
+   ``REMOTE_USER`` blank in the WSGI environment, omit the user
+   from access log entries, and silently break any downstream
+   identity-keyed logic, so mod_wsgi rejects this case rather than
+   treating it as a successful authentication.
+
+:Outcome:
+   The hook returns ``AUTH_GENERAL_ERROR``; Apache responds with
+   500 Internal Server Error to the client.
+
+:Operator action:
+   Fix the ``check_password`` implementation so that, on successful
+   authentication, it returns either ``True`` (to confirm the
+   supplied user name) or a non-empty string naming the
+   authenticated user. Return ``False`` for an authentication
+   failure and ``None`` when the user is not known to the script.
+
+.. _WSGI0177:
+
+WSGI0177 — Basic auth provider returned unexpected type
+-------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_auth.c``
+
+:Logged message:
+   ``Basic auth provider must return True, False, None or user
+   name as string.``
+
+:Cause:
+   The ``check_password`` callable returned a value whose type is
+   not one of the accepted shapes. mod_wsgi accepts ``True``
+   (authentication succeeded for the supplied user name),
+   ``False`` (authentication failed), ``None`` (user not known to
+   the script), or a string (authentication succeeded; use this
+   string as the authenticated user name). Any other return value
+   is a programming error in the auth script.
+
+:Outcome:
+   The hook returns ``AUTH_GENERAL_ERROR``; Apache responds with
+   500 Internal Server Error to the client.
+
+:Operator action:
+   Fix the ``check_password`` implementation to return one of the
+   accepted values. Common mistakes include returning an integer,
+   a tuple, or a custom object intended to carry additional data.
+
+.. _WSGI0178:
+
+WSGI0178 — Digest auth provider returned empty realm hash
+---------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_auth.c``
+
+:Logged message:
+   ``Digest auth provider returned empty realm hash.``
+
+:Cause:
+   The ``get_realm_hash(environ, user, realm)`` callable in the
+   ``WSGIAuthUserScript`` returned a ``bytes`` or ``str`` value,
+   which mod_wsgi treats as the precomputed
+   ``MD5(user:realm:password)`` digest, but the returned value was
+   empty. An empty hash would always fail Apache's digest
+   comparison and produce an opaque authentication denial, so
+   mod_wsgi rejects this case explicitly.
+
+:Outcome:
+   The hook returns ``AUTH_GENERAL_ERROR``; Apache responds with
+   500 Internal Server Error to the client.
+
+:Operator action:
+   Fix the ``get_realm_hash`` implementation so that, when the user
+   is known, it returns the non-empty hex-encoded
+   ``MD5(user:realm:password)`` digest as either a ``bytes`` or
+   ``str`` value. Return ``None`` to indicate that the user is not
+   known to the script.
+
+.. _WSGI0179:
+
+WSGI0179 — Digest auth provider returned unexpected type
+--------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_auth.c``
+
+:Logged message:
+   ``Digest auth provider must return None or string object.``
+
+:Cause:
+   The ``get_realm_hash`` callable returned a value whose type is
+   not one of the accepted shapes. mod_wsgi accepts ``None`` (user
+   not known to the script) or a ``bytes``/``str`` value carrying
+   the hex-encoded ``MD5(user:realm:password)`` digest. Any other
+   return value is a programming error in the auth script.
+
+:Outcome:
+   The hook returns ``AUTH_GENERAL_ERROR``; Apache responds with
+   500 Internal Server Error to the client.
+
+:Operator action:
+   Fix the ``get_realm_hash`` implementation to return one of the
+   accepted values.

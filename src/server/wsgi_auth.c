@@ -592,9 +592,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     if (!config->auth_user_script)
     {
-        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0041)
-                       "Location of WSGI user authentication script not "
-                       "provided.");
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0041) "Location of WSGI user authentication script not "
+                                                                     "provided.");
 
         return AUTH_GENERAL_ERROR;
     }
@@ -611,9 +610,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0042)
-                        "Unable to acquire %s for user authentication "
-                        "hook.",
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0042) "Unable to acquire %s for user authentication "
+                                                            "hook.",
                         wsgi_format_interp_name(r->pool, group));
 
         return AUTH_GENERAL_ERROR;
@@ -636,7 +634,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
     Py_END_ALLOW_THREADS
 #endif
 
-    modules = PyImport_GetModuleDict();
+        modules = PyImport_GetModuleDict();
     module = PyDict_GetItemString(modules, name);
 
     Py_XINCREF(module);
@@ -762,18 +760,30 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
                         if (str)
                         {
-                            adapter->r->user = apr_pstrdup(adapter->r->pool,
-                                                           PyBytes_AsString(str));
-                            Py_DECREF(str);
+                            const char *user_name = PyBytes_AsString(str);
 
-                            status = AUTH_GRANTED;
+                            if (*user_name == '\0')
+                            {
+                                wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                                       WSGI_APLOGNO(0176) "Basic auth provider returned "
+                                                                          "empty user name string.");
+                            }
+                            else
+                            {
+                                adapter->r->user = apr_pstrdup(
+                                    adapter->r->pool, user_name);
+
+                                status = AUTH_GRANTED;
+                            }
+
+                            Py_DECREF(str);
                         }
                     }
                     else
                     {
-                        PyErr_SetString(PyExc_TypeError, "Basic auth "
-                                                         "provider must return True, False "
-                                                         "None or user name as string");
+                        wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                               WSGI_APLOGNO(0177) "Basic auth provider must return True, "
+                                                                  "False, None or user name as string.");
                     }
 
                     Py_DECREF(result);
@@ -818,10 +828,10 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
         }
         else
         {
-            wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0043)
-                                   "Target WSGI user authentication script "
-                                   "'%s' does not provide 'Basic' auth "
-                                   "provider.", script);
+            wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0043) "Target WSGI user authentication script "
+                                                                       "'%s' does not provide 'Basic' auth "
+                                                                       "provider.",
+                                   script);
         }
     }
 
@@ -854,9 +864,8 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     if (!config->auth_user_script)
     {
-        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0044)
-                       "Location of WSGI user authentication script not "
-                       "provided.");
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0044) "Location of WSGI user authentication script not "
+                                                                     "provided.");
 
         return AUTH_GENERAL_ERROR;
     }
@@ -873,9 +882,8 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0045)
-                        "Unable to acquire %s for user authentication "
-                        "hook.",
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0045) "Unable to acquire %s for user authentication "
+                                                            "hook.",
                         wsgi_format_interp_name(r->pool, group));
 
         return AUTH_GENERAL_ERROR;
@@ -1010,10 +1018,20 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                     }
                     else if (PyBytes_Check(result))
                     {
-                        *rethash = PyBytes_AsString(result);
-                        *rethash = apr_pstrdup(r->pool, *rethash);
+                        const char *hash = PyBytes_AsString(result);
 
-                        status = AUTH_USER_FOUND;
+                        if (*hash == '\0')
+                        {
+                            wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                                   WSGI_APLOGNO(0178) "Digest auth provider returned "
+                                                                      "empty realm hash.");
+                        }
+                        else
+                        {
+                            *rethash = apr_pstrdup(r->pool, hash);
+
+                            status = AUTH_USER_FOUND;
+                        }
                     }
                     else if (PyUnicode_Check(result))
                     {
@@ -1029,20 +1047,32 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                         }
                         else
                         {
+                            const char *hash;
+
                             Py_DECREF(result);
                             result = latin_item;
 
-                            *rethash = PyBytes_AsString(result);
-                            *rethash = apr_pstrdup(r->pool, *rethash);
+                            hash = PyBytes_AsString(result);
 
-                            status = AUTH_USER_FOUND;
+                            if (*hash == '\0')
+                            {
+                                wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                                       WSGI_APLOGNO(0178) "Digest auth provider returned "
+                                                                          "empty realm hash.");
+                            }
+                            else
+                            {
+                                *rethash = apr_pstrdup(r->pool, hash);
+
+                                status = AUTH_USER_FOUND;
+                            }
                         }
                     }
                     else
                     {
-                        PyErr_SetString(PyExc_TypeError, "Digest auth "
-                                                         "provider must return None "
-                                                         "or string object");
+                        wsgi_log_rerror_locked(APLOG_ERR, 0, r,
+                                               WSGI_APLOGNO(0179) "Digest auth provider must return None "
+                                                                  "or string object.");
                     }
 
                     Py_DECREF(result);
@@ -1087,10 +1117,10 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
         }
         else
         {
-            wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0046)
-                                   "Target WSGI user authentication script "
-                                   "'%s' does not provide 'Digest' auth "
-                                   "provider.", script);
+            wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0046) "Target WSGI user authentication script "
+                                                                       "'%s' does not provide 'Digest' auth "
+                                                                       "provider.",
+                                   script);
         }
     }
 
@@ -1126,9 +1156,8 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     if (!config->auth_group_script)
     {
-        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0047)
-                       "Location of WSGI group authentication script not "
-                       "provided.");
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0047) "Location of WSGI group authentication script not "
+                                                                     "provided.");
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -1145,9 +1174,8 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0048)
-                        "Unable to acquire %s for group authentication "
-                        "hook.",
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0048) "Unable to acquire %s for group authentication "
+                                                            "hook.",
                         wsgi_format_interp_name(r->pool, group));
 
         return HTTP_INTERNAL_SERVER_ERROR;
@@ -1287,19 +1315,19 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                                 latin_item = PyUnicode_AsLatin1String(item);
                                 if (!latin_item)
                                 {
-                                    wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0049)
-                                                           "Item returned "
-                                                           "from "
-                                                           "'groups_for_user' "
-                                                           "in '%s' is a "
-                                                           "string containing "
-                                                           "characters that "
-                                                           "cannot be encoded "
-                                                           "as latin-1; "
-                                                           "expected a byte "
-                                                           "string.", script);
+                                    wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0049) "Item returned "
+                                                                                               "from "
+                                                                                               "'groups_for_user' "
+                                                                                               "in '%s' is a "
+                                                                                               "string containing "
+                                                                                               "characters that "
+                                                                                               "cannot be encoded "
+                                                                                               "as latin-1; "
+                                                                                               "expected a byte "
+                                                                                               "string.",
+                                                           script);
 
-                                        Py_DECREF(item);
+                                    Py_DECREF(item);
 
                                     status = HTTP_INTERNAL_SERVER_ERROR;
 
@@ -1314,13 +1342,13 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
                             if (!PyBytes_Check(item))
                             {
-                                wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0050)
-                                                       "Item returned from "
-                                                       "'groups_for_user' "
-                                                       "in '%s' is not a "
-                                                       "byte string.", script);
+                                wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0050) "Item returned from "
+                                                                                           "'groups_for_user' "
+                                                                                           "in '%s' is not a "
+                                                                                           "byte string.",
+                                                       script);
 
-                                    Py_DECREF(item);
+                                Py_DECREF(item);
 
                                 status = HTTP_INTERNAL_SERVER_ERROR;
 
@@ -1339,12 +1367,12 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
                     }
                     else
                     {
-                        wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0051)
-                                               "Result returned from "
-                                               "'groups_for_user' in '%s' "
-                                               "is not iterable; expected "
-                                               "an iterable sequence of "
-                                               "byte strings.", script);
+                        wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0051) "Result returned from "
+                                                                                   "'groups_for_user' in '%s' "
+                                                                                   "is not iterable; expected "
+                                                                                   "an iterable sequence of "
+                                                                                   "byte strings.",
+                                               script);
                     }
 
                     Py_DECREF(result);
@@ -1389,10 +1417,10 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
         }
         else
         {
-            wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0052)
-                                   "Target WSGI group authentication "
-                                   "script '%s' does not provide "
-                                   "'groups_for_user' callable.", script);
+            wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0052) "Target WSGI group authentication "
+                                                                       "script '%s' does not provide "
+                                                                       "'groups_for_user' callable.",
+                                   script);
         }
     }
 
@@ -1424,8 +1452,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
     if (!config->access_script)
     {
-        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0053)
-                       "Location of WSGI host access script not provided.");
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0053) "Location of WSGI host access script not provided.");
 
         return 0;
     }
@@ -1442,8 +1469,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0054)
-                        "Unable to acquire %s for host access hook.",
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0054) "Unable to acquire %s for host access hook.",
                         wsgi_format_interp_name(r->pool, group));
 
         return 0;
@@ -1573,11 +1599,11 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
                     }
                     else
                     {
-                        wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0055)
-                                               "Result returned from "
-                                               "'allow_access' in '%s' "
-                                               "must be a boolean or "
-                                               "None.", script);
+                        wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0055) "Result returned from "
+                                                                                   "'allow_access' in '%s' "
+                                                                                   "must be a boolean or "
+                                                                                   "None.",
+                                               script);
                     }
 
                     Py_DECREF(result);
@@ -1622,10 +1648,10 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
         }
         else
         {
-            wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0056)
-                                   "Target WSGI host access script '%s' "
-                                   "does not provide 'allow_access' "
-                                   "callable.", script);
+            wsgi_log_rerror_locked(APLOG_ERR, 0, r, WSGI_APLOGNO(0056) "Target WSGI host access script '%s' "
+                                                                       "does not provide 'allow_access' "
+                                                                       "callable.",
+                                   script);
         }
     }
 
@@ -1665,8 +1691,7 @@ int wsgi_hook_access_checker(request_rec *r)
 
     if (ap_satisfies(r) != SATISFY_ANY || !ap_some_auth_required(r))
     {
-        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0057)
-                        "Client denied by server configuration: '%s'.",
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0057) "Client denied by server configuration: '%s'.",
                         r->filename);
     }
 
@@ -1690,9 +1715,8 @@ static authz_status wsgi_check_authorization(request_rec *r,
 
     if (!config->auth_group_script)
     {
-        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0058)
-                       "Location of WSGI group authorization script not "
-                       "provided.");
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0058) "Location of WSGI group authorization script not "
+                                                                     "provided.");
 
         return AUTHZ_DENIED;
     }
@@ -1704,9 +1728,8 @@ static authz_status wsgi_check_authorization(request_rec *r,
 
     if (apr_table_elts(grpstatus)->nelts == 0)
     {
-        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0059)
-                        "Authorization of user '%s' to access '%s' failed. "
-                        "User is not a member of any groups.",
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0059) "Authorization of user '%s' to access '%s' failed. "
+                                                            "User is not a member of any groups.",
                         r->user, r->uri);
         return AUTHZ_DENIED;
     }
@@ -1720,9 +1743,8 @@ static authz_status wsgi_check_authorization(request_rec *r,
         }
     }
 
-    wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0060)
-                    "Authorization of user '%s' to access '%s' failed. "
-                    "User is not a member of designated groups.",
+    wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0060) "Authorization of user '%s' to access '%s' failed. "
+                                                        "User is not a member of designated groups.",
                     r->user, r->uri);
 
     return AUTHZ_DENIED;
