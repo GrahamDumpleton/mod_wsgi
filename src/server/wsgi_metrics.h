@@ -72,6 +72,16 @@ extern int wsgi_metrics_snapshot_slow_active(wsgi_slow_request_t *out,
 extern void wsgi_telemetry_start_reporter(apr_pool_t *pool);
 extern void wsgi_telemetry_stop_reporter(void);
 
+/* Graceful shutdown sequence. emit_process_stopping fires the chart-
+ * marker datagram at decision time (before drain); pause_reporter
+ * joins the reporter thread without closing the socket; then
+ * emit_final_tick flushes the partial-window accumulators, emits
+ * STOPPED with the lifetime summary, and closes the socket. Pass NULL
+ * for reason when no shutdown reason is available. */
+extern void wsgi_telemetry_emit_process_stopping(const char *reason);
+extern void wsgi_telemetry_pause_reporter(void);
+extern void wsgi_telemetry_emit_final_tick(const char *reason);
+
 extern PyMethodDef wsgi_server_metrics_method[];
 
 extern long wsgi_event_subscribers(void);

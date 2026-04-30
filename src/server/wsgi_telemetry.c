@@ -62,6 +62,34 @@ static int wsgi_telemetry_started = 0;
 static apr_thread_t *wsgi_telemetry_thread = NULL;
 static volatile int wsgi_telemetry_shutdown = 0;
 
+/*
+ * Reporter context. Populated by the reporter thread before it begins
+ * the periodic loop, and read by both the reporter thread and the
+ * daemon main thread (which emits lifecycle datagrams sharing the same
+ * socket and identity). The context outlives the reporter thread —
+ * pause_reporter joins the thread but leaves these fields populated so
+ * emit_final_tick / STOPPED can still send before close.
+ */
+
+typedef struct {
+    int                       fd;
+    struct sockaddr_storage   addr;
+    socklen_t                 addrlen;
+    uint32_t                  pid;
+    uint32_t                  parent_pid;
+    apr_time_t                process_start_us;
+    char                      hostname[128];
+    char                      process_group[64];
+    char                      mod_wsgi_version[32];
+    char                      python_version[64];
+    char                      apache_version[64];
+    char                      mpm_name[32];
+} wsgi_telemetry_ctx_t;
+
+static wsgi_telemetry_ctx_t wsgi_telemetry_ctx;
+static volatile int wsgi_telemetry_ctx_ready = 0;
+static volatile apr_uint32_t wsgi_telemetry_seq = 0;
+
 /* ------------------------------------------------------------------------- */
 
 /*
@@ -104,6 +132,25 @@ static int wsgi_telemetry_open(const char *target,
 
     *out_fd = fd;
     return 0;
+}
+
+static uint32_t wsgi_telemetry_next_seq(void)
+{
+    return apr_atomic_inc32(&wsgi_telemetry_seq) + 1;
+}
+
+static void wsgi_telemetry_send(const wsgi_telemetry_ctx_t *ctx,
+                                const uint8_t *buf, size_t n)
+{
+    if (n == 0 || ctx->fd < 0)
+        return;
+
+    if (sendto(ctx->fd, buf, n, 0,
+               (struct sockaddr *)&ctx->addr, ctx->addrlen) < 0) {
+        /* Datagram sockets: ENOENT / ECONNREFUSED when ingester isn't
+         * up. Silently drop; the ingester picks up on the next tick
+         * once listening. Don't flood the error log. */
+    }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -325,24 +372,236 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
 
 /* ------------------------------------------------------------------------- */
 
+/*
+ * Lifecycle encoders. STARTED carries identity at process birth so the
+ * consumer doesn't have to wait for the first periodic tick to register
+ * the process exists. STOPPING is the chart-marker — fired at decision
+ * time, before drain. STOPPED is the end-of-record summary — fired
+ * after drain completes and the reporter has been quiesced.
+ */
+
+static size_t wsgi_telemetry_encode_started(const wsgi_telemetry_ctx_t *ctx,
+                                            uint32_t seq, uint8_t *buf,
+                                            size_t buflen)
+{
+    uint8_t *p = buf;
+
+    (void)buflen;
+
+    wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_PROCESS_STARTED, ctx->pid,
+                            seq, (uint64_t)ctx->process_start_us);
+
+    if (ctx->mod_wsgi_version[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_MOD_WSGI_VERSION,
+                               ctx->mod_wsgi_version,
+                               (uint16_t)strlen(ctx->mod_wsgi_version));
+    if (ctx->python_version[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_PYTHON_VERSION,
+                               ctx->python_version,
+                               (uint16_t)strlen(ctx->python_version));
+    if (ctx->apache_version[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_APACHE_VERSION,
+                               ctx->apache_version,
+                               (uint16_t)strlen(ctx->apache_version));
+    if (ctx->mpm_name[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_MPM_NAME, ctx->mpm_name,
+                               (uint16_t)strlen(ctx->mpm_name));
+    if (ctx->hostname[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_HOSTNAME, ctx->hostname,
+                               (uint16_t)strlen(ctx->hostname));
+    if (ctx->process_group[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_PROCESS_GROUP,
+                               ctx->process_group,
+                               (uint16_t)strlen(ctx->process_group));
+
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_PROCESS_PARENT_PID,
+                         ctx->parent_pid);
+
+    return (size_t)(p - buf);
+}
+
+static size_t wsgi_telemetry_encode_stopping(const wsgi_telemetry_ctx_t *ctx,
+                                             const char *reason,
+                                             uint64_t active_at_decision,
+                                             uint32_t seq, uint8_t *buf,
+                                             size_t buflen)
+{
+    uint8_t *p = buf;
+    uint64_t now_us = (uint64_t)apr_time_now();
+
+    (void)buflen;
+
+    wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_PROCESS_STOPPING, ctx->pid,
+                            seq, now_us);
+
+    if (ctx->hostname[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_HOSTNAME, ctx->hostname,
+                               (uint16_t)strlen(ctx->hostname));
+    if (ctx->process_group[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_PROCESS_GROUP,
+                               ctx->process_group,
+                               (uint16_t)strlen(ctx->process_group));
+    if (reason && *reason)
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SHUTDOWN_REASON, reason,
+                               (uint16_t)strlen(reason));
+
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_ACTIVE_REQUESTS_AT_DECISION,
+                         active_at_decision);
+
+    return (size_t)(p - buf);
+}
+
+static size_t wsgi_telemetry_encode_stopped(const wsgi_telemetry_ctx_t *ctx,
+                                            const char *reason,
+                                            uint64_t lifetime_count,
+                                            uint64_t active_at_exit,
+                                            uint32_t seq, uint8_t *buf,
+                                            size_t buflen)
+{
+    uint8_t *p = buf;
+    uint64_t now_us = (uint64_t)apr_time_now();
+    double uptime = (double)(now_us - (uint64_t)ctx->process_start_us)
+                    / (double)APR_USEC_PER_SEC;
+    uint64_t graceful_drain = (active_at_exit == 0) ? 1 : 0;
+
+    (void)buflen;
+
+    wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_PROCESS_STOPPED, ctx->pid,
+                            seq, now_us);
+
+    if (ctx->hostname[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_HOSTNAME, ctx->hostname,
+                               (uint16_t)strlen(ctx->hostname));
+    if (ctx->process_group[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_PROCESS_GROUP,
+                               ctx->process_group,
+                               (uint16_t)strlen(ctx->process_group));
+    if (reason && *reason)
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SHUTDOWN_REASON, reason,
+                               (uint16_t)strlen(reason));
+
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_PROCESS_UPTIME, uptime);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_LIFETIME_REQUEST_COUNT,
+                         lifetime_count);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_ACTIVE_REQUESTS_AT_EXIT,
+                         active_at_exit);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GRACEFUL_DRAIN, graceful_drain);
+
+    return (size_t)(p - buf);
+}
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Per-tick emitter. Snapshots the periodic accumulators, fills in the
+ * identity strings the snapshot does not own, encodes / sends the
+ * KIND_REQUEST datagram, then drains the slow-completed ring and scans
+ * any still-active slow records, emitting one KIND_SLOW_REQUEST
+ * datagram per record. Called from the reporter thread on every tick
+ * and from emit_final_tick on the daemon main thread when shutting
+ * down — accumulators are drained-and-reset, so calling this once more
+ * at shutdown captures the partial window since the reporter's last
+ * tick that would otherwise be lost.
+ */
+
+static void wsgi_telemetry_emit_tick(const wsgi_telemetry_ctx_t *ctx)
+{
+    wsgi_telemetry_sample_t sample;
+    uint8_t buf[WSGI_METRICS_MAX_DATAGRAM];
+    size_t n;
+    uint32_t seq;
+
+    if (!wsgi_metrics_snapshot(&sample))
+        return;
+
+    /* Populate identity + reporter config that the snapshot function
+     * does not fill. wsgi_slow_threshold_us is in microseconds, exposed
+     * as seconds on the wire so the UI can compare directly with the
+     * heatmap stuck-threshold dropdown. */
+    strncpy(sample.hostname, ctx->hostname, sizeof(sample.hostname) - 1);
+    sample.hostname[sizeof(sample.hostname) - 1] = '\0';
+    strncpy(sample.process_group, ctx->process_group,
+            sizeof(sample.process_group) - 1);
+    sample.process_group[sizeof(sample.process_group) - 1] = '\0';
+    strncpy(sample.mod_wsgi_version, ctx->mod_wsgi_version,
+            sizeof(sample.mod_wsgi_version) - 1);
+    sample.mod_wsgi_version[sizeof(sample.mod_wsgi_version) - 1] = '\0';
+    strncpy(sample.python_version, ctx->python_version,
+            sizeof(sample.python_version) - 1);
+    sample.python_version[sizeof(sample.python_version) - 1] = '\0';
+    strncpy(sample.apache_version, ctx->apache_version,
+            sizeof(sample.apache_version) - 1);
+    sample.apache_version[sizeof(sample.apache_version) - 1] = '\0';
+    strncpy(sample.mpm_name, ctx->mpm_name, sizeof(sample.mpm_name) - 1);
+    sample.mpm_name[sizeof(sample.mpm_name) - 1] = '\0';
+    sample.telemetry_interval = wsgi_telemetry_interval;
+    sample.slow_requests_threshold =
+        (double)wsgi_slow_threshold_us / 1.0e6;
+
+    if (!sample.seeded)
+        return;  /* first call seeded counters; skip send */
+
+    seq = wsgi_telemetry_next_seq();
+    n = wsgi_telemetry_encode(&sample, ctx->pid, seq, buf, sizeof(buf));
+    wsgi_telemetry_send(ctx, buf, n);
+
+    /* Slow-request tracking — one datagram per record. Completed
+     * records drain first so their final duration arrives before any
+     * heartbeat that would otherwise make the UI age the entry out as
+     * "lost". Active-scan uses a consistent now_us so all elapsed
+     * values in this tick share a reference. */
+
+    if (wsgi_slow_threshold_us > 0) {
+        wsgi_slow_request_t rec;
+        wsgi_slow_request_t actives[16];
+        int n_active;
+        int i;
+        uint64_t tick_stamp_us = (uint64_t)apr_time_now();
+
+        while (wsgi_metrics_pop_slow_completed(&rec)) {
+            seq = wsgi_telemetry_next_seq();
+            n = wsgi_telemetry_encode_slow(&rec, ctx->pid, seq, tick_stamp_us,
+                                           buf, sizeof(buf));
+            wsgi_telemetry_send(ctx, buf, n);
+        }
+
+        n_active = wsgi_metrics_snapshot_slow_active(
+            actives, (int)(sizeof(actives) / sizeof(actives[0])),
+            (apr_time_t)tick_stamp_us, wsgi_slow_threshold_us);
+
+        for (i = 0; i < n_active; i++) {
+            seq = wsgi_telemetry_next_seq();
+            n = wsgi_telemetry_encode_slow(&actives[i], ctx->pid, seq,
+                                           tick_stamp_us, buf, sizeof(buf));
+            wsgi_telemetry_send(ctx, buf, n);
+        }
+    }
+}
+
+/* ------------------------------------------------------------------------- */
+
 static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
                                                         void *data)
 {
-    int fd = -1;
-    struct sockaddr_storage addr;
-    socklen_t addrlen = 0;
     uint8_t buf[WSGI_METRICS_MAX_DATAGRAM];
-    uint32_t seq = 0;
-    uint32_t pid = (uint32_t)getpid();
-    char hostname[128];
-    const char *group_name = "";
-    char mod_wsgi_version[32];
-    char python_version[64];
-    char apache_version[64];
-    char mpm_name[32];
+    size_t n;
+    uint32_t seq;
     apr_interval_time_t sleep_us;
 
-    if (wsgi_telemetry_open(wsgi_telemetry_target, &fd, &addr, &addrlen) != 0) {
+    /* Populate the reporter context. fd is held here so the daemon
+     * main thread can use it for lifecycle datagrams on the same
+     * socket; process_start_us is the STARTED header timestamp and
+     * the basis for STOPPED's uptime field. */
+
+    wsgi_telemetry_ctx.fd = -1;
+    wsgi_telemetry_ctx.pid = (uint32_t)getpid();
+    wsgi_telemetry_ctx.parent_pid = (uint32_t)getppid();
+    wsgi_telemetry_ctx.process_start_us = apr_time_now();
+
+    if (wsgi_telemetry_open(wsgi_telemetry_target,
+                            &wsgi_telemetry_ctx.fd,
+                            &wsgi_telemetry_ctx.addr,
+                            &wsgi_telemetry_ctx.addrlen) != 0) {
         wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0132)
                        "Telemetry reporter could not open target '%s'; "
                        "metrics will not be sent.",
@@ -350,24 +609,31 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
         return NULL;
     }
 
-    if (gethostname(hostname, sizeof(hostname)) != 0)
-        hostname[0] = '\0';
-    hostname[sizeof(hostname) - 1] = '\0';
+    if (gethostname(wsgi_telemetry_ctx.hostname,
+                    sizeof(wsgi_telemetry_ctx.hostname)) != 0)
+        wsgi_telemetry_ctx.hostname[0] = '\0';
+    wsgi_telemetry_ctx.hostname[sizeof(wsgi_telemetry_ctx.hostname) - 1] = '\0';
 
+    wsgi_telemetry_ctx.process_group[0] = '\0';
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process && wsgi_daemon_process->group &&
-        wsgi_daemon_process->group->name)
-        group_name = wsgi_daemon_process->group->name;
+        wsgi_daemon_process->group->name) {
+        strncpy(wsgi_telemetry_ctx.process_group,
+                wsgi_daemon_process->group->name,
+                sizeof(wsgi_telemetry_ctx.process_group) - 1);
+        wsgi_telemetry_ctx.process_group[
+            sizeof(wsgi_telemetry_ctx.process_group) - 1] = '\0';
+    }
 #endif
 
-    /* Build / runtime identity. Populated once; these strings are
-     * static for the life of the process and are copied into each
-     * sample below. Empty values are tolerated — the encoder skips
+    /* Build / runtime identity. Populated once; static for the life of
+     * the process. Empty values are tolerated — the encoder skips
      * fields with a leading nul so an ingester never sees an empty
      * string where it expects a real version. */
-    strncpy(mod_wsgi_version, MOD_WSGI_VERSION_STRING,
-            sizeof(mod_wsgi_version) - 1);
-    mod_wsgi_version[sizeof(mod_wsgi_version) - 1] = '\0';
+    strncpy(wsgi_telemetry_ctx.mod_wsgi_version, MOD_WSGI_VERSION_STRING,
+            sizeof(wsgi_telemetry_ctx.mod_wsgi_version) - 1);
+    wsgi_telemetry_ctx.mod_wsgi_version[
+        sizeof(wsgi_telemetry_ctx.mod_wsgi_version) - 1] = '\0';
 
     {
         /* Py_GetVersion() returns "3.14.0 (main, Jan 15 2026, ...)";
@@ -377,13 +643,13 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
         const char *pv = Py_GetVersion();
         size_t i = 0;
         if (pv) {
-            while (i < sizeof(python_version) - 1 && pv[i] &&
-                   pv[i] != ' ' && pv[i] != '\t') {
-                python_version[i] = pv[i];
+            while (i < sizeof(wsgi_telemetry_ctx.python_version) - 1
+                   && pv[i] && pv[i] != ' ' && pv[i] != '\t') {
+                wsgi_telemetry_ctx.python_version[i] = pv[i];
                 i++;
             }
         }
-        python_version[i] = '\0';
+        wsgi_telemetry_ctx.python_version[i] = '\0';
     }
 
     /* AP_SERVER_BASEVERSION is the compile-time Apache version
@@ -391,20 +657,33 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
      * directive — which we want here: telemetry needs the actual
      * binary version regardless of whether the admin has redacted
      * the public banner. */
-    strncpy(apache_version, AP_SERVER_BASEVERSION,
-            sizeof(apache_version) - 1);
-    apache_version[sizeof(apache_version) - 1] = '\0';
+    strncpy(wsgi_telemetry_ctx.apache_version, AP_SERVER_BASEVERSION,
+            sizeof(wsgi_telemetry_ctx.apache_version) - 1);
+    wsgi_telemetry_ctx.apache_version[
+        sizeof(wsgi_telemetry_ctx.apache_version) - 1] = '\0';
 
     {
         const char *mpm = ap_show_mpm();
         if (mpm) {
-            strncpy(mpm_name, mpm, sizeof(mpm_name) - 1);
-            mpm_name[sizeof(mpm_name) - 1] = '\0';
+            strncpy(wsgi_telemetry_ctx.mpm_name, mpm,
+                    sizeof(wsgi_telemetry_ctx.mpm_name) - 1);
+            wsgi_telemetry_ctx.mpm_name[
+                sizeof(wsgi_telemetry_ctx.mpm_name) - 1] = '\0';
         }
         else {
-            mpm_name[0] = '\0';
+            wsgi_telemetry_ctx.mpm_name[0] = '\0';
         }
     }
+
+    wsgi_telemetry_ctx_ready = 1;
+
+    /* Emit STARTED before the periodic loop begins so the consumer
+     * registers the process without having to wait for the first
+     * periodic tick. */
+    seq = wsgi_telemetry_next_seq();
+    n = wsgi_telemetry_encode_started(&wsgi_telemetry_ctx, seq,
+                                      buf, sizeof(buf));
+    wsgi_telemetry_send(&wsgi_telemetry_ctx, buf, n);
 
     sleep_us = (apr_interval_time_t)(wsgi_telemetry_interval * APR_USEC_PER_SEC);
     if (sleep_us < 100000)   /* floor at 100ms */
@@ -416,104 +695,16 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
                    wsgi_telemetry_target, wsgi_telemetry_interval);
 
     while (!wsgi_telemetry_shutdown) {
-        wsgi_telemetry_sample_t sample;
-        size_t n;
-
         apr_sleep(sleep_us);
-
         if (wsgi_telemetry_shutdown)
             break;
-
-        if (!wsgi_metrics_snapshot(&sample))
-            continue;
-
-        /* Populate identity + reporter config that the snapshot
-         * function does not fill. wsgi_slow_threshold_us is in
-         * microseconds, exposed as seconds on the wire so the UI can
-         * compare directly with the heatmap stuck-threshold dropdown
-         * (also in seconds). */
-        strncpy(sample.hostname, hostname, sizeof(sample.hostname) - 1);
-        sample.hostname[sizeof(sample.hostname) - 1] = '\0';
-        strncpy(sample.process_group, group_name,
-                sizeof(sample.process_group) - 1);
-        sample.process_group[sizeof(sample.process_group) - 1] = '\0';
-        strncpy(sample.mod_wsgi_version, mod_wsgi_version,
-                sizeof(sample.mod_wsgi_version) - 1);
-        sample.mod_wsgi_version[sizeof(sample.mod_wsgi_version) - 1] = '\0';
-        strncpy(sample.python_version, python_version,
-                sizeof(sample.python_version) - 1);
-        sample.python_version[sizeof(sample.python_version) - 1] = '\0';
-        strncpy(sample.apache_version, apache_version,
-                sizeof(sample.apache_version) - 1);
-        sample.apache_version[sizeof(sample.apache_version) - 1] = '\0';
-        strncpy(sample.mpm_name, mpm_name, sizeof(sample.mpm_name) - 1);
-        sample.mpm_name[sizeof(sample.mpm_name) - 1] = '\0';
-        sample.telemetry_interval = wsgi_telemetry_interval;
-        sample.slow_requests_threshold =
-            (double)wsgi_slow_threshold_us / 1.0e6;
-
-        if (!sample.seeded)
-            continue;  /* first call seeded counters; skip send */
-
-        seq++;
-        n = wsgi_telemetry_encode(&sample, pid, seq, buf, sizeof(buf));
-        if (n == 0)
-            continue;
-
-        if (sendto(fd, buf, n, 0,
-                   (struct sockaddr *)&addr, addrlen) < 0) {
-            /* Datagram sockets: ENOENT / ECONNREFUSED when ingester isn't
-             * up. Silently drop; the ingester will pick up on next tick
-             * once listening. Don't flood the error log. */
-        }
-
-        /* Slow-request tracking — one datagram per record. Completed
-         * records drain first so their final duration arrives before
-         * any heartbeat that would otherwise make the UI age the entry
-         * out as "lost". Active-scan uses a consistent now_us so all
-         * elapsed values in this tick share a reference. */
-
-        if (wsgi_slow_threshold_us > 0) {
-            wsgi_slow_request_t rec;
-            wsgi_slow_request_t actives[16];
-            int n_active;
-            int i;
-            uint64_t tick_stamp_us = (uint64_t)apr_time_now();
-
-            while (wsgi_metrics_pop_slow_completed(&rec)) {
-                seq++;
-                n = wsgi_telemetry_encode_slow(&rec, pid, seq, tick_stamp_us,
-                                               buf, sizeof(buf));
-                if (n == 0)
-                    continue;
-                if (sendto(fd, buf, n, 0, (struct sockaddr *)&addr,
-                           addrlen) < 0) {
-                    /* silently drop; see comment above */
-                }
-            }
-
-            n_active = wsgi_metrics_snapshot_slow_active(
-                actives, (int)(sizeof(actives) / sizeof(actives[0])),
-                (apr_time_t)tick_stamp_us, wsgi_slow_threshold_us);
-
-            for (i = 0; i < n_active; i++) {
-                seq++;
-                n = wsgi_telemetry_encode_slow(&actives[i], pid, seq,
-                                               tick_stamp_us, buf,
-                                               sizeof(buf));
-                if (n == 0)
-                    continue;
-                if (sendto(fd, buf, n, 0, (struct sockaddr *)&addr,
-                           addrlen) < 0) {
-                    /* silently drop */
-                }
-            }
-        }
+        wsgi_telemetry_emit_tick(&wsgi_telemetry_ctx);
     }
 
-    if (fd >= 0)
-        close(fd);
-
+    /* Don't close fd here — pause_reporter / stop_reporter manages
+     * that. Leaving it open lets the daemon main thread call
+     * emit_final_tick to flush the partial window and emit STOPPED
+     * via the same socket. */
     return NULL;
 }
 
@@ -631,6 +822,113 @@ void wsgi_telemetry_stop_reporter(void)
         wsgi_telemetry_thread = NULL;
     }
     wsgi_telemetry_started = 0;
+
+    /* Close the socket here for callers that don't go through the
+     * graceful pause / final-tick / STOPPED path. emit_final_tick
+     * closes it itself and clears ctx_ready, so this branch is a no-op
+     * on that path. */
+    if (wsgi_telemetry_ctx_ready && wsgi_telemetry_ctx.fd >= 0) {
+        close(wsgi_telemetry_ctx.fd);
+        wsgi_telemetry_ctx.fd = -1;
+        wsgi_telemetry_ctx_ready = 0;
+    }
+}
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Quiesce the reporter thread without closing the socket. Used during
+ * graceful daemon shutdown: the daemon main thread first emits
+ * STOPPING, lets drain run with the reporter still ticking, then calls
+ * pause_reporter to join the thread before doing the final flush + the
+ * STOPPED emit on the daemon main thread (see emit_final_tick).
+ */
+
+void wsgi_telemetry_pause_reporter(void)
+{
+    if (!wsgi_telemetry_started)
+        return;
+
+    wsgi_telemetry_shutdown = 1;
+    if (wsgi_telemetry_thread) {
+        apr_status_t rv = APR_SUCCESS;
+        apr_thread_join(&rv, wsgi_telemetry_thread);
+        wsgi_telemetry_thread = NULL;
+    }
+    wsgi_telemetry_started = 0;
+}
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Emit the STOPPING chart-marker datagram. Called from the daemon main
+ * thread (or the embedded-mode child cleanup) at the moment shutdown
+ * is decided, before drain begins. Reads wsgi_active_requests under
+ * the monitor lock so the at-decision count is consistent with whoever
+ * else may be reading it. Safe to call concurrently with the reporter
+ * thread — both share the socket and seq is atomic.
+ */
+
+void wsgi_telemetry_emit_process_stopping(const char *reason)
+{
+    uint8_t buf[WSGI_METRICS_MAX_DATAGRAM];
+    uint32_t seq;
+    size_t n;
+    uint64_t active;
+
+    if (!wsgi_telemetry_ctx_ready)
+        return;
+
+    apr_thread_mutex_lock(wsgi_monitor_lock);
+    active = (uint64_t)wsgi_active_requests;
+    apr_thread_mutex_unlock(wsgi_monitor_lock);
+
+    seq = wsgi_telemetry_next_seq();
+    n = wsgi_telemetry_encode_stopping(&wsgi_telemetry_ctx, reason, active,
+                                       seq, buf, sizeof(buf));
+    wsgi_telemetry_send(&wsgi_telemetry_ctx, buf, n);
+}
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Final flush + STOPPED emit + socket close. Called once on the daemon
+ * main thread after pause_reporter has joined the reporter thread.
+ * Runs one more emit_tick so the partial window since the reporter's
+ * last tick is on the wire (otherwise drain-and-reset semantics would
+ * lose those accumulators), then encodes and sends STOPPED, then
+ * closes the socket.
+ */
+
+void wsgi_telemetry_emit_final_tick(const char *reason)
+{
+    uint8_t buf[WSGI_METRICS_MAX_DATAGRAM];
+    uint32_t seq;
+    size_t n;
+    uint64_t lifetime;
+    uint64_t active;
+
+    if (!wsgi_telemetry_ctx_ready)
+        return;
+
+    /* Flush the partial window the reporter didn't get to. */
+    wsgi_telemetry_emit_tick(&wsgi_telemetry_ctx);
+
+    apr_thread_mutex_lock(wsgi_monitor_lock);
+    lifetime = wsgi_total_requests;
+    active = (uint64_t)wsgi_active_requests;
+    apr_thread_mutex_unlock(wsgi_monitor_lock);
+
+    seq = wsgi_telemetry_next_seq();
+    n = wsgi_telemetry_encode_stopped(&wsgi_telemetry_ctx, reason, lifetime,
+                                      active, seq, buf, sizeof(buf));
+    wsgi_telemetry_send(&wsgi_telemetry_ctx, buf, n);
+
+    if (wsgi_telemetry_ctx.fd >= 0) {
+        close(wsgi_telemetry_ctx.fd);
+        wsgi_telemetry_ctx.fd = -1;
+    }
+    wsgi_telemetry_ctx_ready = 0;
 }
 
 /* ------------------------------------------------------------------------- */

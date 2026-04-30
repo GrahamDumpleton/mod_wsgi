@@ -3035,6 +3035,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
      */
 
     wsgi_publish_process_stopping(wsgi_shutdown_reason);
+    wsgi_telemetry_emit_process_stopping(wsgi_shutdown_reason);
 
     if (wsgi_dump_stack_traces)
         wsgi_log_stack_traces();
@@ -3066,6 +3067,19 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
             }
         }
     }
+
+    /*
+     * Drain has completed. Quiesce the telemetry reporter, run one
+     * final periodic tick to flush the partial window since its last
+     * sleep, then emit the STOPPED lifecycle datagram and close the
+     * socket. The reporter has been ticking through drain so any
+     * requests that finished there are already on the wire; this
+     * captures whatever has accumulated since the reporter's last
+     * tick.
+     */
+
+    wsgi_telemetry_pause_reporter();
+    wsgi_telemetry_emit_final_tick(wsgi_shutdown_reason);
 }
 
 static apr_status_t wsgi_cleanup_process(void *data)

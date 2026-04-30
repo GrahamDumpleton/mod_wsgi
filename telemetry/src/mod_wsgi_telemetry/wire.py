@@ -9,7 +9,8 @@ Wire layout:
   fixed header (24 bytes, little-endian):
     magic     uint32   b'WSGI'
     version   uint8
-    kind      uint8    1=process, 2=request, 3=server, 4=slow_request, 10+ events
+    kind      uint8    1=process, 2=request, 3=server, 4=slow_request,
+                       5=process_started, 6=process_stopping, 7=process_stopped
     flags     uint16
     pid       uint32
     seq       uint32   monotonic per process, drop detection
@@ -35,12 +36,18 @@ KIND_PROCESS = 1
 KIND_REQUEST = 2
 KIND_SERVER = 3
 KIND_SLOW_REQUEST = 4
+KIND_PROCESS_STARTED = 5
+KIND_PROCESS_STOPPING = 6
+KIND_PROCESS_STOPPED = 7
 
 KIND_NAMES = {
     KIND_PROCESS: "process_metrics",
     KIND_REQUEST: "request_metrics",
     KIND_SERVER: "server_metrics",
     KIND_SLOW_REQUEST: "slow_request",
+    KIND_PROCESS_STARTED: "process_started",
+    KIND_PROCESS_STOPPING: "process_stopping",
+    KIND_PROCESS_STOPPED: "process_stopped",
 }
 
 # Type tags
@@ -57,14 +64,15 @@ T_I32_ARRAY = 0x05
 FIELDS = {
     # 1-9: identity. Build/runtime versions come first so a consumer
     # that wants to print a "who is this" banner can reach them without
-    # scanning the whole TLV record. All six fields are static for the
-    # life of a process.
+    # scanning the whole TLV record. All seven fields are static for
+    # the life of a process.
     1: "mod_wsgi_version",
     2: "python_version",
     3: "apache_version",
     4: "mpm_name",
     5: "hostname",
     6: "process_group",
+    7: "process_parent_pid",
 
     # 10-19: sampling and reporter configuration. sample_period is the
     # measured wall-clock interval between snapshot calls (drifts with
@@ -173,33 +181,49 @@ FIELDS = {
     123: "status_4xx_total",
     124: "status_5xx_total",
 
-    # 130-149: slow-request fields (only present in KIND_SLOW_REQUEST
+    # 130-139: lifecycle event payload. Only present in
+    # KIND_PROCESS_STARTED, KIND_PROCESS_STOPPING and
+    # KIND_PROCESS_STOPPED datagrams. Identity (hostname,
+    # process_group) is repeated on each lifecycle datagram so it
+    # stands alone — a STARTED can land before any periodic tick and
+    # a STOPPED after the periodic stream has gone quiet, so neither
+    # can rely on the KIND_PROCESS stream for context. The static
+    # identity strings (versions, MPM, parent_pid) are only emitted on
+    # STARTED — STOPPING and STOPPED expect the consumer to have keyed
+    # them by pid.
+    130: "shutdown_reason",
+    131: "process_uptime",
+    132: "lifetime_request_count",
+    133: "active_requests_at_decision",
+    134: "active_requests_at_exit",
+    135: "graceful_drain",        # 0 = reaper aborted, 1 = drain completed cleanly
+
+    # 140-159: slow-request fields (only present in KIND_SLOW_REQUEST
     # datagrams). Identity (hostname, process_group) is keyed per pid
     # from the accompanying KIND_REQUEST stream, so it is not repeated
-    # here. Kept physically last in the ID space so the REQUEST-
-    # snapshot fields above stay contiguous. 130-139: identification
-    # and timing. 140-143: per-request I/O — final at completion,
-    # partial snapshot for active records. 144-145: per-request CPU
-    # time (microseconds) — final at completion, zero for active
-    # records. 146: final HTTP response status — zero for active
-    # records (start_response may not have been called yet).
-    130: "slow_state",            # 0 = active, 1 = completed
-    131: "slow_start_stamp_us",
-    132: "slow_duration_us",
-    133: "slow_thread_id",
-    134: "slow_log_id",
-    135: "slow_method",
-    136: "slow_scheme",
-    137: "slow_hostname",
-    138: "slow_script_name",
-    139: "slow_path_info",
-    140: "slow_input_bytes",
-    141: "slow_input_reads",
-    142: "slow_output_bytes",
-    143: "slow_output_writes",
-    144: "slow_cpu_user_us",
-    145: "slow_cpu_system_us",
-    146: "slow_status",           # 0 = not yet known, else final WSGI status
+    # here. 140-149: identification and timing. 150-153: per-request
+    # I/O — final at completion, partial snapshot for active records.
+    # 154-155: per-request CPU time (microseconds) — final at
+    # completion, zero for active records. 156: final HTTP response
+    # status — zero for active records (start_response may not have
+    # been called yet).
+    140: "slow_state",            # 0 = active, 1 = completed
+    141: "slow_start_stamp_us",
+    142: "slow_duration_us",
+    143: "slow_thread_id",
+    144: "slow_log_id",
+    145: "slow_method",
+    146: "slow_scheme",
+    147: "slow_hostname",
+    148: "slow_script_name",
+    149: "slow_path_info",
+    150: "slow_input_bytes",
+    151: "slow_input_reads",
+    152: "slow_output_bytes",
+    153: "slow_output_writes",
+    154: "slow_cpu_user_us",
+    155: "slow_cpu_system_us",
+    156: "slow_status",           # 0 = not yet known, else final WSGI status
 }
 
 # Reverse map for encoders / tests.

@@ -2663,14 +2663,26 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     /*
      * If not a daemon process need to publish that process
      * is shutting down here. For daemon we did it earlier
-     * before trying to wait on request threads.
+     * before trying to wait on request threads. The telemetry
+     * lifecycle datagrams (STOPPING and the final-tick + STOPPED
+     * sequence) follow the same split — daemon mode emits them in
+     * wsgi_daemon_main; embedded mode emits both here back-to-back
+     * since Apache has already drained worker requests by the time
+     * this cleanup hook runs.
      */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    if (!wsgi_daemon_process)
+    if (!wsgi_daemon_process) {
         wsgi_publish_process_stopping(wsgi_shutdown_reason);
+        wsgi_telemetry_emit_process_stopping(wsgi_shutdown_reason);
+        wsgi_telemetry_pause_reporter();
+        wsgi_telemetry_emit_final_tick(wsgi_shutdown_reason);
+    }
 #else
     wsgi_publish_process_stopping(wsgi_shutdown_reason);
+    wsgi_telemetry_emit_process_stopping(wsgi_shutdown_reason);
+    wsgi_telemetry_pause_reporter();
+    wsgi_telemetry_emit_final_tick(wsgi_shutdown_reason);
 #endif
 
     /* Skip destruction of Python interpreter. */
