@@ -4892,6 +4892,13 @@ tier's scope:
 - **Groups** — one section per daemon group. Emitted only when
   more than one group is live and the filter is "all". Rollup is
   restricted to that group's processes.
+- **Process lifecycle** — restart counts by category and reason,
+  drain quality (graceful vs reaped), drain durations, completed-
+  process uptime / lifetime-request stats, and orphan-STOPPING
+  count. Aggregated over the lifecycle event ring (≤ 600 s,
+  independent from the Totals window since restarts are too
+  infrequent for a 60 s view to be useful). See **Process
+  lifecycle** below for category definitions and inferences.
 - **Processes** — one block per live process, with per-pid detail.
 
 Every scope carries the response status breakdown
@@ -5232,6 +5239,181 @@ Combinations that identify specific bottlenecks:
   \`application\` = app regression or downstream;
   \`daemon\` = GIL pressure; \`queue\` = upstream backpressure.
 
+## Process lifecycle
+
+mod_wsgi emits three lifecycle datagrams per process: STARTED at
+process create, STOPPING at the moment a shutdown decision is made
+(before drain begins), and STOPPED once the process is actually
+about to exit (post-drain, or just before the reaper-thread forces
+exit). These power the Processes tab and the
+\`## Process lifecycle\` section in the snapshot.
+
+### Restart reasons and categories
+
+Each STOPPING / STOPPED event carries a \`shutdown_reason\` string,
+binned into one of three categories for at-a-glance triage:
+
+- **planned** — operator-configured cycling that was expected to
+  fire: \`restart_interval\`, \`maximum_requests\`,
+  \`inactivity_timeout\`, \`script_reload\`. Frequent planned
+  restarts are usually fine; if a planned reason dominates, the
+  corresponding knob is doing its job. Compare \`mean uptime\`
+  against the configured \`restart-interval=\`, and \`mean
+  lifetime requests / process\` for the \`maximum_requests\`
+  reason against the configured \`maximum-requests=\` — they should
+  match closely.
+- **tuning** — fired by limits set to bound bad behaviour:
+  \`request_timeout\`, \`cpu_time_limit\`, \`eviction_signal\`,
+  \`graceful_signal\`, \`startup_timeout\`. Worth investigating;
+  not alarming unless the rate is climbing.
+- **unplanned** — abnormal exit paths: \`deadlock_timeout\`,
+  \`signal_pipe_error\`, \`shutdown_signal\`. Any non-zero count
+  here warrants attention; a single case may be operator-initiated
+  (\`apachectl graceful\`, supervisor-driven restart), but a
+  recurring pattern in the absence of operator action indicates
+  a real problem (oomkiller, supervisor flaps, bus errors).
+
+### Two-phase shutdown: graceful-timeout vs shutdown-timeout
+
+A daemon process restart runs through two distinct phases. The
+distinction is critical for reasoning about both abandoned-request
+counts and capacity impact, and the lifecycle stats only directly
+cover the second phase.
+
+**Phase 1 — graceful (\`graceful-timeout\`, default 15 s).** Triggered
+by \`maximum-requests\` / \`restart-interval\` / \`cpu-time-limit\` /
+\`request-timeout\` etc. when \`graceful-timeout\` is set and at
+least one non-stale request is still in flight. The process keeps
+its listener open and **continues accepting new requests** while
+in-flight ones drain naturally. The slot remains fully productive;
+no replacement is spawned yet. The phase exits early as soon as the
+process reaches an idle state (no non-stale requests). Telemetry
+emits **no event** at the start or end of this phase — the only
+trace it leaves is the time gap between when the trigger condition
+was met and when STOPPING was emitted, and that gap is not currently
+exposed in the wire format.
+
+**Phase 2 — shutdown (\`shutdown-timeout\`, default 5 s).** Begins
+the moment the daemon main thread is signalled to actually exit
+(SIGINT internally), which is the moment STOPPING is emitted. The
+worker accept loops break out, **no new requests are accepted**
+from this point on, and incoming connections from Apache pile up in
+the kernel listen-backlog with nothing draining them. In-flight
+requests continue running; the reaper thread sleeps for
+\`shutdown-timeout\` and force-exits the process if drain hasn't
+finished. STOPPED is emitted at successful drain completion or just
+before the reaper kills the process — \`graceful_drain=1\` or 0
+distinguishes the two outcomes.
+
+**The "drain duration" stat (STOPPING → STOPPED gap) is exclusively
+the phase-2 length** — graceful-phase activity does not contribute.
+This is also the **dark-period length**: during phase 2 the slot is
+not accepting, the replacement process has not been spawned (Apache
+spawns the replacement only after the old daemon exits), so the
+deployment loses one process worth of capacity for the drain
+duration on each restart. The "total drain time" stat is the sum
+across all drains in the window — \`total_drain_time / window_secs\`
+is the per-process fraction of the window spent in the dark
+(divide by the live process count for the deployment-wide loss).
+
+### Drain quality
+
+Each STOPPED event reports \`graceful_drain\`: 1 if no requests
+were in-flight when the process actually exited, 0 otherwise.
+Non-graceful drains usually mean the reaper fired before workers
+finished. The reaper thread emits STOPPED just before forced exit,
+so the snapshot still records the event; \`active_requests_at_exit\`
+is the number of requests the daemon had to abandon. The "requests
+in flight at non-graceful exit" line in the snapshot is the sum of
+these — read as "approximate count of requests likely abandoned by
+reaped daemons in the visible window." These are user-facing
+failures (Apache will return 5xx or reset the connection).
+
+If the drain mean is a meaningful fraction of \`shutdown-timeout\`
+(say > 50%), drains are routinely close to being reaped. The naive
+fix is to raise \`shutdown-timeout\`, but that **directly extends
+the dark period on every restart**, lowering deployment capacity in
+proportion. The right order of remediation is below.
+
+### Remediating non-graceful drains
+
+Apply in order — early levers cost no capacity, late levers do.
+
+1. **Raise \`graceful-timeout\` to comfortably exceed the in-flight
+   p99.** This is the canonical fix. Phase 1 has no listener
+   downside — the process keeps serving new requests while old
+   ones drain. If your p99 application time is ~3 s, set
+   \`graceful-timeout=15\` or higher; the process will exit phase 1
+   the moment it goes idle, so the cost when there's nothing in
+   flight is zero. \`graceful-timeout\` requires \`processes >= 2\`
+   to engage; single-process groups skip phase 1 entirely.
+2. **Raise \`maximum-requests\` (or \`restart-interval\`).** Less
+   frequent restart cycles mean fewer dark-period intervals; the
+   total drain time across the window drops linearly with cycle
+   frequency. If the reason breakdown is dominated by
+   \`maximum_requests\` and the per-process count is low, consider
+   doubling it.
+3. **Fix the slow tail.** Time-distribution histograms and the
+   slow-request tab show where it lives; addressing it removes both
+   the in-flight-during-drain risk and other latency-cost
+   downstream.
+4. **Raise \`shutdown-timeout\`** only as a last resort. The cost
+   is paid as longer dark periods; the trade is that fewer drains
+   reach the timeout. Acceptable when the alternative (phase-1
+   tuning) doesn't apply — e.g. a single-process group.
+
+### What lifecycle stats can and cannot tell you
+
+The stats expose phase-2 behaviour (drain duration, abandoned
+requests, drain success rate) and lifetime stats (uptime, request
+count). They do **not** currently expose:
+
+- The configured \`graceful-timeout\` / \`shutdown-timeout\` /
+  \`maximum-requests\` / \`restart-interval\` values. The LLM has to
+  ask the operator, or compare against typical defaults
+  (graceful-timeout=15, shutdown-timeout=5). When in doubt, ask.
+- Phase-1 length. We emit STOPPING only at the SIGINT point, not at
+  the moment the trigger fired. If \`graceful-timeout\` is doing
+  its job most restarts will idle out promptly and you'll never
+  notice.
+
+If drain mean is consistently small (say < 25% of the typical
+shutdown-timeout default) and graceful_drain=1 dominates, the
+deployment is healthy regardless of restart frequency — phase 1 is
+absorbing the in-flight requests and phase 2 finds nothing to do.
+That's the target state.
+
+### Inferences an LLM should make
+
+- **Mean uptime ≈ configured \`restart-interval\`** when the
+  \`restart_interval\` reason dominates the breakdown. Off by a lot
+  means another reason is firing first.
+- **Mean lifetime requests / process for the \`maximum_requests\`
+  reason** approximates the configured \`maximum-requests=\`.
+- **Drain mean approaching shutdown-timeout default (5 s)** is the
+  leading signal that drains are at risk of being reaped — but
+  reach for \`graceful-timeout\` first, not \`shutdown-timeout\`,
+  because the former costs no capacity.
+- **Non-zero \`requests in flight at non-graceful exit\` count**
+  with non-graceful percentage > 5% indicates user-facing failures
+  during restarts. Confirm by cross-referencing 5xx rate against
+  restart timing.
+- **High total drain time / window ratio** (say > 5% per process)
+  indicates dark-period capacity loss is non-trivial. Cycle less
+  often (raise \`maximum-requests\`) or shorten phase 2 (drains
+  finishing faster — fix the tail or raise \`graceful-timeout\` so
+  phase 2 starts with fewer in-flight requests).
+- **Non-zero unplanned count alongside healthy capacity numbers**
+  points to something killing daemons from outside (operator,
+  oomkiller, supervisor); investigate via the upstream process
+  manager logs.
+- **STOPPING events without matching STOPPED** are normally drains
+  still in progress (a recent decision whose STOPPED hasn't been
+  emitted yet). A persistent surplus suggests lost STOPPED
+  datagrams from older mod_wsgi builds without the reaper-side
+  emission, or a process being killed externally before it can
+  emit.
+
 ## Tuning levers
 
 ### Configuration forms
@@ -5368,10 +5550,20 @@ UI directly can also use this as a navigation guide.
 - **Overview** — line charts over the last minute: request
   throughput, capacity utilization, CPU utilization, response time,
   memory RSS, per-phase time breakdown, and a time-distribution
-  histogram.
+  histogram. Vertical markers on each chart mark restart events
+  (coloured by category — see Process lifecycle).
 - **Capacity** — per-process heatmap of per-slot (thread) state.
   One row per worker thread, one column per tick, showing busy /
   slow / idle.
+- **Processes** — process lifecycle view. Top: a Gantt-style
+  timeline with one row per pid showing the STARTED → STOPPED span
+  and a darker tick at STOPPING (drain start). Bottom: an event
+  log with one row per lifecycle event. Click an event-log row to
+  scroll the timeline to the matching pid; click a Gantt bar to
+  flash the matching event-log row. Both surfaces share a Window
+  picker, the global Process group + Markers filters, a Pause
+  button, and stick-to-bottom scrolling so new arrivals stay in
+  view.
 - **Slow requests** — live table of requests whose wall-clock
   elapsed has crossed the \`WSGISlowRequests\` threshold. Shows
   in-flight and recently-finished entries.
@@ -5456,6 +5648,251 @@ function renderHelpMarkdown(md) {
 // so the field stays present in every snapshot rather than vanishing
 // silently on idle. status==0 (no start_response) is already folded
 // into s5xx on the C side; 1xx is a PEP 3333 tripwire.
+// Roll up the lifecycle event ring into the aggregate stats consumed
+// by the snapshot's "Process lifecycle" section. The ring is bounded
+// to SAMPLE_RETENTION_SEC so the natural window is "whatever is in
+// the buffer" — usually ≤ 10 minutes. Returns null if no events pass
+// the filter so the caller can short-circuit the section.
+//
+// The aggregator pairs STARTED / STOPPING / STOPPED for the same pid
+// to derive drain duration (STOPPING → STOPPED gap) and to flag
+// "orphan" STOPPING events whose matching STOPPED never arrived
+// (drain still in progress, or — for older mod_wsgi without the
+// reaper-side STOPPED emission — a process that was force-exited).
+//
+// groupSel mirrors the snapshot's group filter ("*" = all, "" =
+// embedded only, otherwise daemon group name). passesGroupFilter
+// already normalises empty group → "(embedded)" so the same call
+// shape works here.
+function aggregateLifecycle(groupSel) {
+  const events = state.lifecycleEvents.filter(ev =>
+    passesGroupFilter(ev.process_group, groupSel));
+  if (events.length === 0) return null;
+
+  // Window actually covered by the ring after filtering — useful for
+  // the section header ("last 547 s") since the ring may not be full.
+  const now = Date.now() / 1000;
+  const oldest = events[0].stamp_us / 1e6;
+  const coverSec = Math.max(0, Math.round(now - oldest));
+
+  const byPid = new Map();
+  for (const ev of events) {
+    let arr = byPid.get(ev.pid);
+    if (!arr) { arr = []; byPid.set(ev.pid, arr); }
+    arr.push(ev);
+  }
+
+  let started = 0, stopping = 0, stopped = 0;
+  const reasonCounts = new Map();
+  const categoryCounts = { planned: 0, tuning: 0, unplanned: 0 };
+  let stoppedGraceful = 0;
+  let stoppedNonGraceful = 0;
+  let abandonedRequests = 0;
+  let lifetimeReqsTotal = 0;
+  let lifetimeReqsCount = 0;
+  let uptimeTotal = 0;
+  let uptimeCount = 0;
+  let uptimeMax = 0;
+  // Mean lifetime by reason — operator can compare against the
+  // configured maximum-requests= when planned reason is dominant,
+  // and against restart_interval= when restart_interval dominates.
+  const reasonUptimeTotal = new Map();
+  const reasonUptimeCount = new Map();
+  const reasonRequestsTotal = new Map();
+
+  for (const ev of events) {
+    if (ev.kind === "process_started") {
+      started++;
+    } else if (ev.kind === "process_stopping") {
+      stopping++;
+      const reason = ev.shutdown_reason || "(unknown)";
+      reasonCounts.set(reason, (reasonCounts.get(reason) || 0) + 1);
+      categoryCounts[categoryForReason(reason)]++;
+    } else if (ev.kind === "process_stopped") {
+      stopped++;
+      if (ev.graceful_drain) {
+        stoppedGraceful++;
+      } else {
+        stoppedNonGraceful++;
+        abandonedRequests += ev.active_requests_at_exit || 0;
+      }
+      const upt = ev.process_uptime || 0;
+      const reqs = ev.lifetime_request_count || 0;
+      lifetimeReqsTotal += reqs;
+      lifetimeReqsCount++;
+      uptimeTotal += upt;
+      uptimeCount++;
+      if (upt > uptimeMax) uptimeMax = upt;
+      const reason = ev.shutdown_reason || "(unknown)";
+      reasonUptimeTotal.set(reason,
+        (reasonUptimeTotal.get(reason) || 0) + upt);
+      reasonUptimeCount.set(reason,
+        (reasonUptimeCount.get(reason) || 0) + 1);
+      reasonRequestsTotal.set(reason,
+        (reasonRequestsTotal.get(reason) || 0) + reqs);
+    }
+  }
+
+  // Drain duration: STOPPING → STOPPED gap, paired per pid in the
+  // order events arrived. A pid may legitimately appear with multiple
+  // restart cycles within the window, so consume STOPPINGs / STOPPEDs
+  // in order.
+  const drains = [];
+  let orphanStopping = 0;
+  for (const evs of byPid.values()) {
+    let pending = null;
+    for (const ev of evs) {
+      const t = ev.stamp_us / 1e6;
+      if (ev.kind === "process_stopping") {
+        if (pending !== null) orphanStopping++;
+        pending = t;
+      } else if (ev.kind === "process_stopped") {
+        if (pending !== null) {
+          drains.push(t - pending);
+          pending = null;
+        }
+      }
+    }
+    if (pending !== null) orphanStopping++;
+  }
+  drains.sort((a, b) => a - b);
+  const drainMean = drains.length
+    ? drains.reduce((a, b) => a + b, 0) / drains.length
+    : 0;
+  const drainMax = drains.length ? drains[drains.length - 1] : 0;
+
+  return {
+    coverSec,
+    started, stopping, stopped, orphanStopping,
+    categoryCounts, reasonCounts,
+    stoppedGraceful, stoppedNonGraceful, abandonedRequests,
+    lifetimeReqsTotal, lifetimeReqsCount,
+    uptimeTotal, uptimeCount, uptimeMax,
+    reasonUptimeTotal, reasonUptimeCount, reasonRequestsTotal,
+    drains, drainMean, drainMax,
+  };
+}
+
+// Render the Process lifecycle section into the lines array. Skips
+// itself entirely when no events are in the filtered ring.
+function appendLifecycleStats(lines, groupSel) {
+  const a = aggregateLifecycle(groupSel);
+  if (a === null) {
+    lines.push("## Process lifecycle");
+    lines.push("");
+    lines.push("No process lifecycle events in the buffer for the "
+      + "current filter. The deployment has been stable for the "
+      + "visible window, or the lifecycle event stream has not yet "
+      + "reached the ingester.");
+    lines.push("");
+    return;
+  }
+
+  lines.push("## Process lifecycle (last " + a.coverSec
+    + " s in event ring)");
+  lines.push("");
+
+  // Event counts up front. orphanStopping is a tail-of-the-bell
+  // signal — small numbers are normal (drains in flight at snapshot
+  // time); large numbers point to lost STOPPED datagrams.
+  const eventBits = [
+    a.started + " started",
+    a.stopping + " stopping",
+    a.stopped + " stopped",
+  ];
+  if (a.orphanStopping > 0)
+    eventBits.push(a.orphanStopping + " stopping without matching stopped");
+  lines.push("- events: " + eventBits.join(", "));
+
+  // Categories — three buckets so the LLM can triage at a glance.
+  if (a.stopping > 0) {
+    const cats = a.categoryCounts;
+    lines.push("- restarts by category: planned " + cats.planned
+      + ", tuning " + cats.tuning + ", unplanned " + cats.unplanned);
+    // Reason breakdown sorted by count desc, then alphabetical.
+    const sortedReasons = [...a.reasonCounts.entries()].sort((x, y) => {
+      if (y[1] !== x[1]) return y[1] - x[1];
+      return x[0].localeCompare(y[0]);
+    });
+    lines.push("- restarts by reason: "
+      + sortedReasons.map(([r, n]) => r + "=" + n).join(", "));
+  }
+
+  // Drain quality. Always emit the graceful breakdown when any
+  // STOPPED is observed; omit the "abandoned" line when zero so
+  // healthy snapshots don't carry a noise zero.
+  if (a.stopped > 0) {
+    const pctNon = a.stopped > 0
+      ? ((a.stoppedNonGraceful / a.stopped) * 100).toFixed(0)
+      : "0";
+    lines.push("- drain quality: " + a.stoppedGraceful + " of "
+      + a.stopped + " graceful, " + a.stoppedNonGraceful
+      + " non-graceful (" + pctNon + "%)");
+    if (a.abandonedRequests > 0) {
+      lines.push("- requests in flight at non-graceful exit: "
+        + a.abandonedRequests + " (sum of active_at_exit across "
+        + a.stoppedNonGraceful + " non-graceful STOPPED — "
+        + "approximate count of requests likely abandoned by reaped "
+        + "daemons)");
+    }
+  }
+
+  // Drain duration — gap between STOPPING and STOPPED. This is the
+  // shutdown-timeout phase, i.e. the dark period during which the
+  // process is no longer accepting new requests but has not yet
+  // exited (so its replacement has not been started). Compares
+  // against shutdown_timeout when read by an LLM that knows the
+  // configured value. Total drain time lets the LLM size the
+  // process-equivalent capacity lost to drains across the window —
+  // 12.8 s of drain in a 600 s window with 4 processes is ~0.5%
+  // capacity per process, but 12.8 s in a 600 s window with 1
+  // process is 2.1% — so absolute is more diagnostic than per-
+  // restart mean for capacity-impact reasoning.
+  if (a.drains.length > 0) {
+    const totalDrainSec = a.drains.reduce((x, y) => x + y, 0);
+    const pctOfWindow = a.coverSec > 0
+      ? ((totalDrainSec / a.coverSec) * 100).toFixed(1)
+      : "0.0";
+    lines.push("- drain duration (STOPPING → STOPPED gap, "
+      + "= shutdown-timeout phase, = dark-period length, n="
+      + a.drains.length + "): mean " + a.drainMean.toFixed(2)
+      + " s, max " + a.drainMax.toFixed(2) + " s");
+    lines.push("- total drain time in window: "
+      + totalDrainSec.toFixed(1) + " process-seconds (≈ "
+      + pctOfWindow + "% of window per process if drains are evenly "
+      + "distributed across N processes — divide by N processes to "
+      + "estimate per-process capacity loss)");
+  }
+
+  // Process lifetimes — comparable against the configured
+  // restart_interval (when planned-restart_interval dominates) and
+  // maximum-requests (via mean requests / process for that reason).
+  if (a.uptimeCount > 0) {
+    const meanUpt = a.uptimeTotal / a.uptimeCount;
+    const meanReqs = a.lifetimeReqsCount > 0
+      ? Math.round(a.lifetimeReqsTotal / a.lifetimeReqsCount)
+      : 0;
+    lines.push("- completed lifetimes (n=" + a.uptimeCount
+      + " STOPPED): mean uptime " + meanUpt.toFixed(0) + " s, max "
+      + a.uptimeMax.toFixed(0) + " s, mean lifetime requests "
+      + meanReqs + " / process");
+    // Per-reason mean uptime + mean lifetime requests when there's
+    // more than one reason represented — lets the LLM cross-reference
+    // restart_interval / maximum-requests against their effect.
+    const reasonsWithStops = [...a.reasonUptimeCount.entries()];
+    if (reasonsWithStops.length > 1) {
+      reasonsWithStops.sort((x, y) => y[1] - x[1]);
+      for (const [reason, n] of reasonsWithStops) {
+        const upt = (a.reasonUptimeTotal.get(reason) || 0) / n;
+        const reqs = Math.round((a.reasonRequestsTotal.get(reason) || 0) / n);
+        lines.push("  - " + reason + " (n=" + n + "): mean uptime "
+          + upt.toFixed(0) + " s, mean requests " + reqs);
+      }
+    }
+  }
+  lines.push("");
+}
+
 function statusBreakdownLine(obj) {
   const total = (obj.s1xx || 0) + (obj.s2xx || 0) + (obj.s3xx || 0)
               + (obj.s4xx || 0) + (obj.s5xx || 0);
@@ -5700,6 +6137,13 @@ function buildCurrentStatsMarkdown() {
       lines.push("");
     }
   }
+
+  // --- Process lifecycle ------------------------------------------
+  // Aggregated from the lifecycle event ring (started / stopping /
+  // stopped). Window is the ring retention (≤ 600 s), independent
+  // from the Totals window above — restarts are infrequent enough
+  // that a wider window is necessary to make the section useful.
+  appendLifecycleStats(lines, filterSel);
 
   // --- Per-process ------------------------------------------------
   lines.push("## Processes");
