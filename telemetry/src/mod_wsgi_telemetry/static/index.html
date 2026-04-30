@@ -3917,23 +3917,68 @@ function drawProcessGantt() {
   const tmax = now;
   const groupSel = processesTabGroupFilter();
 
-  // Pull every event whose stamp falls inside the window. We pass a
-  // record through even if only its STARTED is inside the window —
-  // bars that extend past tmax will just be clipped at the right
-  // edge, and bars whose STARTED is older than tmin are drawn from
-  // the left edge with a "truncated start" notch.
-  const inWin = state.lifecycleEvents.filter(ev => {
-    const t = ev.stamp_us / 1e6;
-    return t >= tmin && t <= tmax;
+  // Feed the FULL lifecycle ring to buildPidTimelines, not just the
+  // events whose stamp falls inside the window. This means each pid's
+  // record carries its actual started_t / stopping_t / stopped_t even
+  // when one of those events is just outside the visible window —
+  // important for the truncated-start notch and for the tooltip's
+  // "started" line. The window filter is then applied per-record
+  // below: keep records that are currently live OR had any of their
+  // events land inside the window.
+  let records = buildPidTimelines(state.lifecycleEvents);
+
+  // First pass: drop records whose pid has nothing to do with the
+  // current view — no in-window event AND not currently live in the
+  // periodic-sample stream. Currently-live pids are kept regardless
+  // of when their events fired (a process started before tmin and
+  // still serving requests should appear with a fully truncated
+  // bar; the alternative is silently hiding steady-state processes).
+  records = records.filter(r => {
+    const p = state.processes.get(r.pid);
+    if (p && !isStale(p)) return true;
+    if (r.started_t !== null && r.started_t >= tmin) return true;
+    if (r.stopping_t !== null && r.stopping_t >= tmin) return true;
+    if (r.stopped_t !== null && r.stopped_t >= tmin) return true;
+    return false;
   });
-  let records = buildPidTimelines(inWin);
+
+  // Second pass: augment with currently-live pids that have NO
+  // lifecycle events in the ring at all — long-lived processes
+  // whose STARTED has aged out of the 10-minute ring. The periodic-
+  // sample stream is the authoritative "currently live" set; without
+  // this augmentation the Gantt would silently hide them forever
+  // once their STARTED scrolls out of retention.
+  const seenPids = new Set(records.map(r => r.pid));
+  for (const [pid, p] of state.processes) {
+    if (isStale(p)) continue;
+    if (seenPids.has(pid)) continue;
+    if (!passesGroupFilter(p.process_group || "", groupSel)) continue;
+    records.push({
+      pid: pid,
+      group: p.process_group || "",
+      parent_pid: p.process_parent_pid || 0,
+      started_t: null,
+      stopping_t: null,
+      stopped_t: null,
+      first_t: tmin,
+      shutdown_reason: "",
+      category: "running",
+      uptime: 0,
+      lifetime_requests: 0,
+      active_at_decision: 0,
+      active_at_exit: 0,
+      graceful_drain: 0,
+    });
+  }
+
   records = records.filter(r => passesGroupFilter(r.group, groupSel));
   records = records.filter(passesCategoryFilter);
   records.sort((a, b) => {
     const ag = a.group || "";
     const bg = b.group || "";
     if (ag !== bg) return ag.localeCompare(bg);
-    return a.first_t - b.first_t;
+    if (a.first_t !== b.first_t) return a.first_t - b.first_t;
+    return a.pid - b.pid;
   });
 
   const cssWidth = canvas.parentElement.clientWidth || 600;
@@ -4037,13 +4082,16 @@ function drawProcessGantt() {
     ctx.fillText(groupLabel, 70 * dpr, y + rowH / 2);
 
     // Bar geometry: clipped to plot area; truncation flags set so we
-    // can decorate the open edges below.
+    // can decorate the open edges below. truncStart fires both when
+    // the start is unknown (pruned from ring) and when it is known
+    // but predates the window — both render with the same left-edge
+    // notch so the bar reads as "extends past the visible left."
     const startT = rec.started_t !== null ? rec.started_t : tmin;
     let endT;
     if (rec.stopped_t !== null) endT = rec.stopped_t;
     else if (rec.stopping_t !== null) endT = rec.stopping_t;
     else endT = now;
-    const truncStart = rec.started_t === null;
+    const truncStart = rec.started_t === null || rec.started_t < tmin;
     const truncEnd = rec.stopped_t === null;
     const xStart = Math.max(plotL, xOf(startT));
     const xEnd = Math.min(plotR, xOf(endT));
