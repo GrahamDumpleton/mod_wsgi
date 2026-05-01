@@ -133,9 +133,8 @@
 #                             (e.g. tests/benchmark.wsgi).
 #       --metrics-service T   Pass --metrics-service T to mod_wsgi-express
 #                             to enable the metrics reporter. T is
-#                             'unix:/path/to/sock' or 'udp:host:port'.
-#                             Start the ingester separately from the
-#                             telemetry/ directory:
+#                             'unix:/path/to/sock'. Start the ingester
+#                             separately from the telemetry/ directory:
 #                               uv run mod-wsgi-telemetry \\
 #                                   --listen T
 #       --metrics-interval S
