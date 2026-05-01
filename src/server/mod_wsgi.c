@@ -1213,6 +1213,11 @@ static const command_rec wsgi_commands[] =
         AP_INIT_TAKE1("WSGISlowRequests", wsgi_set_slow_requests,
                       NULL, RSRC_CONF, "Enable slow-request reporting. "
                                        "Arg: threshold in seconds."),
+        AP_INIT_RAW_ARGS("WSGIMetricsOptions", wsgi_set_metrics_options,
+                         NULL, RSRC_CONF,
+                         "Toggle metrics capture options. "
+                         "Args: [+|-]Flag... | None | All. "
+                         "Flags: CaptureUserAgent."),
 
         {NULL}};
 

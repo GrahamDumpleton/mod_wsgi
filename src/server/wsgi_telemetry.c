@@ -409,6 +409,10 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SLOW_PEER_IP,
                                s->peer_ip,
                                (uint16_t)strlen(s->peer_ip));
+    if (s->user_agent[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SLOW_USER_AGENT,
+                               s->user_agent,
+                               (uint16_t)strlen(s->user_agent));
 
     return (size_t)(p - buf);
 }
@@ -827,6 +831,126 @@ const char *wsgi_set_slow_requests(cmd_parms *cmd, void *mconfig,
 
     wsgi_slow_threshold_us =
         (apr_time_t)(seconds * APR_USEC_PER_SEC);
+
+    return NULL;
+}
+
+/*
+ * Directive handler: WSGIMetricsOptions [+|-]Flag [+|-]Flag ... | None | All
+ *
+ * Apache-Options-style toggle for metrics capture. Flags can be
+ * given absolutely (replaces the current set) or with +/- prefixes
+ * (modifies the current set). Mixing absolute and incremental tokens
+ * in a single directive is rejected, matching Apache's Options
+ * convention. None / All are absolute pseudo-tokens that reset to no
+ * flags / every flag respectively.
+ *
+ * Default flag state is zero (every flag is opt-in). Currently the
+ * only flag is CaptureUserAgent, which controls whether the User-
+ * Agent request header is included in slow-request records.
+ */
+
+int wsgi_metrics_options = 0;
+
+static const struct {
+    const char *name;
+    int flag;
+} wsgi_metrics_option_names[] = {
+    { "CaptureUserAgent", WSGI_METRICS_OPT_CAPTURE_USER_AGENT },
+    { NULL, 0 }
+};
+
+static int wsgi_metrics_option_lookup(const char *name)
+{
+    int i;
+    for (i = 0; wsgi_metrics_option_names[i].name; i++) {
+        if (strcasecmp(name, wsgi_metrics_option_names[i].name) == 0)
+            return wsgi_metrics_option_names[i].flag;
+    }
+    return 0;
+}
+
+const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
+                                       const char *args)
+{
+    const char *error = NULL;
+    int seen_incremental = 0;
+    int seen_absolute = 0;
+    int incremental_options;
+    int absolute_options = 0;
+    char *token;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    if (!args || !*args)
+        return "WSGIMetricsOptions: at least one flag required";
+
+    /* Start the incremental accumulator from the current global so
+     * `+Foo` / `-Foo` directives stack. Absolute form fully replaces
+     * and ignores the starting value. */
+    incremental_options = wsgi_metrics_options;
+
+    while (*args) {
+        const char *name;
+        int is_negation = 0;
+
+        token = ap_getword_conf(cmd->temp_pool, &args);
+        if (!*token)
+            break;
+
+        if (token[0] == '+' || token[0] == '-') {
+            is_negation = (token[0] == '-');
+            seen_incremental = 1;
+            name = token + 1;
+            if (!*name)
+                return "WSGIMetricsOptions: bare '+' / '-' is not a flag";
+        }
+        else {
+            seen_absolute = 1;
+            name = token;
+        }
+
+        if (seen_incremental && seen_absolute)
+            return "WSGIMetricsOptions: cannot mix +/- form with "
+                   "absolute names in a single directive";
+
+        if (strcasecmp(name, "None") == 0) {
+            if (token[0] == '+' || token[0] == '-')
+                return "WSGIMetricsOptions: 'None' may not have a "
+                       "+/- prefix";
+            absolute_options = 0;
+            continue;
+        }
+        if (strcasecmp(name, "All") == 0) {
+            if (token[0] == '+' || token[0] == '-')
+                return "WSGIMetricsOptions: 'All' may not have a "
+                       "+/- prefix";
+            absolute_options = WSGI_METRICS_OPT_ALL;
+            continue;
+        }
+
+        int flag = wsgi_metrics_option_lookup(name);
+        if (!flag)
+            return apr_psprintf(cmd->temp_pool,
+                "WSGIMetricsOptions: unknown flag '%s'", name);
+
+        if (seen_incremental) {
+            if (is_negation)
+                incremental_options &= ~flag;
+            else
+                incremental_options |= flag;
+        }
+        else {
+            absolute_options |= flag;
+        }
+    }
+
+    if (seen_incremental)
+        wsgi_metrics_options = incremental_options;
+    else
+        wsgi_metrics_options = absolute_options;
 
     return NULL;
 }

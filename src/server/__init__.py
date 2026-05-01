@@ -432,6 +432,10 @@ WSGIMetricsService %(metrics_service)s interval=%(metrics_interval)s
 WSGISlowRequests %(slow_requests)s
 </IfDefine>
 
+<IfDefine MOD_WSGI_METRICS_OPTIONS>
+%(metrics_options)s
+</IfDefine>
+
 <IfDefine MOD_WSGI_SERVER_STATUS>
 <Location /server-status>
     SetHandler server-status
@@ -2309,6 +2313,14 @@ add_option('all', '--slow-requests', type='float', default=None,
         'is reported. Generates WSGISlowRequests in the config. Only '
         'meaningful alongside --metrics-service. Off by default.')
 
+add_option('all', '--metrics-options', action='append', default=[],
+        metavar='ARGS', help='Apache-Options-style metrics-capture '
+        'toggle, passed verbatim to a WSGIMetricsOptions directive in '
+        'the generated config. Each occurrence of this flag emits a '
+        'separate directive, so the +/- / absolute / None / All forms '
+        'compose just as they do when written by hand. Example: '
+        '--metrics-options "+CaptureUserAgent". Repeatable.')
+
 add_option('all', '--server-status', action='store_true',
         default=False, help='Flag indicating whether web server status '
         'will be available at the /server-status sub URL. Defaults to '
@@ -3329,6 +3341,12 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_METRICS_SERVICE')
     if options['slow_requests'] != '':
         options['httpd_arguments_list'].append('-DMOD_WSGI_SLOW_REQUESTS')
+    if options['metrics_options']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_METRICS_OPTIONS')
+        options['metrics_options'] = '\n'.join(
+            'WSGIMetricsOptions %s' % v for v in options['metrics_options'])
+    else:
+        options['metrics_options'] = ''
     if options['directory_index']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_DIRECTORY_INDEX')
     if options['directory_listing']:

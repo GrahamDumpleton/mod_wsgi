@@ -378,6 +378,18 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
             "2001:db8::5",
         ]),
         "slow_protocol": random.choice(["HTTP/1.1", "HTTP/2.0"]),
+        # User-Agent is opt-in via WSGIMetricsOptions; the simulator
+        # always emits one so the demo UI exercises the column. Real
+        # mod_wsgi installs see this only when the operator configures
+        # +CaptureUserAgent.
+        "slow_user_agent": random.choice([
+            "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/137.0",
+            "curl/8.7.1",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) "
+            "AppleWebKit/605.1.15 Safari/605.1.15",
+            "python-requests/2.32.0",
+            "GoogleBot/2.1 (+http://www.google.com/bot.html)",
+        ]),
         "slow_status": slow_status,
     }
     return Sample(

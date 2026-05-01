@@ -2050,12 +2050,22 @@ function renderSlowExpandPanel(e) {
   const clientRow = clientBits.length
     ? `<div class="label">Client</div><div>${clientBits.join(" &middot; ")}</div>`
     : "";
+  // User-Agent is its own row when present; opt-in via
+  // WSGIMetricsOptions +CaptureUserAgent so most installs will
+  // never carry it. CSS lets long UA strings wrap onto multiple
+  // lines via the existing url-full word-break rule.
+  const userAgent = e.user_agent || "";
+  const userAgentRow = userAgent
+    ? `<div class="label">User-Agent</div>` +
+      `<div class="url-full">${escapeHtml(userAgent)}</div>`
+    : "";
   return `<div class="slow-details">
     <div class="label">Process</div>
     <div>${processLine}</div>
     <div class="label">URL</div>
     <div class="url-full">${escapeHtml(url)}</div>
     ${clientRow}
+    ${userAgentRow}
     <div class="label">Log ID</div>
     <div>${escapeHtml(e.log_id || "—")}</div>
     ${phaseRow}

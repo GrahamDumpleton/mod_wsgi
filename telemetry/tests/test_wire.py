@@ -274,21 +274,25 @@ def test_roundtrip_slow_request_phase_timings():
 
 def test_roundtrip_slow_request_client_identity():
     # peer_ip survives both IPv4 and IPv6 string forms; protocol is
-    # the literal SERVER_PROTOCOL string. Both are bytes-typed so the
-    # round-trip preserves exact bytes (the decoder leaves it to the
-    # ingester to interpret as utf-8).
+    # the literal SERVER_PROTOCOL string; user_agent is the verbatim
+    # request header (only emitted by the C side when
+    # WSGIMetricsOptions +CaptureUserAgent, but the wire format
+    # itself is symmetric and round-trips regardless).
     fields = {
         "slow_record_state": 1,
         "slow_duration_us": 2_000_000,
         "slow_thread_id": 1,
         "slow_peer_ip": b"203.0.113.42",
         "slow_protocol": b"HTTP/2.0",
+        "slow_user_agent": b"Mozilla/5.0 (X11; Linux x86_64) curl/8.7.1",
     }
     s = Sample(version=1, kind=KIND_SLOW_REQUEST, pid=1234, seq=2,
                stamp_us=1_700_000_000_000_000, fields=fields)
     got = decode(encode(s))
     assert got.fields["slow_peer_ip"] == b"203.0.113.42"
     assert got.fields["slow_protocol"] == b"HTTP/2.0"
+    assert got.fields["slow_user_agent"] == \
+        b"Mozilla/5.0 (X11; Linux x86_64) curl/8.7.1"
 
     # IPv6 case (longest plausible address still fits in 46 bytes).
     fields6 = {

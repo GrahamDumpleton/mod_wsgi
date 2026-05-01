@@ -1356,6 +1356,24 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
 
     wsgi_slow_copy_str(rec->protocol, sizeof(rec->protocol),
                        protocol ? protocol : "");
+
+    /* User-Agent is opt-in via WSGIMetricsOptions +CaptureUserAgent
+     * because UA strings can be PII-adjacent (fingerprinting) and bots
+     * sometimes ship multi-kilobyte values. HTTP_USER_AGENT is the
+     * canonical CGI-style env var and works in both modes — in daemon
+     * mode the synthesised request_rec only rebuilds Host / Content-
+     * Length / Transfer-Encoding into headers_in, so the original UA
+     * header is reachable only via subprocess_env. */
+    if (wsgi_metrics_options & WSGI_METRICS_OPT_CAPTURE_USER_AGENT)
+    {
+        const char *ua = NULL;
+        if (r->subprocess_env)
+            ua = apr_table_get(r->subprocess_env, "HTTP_USER_AGENT");
+        if (!ua && r->headers_in)
+            ua = apr_table_get(r->headers_in, "User-Agent");
+        wsgi_slow_copy_str(rec->user_agent, sizeof(rec->user_agent),
+                           ua ? ua : "");
+    }
 }
 
 /* Caller must hold wsgi_monitor_lock. */

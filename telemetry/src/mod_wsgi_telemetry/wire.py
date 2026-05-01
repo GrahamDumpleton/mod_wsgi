@@ -237,6 +237,7 @@ FIELDS = {
     214: "slow_path_info",
     215: "slow_protocol",              # "HTTP/1.1", "HTTP/2.0"
     216: "slow_peer_ip",                # post-trusted-proxy resolution
+    217: "slow_user_agent",             # only when WSGIMetricsOptions +CaptureUserAgent
 
     220: "slow_server_time_us",
     221: "slow_queue_time_us",         # 0 in embedded mode

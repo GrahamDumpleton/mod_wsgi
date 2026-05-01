@@ -69,6 +69,16 @@
 #define WSGI_METRICS_T_BYTES     0x04
 #define WSGI_METRICS_T_I32_ARRAY 0x05
 
+/* WSGIMetricsOptions flag bits. Bitmask shared by all directive
+ * invocations in the global server config; the parser handles +/- /
+ * absolute / None / All forms (mixing forms in one directive is an
+ * error). Default is zero — every flag opts in. Each flag here also
+ * needs a matching name entry in the parser's lookup table. */
+#define WSGI_METRICS_OPT_CAPTURE_USER_AGENT  0x01
+#define WSGI_METRICS_OPT_ALL                 (WSGI_METRICS_OPT_CAPTURE_USER_AGENT)
+
+extern int wsgi_metrics_options;
+
 /* Field IDs. Grouped in blocks of 10 by concept. Must stay in lockstep
  * with the Python decoder table in telemetry/src/mod_wsgi_telemetry/wire.py.
  * IDs are kept stable while the wire format is in development; once a
@@ -271,6 +281,7 @@
 #define WSGI_METRICS_F_SLOW_PATH_INFO             214   /* bytes */
 #define WSGI_METRICS_F_SLOW_PROTOCOL              215   /* bytes — e.g. "HTTP/1.1", "HTTP/2.0" */
 #define WSGI_METRICS_F_SLOW_PEER_IP               216   /* bytes — post-trusted-proxy resolution */
+#define WSGI_METRICS_F_SLOW_USER_AGENT            217   /* bytes — only when WSGIMetricsOptions +CaptureUserAgent */
 
 #define WSGI_METRICS_F_SLOW_SERVER_TIME_US        220   /* u64 */
 #define WSGI_METRICS_F_SLOW_QUEUE_TIME_US         221   /* u64 — 0 in embedded mode */
@@ -425,6 +436,7 @@ typedef struct {
 #define WSGI_SLOW_PATH_INFO_MAX   512
 #define WSGI_SLOW_PEER_IP_MAX      46  /* fits an IPv6 string (INET6_ADDRSTRLEN) */
 #define WSGI_SLOW_PROTOCOL_MAX     16  /* "HTTP/1.1", "HTTP/2.0", room to spare */
+#define WSGI_SLOW_USER_AGENT_MAX  512  /* truncated; bots / SDKs sometimes ship multi-KB UA */
 
 typedef struct {
     uint64_t start_stamp_us;     /* wall-clock when request started */
@@ -488,6 +500,7 @@ typedef struct {
     char     path_info[WSGI_SLOW_PATH_INFO_MAX];
     char     peer_ip[WSGI_SLOW_PEER_IP_MAX];
     char     protocol[WSGI_SLOW_PROTOCOL_MAX];
+    char     user_agent[WSGI_SLOW_USER_AGENT_MAX];
 } wsgi_slow_request_t;
 
 /* ------------------------------------------------------------------------- */

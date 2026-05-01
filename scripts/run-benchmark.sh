@@ -146,6 +146,15 @@
 #                             threshold in seconds above which a still-
 #                             running request is reported. Requires
 #                             --metrics-service.
+#       --metrics-options ARGS
+#                             Pass one WSGIMetricsOptions directive
+#                             through to mod_wsgi-express verbatim.
+#                             Repeatable; each occurrence emits a
+#                             separate directive in the generated
+#                             config, so +/- / absolute / None / All
+#                             forms compose just as they do when
+#                             written by hand. Example:
+#                               --metrics-options "+CaptureUserAgent"
 #       --bombardier-timeout SEC
 #                             Per-request timeout passed to bombardier
 #                             as --timeout. Default 10s. Bombardier's
@@ -192,6 +201,7 @@ METRICS=0
 METRICS_SERVICE=
 METRICS_INTERVAL=1.0
 SLOW_REQUESTS=
+METRICS_OPTIONS=()
 BOMBARDIER_TIMEOUT=10s
 LOG_LEVEL=warn
 
@@ -231,6 +241,7 @@ while [ $# -gt 0 ]; do
         --metrics-service)    METRICS_SERVICE="$2"; shift 2 ;;
         --metrics-interval)   METRICS_INTERVAL="$2"; shift 2 ;;
         --slow-requests)      SLOW_REQUESTS="$2"; shift 2 ;;
+        --metrics-options)    METRICS_OPTIONS+=("$2"); shift 2 ;;
         --bombardier-timeout) BOMBARDIER_TIMEOUT="$2"; shift 2 ;;
         --log-level)      LOG_LEVEL="$2"; shift 2 ;;
         -h|--help)        usage ;;
@@ -359,6 +370,14 @@ elif [ -n "$SLOW_REQUESTS" ]; then
     echo "ERROR: --slow-requests requires --metrics-service" >&2
     exit 1
 fi
+
+# --metrics-options is repeatable on both sides — each element of the
+# array becomes one mod_wsgi-express invocation, which in turn emits
+# one WSGIMetricsOptions line in the generated config so the +/- /
+# absolute / None / All forms compose verbatim.
+for opt in "${METRICS_OPTIONS[@]}"; do
+    setup_args+=(--metrics-options "$opt")
+done
 
 if [ "$MODE" = "daemon" ] && [ "$DISABLE_RELOADING" = "1" ]; then
     reloading_state="disabled"

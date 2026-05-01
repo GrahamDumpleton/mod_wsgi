@@ -113,9 +113,12 @@ class SlowEntry:
     state: int                 # 0 = active, 1 = completed
     # Network identity. peer_ip is post-trusted-proxy resolution, so
     # reflects the real client when X-Forwarded-For handling is
-    # configured. protocol is "HTTP/1.1" / "HTTP/2.0".
+    # configured. protocol is "HTTP/1.1" / "HTTP/2.0". user_agent
+    # is empty unless the operator opted in via
+    # WSGIMetricsOptions +CaptureUserAgent.
     peer_ip: str = ""
     protocol: str = ""
+    user_agent: str = ""
     input_bytes: int = 0
     input_reads: int = 0
     output_bytes: int = 0
@@ -158,6 +161,7 @@ class SlowEntry:
             "path_info": self.path_info,
             "peer_ip": self.peer_ip,
             "protocol": self.protocol,
+            "user_agent": self.user_agent,
             "start_stamp_us": self.start_stamp_us,
             "duration_us": self.duration_us,
             "state": self.state,
@@ -424,6 +428,7 @@ class Ingester:
             path_info=_s("slow_path_info"),
             peer_ip=_s("slow_peer_ip"),
             protocol=_s("slow_protocol"),
+            user_agent=_s("slow_user_agent"),
             start_stamp_us=start_stamp_us,
             duration_us=int(f.get("slow_duration_us") or 0),
             state=int(f.get("slow_record_state") or 0),
