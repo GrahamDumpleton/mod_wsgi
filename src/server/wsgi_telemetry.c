@@ -333,7 +333,7 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
     wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_SLOW_REQUEST, pid, seq,
                             stamp_us);
 
-    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_STATE, s->state);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_RECORD_STATE, s->state);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_START_STAMP_US,
                          s->start_stamp_us);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_DURATION_US, s->duration_us);

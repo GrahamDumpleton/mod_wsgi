@@ -390,7 +390,7 @@ class Ingester:
             path_info=_s("slow_path_info"),
             start_stamp_us=start_stamp_us,
             duration_us=int(f.get("slow_duration_us") or 0),
-            state=int(f.get("slow_state") or 0),
+            state=int(f.get("slow_record_state") or 0),
             input_bytes=int(f.get("slow_input_bytes") or 0),
             input_reads=int(f.get("slow_input_reads") or 0),
             output_bytes=int(f.get("slow_output_bytes") or 0),

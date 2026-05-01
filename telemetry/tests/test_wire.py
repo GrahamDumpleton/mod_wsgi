@@ -74,7 +74,7 @@ def test_field_table_has_no_duplicate_ids():
 def test_roundtrip_slow_request():
     # Carries every slow_* field so any drift in the id table fails loud.
     fields = {
-        "slow_state": 0,
+        "slow_record_state": 0,
         "slow_start_stamp_us": 1_700_000_000_000_000,
         "slow_duration_us": 1_234_000,
         "slow_thread_id": 3,
@@ -90,7 +90,7 @@ def test_roundtrip_slow_request():
     got = decode(encode(s))
     assert got.kind == KIND_SLOW_REQUEST
     assert got.kind_name == "slow_request"
-    assert got.fields["slow_state"] == 0
+    assert got.fields["slow_record_state"] == 0
     assert got.fields["slow_duration_us"] == 1_234_000
     assert got.fields["slow_thread_id"] == 3
     assert got.fields["slow_log_id"] == b"abcd-1234"
@@ -214,7 +214,7 @@ def test_roundtrip_slow_request_io():
     # (final, completed) or scanned from the still-live adapter (partial,
     # active). Both share the same wire IDs.
     fields = {
-        "slow_state": 1,
+        "slow_record_state": 1,
         "slow_start_stamp_us": 1_700_000_000_000_000,
         "slow_duration_us": 8_000_000,
         "slow_thread_id": 7,
@@ -237,7 +237,7 @@ def test_roundtrip_slow_request_cpu():
     # drill-down can show both. Active records carry zero on the wire
     # (getrusage on a worker thread can only run from that worker).
     fields = {
-        "slow_state": 1,
+        "slow_record_state": 1,
         "slow_duration_us": 5_000_000,
         "slow_thread_id": 2,
         "slow_cpu_user_us": 4_200_000,

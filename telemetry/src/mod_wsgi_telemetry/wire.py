@@ -198,32 +198,53 @@ FIELDS = {
     134: "active_requests_at_exit",
     135: "graceful_drain",        # 0 = reaper aborted, 1 = drain completed cleanly
 
-    # 140-159: slow-request fields (only present in KIND_SLOW_REQUEST
+    # 160-199: reserved for future intermediate categories. Field IDs
+    # are uint16 and the address space is effectively unbounded; this
+    # gap exists so new conceptual blocks can be inserted before the
+    # slow-request region without disturbing already-allocated IDs.
+
+    # 200-299: slow-request fields (only present in KIND_SLOW_REQUEST
     # datagrams). Identity (hostname, process_group) is keyed per pid
-    # from the accompanying KIND_REQUEST stream, so it is not repeated
-    # here. 140-149: identification and timing. 150-153: per-request
-    # I/O — final at completion, partial snapshot for active records.
-    # 154-155: per-request CPU time (microseconds) — final at
-    # completion, zero for active records. 156: final HTTP response
-    # status — zero for active records (start_response may not have
-    # been called yet).
-    140: "slow_state",            # 0 = active, 1 = completed
-    141: "slow_start_stamp_us",
-    142: "slow_duration_us",
-    143: "slow_thread_id",
-    144: "slow_log_id",
-    145: "slow_method",
-    146: "slow_scheme",
-    147: "slow_hostname",
-    148: "slow_script_name",
-    149: "slow_path_info",
-    150: "slow_input_bytes",
-    151: "slow_input_reads",
-    152: "slow_output_bytes",
-    153: "slow_output_writes",
-    154: "slow_cpu_user_us",
-    155: "slow_cpu_system_us",
-    156: "slow_status",           # 0 = not yet known, else final WSGI status
+    # from the accompanying KIND_REQUEST and KIND_PROCESS_STARTED
+    # streams, so it is not repeated here. The 200-block reserves 100
+    # IDs for the slow-record category so future additions land cleanly
+    # within this range.
+    #
+    # Block layout:
+    #   200-209: record metadata (state, start, duration, thread, log id)
+    #   210-219: HTTP request identity (method, URL components, protocol,
+    #            peer IP, user agent)
+    #   220-229: per-phase timing breakdown (server / queue / daemon /
+    #            application time, microseconds)
+    #   230-239: per-request I/O counters
+    #   240-249: response outcome (HTTP status; future error.type)
+    #   250-259: per-request CPU and resource use
+    #   260-269: concurrency context (in-flight counts at boundaries)
+    #   270-289: reserved for future trace-context fields
+    #   290-299: reserved
+    #
+    # Active records carry zero for fields not yet observable.
+    200: "slow_record_state",     # 0 = active, 1 = completed
+    201: "slow_start_stamp_us",
+    202: "slow_duration_us",
+    203: "slow_thread_id",
+    204: "slow_log_id",
+
+    210: "slow_method",
+    211: "slow_scheme",
+    212: "slow_hostname",
+    213: "slow_script_name",
+    214: "slow_path_info",
+
+    230: "slow_input_bytes",
+    231: "slow_input_reads",
+    232: "slow_output_bytes",
+    233: "slow_output_writes",
+
+    240: "slow_status",           # 0 = not yet known, else final WSGI status
+
+    250: "slow_cpu_user_us",
+    251: "slow_cpu_system_us",
 }
 
 # Reverse map for encoders / tests.

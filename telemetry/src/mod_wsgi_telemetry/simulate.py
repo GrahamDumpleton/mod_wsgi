@@ -328,7 +328,7 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
     else:
         slow_status = 0
     fields = {
-        "slow_state": state,                    # 0=active, 1=completed
+        "slow_record_state": state,             # 0=active, 1=completed
         "slow_start_stamp_us": start_stamp_us,
         "slow_duration_us": duration_us,
         "slow_thread_id": thread_id,
