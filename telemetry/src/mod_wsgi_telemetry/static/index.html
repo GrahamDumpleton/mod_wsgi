@@ -1348,6 +1348,7 @@ function rebuildGroupFilter() {
 const PROCESS_IDENTITY_FIELDS = [
   "hostname",
   "process_group",
+  "process_parent_pid",
   "mod_wsgi_version",
   "python_version",
   "apache_version",
@@ -1587,6 +1588,15 @@ function upsertSlow(entry) {
 // than filtering on every redraw.
 function addLifecycleEvent(ev) {
   state.lifecycleEvents.push(ev);
+  // STARTED is the only event that carries process_parent_pid on the
+  // wire (identity fields are not repeated on STOPPING / STOPPED to
+  // keep their datagrams small). Latch it onto ProcessState here so
+  // any later lookup by pid can find it without re-walking the
+  // events ring.
+  if (ev.kind === "process_started" && ev.process_parent_pid) {
+    const p = ensureProcess(ev.pid);
+    p.process_parent_pid = ev.process_parent_pid;
+  }
   const cutoffUs = (Date.now() - SAMPLE_RETENTION_SEC * 1000) * 1000;
   // Common case: only the most recent event is fresh — fast path
   // trims from the head. Bound the buffer at 500 events as well so a
@@ -1991,7 +2001,21 @@ function renderSlowExpandPanel(e) {
   const phaseRow = phaseBar
     ? `<div class="label">Phases</div><div>${phaseBar}</div>`
     : "";
+  // Process identity: group · pid (parent) · thread, looked up from
+  // ProcessState by pid. Group renders as "(embedded)" when no daemon
+  // group applies; the parent-pid suffix is omitted when unknown so
+  // very early page-load slow records (before any STARTED has
+  // landed) still render cleanly.
+  const proc = state.processes.get(e.pid);
+  const groupText = (proc && proc.process_group)
+    ? escapeHtml(proc.process_group) : "(embedded)";
+  const ppid = (proc && proc.process_parent_pid) || 0;
+  const pidPart = `pid ${e.pid}` + (ppid ? ` (parent ${ppid})` : "");
+  const threadPart = e.thread_id ? ` &middot; thread ${e.thread_id}` : "";
+  const processLine = `${groupText} &middot; ${pidPart}${threadPart}`;
   return `<div class="slow-details">
+    <div class="label">Process</div>
+    <div>${processLine}</div>
     <div class="label">URL</div>
     <div class="url-full">${escapeHtml(url)}</div>
     <div class="label">Log ID</div>
