@@ -62,9 +62,9 @@ void wsgi_log_error_locked_ex(const char *file, int line, int module_index,
     apr_vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
 
-    Py_BEGIN_ALLOW_THREADS
-        ap_log_error(file, line, module_index, level, rv, s, "%s", buf);
-    Py_END_ALLOW_THREADS
+    WSGI_BEGIN_ALLOW_THREADS
+    ap_log_error(file, line, module_index, level, rv, s, "%s", buf);
+    WSGI_END_ALLOW_THREADS
 }
 
 void wsgi_log_rerror_ex(const char *file, int line, int module_index,
@@ -100,7 +100,7 @@ void wsgi_log_rerror_locked_ex(const char *file, int line, int module_index,
     apr_vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
 
-    Py_BEGIN_ALLOW_THREADS if (r->filename)
+    WSGI_BEGIN_ALLOW_THREADS if (r->filename)
     {
         ap_log_rerror(file, line, module_index, level, rv, r,
                       "[script %s] %s", r->filename, buf);
@@ -109,7 +109,7 @@ void wsgi_log_rerror_locked_ex(const char *file, int line, int module_index,
     {
         ap_log_rerror(file, line, module_index, level, rv, r, "%s", buf);
     }
-    Py_END_ALLOW_THREADS
+    WSGI_END_ALLOW_THREADS
 }
 
 /* ------------------------------------------------------------------------- */
@@ -785,13 +785,14 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
          * wsgi_log_python_error rather than this function.
          */
 
-        Py_BEGIN_ALLOW_THREADS
+        WSGI_BEGIN_ALLOW_THREADS
 
-            if (r)
-                ap_log_rerror(file, line, module_index, APLOG_ERR, 0, r,
-                              "%s", header);
-        else ap_log_error(file, line, module_index, APLOG_ERR, 0, s,
+        if (r)
+            ap_log_rerror(file, line, module_index, APLOG_ERR, 0, r,
                           "%s", header);
+        else
+            ap_log_error(file, line, module_index, APLOG_ERR, 0, s,
+                         "%s", header);
 
         if (captured_text)
         {
@@ -829,7 +830,7 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
             }
         }
 
-        Py_END_ALLOW_THREADS
+        WSGI_END_ALLOW_THREADS
     }
 
     if (!result || !captured_text)

@@ -964,6 +964,8 @@
                 <option value="daemon_time">daemon</option>
                 <option value="queue_time">queue</option>
                 <option value="server_time">server</option>
+                <option disabled>──────────</option>
+                <option value="gil_wait_time">GIL wait</option>
               </select>
             </label>
           </div>
@@ -979,6 +981,8 @@
                 <option value="daemon_time_buckets">daemon</option>
                 <option value="queue_time_buckets">queue</option>
                 <option value="server_time_buckets">server</option>
+                <option disabled>──────────</option>
+                <option value="gil_wait_time_buckets">GIL wait</option>
               </select>
             </label>
           </div>
@@ -2001,6 +2005,26 @@ function renderSlowExpandPanel(e) {
   const phaseRow = phaseBar
     ? `<div class="label">Phases</div><div>${phaseBar}</div>`
     : "";
+  // GIL wait pressure indicator. Cross-cutting overlap (NOT a phase
+  // addend) — sum of waits at every instrumented re-acquire site
+  // reached during this request, plus the initial sub-interp GIL
+  // acquire. Cannot see waits inside the application's own C
+  // extensions, so it's a partial pressure indicator. Always rendered
+  // when a value is present; the count distinguishes "one big stall"
+  // from "death by a thousand re-acquires".
+  const gilWaitUs = e.gil_wait_us || 0;
+  const gilWaitCount = e.gil_wait_count || 0;
+  let gilRow = "";
+  if (gilWaitUs > 0 || gilWaitCount > 0) {
+    const pctOfDuration = (durationUs > 0)
+      ? ((gilWaitUs / durationUs) * 100).toFixed(0) : "—";
+    const pctText = pctOfDuration === "—"
+      ? "" : ` <span class="label">(${pctOfDuration}% of duration)</span>`;
+    const eventsText = gilWaitCount === 1 ? "event" : "events";
+    gilRow = `<div class="label">GIL wait</div>` +
+      `<div>${fmtCpuUs(gilWaitUs)} · ${gilWaitCount} ${eventsText}` +
+      `${pctText}</div>`;
+  }
   // Process identity: group · pid (parent) · thread, looked up from
   // ProcessState by pid. Group renders as "(embedded)" when no daemon
   // group applies; the parent-pid suffix is omitted when unknown so
@@ -2069,6 +2093,7 @@ function renderSlowExpandPanel(e) {
     <div class="label">Log ID</div>
     <div>${escapeHtml(e.log_id || "—")}</div>
     ${phaseRow}
+    ${gilRow}
     ${concurrencyRow}
     <div class="label">Body in</div>
     <div>${fmtIO(inBytes, inCalls, inAvg, "reads")}${
@@ -2662,6 +2687,8 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
   let queueTimeSum = 0, queueTimeSamples = 0, queueTimePeak = 0;
   let daemonTimeSum = 0, daemonTimeSamples = 0, daemonTimePeak = 0;
   let requestTimeSum = 0, requestTimeSamples = 0;
+  let appTimeSum = 0, appTimeSamples = 0;
+  let gilWaitTimeSum = 0, gilWaitTimeSamples = 0, gilWaitTimePeak = 0;
   let hasDaemonTime = false;
   let requestTotal = 0;
   let hasQueueTime = false;
@@ -2720,6 +2747,17 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
                         (s.fields.daemon_time || 0) +
                         (s.fields.application_time || 0);
       requestTimeSamples++;
+      appTimeSum += s.fields.application_time;
+      appTimeSamples++;
+    }
+    // GIL wait pressure indicator. Per-tick mean across requests
+    // completed in the tick; classifyCapacity divides this by the
+    // app-time mean to derive the gil-direct fraction trigger.
+    if (typeof s.fields.gil_wait_time === "number") {
+      gilWaitTimeSum += s.fields.gil_wait_time;
+      gilWaitTimeSamples++;
+      if (s.fields.gil_wait_time > gilWaitTimePeak)
+        gilWaitTimePeak = s.fields.gil_wait_time;
     }
     if (typeof s.fields.request_count === "number")
       requestTotal += s.fields.request_count;
@@ -2760,6 +2798,15 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
     // hard classifier, because I/O-with-GIL-release looks the same.
     slotCpuBusyRatio: slotBusyUsTotal > 0
       ? slotCpuUsTotal / slotBusyUsTotal
+      : 0,
+    hasGilWait: gilWaitTimeSamples > 0,
+    gilWaitMsMean: gilWaitTimeSamples > 0
+      ? (gilWaitTimeSum / gilWaitTimeSamples) * 1000 : 0,
+    gilWaitMsPeak: gilWaitTimePeak * 1000,
+    gilWaitFracOfApp: (gilWaitTimeSamples > 0 && appTimeSamples > 0
+                       && appTimeSum > 0)
+      ? (gilWaitTimeSum / gilWaitTimeSamples)
+        / (appTimeSum / appTimeSamples)
       : 0,
   };
 
@@ -2909,6 +2956,7 @@ function computeProcessStats(p, windowSec) {
   let slotBusyUsTotal = 0, slotCpuUsTotal = 0;
   let queueTimePeakS = 0, daemonTimePeakS = 0;
   let queueSamples = 0, daemonSamples = 0;
+  let gilWaitSumS = 0, gilWaitSamples = 0, gilWaitPeakS = 0;
   let nThreadsMax = 0;
   let windowSecSum = 0;
   let hasAny = false;
@@ -2965,6 +3013,15 @@ function computeProcessStats(p, windowSec) {
     if (typeof f.daemon_time === "number") {
       daemonSamples++;
       if (f.daemon_time > daemonTimePeakS) daemonTimePeakS = f.daemon_time;
+    }
+    // GIL wait pressure indicator (overlap, not a phase). Tracks the
+    // sum across instrumented re-acquire sites within mod_wsgi C code,
+    // averaged per-request per-tick. Only present on ticks where at
+    // least one request completed.
+    if (typeof f.gil_wait_time === "number") {
+      gilWaitSumS += f.gil_wait_time;
+      gilWaitSamples++;
+      if (f.gil_wait_time > gilWaitPeakS) gilWaitPeakS = f.gil_wait_time;
     }
     const period = f.sample_period || 1.0;
     const periodUs = period * 1_000_000;
@@ -3041,6 +3098,18 @@ function computeProcessStats(p, windowSec) {
     daemonMsMean: daemonSamples > 0
       ? (daeSum / Math.max(phaseSamples, 1)) * 1000 : 0,
     daemonMsPeak: daemonTimePeakS * 1000,
+    hasGilWait: gilWaitSamples > 0,
+    gilWaitMsMean: gilWaitSamples > 0
+      ? (gilWaitSumS / gilWaitSamples) * 1000 : 0,
+    gilWaitMsPeak: gilWaitPeakS * 1000,
+    // Share of application time consumed by GIL re-acquire waits at
+    // mod_wsgi instrumentation points. Partial — does not see waits
+    // inside the application's own C extensions — so this is a lower
+    // bound on actual GIL pressure. Used as a positive confirmation
+    // signal in classifyCapacity (high = unambiguous GIL); a low value
+    // does NOT rule out GIL pressure.
+    gilWaitFracOfApp: (gilWaitSamples > 0 && phaseSamples > 0 && appSum > 0)
+      ? (gilWaitSumS / gilWaitSamples) / (appSum / phaseSamples) : 0,
     requestRpm: windowSecSum > 0 ? (rcSum / windowSecSum) * 60 : 0,
     hasIO: ioSamples > 0,
     inBytesRate: ioPeriodSum > 0 ? inBytesSum / ioPeriodSum : 0,
@@ -3168,11 +3237,18 @@ function rollupAcross(pids, windowSec) {
 //       threads" fingerprint, catches cases where busy and daemon
 //       ratios are both flattened because application_time is
 //       itself stretched by the same contention.
+//   (d) measured GIL re-acquire wait at mod_wsgi instrumentation
+//       sites is a non-trivial fraction of application time —
+//       direct positive evidence of contention. The metric is
+//       partial (cannot see waits inside the application's own C
+//       extensions) so it is a one-way signal: high value confirms
+//       GIL pressure, low value does NOT rule it out.
 function classifyCapacity(stats) {
   const out = {
     saturated: false, cpuGilBound: false,
     reasons: [], gilReasons: [], lean: null,
-    triggers: { ratio: false, daemon: false, peg: false, multiCore: false },
+    triggers: { ratio: false, daemon: false, peg: false,
+                gilDirect: false, multiCore: false },
   };
   if (!stats) return out;
   const gated = stats.requestRpm >= 3;
@@ -3201,10 +3277,25 @@ function classifyCapacity(stats) {
   const gilPegTrigger = stats.cpuMean > 0.9
     && stats.nThreads >= 2
     && stats.busyMean > 0.3;
+  // Direct GIL evidence: measured re-acquire wait at mod_wsgi sites
+  // accounts for >=15% of mean application time, with enough load to
+  // matter. One-way signal — see classifyCapacity preamble for why a
+  // low value can't refute the other triggers. Coerced to a real
+  // boolean so a missing stats.hasGilWait field cannot leak `undefined`
+  // into out.cpuGilBound — that would silently flip
+  // classList.toggle("cpu-gil-bound") into its argumentless branch
+  // (toggle every call) and produce an on/off flicker without a
+  // matching label. The same coercion is applied to out.cpuGilBound
+  // below for the same reason.
+  const gilDirectTrigger = !!(stats.hasGilWait
+    && stats.gilWaitFracOfApp >= 0.15
+    && stats.busyMean > 0.3);
   out.triggers = { ratio: gilRatioTrigger, daemon: gilDaemonTrigger,
-                   peg: gilPegTrigger, multiCore };
-  out.cpuGilBound = gated && !multiCore
-    && (gilRatioTrigger || gilDaemonTrigger || gilPegTrigger);
+                   peg: gilPegTrigger, gilDirect: gilDirectTrigger,
+                   multiCore };
+  out.cpuGilBound = !!(gated && !multiCore
+    && (gilRatioTrigger || gilDaemonTrigger || gilPegTrigger
+        || gilDirectTrigger));
 
   if (gilPegTrigger)
     out.gilReasons.push(
@@ -3216,12 +3307,18 @@ function classifyCapacity(stats) {
   }
   if (gilDaemonTrigger)
     out.gilReasons.push(`daemon handoff ${stats.daemonMsMean.toFixed(0)} ms`);
+  if (gilDirectTrigger)
+    out.gilReasons.push(
+      `gil_wait ${Math.round(stats.gilWaitFracOfApp * 100)}% of app time`);
 
-  // Lean CPU vs GIL using slot_cpu/slot_busy. Weak signal —
-  // I/O-with-GIL-release also shows low ratio — so used only to tune
-  // wording, not the label.
+  // Lean wording. Direct GIL evidence wins when present — it
+  // converts the ambiguous "GIL or I/O" reading into a confirmed
+  // GIL diagnosis. Otherwise fall back to slot_cpu/slot_busy as a
+  // weak proxy.
   if (out.cpuGilBound) {
-    if (stats.slotCpuBusyRatio >= 0.7)
+    if (gilDirectTrigger)
+      out.lean = `gil_wait ${Math.round(stats.gilWaitFracOfApp * 100)}% of app time confirms GIL serialisation — add processes for more cores`;
+    else if (stats.slotCpuBusyRatio >= 0.7)
       out.lean = "threads burning CPU under GIL serialisation — add processes for more cores";
     else if (stats.slotCpuBusyRatio < 0.4
       && (gilDaemonTrigger || stats.slotCpuBusyRatio > 0))
@@ -5248,6 +5345,49 @@ carries the detail.
   time across worker slots. 1.0 = pure compute; near 0 = threads
   hold requests without running CPU work (GIL wait or blocking
   I/O).
+- **gil_wait_time** — mean per-request time spent waiting to
+  re-acquire the GIL at mod_wsgi instrumentation sites (input
+  read, output write, error-log emission). Cross-cutting overlap
+  metric — accumulates *during* application time and is **not**
+  an addend in the server / queue / daemon / application
+  invariant. Surfaced with the share of application time it
+  represents on each per-process State block, in the time-
+  breakdown / time-distribution dropdowns under the same name,
+  and on each slow-request detail panel.
+
+  **Coverage is partial. The metric is NOT an absolute measure
+  of GIL contention experienced by the workload.** mod_wsgi can
+  only time waits where its own C code releases and re-acquires
+  the GIL. The following sources of GIL contention are
+  **invisible** to this metric and contribute zero to it:
+
+  - **Pure-Python application code.** The Python interpreter
+    yields and re-acquires the GIL at bytecode boundaries
+    according to \`sys.setswitchinterval\` (default ~5 ms).
+    Contention experienced during those internal yields —
+    which is where most GIL pressure on Python-heavy workloads
+    actually lives — is never tagged.
+  - **C extensions called by the WSGI application.** Any
+    \`Py_BEGIN_ALLOW_THREADS\` / \`Py_END_ALLOW_THREADS\` pair
+    inside libraries the app imports (NumPy, database drivers,
+    \`requests\`, ML frameworks, etc.) releases and re-acquires
+    the GIL on its own; the wait at *its* re-acquire is not
+    seen by mod_wsgi.
+  - **Anything between the WSGI callable's first instruction
+    and its last.** The first-GIL-acquire on dispatch is timed
+    inside the daemon path (and shows up as elevated
+    \`daemon_time\`, not here); everything else inside the app
+    is invisible unless the app happens to be sitting in a
+    mod_wsgi I/O or logging call at the time.
+
+  Treat the printed value as a **lower bound** on actual GIL
+  pressure. A high value positively confirms contention exists;
+  a low value does **not** rule it out — a Python-CPU-bound or
+  NumPy-heavy workload can be brutally GIL-serialised while
+  reporting near-zero \`gil_wait_time\` because none of the
+  contention happens at the mod_wsgi boundary. Use this metric
+  to *raise confidence* in a CPU/GIL diagnosis, never to lower
+  it.
 - **response status: 1xx / 2xx / 3xx / 4xx / 5xx** — per-window
   counts of WSGI app responses by status class, drained from the
   same accumulator that updates \`request_count\`. Sum equals the
@@ -5403,6 +5543,18 @@ suppresses the label:
   suggestive, not conclusive).
 - **daemon-absolute** — daemon mean > 50 ms. Dispatch stage slow
   enough to indicate GIL contention during request entry.
+- **gil-direct** — measured \`gil_wait_time\` is ≥ 15% of mean
+  application time with busy > 30%. Direct positive evidence of
+  GIL contention from mod_wsgi-side instrumentation. One-way
+  signal: a high value confirms GIL pressure and tightens the
+  lean to a definite GIL diagnosis; a low value does **not**
+  rule out GIL pressure. \`gil_wait_time\` only counts waits at
+  mod_wsgi's own re-acquire sites — it does not see contention
+  experienced inside pure-Python application code (interpreter
+  bytecode-level GIL scheduling) or inside C extensions the app
+  calls (their own \`Py_BEGIN/END_ALLOW_THREADS\` pairs), so a
+  near-zero value is consistent with severe GIL contention if
+  the contention lives somewhere mod_wsgi can't observe.
 - **multi-core carve-out (exclusionary)** — cpu > 1.2 cores with
   busy > 50%. Workload is demonstrably running across multiple
   cores, so the GIL is not serialising; the CPU/GIL label is
@@ -5418,7 +5570,12 @@ GIL-contended I/O work produce indistinguishable telemetry (one
 core used, threads waiting). Lean on
 \`slot cpu / slot busy\` — near 1.0 = CPU-bound; low with elevated
 daemon = GIL-bound — but state the call as a lean, not a
-certainty.
+certainty. When \`gil_wait_time\` is non-trivial relative to
+application time (the **gil-direct** trigger), the lean
+sharpens into a confirmed GIL diagnosis. The reverse does not
+hold: a low \`gil_wait_time\` does not refute GIL contention,
+because mod_wsgi cannot instrument re-acquire sites inside the
+application's own C extensions.
 
 ### Normal
 
@@ -5449,6 +5606,11 @@ Combinations that identify specific bottlenecks:
 - **busy high, cpu \`<<\` busy, no slow requests, daemon low** —
   threads waiting on I/O. Fine as long as response stays
   acceptable; more threads can help if demand outruns throughput.
+  Confirm by reading \`gil_wait_time\`: if it is a small fraction
+  of application time, the wait is genuinely external (network /
+  DB) and threads are the right lever; if it is a large fraction,
+  the threads are contending for the GIL during would-be I/O
+  windows and adding processes will help more than adding threads.
 - **\`response\` spike without \`rpm\` change** — use the time
   distribution to find which phase carries the tail.
   \`application\` = app regression or downstream;
@@ -6467,10 +6629,19 @@ function buildCurrentStatsMarkdown() {
     if (ps.hasQueueTime)
       lines.push("  - queue mean: " + fmtSubMs(ps.queueMsMean) + " ms"
         + " (peak " + fmtSubMs(ps.queueMsPeak) + " ms)");
+    if (ps.hasGilWait) {
+      const gilFracPct = ps.gilWaitFracOfApp > 0
+        ? " (" + Math.round(ps.gilWaitFracOfApp * 100) + "% of app mean)"
+        : "";
+      lines.push("  - gil wait mean: " + fmtSubMs(ps.gilWaitMsMean) + " ms"
+        + " (peak " + fmtSubMs(ps.gilWaitMsPeak) + " ms)" + gilFracPct
+        + " — partial, lower bound");
+    }
     const triggerLabels = [];
     if (verdict.triggers.peg) triggerLabels.push("cpu-peg");
     if (verdict.triggers.ratio) triggerLabels.push("slot-ratio");
     if (verdict.triggers.daemon) triggerLabels.push("daemon-absolute");
+    if (verdict.triggers.gilDirect) triggerLabels.push("gil-direct");
     if (verdict.triggers.multiCore)
       triggerLabels.push("multi-core carve-out (label suppressed)");
     if (triggerLabels.length)
@@ -6495,6 +6666,8 @@ function buildCurrentStatsMarkdown() {
       field: "daemon_time_buckets" },
     { label: "Queue time (daemon socket-queue wait; daemon mode only)",
       field: "queue_time_buckets" },
+    { label: "GIL wait (overlap, partial — not an addend)",
+      field: "gil_wait_time_buckets" },
   ];
   const distSections = [];
   for (const spec of distSpecs) {
@@ -6630,6 +6803,17 @@ function buildCurrentStatsMarkdown() {
     + "> 50 ms. The dispatch stage (first-GIL-acquire + handoff) "
     + "is slow enough to indicate contention for the interpreter "
     + "lock during request entry.");
+  lines.push("  - **gil-direct** \u2014 measured GIL re-acquire wait "
+    + "at mod_wsgi instrumentation sites is \u2265 15% of mean "
+    + "application time, with busy > 30%. Direct positive evidence "
+    + "of contention. The underlying \`gil_wait_time\` metric is "
+    + "partial \u2014 it does not see contention happening inside "
+    + "pure-Python application code (the interpreter's own "
+    + "bytecode-level GIL scheduling) or inside C extensions the "
+    + "app calls (their own release/acquire pairs) \u2014 so this "
+    + "is a one-way signal: a high value confirms GIL pressure; "
+    + "a low value does **not** rule it out. See the gil wait "
+    + "signal entry below for the full coverage caveat.");
   lines.push("  - **multi-core carve-out** \u2014 *exclusionary, not "
     + "a flag reason.* When CPU mean > 1.2 cores and busy > 50%, "
     + "the workload is demonstrably running across multiple cores, "
@@ -6658,6 +6842,26 @@ function buildCurrentStatsMarkdown() {
     + "worker thread picked it up. Rises with both undersized "
     + "pools (not enough threads) and slow-to-dispatch daemons "
     + "(GIL contention at request entry).");
+  lines.push("  - **gil wait mean / peak** \u2014 mean (and peak "
+    + "per-tick mean) time per request spent waiting to re-acquire "
+    + "the GIL at mod_wsgi instrumentation sites (input read, "
+    + "output write, error log). Reported with the share of "
+    + "application time it represents. Cross-cutting overlap, "
+    + "**not** an addend to the four request phases. **NOT an "
+    + "absolute measure of GIL contention.** mod_wsgi only times "
+    + "waits at its own release/acquire sites. Contention "
+    + "happening (a) during pure-Python application code via the "
+    + "interpreter's own bytecode-level GIL scheduling "
+    + "(\`sys.setswitchinterval\`), or (b) inside C extensions "
+    + "the WSGI app calls (NumPy, DB drivers, ML frameworks, "
+    + "etc.) at *their* own \`Py_BEGIN/END_ALLOW_THREADS\` pairs, "
+    + "is invisible to this metric and contributes zero. The "
+    + "printed value is therefore a **lower bound** on actual "
+    + "GIL pressure: a high value confirms contention exists, "
+    + "but a low value does **not** rule it out \u2014 Python-CPU-"
+    + "bound workloads can be heavily GIL-serialised while "
+    + "reporting near-zero \`gil_wait_time\` because none of the "
+    + "contention happens at the mod_wsgi boundary.");
 
   if (multiHost) {
     lines.push("- **Multi-host snapshot.** Samples from multiple "

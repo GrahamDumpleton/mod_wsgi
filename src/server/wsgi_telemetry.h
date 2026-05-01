@@ -55,18 +55,18 @@
 
 #define WSGI_METRICS_VERSION 1
 
-#define WSGI_METRICS_KIND_PROCESS          1
-#define WSGI_METRICS_KIND_REQUEST          2
-#define WSGI_METRICS_KIND_SERVER           3
-#define WSGI_METRICS_KIND_SLOW_REQUEST     4
-#define WSGI_METRICS_KIND_PROCESS_STARTED  5
+#define WSGI_METRICS_KIND_PROCESS 1
+#define WSGI_METRICS_KIND_REQUEST 2
+#define WSGI_METRICS_KIND_SERVER 3
+#define WSGI_METRICS_KIND_SLOW_REQUEST 4
+#define WSGI_METRICS_KIND_PROCESS_STARTED 5
 #define WSGI_METRICS_KIND_PROCESS_STOPPING 6
-#define WSGI_METRICS_KIND_PROCESS_STOPPED  7
+#define WSGI_METRICS_KIND_PROCESS_STOPPED 7
 
-#define WSGI_METRICS_T_U64       0x01
-#define WSGI_METRICS_T_F64       0x02
-#define WSGI_METRICS_T_I64       0x03
-#define WSGI_METRICS_T_BYTES     0x04
+#define WSGI_METRICS_T_U64 0x01
+#define WSGI_METRICS_T_F64 0x02
+#define WSGI_METRICS_T_I64 0x03
+#define WSGI_METRICS_T_BYTES 0x04
 #define WSGI_METRICS_T_I32_ARRAY 0x05
 
 /* WSGIMetricsOptions flag bits. Bitmask shared by all directive
@@ -74,8 +74,8 @@
  * absolute / None / All forms (mixing forms in one directive is an
  * error). Default is zero — every flag opts in. Each flag here also
  * needs a matching name entry in the parser's lookup table. */
-#define WSGI_METRICS_OPT_CAPTURE_USER_AGENT  0x01
-#define WSGI_METRICS_OPT_ALL                 (WSGI_METRICS_OPT_CAPTURE_USER_AGENT)
+#define WSGI_METRICS_OPT_CAPTURE_USER_AGENT 0x01
+#define WSGI_METRICS_OPT_ALL (WSGI_METRICS_OPT_CAPTURE_USER_AGENT)
 
 extern int wsgi_metrics_options;
 
@@ -89,13 +89,13 @@ extern int wsgi_metrics_options;
  * wants to print a "who is this" banner can reach them without scanning
  * the whole TLV record. All seven fields are static for the life of a
  * process and only need to be emitted on the first sample after start. */
-#define WSGI_METRICS_F_MOD_WSGI_VERSION             1   /* bytes — e.g. "6.0.0" */
-#define WSGI_METRICS_F_PYTHON_VERSION               2   /* bytes — e.g. "3.14.0" */
-#define WSGI_METRICS_F_APACHE_VERSION               3   /* bytes — e.g. "Apache/2.4.62" */
-#define WSGI_METRICS_F_MPM_NAME                     4   /* bytes — e.g. "event", "prefork" */
-#define WSGI_METRICS_F_HOSTNAME                     5   /* bytes */
-#define WSGI_METRICS_F_PROCESS_GROUP                6   /* bytes */
-#define WSGI_METRICS_F_PROCESS_PARENT_PID           7   /* u64 — Apache parent pid */
+#define WSGI_METRICS_F_MOD_WSGI_VERSION 1   /* bytes — e.g. "6.0.0" */
+#define WSGI_METRICS_F_PYTHON_VERSION 2     /* bytes — e.g. "3.14.0" */
+#define WSGI_METRICS_F_APACHE_VERSION 3     /* bytes — e.g. "Apache/2.4.62" */
+#define WSGI_METRICS_F_MPM_NAME 4           /* bytes — e.g. "event", "prefork" */
+#define WSGI_METRICS_F_HOSTNAME 5           /* bytes */
+#define WSGI_METRICS_F_PROCESS_GROUP 6      /* bytes */
+#define WSGI_METRICS_F_PROCESS_PARENT_PID 7 /* u64 — Apache parent pid */
 
 /* 10-19: Sampling and reporter configuration. sample_period is the
  * measured wall-clock interval between two snapshot calls (drifts with
@@ -105,42 +105,46 @@ extern int wsgi_metrics_options;
  * slow_requests_threshold is the configured WSGISlowRequests value in
  * seconds (0 when the directive is not configured, in which case slow-
  * request datagrams never fire). */
-#define WSGI_METRICS_F_SAMPLE_PERIOD               10   /* f64 */
-#define WSGI_METRICS_F_TELEMETRY_INTERVAL          11   /* f64 */
-#define WSGI_METRICS_F_SLOW_REQUESTS_THRESHOLD     12   /* f64 */
+#define WSGI_METRICS_F_SAMPLE_PERIOD 10           /* f64 */
+#define WSGI_METRICS_F_TELEMETRY_INTERVAL 11      /* f64 */
+#define WSGI_METRICS_F_SLOW_REQUESTS_THRESHOLD 12 /* f64 */
 
 /* 20-29: Request rates and capacity for the interval. */
-#define WSGI_METRICS_F_REQUEST_COUNT               20   /* u64 */
-#define WSGI_METRICS_F_REQUEST_THROUGHPUT          21   /* f64 */
-#define WSGI_METRICS_F_CAPACITY_UTILIZATION        22   /* f64 */
+#define WSGI_METRICS_F_REQUEST_COUNT 20        /* u64 */
+#define WSGI_METRICS_F_REQUEST_THROUGHPUT 21   /* f64 */
+#define WSGI_METRICS_F_CAPACITY_UTILIZATION 22 /* f64 */
 
 /* 30-39: CPU. *_utilization are interval rates from wsgi_request_metrics;
  * *_time are cumulative seconds reserved for wsgi_process_metrics (not
  * yet emitted on the wire). */
-#define WSGI_METRICS_F_CPU_USER_UTILIZATION        30   /* f64 */
-#define WSGI_METRICS_F_CPU_SYSTEM_UTILIZATION      31   /* f64 */
-#define WSGI_METRICS_F_CPU_UTILIZATION             32   /* f64 */
-#define WSGI_METRICS_F_CPU_USER_TIME               35   /* f64 */
-#define WSGI_METRICS_F_CPU_SYSTEM_TIME             36   /* f64 */
-#define WSGI_METRICS_F_CPU_TIME                    37   /* f64 */
+#define WSGI_METRICS_F_CPU_USER_UTILIZATION 30   /* f64 */
+#define WSGI_METRICS_F_CPU_SYSTEM_UTILIZATION 31 /* f64 */
+#define WSGI_METRICS_F_CPU_UTILIZATION 32        /* f64 */
+#define WSGI_METRICS_F_CPU_USER_TIME 35          /* f64 */
+#define WSGI_METRICS_F_CPU_SYSTEM_TIME 36        /* f64 */
+#define WSGI_METRICS_F_CPU_TIME 37               /* f64 */
 
 /* 40-49: Memory. */
-#define WSGI_METRICS_F_MEMORY_RSS                  40   /* u64 */
-#define WSGI_METRICS_F_MEMORY_MAX_RSS              41   /* u64 */
+#define WSGI_METRICS_F_MEMORY_RSS 40     /* u64 */
+#define WSGI_METRICS_F_MEMORY_MAX_RSS 41 /* u64 */
 
 /* 50-59: Worker-thread counts. */
-#define WSGI_METRICS_F_REQUEST_THREADS_MAXIMUM     50   /* u64 */
-#define WSGI_METRICS_F_REQUEST_THREADS_STARTED     51   /* u64 */
-#define WSGI_METRICS_F_REQUEST_THREADS_ACTIVE      52   /* u64 */
+#define WSGI_METRICS_F_REQUEST_THREADS_MAXIMUM 50 /* u64 */
+#define WSGI_METRICS_F_REQUEST_THREADS_STARTED 51 /* u64 */
+#define WSGI_METRICS_F_REQUEST_THREADS_ACTIVE 52  /* u64 */
 
 /* 60-69: Per-phase mean times for the interval (seconds).
  * request_time is the per-request total (server + queue + daemon +
- * application) — what the caller actually experienced. */
-#define WSGI_METRICS_F_SERVER_TIME                 60   /* f64 */
-#define WSGI_METRICS_F_QUEUE_TIME                  61   /* f64 */
-#define WSGI_METRICS_F_DAEMON_TIME                 62   /* f64 */
-#define WSGI_METRICS_F_APPLICATION_TIME            63   /* f64 */
-#define WSGI_METRICS_F_REQUEST_TIME                64   /* f64 */
+ * application) — what the caller actually experienced. gil_wait_time
+ * is a cross-cutting overlap indicator (sum across instrumented re-
+ * acquire sites within mod_wsgi's C code) and is *not* an addend in
+ * the request_time invariant — see WSGI_METRICS_F_GIL_WAIT_TIME. */
+#define WSGI_METRICS_F_SERVER_TIME 60      /* f64 */
+#define WSGI_METRICS_F_QUEUE_TIME 61       /* f64 */
+#define WSGI_METRICS_F_DAEMON_TIME 62      /* f64 */
+#define WSGI_METRICS_F_APPLICATION_TIME 63 /* f64 */
+#define WSGI_METRICS_F_REQUEST_TIME 64     /* f64 */
+#define WSGI_METRICS_F_GIL_WAIT_TIME 65    /* f64 — see comment above */
 
 /* 70-79: Per-phase exact min times for the interval (microseconds).
  * Only emitted on ticks where at least one request completed; the
@@ -149,50 +153,53 @@ extern int wsgi_metrics_options;
  *
  * Aggregate cleanly across processes and across time windows by
  * (min of mins) — exact, no histogram approximation. */
-#define WSGI_METRICS_F_SERVER_TIME_MIN_US          70   /* u64 */
-#define WSGI_METRICS_F_QUEUE_TIME_MIN_US           71   /* u64 */
-#define WSGI_METRICS_F_DAEMON_TIME_MIN_US          72   /* u64 */
-#define WSGI_METRICS_F_APPLICATION_TIME_MIN_US     73   /* u64 */
-#define WSGI_METRICS_F_REQUEST_TIME_MIN_US         74   /* u64 */
+#define WSGI_METRICS_F_SERVER_TIME_MIN_US 70      /* u64 */
+#define WSGI_METRICS_F_QUEUE_TIME_MIN_US 71       /* u64 */
+#define WSGI_METRICS_F_DAEMON_TIME_MIN_US 72      /* u64 */
+#define WSGI_METRICS_F_APPLICATION_TIME_MIN_US 73 /* u64 */
+#define WSGI_METRICS_F_REQUEST_TIME_MIN_US 74     /* u64 */
+#define WSGI_METRICS_F_GIL_WAIT_TIME_MIN_US 75    /* u64 */
 
 /* 80-89: Per-phase exact max times for the interval (microseconds).
  * Same emission rule and aggregation semantics as the min block —
  * (max of maxes) is exact. Pairs with the histograms below to give a
  * true worst-case alongside the bucket-bounded percentiles. */
-#define WSGI_METRICS_F_SERVER_TIME_MAX_US          80   /* u64 */
-#define WSGI_METRICS_F_QUEUE_TIME_MAX_US           81   /* u64 */
-#define WSGI_METRICS_F_DAEMON_TIME_MAX_US          82   /* u64 */
-#define WSGI_METRICS_F_APPLICATION_TIME_MAX_US     83   /* u64 */
-#define WSGI_METRICS_F_REQUEST_TIME_MAX_US         84   /* u64 */
+#define WSGI_METRICS_F_SERVER_TIME_MAX_US 80      /* u64 */
+#define WSGI_METRICS_F_QUEUE_TIME_MAX_US 81       /* u64 */
+#define WSGI_METRICS_F_DAEMON_TIME_MAX_US 82      /* u64 */
+#define WSGI_METRICS_F_APPLICATION_TIME_MAX_US 83 /* u64 */
+#define WSGI_METRICS_F_REQUEST_TIME_MAX_US 84     /* u64 */
+#define WSGI_METRICS_F_GIL_WAIT_TIME_MAX_US 85    /* u64 */
 
 /* 90-99: Per-phase histograms. HDR-style: 16 octaves from 1 ms to
  * 65.5 s, each octave linearly split into 4 sub-buckets, plus one
  * overflow bucket for >65536 ms = 65 entries per phase. Max relative
  * error inside any sub-bucket is ≤25%. See wsgi_record_time_in_buckets
  * for the mantissa-based O(1) index. */
-#define WSGI_METRICS_F_SERVER_TIME_BUCKETS         90   /* i32 array */
-#define WSGI_METRICS_F_QUEUE_TIME_BUCKETS          91   /* i32 array */
-#define WSGI_METRICS_F_DAEMON_TIME_BUCKETS         92   /* i32 array */
-#define WSGI_METRICS_F_APPLICATION_TIME_BUCKETS    93   /* i32 array */
-#define WSGI_METRICS_F_REQUEST_TIME_BUCKETS        94   /* i32 array */
+#define WSGI_METRICS_F_SERVER_TIME_BUCKETS 90      /* i32 array */
+#define WSGI_METRICS_F_QUEUE_TIME_BUCKETS 91       /* i32 array */
+#define WSGI_METRICS_F_DAEMON_TIME_BUCKETS 92      /* i32 array */
+#define WSGI_METRICS_F_APPLICATION_TIME_BUCKETS 93 /* i32 array */
+#define WSGI_METRICS_F_REQUEST_TIME_BUCKETS 94     /* i32 array */
+#define WSGI_METRICS_F_GIL_WAIT_TIME_BUCKETS 95    /* i32 array */
 
 /* 100-109: Per-interval request I/O totals. Drained from the same
  * accumulator that wsgi_record_request_times() updates at end-of-
  * request, so the counts cover requests that completed during this
  * tick (in-flight requests do not contribute until they finish). */
-#define WSGI_METRICS_F_INPUT_BYTES_TOTAL          100   /* u64 */
-#define WSGI_METRICS_F_INPUT_READS_TOTAL          101   /* u64 */
-#define WSGI_METRICS_F_OUTPUT_BYTES_TOTAL         102   /* u64 */
-#define WSGI_METRICS_F_OUTPUT_WRITES_TOTAL        103   /* u64 */
+#define WSGI_METRICS_F_INPUT_BYTES_TOTAL 100   /* u64 */
+#define WSGI_METRICS_F_INPUT_READS_TOTAL 101   /* u64 */
+#define WSGI_METRICS_F_OUTPUT_BYTES_TOTAL 102  /* u64 */
+#define WSGI_METRICS_F_OUTPUT_WRITES_TOTAL 103 /* u64 */
 
 /* 110-119: Per-slot capacity signals. One entry per worker thread;
  * array length matches the emitting process's live
  * request_threads_maximum. */
-#define WSGI_METRICS_F_SLOT_REQUEST_COUNT         110   /* i32 array */
-#define WSGI_METRICS_F_SLOT_BUSY_TIME_US          111   /* i32 array */
-#define WSGI_METRICS_F_SLOT_CPU_TIME_US           112   /* i32 array */
-#define WSGI_METRICS_F_SLOT_CURRENT_ELAPSED_MS    113   /* i32 array */
-#define WSGI_METRICS_F_SLOT_MAX_DURATION_MS       114   /* i32 array */
+#define WSGI_METRICS_F_SLOT_REQUEST_COUNT 110      /* i32 array */
+#define WSGI_METRICS_F_SLOT_BUSY_TIME_US 111       /* i32 array */
+#define WSGI_METRICS_F_SLOT_CPU_TIME_US 112        /* i32 array */
+#define WSGI_METRICS_F_SLOT_CURRENT_ELAPSED_MS 113 /* i32 array */
+#define WSGI_METRICS_F_SLOT_MAX_DURATION_MS 114    /* i32 array */
 
 /* 120-129: Per-interval HTTP response status class totals. Drained
  * from the same accumulators that wsgi_record_request_times() updates
@@ -211,11 +218,11 @@ extern int wsgi_metrics_options;
  * interval. Encoder always emits all five fields (even when zero) so
  * consumers can distinguish "zero of this class" from "older encoder
  * that didn't have the field". */
-#define WSGI_METRICS_F_STATUS_1XX_TOTAL           120   /* u64 */
-#define WSGI_METRICS_F_STATUS_2XX_TOTAL           121   /* u64 */
-#define WSGI_METRICS_F_STATUS_3XX_TOTAL           122   /* u64 */
-#define WSGI_METRICS_F_STATUS_4XX_TOTAL           123   /* u64 */
-#define WSGI_METRICS_F_STATUS_5XX_TOTAL           124   /* u64 */
+#define WSGI_METRICS_F_STATUS_1XX_TOTAL 120 /* u64 */
+#define WSGI_METRICS_F_STATUS_2XX_TOTAL 121 /* u64 */
+#define WSGI_METRICS_F_STATUS_3XX_TOTAL 122 /* u64 */
+#define WSGI_METRICS_F_STATUS_4XX_TOTAL 123 /* u64 */
+#define WSGI_METRICS_F_STATUS_5XX_TOTAL 124 /* u64 */
 
 /* 130-139: Lifecycle event payload. Only present in
  * WSGI_METRICS_KIND_PROCESS_STARTED, WSGI_METRICS_KIND_PROCESS_STOPPING
@@ -226,12 +233,12 @@ extern int wsgi_metrics_options;
  * KIND_PROCESS stream for context. The static identity strings
  * (versions, MPM, parent_pid) are only emitted on STARTED — STOPPING
  * and STOPPED expect the consumer to have keyed them by pid. */
-#define WSGI_METRICS_F_SHUTDOWN_REASON            130   /* bytes — one of the documented reason strings */
-#define WSGI_METRICS_F_PROCESS_UPTIME             131   /* f64 — seconds from STARTED to STOPPED */
-#define WSGI_METRICS_F_LIFETIME_REQUEST_COUNT     132   /* u64 — total requests served by this process */
-#define WSGI_METRICS_F_ACTIVE_REQUESTS_AT_DECISION 133  /* u64 — in-flight count at STOPPING moment */
-#define WSGI_METRICS_F_ACTIVE_REQUESTS_AT_EXIT    134   /* u64 — in-flight count at STOPPED moment; non-zero ⇒ cut off */
-#define WSGI_METRICS_F_GRACEFUL_DRAIN             135   /* u64: 0=reaper aborted, 1=drain completed cleanly */
+#define WSGI_METRICS_F_SHUTDOWN_REASON 130             /* bytes — one of the documented reason strings */
+#define WSGI_METRICS_F_PROCESS_UPTIME 131              /* f64 — seconds from STARTED to STOPPED */
+#define WSGI_METRICS_F_LIFETIME_REQUEST_COUNT 132      /* u64 — total requests served by this process */
+#define WSGI_METRICS_F_ACTIVE_REQUESTS_AT_DECISION 133 /* u64 — in-flight count at STOPPING moment */
+#define WSGI_METRICS_F_ACTIVE_REQUESTS_AT_EXIT 134     /* u64 — in-flight count at STOPPED moment; non-zero ⇒ cut off */
+#define WSGI_METRICS_F_GRACEFUL_DRAIN 135              /* u64: 0=reaper aborted, 1=drain completed cleanly */
 
 /* 160-199: Reserved for future intermediate categories. Field IDs are
  * uint16 and the address space is effectively unbounded; this gap
@@ -268,38 +275,40 @@ extern int wsgi_metrics_options;
  * only reads the calling thread, while the active-record snapshot runs
  * from the reporter thread), I/O totals (the adapter may yet read or
  * write more), and any boundary-at-completion field. */
-#define WSGI_METRICS_F_SLOW_RECORD_STATE          200   /* u64: 0=active, 1=completed */
-#define WSGI_METRICS_F_SLOW_START_STAMP_US        201   /* u64 */
-#define WSGI_METRICS_F_SLOW_DURATION_US           202   /* u64 */
-#define WSGI_METRICS_F_SLOW_THREAD_ID             203   /* u64 */
-#define WSGI_METRICS_F_SLOW_LOG_ID                204   /* bytes */
+#define WSGI_METRICS_F_SLOW_RECORD_STATE 200   /* u64: 0=active, 1=completed */
+#define WSGI_METRICS_F_SLOW_START_STAMP_US 201 /* u64 */
+#define WSGI_METRICS_F_SLOW_DURATION_US 202    /* u64 */
+#define WSGI_METRICS_F_SLOW_THREAD_ID 203      /* u64 */
+#define WSGI_METRICS_F_SLOW_LOG_ID 204         /* bytes */
 
-#define WSGI_METRICS_F_SLOW_METHOD                210   /* bytes */
-#define WSGI_METRICS_F_SLOW_SCHEME                211   /* bytes */
-#define WSGI_METRICS_F_SLOW_HOSTNAME              212   /* bytes */
-#define WSGI_METRICS_F_SLOW_SCRIPT_NAME           213   /* bytes */
-#define WSGI_METRICS_F_SLOW_PATH_INFO             214   /* bytes */
-#define WSGI_METRICS_F_SLOW_PROTOCOL              215   /* bytes — e.g. "HTTP/1.1", "HTTP/2.0" */
-#define WSGI_METRICS_F_SLOW_PEER_IP               216   /* bytes — post-trusted-proxy resolution */
-#define WSGI_METRICS_F_SLOW_USER_AGENT            217   /* bytes — only when WSGIMetricsOptions +CaptureUserAgent */
+#define WSGI_METRICS_F_SLOW_METHOD 210      /* bytes */
+#define WSGI_METRICS_F_SLOW_SCHEME 211      /* bytes */
+#define WSGI_METRICS_F_SLOW_HOSTNAME 212    /* bytes */
+#define WSGI_METRICS_F_SLOW_SCRIPT_NAME 213 /* bytes */
+#define WSGI_METRICS_F_SLOW_PATH_INFO 214   /* bytes */
+#define WSGI_METRICS_F_SLOW_PROTOCOL 215    /* bytes — e.g. "HTTP/1.1", "HTTP/2.0" */
+#define WSGI_METRICS_F_SLOW_PEER_IP 216     /* bytes — post-trusted-proxy resolution */
+#define WSGI_METRICS_F_SLOW_USER_AGENT 217  /* bytes — only when WSGIMetricsOptions +CaptureUserAgent */
 
-#define WSGI_METRICS_F_SLOW_SERVER_TIME_US        220   /* u64 */
-#define WSGI_METRICS_F_SLOW_QUEUE_TIME_US         221   /* u64 — 0 in embedded mode */
-#define WSGI_METRICS_F_SLOW_DAEMON_TIME_US        222   /* u64 — 0 in embedded mode */
-#define WSGI_METRICS_F_SLOW_APPLICATION_TIME_US   223   /* u64 — partial for active records */
+#define WSGI_METRICS_F_SLOW_SERVER_TIME_US 220      /* u64 */
+#define WSGI_METRICS_F_SLOW_QUEUE_TIME_US 221       /* u64 — 0 in embedded mode */
+#define WSGI_METRICS_F_SLOW_DAEMON_TIME_US 222      /* u64 — 0 in embedded mode */
+#define WSGI_METRICS_F_SLOW_APPLICATION_TIME_US 223 /* u64 — partial for active records */
+#define WSGI_METRICS_F_SLOW_GIL_WAIT_US 224         /* u64 — running total at snapshot for active records */
+#define WSGI_METRICS_F_SLOW_GIL_WAIT_COUNT 225      /* u64 — number of re-acquire events observed */
 
-#define WSGI_METRICS_F_SLOW_INPUT_BYTES           230   /* u64 */
-#define WSGI_METRICS_F_SLOW_INPUT_READS           231   /* u64 */
-#define WSGI_METRICS_F_SLOW_OUTPUT_BYTES          232   /* u64 */
-#define WSGI_METRICS_F_SLOW_OUTPUT_WRITES         233   /* u64 */
+#define WSGI_METRICS_F_SLOW_INPUT_BYTES 230   /* u64 */
+#define WSGI_METRICS_F_SLOW_INPUT_READS 231   /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_BYTES 232  /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_WRITES 233 /* u64 */
 
-#define WSGI_METRICS_F_SLOW_STATUS                240   /* u64: 0=not yet known */
+#define WSGI_METRICS_F_SLOW_STATUS 240 /* u64: 0=not yet known */
 
-#define WSGI_METRICS_F_SLOW_CPU_USER_US           250   /* u64 */
-#define WSGI_METRICS_F_SLOW_CPU_SYSTEM_US         251   /* u64 */
+#define WSGI_METRICS_F_SLOW_CPU_USER_US 250   /* u64 */
+#define WSGI_METRICS_F_SLOW_CPU_SYSTEM_US 251 /* u64 */
 
-#define WSGI_METRICS_F_SLOW_ACTIVE_AT_START       260   /* u64 — wsgi_active_requests including this one */
-#define WSGI_METRICS_F_SLOW_ACTIVE_AT_COMPLETION  261   /* u64 — 0 for active records */
+#define WSGI_METRICS_F_SLOW_ACTIVE_AT_START 260      /* u64 — wsgi_active_requests including this one */
+#define WSGI_METRICS_F_SLOW_ACTIVE_AT_COMPLETION 261 /* u64 — 0 for active records */
 
 /* ------------------------------------------------------------------------- */
 
@@ -319,30 +328,31 @@ extern int wsgi_metrics_options;
  * slot_count entries per tick, so oversizing the struct costs stack
  * memory but no wire bytes. 128 is generous for any realistic
  * WSGIDaemonProcess threads setting. */
-#define WSGI_TELEMETRY_MAX_SLOTS    128
+#define WSGI_TELEMETRY_MAX_SLOTS 128
 
-typedef struct {
-    char     hostname[128];
-    char     process_group[64];
+typedef struct
+{
+    char hostname[128];
+    char process_group[64];
 
     /* Build / runtime identity. Populated once at reporter thread
      * start and copied into the sample every tick; static for the
      * life of the process. Emitted as bytes fields 1-4. Empty strings
      * are skipped by the encoder so older ingesters tolerate a
      * mod_wsgi that couldn't resolve, say, the MPM name. */
-    char     mod_wsgi_version[32];
-    char     python_version[64];
-    char     apache_version[64];
-    char     mpm_name[32];
+    char mod_wsgi_version[32];
+    char python_version[64];
+    char apache_version[64];
+    char mpm_name[32];
 
-    double   sample_period;
+    double sample_period;
     uint64_t request_count;
-    double   request_throughput;
-    double   capacity_utilization;
+    double request_throughput;
+    double capacity_utilization;
 
-    double   cpu_user_utilization;
-    double   cpu_system_utilization;
-    double   cpu_utilization;
+    double cpu_user_utilization;
+    double cpu_system_utilization;
+    double cpu_utilization;
 
     uint64_t memory_rss;
     uint64_t memory_max_rss;
@@ -351,11 +361,20 @@ typedef struct {
     uint32_t request_threads_started;
     uint32_t request_threads_active;
 
-    double   server_time;
-    double   queue_time;
-    double   daemon_time;
-    double   application_time;
-    double   request_time;
+    double server_time;
+    double queue_time;
+    double daemon_time;
+    double application_time;
+    double request_time;
+    /* GIL-wait pressure indicator. Mean per-request total of waits
+     * observed at every instrumented Py_END_ALLOW_THREADS-equivalent
+     * site within mod_wsgi's C code, plus the initial sub-interp GIL
+     * acquire. Cross-cutting overlap — *not* an addend in
+     * server + queue + daemon + application = request. The metric is
+     * partial (cannot see waits inside the application's own C
+     * extensions) and surfaces as a pressure indicator (trend over
+     * time) rather than a phase attribution. */
+    double gil_wait_time;
 
     /* Per-phase exact min/max for the interval, in microseconds. The
      * encoder skips the corresponding wire field when min still holds
@@ -367,17 +386,20 @@ typedef struct {
     uint64_t daemon_time_min_us;
     uint64_t application_time_min_us;
     uint64_t request_time_min_us;
+    uint64_t gil_wait_time_min_us;
     uint64_t server_time_max_us;
     uint64_t queue_time_max_us;
     uint64_t daemon_time_max_us;
     uint64_t application_time_max_us;
     uint64_t request_time_max_us;
+    uint64_t gil_wait_time_max_us;
 
-    int32_t  server_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
-    int32_t  queue_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
-    int32_t  daemon_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
-    int32_t  application_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
-    int32_t  request_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
+    int32_t server_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
+    int32_t queue_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
+    int32_t daemon_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
+    int32_t application_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
+    int32_t request_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
+    int32_t gil_wait_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
 
     /* Per-interval request I/O totals. Sum across requests that
      * completed in this interval; in-flight requests contribute on
@@ -401,21 +423,21 @@ typedef struct {
      * of the process; populated once per snapshot so the UI sees the
      * same values as the C side. slow_requests_threshold is 0 when
      * the WSGISlowRequests directive is not configured. */
-    double   telemetry_interval;
-    double   slow_requests_threshold;
+    double telemetry_interval;
+    double slow_requests_threshold;
 
     /* Per-slot capacity signals. slot_count is the live length of each
      * array — normally the WSGI process's request_threads_maximum, or
      * WSGI_TELEMETRY_MAX_SLOTS if that is exceeded. */
     uint32_t slot_count;
-    int32_t  slot_request_count      [WSGI_TELEMETRY_MAX_SLOTS];
-    int32_t  slot_busy_time_us       [WSGI_TELEMETRY_MAX_SLOTS];
-    int32_t  slot_cpu_time_us        [WSGI_TELEMETRY_MAX_SLOTS];
-    int32_t  slot_current_elapsed_ms [WSGI_TELEMETRY_MAX_SLOTS];
-    int32_t  slot_max_duration_ms    [WSGI_TELEMETRY_MAX_SLOTS];
+    int32_t slot_request_count[WSGI_TELEMETRY_MAX_SLOTS];
+    int32_t slot_busy_time_us[WSGI_TELEMETRY_MAX_SLOTS];
+    int32_t slot_cpu_time_us[WSGI_TELEMETRY_MAX_SLOTS];
+    int32_t slot_current_elapsed_ms[WSGI_TELEMETRY_MAX_SLOTS];
+    int32_t slot_max_duration_ms[WSGI_TELEMETRY_MAX_SLOTS];
 
-    int      has_daemon_timing;  /* queue_time / daemon_time valid? */
-    int      seeded;             /* false on first call; telemetry skips send */
+    int has_daemon_timing; /* queue_time / daemon_time valid? */
+    int seeded;            /* false on first call; telemetry skips send */
 } wsgi_telemetry_sample_t;
 
 /* ------------------------------------------------------------------------- */
@@ -428,21 +450,22 @@ typedef struct {
  * null-terminated; the encoder writes up to strlen() bytes on the wire.
  */
 
-#define WSGI_SLOW_LOG_ID_MAX      64
-#define WSGI_SLOW_METHOD_MAX      16
-#define WSGI_SLOW_SCHEME_MAX      16
-#define WSGI_SLOW_HOSTNAME_MAX    256
+#define WSGI_SLOW_LOG_ID_MAX 64
+#define WSGI_SLOW_METHOD_MAX 16
+#define WSGI_SLOW_SCHEME_MAX 16
+#define WSGI_SLOW_HOSTNAME_MAX 256
 #define WSGI_SLOW_SCRIPT_NAME_MAX 256
-#define WSGI_SLOW_PATH_INFO_MAX   512
-#define WSGI_SLOW_PEER_IP_MAX      46  /* fits an IPv6 string (INET6_ADDRSTRLEN) */
-#define WSGI_SLOW_PROTOCOL_MAX     16  /* "HTTP/1.1", "HTTP/2.0", room to spare */
-#define WSGI_SLOW_USER_AGENT_MAX  512  /* truncated; bots / SDKs sometimes ship multi-KB UA */
+#define WSGI_SLOW_PATH_INFO_MAX 512
+#define WSGI_SLOW_PEER_IP_MAX 46     /* fits an IPv6 string (INET6_ADDRSTRLEN) */
+#define WSGI_SLOW_PROTOCOL_MAX 16    /* "HTTP/1.1", "HTTP/2.0", room to spare */
+#define WSGI_SLOW_USER_AGENT_MAX 512 /* truncated; bots / SDKs sometimes ship multi-KB UA */
 
-typedef struct {
-    uint64_t start_stamp_us;     /* wall-clock when request started */
-    uint64_t duration_us;        /* elapsed (active) or final (completed) */
+typedef struct
+{
+    uint64_t start_stamp_us; /* wall-clock when request started */
+    uint64_t duration_us;    /* elapsed (active) or final (completed) */
     uint32_t thread_id;
-    uint8_t  state;              /* 0=active, 1=completed */
+    uint8_t state; /* 0=active, 1=completed */
 
     /* Per-request I/O counters. Final at completion; partial snapshot
      * for an active record (adapter may read/write more before end). */
@@ -488,19 +511,28 @@ typedef struct {
     uint64_t active_at_start;
     uint64_t active_at_completion;
 
+    /* GIL-wait pressure indicator for this single request — sum and
+     * count of waits observed at every instrumented re-acquire site
+     * reached by this request, plus the initial sub-interp GIL acquire.
+     * For active records, the running totals at snapshot time. See the
+     * sample-struct comment on gil_wait_time for the partial-visibility
+     * caveat. */
+    uint64_t gil_wait_us;
+    uint64_t gil_wait_count;
+
     /* Final HTTP response status (e.g. 200, 404, 500). Zero for active
      * records — start_response may not have been called yet. */
     uint16_t status;
 
-    char     log_id[WSGI_SLOW_LOG_ID_MAX];
-    char     method[WSGI_SLOW_METHOD_MAX];
-    char     scheme[WSGI_SLOW_SCHEME_MAX];
-    char     hostname[WSGI_SLOW_HOSTNAME_MAX];
-    char     script_name[WSGI_SLOW_SCRIPT_NAME_MAX];
-    char     path_info[WSGI_SLOW_PATH_INFO_MAX];
-    char     peer_ip[WSGI_SLOW_PEER_IP_MAX];
-    char     protocol[WSGI_SLOW_PROTOCOL_MAX];
-    char     user_agent[WSGI_SLOW_USER_AGENT_MAX];
+    char log_id[WSGI_SLOW_LOG_ID_MAX];
+    char method[WSGI_SLOW_METHOD_MAX];
+    char scheme[WSGI_SLOW_SCHEME_MAX];
+    char hostname[WSGI_SLOW_HOSTNAME_MAX];
+    char script_name[WSGI_SLOW_SCRIPT_NAME_MAX];
+    char path_info[WSGI_SLOW_PATH_INFO_MAX];
+    char peer_ip[WSGI_SLOW_PEER_IP_MAX];
+    char protocol[WSGI_SLOW_PROTOCOL_MAX];
+    char user_agent[WSGI_SLOW_USER_AGENT_MAX];
 } wsgi_slow_request_t;
 
 /* ------------------------------------------------------------------------- */
@@ -539,7 +571,7 @@ static inline void wsgi_metrics_put_u64le(uint8_t **p, uint64_t v)
 }
 
 static inline void wsgi_metrics_put_header(uint8_t **p, uint8_t kind, uint32_t pid,
-                                   uint32_t seq, uint64_t stamp_us)
+                                           uint32_t seq, uint64_t stamp_us)
 {
     (*p)[0] = WSGI_METRICS_MAGIC_0;
     (*p)[1] = WSGI_METRICS_MAGIC_1;
@@ -549,7 +581,7 @@ static inline void wsgi_metrics_put_header(uint8_t **p, uint8_t kind, uint32_t p
     (*p)[0] = WSGI_METRICS_VERSION;
     (*p)[1] = kind;
     *p += 2;
-    wsgi_metrics_put_u16le(p, 0);       /* flags */
+    wsgi_metrics_put_u16le(p, 0); /* flags */
     wsgi_metrics_put_u32le(p, pid);
     wsgi_metrics_put_u32le(p, seq);
     wsgi_metrics_put_u64le(p, stamp_us);
@@ -558,7 +590,8 @@ static inline void wsgi_metrics_put_header(uint8_t **p, uint8_t kind, uint32_t p
 static inline void wsgi_metrics_put_u64(uint8_t **p, uint16_t id, uint64_t v)
 {
     wsgi_metrics_put_u16le(p, id);
-    (*p)[0] = WSGI_METRICS_T_U64; *p += 1;
+    (*p)[0] = WSGI_METRICS_T_U64;
+    *p += 1;
     wsgi_metrics_put_u64le(p, v);
 }
 
@@ -567,28 +600,32 @@ static inline void wsgi_metrics_put_f64(uint8_t **p, uint16_t id, double v)
     uint64_t bits;
     memcpy(&bits, &v, sizeof(bits));
     wsgi_metrics_put_u16le(p, id);
-    (*p)[0] = WSGI_METRICS_T_F64; *p += 1;
+    (*p)[0] = WSGI_METRICS_T_F64;
+    *p += 1;
     wsgi_metrics_put_u64le(p, bits);
 }
 
 static inline void wsgi_metrics_put_bytes(uint8_t **p, uint16_t id,
-                                  const char *data, uint16_t len)
+                                          const char *data, uint16_t len)
 {
     wsgi_metrics_put_u16le(p, id);
-    (*p)[0] = WSGI_METRICS_T_BYTES; *p += 1;
+    (*p)[0] = WSGI_METRICS_T_BYTES;
+    *p += 1;
     wsgi_metrics_put_u16le(p, len);
     memcpy(*p, data, len);
     *p += len;
 }
 
 static inline void wsgi_metrics_put_i32_array(uint8_t **p, uint16_t id,
-                                      const int32_t *arr, uint16_t count)
+                                              const int32_t *arr, uint16_t count)
 {
     uint16_t i;
     wsgi_metrics_put_u16le(p, id);
-    (*p)[0] = WSGI_METRICS_T_I32_ARRAY; *p += 1;
+    (*p)[0] = WSGI_METRICS_T_I32_ARRAY;
+    *p += 1;
     wsgi_metrics_put_u16le(p, count);
-    for (i = 0; i < count; i++) {
+    for (i = 0; i < count; i++)
+    {
         uint32_t v = (uint32_t)arr[i];
         wsgi_metrics_put_u32le(p, v);
     }

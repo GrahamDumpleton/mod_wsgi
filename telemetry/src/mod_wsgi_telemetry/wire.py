@@ -111,12 +111,18 @@ FIELDS = {
     # 60-69: per-phase mean times for the interval (seconds).
     # request_time is the per-request total
     # (server + queue + daemon + application) — what the caller actually
-    # experienced.
+    # experienced. gil_wait_time is a cross-cutting overlap indicator
+    # (sum across instrumented re-acquire sites within mod_wsgi's C code)
+    # and is *not* an addend in the request_time invariant. The metric
+    # is partial — it cannot see waits inside the application's own C
+    # extensions — and should be surfaced as a pressure indicator
+    # (trend / peak chart), not a phase attribution.
     60: "server_time",
     61: "queue_time",
     62: "daemon_time",
     63: "application_time",
     64: "request_time",
+    65: "gil_wait_time",
 
     # 70-79: per-phase exact min times for the interval (microseconds).
     # Only present on ticks where at least one request completed; the
@@ -128,6 +134,7 @@ FIELDS = {
     72: "daemon_time_min_us",
     73: "application_time_min_us",
     74: "request_time_min_us",
+    75: "gil_wait_time_min_us",
 
     # 80-89: per-phase exact max times for the interval (microseconds).
     # Same emission rule and aggregation semantics as the min block —
@@ -138,6 +145,7 @@ FIELDS = {
     82: "daemon_time_max_us",
     83: "application_time_max_us",
     84: "request_time_max_us",
+    85: "gil_wait_time_max_us",
 
     # 90-99: per-phase histograms. HDR-style: 16 octaves from 1 ms to
     # 65.5 s, each octave linearly split into 4 sub-buckets, plus one
@@ -148,6 +156,7 @@ FIELDS = {
     92: "daemon_time_buckets",
     93: "application_time_buckets",
     94: "request_time_buckets",
+    95: "gil_wait_time_buckets",
 
     # 100-109: per-interval request I/O totals. Drained from the
     # adapter's InputObject.bytes/reads and
@@ -243,6 +252,8 @@ FIELDS = {
     221: "slow_queue_time_us",         # 0 in embedded mode
     222: "slow_daemon_time_us",        # 0 in embedded mode
     223: "slow_application_time_us",   # partial for active records still in flight
+    224: "slow_gil_wait_us",            # GIL-wait pressure indicator; running total for active records
+    225: "slow_gil_wait_count",         # number of re-acquire events observed
 
     230: "slow_input_bytes",
     231: "slow_input_reads",

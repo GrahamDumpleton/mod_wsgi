@@ -71,19 +71,20 @@ static volatile int wsgi_telemetry_shutdown = 0;
  * emit_final_tick / STOPPED can still send before close.
  */
 
-typedef struct {
-    int                       fd;
-    struct sockaddr_storage   addr;
-    socklen_t                 addrlen;
-    uint32_t                  pid;
-    uint32_t                  parent_pid;
-    apr_time_t                process_start_us;
-    char                      hostname[128];
-    char                      process_group[64];
-    char                      mod_wsgi_version[32];
-    char                      python_version[64];
-    char                      apache_version[64];
-    char                      mpm_name[32];
+typedef struct
+{
+    int fd;
+    struct sockaddr_storage addr;
+    socklen_t addrlen;
+    uint32_t pid;
+    uint32_t parent_pid;
+    apr_time_t process_start_us;
+    char hostname[128];
+    char process_group[64];
+    char mod_wsgi_version[32];
+    char python_version[64];
+    char apache_version[64];
+    char mpm_name[32];
 } wsgi_telemetry_ctx_t;
 
 static wsgi_telemetry_ctx_t wsgi_telemetry_ctx;
@@ -137,6 +138,21 @@ static int wsgi_telemetry_open(const char *target,
     if (fd < 0)
         return -1;
 
+    /* On macOS / BSD, AF_UNIX SOCK_DGRAM defaults to a 2 KB max datagram
+     * size from net.local.dgram.maxdgram. Periodic telemetry samples can
+     * exceed this once histograms and per-phase min/max are populated, so
+     * set SO_SNDBUF explicitly to override the per-socket cap. Linux is
+     * unaffected (default is far higher), but the call is harmless there
+     * — the kernel clamps to its own max if our request is too large.
+     * Errors are non-fatal: if setsockopt fails the socket still works
+     * for smaller datagrams; the periodic stream will just drop the
+     * occasional oversize record. */
+    {
+        int bufsize = 65536;
+        (void)setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
+                         &bufsize, sizeof(bufsize));
+    }
+
     sa->sun_family = AF_UNIX;
     strncpy(sa->sun_path, path, sizeof(sa->sun_path) - 1);
     *out_addrlen = (socklen_t)sizeof(*sa);
@@ -157,7 +173,8 @@ static void wsgi_telemetry_send(const wsgi_telemetry_ctx_t *ctx,
         return;
 
     if (sendto(ctx->fd, buf, n, 0,
-               (struct sockaddr *)&ctx->addr, ctx->addrlen) < 0) {
+               (struct sockaddr *)&ctx->addr, ctx->addrlen) < 0)
+    {
         /* Datagram sockets: ENOENT / ECONNREFUSED when ingester isn't
          * up. Silently drop; the ingester picks up on the next tick
          * once listening. Don't flood the error log. */
@@ -172,33 +189,33 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
 {
     uint8_t *p = buf;
     uint8_t *end = buf + buflen;
-    uint64_t stamp_us = (uint64_t)apr_time_now();  /* apr_time_t is usec */
+    uint64_t stamp_us = (uint64_t)apr_time_now(); /* apr_time_t is usec */
 
-    (void)end;  /* encoder sizes are deterministic; see WSGI_METRICS_MAX_DATAGRAM */
+    (void)end; /* encoder sizes are deterministic; see WSGI_METRICS_MAX_DATAGRAM */
 
     wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_REQUEST, pid, seq, stamp_us);
 
     if (s->mod_wsgi_version[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_MOD_WSGI_VERSION,
-                       s->mod_wsgi_version,
-                       (uint16_t)strlen(s->mod_wsgi_version));
+                               s->mod_wsgi_version,
+                               (uint16_t)strlen(s->mod_wsgi_version));
     if (s->python_version[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_PYTHON_VERSION,
-                       s->python_version,
-                       (uint16_t)strlen(s->python_version));
+                               s->python_version,
+                               (uint16_t)strlen(s->python_version));
     if (s->apache_version[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_APACHE_VERSION,
-                       s->apache_version,
-                       (uint16_t)strlen(s->apache_version));
+                               s->apache_version,
+                               (uint16_t)strlen(s->apache_version));
     if (s->mpm_name[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_MPM_NAME, s->mpm_name,
-                       (uint16_t)strlen(s->mpm_name));
+                               (uint16_t)strlen(s->mpm_name));
     if (s->hostname[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_HOSTNAME, s->hostname,
-                       (uint16_t)strlen(s->hostname));
+                               (uint16_t)strlen(s->hostname));
     if (s->process_group[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_PROCESS_GROUP, s->process_group,
-                       (uint16_t)strlen(s->process_group));
+                               (uint16_t)strlen(s->process_group));
 
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SAMPLE_PERIOD, s->sample_period);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_TELEMETRY_INTERVAL,
@@ -224,7 +241,9 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SERVER_TIME, s->server_time);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_APPLICATION_TIME, s->application_time);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_REQUEST_TIME, s->request_time);
-    if (s->has_daemon_timing) {
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_GIL_WAIT_TIME, s->gil_wait_time);
+    if (s->has_daemon_timing)
+    {
         wsgi_metrics_put_f64(&p, WSGI_METRICS_F_QUEUE_TIME, s->queue_time);
         wsgi_metrics_put_f64(&p, WSGI_METRICS_F_DAEMON_TIME, s->daemon_time);
     }
@@ -233,32 +252,45 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
      * on ticks where the phase saw no requests; the decoder treats
      * absence as "no data this tick". Min and max are paired — if min
      * was set, max was set too. */
-    if (s->server_time_min_us != UINT64_MAX) {
+    if (s->server_time_min_us != UINT64_MAX)
+    {
         wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SERVER_TIME_MIN_US,
                              s->server_time_min_us);
         wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SERVER_TIME_MAX_US,
                              s->server_time_max_us);
     }
-    if (s->application_time_min_us != UINT64_MAX) {
+    if (s->application_time_min_us != UINT64_MAX)
+    {
         wsgi_metrics_put_u64(&p, WSGI_METRICS_F_APPLICATION_TIME_MIN_US,
                              s->application_time_min_us);
         wsgi_metrics_put_u64(&p, WSGI_METRICS_F_APPLICATION_TIME_MAX_US,
                              s->application_time_max_us);
     }
-    if (s->request_time_min_us != UINT64_MAX) {
+    if (s->request_time_min_us != UINT64_MAX)
+    {
         wsgi_metrics_put_u64(&p, WSGI_METRICS_F_REQUEST_TIME_MIN_US,
                              s->request_time_min_us);
         wsgi_metrics_put_u64(&p, WSGI_METRICS_F_REQUEST_TIME_MAX_US,
                              s->request_time_max_us);
     }
-    if (s->has_daemon_timing) {
-        if (s->queue_time_min_us != UINT64_MAX) {
+    if (s->gil_wait_time_min_us != UINT64_MAX)
+    {
+        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GIL_WAIT_TIME_MIN_US,
+                             s->gil_wait_time_min_us);
+        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GIL_WAIT_TIME_MAX_US,
+                             s->gil_wait_time_max_us);
+    }
+    if (s->has_daemon_timing)
+    {
+        if (s->queue_time_min_us != UINT64_MAX)
+        {
             wsgi_metrics_put_u64(&p, WSGI_METRICS_F_QUEUE_TIME_MIN_US,
                                  s->queue_time_min_us);
             wsgi_metrics_put_u64(&p, WSGI_METRICS_F_QUEUE_TIME_MAX_US,
                                  s->queue_time_max_us);
         }
-        if (s->daemon_time_min_us != UINT64_MAX) {
+        if (s->daemon_time_min_us != UINT64_MAX)
+        {
             wsgi_metrics_put_u64(&p, WSGI_METRICS_F_DAEMON_TIME_MIN_US,
                                  s->daemon_time_min_us);
             wsgi_metrics_put_u64(&p, WSGI_METRICS_F_DAEMON_TIME_MAX_US,
@@ -267,17 +299,20 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
     }
 
     wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SERVER_TIME_BUCKETS,
-                       s->server_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
+                               s->server_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
     wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_APPLICATION_TIME_BUCKETS,
-                       s->application_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
-    if (s->has_daemon_timing) {
+                               s->application_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
+    if (s->has_daemon_timing)
+    {
         wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_QUEUE_TIME_BUCKETS,
-                           s->queue_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
+                                   s->queue_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
         wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_DAEMON_TIME_BUCKETS,
-                           s->daemon_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
+                                   s->daemon_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
     }
     wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_REQUEST_TIME_BUCKETS,
-                       s->request_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
+                               s->request_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
+    wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_GIL_WAIT_TIME_BUCKETS,
+                               s->gil_wait_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
 
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_INPUT_BYTES_TOTAL,
                          s->input_bytes_total);
@@ -304,7 +339,8 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_STATUS_5XX_TOTAL,
                          s->status_5xx_total);
 
-    if (s->slot_count > 0) {
+    if (s->slot_count > 0)
+    {
         uint16_t n = (uint16_t)s->slot_count;
         wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SLOT_REQUEST_COUNT,
                                    s->slot_request_count, n);
@@ -328,7 +364,7 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
 {
     uint8_t *p = buf;
 
-    (void)buflen;  /* deterministic; WSGI_METRICS_MAX_DATAGRAM sizes it */
+    (void)buflen; /* deterministic; WSGI_METRICS_MAX_DATAGRAM sizes it */
 
     wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_SLOW_REQUEST, pid, seq,
                             stamp_us);
@@ -365,6 +401,15 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
                          s->daemon_time_us);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_APPLICATION_TIME_US,
                          s->application_time_us);
+
+    /* GIL-wait pressure indicator for this single request. Always
+     * emitted (including zeros) so the slow-record detail panel can
+     * surface the value uniformly. For active records this is the
+     * running sum; for completed records it is the final total. */
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_GIL_WAIT_US,
+                         s->gil_wait_us);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_GIL_WAIT_COUNT,
+                         s->gil_wait_count);
 
     /* Concurrency context. active_at_completion is zero for active
      * records (the request has not finished yet); always emitted so
@@ -508,8 +553,7 @@ static size_t wsgi_telemetry_encode_stopped(const wsgi_telemetry_ctx_t *ctx,
 {
     uint8_t *p = buf;
     uint64_t now_us = (uint64_t)apr_time_now();
-    double uptime = (double)(now_us - (uint64_t)ctx->process_start_us)
-                    / (double)APR_USEC_PER_SEC;
+    double uptime = (double)(now_us - (uint64_t)ctx->process_start_us) / (double)APR_USEC_PER_SEC;
     uint64_t graceful_drain = graceful ? 1 : 0;
 
     (void)buflen;
@@ -587,7 +631,7 @@ static void wsgi_telemetry_emit_tick(const wsgi_telemetry_ctx_t *ctx)
         (double)wsgi_slow_threshold_us / 1.0e6;
 
     if (!sample.seeded)
-        return;  /* first call seeded counters; skip send */
+        return; /* first call seeded counters; skip send */
 
     seq = wsgi_telemetry_next_seq();
     n = wsgi_telemetry_encode(&sample, ctx->pid, seq, buf, sizeof(buf));
@@ -599,14 +643,16 @@ static void wsgi_telemetry_emit_tick(const wsgi_telemetry_ctx_t *ctx)
      * "lost". Active-scan uses a consistent now_us so all elapsed
      * values in this tick share a reference. */
 
-    if (wsgi_slow_threshold_us > 0) {
+    if (wsgi_slow_threshold_us > 0)
+    {
         wsgi_slow_request_t rec;
         wsgi_slow_request_t actives[16];
         int n_active;
         int i;
         uint64_t tick_stamp_us = (uint64_t)apr_time_now();
 
-        while (wsgi_metrics_pop_slow_completed(&rec)) {
+        while (wsgi_metrics_pop_slow_completed(&rec))
+        {
             seq = wsgi_telemetry_next_seq();
             n = wsgi_telemetry_encode_slow(&rec, ctx->pid, seq, tick_stamp_us,
                                            buf, sizeof(buf));
@@ -617,7 +663,8 @@ static void wsgi_telemetry_emit_tick(const wsgi_telemetry_ctx_t *ctx)
             actives, (int)(sizeof(actives) / sizeof(actives[0])),
             (apr_time_t)tick_stamp_us, wsgi_slow_threshold_us);
 
-        for (i = 0; i < n_active; i++) {
+        for (i = 0; i < n_active; i++)
+        {
             seq = wsgi_telemetry_next_seq();
             n = wsgi_telemetry_encode_slow(&actives[i], ctx->pid, seq,
                                            tick_stamp_us, buf, sizeof(buf));
@@ -649,10 +696,10 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
     if (wsgi_telemetry_open(wsgi_telemetry_target,
                             &wsgi_telemetry_ctx.fd,
                             &wsgi_telemetry_ctx.addr,
-                            &wsgi_telemetry_ctx.addrlen) != 0) {
-        wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0132)
-                       "Telemetry reporter could not open target '%s'; "
-                       "metrics will not be sent.",
+                            &wsgi_telemetry_ctx.addrlen) != 0)
+    {
+        wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0132) "Telemetry reporter could not open target '%s'; "
+                                                                         "metrics will not be sent.",
                        wsgi_telemetry_target);
         return NULL;
     }
@@ -665,12 +712,12 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
     wsgi_telemetry_ctx.process_group[0] = '\0';
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process && wsgi_daemon_process->group &&
-        wsgi_daemon_process->group->name) {
+        wsgi_daemon_process->group->name)
+    {
         strncpy(wsgi_telemetry_ctx.process_group,
                 wsgi_daemon_process->group->name,
                 sizeof(wsgi_telemetry_ctx.process_group) - 1);
-        wsgi_telemetry_ctx.process_group[
-            sizeof(wsgi_telemetry_ctx.process_group) - 1] = '\0';
+        wsgi_telemetry_ctx.process_group[sizeof(wsgi_telemetry_ctx.process_group) - 1] = '\0';
     }
 #endif
 
@@ -680,8 +727,7 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
      * string where it expects a real version. */
     strncpy(wsgi_telemetry_ctx.mod_wsgi_version, MOD_WSGI_VERSION_STRING,
             sizeof(wsgi_telemetry_ctx.mod_wsgi_version) - 1);
-    wsgi_telemetry_ctx.mod_wsgi_version[
-        sizeof(wsgi_telemetry_ctx.mod_wsgi_version) - 1] = '\0';
+    wsgi_telemetry_ctx.mod_wsgi_version[sizeof(wsgi_telemetry_ctx.mod_wsgi_version) - 1] = '\0';
 
     {
         /* Py_GetVersion() returns "3.14.0 (main, Jan 15 2026, ...)";
@@ -690,9 +736,10 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
          * SERVER_SOFTWARE construction. */
         const char *pv = Py_GetVersion();
         size_t i = 0;
-        if (pv) {
-            while (i < sizeof(wsgi_telemetry_ctx.python_version) - 1
-                   && pv[i] && pv[i] != ' ' && pv[i] != '\t') {
+        if (pv)
+        {
+            while (i < sizeof(wsgi_telemetry_ctx.python_version) - 1 && pv[i] && pv[i] != ' ' && pv[i] != '\t')
+            {
                 wsgi_telemetry_ctx.python_version[i] = pv[i];
                 i++;
             }
@@ -707,18 +754,18 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
      * the public banner. */
     strncpy(wsgi_telemetry_ctx.apache_version, AP_SERVER_BASEVERSION,
             sizeof(wsgi_telemetry_ctx.apache_version) - 1);
-    wsgi_telemetry_ctx.apache_version[
-        sizeof(wsgi_telemetry_ctx.apache_version) - 1] = '\0';
+    wsgi_telemetry_ctx.apache_version[sizeof(wsgi_telemetry_ctx.apache_version) - 1] = '\0';
 
     {
         const char *mpm = ap_show_mpm();
-        if (mpm) {
+        if (mpm)
+        {
             strncpy(wsgi_telemetry_ctx.mpm_name, mpm,
                     sizeof(wsgi_telemetry_ctx.mpm_name) - 1);
-            wsgi_telemetry_ctx.mpm_name[
-                sizeof(wsgi_telemetry_ctx.mpm_name) - 1] = '\0';
+            wsgi_telemetry_ctx.mpm_name[sizeof(wsgi_telemetry_ctx.mpm_name) - 1] = '\0';
         }
-        else {
+        else
+        {
             wsgi_telemetry_ctx.mpm_name[0] = '\0';
         }
     }
@@ -734,7 +781,7 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
     wsgi_telemetry_send(&wsgi_telemetry_ctx, buf, n);
 
     sleep_us = (apr_interval_time_t)(wsgi_telemetry_interval * APR_USEC_PER_SEC);
-    if (sleep_us < 100000)   /* floor at 100ms */
+    if (sleep_us < 100000) /* floor at 100ms */
         sleep_us = 100000;
 
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
@@ -742,7 +789,8 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
                    "interval=%.3fs.",
                    wsgi_telemetry_target, wsgi_telemetry_interval);
 
-    while (!wsgi_telemetry_shutdown) {
+    while (!wsgi_telemetry_shutdown)
+    {
         apr_sleep(sleep_us);
         if (wsgi_telemetry_shutdown)
             break;
@@ -785,15 +833,18 @@ const char *wsgi_set_metrics_service(cmd_parms *cmd, void *mconfig,
     wsgi_telemetry_target = apr_pstrdup(cmd->pool, arg1);
     wsgi_telemetry_enabled = 1;
 
-    if (arg2) {
+    if (arg2)
+    {
         double v = 0.0;
-        if (strncmp(arg2, "interval=", 9) == 0) {
+        if (strncmp(arg2, "interval=", 9) == 0)
+        {
             v = atof(arg2 + 9);
             if (v <= 0.0)
                 return "WSGIMetricsService interval must be positive";
             wsgi_telemetry_interval = v;
         }
-        else {
+        else
+        {
             return "WSGIMetricsService second argument must be "
                    "'interval=N'";
         }
@@ -852,18 +903,19 @@ const char *wsgi_set_slow_requests(cmd_parms *cmd, void *mconfig,
 
 int wsgi_metrics_options = 0;
 
-static const struct {
+static const struct
+{
     const char *name;
     int flag;
 } wsgi_metrics_option_names[] = {
-    { "CaptureUserAgent", WSGI_METRICS_OPT_CAPTURE_USER_AGENT },
-    { NULL, 0 }
-};
+    {"CaptureUserAgent", WSGI_METRICS_OPT_CAPTURE_USER_AGENT},
+    {NULL, 0}};
 
 static int wsgi_metrics_option_lookup(const char *name)
 {
     int i;
-    for (i = 0; wsgi_metrics_option_names[i].name; i++) {
+    for (i = 0; wsgi_metrics_option_names[i].name; i++)
+    {
         if (strcasecmp(name, wsgi_metrics_option_names[i].name) == 0)
             return wsgi_metrics_option_names[i].flag;
     }
@@ -871,7 +923,7 @@ static int wsgi_metrics_option_lookup(const char *name)
 }
 
 const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
-                                       const char *args)
+                                     const char *args)
 {
     const char *error = NULL;
     int seen_incremental = 0;
@@ -892,7 +944,8 @@ const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
      * and ignores the starting value. */
     incremental_options = wsgi_metrics_options;
 
-    while (*args) {
+    while (*args)
+    {
         const char *name;
         int is_negation = 0;
 
@@ -900,14 +953,16 @@ const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
         if (!*token)
             break;
 
-        if (token[0] == '+' || token[0] == '-') {
+        if (token[0] == '+' || token[0] == '-')
+        {
             is_negation = (token[0] == '-');
             seen_incremental = 1;
             name = token + 1;
             if (!*name)
                 return "WSGIMetricsOptions: bare '+' / '-' is not a flag";
         }
-        else {
+        else
+        {
             seen_absolute = 1;
             name = token;
         }
@@ -916,14 +971,16 @@ const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
             return "WSGIMetricsOptions: cannot mix +/- form with "
                    "absolute names in a single directive";
 
-        if (strcasecmp(name, "None") == 0) {
+        if (strcasecmp(name, "None") == 0)
+        {
             if (token[0] == '+' || token[0] == '-')
                 return "WSGIMetricsOptions: 'None' may not have a "
                        "+/- prefix";
             absolute_options = 0;
             continue;
         }
-        if (strcasecmp(name, "All") == 0) {
+        if (strcasecmp(name, "All") == 0)
+        {
             if (token[0] == '+' || token[0] == '-')
                 return "WSGIMetricsOptions: 'All' may not have a "
                        "+/- prefix";
@@ -934,15 +991,17 @@ const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
         int flag = wsgi_metrics_option_lookup(name);
         if (!flag)
             return apr_psprintf(cmd->temp_pool,
-                "WSGIMetricsOptions: unknown flag '%s'", name);
+                                "WSGIMetricsOptions: unknown flag '%s'", name);
 
-        if (seen_incremental) {
+        if (seen_incremental)
+        {
             if (is_negation)
                 incremental_options &= ~flag;
             else
                 incremental_options |= flag;
         }
-        else {
+        else
+        {
             absolute_options |= flag;
         }
     }
@@ -976,10 +1035,10 @@ void wsgi_telemetry_start_reporter(apr_pool_t *pool)
 
     rv = apr_thread_create(&wsgi_telemetry_thread, NULL,
                            wsgi_telemetry_thread_main, NULL, pool);
-    if (rv != APR_SUCCESS) {
-        wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0133)
-                       "Unable to create telemetry reporter thread; "
-                       "metrics will not be sent.");
+    if (rv != APR_SUCCESS)
+    {
+        wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0133) "Unable to create telemetry reporter thread; "
+                                                                          "metrics will not be sent.");
         wsgi_telemetry_started = 0;
     }
 }
@@ -992,7 +1051,8 @@ void wsgi_telemetry_stop_reporter(void)
         return;
 
     wsgi_telemetry_shutdown = 1;
-    if (wsgi_telemetry_thread) {
+    if (wsgi_telemetry_thread)
+    {
         apr_status_t rv = APR_SUCCESS;
         apr_thread_join(&rv, wsgi_telemetry_thread);
         wsgi_telemetry_thread = NULL;
@@ -1003,7 +1063,8 @@ void wsgi_telemetry_stop_reporter(void)
      * graceful pause / final-tick / STOPPED path. emit_final_tick
      * closes it itself and clears ctx_ready, so this branch is a no-op
      * on that path. */
-    if (wsgi_telemetry_ctx_ready && wsgi_telemetry_ctx.fd >= 0) {
+    if (wsgi_telemetry_ctx_ready && wsgi_telemetry_ctx.fd >= 0)
+    {
         close(wsgi_telemetry_ctx.fd);
         wsgi_telemetry_ctx.fd = -1;
         wsgi_telemetry_ctx_ready = 0;
@@ -1026,7 +1087,8 @@ void wsgi_telemetry_pause_reporter(void)
         return;
 
     wsgi_telemetry_shutdown = 1;
-    if (wsgi_telemetry_thread) {
+    if (wsgi_telemetry_thread)
+    {
         apr_status_t rv = APR_SUCCESS;
         apr_thread_join(&rv, wsgi_telemetry_thread);
         wsgi_telemetry_thread = NULL;
@@ -1146,7 +1208,8 @@ void wsgi_telemetry_emit_final_tick(const char *reason)
 
     wsgi_telemetry_emit_process_stopped(reason, active == 0);
 
-    if (wsgi_telemetry_ctx.fd >= 0) {
+    if (wsgi_telemetry_ctx.fd >= 0)
+    {
         close(wsgi_telemetry_ctx.fd);
         wsgi_telemetry_ctx.fd = -1;
     }

@@ -138,6 +138,13 @@ class SlowEntry:
     queue_time_us: int = 0
     daemon_time_us: int = 0
     application_time_us: int = 0
+    # GIL-wait pressure indicator. Sum of waits at every instrumented
+    # re-acquire site reached during this request, plus the initial
+    # sub-interp GIL acquire. Cross-cutting overlap, not a phase
+    # addend. Cannot see waits inside the application's own C
+    # extensions, so it surfaces as a partial pressure indicator.
+    gil_wait_us: int = 0
+    gil_wait_count: int = 0
     # Concurrency context — wsgi_active_requests including this one
     # at slot claim and at completion. active_at_completion is 0 for
     # active records by definition (the request hasn't finished).
@@ -175,6 +182,8 @@ class SlowEntry:
             "queue_time_us": self.queue_time_us,
             "daemon_time_us": self.daemon_time_us,
             "application_time_us": self.application_time_us,
+            "gil_wait_us": self.gil_wait_us,
+            "gil_wait_count": self.gil_wait_count,
             "active_at_start": self.active_at_start,
             "active_at_completion": self.active_at_completion,
             "status": self.status,
@@ -442,6 +451,8 @@ class Ingester:
             queue_time_us=int(f.get("slow_queue_time_us") or 0),
             daemon_time_us=int(f.get("slow_daemon_time_us") or 0),
             application_time_us=int(f.get("slow_application_time_us") or 0),
+            gil_wait_us=int(f.get("slow_gil_wait_us") or 0),
+            gil_wait_count=int(f.get("slow_gil_wait_count") or 0),
             active_at_start=int(f.get("slow_active_at_start") or 0),
             active_at_completion=int(f.get("slow_active_at_completion") or 0),
             status=int(f.get("slow_status") or 0),

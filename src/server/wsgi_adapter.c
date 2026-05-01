@@ -76,9 +76,9 @@ void Input_finish(InputObject *self)
 {
     if (self->bb)
     {
-        Py_BEGIN_ALLOW_THREADS
+        WSGI_BEGIN_ALLOW_THREADS
             apr_brigade_destroy(self->bb);
-        Py_END_ALLOW_THREADS
+        WSGI_END_ALLOW_THREADS
 
             self->bb = NULL;
     }
@@ -145,7 +145,7 @@ static apr_int64_t Input_read_from_input(InputObject *self, char *buffer,
      * when we exit.
      */
 
-    Py_BEGIN_ALLOW_THREADS
+    WSGI_BEGIN_ALLOW_THREADS
 
         start = apr_time_now();
 
@@ -244,7 +244,7 @@ finally:
 
     /* Make sure we reacquire the GIL when all done. */
 
-    Py_END_ALLOW_THREADS
+    WSGI_END_ALLOW_THREADS
 
         /*
          * Set any Python exception when an error has occurred and
@@ -1537,9 +1537,9 @@ static int Adapter_output(AdapterObject *self, const char *data,
         b = apr_bucket_flush_create(r->connection->bucket_alloc);
         APR_BRIGADE_INSERT_TAIL(self->bb, b);
 
-        Py_BEGIN_ALLOW_THREADS
+        WSGI_BEGIN_ALLOW_THREADS
             rv = ap_pass_brigade(r->output_filters, self->bb);
-        Py_END_ALLOW_THREADS
+        WSGI_END_ALLOW_THREADS
 
             if (rv != APR_SUCCESS)
         {
@@ -1574,9 +1574,9 @@ static int Adapter_output(AdapterObject *self, const char *data,
             return 0;
         }
 
-        Py_BEGIN_ALLOW_THREADS
+        WSGI_BEGIN_ALLOW_THREADS
             apr_brigade_cleanup(self->bb);
-        Py_END_ALLOW_THREADS
+        WSGI_END_ALLOW_THREADS
     }
 
     /* Add how much time we spent send this block of output. */
@@ -1656,9 +1656,9 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
 
         PyErr_SetString(PyExc_IOError, error_message);
 
-        Py_BEGIN_ALLOW_THREADS
+        WSGI_BEGIN_ALLOW_THREADS
             apr_brigade_destroy(bb);
-        Py_END_ALLOW_THREADS
+        WSGI_END_ALLOW_THREADS
 
         return 0;
     }
@@ -1707,9 +1707,9 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
     b = apr_bucket_eos_create(r->connection->bucket_alloc);
     APR_BRIGADE_INSERT_TAIL(bb, b);
 
-    Py_BEGIN_ALLOW_THREADS
+    WSGI_BEGIN_ALLOW_THREADS
         rv = ap_pass_brigade(r->output_filters, bb);
-    Py_END_ALLOW_THREADS
+    WSGI_END_ALLOW_THREADS
 
         if (rv != APR_SUCCESS)
     {
@@ -1725,9 +1725,9 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
         return 0;
     }
 
-    Py_BEGIN_ALLOW_THREADS
+    WSGI_BEGIN_ALLOW_THREADS
         apr_brigade_destroy(bb);
-    Py_END_ALLOW_THREADS
+    WSGI_END_ALLOW_THREADS
 
         if (r->connection->aborted)
     {

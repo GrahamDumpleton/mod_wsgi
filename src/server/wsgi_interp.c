@@ -2178,6 +2178,7 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
     if (*name)
     {
+        apr_time_t _gil_t1;
 #if APR_HAS_THREADS
         WSGIThreadInfo *thread_handle = NULL;
 
@@ -2202,11 +2203,18 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
         tstate = handle->tstate;
 #endif
 
+        /* Time the narrow GIL acquire only — interpreter creation and
+         * threadstate creation above are cold-path costs that belong on
+         * the lifecycle datagram, not the per-request indicator. */
+        _gil_t1 = apr_time_now();
         PyEval_AcquireThread(tstate);
+        wsgi_gil_wait_record((apr_uint64_t)(apr_time_now() - _gil_t1));
     }
     else
     {
+        apr_time_t _gil_t1 = apr_time_now();
         PyGILState_Ensure();
+        wsgi_gil_wait_record((apr_uint64_t)(apr_time_now() - _gil_t1));
 
         /*
          * When simplified GIL state API is used, the thread
@@ -2672,7 +2680,8 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
      */
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
-    if (!wsgi_daemon_process) {
+    if (!wsgi_daemon_process)
+    {
         wsgi_publish_process_stopping(wsgi_shutdown_reason);
         wsgi_telemetry_emit_process_stopping(wsgi_shutdown_reason);
         wsgi_telemetry_pause_reporter();

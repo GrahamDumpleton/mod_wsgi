@@ -42,6 +42,13 @@ int wsgi_execute_script(request_rec *r)
 
     WSGIThreadInfo *thread_info = NULL;
 
+    /* Clear any leftover staged GIL-wait value from a prior request
+     * handled on this worker thread. The next instrumented site —
+     * starting with the initial interp acquire below — will accumulate
+     * into the staging slot, drained into the per-request active slot
+     * at wsgi_start_request. */
+    wsgi_gil_wait_reset();
+
     /* Grab request configuration. */
 
     config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
@@ -56,9 +63,8 @@ int wsgi_execute_script(request_rec *r)
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0087)
-                        "Unable to acquire %s for WSGI request handler "
-                        "in %s.",
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0087) "Unable to acquire %s for WSGI request handler "
+                                                            "in %s.",
                         wsgi_format_interp_name(r->pool,
                                                 config->application_group),
                         wsgi_format_process_context(r->pool));
@@ -97,14 +103,14 @@ int wsgi_execute_script(request_rec *r)
      */
 
 #if APR_HAS_THREADS
-    Py_BEGIN_ALLOW_THREADS
-        apr_thread_mutex_lock(wsgi_module_lock);
-    Py_END_ALLOW_THREADS
+    WSGI_BEGIN_ALLOW_THREADS
+    apr_thread_mutex_lock(wsgi_module_lock);
+    WSGI_END_ALLOW_THREADS
 #endif
 
-        /* Determine the script path to be loaded. */
+    /* Determine the script path to be loaded. */
 
-        if (config->handler_script && *config->handler_script)
+    if (config->handler_script && *config->handler_script)
     {
         script = config->handler_script;
 
@@ -250,9 +256,9 @@ int wsgi_execute_script(request_rec *r)
         const char *data = "Status: 200 Continue\r\n\r\n";
         long length = strlen(data);
 
-        Py_BEGIN_ALLOW_THREADS
+        WSGI_BEGIN_ALLOW_THREADS
 
-            filters = r->output_filters;
+        filters = r->output_filters;
         while (filters && filters->frec->ftype != AP_FTYPE_NETWORK)
         {
             filters = filters->next;
@@ -277,7 +283,7 @@ int wsgi_execute_script(request_rec *r)
 
         ap_pass_brigade(filters, bb);
 
-        Py_END_ALLOW_THREADS
+        WSGI_END_ALLOW_THREADS
     }
 #endif
 

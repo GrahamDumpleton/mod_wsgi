@@ -121,6 +121,32 @@ extern PyMethodDef wsgi_request_data_method[];
 
 /* ------------------------------------------------------------------------- */
 
+/* Reset the per-thread GIL-wait staging accumulator. Called at the top of
+ * wsgi_execute_script so any previous request's leftover staged value is
+ * discarded before the new request's daemon-phase contributions begin. */
+extern void wsgi_gil_wait_reset(void);
+
+/* Record one GIL re-acquire wait. Routed by WSGI_END_ALLOW_THREADS at every
+ * instrumented release/acquire site. Writes into the per-request active
+ * slot when one is in_use; otherwise stages on WSGIThreadInfo (drained at
+ * slot claim). Cheap — APR threadkey lookup plus uint64 add, no locking. */
+extern void wsgi_gil_wait_record(apr_uint64_t wait_us);
+
+/* Drop-in replacements for Py_BEGIN_ALLOW_THREADS / Py_END_ALLOW_THREADS
+ * that additionally measure the time spent waiting to re-acquire the GIL
+ * in the END expansion. The user's released-region code between BEGIN and
+ * END is unchanged. Use these at every site on the per-request hot path
+ * — the initial interp acquire is timed inline rather than via these
+ * macros because that path has no symmetric BEGIN/END pair. */
+#define WSGI_BEGIN_ALLOW_THREADS \
+    {                            \
+        PyThreadState *_wsgi_save = PyEval_SaveThread();
+#define WSGI_END_ALLOW_THREADS                                       \
+    apr_time_t _wsgi_t1 = apr_time_now();                            \
+    PyEval_RestoreThread(_wsgi_save);                                \
+    wsgi_gil_wait_record((apr_uint64_t)(apr_time_now() - _wsgi_t1)); \
+    }
+
 #endif
 
 /* vi: set sw=4 expandtab : */

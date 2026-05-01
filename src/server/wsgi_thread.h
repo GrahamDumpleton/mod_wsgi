@@ -34,6 +34,16 @@ typedef struct
     PyObject *request_id;
     PyObject *request_data;
     PyObject *log_buffer;
+
+    /* Staging accumulator for GIL wait time observed at instrumented
+     * Py_BEGIN/END_ALLOW_THREADS sites that fire before the per-request
+     * active slot has been claimed (initial wsgi_acquire_interpreter,
+     * module-lock acquire, "200 Continue" brigade send). Drained into
+     * the slot in wsgi_start_request and reset at the top of
+     * wsgi_execute_script. After slot claim the macros write directly
+     * into the slot, so this stays at zero for the rest of the request. */
+    apr_uint64_t staged_gil_wait_us;
+    apr_uint64_t staged_gil_wait_count;
 } WSGIThreadInfo;
 
 extern int wsgi_total_threads;
