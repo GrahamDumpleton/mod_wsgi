@@ -368,6 +368,16 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
         "slow_active_at_start": random.randint(2, 12),
         "slow_active_at_completion": (
             random.randint(2, 12) if state == 1 else 0),
+        # Synthesise a peer IP (mostly RFC1918, occasional IPv6) and
+        # a protocol so the demo UI exercises both columns. Real-world
+        # values come from r->useragent_ip and SERVER_PROTOCOL.
+        "slow_peer_ip": random.choice([
+            f"10.0.{random.randint(0,255)}.{random.randint(1,254)}",
+            f"192.168.1.{random.randint(2,254)}",
+            "203.0.113.42",
+            "2001:db8::5",
+        ]),
+        "slow_protocol": random.choice(["HTTP/1.1", "HTTP/2.0"]),
         "slow_status": slow_status,
     }
     return Sample(

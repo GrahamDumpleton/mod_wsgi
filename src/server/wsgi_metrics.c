@@ -1280,11 +1280,21 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
     const char *path_info = NULL;
     const char *scheme_env = NULL;
     const char *scheme = "http";
+    const char *protocol = NULL;
 
     wsgi_slow_copy_str(rec->log_id, sizeof(rec->log_id),
                        r->log_id ? r->log_id : "");
     wsgi_slow_copy_str(rec->hostname, sizeof(rec->hostname),
                        r->hostname ? r->hostname : "");
+
+    /* r->useragent_ip reflects mod_wsgi's existing trusted-proxy /
+     * X-Forwarded-For resolution (see wsgi_environ.c) when configured,
+     * so this is the *real* client IP rather than the immediate-hop
+     * proxy. Apache populates it natively in embedded mode and
+     * wsgi_daemon.c assigns it from the inbound connection in daemon
+     * mode. */
+    wsgi_slow_copy_str(rec->peer_ip, sizeof(rec->peer_ip),
+                       r->useragent_ip ? r->useragent_ip : "");
 
     /* In daemon mode r->method is NULL — the daemon-side request_rec is
      * synthesised from the subprocess_env stream and wsgi_read_request
@@ -1315,7 +1325,17 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
         path_info = apr_table_get(r->subprocess_env, "mod_wsgi.path_info");
         if (!path_info)
             path_info = apr_table_get(r->subprocess_env, "PATH_INFO");
+
+        /* SERVER_PROTOCOL is the canonical "HTTP/1.1" / "HTTP/2.0"
+         * string and crosses the daemon socket via subprocess_env, so
+         * it works in both modes. r->protocol is the embedded-mode
+         * fallback (in daemon mode r->protocol on the synthesised
+         * request_rec is unreliable). */
+        protocol = apr_table_get(r->subprocess_env, "SERVER_PROTOCOL");
     }
+
+    if (!protocol)
+        protocol = r->protocol;
 
     if (!method)
         method = r->method; /* embedded-mode fallback */
@@ -1333,6 +1353,9 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
 
     wsgi_slow_copy_str(rec->path_info, sizeof(rec->path_info),
                        path_info ? path_info : (r->uri ? r->uri : ""));
+
+    wsgi_slow_copy_str(rec->protocol, sizeof(rec->protocol),
+                       protocol ? protocol : "");
 }
 
 /* Caller must hold wsgi_monitor_lock. */

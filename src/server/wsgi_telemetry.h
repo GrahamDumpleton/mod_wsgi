@@ -269,6 +269,8 @@
 #define WSGI_METRICS_F_SLOW_HOSTNAME              212   /* bytes */
 #define WSGI_METRICS_F_SLOW_SCRIPT_NAME           213   /* bytes */
 #define WSGI_METRICS_F_SLOW_PATH_INFO             214   /* bytes */
+#define WSGI_METRICS_F_SLOW_PROTOCOL              215   /* bytes — e.g. "HTTP/1.1", "HTTP/2.0" */
+#define WSGI_METRICS_F_SLOW_PEER_IP               216   /* bytes — post-trusted-proxy resolution */
 
 #define WSGI_METRICS_F_SLOW_SERVER_TIME_US        220   /* u64 */
 #define WSGI_METRICS_F_SLOW_QUEUE_TIME_US         221   /* u64 — 0 in embedded mode */
@@ -421,6 +423,8 @@ typedef struct {
 #define WSGI_SLOW_HOSTNAME_MAX    256
 #define WSGI_SLOW_SCRIPT_NAME_MAX 256
 #define WSGI_SLOW_PATH_INFO_MAX   512
+#define WSGI_SLOW_PEER_IP_MAX      46  /* fits an IPv6 string (INET6_ADDRSTRLEN) */
+#define WSGI_SLOW_PROTOCOL_MAX     16  /* "HTTP/1.1", "HTTP/2.0", room to spare */
 
 typedef struct {
     uint64_t start_stamp_us;     /* wall-clock when request started */
@@ -482,6 +486,8 @@ typedef struct {
     char     hostname[WSGI_SLOW_HOSTNAME_MAX];
     char     script_name[WSGI_SLOW_SCRIPT_NAME_MAX];
     char     path_info[WSGI_SLOW_PATH_INFO_MAX];
+    char     peer_ip[WSGI_SLOW_PEER_IP_MAX];
+    char     protocol[WSGI_SLOW_PROTOCOL_MAX];
 } wsgi_slow_request_t;
 
 /* ------------------------------------------------------------------------- */

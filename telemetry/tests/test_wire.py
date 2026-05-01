@@ -272,6 +272,36 @@ def test_roundtrip_slow_request_phase_timings():
     assert got.fields["slow_application_time_us"] == 5_650_000
 
 
+def test_roundtrip_slow_request_client_identity():
+    # peer_ip survives both IPv4 and IPv6 string forms; protocol is
+    # the literal SERVER_PROTOCOL string. Both are bytes-typed so the
+    # round-trip preserves exact bytes (the decoder leaves it to the
+    # ingester to interpret as utf-8).
+    fields = {
+        "slow_record_state": 1,
+        "slow_duration_us": 2_000_000,
+        "slow_thread_id": 1,
+        "slow_peer_ip": b"203.0.113.42",
+        "slow_protocol": b"HTTP/2.0",
+    }
+    s = Sample(version=1, kind=KIND_SLOW_REQUEST, pid=1234, seq=2,
+               stamp_us=1_700_000_000_000_000, fields=fields)
+    got = decode(encode(s))
+    assert got.fields["slow_peer_ip"] == b"203.0.113.42"
+    assert got.fields["slow_protocol"] == b"HTTP/2.0"
+
+    # IPv6 case (longest plausible address still fits in 46 bytes).
+    fields6 = {
+        "slow_record_state": 1,
+        "slow_peer_ip": b"2001:0db8:85a3:0000:0000:8a2e:0370:7334",
+        "slow_protocol": b"HTTP/1.1",
+    }
+    s6 = Sample(version=1, kind=KIND_SLOW_REQUEST, pid=1235, seq=3,
+                stamp_us=1_700_000_000_000_001, fields=fields6)
+    got6 = decode(encode(s6))
+    assert got6.fields["slow_peer_ip"] == b"2001:0db8:85a3:0000:0000:8a2e:0370:7334"
+
+
 def test_roundtrip_slow_request_concurrency():
     # Concurrency context: in-flight count at slot claim and at
     # completion. active_at_completion is 0 for active records by

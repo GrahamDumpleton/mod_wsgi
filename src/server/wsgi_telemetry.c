@@ -401,6 +401,14 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SLOW_PATH_INFO,
                                s->path_info,
                                (uint16_t)strlen(s->path_info));
+    if (s->protocol[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SLOW_PROTOCOL,
+                               s->protocol,
+                               (uint16_t)strlen(s->protocol));
+    if (s->peer_ip[0])
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_SLOW_PEER_IP,
+                               s->peer_ip,
+                               (uint16_t)strlen(s->peer_ip));
 
     return (size_t)(p - buf);
 }

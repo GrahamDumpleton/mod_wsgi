@@ -111,6 +111,11 @@ class SlowEntry:
     start_stamp_us: int
     duration_us: int
     state: int                 # 0 = active, 1 = completed
+    # Network identity. peer_ip is post-trusted-proxy resolution, so
+    # reflects the real client when X-Forwarded-For handling is
+    # configured. protocol is "HTTP/1.1" / "HTTP/2.0".
+    peer_ip: str = ""
+    protocol: str = ""
     input_bytes: int = 0
     input_reads: int = 0
     output_bytes: int = 0
@@ -151,6 +156,8 @@ class SlowEntry:
             "hostname": self.hostname,
             "script_name": self.script_name,
             "path_info": self.path_info,
+            "peer_ip": self.peer_ip,
+            "protocol": self.protocol,
             "start_stamp_us": self.start_stamp_us,
             "duration_us": self.duration_us,
             "state": self.state,
@@ -415,6 +422,8 @@ class Ingester:
             hostname=_s("slow_hostname"),
             script_name=_s("slow_script_name"),
             path_info=_s("slow_path_info"),
+            peer_ip=_s("slow_peer_ip"),
+            protocol=_s("slow_protocol"),
             start_stamp_us=start_stamp_us,
             duration_us=int(f.get("slow_duration_us") or 0),
             state=int(f.get("slow_record_state") or 0),

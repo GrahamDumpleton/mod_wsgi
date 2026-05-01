@@ -2039,11 +2039,23 @@ function renderSlowExpandPanel(e) {
   const concurrencyRow = concurrencyLine
     ? `<div class="label">Concurrency</div><div>${concurrencyLine}</div>`
     : "";
+  // Network identity row: peer IP and HTTP protocol version, joined
+  // with a middle dot. Skipped entirely when neither is known so the
+  // panel doesn't render an empty row.
+  const peerIp = e.peer_ip || "";
+  const protocol = e.protocol || "";
+  const clientBits = [];
+  if (peerIp) clientBits.push(escapeHtml(peerIp));
+  if (protocol) clientBits.push(escapeHtml(protocol));
+  const clientRow = clientBits.length
+    ? `<div class="label">Client</div><div>${clientBits.join(" &middot; ")}</div>`
+    : "";
   return `<div class="slow-details">
     <div class="label">Process</div>
     <div>${processLine}</div>
     <div class="label">URL</div>
     <div class="url-full">${escapeHtml(url)}</div>
+    ${clientRow}
     <div class="label">Log ID</div>
     <div>${escapeHtml(e.log_id || "—")}</div>
     ${phaseRow}
