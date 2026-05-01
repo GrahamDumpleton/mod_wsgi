@@ -5485,6 +5485,19 @@ carries the detail.
   NumPy-heavy workload can be heavily GIL-serialised while
   reporting near-zero \`gil_wait_time\`. Use this metric to
   *raise confidence* in a CPU/GIL diagnosis, never to lower it.
+
+  **Reading the time-distribution histogram.** When the worker
+  is GIL-bound, individual waits cluster at multiples of
+  \`sys.setswitchinterval\` (default 5 ms): a head bucket below
+  1 ms for immediate handoffs, then bumps near 5 ms, 10 ms,
+  15 ms — one extra switch-interval cycle per missed handoff.
+  The histogram is quantised by the GIL scheduler rather than
+  smooth, so the bumps are signal, not sampling artefacts. The
+  cluster centres move with \`sys.setswitchinterval\` (set it to
+  1 ms and the bumps shift to 1 / 2 / 3 ms). The ratio of
+  samples in the ≥5 ms bands to the head bucket is a cleaner
+  contention indicator than p95 / p99 alone — it directly counts
+  how often a request lost at least one switch-interval cycle.
 - **input_read_time** — mean per-request total time the WSGI
   app spent inside \`wsgi.input.read*\` reading the request
   body. Surfaced in the time-breakdown / time-distribution
