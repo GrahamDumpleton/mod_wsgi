@@ -117,6 +117,19 @@ class SlowEntry:
     output_writes: int = 0
     cpu_user_us: int = 0
     cpu_system_us: int = 0
+    # Per-phase timing breakdown (microseconds). server is Apache
+    # request arrival → handed off to daemon (or → application_start
+    # in embedded mode); queue is daemon connect → worker pickup;
+    # daemon is worker pickup → WSGI callable invoked; application
+    # is the WSGI callable elapsed. queue and daemon are 0 in
+    # embedded mode. application is partial for active records still
+    # inside the callable; pre-application active records report 0
+    # for application and a partial daemon (or server) so the user
+    # can see where time is going.
+    server_time_us: int = 0
+    queue_time_us: int = 0
+    daemon_time_us: int = 0
+    application_time_us: int = 0
     status: int = 0            # 0 = not yet known, else final WSGI status
     last_seen: float = 0.0
 
@@ -139,6 +152,10 @@ class SlowEntry:
             "output_writes": self.output_writes,
             "cpu_user_us": self.cpu_user_us,
             "cpu_system_us": self.cpu_system_us,
+            "server_time_us": self.server_time_us,
+            "queue_time_us": self.queue_time_us,
+            "daemon_time_us": self.daemon_time_us,
+            "application_time_us": self.application_time_us,
             "status": self.status,
         }
 
@@ -397,6 +414,10 @@ class Ingester:
             output_writes=int(f.get("slow_output_writes") or 0),
             cpu_user_us=int(f.get("slow_cpu_user_us") or 0),
             cpu_system_us=int(f.get("slow_cpu_system_us") or 0),
+            server_time_us=int(f.get("slow_server_time_us") or 0),
+            queue_time_us=int(f.get("slow_queue_time_us") or 0),
+            daemon_time_us=int(f.get("slow_daemon_time_us") or 0),
+            application_time_us=int(f.get("slow_application_time_us") or 0),
             status=int(f.get("slow_status") or 0),
             last_seen=time.monotonic(),
         )

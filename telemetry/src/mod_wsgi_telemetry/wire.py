@@ -236,6 +236,11 @@ FIELDS = {
     213: "slow_script_name",
     214: "slow_path_info",
 
+    220: "slow_server_time_us",
+    221: "slow_queue_time_us",         # 0 in embedded mode
+    222: "slow_daemon_time_us",        # 0 in embedded mode
+    223: "slow_application_time_us",   # partial for active records still in flight
+
     230: "slow_input_bytes",
     231: "slow_input_reads",
     232: "slow_output_bytes",

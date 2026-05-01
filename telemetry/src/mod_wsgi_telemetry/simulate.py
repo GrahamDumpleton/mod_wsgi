@@ -327,6 +327,20 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
         slow_status = 500 if random.random() < 0.05 else 200
     else:
         slow_status = 0
+    # Synthesise plausible per-phase timings so the UI's breakdown is
+    # exercisable on demo data. server / queue / daemon are small
+    # fixed-ish overheads; application is the residual. Active records
+    # report an in-flight application_time partial.
+    server_us = random.randint(500, 3_000)
+    queue_us = random.randint(500, 5_000)
+    daemon_us = random.randint(500, 3_000)
+    overhead_us = server_us + queue_us + daemon_us
+    if state == 1:
+        application_us = max(0, duration_us - overhead_us)
+    else:
+        # Active record: application is partial, treat the elapsed time
+        # minus pre-app overhead as the partial application_time.
+        application_us = max(0, duration_us - overhead_us)
     fields = {
         "slow_record_state": state,             # 0=active, 1=completed
         "slow_start_stamp_us": start_stamp_us,
@@ -344,6 +358,10 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
         "slow_output_writes": out_writes,
         "slow_cpu_user_us": cpu_user_us,
         "slow_cpu_system_us": cpu_system_us,
+        "slow_server_time_us": server_us,
+        "slow_queue_time_us": queue_us,
+        "slow_daemon_time_us": daemon_us,
+        "slow_application_time_us": application_us,
         "slow_status": slow_status,
     }
     return Sample(

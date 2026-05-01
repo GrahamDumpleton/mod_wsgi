@@ -188,6 +188,22 @@ typedef struct
     double     cpu_user_at_start;
     double     cpu_system_at_start;
 
+    /* Per-phase timing baselines, used by the slow-record snapshot to
+     * compute server / queue / daemon / application durations. Captured
+     * at slot claim from WSGIRequestConfig (request_start_us,
+     * queue_start_us, daemon_start_us — the latter two are 0 in
+     * embedded mode), via wsgi_record_application_start
+     * (application_start_us, set by the adapter once the WSGI callable
+     * is about to run), and via wsgi_record_request_times
+     * (application_finish_us, set at end-of-request). Active-record
+     * snapshots use these plus the snapshot's `now` to compute partial
+     * phase durations. */
+    apr_time_t request_start_us;
+    apr_time_t queue_start_us;
+    apr_time_t daemon_start_us;
+    apr_time_t application_start_us;
+    apr_time_t application_finish_us;
+
     /* Per-request I/O counters, written by wsgi_record_request_times
      * once the adapter knows the final read/write totals and consumed
      * by wsgi_end_request when snapshotting a slow-completion record.
@@ -237,6 +253,9 @@ static int wsgi_completed_ring_count = 0;
 static void wsgi_slots_ensure_locked(void);
 static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r);
 static void wsgi_slow_push_completed_locked(const wsgi_slow_request_t *rec);
+static void wsgi_slow_fill_phase_durations(wsgi_slow_request_t *rec,
+                                           const wsgi_active_slot_t *slot,
+                                           apr_time_t now_us);
 
 void wsgi_record_time_in_buckets(int *buckets, double duration)
 {
@@ -388,6 +407,12 @@ void wsgi_record_request_times(apr_time_t request_start,
         slot->io_output_bytes = output_bytes > 0 ? output_bytes : 0;
         slot->io_output_writes = output_writes > 0 ? output_writes : 0;
         slot->last_status = status;
+
+        /* application_start was stashed earlier by
+         * wsgi_record_application_start; record application_finish here
+         * so the slow-record snapshot at wsgi_end_request can compute
+         * the application phase duration without re-deriving it. */
+        slot->application_finish_us = application_finish;
     }
 
     wsgi_record_time_in_buckets(&wsgi_server_time_buckets[0],
@@ -417,9 +442,39 @@ void wsgi_record_request_times(apr_time_t request_start,
     apr_thread_mutex_unlock(wsgi_monitor_lock);
 }
 
+void wsgi_record_application_start(apr_time_t application_start)
+{
+    WSGIThreadInfo *thread_info;
+
+    if (wsgi_request_metrics_enabled == 0)
+        return;
+
+    /* Looked up before taking the lock — wsgi_thread_info() touches
+     * only the current thread's APR threadkey storage. */
+    thread_info = wsgi_thread_info(0, 1);
+
+    if (!thread_info || thread_info->thread_id < 1)
+        return;
+
+    apr_thread_mutex_lock(wsgi_monitor_lock);
+
+    if (wsgi_active_slots &&
+        thread_info->thread_id <= wsgi_active_slots_max)
+    {
+        wsgi_active_slot_t *slot =
+            &wsgi_active_slots[thread_info->thread_id - 1];
+
+        if (slot->in_use)
+            slot->application_start_us = application_start;
+    }
+
+    apr_thread_mutex_unlock(wsgi_monitor_lock);
+}
+
 WSGIThreadInfo *wsgi_start_request(request_rec *r)
 {
     WSGIThreadInfo *thread_info;
+    WSGIRequestConfig *config = NULL;
 
     PyObject *module = NULL;
 
@@ -460,6 +515,18 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
     if (thread_info && thread_info->thread_id >= 1)
         have_cpu = wsgi_thread_cpu_usage(&cpu_usage);
 
+    /* Per-request phase-timing baselines come from the WSGIRequestConfig
+     * cached on r at handler entry. request_start is set by mod_wsgi.c
+     * from r->request_time; queue_start and daemon_start are non-zero
+     * only in daemon mode (queue_start crosses the daemon socket from
+     * the Apache child, daemon_start is captured by the daemon thread
+     * just before invoking handler-level setup). Reading config outside
+     * the lock is safe — it lives in r->pool which is alive until
+     * wsgi_end_request clears the slot. */
+
+    config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
+                                                       &wsgi_module);
+
     /* Bump utilization, claim this thread's active-request slot, all
      * under one lock acquire. Holding the request_rec pointer (not a
      * copy) lets the telemetry reporter thread read URL / identity
@@ -499,6 +566,12 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
                 slot->cpu_user_at_start = 0.0;
                 slot->cpu_system_at_start = 0.0;
             }
+
+            slot->request_start_us = config ? config->request_start : 0;
+            slot->queue_start_us = config ? config->queue_start : 0;
+            slot->daemon_start_us = config ? config->daemon_start : 0;
+            slot->application_start_us = 0;
+            slot->application_finish_us = 0;
         }
     }
 
@@ -620,6 +693,7 @@ void wsgi_end_request(void)
                 rec.cpu_user_us = (uint64_t)(cpu_user_delta * 1.0e6);
                 rec.cpu_system_us = (uint64_t)(cpu_system_delta * 1.0e6);
                 rec.status = (uint16_t)slot->last_status;
+                wsgi_slow_fill_phase_durations(&rec, slot, now);
                 wsgi_slow_snapshot_fields(&rec, slot->r);
                 wsgi_slow_push_completed_locked(&rec);
             }
@@ -1075,6 +1149,74 @@ static void wsgi_slots_ensure_locked(void)
     wsgi_completed_ring_size = ring;
 }
 
+/* Fills the four phase-duration fields on rec from the slot's stashed
+ * timestamps. Mirrors the breakdown that wsgi_record_request_times
+ * applies to the aggregate stream. now_us is used in place of the
+ * unset application_finish for active records still inside the WSGI
+ * callable; for completed records (where application_finish_us is
+ * non-zero) it is unused. queue_start_us is non-zero only in daemon
+ * mode — embedded mode collapses queue_time and daemon_time into 0
+ * and folds everything before application_start into server_time. */
+static void wsgi_slow_fill_phase_durations(wsgi_slow_request_t *rec,
+                                           const wsgi_active_slot_t *slot,
+                                           apr_time_t now_us)
+{
+    apr_time_t app_start;
+    apr_time_t app_finish;
+
+    app_start = slot->application_start_us;
+    app_finish = slot->application_finish_us
+                 ? slot->application_finish_us
+                 : (app_start ? now_us : 0);
+
+    if (slot->queue_start_us)
+    {
+        rec->server_time_us = (uint64_t)(slot->queue_start_us -
+                                         slot->request_start_us);
+        rec->queue_time_us = (uint64_t)(slot->daemon_start_us -
+                                        slot->queue_start_us);
+        if (app_start)
+        {
+            rec->daemon_time_us = (uint64_t)(app_start -
+                                             slot->daemon_start_us);
+            rec->application_time_us = app_finish
+                ? (uint64_t)(app_finish - app_start) : 0;
+        }
+        else
+        {
+            /* Pre-app phase is still in the daemon-side setup. Report
+             * the elapsed-since-daemon-start as a partial daemon_time
+             * so the user can see where time is going; application is
+             * zero by definition. */
+            rec->daemon_time_us = (uint64_t)(now_us -
+                                             slot->daemon_start_us);
+            rec->application_time_us = 0;
+        }
+    }
+    else
+    {
+        /* Embedded mode: no queue or daemon hand-off. Server covers
+         * everything up to application_start; if the WSGI callable has
+         * not yet been invoked, server is the partial elapsed-since-
+         * request-start. */
+        if (app_start)
+        {
+            rec->server_time_us = (uint64_t)(app_start -
+                                             slot->request_start_us);
+            rec->application_time_us = app_finish
+                ? (uint64_t)(app_finish - app_start) : 0;
+        }
+        else
+        {
+            rec->server_time_us = slot->request_start_us
+                ? (uint64_t)(now_us - slot->request_start_us) : 0;
+            rec->application_time_us = 0;
+        }
+        rec->queue_time_us = 0;
+        rec->daemon_time_us = 0;
+    }
+}
+
 static void wsgi_slow_copy_str(char *dst, size_t cap, const char *src)
 {
     size_t n;
@@ -1270,6 +1412,7 @@ int wsgi_metrics_snapshot_slow_active(wsgi_slow_request_t *out, int out_cap,
         rec->input_reads = (uint64_t)slot->io_input_reads;
         rec->output_bytes = (uint64_t)slot->io_output_bytes;
         rec->output_writes = (uint64_t)slot->io_output_writes;
+        wsgi_slow_fill_phase_durations(rec, slot, now_us);
         wsgi_slow_snapshot_fields(rec, slot->r);
 
         n++;

@@ -2240,6 +2240,12 @@ int Adapter_run(AdapterObject *self, PyObject *object)
 
     self->start_time = apr_time_now();
 
+    /* Make application_start visible to the slow-record active-snapshot
+     * path; without this an in-flight slow request would fall back to
+     * slot->start_us (the slot-claim instant, before module load) and
+     * conflate framework-load time with application time. */
+    wsgi_record_application_start(self->start_time);
+
     apr_table_setn(self->r->subprocess_env, "mod_wsgi.script_start",
                    apr_psprintf(self->r->pool, "%" APR_TIME_T_FMT,
                                 self->start_time));

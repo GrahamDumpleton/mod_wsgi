@@ -270,6 +270,11 @@
 #define WSGI_METRICS_F_SLOW_SCRIPT_NAME           213   /* bytes */
 #define WSGI_METRICS_F_SLOW_PATH_INFO             214   /* bytes */
 
+#define WSGI_METRICS_F_SLOW_SERVER_TIME_US        220   /* u64 */
+#define WSGI_METRICS_F_SLOW_QUEUE_TIME_US         221   /* u64 — 0 in embedded mode */
+#define WSGI_METRICS_F_SLOW_DAEMON_TIME_US        222   /* u64 — 0 in embedded mode */
+#define WSGI_METRICS_F_SLOW_APPLICATION_TIME_US   223   /* u64 — partial for active records */
+
 #define WSGI_METRICS_F_SLOW_INPUT_BYTES           230   /* u64 */
 #define WSGI_METRICS_F_SLOW_INPUT_READS           231   /* u64 */
 #define WSGI_METRICS_F_SLOW_OUTPUT_BYTES          232   /* u64 */
@@ -433,6 +438,26 @@ typedef struct {
      * snapshot path that produces active records. */
     uint64_t cpu_user_us;
     uint64_t cpu_system_us;
+
+    /* Per-phase request timing (microseconds). server is Apache request
+     * arrival → handed off to daemon (or → application_start in
+     * embedded mode); queue is daemon connect accepted → worker thread
+     * picked up the request; daemon is worker pickup → WSGI callable
+     * invoked; application is WSGI callable invocation through last
+     * yielded chunk.
+     *
+     * For completed records all four are final. For active records:
+     * server, queue and daemon are final once the corresponding phase
+     * boundary has been crossed (the slot-claim path captures
+     * request_start, queue_start and daemon_start before the WSGI
+     * callable runs); application_time_us is zero until the callable
+     * starts and reports (now - application_start) as a partial total
+     * once it has. queue_time_us and daemon_time_us are zero in
+     * embedded mode where there is no daemon hand-off. */
+    uint64_t server_time_us;
+    uint64_t queue_time_us;
+    uint64_t daemon_time_us;
+    uint64_t application_time_us;
 
     /* Final HTTP response status (e.g. 200, 404, 500). Zero for active
      * records — start_response may not have been called yet. */

@@ -250,6 +250,28 @@ def test_roundtrip_slow_request_cpu():
     assert got.fields["slow_cpu_system_us"] == 300_000
 
 
+def test_roundtrip_slow_request_phase_timings():
+    # Per-phase timing breakdown. queue and daemon are 0 in embedded
+    # mode; here we exercise daemon-mode values to prove all four
+    # field IDs round-trip.
+    fields = {
+        "slow_record_state": 1,
+        "slow_duration_us": 6_000_000,
+        "slow_thread_id": 4,
+        "slow_server_time_us": 50_000,
+        "slow_queue_time_us": 200_000,
+        "slow_daemon_time_us": 100_000,
+        "slow_application_time_us": 5_650_000,
+    }
+    s = Sample(version=1, kind=KIND_SLOW_REQUEST, pid=8181, seq=11,
+               stamp_us=1_700_000_000_000_000, fields=fields)
+    got = decode(encode(s))
+    assert got.fields["slow_server_time_us"] == 50_000
+    assert got.fields["slow_queue_time_us"] == 200_000
+    assert got.fields["slow_daemon_time_us"] == 100_000
+    assert got.fields["slow_application_time_us"] == 5_650_000
+
+
 def test_rejects_bad_magic():
     s = Sample(version=1, kind=KIND_REQUEST, pid=1, seq=1,
                stamp_us=0, fields={"request_count": 1})

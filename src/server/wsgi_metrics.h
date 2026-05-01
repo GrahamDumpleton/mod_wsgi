@@ -48,6 +48,14 @@ extern void wsgi_record_request_times(apr_time_t request_start,
                                       apr_off_t output_bytes, apr_off_t output_writes,
                                       int status);
 
+/* Records the wall-clock instant the WSGI callable began executing onto
+ * the worker thread's active slot. Called from the adapter immediately
+ * after self->start_time is captured, so the active-record snapshot can
+ * compute server / queue / daemon / application phase durations even
+ * while the callable is still running. The companion application_finish
+ * value is captured by wsgi_record_request_times at end-of-request. */
+extern void wsgi_record_application_start(apr_time_t application_start);
+
 extern int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out);
 
 /* Slow-request tracking. threshold_us == 0 disables the feature; set

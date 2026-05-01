@@ -351,6 +351,21 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_CPU_SYSTEM_US,
                          s->cpu_system_us);
 
+    /* Per-phase request timing. Always emitted (including zeros) so
+     * consumers can render the breakdown without having to fall back to
+     * "field absent ⇒ phase unknown" reasoning. queue_time and
+     * daemon_time are zero in embedded mode where there is no daemon
+     * hand-off; application_time is zero on active records that have
+     * not yet entered the WSGI callable, partial otherwise. */
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_SERVER_TIME_US,
+                         s->server_time_us);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_QUEUE_TIME_US,
+                         s->queue_time_us);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_DAEMON_TIME_US,
+                         s->daemon_time_us);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_APPLICATION_TIME_US,
+                         s->application_time_us);
+
     /* Final HTTP response status. Zero for active records (the WSGI
      * app may not have called start_response yet); always emitted so
      * consumers see the "0 = not yet known" sentinel rather than a

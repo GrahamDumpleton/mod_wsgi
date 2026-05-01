@@ -452,6 +452,54 @@
   }
   .slow-details .io-amber { color: #ffb74d; }
   .slow-details .cpu-multi { color: #4fc3f7; }
+  /* Per-phase timing breakdown rendered as a stacked horizontal bar
+   * plus a legend underneath. Total bar width is scaled to the sum of
+   * the four phases (which equals request_time end-to-end, so the bar
+   * always fills the row regardless of which phase dominates).
+   * Colour palette aligns with how the phases are framed in the docs:
+   *   server      = gray   — pre-mod_wsgi Apache overhead
+   *   queue       = amber  — waiting on a daemon worker
+   *   daemon      = blue   — daemon-side request setup
+   *   application = green  — actual WSGI callable
+   * Active records render with reduced opacity on the segment that is
+   * still in flight so the user sees "this is partial". */
+  .slow-details .phase-bar {
+    display: flex;
+    width: 100%;
+    height: 12px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: #1a1a1a;
+  }
+  .slow-details .phase-segment {
+    height: 100%;
+    min-width: 1px;
+  }
+  .slow-details .phase-segment.server      { background: #555; }
+  .slow-details .phase-segment.queue       { background: #ffb74d; }
+  .slow-details .phase-segment.daemon      { background: #4fc3f7; }
+  .slow-details .phase-segment.application { background: #81c784; }
+  .slow-details .phase-segment.partial     { opacity: 0.55; }
+  .slow-details .phase-legend {
+    display: grid;
+    grid-template-columns: repeat(2, max-content max-content);
+    gap: 2px 12px;
+    margin-top: 4px;
+    font-size: 11px;
+  }
+  .slow-details .phase-legend .swatch {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 6px;
+    vertical-align: middle;
+    border-radius: 1px;
+  }
+  .slow-details .phase-legend .swatch.server      { background: #555; }
+  .slow-details .phase-legend .swatch.queue       { background: #ffb74d; }
+  .slow-details .phase-legend .swatch.daemon      { background: #4fc3f7; }
+  .slow-details .phase-legend .swatch.application { background: #81c784; }
+  .slow-details .phase-legend .num { color: var(--muted); }
   .slow-empty {
     color: var(--muted);
     font-size: 12px;
@@ -1749,6 +1797,47 @@ function fmtCpuUs(us) {
   return ms.toFixed(2) + " ms";
 }
 
+// Renders the four-phase timing breakdown for a slow request as a
+// stacked bar plus a legend. server / queue / daemon are typically
+// small overheads; application is the residual. Returns an empty
+// string when no phase data is present (e.g. records emitted before
+// the C side started capturing phase timestamps, or active records
+// snapshot before any boundary has been crossed) so the panel
+// degrades gracefully rather than rendering an empty bar.
+function renderPhaseBar(e) {
+  const server = e.server_time_us || 0;
+  const queue = e.queue_time_us || 0;
+  const daemon = e.daemon_time_us || 0;
+  const app = e.application_time_us || 0;
+  const total = server + queue + daemon + app;
+  if (total === 0) return "";
+  const pct = (v) => ((v / total) * 100).toFixed(2);
+  // Active records still in flight: dim the last non-zero phase to
+  // signal "still accumulating". For state===1 (completed) all
+  // segments are final.
+  let partialKey = null;
+  if (e.state === 0) {
+    if      (app    > 0) partialKey = "application";
+    else if (daemon > 0) partialKey = "daemon";
+    else if (queue  > 0) partialKey = "queue";
+    else if (server > 0) partialKey = "server";
+  }
+  const seg = (cls, v) => v > 0
+    ? `<div class="phase-segment ${cls}${partialKey === cls ? " partial" : ""}" style="width:${pct(v)}%"></div>`
+    : "";
+  const legendRow = (cls, label, v) =>
+    `<span><span class="swatch ${cls}"></span>${label}</span>` +
+    `<span class="num">${fmtCpuUs(v)}</span>`;
+  return `<div class="phase-bar">${
+    seg("server", server)}${seg("queue", queue)}${
+    seg("daemon", daemon)}${seg("application", app)}</div>
+    <div class="phase-legend">${
+      legendRow("server", "server", server)}${
+      legendRow("queue", "queue", queue)}${
+      legendRow("daemon", "daemon", daemon)}${
+      legendRow("application", "application", app)}</div>`;
+}
+
 // Convert a per-tick byte total to bytes/sec by dividing by the
 // reporter's sample_period. Returns 0 when sample_period is missing
 // or zero so the chart still draws an axis instead of NaN-ing out.
@@ -1898,11 +1987,16 @@ function renderSlowExpandPanel(e) {
       `<div>user ${fmtCpuUs(cpuUserUs)} \u00b7 ` +
       `system ${fmtCpuUs(cpuSystemUs)}</div>`;
   }
+  const phaseBar = renderPhaseBar(e);
+  const phaseRow = phaseBar
+    ? `<div class="label">Phases</div><div>${phaseBar}</div>`
+    : "";
   return `<div class="slow-details">
     <div class="label">URL</div>
     <div class="url-full">${escapeHtml(url)}</div>
     <div class="label">Log ID</div>
     <div>${escapeHtml(e.log_id || "—")}</div>
+    ${phaseRow}
     <div class="label">Body in</div>
     <div>${fmtIO(inBytes, inCalls, inAvg, "reads")}${
       e.state === 0 ? ioBadge : ""}</div>
