@@ -83,6 +83,7 @@ FIELDS = {
     10: "sample_period",
     11: "telemetry_interval",
     12: "slow_requests_threshold",
+    13: "switch_interval",
 
     # 20-29: request rates and capacity for the interval.
     20: "request_count",

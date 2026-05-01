@@ -1737,6 +1737,42 @@ static int wsgi_python_init_failed(PyStatus status)
     return 1;
 }
 
+void wsgi_python_set_switch_interval(double seconds)
+{
+    PyGILState_STATE gstate;
+    PyObject *sys = NULL;
+    PyObject *result = NULL;
+
+    gstate = PyGILState_Ensure();
+
+    sys = PyImport_ImportModule("sys");
+    if (sys) {
+        result = PyObject_CallMethod(sys, "setswitchinterval",
+                                     "d", seconds);
+        Py_DECREF(sys);
+    }
+
+    if (!result) {
+        PyErr_Clear();
+        PyGILState_Release(gstate);
+        wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
+                       "mod_wsgi: failed to apply Python GIL switch "
+                       "interval %.6fs in %s.", seconds,
+                       wsgi_format_process_context(
+                           wsgi_server->process->pool));
+        return;
+    }
+
+    Py_DECREF(result);
+    PyGILState_Release(gstate);
+
+    wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                   "mod_wsgi: Python GIL switch interval set to "
+                   "%.6fs in %s.", seconds,
+                   wsgi_format_process_context(
+                       wsgi_server->process->pool));
+}
+
 apr_status_t wsgi_python_init(apr_pool_t *p)
 {
     const char *python_home = 0;
@@ -2048,6 +2084,17 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
         PyEval_ReleaseThread(wsgi_main_tstate);
 
         wsgi_python_initialized = 1;
+
+        /* Apply WSGISwitchInterval to the embedded interpreter only.
+         * In daemon mode wsgi_python_init also runs inside the daemon
+         * child after fork, but daemon processes pick up their value
+         * from daemon->group->switch_interval after wsgi_python_child_init
+         * (see wsgi_daemon.c) — applying the server-config value here
+         * would shadow that and emit a redundant INFO log line. */
+        if (wsgi_daemon_process == NULL
+                && wsgi_server_config->switch_interval > 0.0)
+            wsgi_python_set_switch_interval(
+                wsgi_server_config->switch_interval);
 
         /*
          * Register cleanups to be performed on parent restart

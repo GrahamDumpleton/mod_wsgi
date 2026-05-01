@@ -109,6 +109,7 @@ typedef struct
     const char *python_home;
     const char *python_path;
     const char *python_eggs;
+    double switch_interval;
     int stack_size;
     int maximum_requests;
     int shutdown_timeout;

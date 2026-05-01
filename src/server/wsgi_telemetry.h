@@ -108,6 +108,7 @@ extern int wsgi_metrics_options;
 #define WSGI_METRICS_F_SAMPLE_PERIOD 10           /* f64 */
 #define WSGI_METRICS_F_TELEMETRY_INTERVAL 11      /* f64 */
 #define WSGI_METRICS_F_SLOW_REQUESTS_THRESHOLD 12 /* f64 */
+#define WSGI_METRICS_F_SWITCH_INTERVAL 13         /* f64 — sys.getswitchinterval() */
 
 /* 20-29: Request rates and capacity for the interval. */
 #define WSGI_METRICS_F_REQUEST_COUNT 20        /* u64 */
@@ -357,6 +358,12 @@ typedef struct
     char mpm_name[32];
 
     double sample_period;
+    /* Active sys.getswitchinterval() value in seconds, sampled once at
+     * reporter thread start. Static under the documented contract that
+     * the interval is set at process start (via WSGISwitchInterval or
+     * the switch-interval option on WSGIDaemonProcess) and not changed
+     * from Python after. */
+    double switch_interval;
     uint64_t request_count;
     double request_throughput;
     double capacity_utilization;

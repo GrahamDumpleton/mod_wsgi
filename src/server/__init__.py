@@ -362,7 +362,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    header-buffer-size=%(header_buffer_size)s \\
    response-buffer-size=%(response_buffer_size)s \\
    response-socket-timeout=%(response_socket_timeout)s \\
-   server-metrics=%(server_metrics_flag)s
+   server-metrics=%(server_metrics_flag)s%(daemon_switch_interval_option)s
 </IfDefine>
 <IfDefine !MOD_WSGI_MULTIPROCESS>
 WSGIDaemonProcess %(host)s:%(port)s \\
@@ -392,7 +392,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
    response-buffer-size=%(response_buffer_size)s \\
    response-socket-timeout=%(response_socket_timeout)s \\
-   server-metrics=%(server_metrics_flag)s
+   server-metrics=%(server_metrics_flag)s%(daemon_switch_interval_option)s
 </IfDefine>
 </IfDefine>
 </IfDefine>
@@ -430,6 +430,10 @@ WSGIMetricsService %(metrics_service)s interval=%(metrics_interval)s
 
 <IfDefine MOD_WSGI_SLOW_REQUESTS>
 WSGISlowRequests %(slow_requests)s
+</IfDefine>
+
+<IfDefine MOD_WSGI_SWITCH_INTERVAL>
+WSGISwitchInterval %(switch_interval)s
 </IfDefine>
 
 <IfDefine MOD_WSGI_METRICS_OPTIONS>
@@ -2313,6 +2317,13 @@ add_option('all', '--slow-requests', type='float', default=None,
         'is reported. Generates WSGISlowRequests in the config. Only '
         'meaningful alongside --metrics-service. Off by default.')
 
+add_option('all', '--switch-interval', type='float', default=None,
+        metavar='SECONDS', help='Override the Python GIL switch interval '
+        '(sys.setswitchinterval). Applied at process start in both '
+        'embedded and daemon mode via WSGISwitchInterval and the '
+        'switch-interval option on WSGIDaemonProcess. Defaults to '
+        'Python\'s built-in 0.005 (5 ms) when unset.')
+
 add_option('all', '--metrics-options', action='append', default=[],
         metavar='ARGS', help='Apache-Options-style metrics-capture '
         'toggle, passed verbatim to a WSGIMetricsOptions directive in '
@@ -3007,6 +3018,16 @@ def _cmd_setup_server(command, args, options):
     else:
         options['slow_requests'] = ''
 
+    if options['switch_interval'] is not None:
+        if options['switch_interval'] <= 0.0:
+            raise ValueError(
+                "--switch-interval must be a positive number of seconds")
+        options['daemon_switch_interval_option'] = (
+            ' \\\n   switch-interval=%s' % options['switch_interval'])
+    else:
+        options['switch_interval'] = ''
+        options['daemon_switch_interval_option'] = ''
+
     if options['handler_scripts']:
         handler_scripts = []
         for extension, script in options['handler_scripts']:
@@ -3341,6 +3362,8 @@ def _cmd_setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_METRICS_SERVICE')
     if options['slow_requests'] != '':
         options['httpd_arguments_list'].append('-DMOD_WSGI_SLOW_REQUESTS')
+    if options['switch_interval'] != '':
+        options['httpd_arguments_list'].append('-DMOD_WSGI_SWITCH_INTERVAL')
     if options['metrics_options']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_METRICS_OPTIONS')
         options['metrics_options'] = '\n'.join(

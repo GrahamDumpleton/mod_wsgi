@@ -85,6 +85,7 @@ typedef struct
     char python_version[64];
     char apache_version[64];
     char mpm_name[32];
+    double switch_interval;
 } wsgi_telemetry_ctx_t;
 
 static wsgi_telemetry_ctx_t wsgi_telemetry_ctx;
@@ -222,6 +223,9 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
                          s->telemetry_interval);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_REQUESTS_THRESHOLD,
                          s->slow_requests_threshold);
+    if (s->switch_interval > 0.0)
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SWITCH_INTERVAL,
+                             s->switch_interval);
 
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_REQUEST_COUNT, s->request_count);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_REQUEST_THROUGHPUT, s->request_throughput);
@@ -544,6 +548,10 @@ static size_t wsgi_telemetry_encode_started(const wsgi_telemetry_ctx_t *ctx,
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_PROCESS_PARENT_PID,
                          ctx->parent_pid);
 
+    if (ctx->switch_interval > 0.0)
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SWITCH_INTERVAL,
+                             ctx->switch_interval);
+
     return (size_t)(p - buf);
 }
 
@@ -664,6 +672,7 @@ static void wsgi_telemetry_emit_tick(const wsgi_telemetry_ctx_t *ctx)
     sample.telemetry_interval = wsgi_telemetry_interval;
     sample.slow_requests_threshold =
         (double)wsgi_slow_threshold_us / 1.0e6;
+    sample.switch_interval = ctx->switch_interval;
 
     if (!sample.seeded)
         return; /* first call seeded counters; skip send */
@@ -780,6 +789,34 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
             }
         }
         wsgi_telemetry_ctx.python_version[i] = '\0';
+    }
+
+    {
+        /* Capture sys.getswitchinterval() once. The contract is that
+         * the interval is set at process start (via WSGISwitchInterval
+         * or the switch-interval option on WSGIDaemonProcess) and not
+         * mutated from Python after; the value reported here is the
+         * one in effect for every subsequent tick under that contract.
+         * If the contract is broken the contention coefficient
+         * computed downstream is undefined. */
+        PyGILState_STATE gstate = PyGILState_Ensure();
+        PyObject *sys = PyImport_ImportModule("sys");
+        wsgi_telemetry_ctx.switch_interval = 0.0;
+        if (sys)
+        {
+            PyObject *r = PyObject_CallMethod(sys, "getswitchinterval",
+                                              NULL);
+            if (r)
+            {
+                double v = PyFloat_AsDouble(r);
+                if (!PyErr_Occurred() && v > 0.0)
+                    wsgi_telemetry_ctx.switch_interval = v;
+                Py_DECREF(r);
+            }
+            Py_DECREF(sys);
+        }
+        PyErr_Clear();
+        PyGILState_Release(gstate);
     }
 
     /* AP_SERVER_BASEVERSION is the compile-time Apache version

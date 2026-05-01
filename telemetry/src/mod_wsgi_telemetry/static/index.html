@@ -3803,6 +3803,191 @@ function fmtMs(ms) {
   return (Math.round(ms * 10) / 10) + "ms";
 }
 
+// Sum HDR bucket counts into cycle bands at multiples of the active
+// sys.setswitchinterval value. Bands: k=0 immediate / voluntary release,
+// k=1..3 successive missed handoffs, k=4+ tail (likely OS stalls). A
+// bucket is assigned to whichever band contains its midpoint.
+function gilCycleBandCounts(buckets, switchIntervalSec) {
+  if (!switchIntervalSec || switchIntervalSec <= 0) return null;
+  if (!buckets || buckets.length !== N_BUCKETS) return null;
+  const sMs = switchIntervalSec * 1000;
+  const edges = [
+    [0, 0.8 * sMs],
+    [0.8 * sMs, 1.8 * sMs],
+    [1.8 * sMs, 2.8 * sMs],
+    [2.8 * sMs, 3.8 * sMs],
+    [3.8 * sMs, Infinity],
+  ];
+  const bands = [0, 0, 0, 0, 0];
+  for (let i = 0; i < N_BUCKETS; i++) {
+    const c = buckets[i] | 0;
+    if (c <= 0) continue;
+    const lo = i === 0 ? 0 : BUCKET_UPPER_MS[i - 1];
+    const hi = BUCKET_UPPER_MS[i];
+    const mid = hi === Infinity ? lo : 0.5 * (lo + hi);
+    for (let k = 0; k < 5; k++) {
+      if (mid >= edges[k][0] && mid < edges[k][1]) {
+        bands[k] += c;
+        break;
+      }
+    }
+  }
+  return bands;
+}
+
+// Weighted log-linear fit of log(c[k]) vs k. Returns {q, r2} or null
+// if the fit doesn't meet the geometric-decay assumption (positive
+// slope, degenerate inputs, or R² below 0.5). Used by both the
+// primary and fallback contention-coefficient fits.
+function fitGeometricDecay(points) {
+  if (points.length < 2) return null;
+
+  let sumW = 0, mx = 0, my = 0;
+  for (const p of points) { sumW += p.w; mx += p.w * p.x; my += p.w * p.y; }
+  mx /= sumW; my /= sumW;
+
+  let varX = 0, covXY = 0;
+  for (const p of points) {
+    varX += p.w * (p.x - mx) * (p.x - mx);
+    covXY += p.w * (p.x - mx) * (p.y - my);
+  }
+  varX /= sumW; covXY /= sumW;
+  if (varX <= 0) return null;
+
+  const slope = covXY / varX;
+  if (slope >= 0) return null;
+
+  const q = 1 - Math.exp(slope);
+  if (!(q > 0 && q < 1)) return null;
+
+  const intercept = my - slope * mx;
+  let ssRes = 0, varY = 0;
+  for (const p of points) {
+    const yhat = intercept + slope * p.x;
+    ssRes += p.w * (p.y - yhat) * (p.y - yhat);
+    varY += p.w * (p.y - my) * (p.y - my);
+  }
+  if (varY <= 0) return null;
+  const r2 = 1 - ssRes / varY;
+  if (r2 < 0.5) return null;
+
+  return { q, r2 };
+}
+
+// GIL contention coefficient. Primary path fits a geometric to cycle
+// bands c1..c3. Fallback path fits c2..c4plus when c1 is contaminated
+// by the HDR head bucket — at switch intervals ≲ 1 ms the head bucket
+// [0, 1.25 ms) absorbs both k=0 (immediate) and k=1 (one missed cycle),
+// leaving c1 holding only spillover. The contamination signature is
+// c1 < c2, which violates the geometric monotonicity assumption.
+// Returns null when neither path supports a meaningful fit. See
+// telemetry/src/mod_wsgi_telemetry/contention.py for the canonical
+// reference implementation; this mirrors it for the web UI.
+function gilContentionCoefficient(buckets, switchIntervalSec) {
+  const bands = gilCycleBandCounts(buckets, switchIntervalSec);
+  if (!bands) return null;
+  const nTotal = bands.reduce((a, b) => a + b, 0);
+
+  const c1Contaminated = bands[1] < bands[2];
+
+  if (!c1Contaminated) {
+    const nFit = bands[1] + bands[2] + bands[3];
+    if (nFit >= 100) {
+      const points = [];
+      for (let k = 1; k <= 3; k++) {
+        if (bands[k] > 0)
+          points.push({ x: k - 1, y: Math.log(bands[k]), w: bands[k] });
+      }
+      const fit = fitGeometricDecay(points);
+      if (fit) {
+        return {
+          q: fit.q,
+          bandCounts: bands,
+          fitR2: fit.r2,
+          nFit,
+          nTotal,
+          fitKind: "primary",
+        };
+      }
+    }
+  }
+
+  // Fallback: fit on c2, c3, c4plus. c4plus aggregates the true k=4
+  // cycle band with the OS-stall tail beyond it, so the fit is
+  // somewhat noisier and biased high in q (tail inflates c4plus); the
+  // R² check still applies. Only attempted when c1 is contaminated —
+  // the primary fit is preferred whenever it can run.
+  const nFitFallback = bands[2] + bands[3] + bands[4];
+  if (nFitFallback < 100) return null;
+  const fbPoints = [];
+  for (let k = 2; k <= 4; k++) {
+    if (bands[k] > 0)
+      fbPoints.push({ x: k - 2, y: Math.log(bands[k]), w: bands[k] });
+  }
+  const fbFit = fitGeometricDecay(fbPoints);
+  if (!fbFit) return null;
+  return {
+    q: fbFit.q,
+    bandCounts: bands,
+    fitR2: fbFit.r2,
+    nFit: nFitFallback,
+    nTotal,
+    fitKind: "fallback_c2_c4plus",
+  };
+}
+
+// Verbal tier for q describing convoy-decay shape, NOT contention
+// severity. q is the per-cycle handoff success probability fitted from
+// the geometric decay across cycle bands; high q means convoys clear
+// quickly (a missed cycle rarely chains into more), low q means they
+// persist (the Beazley convoy signature). Whether q maps to "things
+// are bad" depends on the absolute wall-clock cost per cycle (the
+// switch interval) and the gil_wait_time mean — see the help text for
+// the 2x2 diagnostic that combines q with gil_wait_time mean to reach
+// an action recommendation.
+function gilDecayLabel(q) {
+  if (q >= 0.7) return "transient";
+  if (q >= 0.4) return "compounding";
+  return "convoy";
+}
+
+// Most recent switch_interval seen across visible processes within the
+// window. Static per-process under the directive contract, so we only
+// need any one current value; pick the freshest sample available.
+function aggregateSwitchInterval(windowSec) {
+  const cutoff = windowSec ? (Date.now() / 1000 - windowSec) : 0;
+  let best = null;
+  for (const [, p] of state.processes) {
+    if (isHidden(p)) continue;
+    for (let i = p.samples.length - 1; i >= 0; i--) {
+      const s = p.samples[i];
+      if (s.t < cutoff) break;
+      const v = s.fields["switch_interval"];
+      if (typeof v === "number" && v > 0) { best = v; break; }
+    }
+  }
+  return best;
+}
+
+// Same as aggregateSwitchInterval but scoped to an explicit pid list,
+// used by the snapshot exporter alongside aggregateBucketsFor so the
+// coefficient line stays consistent with the visible-processes filter.
+function aggregateSwitchIntervalFor(pids, windowSec) {
+  const cutoff = windowSec ? (Date.now() / 1000 - windowSec) : 0;
+  let best = null;
+  for (const pid of pids) {
+    const p = state.processes.get(pid);
+    if (!p) continue;
+    for (let i = p.samples.length - 1; i >= 0; i--) {
+      const s = p.samples[i];
+      if (s.t < cutoff) break;
+      const v = s.fields["switch_interval"];
+      if (typeof v === "number" && v > 0) { best = v; break; }
+    }
+  }
+  return best;
+}
+
 // Human-readable range for a single bucket index.
 function bucketRangeLabel(i) {
   if (i === 0) return "\u2264 " + fmtMs(BUCKET_UPPER_MS[0]);
@@ -4923,11 +5108,24 @@ function redraw() {
     // the chart itself).
     const pctSpan = (key, value) =>
       `<span class="label" style="color:${PCT_COLORS[key]}">${key}</span>${value}`;
+    let extra = "";
+    if (distField === "gil_wait_time_buckets") {
+      const sw = aggregateSwitchInterval(distWindowSec);
+      if (sw) {
+        const swMs = (sw * 1000).toFixed(sw < 0.001 ? 3 : 1);
+        extra = ` <span class="label">switch</span>${swMs}ms`;
+        const cc = gilContentionCoefficient(hist, sw);
+        if (cc) {
+          const qMark = cc.fitKind === "fallback_c2_c4plus" ? "~" : "";
+          extra += ` <span class="label">q</span>${qMark}${cc.q.toFixed(2)} (${gilDecayLabel(cc.q)})`;
+        }
+      }
+    }
     setLive("live_dist",
       `<span class="label">n</span>${dist.total}` + minPart +
       ` ${pctSpan("p50", fmtMs(dist.p50))} ` +
       `${pctSpan("p95", fmtMs(dist.p95))} ` +
-      `${pctSpan("p99", fmtMs(dist.p99))}` + maxPart);
+      `${pctSpan("p99", fmtMs(dist.p99))}` + maxPart + extra);
   } else {
     setLive("live_dist", "");
   }
@@ -5494,10 +5692,20 @@ carries the detail.
   The histogram is quantised by the GIL scheduler rather than
   smooth, so the bumps are signal, not sampling artefacts. The
   cluster centres move with \`sys.setswitchinterval\` (set it to
-  1 ms and the bumps shift to 1 / 2 / 3 ms). The ratio of
-  samples in the ≥5 ms bands to the head bucket is a cleaner
-  contention indicator than p95 / p99 alone — it directly counts
-  how often a request lost at least one switch-interval cycle.
+  1 ms and the bumps shift to 1 / 2 / 3 ms; configure via the
+  \`WSGISwitchInterval\` server directive or the
+  \`switch-interval\` option on \`WSGIDaemonProcess\`). The decay
+  rate across the bumps is geometric under steady contention and
+  is summarised as the **GIL contention coefficient \`q\`**
+  surfaced in the GIL-wait time-distribution readout (live and
+  snapshot) — see the Time distributions section for the full
+  definition, label tiers, and the 2x2 diagnostic that pairs
+  \`q\` with \`gil_wait_time\` mean to choose between tightening
+  the switch interval and adding processes. Critically, \`q\`
+  measures the **shape** of the convoy decay (how fast missed-
+  cycle waits stop chaining), not the **severity** of contention
+  — read it together with the wall-clock \`gil_wait_time\` mean
+  to understand whether the GIL is actually hurting you.
 - **input_read_time** — mean per-request total time the WSGI
   app spent inside \`wsgi.input.read*\` reading the request
   body. Surfaced in the time-breakdown / time-distribution
@@ -5592,6 +5800,109 @@ Mechanics:
 - **Embedded mode never populates queue / daemon histograms** (no
   socket handoff); those sections are emitted only for daemon
   processes.
+- **GIL contention coefficient \`q\`** (GIL-wait section only,
+  live readout and snapshot). When the GIL-wait phase is selected
+  the readout adds the active \`sys.setswitchinterval\` value and a
+  derived coefficient \`q\`. The histogram bumps cluster at
+  multiples of the switch interval (one cycle per missed handoff);
+  aggregated counts in those cycle bands fall off geometrically
+  under steady contention, and \`q\` is the per-cycle handoff
+  success probability fitted from that decay.
+
+  **What \`q\` measures.** \`q\` describes the *shape* of the
+  convoy decay across cycle bands \`c1\` → \`c2\` → \`c3\`, not
+  the *severity* of contention. \`q\` ≈ 1 means once a waiter
+  has missed one cycle, it almost always wins the next handoff
+  ("transient" — the convoy clears fast). \`q\` ≈ 0 means a
+  waiter that has missed one cycle keeps missing more
+  ("convoy" — the Beazley signature). The k=0 (immediate) band
+  is intentionally excluded from the fit because it is
+  contaminated by voluntary GIL releases (an I/O drop where the
+  holder happened to release before its check fired) which are
+  not part of the contention-handoff geometric model.
+
+  **Label tiers** (purely about decay shape):
+
+  - \`q ≥ 0.7\` → "transient" — compounds clear quickly.
+  - \`0.4 ≤ q < 0.7\` → "compounding" — meaningful share of
+    waits chain across two or three cycles.
+  - \`q < 0.4\` → "convoy" — most contended waits compound
+    heavily.
+
+  **\`q\` is NOT a severity signal on its own.** A workload
+  with \`WSGISwitchInterval 0.010\` and \`q\` = 0.9 ("transient")
+  can have a much worse \`gil_wait_time\` mean than a workload
+  with the default 5 ms interval and \`q\` = 0.65 ("compounding"),
+  because each missed cycle at 10 ms costs twice the wall-clock
+  time. \`q\` tells you the *shape* of the convoy; the wall-clock
+  pain is \`q\` × switch interval × per-request handoff count.
+  Always read \`q\` together with the \`gil wait mean\` reported
+  on the per-process State block.
+
+  **\`q\` depends on switch interval, not just the workload.**
+  Contrary to a first-pass intuition, \`q\` is *not* a workload-
+  invariant. At very short intervals (≲ 1 ms — well below typical
+  per-request compute slices) the holder is interrupted mid-work
+  and immediately wants the GIL back, generating real convoy and
+  pushing \`q\` down. At long intervals (≥ ~10 ms — comparable
+  to or longer than typical per-request compute) the holder
+  usually finishes its critical section before the next checkpoint
+  and releases voluntarily, eliminating compounding and pushing
+  \`q\` up. \`q\` is most stable in the 2–5 ms band where
+  switch-interval changes don't perturb the holder's natural
+  release rhythm; in that band, a moving \`q\` after tuning means
+  the workload's contention dynamics changed, not the timer.
+
+  **2x2 diagnostic — combine \`q\` with \`gil_wait_time\` mean
+  to choose an action:**
+
+  |  | low \`gil_wait\` mean | high \`gil_wait\` mean |
+  |---|---|---|
+  | \`q\` "transient" (≥ 0.7) | not your bottleneck — leave it | each missed cycle is expensive but they don't chain — **tighten \`WSGISwitchInterval\`** for a clean wall-clock win |
+  | \`q\` "compounding" / "convoy" | rare — usually means low traffic | both cycle cost AND convoy hurt — **tighten interval AND consider adding processes**; tightening alone gives diminishing returns past ~2 ms |
+
+  "High \`gil_wait\` mean" is workload-relative; a useful
+  threshold is "≥ 5% of mean application time", matching the
+  \`gil-direct\` saturation trigger scaled down. At 14% of app
+  time the GIL is a clear bottleneck regardless of \`q\`.
+
+  **Diagnostic loop for \`WSGISwitchInterval\` tuning:**
+
+  1. Start at the default (5 ms). Note \`q\` and the
+     \`gil_wait_time\` mean fraction of app time.
+  2. If \`gil_wait\` is < 5% of app mean: not worth tuning. Stop.
+  3. If significant: tighten in steps (5 → 2 → 1 ms). Watch the
+     **total response p95** in the time-distribution panel.
+  4. p95 typically improves until diminishing returns kick in
+     around ~2 ms for steady mixed workloads. Stop there — going
+     lower gives small wall-clock gains and risks throughput loss
+     from context-switch overhead at high load (not visible
+     under-saturated; may emerge at saturation).
+  5. If after tightening to ~1 ms \`gil_wait\` is still
+     meaningfully high: GIL is the wall, not the schedule.
+     **Add processes** (\`WSGIDaemonProcess processes=\`),
+     don't tighten further. Each daemon process is its own
+     interpreter with its own GIL — the only way to scale a
+     Python-CPU-bound workload past one core's throughput.
+
+  **Fit fallback at sub-1 ms switch intervals.** When the switch
+  interval is ≲ 1 ms the HDR head bucket ([0, 1.25 ms)) absorbs
+  both \`k=0\` (immediate) and \`k=1\` (one missed cycle),
+  leaving \`c1\` holding only spillover — signature: \`c1 < c2\`.
+  The fitter detects this and falls back to a three-point fit on
+  \`c2..c4+\`, which loses one cycle of signal but recovers a
+  \`q\` value across the full directive range. Fallback fits are
+  marked \`~q\` in the live readout and annotated
+  \`c2..c4+ fallback fit\` in the snapshot. The fallback's
+  \`q\` is biased slightly high because \`c4+\` aggregates the
+  true k=4 cycle band with the OS-stall tail; for steady
+  contention it agrees with primary-fit \`q\` to within ~0.05 in
+  practice. Suppressed when fewer than 100 events are in the
+  chosen cycle bands or the fit's R² is below 0.5 (model doesn't
+  apply — likely non-stationary load, near-zero contention, or
+  extreme HDR contamination). The cycle-band counts are still
+  emitted in the snapshot output even when \`q\` is suppressed —
+  inspect them directly when fit rejection is the limit.
 
 ## Response status classes
 
@@ -6902,8 +7213,36 @@ function buildCurrentStatsMarkdown() {
       "- requests in window: " + total.toLocaleString(),
       "- percentiles (interpolated within containing bucket): "
         + pctPart + minMaxPart,
-      "- non-zero buckets:",
     ];
+    if (spec.field === "gil_wait_time_buckets") {
+      const sw = aggregateSwitchIntervalFor(visible, LINE_WINDOW_SEC);
+      if (sw) {
+        const swMs = sw < 0.001 ? (sw * 1000).toFixed(3) : (sw * 1000).toFixed(1);
+        body.push("- Python GIL switch interval: " + swMs + " ms");
+        const bands = gilCycleBandCounts(hist, sw);
+        if (bands) {
+          const bandsTxt = bands.map((c, i) =>
+              "k=" + (i === 4 ? "4+" : String(i)) + ":" + c).join(", ");
+          body.push("- contention bands (cycle counts): " + bandsTxt);
+        }
+        const cc = gilContentionCoefficient(hist, sw);
+        if (cc) {
+          const fitNote = cc.fitKind === "fallback_c2_c4plus"
+            ? "; c2..c4+ fallback fit — c1 absorbed by HDR head bucket"
+            : "";
+          body.push("- GIL contention coefficient: q="
+            + cc.q.toFixed(2) + " (" + gilDecayLabel(cc.q)
+            + "; fit R²=" + cc.fitR2.toFixed(2)
+            + ", n_fit=" + cc.nFit + fitNote + ")");
+        } else {
+          body.push("- GIL contention coefficient: not computed "
+            + "(insufficient samples in cycle bands, geometric fit "
+            + "unreliable, or switch interval too small even for the "
+            + "c2..c4+ fallback fit)");
+        }
+      }
+    }
+    body.push("- non-zero buckets:");
     for (let i = 0; i < N_BUCKETS; i++) {
       if (hist[i] === 0) continue;
       const pct = (hist[i] / total) * 100;

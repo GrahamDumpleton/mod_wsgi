@@ -463,6 +463,28 @@ const char *wsgi_set_python_hash_seed(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+const char *wsgi_set_switch_interval(cmd_parms *cmd, void *mconfig,
+                                     const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+    char *endp = NULL;
+    double v;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    v = strtod(f, &endp);
+    if (endp == f || *endp != '\0' || v <= 0.0)
+        return "WSGISwitchInterval must be a positive number of seconds.";
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+    sconfig->switch_interval = v;
+
+    return NULL;
+}
+
 const char *wsgi_set_destroy_interpreter(cmd_parms *cmd, void *mconfig,
                                          const char *f)
 {

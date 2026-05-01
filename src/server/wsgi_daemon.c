@@ -104,6 +104,7 @@ const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     const char *python_home = NULL;
     const char *python_path = NULL;
     const char *python_eggs = NULL;
+    double switch_interval = 0.0;
 
     int stack_size = 0;
     int maximum_requests = 0;
@@ -284,6 +285,17 @@ const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
         else if (!strcmp(option, "python-eggs"))
         {
             python_eggs = value;
+        }
+        else if (!strcmp(option, "switch-interval"))
+        {
+            char *endp = NULL;
+
+            if (!*value)
+                return "Invalid switch interval for WSGI daemon process.";
+
+            switch_interval = strtod(value, &endp);
+            if (endp == value || *endp != '\0' || switch_interval <= 0.0)
+                return "Invalid switch interval for WSGI daemon process.";
         }
 #if (APR_MAJOR_VERSION >= 1)
         else if (!strcmp(option, "stack-size"))
@@ -681,6 +693,7 @@ const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
     entry->python_home = python_home;
     entry->python_path = python_path;
     entry->python_eggs = python_eggs;
+    entry->switch_interval = switch_interval;
 
     entry->stack_size = stack_size;
     entry->maximum_requests = maximum_requests;
@@ -3683,6 +3696,11 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
                                "daemon process '%s'; Python based "
                                "handlers will not be available.",
                                daemon->group->name);
+            }
+            else if (daemon->group->switch_interval > 0.0)
+            {
+                wsgi_python_set_switch_interval(
+                    daemon->group->switch_interval);
             }
         }
 

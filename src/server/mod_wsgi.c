@@ -1132,6 +1132,9 @@ static const command_rec wsgi_commands[] =
                       NULL, RSRC_CONF, "Python eggs cache directory."),
         AP_INIT_TAKE1("WSGIPythonHashSeed", wsgi_set_python_hash_seed,
                       NULL, RSRC_CONF, "Python hash seed."),
+        AP_INIT_TAKE1("WSGISwitchInterval", wsgi_set_switch_interval,
+                      NULL, RSRC_CONF,
+                      "Override Python GIL switch interval (seconds)."),
 
         AP_INIT_TAKE1("WSGIDestroyInterpreter", wsgi_set_destroy_interpreter,
                       NULL, RSRC_CONF, "Enable/Disable destruction of Python interpreter."),

@@ -145,6 +145,13 @@
 #                             threshold in seconds above which a still-
 #                             running request is reported. Requires
 #                             --metrics-service.
+#       --switch-interval SEC Override the Python GIL switch interval
+#                             (sys.setswitchinterval). Applied at process
+#                             start in both embedded and daemon mode.
+#                             Defaults to Python's built-in 0.005 (5 ms)
+#                             when unset. Useful for measuring how the
+#                             GIL contention coefficient and per-phase
+#                             histogram bumps shift with the interval.
 #       --metrics-options ARGS
 #                             Pass one WSGIMetricsOptions directive
 #                             through to mod_wsgi-express verbatim.
@@ -200,6 +207,7 @@ METRICS=0
 METRICS_SERVICE=
 METRICS_INTERVAL=1.0
 SLOW_REQUESTS=
+SWITCH_INTERVAL=
 METRICS_OPTIONS=()
 BOMBARDIER_TIMEOUT=10s
 LOG_LEVEL=warn
@@ -240,6 +248,7 @@ while [ $# -gt 0 ]; do
         --metrics-service)    METRICS_SERVICE="$2"; shift 2 ;;
         --metrics-interval)   METRICS_INTERVAL="$2"; shift 2 ;;
         --slow-requests)      SLOW_REQUESTS="$2"; shift 2 ;;
+        --switch-interval)    SWITCH_INTERVAL="$2"; shift 2 ;;
         --metrics-options)    METRICS_OPTIONS+=("$2"); shift 2 ;;
         --bombardier-timeout) BOMBARDIER_TIMEOUT="$2"; shift 2 ;;
         --log-level)      LOG_LEVEL="$2"; shift 2 ;;
@@ -378,6 +387,10 @@ for opt in "${METRICS_OPTIONS[@]}"; do
     setup_args+=(--metrics-options "$opt")
 done
 
+if [ -n "$SWITCH_INTERVAL" ]; then
+    setup_args+=(--switch-interval "$SWITCH_INTERVAL")
+fi
+
 if [ "$MODE" = "daemon" ] && [ "$DISABLE_RELOADING" = "1" ]; then
     reloading_state="disabled"
 else
@@ -459,6 +472,7 @@ echo "  body-size      : $BODY_SIZE"
 echo "  body-chunks    : $BODY_CHUNKS"
 echo "  4xx-rate       : $RATE_4XX"
 echo "  5xx-rate       : $RATE_5XX"
+echo "  switch-int     : ${SWITCH_INTERVAL:-default}"
 if [ "$DISTRIBUTION" = "lognormal" ]; then
     echo "  distribution   : lognormal (io_sigma=${IO_SIGMA}, cpu_sigma=${CPU_SIGMA})"
 elif [ "$DISTRIBUTION" = "mixture" ]; then

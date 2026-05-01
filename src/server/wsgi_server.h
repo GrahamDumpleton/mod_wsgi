@@ -89,6 +89,8 @@ typedef struct
 
     const char *python_hash_seed;
 
+    double switch_interval;
+
     int destroy_interpreter;
     int restrict_embedded;
     int restrict_stdin;

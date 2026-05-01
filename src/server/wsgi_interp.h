@@ -102,6 +102,8 @@ extern void wsgi_python_version(void);
 extern apr_status_t wsgi_python_init(apr_pool_t *p);
 extern apr_status_t wsgi_python_term(void);
 
+extern void wsgi_python_set_switch_interval(double seconds);
+
 extern InterpreterObject *wsgi_acquire_interpreter(const char *name);
 extern void wsgi_release_interpreter(InterpreterObject *handle);
 

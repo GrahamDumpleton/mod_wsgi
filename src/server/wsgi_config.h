@@ -58,6 +58,8 @@ extern const char *wsgi_set_python_eggs(cmd_parms *cmd, void *mconfig,
                                         const char *f);
 extern const char *wsgi_set_python_hash_seed(cmd_parms *cmd, void *mconfig,
                                              const char *f);
+extern const char *wsgi_set_switch_interval(cmd_parms *cmd, void *mconfig,
+                                            const char *f);
 extern const char *wsgi_set_destroy_interpreter(cmd_parms *cmd, void *mconfig,
                                                 const char *f);
 extern const char *wsgi_set_restrict_embedded(cmd_parms *cmd, void *mconfig,
