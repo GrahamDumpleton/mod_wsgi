@@ -145,6 +145,16 @@ class SlowEntry:
     # extensions, so it surfaces as a partial pressure indicator.
     gil_wait_us: int = 0
     gil_wait_count: int = 0
+    # I/O time overlap indicators for this request. input_read_us is
+    # the total time spent inside wsgi.input.read*; output_write_us is
+    # the total time spent in the adapter's output path
+    # (start_response / write / yield-to-Apache). Cross-cutting
+    # overlap, not a phase addend. output_write_us is "adapter
+    # handoff" time, not client-receive time — Apache may buffer and
+    # async-flush past mod_wsgi's view. See the wire.py field
+    # comment for the full caveat.
+    input_read_us: int = 0
+    output_write_us: int = 0
     # Concurrency context — wsgi_active_requests including this one
     # at slot claim and at completion. active_at_completion is 0 for
     # active records by definition (the request hasn't finished).
@@ -184,6 +194,8 @@ class SlowEntry:
             "application_time_us": self.application_time_us,
             "gil_wait_us": self.gil_wait_us,
             "gil_wait_count": self.gil_wait_count,
+            "input_read_us": self.input_read_us,
+            "output_write_us": self.output_write_us,
             "active_at_start": self.active_at_start,
             "active_at_completion": self.active_at_completion,
             "status": self.status,
@@ -453,6 +465,8 @@ class Ingester:
             application_time_us=int(f.get("slow_application_time_us") or 0),
             gil_wait_us=int(f.get("slow_gil_wait_us") or 0),
             gil_wait_count=int(f.get("slow_gil_wait_count") or 0),
+            input_read_us=int(f.get("slow_input_read_us") or 0),
+            output_write_us=int(f.get("slow_output_write_us") or 0),
             active_at_start=int(f.get("slow_active_at_start") or 0),
             active_at_completion=int(f.get("slow_active_at_completion") or 0),
             status=int(f.get("slow_status") or 0),

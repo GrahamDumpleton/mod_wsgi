@@ -135,16 +135,30 @@ extern int wsgi_metrics_options;
 
 /* 60-69: Per-phase mean times for the interval (seconds).
  * request_time is the per-request total (server + queue + daemon +
- * application) — what the caller actually experienced. gil_wait_time
- * is a cross-cutting overlap indicator (sum across instrumented re-
- * acquire sites within mod_wsgi's C code) and is *not* an addend in
- * the request_time invariant — see WSGI_METRICS_F_GIL_WAIT_TIME. */
+ * application) — what the caller actually experienced. gil_wait_time,
+ * input_read_time and output_write_time are cross-cutting overlap
+ * indicators (accumulated *during* application_time at mod_wsgi's
+ * adapter / re-acquire sites) and are *not* addends in the
+ * request_time invariant — see WSGI_METRICS_F_GIL_WAIT_TIME and
+ * WSGI_METRICS_F_INPUT_READ_TIME for the partial-coverage caveats. */
 #define WSGI_METRICS_F_SERVER_TIME 60      /* f64 */
 #define WSGI_METRICS_F_QUEUE_TIME 61       /* f64 */
 #define WSGI_METRICS_F_DAEMON_TIME 62      /* f64 */
 #define WSGI_METRICS_F_APPLICATION_TIME 63 /* f64 */
 #define WSGI_METRICS_F_REQUEST_TIME 64     /* f64 */
 #define WSGI_METRICS_F_GIL_WAIT_TIME 65    /* f64 — see comment above */
+/* Time the WSGI app spent inside wsgi.input.read* (input) or inside
+ * start_response/write/yield-to-Apache (output), summed per request
+ * and averaged per tick. Both are *complete* for traffic mediated by
+ * the adapter (the app cannot bypass these sites) but neither is a
+ * wire-level latency: input_read_time covers brigade-fill + parse
+ * inside Apache/mod_wsgi, output_write_time covers handing data to
+ * Apache's bucket-brigade and asking it to flush — Apache may
+ * buffer and async-flush, so output_write_time is "adapter handoff"
+ * rather than "client receive" time. Surface as overlap indicators,
+ * not phase attribution. */
+#define WSGI_METRICS_F_INPUT_READ_TIME 66    /* f64 */
+#define WSGI_METRICS_F_OUTPUT_WRITE_TIME 67  /* f64 */
 
 /* 70-79: Per-phase exact min times for the interval (microseconds).
  * Only emitted on ticks where at least one request completed; the
@@ -153,35 +167,41 @@ extern int wsgi_metrics_options;
  *
  * Aggregate cleanly across processes and across time windows by
  * (min of mins) — exact, no histogram approximation. */
-#define WSGI_METRICS_F_SERVER_TIME_MIN_US 70      /* u64 */
-#define WSGI_METRICS_F_QUEUE_TIME_MIN_US 71       /* u64 */
-#define WSGI_METRICS_F_DAEMON_TIME_MIN_US 72      /* u64 */
-#define WSGI_METRICS_F_APPLICATION_TIME_MIN_US 73 /* u64 */
-#define WSGI_METRICS_F_REQUEST_TIME_MIN_US 74     /* u64 */
-#define WSGI_METRICS_F_GIL_WAIT_TIME_MIN_US 75    /* u64 */
+#define WSGI_METRICS_F_SERVER_TIME_MIN_US 70       /* u64 */
+#define WSGI_METRICS_F_QUEUE_TIME_MIN_US 71        /* u64 */
+#define WSGI_METRICS_F_DAEMON_TIME_MIN_US 72       /* u64 */
+#define WSGI_METRICS_F_APPLICATION_TIME_MIN_US 73  /* u64 */
+#define WSGI_METRICS_F_REQUEST_TIME_MIN_US 74      /* u64 */
+#define WSGI_METRICS_F_GIL_WAIT_TIME_MIN_US 75     /* u64 */
+#define WSGI_METRICS_F_INPUT_READ_TIME_MIN_US 76   /* u64 */
+#define WSGI_METRICS_F_OUTPUT_WRITE_TIME_MIN_US 77 /* u64 */
 
 /* 80-89: Per-phase exact max times for the interval (microseconds).
  * Same emission rule and aggregation semantics as the min block —
  * (max of maxes) is exact. Pairs with the histograms below to give a
  * true worst-case alongside the bucket-bounded percentiles. */
-#define WSGI_METRICS_F_SERVER_TIME_MAX_US 80      /* u64 */
-#define WSGI_METRICS_F_QUEUE_TIME_MAX_US 81       /* u64 */
-#define WSGI_METRICS_F_DAEMON_TIME_MAX_US 82      /* u64 */
-#define WSGI_METRICS_F_APPLICATION_TIME_MAX_US 83 /* u64 */
-#define WSGI_METRICS_F_REQUEST_TIME_MAX_US 84     /* u64 */
-#define WSGI_METRICS_F_GIL_WAIT_TIME_MAX_US 85    /* u64 */
+#define WSGI_METRICS_F_SERVER_TIME_MAX_US 80       /* u64 */
+#define WSGI_METRICS_F_QUEUE_TIME_MAX_US 81        /* u64 */
+#define WSGI_METRICS_F_DAEMON_TIME_MAX_US 82       /* u64 */
+#define WSGI_METRICS_F_APPLICATION_TIME_MAX_US 83  /* u64 */
+#define WSGI_METRICS_F_REQUEST_TIME_MAX_US 84      /* u64 */
+#define WSGI_METRICS_F_GIL_WAIT_TIME_MAX_US 85     /* u64 */
+#define WSGI_METRICS_F_INPUT_READ_TIME_MAX_US 86   /* u64 */
+#define WSGI_METRICS_F_OUTPUT_WRITE_TIME_MAX_US 87 /* u64 */
 
 /* 90-99: Per-phase histograms. HDR-style: 16 octaves from 1 ms to
  * 65.5 s, each octave linearly split into 4 sub-buckets, plus one
  * overflow bucket for >65536 ms = 65 entries per phase. Max relative
  * error inside any sub-bucket is ≤25%. See wsgi_record_time_in_buckets
  * for the mantissa-based O(1) index. */
-#define WSGI_METRICS_F_SERVER_TIME_BUCKETS 90      /* i32 array */
-#define WSGI_METRICS_F_QUEUE_TIME_BUCKETS 91       /* i32 array */
-#define WSGI_METRICS_F_DAEMON_TIME_BUCKETS 92      /* i32 array */
-#define WSGI_METRICS_F_APPLICATION_TIME_BUCKETS 93 /* i32 array */
-#define WSGI_METRICS_F_REQUEST_TIME_BUCKETS 94     /* i32 array */
-#define WSGI_METRICS_F_GIL_WAIT_TIME_BUCKETS 95    /* i32 array */
+#define WSGI_METRICS_F_SERVER_TIME_BUCKETS 90       /* i32 array */
+#define WSGI_METRICS_F_QUEUE_TIME_BUCKETS 91        /* i32 array */
+#define WSGI_METRICS_F_DAEMON_TIME_BUCKETS 92       /* i32 array */
+#define WSGI_METRICS_F_APPLICATION_TIME_BUCKETS 93  /* i32 array */
+#define WSGI_METRICS_F_REQUEST_TIME_BUCKETS 94      /* i32 array */
+#define WSGI_METRICS_F_GIL_WAIT_TIME_BUCKETS 95     /* i32 array */
+#define WSGI_METRICS_F_INPUT_READ_TIME_BUCKETS 96   /* i32 array */
+#define WSGI_METRICS_F_OUTPUT_WRITE_TIME_BUCKETS 97 /* i32 array */
 
 /* 100-109: Per-interval request I/O totals. Drained from the same
  * accumulator that wsgi_record_request_times() updates at end-of-
@@ -297,10 +317,18 @@ extern int wsgi_metrics_options;
 #define WSGI_METRICS_F_SLOW_GIL_WAIT_US 224         /* u64 — running total at snapshot for active records */
 #define WSGI_METRICS_F_SLOW_GIL_WAIT_COUNT 225      /* u64 — number of re-acquire events observed */
 
-#define WSGI_METRICS_F_SLOW_INPUT_BYTES 230   /* u64 */
-#define WSGI_METRICS_F_SLOW_INPUT_READS 231   /* u64 */
-#define WSGI_METRICS_F_SLOW_OUTPUT_BYTES 232  /* u64 */
-#define WSGI_METRICS_F_SLOW_OUTPUT_WRITES 233 /* u64 */
+#define WSGI_METRICS_F_SLOW_INPUT_BYTES 230      /* u64 */
+#define WSGI_METRICS_F_SLOW_INPUT_READS 231      /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_BYTES 232     /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_WRITES 233    /* u64 */
+/* Per-request total time spent inside wsgi.input.read* and inside
+ * the adapter's start_response/write/file-wrapper output path. Final
+ * at completion; running totals at active-record snapshot time. See
+ * WSGI_METRICS_F_INPUT_READ_TIME / OUTPUT_WRITE_TIME for the full
+ * coverage caveat (output_write_us is adapter-handoff time, not
+ * client-receive time). */
+#define WSGI_METRICS_F_SLOW_INPUT_READ_US 234    /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_WRITE_US 235  /* u64 */
 
 #define WSGI_METRICS_F_SLOW_STATUS 240 /* u64: 0=not yet known */
 
@@ -376,6 +404,21 @@ typedef struct
      * time) rather than a phase attribution. */
     double gil_wait_time;
 
+    /* I/O timing overlap indicators. Mean per-request total of time
+     * the WSGI app spent inside wsgi.input.read* (input_read_time)
+     * and inside the adapter's output path — start_response /
+     * write() / yield-to-Apache (output_write_time). Both are
+     * accumulated *during* application_time at adapter sites the app
+     * cannot bypass, so they are complete for what mod_wsgi
+     * mediates, but they are *not* addends in
+     * server + queue + daemon + application = request. Caveat:
+     * output_write_time covers handing data to Apache's bucket-
+     * brigade and asking Apache to flush — Apache may buffer and
+     * async-flush, so this is "adapter handoff" time rather than
+     * "client receive" time. */
+    double input_read_time;
+    double output_write_time;
+
     /* Per-phase exact min/max for the interval, in microseconds. The
      * encoder skips the corresponding wire field when min still holds
      * its UINT64_MAX sentinel — i.e. no requests completed during the
@@ -387,12 +430,16 @@ typedef struct
     uint64_t application_time_min_us;
     uint64_t request_time_min_us;
     uint64_t gil_wait_time_min_us;
+    uint64_t input_read_time_min_us;
+    uint64_t output_write_time_min_us;
     uint64_t server_time_max_us;
     uint64_t queue_time_max_us;
     uint64_t daemon_time_max_us;
     uint64_t application_time_max_us;
     uint64_t request_time_max_us;
     uint64_t gil_wait_time_max_us;
+    uint64_t input_read_time_max_us;
+    uint64_t output_write_time_max_us;
 
     int32_t server_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
     int32_t queue_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
@@ -400,6 +447,8 @@ typedef struct
     int32_t application_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
     int32_t request_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
     int32_t gil_wait_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
+    int32_t input_read_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
+    int32_t output_write_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
 
     /* Per-interval request I/O totals. Sum across requests that
      * completed in this interval; in-flight requests contribute on
@@ -519,6 +568,16 @@ typedef struct
      * caveat. */
     uint64_t gil_wait_us;
     uint64_t gil_wait_count;
+
+    /* I/O time overlap indicators for this single request.
+     * input_read_us is the total time spent inside wsgi.input.read*;
+     * output_write_us is the total time spent inside the adapter's
+     * start_response/write/yield-to-Apache output path. Final at
+     * completion; running totals at active-record snapshot time. See
+     * the sample-struct comment on input_read_time / output_write_time
+     * for the adapter-handoff caveat on the output side. */
+    uint64_t input_read_us;
+    uint64_t output_write_us;
 
     /* Final HTTP response status (e.g. 200, 404, 500). Zero for active
      * records — start_response may not have been called yet. */

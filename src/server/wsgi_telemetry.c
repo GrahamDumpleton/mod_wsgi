@@ -242,6 +242,10 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_APPLICATION_TIME, s->application_time);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_REQUEST_TIME, s->request_time);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_GIL_WAIT_TIME, s->gil_wait_time);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_INPUT_READ_TIME,
+                         s->input_read_time);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_OUTPUT_WRITE_TIME,
+                         s->output_write_time);
     if (s->has_daemon_timing)
     {
         wsgi_metrics_put_f64(&p, WSGI_METRICS_F_QUEUE_TIME, s->queue_time);
@@ -280,6 +284,20 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
         wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GIL_WAIT_TIME_MAX_US,
                              s->gil_wait_time_max_us);
     }
+    if (s->input_read_time_min_us != UINT64_MAX)
+    {
+        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_INPUT_READ_TIME_MIN_US,
+                             s->input_read_time_min_us);
+        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_INPUT_READ_TIME_MAX_US,
+                             s->input_read_time_max_us);
+    }
+    if (s->output_write_time_min_us != UINT64_MAX)
+    {
+        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_OUTPUT_WRITE_TIME_MIN_US,
+                             s->output_write_time_min_us);
+        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_OUTPUT_WRITE_TIME_MAX_US,
+                             s->output_write_time_max_us);
+    }
     if (s->has_daemon_timing)
     {
         if (s->queue_time_min_us != UINT64_MAX)
@@ -313,6 +331,12 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
                                s->request_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
     wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_GIL_WAIT_TIME_BUCKETS,
                                s->gil_wait_time_buckets, WSGI_TELEMETRY_BUCKET_COUNT);
+    wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_INPUT_READ_TIME_BUCKETS,
+                               s->input_read_time_buckets,
+                               WSGI_TELEMETRY_BUCKET_COUNT);
+    wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_OUTPUT_WRITE_TIME_BUCKETS,
+                               s->output_write_time_buckets,
+                               WSGI_TELEMETRY_BUCKET_COUNT);
 
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_INPUT_BYTES_TOTAL,
                          s->input_bytes_total);
@@ -410,6 +434,17 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
                          s->gil_wait_us);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_GIL_WAIT_COUNT,
                          s->gil_wait_count);
+
+    /* I/O time overlap indicators for this single request. Always
+     * emitted (including zeros) so the slow-record detail panel can
+     * surface them uniformly. For active records these are zero
+     * (the slot's io_input_read_us / io_output_write_us are only
+     * stamped at end-of-request); for completed records they are
+     * the final totals. */
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_INPUT_READ_US,
+                         s->input_read_us);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_OUTPUT_WRITE_US,
+                         s->output_write_us);
 
     /* Concurrency context. active_at_completion is zero for active
      * records (the request has not finished yet); always emitted so

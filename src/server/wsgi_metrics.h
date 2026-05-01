@@ -46,6 +46,8 @@ extern void wsgi_record_request_times(apr_time_t request_start,
                                       apr_time_t application_start, apr_time_t application_finish,
                                       apr_off_t input_bytes, apr_off_t input_reads,
                                       apr_off_t output_bytes, apr_off_t output_writes,
+                                      apr_time_t input_read_us,
+                                      apr_time_t output_write_us,
                                       int status);
 
 /* Records the wall-clock instant the WSGI callable began executing onto

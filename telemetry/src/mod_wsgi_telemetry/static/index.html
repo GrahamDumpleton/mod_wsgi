@@ -966,6 +966,8 @@
                 <option value="server_time">server</option>
                 <option disabled>──────────</option>
                 <option value="gil_wait_time">GIL wait</option>
+                <option value="input_read_time">input read</option>
+                <option value="output_write_time">output write</option>
               </select>
             </label>
           </div>
@@ -983,6 +985,8 @@
                 <option value="server_time_buckets">server</option>
                 <option disabled>──────────</option>
                 <option value="gil_wait_time_buckets">GIL wait</option>
+                <option value="input_read_time_buckets">input read</option>
+                <option value="output_write_time_buckets">output write</option>
               </select>
             </label>
           </div>
@@ -2025,6 +2029,31 @@ function renderSlowExpandPanel(e) {
       `<div>${fmtCpuUs(gilWaitUs)} · ${gilWaitCount} ${eventsText}` +
       `${pctText}</div>`;
   }
+  // I/O time overlap. Both fields are zero on active (in-flight)
+  // records — the slot's io_input_read_us / io_output_write_us are
+  // only stamped at end-of-request — so the rows naturally appear
+  // only on completed records. Shown with the share of duration
+  // they cover so an LLM/operator can see at a glance whether time
+  // was lost in the read or write side. output_write covers
+  // adapter-handoff (Apache bucket-brigade fill + flush request)
+  // and not the wire-level send to the client; the help text spells
+  // that caveat out and the row label is unqualified to keep the
+  // panel scannable.
+  const inputReadUs = e.input_read_us || 0;
+  const outputWriteUs = e.output_write_us || 0;
+  const fmtIOPct = us => (durationUs > 0)
+    ? ` <span class="label">(${((us / durationUs) * 100).toFixed(0)}% of duration)</span>`
+    : "";
+  let inputReadRow = "";
+  if (inputReadUs > 0) {
+    inputReadRow = `<div class="label">Input read time</div>` +
+      `<div>${fmtCpuUs(inputReadUs)}${fmtIOPct(inputReadUs)}</div>`;
+  }
+  let outputWriteRow = "";
+  if (outputWriteUs > 0) {
+    outputWriteRow = `<div class="label">Output write time</div>` +
+      `<div>${fmtCpuUs(outputWriteUs)}${fmtIOPct(outputWriteUs)}</div>`;
+  }
   // Process identity: group · pid (parent) · thread, looked up from
   // ProcessState by pid. Group renders as "(embedded)" when no daemon
   // group applies; the parent-pid suffix is omitted when unknown so
@@ -2098,9 +2127,11 @@ function renderSlowExpandPanel(e) {
     <div class="label">Body in</div>
     <div>${fmtIO(inBytes, inCalls, inAvg, "reads")}${
       e.state === 0 ? ioBadge : ""}</div>
+    ${inputReadRow}
     <div class="label">Body out</div>
     <div>${fmtIO(outBytes, outCalls, outAvg, "writes")}${
       e.state === 1 ? ioBadge : ""}</div>
+    ${outputWriteRow}
     <div class="label">CPU</div>
     <div>${cpuLine}</div>
     ${cpuBreakdownLine}
@@ -2689,6 +2720,9 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
   let requestTimeSum = 0, requestTimeSamples = 0;
   let appTimeSum = 0, appTimeSamples = 0;
   let gilWaitTimeSum = 0, gilWaitTimeSamples = 0, gilWaitTimePeak = 0;
+  let inputReadTimeSum = 0, inputReadTimeSamples = 0, inputReadTimePeak = 0;
+  let outputWriteTimeSum = 0, outputWriteTimeSamples = 0,
+      outputWriteTimePeak = 0;
   let hasDaemonTime = false;
   let requestTotal = 0;
   let hasQueueTime = false;
@@ -2759,6 +2793,22 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
       if (s.fields.gil_wait_time > gilWaitTimePeak)
         gilWaitTimePeak = s.fields.gil_wait_time;
     }
+    // I/O time overlap indicators. Same per-tick-mean / window-mean
+    // shape as gil_wait_time. Both fields are emitted in lockstep
+    // with application_time so a tick with completions has all of
+    // them populated together.
+    if (typeof s.fields.input_read_time === "number") {
+      inputReadTimeSum += s.fields.input_read_time;
+      inputReadTimeSamples++;
+      if (s.fields.input_read_time > inputReadTimePeak)
+        inputReadTimePeak = s.fields.input_read_time;
+    }
+    if (typeof s.fields.output_write_time === "number") {
+      outputWriteTimeSum += s.fields.output_write_time;
+      outputWriteTimeSamples++;
+      if (s.fields.output_write_time > outputWriteTimePeak)
+        outputWriteTimePeak = s.fields.output_write_time;
+    }
     if (typeof s.fields.request_count === "number")
       requestTotal += s.fields.request_count;
     windowDuration += period;
@@ -2806,6 +2856,24 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
     gilWaitFracOfApp: (gilWaitTimeSamples > 0 && appTimeSamples > 0
                        && appTimeSum > 0)
       ? (gilWaitTimeSum / gilWaitTimeSamples)
+        / (appTimeSum / appTimeSamples)
+      : 0,
+    hasInputReadTime: inputReadTimeSamples > 0,
+    inputReadMsMean: inputReadTimeSamples > 0
+      ? (inputReadTimeSum / inputReadTimeSamples) * 1000 : 0,
+    inputReadMsPeak: inputReadTimePeak * 1000,
+    inputReadFracOfApp: (inputReadTimeSamples > 0 && appTimeSamples > 0
+                         && appTimeSum > 0)
+      ? (inputReadTimeSum / inputReadTimeSamples)
+        / (appTimeSum / appTimeSamples)
+      : 0,
+    hasOutputWriteTime: outputWriteTimeSamples > 0,
+    outputWriteMsMean: outputWriteTimeSamples > 0
+      ? (outputWriteTimeSum / outputWriteTimeSamples) * 1000 : 0,
+    outputWriteMsPeak: outputWriteTimePeak * 1000,
+    outputWriteFracOfApp: (outputWriteTimeSamples > 0 && appTimeSamples > 0
+                           && appTimeSum > 0)
+      ? (outputWriteTimeSum / outputWriteTimeSamples)
         / (appTimeSum / appTimeSamples)
       : 0,
   };
@@ -2957,6 +3025,8 @@ function computeProcessStats(p, windowSec) {
   let queueTimePeakS = 0, daemonTimePeakS = 0;
   let queueSamples = 0, daemonSamples = 0;
   let gilWaitSumS = 0, gilWaitSamples = 0, gilWaitPeakS = 0;
+  let inputReadSumS = 0, inputReadSamples = 0, inputReadPeakS = 0;
+  let outputWriteSumS = 0, outputWriteSamples = 0, outputWritePeakS = 0;
   let nThreadsMax = 0;
   let windowSecSum = 0;
   let hasAny = false;
@@ -3022,6 +3092,22 @@ function computeProcessStats(p, windowSec) {
       gilWaitSumS += f.gil_wait_time;
       gilWaitSamples++;
       if (f.gil_wait_time > gilWaitPeakS) gilWaitPeakS = f.gil_wait_time;
+    }
+    // I/O time overlap (per-request mean inside wsgi.input.read* and
+    // inside the adapter output path). Same per-tick-mean shape as
+    // gil_wait. Both fields are emitted in lockstep with
+    // application_time so a tick with completions has all of them.
+    if (typeof f.input_read_time === "number") {
+      inputReadSumS += f.input_read_time;
+      inputReadSamples++;
+      if (f.input_read_time > inputReadPeakS)
+        inputReadPeakS = f.input_read_time;
+    }
+    if (typeof f.output_write_time === "number") {
+      outputWriteSumS += f.output_write_time;
+      outputWriteSamples++;
+      if (f.output_write_time > outputWritePeakS)
+        outputWritePeakS = f.output_write_time;
     }
     const period = f.sample_period || 1.0;
     const periodUs = period * 1_000_000;
@@ -3110,6 +3196,26 @@ function computeProcessStats(p, windowSec) {
     // does NOT rule out GIL pressure.
     gilWaitFracOfApp: (gilWaitSamples > 0 && phaseSamples > 0 && appSum > 0)
       ? (gilWaitSumS / gilWaitSamples) / (appSum / phaseSamples) : 0,
+    // I/O time overlap aggregates. Same shape as gilWait above; the
+    // fracOfApp is the share of mean application time spent in
+    // wsgi.input.read* (input) or in the adapter output path
+    // (output). Both are *complete* for traffic mediated by the
+    // adapter, but output_write is "adapter handoff" not
+    // client-receive time — see the help text for the full caveat.
+    hasInputReadTime: inputReadSamples > 0,
+    inputReadMsMean: inputReadSamples > 0
+      ? (inputReadSumS / inputReadSamples) * 1000 : 0,
+    inputReadMsPeak: inputReadPeakS * 1000,
+    inputReadFracOfApp: (inputReadSamples > 0 && phaseSamples > 0
+                         && appSum > 0)
+      ? (inputReadSumS / inputReadSamples) / (appSum / phaseSamples) : 0,
+    hasOutputWriteTime: outputWriteSamples > 0,
+    outputWriteMsMean: outputWriteSamples > 0
+      ? (outputWriteSumS / outputWriteSamples) * 1000 : 0,
+    outputWriteMsPeak: outputWritePeakS * 1000,
+    outputWriteFracOfApp: (outputWriteSamples > 0 && phaseSamples > 0
+                           && appSum > 0)
+      ? (outputWriteSumS / outputWriteSamples) / (appSum / phaseSamples) : 0,
     requestRpm: windowSecSum > 0 ? (rcSum / windowSecSum) * 60 : 0,
     hasIO: ioSamples > 0,
     inBytesRate: ioPeriodSum > 0 ? inBytesSum / ioPeriodSum : 0,
@@ -5388,6 +5494,58 @@ carries the detail.
   contention happens at the mod_wsgi boundary. Use this metric
   to *raise confidence* in a CPU/GIL diagnosis, never to lower
   it.
+- **input_read_time** — mean per-request total time spent inside
+  \`wsgi.input.read*\` while the WSGI app was draining the
+  request body. Surfaced in the time-breakdown / time-distribution
+  dropdowns under "input read", on the slow-record detail panel
+  with the share of request duration it covered, and on the
+  per-process State block with the share of mean application
+  time it represents. Cross-cutting overlap — accumulates
+  *during* application time and is **not** an addend in the
+  server / queue / daemon / application invariant. Coverage is
+  **complete** for traffic mediated by the adapter (the WSGI
+  app cannot bypass these sites — the only way to read the
+  request body is through the InputObject, which times every
+  call). What it measures is brigade-fill plus parse inside
+  Apache/mod_wsgi, **not** the wire-level receive from the
+  client (which happens before the WSGI app even sees the
+  request). The metric is captured *inside* the GIL-released
+  region around the brigade work, so the GIL re-acquire wait
+  that follows is attributed to \`gil_wait_time\` and **not**
+  double-counted here. Diagnostic value: high \`input_read_time\`
+  with low byte counts points at a slow client uploader; high
+  with high byte counts is healthy bulk ingest; very low values
+  plus meaningful \`input_bytes_total\` means the body was
+  already buffered by Apache before the WSGI app ran.
+- **output_write_time** — mean per-request total time spent
+  inside the adapter's output path: \`start_response\`,
+  \`AdapterObject.write()\`, and the file-wrapper / yield-to-
+  Apache flush sites — specifically the time the worker thread
+  spent inside \`ap_pass_brigade\` and its companion brigade-
+  cleanup calls with the GIL released. Surfaced in the same
+  dropdowns, slow-record detail panel, and per-process State
+  block as \`input_read_time\`. Cross-cutting overlap — *not*
+  an addend. Coverage is **complete** for traffic mediated by
+  the adapter (the WSGI app cannot send a byte without going
+  through these sites). The metric is captured *inside* the
+  GIL-released region, so the GIL re-acquire wait that follows
+  is attributed to \`gil_wait_time\` and **not** double-counted
+  here — \`output_write_time\` and \`gil_wait_time\` measure
+  disjoint windows. **Caveat — read carefully:** what this
+  measures is **adapter-handoff time**, not client-receive
+  latency. mod_wsgi hands data to Apache's bucket-brigade and
+  asks Apache to flush; Apache may buffer in kernel socket
+  buffers, apply output filters, and **async-flush past the
+  WSGI app's return** without that downstream wait being
+  attributed to this metric. Practical interpretation: high
+  \`output_write_time\` means *the WSGI app sat in \`write()\`
+  for X ms* — typically because Apache applied backpressure
+  (kernel send buffer full, slow client, downstream filter
+  blocking). It does **not** measure how long the client took
+  to receive the bytes. Pair with \`output_bytes_total\` for
+  throughput context (B/s = output_bytes_total / output_write_time
+  is a usable rate for the adapter handoff but not for the
+  network).
 - **response status: 1xx / 2xx / 3xx / 4xx / 5xx** — per-window
   counts of WSGI app responses by status class, drained from the
   same accumulator that updates \`request_count\`. Sum equals the
@@ -5615,6 +5773,34 @@ Combinations that identify specific bottlenecks:
   distribution to find which phase carries the tail.
   \`application\` = app regression or downstream;
   \`daemon\` = GIL pressure; \`queue\` = upstream backpressure.
+- **High \`output_write_time\` with low rpm or upstream
+  retransmits** — the WSGI app is blocked in \`write()\` because
+  Apache's send buffer is full. Causes: slow client (mobile,
+  satellite), small kernel \`SO_SNDBUF\`, an output filter
+  (gzip / mod_security / SSI) holding bytes, or downstream
+  backpressure (a reverse proxy not draining fast enough).
+  **Not** a CPU or GIL issue; adding processes / threads will
+  not help. Investigate: client population, Apache output
+  filters, \`net.ipv4.tcp_wmem\`, and any reverse proxy in
+  front. Note this metric does **not** attribute time spent
+  inside Apache async-flushing after the WSGI app returns —
+  see the \`output_write_time\` field comment.
+- **High \`input_read_time\` with modest \`input_bytes_total\`** —
+  slow client uploader. Same diagnosis path as the output side
+  (don't reach for processes / threads). Consider whether the
+  app should be reading the body lazily, applying a body-size
+  limit upstream, or moving large uploads to a streaming /
+  chunked path that doesn't pin a worker thread.
+- **High \`input_read_time\` with high \`input_bytes_total\`** —
+  healthy bulk-ingest, expected. Confirm by computing
+  \`input_bytes_total / input_read_time\` for a per-second
+  ingest rate; if it matches the expected upload rate, no
+  action needed.
+- **\`input_read_time\` ≈ 0 with \`input_bytes_total\` > 0** —
+  request body was fully buffered by Apache before the WSGI
+  app ran (typical for small bodies on fast LAN clients). Not
+  a problem; the metric is just being honest that the app
+  didn't wait for any bytes.
 
 ## Process lifecycle
 
@@ -6637,6 +6823,23 @@ function buildCurrentStatsMarkdown() {
         + " (peak " + fmtSubMs(ps.gilWaitMsPeak) + " ms)" + gilFracPct
         + " — partial, lower bound");
     }
+    if (ps.hasInputReadTime && ps.inputReadMsMean > 0.01) {
+      const fracPct = ps.inputReadFracOfApp > 0
+        ? " (" + Math.round(ps.inputReadFracOfApp * 100) + "% of app mean)"
+        : "";
+      lines.push("  - input read mean: "
+        + fmtSubMs(ps.inputReadMsMean) + " ms"
+        + " (peak " + fmtSubMs(ps.inputReadMsPeak) + " ms)" + fracPct);
+    }
+    if (ps.hasOutputWriteTime && ps.outputWriteMsMean > 0.01) {
+      const fracPct = ps.outputWriteFracOfApp > 0
+        ? " (" + Math.round(ps.outputWriteFracOfApp * 100) + "% of app mean)"
+        : "";
+      lines.push("  - output write mean: "
+        + fmtSubMs(ps.outputWriteMsMean) + " ms"
+        + " (peak " + fmtSubMs(ps.outputWriteMsPeak) + " ms)" + fracPct
+        + " — adapter handoff, not client-receive");
+    }
     const triggerLabels = [];
     if (verdict.triggers.peg) triggerLabels.push("cpu-peg");
     if (verdict.triggers.ratio) triggerLabels.push("slot-ratio");
@@ -6668,6 +6871,11 @@ function buildCurrentStatsMarkdown() {
       field: "queue_time_buckets" },
     { label: "GIL wait (overlap, partial — not an addend)",
       field: "gil_wait_time_buckets" },
+    { label: "Input read time (overlap, complete for adapter — not an addend)",
+      field: "input_read_time_buckets" },
+    { label: "Output write time (overlap, adapter-handoff — not an addend, "
+        + "not client-receive latency)",
+      field: "output_write_time_buckets" },
   ];
   const distSections = [];
   for (const spec of distSpecs) {
@@ -6862,6 +7070,32 @@ function buildCurrentStatsMarkdown() {
     + "bound workloads can be heavily GIL-serialised while "
     + "reporting near-zero \`gil_wait_time\` because none of the "
     + "contention happens at the mod_wsgi boundary.");
+  lines.push("  - **input read mean / peak** — mean (and peak "
+    + "per-tick mean) time per request the WSGI app spent inside "
+    + "\`wsgi.input.read*\` draining the request body. Cross-cutting "
+    + "overlap, **not** an addend to the four request phases. "
+    + "Coverage is *complete* for adapter-mediated traffic (the app "
+    + "cannot bypass these sites). Measures brigade-fill plus parse "
+    + "inside Apache/mod_wsgi, **not** the wire-level receive from "
+    + "the client. High value with low \`input_bytes_total\` = slow "
+    + "uploader; high with high bytes = healthy bulk ingest; near "
+    + "zero with non-trivial bytes = body was already buffered by "
+    + "Apache before the WSGI app ran.");
+  lines.push("  - **output write mean / peak** — mean (and peak "
+    + "per-tick mean) time per request the WSGI app spent inside "
+    + "the adapter's output path: \`start_response\`, "
+    + "\`AdapterObject.write()\`, file-wrapper / yield-to-Apache "
+    + "flush sites. Cross-cutting overlap, **not** an addend. "
+    + "Coverage is *complete* for adapter-mediated traffic, but "
+    + "measures **adapter-handoff** time — handing data into "
+    + "Apache's bucket-brigade and asking Apache to flush — **not** "
+    + "client-receive latency. Apache may buffer in kernel socket "
+    + "buffers, apply output filters, and async-flush past the WSGI "
+    + "app's return without that downstream wait being attributed "
+    + "here. High value typically means Apache applied backpressure "
+    + "(send-buffer full, slow client, downstream filter blocking); "
+    + "**not** a CPU/GIL issue and adding processes/threads will "
+    + "not help.");
 
   if (multiHost) {
     lines.push("- **Multi-host snapshot.** Samples from multiple "

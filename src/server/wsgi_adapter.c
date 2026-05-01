@@ -1308,6 +1308,15 @@ static int Adapter_output(AdapterObject *self, const char *data,
     apr_status_t rv;
     request_rec *r;
 
+    /* output_start / output_finish bracket the GIL-released regions
+     * around ap_pass_brigade and apr_brigade_cleanup. They are
+     * captured *inside* each WSGI_BEGIN_ALLOW_THREADS block, so the
+     * accumulated self->output_time measures only the time the WSGI
+     * app spent waiting for Apache to take its data — header
+     * processing, bucket construction and the GIL re-acquire wait
+     * (which WSGI_END_ALLOW_THREADS attributes to gil_wait_time)
+     * are deliberately excluded. Same pattern as Input_read_from_input
+     * uses for self->time. */
     apr_time_t output_start = 0;
     apr_time_t output_finish = 0;
 
@@ -1333,10 +1342,6 @@ static int Adapter_output(AdapterObject *self, const char *data,
     }
 
     r = self->r;
-
-    /* Remember we started sending this block of output. */
-
-    output_start = apr_time_now();
 
     /* Count how many separate blocks have been output. */
 
@@ -1405,10 +1410,8 @@ static int Adapter_output(AdapterObject *self, const char *data,
                     PyErr_SetString(PyExc_ValueError,
                                     "invalid content length");
 
-                    output_finish = apr_time_now();
-
-                    if (output_finish > output_start)
-                        self->output_time += (output_finish - output_start);
+                    /* No I/O has happened yet on this code path, so
+                     * nothing to fold into output_time. */
 
                     return 0;
                 }
@@ -1504,10 +1507,8 @@ static int Adapter_output(AdapterObject *self, const char *data,
                 PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client "
                                                "connection closed.");
 
-            output_finish = apr_time_now();
-
-            if (output_finish > output_start)
-                self->output_time += (output_finish - output_start);
+            /* No I/O has happened yet on this code path, so nothing
+             * to fold into output_time. */
 
             return 0;
         }
@@ -1538,7 +1539,11 @@ static int Adapter_output(AdapterObject *self, const char *data,
         APR_BRIGADE_INSERT_TAIL(self->bb, b);
 
         WSGI_BEGIN_ALLOW_THREADS
+            output_start = apr_time_now();
             rv = ap_pass_brigade(r->output_filters, self->bb);
+            output_finish = apr_time_now();
+            if (output_finish > output_start)
+                self->output_time += (output_finish - output_start);
         WSGI_END_ALLOW_THREADS
 
             if (rv != APR_SUCCESS)
@@ -1566,25 +1571,19 @@ static int Adapter_output(AdapterObject *self, const char *data,
                 PyErr_SetString(PyExc_IOError, error_message);
             }
 
-            output_finish = apr_time_now();
-
-            if (output_finish > output_start)
-                self->output_time += (output_finish - output_start);
+            /* output_time already folded above. */
 
             return 0;
         }
 
         WSGI_BEGIN_ALLOW_THREADS
+            output_start = apr_time_now();
             apr_brigade_cleanup(self->bb);
+            output_finish = apr_time_now();
+            if (output_finish > output_start)
+                self->output_time += (output_finish - output_start);
         WSGI_END_ALLOW_THREADS
     }
-
-    /* Add how much time we spent send this block of output. */
-
-    output_finish = apr_time_now();
-
-    if (output_finish > output_start)
-        self->output_time += (output_finish - output_start);
 
     /*
      * Check whether aborted connection was found when data
@@ -1628,6 +1627,14 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
 
     apr_file_t *dupfile = NULL;
 
+    /* Same in-block timing pattern as Adapter_output: bracket the
+     * GIL-released ap_pass_brigade region (and its companion
+     * apr_brigade_destroy calls) so the accumulated time excludes
+     * the GIL re-acquire wait that WSGI_END_ALLOW_THREADS attributes
+     * to gil_wait_time instead. */
+    apr_time_t output_start = 0;
+    apr_time_t output_finish = 0;
+
     r = self->r;
 
     if (r->connection->aborted)
@@ -1657,7 +1664,11 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
         PyErr_SetString(PyExc_IOError, error_message);
 
         WSGI_BEGIN_ALLOW_THREADS
+            output_start = apr_time_now();
             apr_brigade_destroy(bb);
+            output_finish = apr_time_now();
+            if (output_finish > output_start)
+                self->output_time += (output_finish - output_start);
         WSGI_END_ALLOW_THREADS
 
         return 0;
@@ -1708,7 +1719,11 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
     APR_BRIGADE_INSERT_TAIL(bb, b);
 
     WSGI_BEGIN_ALLOW_THREADS
+        output_start = apr_time_now();
         rv = ap_pass_brigade(r->output_filters, bb);
+        output_finish = apr_time_now();
+        if (output_finish > output_start)
+            self->output_time += (output_finish - output_start);
     WSGI_END_ALLOW_THREADS
 
         if (rv != APR_SUCCESS)
@@ -1726,7 +1741,11 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
     }
 
     WSGI_BEGIN_ALLOW_THREADS
+        output_start = apr_time_now();
         apr_brigade_destroy(bb);
+        output_finish = apr_time_now();
+        if (output_finish > output_start)
+            self->output_time += (output_finish - output_start);
     WSGI_END_ALLOW_THREADS
 
         if (r->connection->aborted)
@@ -2847,6 +2866,8 @@ event_error:
                               self->input ? self->input->bytes : 0,
                               self->input ? self->input->reads : 0,
                               self->output_length, self->output_writes,
+                              self->input ? self->input->time : 0,
+                              self->output_time,
                               self->status);
 
     /*

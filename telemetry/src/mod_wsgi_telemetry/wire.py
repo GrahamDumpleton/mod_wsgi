@@ -123,6 +123,28 @@ FIELDS = {
     63: "application_time",
     64: "request_time",
     65: "gil_wait_time",
+    # input_read_time / output_write_time are I/O timing overlap
+    # indicators. Mean per-request total of time the WSGI app spent
+    # inside wsgi.input.read* (input) and inside the adapter's
+    # output path — start_response, write(), yield-to-Apache
+    # (output). Both are accumulated *during* application_time at
+    # adapter sites the app cannot bypass, so they are complete for
+    # what mod_wsgi mediates. Output is "adapter handoff" time
+    # (handing data into Apache's bucket-brigade and asking Apache
+    # to flush) — Apache may buffer / async-flush, so it is *not*
+    # client-receive latency. Neither is an addend in the
+    # request_time invariant; surface as overlap, not phase.
+    #
+    # Both are timed *inside* the WSGI_BEGIN/END_ALLOW_THREADS
+    # blocks (start/finish captured between PyEval_SaveThread and
+    # PyEval_RestoreThread), so the GIL re-acquire wait that
+    # WSGI_END_ALLOW_THREADS attributes to gil_wait_time is **not**
+    # double-counted in these metrics. input_read_time +
+    # output_write_time + gil_wait_time are independent overlap
+    # indicators that together cover most of what application_time
+    # is actually spent on for I/O-heavy workloads.
+    66: "input_read_time",
+    67: "output_write_time",
 
     # 70-79: per-phase exact min times for the interval (microseconds).
     # Only present on ticks where at least one request completed; the
@@ -135,6 +157,8 @@ FIELDS = {
     73: "application_time_min_us",
     74: "request_time_min_us",
     75: "gil_wait_time_min_us",
+    76: "input_read_time_min_us",
+    77: "output_write_time_min_us",
 
     # 80-89: per-phase exact max times for the interval (microseconds).
     # Same emission rule and aggregation semantics as the min block —
@@ -146,6 +170,8 @@ FIELDS = {
     83: "application_time_max_us",
     84: "request_time_max_us",
     85: "gil_wait_time_max_us",
+    86: "input_read_time_max_us",
+    87: "output_write_time_max_us",
 
     # 90-99: per-phase histograms. HDR-style: 16 octaves from 1 ms to
     # 65.5 s, each octave linearly split into 4 sub-buckets, plus one
@@ -157,6 +183,8 @@ FIELDS = {
     93: "application_time_buckets",
     94: "request_time_buckets",
     95: "gil_wait_time_buckets",
+    96: "input_read_time_buckets",
+    97: "output_write_time_buckets",
 
     # 100-109: per-interval request I/O totals. Drained from the
     # adapter's InputObject.bytes/reads and
@@ -259,6 +287,8 @@ FIELDS = {
     231: "slow_input_reads",
     232: "slow_output_bytes",
     233: "slow_output_writes",
+    234: "slow_input_read_us",     # per-request total time inside wsgi.input.read*
+    235: "slow_output_write_us",   # per-request total time inside adapter output path
 
     240: "slow_status",           # 0 = not yet known, else final WSGI status
 
