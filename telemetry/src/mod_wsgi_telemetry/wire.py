@@ -111,38 +111,19 @@ FIELDS = {
     # 60-69: per-phase mean times for the interval (seconds).
     # request_time is the per-request total
     # (server + queue + daemon + application) — what the caller actually
-    # experienced. gil_wait_time is a cross-cutting overlap indicator
-    # (sum across instrumented re-acquire sites within mod_wsgi's C code)
-    # and is *not* an addend in the request_time invariant. The metric
-    # is partial — it cannot see waits inside the application's own C
-    # extensions — and should be surfaced as a pressure indicator
-    # (trend / peak chart), not a phase attribution.
+    # experienced. gil_wait_time, input_read_time and output_write_time
+    # are cross-cutting overlap indicators that accumulate *during*
+    # application_time and are *not* addends in the request_time
+    # invariant. gil_wait_time is partial — see UI help text for the
+    # full coverage caveat. output_write_time is adapter-handoff time
+    # (Apache may buffer / async-flush past the WSGI app's return), not
+    # client-receive latency.
     60: "server_time",
     61: "queue_time",
     62: "daemon_time",
     63: "application_time",
     64: "request_time",
     65: "gil_wait_time",
-    # input_read_time / output_write_time are I/O timing overlap
-    # indicators. Mean per-request total of time the WSGI app spent
-    # inside wsgi.input.read* (input) and inside the adapter's
-    # output path — start_response, write(), yield-to-Apache
-    # (output). Both are accumulated *during* application_time at
-    # adapter sites the app cannot bypass, so they are complete for
-    # what mod_wsgi mediates. Output is "adapter handoff" time
-    # (handing data into Apache's bucket-brigade and asking Apache
-    # to flush) — Apache may buffer / async-flush, so it is *not*
-    # client-receive latency. Neither is an addend in the
-    # request_time invariant; surface as overlap, not phase.
-    #
-    # Both are timed *inside* the WSGI_BEGIN/END_ALLOW_THREADS
-    # blocks (start/finish captured between PyEval_SaveThread and
-    # PyEval_RestoreThread), so the GIL re-acquire wait that
-    # WSGI_END_ALLOW_THREADS attributes to gil_wait_time is **not**
-    # double-counted in these metrics. input_read_time +
-    # output_write_time + gil_wait_time are independent overlap
-    # indicators that together cover most of what application_time
-    # is actually spent on for I/O-heavy workloads.
     66: "input_read_time",
     67: "output_write_time",
 

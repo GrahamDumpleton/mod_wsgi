@@ -135,30 +135,19 @@ extern int wsgi_metrics_options;
 
 /* 60-69: Per-phase mean times for the interval (seconds).
  * request_time is the per-request total (server + queue + daemon +
- * application) — what the caller actually experienced. gil_wait_time,
- * input_read_time and output_write_time are cross-cutting overlap
- * indicators (accumulated *during* application_time at mod_wsgi's
- * adapter / re-acquire sites) and are *not* addends in the
- * request_time invariant — see WSGI_METRICS_F_GIL_WAIT_TIME and
- * WSGI_METRICS_F_INPUT_READ_TIME for the partial-coverage caveats. */
-#define WSGI_METRICS_F_SERVER_TIME 60      /* f64 */
-#define WSGI_METRICS_F_QUEUE_TIME 61       /* f64 */
-#define WSGI_METRICS_F_DAEMON_TIME 62      /* f64 */
-#define WSGI_METRICS_F_APPLICATION_TIME 63 /* f64 */
-#define WSGI_METRICS_F_REQUEST_TIME 64     /* f64 */
-#define WSGI_METRICS_F_GIL_WAIT_TIME 65    /* f64 — see comment above */
-/* Time the WSGI app spent inside wsgi.input.read* (input) or inside
- * start_response/write/yield-to-Apache (output), summed per request
- * and averaged per tick. Both are *complete* for traffic mediated by
- * the adapter (the app cannot bypass these sites) but neither is a
- * wire-level latency: input_read_time covers brigade-fill + parse
- * inside Apache/mod_wsgi, output_write_time covers handing data to
- * Apache's bucket-brigade and asking it to flush — Apache may
- * buffer and async-flush, so output_write_time is "adapter handoff"
- * rather than "client receive" time. Surface as overlap indicators,
- * not phase attribution. */
-#define WSGI_METRICS_F_INPUT_READ_TIME 66    /* f64 */
-#define WSGI_METRICS_F_OUTPUT_WRITE_TIME 67  /* f64 */
+ * application) — what the caller actually experienced.
+ * gil_wait_time, input_read_time and output_write_time are
+ * cross-cutting overlap indicators measured during application_time
+ * and are *not* addends in the request_time invariant. See the UI
+ * help text for partial-coverage and adapter-handoff caveats. */
+#define WSGI_METRICS_F_SERVER_TIME 60       /* f64 */
+#define WSGI_METRICS_F_QUEUE_TIME 61        /* f64 */
+#define WSGI_METRICS_F_DAEMON_TIME 62       /* f64 */
+#define WSGI_METRICS_F_APPLICATION_TIME 63  /* f64 */
+#define WSGI_METRICS_F_REQUEST_TIME 64      /* f64 */
+#define WSGI_METRICS_F_GIL_WAIT_TIME 65     /* f64 */
+#define WSGI_METRICS_F_INPUT_READ_TIME 66   /* f64 */
+#define WSGI_METRICS_F_OUTPUT_WRITE_TIME 67 /* f64 */
 
 /* 70-79: Per-phase exact min times for the interval (microseconds).
  * Only emitted on ticks where at least one request completed; the
@@ -315,20 +304,14 @@ extern int wsgi_metrics_options;
 #define WSGI_METRICS_F_SLOW_DAEMON_TIME_US 222      /* u64 — 0 in embedded mode */
 #define WSGI_METRICS_F_SLOW_APPLICATION_TIME_US 223 /* u64 — partial for active records */
 #define WSGI_METRICS_F_SLOW_GIL_WAIT_US 224         /* u64 — running total at snapshot for active records */
-#define WSGI_METRICS_F_SLOW_GIL_WAIT_COUNT 225      /* u64 — number of re-acquire events observed */
+#define WSGI_METRICS_F_SLOW_GIL_WAIT_COUNT 225      /* u64 — number of GIL waits observed */
 
-#define WSGI_METRICS_F_SLOW_INPUT_BYTES 230      /* u64 */
-#define WSGI_METRICS_F_SLOW_INPUT_READS 231      /* u64 */
-#define WSGI_METRICS_F_SLOW_OUTPUT_BYTES 232     /* u64 */
-#define WSGI_METRICS_F_SLOW_OUTPUT_WRITES 233    /* u64 */
-/* Per-request total time spent inside wsgi.input.read* and inside
- * the adapter's start_response/write/file-wrapper output path. Final
- * at completion; running totals at active-record snapshot time. See
- * WSGI_METRICS_F_INPUT_READ_TIME / OUTPUT_WRITE_TIME for the full
- * coverage caveat (output_write_us is adapter-handoff time, not
- * client-receive time). */
-#define WSGI_METRICS_F_SLOW_INPUT_READ_US 234    /* u64 */
-#define WSGI_METRICS_F_SLOW_OUTPUT_WRITE_US 235  /* u64 */
+#define WSGI_METRICS_F_SLOW_INPUT_BYTES 230     /* u64 */
+#define WSGI_METRICS_F_SLOW_INPUT_READS 231     /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_BYTES 232    /* u64 */
+#define WSGI_METRICS_F_SLOW_OUTPUT_WRITES 233   /* u64 */
+#define WSGI_METRICS_F_SLOW_INPUT_READ_US 234   /* u64 — per-request total */
+#define WSGI_METRICS_F_SLOW_OUTPUT_WRITE_US 235 /* u64 — per-request total */
 
 #define WSGI_METRICS_F_SLOW_STATUS 240 /* u64: 0=not yet known */
 
@@ -394,28 +377,13 @@ typedef struct
     double daemon_time;
     double application_time;
     double request_time;
-    /* GIL-wait pressure indicator. Mean per-request total of waits
-     * observed at every instrumented Py_END_ALLOW_THREADS-equivalent
-     * site within mod_wsgi's C code, plus the initial sub-interp GIL
-     * acquire. Cross-cutting overlap — *not* an addend in
-     * server + queue + daemon + application = request. The metric is
-     * partial (cannot see waits inside the application's own C
-     * extensions) and surfaces as a pressure indicator (trend over
-     * time) rather than a phase attribution. */
+    /* Cross-cutting overlap indicators measured during application
+     * time. Mean per-request totals. Not addends in
+     * server + queue + daemon + application = request. See UI help
+     * text for the partial-coverage caveat on gil_wait_time and the
+     * adapter-handoff vs client-receive distinction on
+     * output_write_time. */
     double gil_wait_time;
-
-    /* I/O timing overlap indicators. Mean per-request total of time
-     * the WSGI app spent inside wsgi.input.read* (input_read_time)
-     * and inside the adapter's output path — start_response /
-     * write() / yield-to-Apache (output_write_time). Both are
-     * accumulated *during* application_time at adapter sites the app
-     * cannot bypass, so they are complete for what mod_wsgi
-     * mediates, but they are *not* addends in
-     * server + queue + daemon + application = request. Caveat:
-     * output_write_time covers handing data to Apache's bucket-
-     * brigade and asking Apache to flush — Apache may buffer and
-     * async-flush, so this is "adapter handoff" time rather than
-     * "client receive" time. */
     double input_read_time;
     double output_write_time;
 
@@ -560,22 +528,11 @@ typedef struct
     uint64_t active_at_start;
     uint64_t active_at_completion;
 
-    /* GIL-wait pressure indicator for this single request — sum and
-     * count of waits observed at every instrumented re-acquire site
-     * reached by this request, plus the initial sub-interp GIL acquire.
-     * For active records, the running totals at snapshot time. See the
-     * sample-struct comment on gil_wait_time for the partial-visibility
-     * caveat. */
+    /* Cross-cutting overlap totals for this single request. Final at
+     * completion; running totals at active-record snapshot time. See
+     * UI help text for partial-coverage and adapter-handoff caveats. */
     uint64_t gil_wait_us;
     uint64_t gil_wait_count;
-
-    /* I/O time overlap indicators for this single request.
-     * input_read_us is the total time spent inside wsgi.input.read*;
-     * output_write_us is the total time spent inside the adapter's
-     * start_response/write/yield-to-Apache output path. Final at
-     * completion; running totals at active-record snapshot time. See
-     * the sample-struct comment on input_read_time / output_write_time
-     * for the adapter-handoff caveat on the output side. */
     uint64_t input_read_us;
     uint64_t output_write_us;
 

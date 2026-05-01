@@ -5451,100 +5451,86 @@ carries the detail.
   time across worker slots. 1.0 = pure compute; near 0 = threads
   hold requests without running CPU work (GIL wait or blocking
   I/O).
-- **gil_wait_time** — mean per-request time spent waiting to
-  re-acquire the GIL at mod_wsgi instrumentation sites (input
-  read, output write, error-log emission). Cross-cutting overlap
-  metric — accumulates *during* application time and is **not**
-  an addend in the server / queue / daemon / application
-  invariant. Surfaced with the share of application time it
-  represents on each per-process State block, in the time-
-  breakdown / time-distribution dropdowns under the same name,
-  and on each slow-request detail panel.
+- **gil_wait_time** — mean per-request time the worker thread
+  was held up waiting for the Python GIL while mod_wsgi was
+  performing I/O or logging on the application's behalf.
+  Cross-cutting overlap metric — accumulates *during*
+  application time and is **not** an addend in the
+  server / queue / daemon / application invariant. Surfaced
+  with the share of application time it represents on each
+  per-process State block, in the time-breakdown / time-
+  distribution dropdowns under the same name, and on each
+  slow-request detail panel.
 
   **Coverage is partial. The metric is NOT an absolute measure
-  of GIL contention experienced by the workload.** mod_wsgi can
-  only time waits where its own C code releases and re-acquires
-  the GIL. The following sources of GIL contention are
-  **invisible** to this metric and contribute zero to it:
+  of GIL contention experienced by the workload.** It only
+  reflects waits the worker thread itself encountered during
+  mod_wsgi-mediated I/O or logging. Two large categories of
+  GIL contention contribute zero to it:
 
-  - **Pure-Python application code.** The Python interpreter
-    yields and re-acquires the GIL at bytecode boundaries
-    according to \`sys.setswitchinterval\` (default ~5 ms).
-    Contention experienced during those internal yields —
-    which is where most GIL pressure on Python-heavy workloads
-    actually lives — is never tagged.
-  - **C extensions called by the WSGI application.** Any
-    \`Py_BEGIN_ALLOW_THREADS\` / \`Py_END_ALLOW_THREADS\` pair
-    inside libraries the app imports (NumPy, database drivers,
-    \`requests\`, ML frameworks, etc.) releases and re-acquires
-    the GIL on its own; the wait at *its* re-acquire is not
-    seen by mod_wsgi.
-  - **Anything between the WSGI callable's first instruction
-    and its last.** The first-GIL-acquire on dispatch is timed
-    inside the daemon path (and shows up as elevated
-    \`daemon_time\`, not here); everything else inside the app
-    is invisible unless the app happens to be sitting in a
-    mod_wsgi I/O or logging call at the time.
+  - **GIL contention during pure-Python application code.**
+    Python rotates the GIL between threads at bytecode
+    boundaries (controlled by \`sys.setswitchinterval\`,
+    default ~5 ms). Most GIL pressure on Python-CPU-heavy
+    workloads lives there and is invisible here.
+  - **GIL contention inside C extensions the application
+    calls.** NumPy, database drivers, \`requests\`, ML
+    frameworks, etc. — each library decides on its own when
+    to drop and re-take the GIL during long operations; waits
+    inside those library calls are not seen here.
 
   Treat the printed value as a **lower bound** on actual GIL
   pressure. A high value positively confirms contention exists;
   a low value does **not** rule it out — a Python-CPU-bound or
-  NumPy-heavy workload can be brutally GIL-serialised while
-  reporting near-zero \`gil_wait_time\` because none of the
-  contention happens at the mod_wsgi boundary. Use this metric
-  to *raise confidence* in a CPU/GIL diagnosis, never to lower
-  it.
-- **input_read_time** — mean per-request total time spent inside
-  \`wsgi.input.read*\` while the WSGI app was draining the
-  request body. Surfaced in the time-breakdown / time-distribution
-  dropdowns under "input read", on the slow-record detail panel
-  with the share of request duration it covered, and on the
-  per-process State block with the share of mean application
-  time it represents. Cross-cutting overlap — accumulates
-  *during* application time and is **not** an addend in the
-  server / queue / daemon / application invariant. Coverage is
-  **complete** for traffic mediated by the adapter (the WSGI
-  app cannot bypass these sites — the only way to read the
-  request body is through the InputObject, which times every
-  call). What it measures is brigade-fill plus parse inside
-  Apache/mod_wsgi, **not** the wire-level receive from the
-  client (which happens before the WSGI app even sees the
-  request). The metric is captured *inside* the GIL-released
-  region around the brigade work, so the GIL re-acquire wait
-  that follows is attributed to \`gil_wait_time\` and **not**
-  double-counted here. Diagnostic value: high \`input_read_time\`
-  with low byte counts points at a slow client uploader; high
-  with high byte counts is healthy bulk ingest; very low values
-  plus meaningful \`input_bytes_total\` means the body was
-  already buffered by Apache before the WSGI app ran.
-- **output_write_time** — mean per-request total time spent
-  inside the adapter's output path: \`start_response\`,
-  \`AdapterObject.write()\`, and the file-wrapper / yield-to-
-  Apache flush sites — specifically the time the worker thread
-  spent inside \`ap_pass_brigade\` and its companion brigade-
-  cleanup calls with the GIL released. Surfaced in the same
-  dropdowns, slow-record detail panel, and per-process State
-  block as \`input_read_time\`. Cross-cutting overlap — *not*
-  an addend. Coverage is **complete** for traffic mediated by
-  the adapter (the WSGI app cannot send a byte without going
-  through these sites). The metric is captured *inside* the
-  GIL-released region, so the GIL re-acquire wait that follows
-  is attributed to \`gil_wait_time\` and **not** double-counted
-  here — \`output_write_time\` and \`gil_wait_time\` measure
-  disjoint windows. **Caveat — read carefully:** what this
-  measures is **adapter-handoff time**, not client-receive
-  latency. mod_wsgi hands data to Apache's bucket-brigade and
-  asks Apache to flush; Apache may buffer in kernel socket
-  buffers, apply output filters, and **async-flush past the
-  WSGI app's return** without that downstream wait being
-  attributed to this metric. Practical interpretation: high
-  \`output_write_time\` means *the WSGI app sat in \`write()\`
-  for X ms* — typically because Apache applied backpressure
-  (kernel send buffer full, slow client, downstream filter
-  blocking). It does **not** measure how long the client took
-  to receive the bytes. Pair with \`output_bytes_total\` for
-  throughput context (B/s = output_bytes_total / output_write_time
-  is a usable rate for the adapter handoff but not for the
+  NumPy-heavy workload can be heavily GIL-serialised while
+  reporting near-zero \`gil_wait_time\`. Use this metric to
+  *raise confidence* in a CPU/GIL diagnosis, never to lower it.
+- **input_read_time** — mean per-request total time the WSGI
+  app spent inside \`wsgi.input.read*\` reading the request
+  body. Surfaced in the time-breakdown / time-distribution
+  dropdowns under "input read", on the slow-record detail
+  panel with the share of request duration it covered, and on
+  the per-process State block with the share of mean
+  application time it represents. Cross-cutting overlap —
+  accumulates *during* application time and is **not** an
+  addend in the server / queue / daemon / application
+  invariant.
+
+  Coverage is **complete** for the request body the WSGI app
+  actually reads (the only standards-compliant path to it).
+  It is **not** the wire-level receive from the client — that
+  happens before the WSGI app sees the request — so very low
+  values combined with non-trivial \`input_bytes_total\` simply
+  mean Apache had already buffered the body by the time the
+  app called \`read()\`.
+
+  Diagnostic value: high \`input_read_time\` with low byte
+  counts points at a slow client uploader; high with high byte
+  counts is healthy bulk ingest; near-zero with meaningful
+  \`input_bytes_total\` is normal for small bodies on fast
+  clients (Apache pre-buffered).
+- **output_write_time** — mean per-request total time the WSGI
+  app spent inside \`start_response\`, \`write()\`, and the
+  response-iteration / file-wrapper paths waiting for Apache
+  to take the data. Surfaced in the same dropdowns,
+  slow-record detail panel, and per-process State block as
+  \`input_read_time\`. Cross-cutting overlap — *not* an addend.
+
+  Coverage is **complete** for the response data the WSGI app
+  emits. **Caveat — read carefully:** this is **adapter-
+  handoff time**, not client-receive latency. Apache may
+  buffer in kernel socket buffers, apply output filters, and
+  async-flush past the WSGI app's return without that
+  downstream wait being attributed here.
+
+  Practical interpretation: high \`output_write_time\` means
+  *the WSGI app sat in \`write()\` for X ms* — typically
+  because Apache applied backpressure (kernel send buffer
+  full, slow client, downstream filter blocking). It does
+  **not** measure how long the client took to receive the
+  bytes. Pair with \`output_bytes_total\` for throughput
+  context (\`output_bytes_total / output_write_time\` is a
+  usable rate for the adapter handoff but not for the
   network).
 - **response status: 1xx / 2xx / 3xx / 4xx / 5xx** — per-window
   counts of WSGI app responses by status class, drained from the
@@ -5605,8 +5591,8 @@ divergence at the same time.
 Mechanics:
 
 - **Counts only what the WSGI app set.** The status comes from
-  \`AdapterObject.status\`, parsed from the \`start_response\`
-  status line. Errors generated **outside** the WSGI app — Apache
+  the \`start_response\` status line. Errors generated **outside**
+  the WSGI app — Apache
   worker-side outcomes such as queue-overflow \`503\`,
   daemon-unavailable \`503\`, or inactivity-timeout \`504\` — never
   reach the recorder and are **not** in these counters. If you
@@ -5702,17 +5688,12 @@ suppresses the label:
 - **daemon-absolute** — daemon mean > 50 ms. Dispatch stage slow
   enough to indicate GIL contention during request entry.
 - **gil-direct** — measured \`gil_wait_time\` is ≥ 15% of mean
-  application time with busy > 30%. Direct positive evidence of
-  GIL contention from mod_wsgi-side instrumentation. One-way
-  signal: a high value confirms GIL pressure and tightens the
-  lean to a definite GIL diagnosis; a low value does **not**
-  rule out GIL pressure. \`gil_wait_time\` only counts waits at
-  mod_wsgi's own re-acquire sites — it does not see contention
-  experienced inside pure-Python application code (interpreter
-  bytecode-level GIL scheduling) or inside C extensions the app
-  calls (their own \`Py_BEGIN/END_ALLOW_THREADS\` pairs), so a
-  near-zero value is consistent with severe GIL contention if
-  the contention lives somewhere mod_wsgi can't observe.
+  application time with busy > 30%. Direct positive evidence
+  of GIL contention. One-way signal: a high value confirms
+  GIL pressure and tightens the lean to a definite GIL
+  diagnosis; a low value does **not** rule out GIL pressure
+  (see the \`gil_wait_time\` field entry for the full
+  partial-coverage caveat).
 - **multi-core carve-out (exclusionary)** — cpu > 1.2 cores with
   busy > 50%. Workload is demonstrably running across multiple
   cores, so the GIL is not serialising; the CPU/GIL label is
@@ -5731,9 +5712,8 @@ daemon = GIL-bound — but state the call as a lean, not a
 certainty. When \`gil_wait_time\` is non-trivial relative to
 application time (the **gil-direct** trigger), the lean
 sharpens into a confirmed GIL diagnosis. The reverse does not
-hold: a low \`gil_wait_time\` does not refute GIL contention,
-because mod_wsgi cannot instrument re-acquire sites inside the
-application's own C extensions.
+hold: a low \`gil_wait_time\` does not refute GIL contention —
+see that field's coverage caveat.
 
 ### Normal
 
@@ -5754,10 +5734,10 @@ Combinations that identify specific bottlenecks:
 - **cpu ~100% (one core) with multiple threads, busy moderate+** —
   process is pinned to one core. Could be CPU-bound work (threads
   want CPU, GIL serialises) or GIL-contended I/O work (threads
-  waiting for GIL re-acquire). Telemetry cannot distinguish; both
-  flag CPU/GIL-bound and both want more processes. If \`daemon\`
-  is also elevated, lean GIL. If \`slot cpu / slot busy\` is near
-  1.0, lean CPU.
+  blocked on the GIL between I/O calls). Telemetry cannot
+  distinguish; both flag CPU/GIL-bound and both want more
+  processes. If \`daemon\` is also elevated, lean GIL. If
+  \`slot cpu / slot busy\` is near 1.0, lean CPU.
 - **cpu > ~120% with busy high** — healthy multi-core work via C
   extensions releasing the GIL. No label fires; still scale
   processes when cpu approaches (cores − 1) × 100%.
@@ -5782,9 +5762,7 @@ Combinations that identify specific bottlenecks:
   **Not** a CPU or GIL issue; adding processes / threads will
   not help. Investigate: client population, Apache output
   filters, \`net.ipv4.tcp_wmem\`, and any reverse proxy in
-  front. Note this metric does **not** attribute time spent
-  inside Apache async-flushing after the WSGI app returns —
-  see the \`output_write_time\` field comment.
+  front.
 - **High \`input_read_time\` with modest \`input_bytes_total\`** —
   slow client uploader. Same diagnosis path as the output side
   (don't reach for processes / threads). Consider whether the
@@ -7011,17 +6989,12 @@ function buildCurrentStatsMarkdown() {
     + "> 50 ms. The dispatch stage (first-GIL-acquire + handoff) "
     + "is slow enough to indicate contention for the interpreter "
     + "lock during request entry.");
-  lines.push("  - **gil-direct** \u2014 measured GIL re-acquire wait "
-    + "at mod_wsgi instrumentation sites is \u2265 15% of mean "
-    + "application time, with busy > 30%. Direct positive evidence "
-    + "of contention. The underlying \`gil_wait_time\` metric is "
-    + "partial \u2014 it does not see contention happening inside "
-    + "pure-Python application code (the interpreter's own "
-    + "bytecode-level GIL scheduling) or inside C extensions the "
-    + "app calls (their own release/acquire pairs) \u2014 so this "
-    + "is a one-way signal: a high value confirms GIL pressure; "
-    + "a low value does **not** rule it out. See the gil wait "
-    + "signal entry below for the full coverage caveat.");
+  lines.push("  - **gil-direct** \u2014 measured \`gil_wait_time\` "
+    + "is \u2265 15% of mean application time, with busy > 30%. "
+    + "Direct positive evidence of GIL contention. One-way "
+    + "signal: a high value confirms GIL pressure, a low value "
+    + "does **not** rule it out \u2014 see the gil wait signal entry "
+    + "below for the partial-coverage caveat.");
   lines.push("  - **multi-core carve-out** \u2014 *exclusionary, not "
     + "a flag reason.* When CPU mean > 1.2 cores and busy > 50%, "
     + "the workload is demonstrably running across multiple cores, "
@@ -7051,49 +7024,45 @@ function buildCurrentStatsMarkdown() {
     + "pools (not enough threads) and slow-to-dispatch daemons "
     + "(GIL contention at request entry).");
   lines.push("  - **gil wait mean / peak** \u2014 mean (and peak "
-    + "per-tick mean) time per request spent waiting to re-acquire "
-    + "the GIL at mod_wsgi instrumentation sites (input read, "
-    + "output write, error log). Reported with the share of "
-    + "application time it represents. Cross-cutting overlap, "
-    + "**not** an addend to the four request phases. **NOT an "
-    + "absolute measure of GIL contention.** mod_wsgi only times "
-    + "waits at its own release/acquire sites. Contention "
-    + "happening (a) during pure-Python application code via the "
-    + "interpreter's own bytecode-level GIL scheduling "
-    + "(\`sys.setswitchinterval\`), or (b) inside C extensions "
-    + "the WSGI app calls (NumPy, DB drivers, ML frameworks, "
-    + "etc.) at *their* own \`Py_BEGIN/END_ALLOW_THREADS\` pairs, "
-    + "is invisible to this metric and contributes zero. The "
-    + "printed value is therefore a **lower bound** on actual "
-    + "GIL pressure: a high value confirms contention exists, "
-    + "but a low value does **not** rule it out \u2014 Python-CPU-"
-    + "bound workloads can be heavily GIL-serialised while "
-    + "reporting near-zero \`gil_wait_time\` because none of the "
-    + "contention happens at the mod_wsgi boundary.");
+    + "per-tick mean) time per request the worker thread was held "
+    + "up waiting for the Python GIL while mod_wsgi was performing "
+    + "I/O or logging on the application's behalf. Reported with "
+    + "the share of application time it represents. Cross-cutting "
+    + "overlap, **not** an addend to the four request phases. "
+    + "**NOT an absolute measure of GIL contention.** It does not "
+    + "see contention experienced (a) during pure-Python "
+    + "application code (Python rotates the GIL between threads at "
+    + "bytecode boundaries, controlled by \`sys.setswitchinterval\`) "
+    + "or (b) inside C extensions the WSGI app calls (NumPy, DB "
+    + "drivers, ML frameworks, etc., which manage the GIL "
+    + "internally). The printed value is therefore a **lower "
+    + "bound** on actual GIL pressure: a high value confirms "
+    + "contention exists, but a low value does **not** rule it "
+    + "out \u2014 Python-CPU-bound workloads can be heavily "
+    + "GIL-serialised while reporting near-zero \`gil_wait_time\`.");
   lines.push("  - **input read mean / peak** — mean (and peak "
     + "per-tick mean) time per request the WSGI app spent inside "
-    + "\`wsgi.input.read*\` draining the request body. Cross-cutting "
+    + "\`wsgi.input.read*\` reading the request body. Cross-cutting "
     + "overlap, **not** an addend to the four request phases. "
-    + "Coverage is *complete* for adapter-mediated traffic (the app "
-    + "cannot bypass these sites). Measures brigade-fill plus parse "
-    + "inside Apache/mod_wsgi, **not** the wire-level receive from "
-    + "the client. High value with low \`input_bytes_total\` = slow "
-    + "uploader; high with high bytes = healthy bulk ingest; near "
-    + "zero with non-trivial bytes = body was already buffered by "
-    + "Apache before the WSGI app ran.");
+    + "Coverage is *complete* for the request body the WSGI app "
+    + "actually reads, but is **not** wire-level receive latency "
+    + "from the client (Apache may have already buffered the body "
+    + "before the WSGI app called \`read()\`). High value with low "
+    + "\`input_bytes_total\` = slow uploader; high with high bytes "
+    + "= healthy bulk ingest; near zero with non-trivial bytes = "
+    + "body was already buffered by Apache before the WSGI app ran.");
   lines.push("  - **output write mean / peak** — mean (and peak "
     + "per-tick mean) time per request the WSGI app spent inside "
-    + "the adapter's output path: \`start_response\`, "
-    + "\`AdapterObject.write()\`, file-wrapper / yield-to-Apache "
-    + "flush sites. Cross-cutting overlap, **not** an addend. "
-    + "Coverage is *complete* for adapter-mediated traffic, but "
-    + "measures **adapter-handoff** time — handing data into "
-    + "Apache's bucket-brigade and asking Apache to flush — **not** "
-    + "client-receive latency. Apache may buffer in kernel socket "
-    + "buffers, apply output filters, and async-flush past the WSGI "
-    + "app's return without that downstream wait being attributed "
-    + "here. High value typically means Apache applied backpressure "
-    + "(send-buffer full, slow client, downstream filter blocking); "
+    + "\`start_response\`, \`write()\`, and the response-iteration / "
+    + "file-wrapper paths waiting for Apache to take the data. "
+    + "Cross-cutting overlap, **not** an addend. Coverage is "
+    + "*complete* for the response data the WSGI app emits, but "
+    + "measures **adapter-handoff** time, **not** client-receive "
+    + "latency: Apache may buffer in kernel socket buffers, apply "
+    + "output filters, and async-flush past the WSGI app's return "
+    + "without that downstream wait being attributed here. High "
+    + "value typically means Apache applied backpressure (send-"
+    + "buffer full, slow client, downstream filter blocking); "
     + "**not** a CPU/GIL issue and adding processes/threads will "
     + "not help.");
 
