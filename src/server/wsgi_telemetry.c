@@ -966,6 +966,14 @@ void wsgi_telemetry_start_reporter(apr_pool_t *pool)
 
     wsgi_telemetry_started = 1;
 
+    /* Seed the snapshot baselines and turn on per-request accounting
+     * before the reporter thread (and any worker thread) starts. The
+     * reporter's first periodic tick fires one telemetry interval after
+     * spawn — without this seed, every request served in that startup
+     * window would be silently dropped at the request_metrics_enabled
+     * gate in wsgi_record_request_times. */
+    wsgi_metrics_telemetry_init();
+
     rv = apr_thread_create(&wsgi_telemetry_thread, NULL,
                            wsgi_telemetry_thread_main, NULL, pool);
     if (rv != APR_SUCCESS) {

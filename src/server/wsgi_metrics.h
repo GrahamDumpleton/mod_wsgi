@@ -58,6 +58,16 @@ extern void wsgi_record_application_start(apr_time_t application_start);
 
 extern int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out);
 
+/* Seed the C-native snapshot baselines and turn on per-request metric
+ * accounting. Called from wsgi_telemetry_start_reporter in the daemon
+ * main thread before any worker has had a chance to serve a request,
+ * so wsgi_record_request_times sees enabled=1 on its first invocation
+ * and request data is captured from t=0 onwards rather than only after
+ * the reporter's first periodic tick fires (which under default 1s
+ * interval would silently drop everything served in the startup
+ * window). Idempotent. */
+extern void wsgi_metrics_telemetry_init(void);
+
 /* Slow-request tracking. threshold_us == 0 disables the feature; set
  * from the WSGISlowRequests directive at config time. Must be written
  * before the telemetry reporter thread starts. */

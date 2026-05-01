@@ -742,16 +742,99 @@ void wsgi_end_request(void)
  * sampling window.
  */
 
+/* C-native snapshot state. File-static so wsgi_metrics_telemetry_init can
+ * seed these baselines at telemetry-start time, before any request can be
+ * served. Without that early seed, the first snapshot tick (typically 1s
+ * after server start) would seed with already-incremented counters and
+ * lose every request that completed in the startup window. */
+static double telemetry_start_time = 0.0;
+static double telemetry_start_request_busy_time = 0.0;
+static apr_uint64_t telemetry_start_request_count = 0;
+static double telemetry_start_cpu_user_time = 0.0;
+static double telemetry_start_cpu_system_time = 0.0;
+static int telemetry_request_threads_maximum = 0;
+
+#ifdef HAVE_TIMES
+static double telemetry_tick_hz = 0.0;
+#endif
+
+static int telemetry_query_threads_maximum(void)
+{
+    int max = 0;
+    int is_threaded = 0;
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_daemon_process)
+    {
+        max = wsgi_daemon_process->group->threads;
+    }
+    else
+    {
+        ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
+        if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
+            ap_mpm_query(AP_MPMQ_MAX_THREADS, &max);
+    }
+#else
+    ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
+    if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
+        ap_mpm_query(AP_MPMQ_MAX_THREADS, &max);
+#endif
+
+    if (max <= 0)
+        max = 1;
+    return max;
+}
+
+void wsgi_metrics_telemetry_init(void)
+{
+    /* Seed the C-native snapshot baselines and enable per-request
+     * accounting from this point. Called from wsgi_telemetry_start_reporter
+     * in the daemon main thread before any worker thread has had a chance
+     * to serve a request — so wsgi_record_request_times sees enabled=1 on
+     * its very first call and request data from t=0 onwards is captured.
+     *
+     * Idempotent: a second call is a no-op so the periodic snapshot's
+     * legacy first-call seeding (kept as a fallback for the non-telemetry
+     * Python-accessor path) doesn't fight this initialiser. */
+    apr_thread_mutex_lock(wsgi_monitor_lock);
+
+    if (telemetry_start_time != 0.0)
+    {
+        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        return;
+    }
+
+    telemetry_start_time = (double)apr_time_now();
+    telemetry_start_request_busy_time = wsgi_utilization_time_locked(0,
+                                                  &telemetry_start_request_count);
+
+    wsgi_request_metrics_enabled = 1;
+
+    apr_thread_mutex_unlock(wsgi_monitor_lock);
+
+#ifdef HAVE_TIMES
+    {
+        struct tms tmsbuf;
+        if (!telemetry_tick_hz)
+        {
+#ifdef _SC_CLK_TCK
+            telemetry_tick_hz = sysconf(_SC_CLK_TCK);
+#else
+            telemetry_tick_hz = HZ;
+#endif
+        }
+        times(&tmsbuf);
+        telemetry_start_cpu_user_time = tmsbuf.tms_utime / telemetry_tick_hz;
+        telemetry_start_cpu_system_time = tmsbuf.tms_stime / telemetry_tick_hz;
+    }
+#endif
+
+    if (!telemetry_request_threads_maximum)
+        telemetry_request_threads_maximum = telemetry_query_threads_maximum();
+}
+
 int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 {
-    static double telemetry_start_time = 0.0;
-    static double telemetry_start_request_busy_time = 0.0;
-    static apr_uint64_t telemetry_start_request_count = 0;
-    static double telemetry_start_cpu_user_time = 0.0;
-    static double telemetry_start_cpu_system_time = 0.0;
-
-    static int telemetry_request_threads_maximum = 0;
-
     apr_time_t stop_time;
     double stop_request_busy_time = 0.0;
     apr_uint64_t stop_request_count = 0;
@@ -771,14 +854,13 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 
 #ifdef HAVE_TIMES
     struct tms tmsbuf;
-    static double tick = 0.0;
 
-    if (!tick)
+    if (!telemetry_tick_hz)
     {
 #ifdef _SC_CLK_TCK
-        tick = sysconf(_SC_CLK_TCK);
+        telemetry_tick_hz = sysconf(_SC_CLK_TCK);
 #else
-        tick = HZ;
+        telemetry_tick_hz = HZ;
 #endif
     }
 #endif
@@ -789,36 +871,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     memset(out, 0, sizeof(*out));
 
     if (!telemetry_request_threads_maximum)
-    {
-        int is_threaded = 0;
-
-#if defined(MOD_WSGI_WITH_DAEMONS)
-        if (wsgi_daemon_process)
-        {
-            telemetry_request_threads_maximum =
-                wsgi_daemon_process->group->threads;
-        }
-        else
-        {
-            ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
-            if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
-            {
-                ap_mpm_query(AP_MPMQ_MAX_THREADS,
-                             &telemetry_request_threads_maximum);
-            }
-        }
-#else
-        ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
-        if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
-        {
-            ap_mpm_query(AP_MPMQ_MAX_THREADS,
-                         &telemetry_request_threads_maximum);
-        }
-#endif
-
-        if (telemetry_request_threads_maximum <= 0)
-            telemetry_request_threads_maximum = 1;
-    }
+        telemetry_request_threads_maximum = telemetry_query_threads_maximum();
 
     stop_time = apr_time_now();
 
@@ -889,8 +942,8 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 
 #ifdef HAVE_TIMES
         times(&tmsbuf);
-        telemetry_start_cpu_user_time = tmsbuf.tms_utime / tick;
-        telemetry_start_cpu_system_time = tmsbuf.tms_stime / tick;
+        telemetry_start_cpu_user_time = tmsbuf.tms_utime / telemetry_tick_hz;
+        telemetry_start_cpu_system_time = tmsbuf.tms_stime / telemetry_tick_hz;
 #endif
 
         out->seeded = 0;
@@ -1041,8 +1094,8 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 #ifdef HAVE_TIMES
     times(&tmsbuf);
     {
-        double stop_user = tmsbuf.tms_utime / tick;
-        double stop_system = tmsbuf.tms_stime / tick;
+        double stop_user = tmsbuf.tms_utime / telemetry_tick_hz;
+        double stop_system = tmsbuf.tms_stime / telemetry_tick_hz;
         double user_rate = (stop_user - telemetry_start_cpu_user_time) /
                            sample_period;
         double system_rate = (stop_system - telemetry_start_cpu_system_time) /
