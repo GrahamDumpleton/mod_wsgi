@@ -250,6 +250,9 @@ FIELDS = {
 
     250: "slow_cpu_user_us",
     251: "slow_cpu_system_us",
+
+    260: "slow_active_at_start",        # in-flight count including this request
+    261: "slow_active_at_completion",   # 0 for active records
 }
 
 # Reverse map for encoders / tests.

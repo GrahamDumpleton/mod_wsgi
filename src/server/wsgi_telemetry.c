@@ -366,6 +366,15 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_APPLICATION_TIME_US,
                          s->application_time_us);
 
+    /* Concurrency context. active_at_completion is zero for active
+     * records (the request has not finished yet); always emitted so
+     * consumers see the "0 = not yet known" sentinel rather than a
+     * missing field. */
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_ACTIVE_AT_START,
+                         s->active_at_start);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_ACTIVE_AT_COMPLETION,
+                         s->active_at_completion);
+
     /* Final HTTP response status. Zero for active records (the WSGI
      * app may not have called start_response yet); always emitted so
      * consumers see the "0 = not yet known" sentinel rather than a

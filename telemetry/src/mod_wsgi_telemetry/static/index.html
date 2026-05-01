@@ -2013,6 +2013,32 @@ function renderSlowExpandPanel(e) {
   const pidPart = `pid ${e.pid}` + (ppid ? ` (parent ${ppid})` : "");
   const threadPart = e.thread_id ? ` &middot; thread ${e.thread_id}` : "";
   const processLine = `${groupText} &middot; ${pidPart}${threadPart}`;
+  // Concurrency context: in-flight count at slot claim (always
+  // captured) and at completion (zero for active records, by
+  // definition). Shown as "n / max" when max is known from the
+  // periodic stream; falls back to bare "n" when this slow record
+  // arrived before any per-process sample. For completed records
+  // we show both boundary values; for active records only start.
+  const lastSample = (proc && proc.samples && proc.samples.length)
+    ? proc.samples[proc.samples.length - 1] : null;
+  const threadsMax = (lastSample && lastSample.fields &&
+    lastSample.fields.request_threads_maximum) || 0;
+  const fmtConcurrency = (n) => threadsMax
+    ? `${n} / ${threadsMax}` : `${n}`;
+  let concurrencyLine = null;
+  if (e.active_at_start) {
+    if (e.state === 1 && e.active_at_completion) {
+      concurrencyLine = `${fmtConcurrency(e.active_at_start)} at start ` +
+        `&rarr; ${fmtConcurrency(e.active_at_completion)} at completion`;
+    } else {
+      concurrencyLine = `${fmtConcurrency(e.active_at_start)} at start`;
+      if (e.state === 0)
+        concurrencyLine += ` <span class="label">(in flight)</span>`;
+    }
+  }
+  const concurrencyRow = concurrencyLine
+    ? `<div class="label">Concurrency</div><div>${concurrencyLine}</div>`
+    : "";
   return `<div class="slow-details">
     <div class="label">Process</div>
     <div>${processLine}</div>
@@ -2021,6 +2047,7 @@ function renderSlowExpandPanel(e) {
     <div class="label">Log ID</div>
     <div>${escapeHtml(e.log_id || "—")}</div>
     ${phaseRow}
+    ${concurrencyRow}
     <div class="label">Body in</div>
     <div>${fmtIO(inBytes, inCalls, inAvg, "reads")}${
       e.state === 0 ? ioBadge : ""}</div>

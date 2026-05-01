@@ -272,6 +272,25 @@ def test_roundtrip_slow_request_phase_timings():
     assert got.fields["slow_application_time_us"] == 5_650_000
 
 
+def test_roundtrip_slow_request_concurrency():
+    # Concurrency context: in-flight count at slot claim and at
+    # completion. active_at_completion is 0 for active records by
+    # definition; here we exercise a completed record so both fields
+    # carry non-zero values.
+    fields = {
+        "slow_record_state": 1,
+        "slow_duration_us": 4_000_000,
+        "slow_thread_id": 6,
+        "slow_active_at_start": 12,
+        "slow_active_at_completion": 9,
+    }
+    s = Sample(version=1, kind=KIND_SLOW_REQUEST, pid=9292, seq=13,
+               stamp_us=1_700_000_000_000_000, fields=fields)
+    got = decode(encode(s))
+    assert got.fields["slow_active_at_start"] == 12
+    assert got.fields["slow_active_at_completion"] == 9
+
+
 def test_rejects_bad_magic():
     s = Sample(version=1, kind=KIND_REQUEST, pid=1, seq=1,
                stamp_us=0, fields={"request_count": 1})

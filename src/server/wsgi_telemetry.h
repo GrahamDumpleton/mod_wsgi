@@ -285,6 +285,9 @@
 #define WSGI_METRICS_F_SLOW_CPU_USER_US           250   /* u64 */
 #define WSGI_METRICS_F_SLOW_CPU_SYSTEM_US         251   /* u64 */
 
+#define WSGI_METRICS_F_SLOW_ACTIVE_AT_START       260   /* u64 — wsgi_active_requests including this one */
+#define WSGI_METRICS_F_SLOW_ACTIVE_AT_COMPLETION  261   /* u64 — 0 for active records */
+
 /* ------------------------------------------------------------------------- */
 
 /*
@@ -458,6 +461,16 @@ typedef struct {
     uint64_t queue_time_us;
     uint64_t daemon_time_us;
     uint64_t application_time_us;
+
+    /* Concurrency context — number of in-flight requests in this
+     * process (= wsgi_active_requests including this one) at slot
+     * claim and at completion. active_at_completion is zero for
+     * active records, by definition (the request hasn't completed
+     * yet). Used together with the per-process request_threads_maximum
+     * from the periodic stream to render an "n / max" saturation
+     * indicator on the slow-record detail panel. */
+    uint64_t active_at_start;
+    uint64_t active_at_completion;
 
     /* Final HTTP response status (e.g. 200, 404, 500). Zero for active
      * records — start_response may not have been called yet. */

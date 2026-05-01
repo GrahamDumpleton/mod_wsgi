@@ -130,6 +130,14 @@ class SlowEntry:
     queue_time_us: int = 0
     daemon_time_us: int = 0
     application_time_us: int = 0
+    # Concurrency context — wsgi_active_requests including this one
+    # at slot claim and at completion. active_at_completion is 0 for
+    # active records by definition (the request hasn't finished).
+    # Used together with the per-process request_threads_maximum
+    # from the periodic stream to render an "n / max" saturation
+    # indicator on the slow-record detail panel.
+    active_at_start: int = 0
+    active_at_completion: int = 0
     status: int = 0            # 0 = not yet known, else final WSGI status
     last_seen: float = 0.0
 
@@ -156,6 +164,8 @@ class SlowEntry:
             "queue_time_us": self.queue_time_us,
             "daemon_time_us": self.daemon_time_us,
             "application_time_us": self.application_time_us,
+            "active_at_start": self.active_at_start,
+            "active_at_completion": self.active_at_completion,
             "status": self.status,
         }
 
@@ -418,6 +428,8 @@ class Ingester:
             queue_time_us=int(f.get("slow_queue_time_us") or 0),
             daemon_time_us=int(f.get("slow_daemon_time_us") or 0),
             application_time_us=int(f.get("slow_application_time_us") or 0),
+            active_at_start=int(f.get("slow_active_at_start") or 0),
+            active_at_completion=int(f.get("slow_active_at_completion") or 0),
             status=int(f.get("slow_status") or 0),
             last_seen=time.monotonic(),
         )

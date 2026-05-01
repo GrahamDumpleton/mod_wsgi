@@ -204,6 +204,12 @@ typedef struct
     apr_time_t application_start_us;
     apr_time_t application_finish_us;
 
+    /* In-flight request count (= wsgi_active_requests including this
+     * one) at slot claim. Snapshotted into the slow record at
+     * completion alongside the live wsgi_active_requests value to give
+     * the "saturation when this request was running" picture. */
+    uint64_t   active_at_start;
+
     /* Per-request I/O counters, written by wsgi_record_request_times
      * once the adapter knows the final read/write totals and consumed
      * by wsgi_end_request when snapshotting a slow-completion record.
@@ -572,6 +578,11 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
             slot->daemon_start_us = config ? config->daemon_start : 0;
             slot->application_start_us = 0;
             slot->application_finish_us = 0;
+
+            /* wsgi_utilization_time_locked(1, ...) above already
+             * incremented wsgi_active_requests, so this snapshot
+             * reflects the in-flight count *including* this request. */
+            slot->active_at_start = (uint64_t)wsgi_active_requests;
         }
     }
 
@@ -693,6 +704,11 @@ void wsgi_end_request(void)
                 rec.cpu_user_us = (uint64_t)(cpu_user_delta * 1.0e6);
                 rec.cpu_system_us = (uint64_t)(cpu_system_delta * 1.0e6);
                 rec.status = (uint16_t)slot->last_status;
+                rec.active_at_start = slot->active_at_start;
+                /* wsgi_active_requests still includes this request at
+                 * this point; the matching decrement happens below in
+                 * wsgi_utilization_time_locked(-1, ...). */
+                rec.active_at_completion = (uint64_t)wsgi_active_requests;
                 wsgi_slow_fill_phase_durations(&rec, slot, now);
                 wsgi_slow_snapshot_fields(&rec, slot->r);
                 wsgi_slow_push_completed_locked(&rec);
@@ -1412,6 +1428,10 @@ int wsgi_metrics_snapshot_slow_active(wsgi_slow_request_t *out, int out_cap,
         rec->input_reads = (uint64_t)slot->io_input_reads;
         rec->output_bytes = (uint64_t)slot->io_output_bytes;
         rec->output_writes = (uint64_t)slot->io_output_writes;
+        rec->active_at_start = slot->active_at_start;
+        /* active_at_completion is unset for in-flight records by
+         * definition (they haven't completed); leave at 0 from the
+         * memset above. */
         wsgi_slow_fill_phase_durations(rec, slot, now_us);
         wsgi_slow_snapshot_fields(rec, slot->r);
 

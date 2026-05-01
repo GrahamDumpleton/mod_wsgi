@@ -362,6 +362,12 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
         "slow_queue_time_us": queue_us,
         "slow_daemon_time_us": daemon_us,
         "slow_application_time_us": application_us,
+        # Synthesise plausible concurrency: pretend a 15-thread worker
+        # with 2-12 in flight at slot claim, drifting up or down a
+        # little by completion. Exercises the saturation indicator.
+        "slow_active_at_start": random.randint(2, 12),
+        "slow_active_at_completion": (
+            random.randint(2, 12) if state == 1 else 0),
         "slow_status": slow_status,
     }
     return Sample(
