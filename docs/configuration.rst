@@ -50,6 +50,7 @@ Python environment
    configuration-directives/WSGIPythonHashSeed
    configuration-directives/WSGIPythonWarnings
    configuration-directives/WSGIDontWriteBytecode
+   configuration-directives/WSGISwitchInterval
 
 Authentication and access control
 ---------------------------------
@@ -134,5 +135,6 @@ Alphabetical index
 * :doc:`configuration-directives/WSGIScriptReloading`
 * :doc:`configuration-directives/WSGISocketPrefix`
 * :doc:`configuration-directives/WSGISocketRotation`
+* :doc:`configuration-directives/WSGISwitchInterval`
 * :doc:`configuration-directives/WSGITrustedProxies`
 * :doc:`configuration-directives/WSGITrustedProxyHeaders`

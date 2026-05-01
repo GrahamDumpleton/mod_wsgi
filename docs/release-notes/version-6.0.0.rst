@@ -62,6 +62,13 @@ New Features
   operators who want injection-based recovery opt in explicitly.
   Daemon mode only; embedded mode is unchanged.
 
+* New ``WSGISwitchInterval`` directive sets the Python GIL switch
+  interval (``sys.setswitchinterval()``) for the embedded interpreter
+  at process start. The matching ``switch-interval=`` option on
+  ``WSGIDaemonProcess`` does the same for daemon-mode interpreters,
+  and can be set per daemon group. ``mod_wsgi-express`` exposes
+  ``--switch-interval`` which applies the value to both modes.
+
 Features Changed
 ----------------
 

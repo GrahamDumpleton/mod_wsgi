@@ -287,6 +287,19 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     This option is the daemon-mode equivalent of the WSGIPythonEggs
     directive. See :doc:`WSGIPythonEggs` for the full description.
 
+.. _switch-interval:
+
+**switch-interval=seconds**
+    Override the Python GIL switch interval for the daemon process by
+    calling ``sys.setswitchinterval()`` once at process start. The
+    value is a positive number of seconds expressed as a float (the
+    same form ``sys.setswitchinterval()`` accepts), for example
+    ``switch-interval=0.002`` to set it to 2 ms.
+
+    This option is the daemon-mode equivalent of the
+    :doc:`WSGISwitchInterval` directive. See :doc:`WSGISwitchInterval`
+    for the full description.
+
 .. _restart-interval:
 
 **restart-interval=sss**
