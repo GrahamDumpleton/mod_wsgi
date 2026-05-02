@@ -4975,3 +4975,34 @@ WSGI0192 — Unable to create thread state to destroy sub-interpreter
    cause and the OS reclaims the process shortly afterwards. If
    recurrent, investigate why the process is exhausting memory
    before exit.
+
+.. _WSGI0193:
+
+WSGI0193 — Unable to allocate interpreters dictionary
+-----------------------------------------------------
+
+:Severity: CRIT
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to allocate interpreters dictionary for <process-context>;
+   Python based handlers will not be available.`` Process context is
+   ``embedded mode`` or ``daemon process '<group>'``.
+
+:Cause:
+   ``PyDict_New()`` returned ``NULL`` during ``wsgi_python_child_init``
+   when constructing the per-process map of interpreter wrappers.
+   Almost always a Python heap allocation failure at the C level
+   during process startup.
+
+:Outcome:
+   Python initialisation aborts; the process refuses to handle Python
+   requests for the remainder of its lifetime. Apache treats this as
+   a startup failure and any request that would have been handled by
+   mod_wsgi gets a 500 internal server error.
+
+:Operator action:
+   Check free memory on the host at the time the process started.
+   If recurrent, reduce per-process configuration that consumes
+   memory at startup (large ``WSGIPythonPath``, eager imports via
+   ``WSGIImportScript``).

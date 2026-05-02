@@ -645,6 +645,8 @@ InterpreterObject *newInterpreterObject(const char *name)
      */
 
     item = PyCodec_Encoder("ascii");
+    if (!item)
+        PyErr_Clear();
     Py_XDECREF(item);
 
     /*
@@ -1724,7 +1726,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
     {
         PyObject *res = NULL;
         Py_INCREF(exitfunc);
-        PySys_SetObject("exitfunc", (PyObject *)NULL);
         res = PyObject_CallObject(exitfunc, (PyObject *)NULL);
 
         if (res == NULL)
@@ -2758,7 +2759,8 @@ load_source_finally:
         {
             object = PyLong_FromLongLong(r->finfo.mtime);
         }
-        wsgi_module_add_object(m, "__mtime__", object);
+        if (wsgi_module_add_object(m, "__mtime__", object) < 0)
+            PyErr_Clear();
     }
     else
     {
@@ -2813,6 +2815,8 @@ int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
     if (object)
     {
         mtime = PyLong_AsLongLong(object);
+        if (PyErr_Occurred())
+            PyErr_Clear();
 
         if (!r || strcmp(r->filename, filename))
         {
@@ -2847,10 +2851,12 @@ int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
 
             Py_INCREF(object);
             path = PyUnicode_DecodeFSDefault(resource);
-            args = Py_BuildValue("(O)", path);
-            Py_DECREF(path);
-            result = PyObject_CallObject(object, args);
-            Py_DECREF(args);
+            if (path)
+                args = Py_BuildValue("(O)", path);
+            Py_XDECREF(path);
+            if (args)
+                result = PyObject_CallObject(object, args);
+            Py_XDECREF(args);
             Py_DECREF(object);
 
             if (result)
@@ -3123,6 +3129,22 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
     /* Initialise Python interpreter instance table and lock. */
 
     wsgi_interpreters = PyDict_New();
+
+    if (!wsgi_interpreters)
+    {
+        wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server,
+                              WSGI_APLOGNO(0193) "Unable to allocate "
+                                                 "interpreters dictionary "
+                                                 "for %s; Python based "
+                                                 "handlers will not be "
+                                                 "available.",
+                              wsgi_format_process_context(
+                                  wsgi_server->process->pool));
+        PyErr_Clear();
+        PyGILState_Release(state);
+        wsgi_python_initialized = 0;
+        return APR_EGENERAL;
+    }
 
 #if APR_HAS_THREADS
     apr_thread_mutex_create(&wsgi_interp_lock, APR_THREAD_MUTEX_UNNESTED, p);
