@@ -89,6 +89,13 @@ static PyObject *Stream_iternext(StreamObject *self)
     PyObject *args = NULL;
     PyObject *result = NULL;
 
+    if (!self->filelike)
+    {
+        PyErr_SetString(PyExc_ValueError,
+                        "I/O operation on closed file");
+        return NULL;
+    }
+
     attribute = PyObject_GetAttrString((PyObject *)self, "filelike");
 
     if (!attribute)
@@ -188,6 +195,13 @@ static PyObject *Stream_close(StreamObject *self, PyObject *Py_UNUSED(args))
 
 static PyObject *Stream_get_filelike(StreamObject *self, void *Py_UNUSED(closure))
 {
+    if (!self->filelike)
+    {
+        PyErr_SetString(PyExc_ValueError,
+                        "I/O operation on closed file");
+        return NULL;
+    }
+
     Py_INCREF(self->filelike);
     return self->filelike;
 }
