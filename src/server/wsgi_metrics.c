@@ -2133,13 +2133,32 @@ static int wsgi_dict_set_long_list(PyObject *dict, PyObject *key,
     return wsgi_dict_set_steal(dict, key, lst);
 }
 
+static int wsgi_dict_set_minmax_or_none(PyObject *dict, PyObject *min_key,
+                                        PyObject *max_key,
+                                        apr_uint64_t min_us,
+                                        apr_uint64_t max_us)
+{
+    /* min_us == UINT64_MAX means the phase recorded no requests this
+     * interval — publish None for both keys so consumers can tell the
+     * "no data" case from a recorded zero. */
+    if (min_us == UINT64_MAX)
+    {
+        if (wsgi_dict_set_none(dict, min_key) < 0)
+            return -1;
+        return wsgi_dict_set_none(dict, max_key);
+    }
+    if (wsgi_dict_set_ulonglong(dict, min_key,
+                                (unsigned long long)min_us) < 0)
+        return -1;
+    return wsgi_dict_set_ulonglong(dict, max_key,
+                                   (unsigned long long)max_us);
+}
+
 /* ------------------------------------------------------------------------- */
 
 static PyObject *wsgi_request_metrics(void)
 {
     PyObject *result = NULL;
-
-    PyObject *object = NULL;
 
     apr_time_t stop_time;
     double stop_request_busy_time = 0.0;
@@ -2294,6 +2313,8 @@ static PyObject *wsgi_request_metrics(void)
     }
 
     result = PyDict_New();
+    if (!result)
+        return NULL;
 
     stop_time = apr_time_now();
 
@@ -2564,317 +2585,41 @@ static PyObject *wsgi_request_metrics(void)
 
     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
-    object = PyLong_FromLong(getpid());
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(pid), object);
-    Py_DECREF(object);
-
-    object = PyFloat_FromDouble(apr_time_sec((double)start_time));
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(start_time), object);
-    Py_DECREF(object);
-
-    object = PyFloat_FromDouble(apr_time_sec((double)stop_time));
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(stop_time), object);
-    Py_DECREF(object);
-
+    /* Compute derived values used as inputs to several publishes, plus
+     * the per-slot active-thread count, before any Python construction
+     * begins so the publish path is purely "encode + dict-set". */
     sample_period = (apr_time_sec((double)stop_time) -
                      apr_time_sec((double)start_time));
 
-    object = PyFloat_FromDouble(sample_period);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(sample_period), object);
-    Py_DECREF(object);
-
-#ifdef HAVE_TIMES
-    cpu_user_time = ((stop_cpu_user_time - start_cpu_user_time) /
-                     sample_period);
-    cpu_system_time = ((stop_cpu_system_time - start_cpu_system_time) /
-                       sample_period);
-
-    total_cpu_time = cpu_user_time + cpu_system_time;
-
-    object = PyFloat_FromDouble(cpu_user_time);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_user_utilization), object);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_user_time), object);
-    Py_DECREF(object);
-
-    object = PyFloat_FromDouble(cpu_system_time);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_system_utilization), object);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_system_time), object);
-    Py_DECREF(object);
-
-    object = PyFloat_FromDouble(total_cpu_time);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_utilization), object);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_time), object);
-    Py_DECREF(object);
-#else
-    object = PyFloat_FromDouble(0.0);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_user_utilization), object);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_user_time), object);
-    Py_DECREF(object);
-
-    object = PyFloat_FromDouble(0.0);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_system_utilization), object);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_system_time), object);
-    Py_DECREF(object);
-
-    object = PyFloat_FromDouble(0.0);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_utilization), object);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_time), object);
-    Py_DECREF(object);
-#endif
-
-    object = PyLong_FromLongLong(wsgi_get_peak_memory_RSS());
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(memory_max_rss), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromLongLong(wsgi_get_current_memory_RSS());
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(memory_rss), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromLong(request_threads_maximum);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(request_threads_maximum), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromLong(wsgi_request_threads);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(request_threads_started), object);
-    Py_DECREF(object);
-
-    request_busy_time = stop_request_busy_time - start_request_busy_time;
-
-    capacity_utilization = (request_busy_time / sample_period /
-                            request_threads_maximum);
-
-    object = PyFloat_FromDouble(capacity_utilization);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(capacity_utilization), object);
-    Py_DECREF(object);
-
-    request_count = stop_request_count - start_request_count;
-
-    object = PyLong_FromLongLong(request_count);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(request_count), object);
-    Py_DECREF(object);
-
-    request_throughput = sample_period ? request_count / sample_period : 0;
-
-    object = PyFloat_FromDouble(request_throughput);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(request_throughput), object);
-    Py_DECREF(object);
-
-    /* Per-interval HTTP response class totals. status==0 (no
-     * start_response call) is folded into status_5xx; out-of-range
-     * values are silently dropped, so status_1xx + status_2xx +
-     * status_3xx + status_4xx + status_5xx == request_count for the
-     * same interval. */
-    object = PyLong_FromUnsignedLongLong(status_1xx_snap);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(status_1xx), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromUnsignedLongLong(status_2xx_snap);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(status_2xx), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromUnsignedLongLong(status_3xx_snap);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(status_3xx), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromUnsignedLongLong(status_4xx_snap);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(status_4xx), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromUnsignedLongLong(status_5xx_snap);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(status_5xx), object);
-    Py_DECREF(object);
-
-    /* Per-interval I/O byte and op totals across all completed requests
-     * in the interval. Mirrors the status counters above — drained from
-     * the same locked region. */
-    object = PyLong_FromUnsignedLongLong(input_bytes_snap);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(input_bytes), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromUnsignedLongLong(input_reads_snap);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(input_reads), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromUnsignedLongLong(output_bytes_snap);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(output_bytes), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromUnsignedLongLong(output_writes_snap);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(output_writes), object);
-    Py_DECREF(object);
-
-    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
-    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
-    {
-        PyList_SET_ITEM(object, i,
-                        PyLong_FromLong(server_time_buckets_snap[i]));
-    }
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(server_time_buckets), object);
-    Py_DECREF(object);
-
-    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
-    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
-    {
-        PyList_SET_ITEM(object, i,
-                        PyLong_FromLong(queue_time_buckets_snap[i]));
-    }
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(queue_time_buckets), object);
-    Py_DECREF(object);
-
-    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
-    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
-    {
-        PyList_SET_ITEM(object, i,
-                        PyLong_FromLong(daemon_time_buckets_snap[i]));
-    }
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(daemon_time_buckets), object);
-    Py_DECREF(object);
-
-    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
-    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
-    {
-        PyList_SET_ITEM(object, i,
-                        PyLong_FromLong(application_time_buckets_snap[i]));
-    }
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(application_time_buckets), object);
-    Py_DECREF(object);
-
-    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
-    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
-    {
-        PyList_SET_ITEM(object, i,
-                        PyLong_FromLong(request_time_buckets_snap[i]));
-    }
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(request_time_buckets), object);
-    Py_DECREF(object);
-
-    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
-    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
-    {
-        PyList_SET_ITEM(object, i,
-                        PyLong_FromLong(gil_wait_time_buckets_snap[i]));
-    }
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(gil_wait_time_buckets), object);
-    Py_DECREF(object);
-
-    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
-    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
-    {
-        PyList_SET_ITEM(object, i,
-                        PyLong_FromLong(input_read_time_buckets_snap[i]));
-    }
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(input_read_time_buckets), object);
-    Py_DECREF(object);
-
-    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
-    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
-    {
-        PyList_SET_ITEM(object, i,
-                        PyLong_FromLong(output_write_time_buckets_snap[i]));
-    }
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(output_write_time_buckets), object);
-    Py_DECREF(object);
-
-    object = PyList_New(request_threads_maximum);
-    for (i = 0; i < request_threads_maximum; i++)
-    {
-        PyList_SET_ITEM(object, i,
-                        PyLong_FromLong(slot_completed_snap[i]));
-        if (slot_completed_snap[i] || slot_current_ms_snap[i])
-            request_threads_active++;
-    }
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(request_threads_buckets), object);
-    Py_DECREF(object);
-
-    object = PyList_New(request_threads_maximum);
-    for (i = 0; i < request_threads_maximum; i++)
-        PyList_SET_ITEM(object, i,
-                        PyLong_FromLong(slot_busy_us_snap[i]));
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(slot_busy_time_us), object);
-    Py_DECREF(object);
-
-    object = PyList_New(request_threads_maximum);
-    for (i = 0; i < request_threads_maximum; i++)
-        PyList_SET_ITEM(object, i,
-                        PyLong_FromLong(slot_cpu_us_snap[i]));
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(slot_cpu_time_us), object);
-    Py_DECREF(object);
-
-    object = PyList_New(request_threads_maximum);
-    for (i = 0; i < request_threads_maximum; i++)
-        PyList_SET_ITEM(object, i,
-                        PyLong_FromLong(slot_current_ms_snap[i]));
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(slot_current_elapsed_ms), object);
-    Py_DECREF(object);
-
-    object = PyList_New(request_threads_maximum);
-    for (i = 0; i < request_threads_maximum; i++)
-        PyList_SET_ITEM(object, i,
-                        PyLong_FromLong(slot_max_ms_snap[i]));
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(slot_max_duration_ms), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromLong(request_threads_active);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(request_threads_active), object);
-    Py_DECREF(object);
-
+    /* The locked region above drained the per-interval aggregates so
+     * this interval is consumed; advancing the baselines here keeps
+     * the next call's rate metrics consistent with its per-phase means
+     * even if the publish phase below fails. */
     start_time = stop_time;
     start_request_busy_time = stop_request_busy_time;
     start_request_count = stop_request_count;
     start_cpu_user_time = stop_cpu_user_time;
     start_cpu_system_time = stop_cpu_system_time;
 
-    server_time_avg = 0;
-    queue_time_avg = 0;
-    daemon_time_avg = 0;
-    application_time_avg = 0;
-    request_time_avg = 0;
+#ifdef HAVE_TIMES
+    cpu_user_time = ((stop_cpu_user_time - start_cpu_user_time) /
+                     sample_period);
+    cpu_system_time = ((stop_cpu_system_time - start_cpu_system_time) /
+                       sample_period);
+    total_cpu_time = cpu_user_time + cpu_system_time;
+#endif
+
+    request_busy_time = stop_request_busy_time - start_request_busy_time;
+    capacity_utilization = (request_busy_time / sample_period /
+                            request_threads_maximum);
+    request_count = stop_request_count - start_request_count;
+    request_throughput = sample_period ? request_count / sample_period : 0;
+
+    for (i = 0; i < request_threads_maximum; i++)
+    {
+        if (slot_completed_snap[i] || slot_current_ms_snap[i])
+            request_threads_active++;
+    }
 
     if (interval_requests)
     {
@@ -2888,142 +2633,254 @@ static PyObject *wsgi_request_metrics(void)
         output_write_time_avg = output_write_time_total / interval_requests;
     }
 
-    object = PyFloat_FromDouble(server_time_avg);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(server_time), object);
-    Py_DECREF(object);
+    if (wsgi_dict_set_long(result, WSGI_INTERNED_STRING(pid), getpid()) < 0)
+        goto error;
+    if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(start_time),
+                             apr_time_sec((double)start_time)) < 0)
+        goto error;
+    if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(stop_time),
+                             apr_time_sec((double)stop_time)) < 0)
+        goto error;
+    if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(sample_period),
+                             sample_period) < 0)
+        goto error;
+
+    if (wsgi_dict_set_double(result,
+                             WSGI_INTERNED_STRING(cpu_user_utilization),
+                             cpu_user_time) < 0 ||
+        wsgi_dict_set_double(result, WSGI_INTERNED_STRING(cpu_user_time),
+                             cpu_user_time) < 0 ||
+        wsgi_dict_set_double(result,
+                             WSGI_INTERNED_STRING(cpu_system_utilization),
+                             cpu_system_time) < 0 ||
+        wsgi_dict_set_double(result, WSGI_INTERNED_STRING(cpu_system_time),
+                             cpu_system_time) < 0 ||
+        wsgi_dict_set_double(result,
+                             WSGI_INTERNED_STRING(cpu_utilization),
+                             total_cpu_time) < 0 ||
+        wsgi_dict_set_double(result, WSGI_INTERNED_STRING(cpu_time),
+                             total_cpu_time) < 0)
+        goto error;
+
+    if (wsgi_dict_set_longlong(result, WSGI_INTERNED_STRING(memory_max_rss),
+                               wsgi_get_peak_memory_RSS()) < 0 ||
+        wsgi_dict_set_longlong(result, WSGI_INTERNED_STRING(memory_rss),
+                               wsgi_get_current_memory_RSS()) < 0)
+        goto error;
+
+    if (wsgi_dict_set_long(result,
+                           WSGI_INTERNED_STRING(request_threads_maximum),
+                           request_threads_maximum) < 0 ||
+        wsgi_dict_set_long(result,
+                           WSGI_INTERNED_STRING(request_threads_started),
+                           wsgi_request_threads) < 0 ||
+        wsgi_dict_set_long(result,
+                           WSGI_INTERNED_STRING(request_threads_active),
+                           request_threads_active) < 0)
+        goto error;
+
+    if (wsgi_dict_set_double(result,
+                             WSGI_INTERNED_STRING(capacity_utilization),
+                             capacity_utilization) < 0 ||
+        wsgi_dict_set_longlong(result, WSGI_INTERNED_STRING(request_count),
+                               (long long)request_count) < 0 ||
+        wsgi_dict_set_double(result,
+                             WSGI_INTERNED_STRING(request_throughput),
+                             request_throughput) < 0)
+        goto error;
+
+    /* Per-interval HTTP response class totals. status==0 (no
+     * start_response call) is folded into status_5xx; out-of-range
+     * values are silently dropped, so status_1xx + status_2xx +
+     * status_3xx + status_4xx + status_5xx == request_count for the
+     * same interval. */
+    if (wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(status_1xx),
+                                status_1xx_snap) < 0 ||
+        wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(status_2xx),
+                                status_2xx_snap) < 0 ||
+        wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(status_3xx),
+                                status_3xx_snap) < 0 ||
+        wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(status_4xx),
+                                status_4xx_snap) < 0 ||
+        wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(status_5xx),
+                                status_5xx_snap) < 0)
+        goto error;
+
+    /* Per-interval I/O byte and op totals across all completed requests
+     * in the interval. Mirrors the status counters above — drained from
+     * the same locked region. */
+    if (wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(input_bytes),
+                                input_bytes_snap) < 0 ||
+        wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(input_reads),
+                                input_reads_snap) < 0 ||
+        wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(output_bytes),
+                                output_bytes_snap) < 0 ||
+        wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(output_writes),
+                                output_writes_snap) < 0)
+        goto error;
+
+    if (wsgi_dict_set_long_list(result,
+                                WSGI_INTERNED_STRING(server_time_buckets),
+                                server_time_buckets_snap,
+                                WSGI_TELEMETRY_BUCKET_COUNT) < 0 ||
+        wsgi_dict_set_long_list(result,
+                                WSGI_INTERNED_STRING(queue_time_buckets),
+                                queue_time_buckets_snap,
+                                WSGI_TELEMETRY_BUCKET_COUNT) < 0 ||
+        wsgi_dict_set_long_list(result,
+                                WSGI_INTERNED_STRING(daemon_time_buckets),
+                                daemon_time_buckets_snap,
+                                WSGI_TELEMETRY_BUCKET_COUNT) < 0 ||
+        wsgi_dict_set_long_list(result,
+                                WSGI_INTERNED_STRING(application_time_buckets),
+                                application_time_buckets_snap,
+                                WSGI_TELEMETRY_BUCKET_COUNT) < 0 ||
+        wsgi_dict_set_long_list(result,
+                                WSGI_INTERNED_STRING(request_time_buckets),
+                                request_time_buckets_snap,
+                                WSGI_TELEMETRY_BUCKET_COUNT) < 0 ||
+        wsgi_dict_set_long_list(result,
+                                WSGI_INTERNED_STRING(gil_wait_time_buckets),
+                                gil_wait_time_buckets_snap,
+                                WSGI_TELEMETRY_BUCKET_COUNT) < 0 ||
+        wsgi_dict_set_long_list(result,
+                                WSGI_INTERNED_STRING(input_read_time_buckets),
+                                input_read_time_buckets_snap,
+                                WSGI_TELEMETRY_BUCKET_COUNT) < 0 ||
+        wsgi_dict_set_long_list(result,
+                                WSGI_INTERNED_STRING(output_write_time_buckets),
+                                output_write_time_buckets_snap,
+                                WSGI_TELEMETRY_BUCKET_COUNT) < 0)
+        goto error;
+
+    if (wsgi_dict_set_long_list(result,
+                                WSGI_INTERNED_STRING(request_threads_buckets),
+                                slot_completed_snap,
+                                request_threads_maximum) < 0 ||
+        wsgi_dict_set_long_list(result,
+                                WSGI_INTERNED_STRING(slot_busy_time_us),
+                                slot_busy_us_snap,
+                                request_threads_maximum) < 0 ||
+        wsgi_dict_set_long_list(result,
+                                WSGI_INTERNED_STRING(slot_cpu_time_us),
+                                slot_cpu_us_snap,
+                                request_threads_maximum) < 0 ||
+        wsgi_dict_set_long_list(result,
+                                WSGI_INTERNED_STRING(slot_current_elapsed_ms),
+                                slot_current_ms_snap,
+                                request_threads_maximum) < 0 ||
+        wsgi_dict_set_long_list(result,
+                                WSGI_INTERNED_STRING(slot_max_duration_ms),
+                                slot_max_ms_snap,
+                                request_threads_maximum) < 0)
+        goto error;
+
+    if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(server_time),
+                             server_time_avg) < 0)
+        goto error;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process)
     {
-        object = PyFloat_FromDouble(queue_time_avg);
-        PyDict_SetItem(result,
-                       WSGI_INTERNED_STRING(queue_time), object);
-        Py_DECREF(object);
-
-        object = PyFloat_FromDouble(daemon_time_avg);
-        PyDict_SetItem(result,
-                       WSGI_INTERNED_STRING(daemon_time), object);
-        Py_DECREF(object);
+        if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(queue_time),
+                                 queue_time_avg) < 0 ||
+            wsgi_dict_set_double(result, WSGI_INTERNED_STRING(daemon_time),
+                                 daemon_time_avg) < 0)
+            goto error;
     }
     else
-    {
-        PyDict_SetItem(result,
-                       WSGI_INTERNED_STRING(queue_time), Py_None);
-        PyDict_SetItem(result,
-                       WSGI_INTERNED_STRING(daemon_time), Py_None);
-    }
-#else
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(queue_time), Py_None);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(daemon_time), Py_None);
 #endif
+    {
+        if (wsgi_dict_set_none(result, WSGI_INTERNED_STRING(queue_time)) < 0 ||
+            wsgi_dict_set_none(result, WSGI_INTERNED_STRING(daemon_time)) < 0)
+            goto error;
+    }
 
-    object = PyFloat_FromDouble(application_time_avg);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(application_time), object);
-    Py_DECREF(object);
-
-    object = PyFloat_FromDouble(request_time_avg);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(request_time), object);
-    Py_DECREF(object);
+    if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(application_time),
+                             application_time_avg) < 0 ||
+        wsgi_dict_set_double(result, WSGI_INTERNED_STRING(request_time),
+                             request_time_avg) < 0)
+        goto error;
 
     /* Cross-cutting overlap means. Same per-tick mean shape as the phase
      * means above (total time across completions divided by request
      * count); not addends in the request_time invariant. gil_wait_count
      * is the interval count of recorded GIL re-acquire events — useful
      * for normalising gil_wait_time to a mean wait per acquire. */
-    object = PyFloat_FromDouble(gil_wait_time_avg);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(gil_wait_time), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromUnsignedLongLong(gil_wait_count_snap);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(gil_wait_count), object);
-    Py_DECREF(object);
-
-    object = PyFloat_FromDouble(input_read_time_avg);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(input_read_time), object);
-    Py_DECREF(object);
-
-    object = PyFloat_FromDouble(output_write_time_avg);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(output_write_time), object);
-    Py_DECREF(object);
+    if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(gil_wait_time),
+                             gil_wait_time_avg) < 0 ||
+        wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(gil_wait_count),
+                                gil_wait_count_snap) < 0 ||
+        wsgi_dict_set_double(result, WSGI_INTERNED_STRING(input_read_time),
+                             input_read_time_avg) < 0 ||
+        wsgi_dict_set_double(result, WSGI_INTERNED_STRING(output_write_time),
+                             output_write_time_avg) < 0)
+        goto error;
 
     /* Per-phase exact min/max for the interval, in microseconds. None
      * for both keys if the phase did not record any requests this tick
      * (the min accumulator still holds its UINT64_MAX sentinel).
      * queue_time and daemon_time are also None for non-daemon
      * configurations, matching the corresponding mean entries above. */
-#define WSGI_PUBLISH_PHASE_MINMAX(min_key, max_key, min_us, max_us)             \
-    do                                                                          \
-    {                                                                           \
-        if ((min_us) == UINT64_MAX)                                             \
-        {                                                                       \
-            PyDict_SetItem(result, WSGI_INTERNED_STRING(min_key), Py_None);     \
-            PyDict_SetItem(result, WSGI_INTERNED_STRING(max_key), Py_None);     \
-        }                                                                       \
-        else                                                                    \
-        {                                                                       \
-            object = PyLong_FromUnsignedLongLong((unsigned long long)(min_us)); \
-            PyDict_SetItem(result, WSGI_INTERNED_STRING(min_key), object);      \
-            Py_DECREF(object);                                                  \
-            object = PyLong_FromUnsignedLongLong((unsigned long long)(max_us)); \
-            PyDict_SetItem(result, WSGI_INTERNED_STRING(max_key), object);      \
-            Py_DECREF(object);                                                  \
-        }                                                                       \
-    } while (0)
-
-    WSGI_PUBLISH_PHASE_MINMAX(server_time_min_us, server_time_max_us,
-                              server_time_min_snap_us, server_time_max_snap_us);
-    WSGI_PUBLISH_PHASE_MINMAX(application_time_min_us, application_time_max_us,
-                              application_time_min_snap_us,
-                              application_time_max_snap_us);
-    WSGI_PUBLISH_PHASE_MINMAX(request_time_min_us, request_time_max_us,
-                              request_time_min_snap_us,
-                              request_time_max_snap_us);
-    WSGI_PUBLISH_PHASE_MINMAX(gil_wait_time_min_us, gil_wait_time_max_us,
-                              gil_wait_time_min_snap_us,
-                              gil_wait_time_max_snap_us);
-    WSGI_PUBLISH_PHASE_MINMAX(input_read_time_min_us, input_read_time_max_us,
-                              input_read_time_min_snap_us,
-                              input_read_time_max_snap_us);
-    WSGI_PUBLISH_PHASE_MINMAX(output_write_time_min_us,
-                              output_write_time_max_us,
-                              output_write_time_min_snap_us,
-                              output_write_time_max_snap_us);
+    if (wsgi_dict_set_minmax_or_none(
+            result, WSGI_INTERNED_STRING(server_time_min_us),
+            WSGI_INTERNED_STRING(server_time_max_us),
+            server_time_min_snap_us, server_time_max_snap_us) < 0 ||
+        wsgi_dict_set_minmax_or_none(
+            result, WSGI_INTERNED_STRING(application_time_min_us),
+            WSGI_INTERNED_STRING(application_time_max_us),
+            application_time_min_snap_us, application_time_max_snap_us) < 0 ||
+        wsgi_dict_set_minmax_or_none(
+            result, WSGI_INTERNED_STRING(request_time_min_us),
+            WSGI_INTERNED_STRING(request_time_max_us),
+            request_time_min_snap_us, request_time_max_snap_us) < 0 ||
+        wsgi_dict_set_minmax_or_none(
+            result, WSGI_INTERNED_STRING(gil_wait_time_min_us),
+            WSGI_INTERNED_STRING(gil_wait_time_max_us),
+            gil_wait_time_min_snap_us, gil_wait_time_max_snap_us) < 0 ||
+        wsgi_dict_set_minmax_or_none(
+            result, WSGI_INTERNED_STRING(input_read_time_min_us),
+            WSGI_INTERNED_STRING(input_read_time_max_us),
+            input_read_time_min_snap_us, input_read_time_max_snap_us) < 0 ||
+        wsgi_dict_set_minmax_or_none(
+            result, WSGI_INTERNED_STRING(output_write_time_min_us),
+            WSGI_INTERNED_STRING(output_write_time_max_us),
+            output_write_time_min_snap_us,
+            output_write_time_max_snap_us) < 0)
+        goto error;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process)
     {
-        WSGI_PUBLISH_PHASE_MINMAX(queue_time_min_us, queue_time_max_us,
-                                  queue_time_min_snap_us,
-                                  queue_time_max_snap_us);
-        WSGI_PUBLISH_PHASE_MINMAX(daemon_time_min_us, daemon_time_max_us,
-                                  daemon_time_min_snap_us,
-                                  daemon_time_max_snap_us);
+        if (wsgi_dict_set_minmax_or_none(
+                result, WSGI_INTERNED_STRING(queue_time_min_us),
+                WSGI_INTERNED_STRING(queue_time_max_us),
+                queue_time_min_snap_us, queue_time_max_snap_us) < 0 ||
+            wsgi_dict_set_minmax_or_none(
+                result, WSGI_INTERNED_STRING(daemon_time_min_us),
+                WSGI_INTERNED_STRING(daemon_time_max_us),
+                daemon_time_min_snap_us, daemon_time_max_snap_us) < 0)
+            goto error;
     }
     else
 #endif
     {
-        PyDict_SetItem(result,
-                       WSGI_INTERNED_STRING(queue_time_min_us), Py_None);
-        PyDict_SetItem(result,
-                       WSGI_INTERNED_STRING(queue_time_max_us), Py_None);
-        PyDict_SetItem(result,
-                       WSGI_INTERNED_STRING(daemon_time_min_us), Py_None);
-        PyDict_SetItem(result,
-                       WSGI_INTERNED_STRING(daemon_time_max_us), Py_None);
+        if (wsgi_dict_set_none(result,
+                               WSGI_INTERNED_STRING(queue_time_min_us)) < 0 ||
+            wsgi_dict_set_none(result,
+                               WSGI_INTERNED_STRING(queue_time_max_us)) < 0 ||
+            wsgi_dict_set_none(result,
+                               WSGI_INTERNED_STRING(daemon_time_min_us)) < 0 ||
+            wsgi_dict_set_none(result,
+                               WSGI_INTERNED_STRING(daemon_time_max_us)) < 0)
+            goto error;
     }
 
-#undef WSGI_PUBLISH_PHASE_MINMAX
-
     return result;
+
+error:
+    Py_DECREF(result);
+    return NULL;
 }
 
 PyMethodDef wsgi_request_metrics_method[] = {
