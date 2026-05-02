@@ -3042,10 +3042,10 @@ PyMethodDef wsgi_process_metrics_method[] = {
 static PyObject *wsgi_server_metrics(void)
 {
     PyObject *scoreboard_dict = NULL;
-
     PyObject *process_list = NULL;
-
-    PyObject *object = NULL;
+    PyObject *process_dict = NULL;
+    PyObject *worker_list = NULL;
+    PyObject *worker_dict = NULL;
 
     apr_time_t current_time;
     apr_interval_time_t running_time;
@@ -3082,163 +3082,138 @@ static PyObject *wsgi_server_metrics(void)
     if (!gs_record)
         Py_RETURN_NONE;
 
-    /* Return everything in a dictionary. Start with global. */
-
     scoreboard_dict = PyDict_New();
-
-    object = PyLong_FromLong(gs_record->server_limit);
-    PyDict_SetItem(scoreboard_dict,
-                   WSGI_INTERNED_STRING(server_limit), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromLong(gs_record->thread_limit);
-    PyDict_SetItem(scoreboard_dict,
-                   WSGI_INTERNED_STRING(thread_limit), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromLong(gs_record->running_generation);
-    PyDict_SetItem(scoreboard_dict,
-                   WSGI_INTERNED_STRING(running_generation), object);
-    Py_DECREF(object);
-
-    object = PyFloat_FromDouble(apr_time_sec((
-                                                 double)gs_record->restart_time));
-    PyDict_SetItem(scoreboard_dict,
-                   WSGI_INTERNED_STRING(restart_time), object);
-    Py_DECREF(object);
+    if (!scoreboard_dict)
+        return NULL;
 
     current_time = apr_time_now();
-
-    object = PyFloat_FromDouble(apr_time_sec((double)current_time));
-    PyDict_SetItem(scoreboard_dict,
-                   WSGI_INTERNED_STRING(current_time), object);
-    Py_DECREF(object);
-
     running_time = apr_time_sec((double)current_time -
                                 ap_scoreboard_image->global->restart_time);
 
-    object = PyLong_FromLongLong(running_time);
-    PyDict_SetItem(scoreboard_dict,
-                   WSGI_INTERNED_STRING(running_time), object);
-    Py_DECREF(object);
-
-    /* Now add in the processes/workers. */
+    if (wsgi_dict_set_long(scoreboard_dict,
+                           WSGI_INTERNED_STRING(server_limit),
+                           gs_record->server_limit) < 0 ||
+        wsgi_dict_set_long(scoreboard_dict,
+                           WSGI_INTERNED_STRING(thread_limit),
+                           gs_record->thread_limit) < 0 ||
+        wsgi_dict_set_long(scoreboard_dict,
+                           WSGI_INTERNED_STRING(running_generation),
+                           gs_record->running_generation) < 0 ||
+        wsgi_dict_set_double(scoreboard_dict,
+                             WSGI_INTERNED_STRING(restart_time),
+                             apr_time_sec(
+                                 (double)gs_record->restart_time)) < 0 ||
+        wsgi_dict_set_double(scoreboard_dict,
+                             WSGI_INTERNED_STRING(current_time),
+                             apr_time_sec((double)current_time)) < 0 ||
+        wsgi_dict_set_longlong(scoreboard_dict,
+                               WSGI_INTERNED_STRING(running_time),
+                               (long long)running_time) < 0)
+        goto error;
 
     process_list = PyList_New(0);
+    if (!process_list)
+        goto error;
 
     for (i = 0; i < gs_record->server_limit; ++i)
     {
-        PyObject *process_dict = NULL;
-        PyObject *worker_list = NULL;
-
         ps_record = ap_get_scoreboard_process(i);
 
         process_dict = PyDict_New();
-        PyList_Append(process_list, process_dict);
+        if (!process_dict)
+            goto error;
 
-        object = PyLong_FromLong(i);
-        PyDict_SetItem(process_dict,
-                       WSGI_INTERNED_STRING(process_num), object);
-        Py_DECREF(object);
-
-        object = PyLong_FromLong(ps_record->pid);
-        PyDict_SetItem(process_dict,
-                       WSGI_INTERNED_STRING(pid), object);
-        Py_DECREF(object);
-
-        object = PyLong_FromLong(ps_record->generation);
-        PyDict_SetItem(process_dict,
-                       WSGI_INTERNED_STRING(generation), object);
-        Py_DECREF(object);
-
-        object = PyBool_FromLong(ps_record->quiescing);
-        PyDict_SetItem(process_dict,
-                       WSGI_INTERNED_STRING(quiescing), object);
-        Py_DECREF(object);
+        if (wsgi_dict_set_long(process_dict,
+                               WSGI_INTERNED_STRING(process_num), i) < 0 ||
+            wsgi_dict_set_long(process_dict, WSGI_INTERNED_STRING(pid),
+                               ps_record->pid) < 0 ||
+            wsgi_dict_set_long(process_dict,
+                               WSGI_INTERNED_STRING(generation),
+                               ps_record->generation) < 0 ||
+            wsgi_dict_set_bool(process_dict,
+                               WSGI_INTERNED_STRING(quiescing),
+                               ps_record->quiescing) < 0)
+            goto error;
 
         worker_list = PyList_New(0);
-        PyDict_SetItem(process_dict,
-                       WSGI_INTERNED_STRING(workers), worker_list);
+        if (!worker_list)
+            goto error;
 
         for (j = 0; j < gs_record->thread_limit; ++j)
         {
-            PyObject *worker_dict = NULL;
-
             ws_record = ap_get_scoreboard_worker_from_indexes(i, j);
 
             worker_dict = PyDict_New();
+            if (!worker_dict)
+                goto error;
 
-            PyList_Append(worker_list, worker_dict);
+            if (wsgi_dict_set_long(worker_dict,
+                                   WSGI_INTERNED_STRING(thread_num),
+                                   ws_record->thread_num) < 0 ||
+                wsgi_dict_set_long(worker_dict,
+                                   WSGI_INTERNED_STRING(generation),
+                                   ws_record->generation) < 0 ||
+                wsgi_dict_set_borrowed(worker_dict,
+                                       WSGI_INTERNED_STRING(status),
+                                       wsgi_status_flags[ws_record->status]) < 0 ||
+                wsgi_dict_set_long(worker_dict,
+                                   WSGI_INTERNED_STRING(access_count),
+                                   ws_record->access_count) < 0 ||
+                wsgi_dict_set_ulonglong(worker_dict,
+                                        WSGI_INTERNED_STRING(bytes_served),
+                                        ws_record->bytes_served) < 0 ||
+                wsgi_dict_set_double(worker_dict,
+                                     WSGI_INTERNED_STRING(start_time),
+                                     apr_time_sec(
+                                         (double)ws_record->start_time)) < 0 ||
+                wsgi_dict_set_double(worker_dict,
+                                     WSGI_INTERNED_STRING(stop_time),
+                                     apr_time_sec(
+                                         (double)ws_record->stop_time)) < 0 ||
+                wsgi_dict_set_double(worker_dict,
+                                     WSGI_INTERNED_STRING(last_used),
+                                     apr_time_sec(
+                                         (double)ws_record->last_used)) < 0 ||
+                wsgi_dict_set_latin1(worker_dict,
+                                     WSGI_INTERNED_STRING(client),
+                                     ws_record->client) < 0 ||
+                wsgi_dict_set_latin1(worker_dict,
+                                     WSGI_INTERNED_STRING(request),
+                                     ws_record->request) < 0 ||
+                wsgi_dict_set_latin1(worker_dict,
+                                     WSGI_INTERNED_STRING(vhost),
+                                     ws_record->vhost) < 0)
+                goto error;
 
-            object = PyLong_FromLong(ws_record->thread_num);
-            PyDict_SetItem(worker_dict,
-                           WSGI_INTERNED_STRING(thread_num), object);
-            Py_DECREF(object);
-
-            object = PyLong_FromLong(ws_record->generation);
-            PyDict_SetItem(worker_dict,
-                           WSGI_INTERNED_STRING(generation), object);
-            Py_DECREF(object);
-
-            object = wsgi_status_flags[ws_record->status];
-            PyDict_SetItem(worker_dict,
-                           WSGI_INTERNED_STRING(status), object);
-
-            object = PyLong_FromLong(ws_record->access_count);
-            PyDict_SetItem(worker_dict,
-                           WSGI_INTERNED_STRING(access_count), object);
-            Py_DECREF(object);
-
-            object = PyLong_FromUnsignedLongLong(ws_record->bytes_served);
-            PyDict_SetItem(worker_dict,
-                           WSGI_INTERNED_STRING(bytes_served), object);
-            Py_DECREF(object);
-
-            object = PyFloat_FromDouble(apr_time_sec(
-                (double)ws_record->start_time));
-            PyDict_SetItem(worker_dict,
-                           WSGI_INTERNED_STRING(start_time), object);
-            Py_DECREF(object);
-
-            object = PyFloat_FromDouble(apr_time_sec(
-                (double)ws_record->stop_time));
-            PyDict_SetItem(worker_dict,
-                           WSGI_INTERNED_STRING(stop_time), object);
-            Py_DECREF(object);
-
-            object = PyFloat_FromDouble(apr_time_sec(
-                (double)ws_record->last_used));
-            PyDict_SetItem(worker_dict,
-                           WSGI_INTERNED_STRING(last_used), object);
-            Py_DECREF(object);
-
-            object = PyUnicode_DecodeLatin1(ws_record->client, strlen(ws_record->client), NULL);
-            PyDict_SetItem(worker_dict,
-                           WSGI_INTERNED_STRING(client), object);
-            Py_DECREF(object);
-
-            object = PyUnicode_DecodeLatin1(ws_record->request, strlen(ws_record->request), NULL);
-            PyDict_SetItem(worker_dict,
-                           WSGI_INTERNED_STRING(request), object);
-            Py_DECREF(object);
-
-            object = PyUnicode_DecodeLatin1(ws_record->vhost, strlen(ws_record->vhost), NULL);
-            PyDict_SetItem(worker_dict,
-                           WSGI_INTERNED_STRING(vhost), object);
-            Py_DECREF(object);
-
-            Py_DECREF(worker_dict);
+            if (PyList_Append(worker_list, worker_dict) < 0)
+                goto error;
+            Py_CLEAR(worker_dict);
         }
 
-        Py_DECREF(worker_list);
-        Py_DECREF(process_dict);
+        if (PyDict_SetItem(process_dict, WSGI_INTERNED_STRING(workers),
+                           worker_list) < 0)
+            goto error;
+        Py_CLEAR(worker_list);
+
+        if (PyList_Append(process_list, process_dict) < 0)
+            goto error;
+        Py_CLEAR(process_dict);
     }
 
-    PyDict_SetItem(scoreboard_dict,
-                   WSGI_INTERNED_STRING(processes), process_list);
+    if (PyDict_SetItem(scoreboard_dict, WSGI_INTERNED_STRING(processes),
+                       process_list) < 0)
+        goto error;
     Py_DECREF(process_list);
 
     return scoreboard_dict;
+
+error:
+    Py_XDECREF(worker_dict);
+    Py_XDECREF(worker_list);
+    Py_XDECREF(process_dict);
+    Py_XDECREF(process_list);
+    Py_DECREF(scoreboard_dict);
+    return NULL;
 }
 
 /* ------------------------------------------------------------------------- */
