@@ -179,9 +179,12 @@ PyObject *newLogWrapperObject(PyObject *buffer)
     args = Py_BuildValue("(OssOOO)", buffer, "utf-8", "replace",
                          Py_None, Py_True, Py_True);
 
-    wrapper = PyObject_CallObject(object, args);
+    if (args)
+    {
+        wrapper = PyObject_CallObject(object, args);
+        Py_DECREF(args);
+    }
 
-    Py_DECREF(args);
     Py_DECREF(object);
     Py_DECREF(module);
 
@@ -509,6 +512,14 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
 
         item_args = PyTuple_Pack(1, item);
 
+        if (!item_args)
+        {
+            Py_DECREF(item);
+            Py_DECREF(iterator);
+
+            return NULL;
+        }
+
         result = Log_write(self, item_args);
 
         Py_DECREF(item_args);
@@ -520,6 +531,19 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
 
             return NULL;
         }
+    }
+
+    /*
+     * PyIter_Next returns NULL for both "iteration complete" and
+     * "error raised during iteration"; surface the latter as a
+     * failed writelines() rather than silently returning None.
+     */
+
+    if (PyErr_Occurred())
+    {
+        Py_DECREF(iterator);
+
+        return NULL;
     }
 
     Py_DECREF(iterator);
