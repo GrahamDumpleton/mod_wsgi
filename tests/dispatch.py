@@ -29,6 +29,13 @@ def process_group(environ):
 
 
 def application_group(environ):
+    # Tests that need a named sub-interpreter (rather than the
+    # daemon's main interpreter) declare a path-prefix here. Without
+    # this override the static "%{GLOBAL}" on every WSGIScriptAlias
+    # would route the request to the main interpreter instead.
+    if environ.get("SCRIPT_NAME", "").startswith("/test/wsgi/sub-interpreter"):
+        return "test-subinterp"
+
     # Empty string resolves to the same application group as the
     # "%{GLOBAL}" placeholder used in the WSGIScriptAlias.
     return ""

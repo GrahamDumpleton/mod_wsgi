@@ -659,7 +659,8 @@ PyTypeObject Log_Type = {
 
 void wsgi_log_python_error_ex(const char *file, int line, int module_index,
                               request_rec *r, const char *filename,
-                              const char *application_group, int publish)
+                              const char *application_group, int publish,
+                              wsgi_log_python_phase phase)
 {
     PyObject *m = NULL;
     PyObject *result = NULL;
@@ -820,26 +821,60 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
     {
         char header[WSGI_LOG_BUFFER_SIZE];
 
-        if (r)
+        switch (phase)
         {
+        case WSGI_LOG_PYTHON_PHASE_INTERP_INIT:
             apr_snprintf(header, sizeof(header),
                          is_systemexit
-                             ? WSGI_APLOGNO(0175) "[script %s] SystemExit (%s) raised "
-                                                  "by WSGI script '%s' for %s ignored."
-                             : WSGI_APLOGNO(0174) "[script %s] Exception (%s) raised "
-                                                  "processing WSGI script '%s' for %s.",
-                         r->filename ? r->filename : "(unknown)",
-                         exception_type, filename, context);
-        }
-        else
-        {
+                             ? WSGI_APLOGNO(0189) "SystemExit (%s) raised "
+                                                  "during Python interpreter "
+                                                  "initialisation for %s; "
+                                                  "ignored."
+                             : WSGI_APLOGNO(0188) "Exception (%s) raised "
+                                                  "during Python interpreter "
+                                                  "initialisation for %s.",
+                         exception_type, context);
+            break;
+
+        case WSGI_LOG_PYTHON_PHASE_INTERP_ATEXIT:
             apr_snprintf(header, sizeof(header),
                          is_systemexit
-                             ? WSGI_APLOGNO(0175) "SystemExit (%s) raised by WSGI "
-                                                  "script '%s' for %s ignored."
-                             : WSGI_APLOGNO(0174) "Exception (%s) raised processing "
-                                                  "WSGI script '%s' for %s.",
-                         exception_type, filename, context);
+                             ? WSGI_APLOGNO(0097) "SystemExit (%s) raised "
+                                                  "by Python atexit "
+                                                  "functions during "
+                                                  "shutdown of %s; "
+                                                  "ignored."
+                             : WSGI_APLOGNO(0098) "Exception (%s) raised "
+                                                  "by Python atexit "
+                                                  "functions during "
+                                                  "shutdown of %s.",
+                         exception_type, context);
+            break;
+
+        case WSGI_LOG_PYTHON_PHASE_RUNNING:
+        default:
+            if (r)
+            {
+                apr_snprintf(header, sizeof(header),
+                             is_systemexit
+                                 ? WSGI_APLOGNO(0175) "[script %s] SystemExit (%s) raised "
+                                                      "by WSGI script '%s' for %s ignored."
+                                 : WSGI_APLOGNO(0174) "[script %s] Exception (%s) raised "
+                                                      "processing WSGI script '%s' for %s.",
+                             r->filename ? r->filename : "(unknown)",
+                             exception_type, filename, context);
+            }
+            else
+            {
+                apr_snprintf(header, sizeof(header),
+                             is_systemexit
+                                 ? WSGI_APLOGNO(0175) "SystemExit (%s) raised by WSGI "
+                                                      "script '%s' for %s ignored."
+                                 : WSGI_APLOGNO(0174) "Exception (%s) raised processing "
+                                                      "WSGI script '%s' for %s.",
+                             exception_type, filename, context);
+            }
+            break;
         }
 
         /*

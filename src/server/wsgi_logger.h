@@ -38,9 +38,8 @@ extern PyObject *newLogObject(request_rec *r, int level, const char *name,
 
 /*
  * wsgi_log_python_error logs a Python exception to the Apache error log:
- * a single header line that carries the WSGINNNN code, the script path,
- * and the interpreter+process context, followed by the formatted
- * traceback emitted line by line.
+ * a single header line that carries the WSGINNNN code and identifying
+ * context, followed by the formatted traceback emitted line by line.
  *
  * The traceback is captured into an io.StringIO under the GIL, then the
  * entire emission (header + traceback continuation) is performed under
@@ -52,16 +51,41 @@ extern PyObject *newLogObject(request_rec *r, int level, const char *name,
  * was raised in. Pass NULL when r is non-NULL; the function will
  * extract config->application_group from the request itself. Server-
  * context callers (r == NULL) must pass it explicitly.
+ *
+ * The phase argument selects which header message template is used.
+ * Each phase corresponds to a distinct lifecycle event with its own
+ * operator-facing wording and its own WSGINNNN codes for normal
+ * exceptions and SystemExit. The actual codes are an implementation
+ * detail and live in the function body.
  */
+
+typedef enum {
+    WSGI_LOG_PYTHON_PHASE_RUNNING = 0,
+    WSGI_LOG_PYTHON_PHASE_INTERP_INIT,
+    WSGI_LOG_PYTHON_PHASE_INTERP_ATEXIT
+} wsgi_log_python_phase;
+
 extern void wsgi_log_python_error_ex(const char *file, int line,
                                      int module_index, request_rec *r,
                                      const char *filename,
                                      const char *application_group,
-                                     int publish);
+                                     int publish,
+                                     wsgi_log_python_phase phase);
 
 #define wsgi_log_python_error(r, filename, application_group, publish) \
     wsgi_log_python_error_ex(APLOG_MARK, (r), (filename), \
-                             (application_group), (publish))
+                             (application_group), (publish), \
+                             WSGI_LOG_PYTHON_PHASE_RUNNING)
+
+#define wsgi_log_python_interp_init_error(application_group) \
+    wsgi_log_python_error_ex(APLOG_MARK, NULL, NULL, \
+                             (application_group), 0, \
+                             WSGI_LOG_PYTHON_PHASE_INTERP_INIT)
+
+#define wsgi_log_python_interp_atexit_error(application_group) \
+    wsgi_log_python_error_ex(APLOG_MARK, NULL, NULL, \
+                             (application_group), 0, \
+                             WSGI_LOG_PYTHON_PHASE_INTERP_ATEXIT)
 
 /* ------------------------------------------------------------------------- */
 

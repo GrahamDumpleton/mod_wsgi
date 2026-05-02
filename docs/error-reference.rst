@@ -972,35 +972,40 @@ WSGI0034 — Request origin could not be validated (magic token mismatch)
 
 .. _WSGI0035:
 
-WSGI0035 — Unable to create Python sub-interpreter
---------------------------------------------------
+WSGI0035 — Unable to setup Python interpreter
+---------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to create sub-interpreter '<name>' in <process-context>.``
-   The process context is either ``embedded mode`` or ``daemon
+   ``Unable to setup <interpreter-context> in <process-context>.``
+   Interpreter context is ``main interpreter`` or ``sub-interpreter
+   '<name>'``; process context is ``embedded mode`` or ``daemon
    process '<group>'``.
 
 :Cause:
-   ``newInterpreterObject()`` failed during construction of a Python
-   sub-interpreter for an application group. Almost always a memory
-   exhaustion or a Python ``Py_NewInterpreter()`` failure. The
-   partially constructed sub-interpreter is cleaned up before this
-   message is logged.
+   ``newInterpreterObject()`` failed at any step of interpreter
+   construction — handle allocation, ``Py_NewInterpreter()``,
+   replacement of ``sys.std*`` streams, registering the ``mod_wsgi``
+   / ``apache`` extension modules, applying ``WSGIPythonPath``
+   entries, etc. Almost always a memory exhaustion, but a corrupted
+   Python state or a buggy user-supplied ``mod_wsgi.py`` /
+   ``apache.py`` shadowing the extension modules can also surface
+   here. Any partially constructed sub-interpreter is cleaned up
+   before this message is logged.
 
 :Outcome:
-   The caller receives ``NULL`` and treats the application group as
-   unavailable. Subsequent attempts to acquire the same group will
-   re-attempt creation.
+   The caller receives ``NULL`` and treats the interpreter as
+   unavailable. The actual Python exception detail is logged
+   immediately after this header via the interpreter-init phase
+   message (see :ref:`WSGI0188` / :ref:`WSGI0189`).
 
 :Operator action:
-   Check free memory and the Python build for compatibility. If
-   recurrent, raise the Apache ``LogLevel`` for the ``wsgi`` module
-   to ``debug`` to capture additional context, and check whether
-   third-party Python C extensions are misbehaving in
-   sub-interpreters.
+   Read the traceback that follows this header to identify the
+   underlying cause. Check free memory if a ``MemoryError``. If
+   recurrent under load, reduce ``threads=`` / ``processes=`` on
+   heavily configured daemon groups.
 
 .. _WSGI0036:
 
@@ -1063,21 +1068,23 @@ WSGI0037 — Unable to initialise Python types for child process
 
 .. _WSGI0038:
 
-WSGI0038 — Unable to create main Python interpreter wrapper
------------------------------------------------------------
+WSGI0038 — Python based handlers unavailable in process
+-------------------------------------------------------
 
-:Severity: CRIT
+:Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to create wrapper object for main Python interpreter
-   in <process-context>; Python based handlers will not be
-   available.`` Process context shape as for :ref:`WSGI0036`.
+   ``Python based handlers will not be available in
+   <process-context>.`` Process context shape as for :ref:`WSGI0036`.
 
 :Cause:
    ``newInterpreterObject(NULL)`` failed when creating the cached
-   wrapper for the main Python interpreter at child / daemon startup.
-   Almost always a memory exhaustion at the moment of allocation.
+   wrapper for the main Python interpreter at child / daemon
+   startup. The cause and underlying Python exception are logged
+   immediately above this entry by :ref:`WSGI0035` and the
+   accompanying interpreter-init traceback (:ref:`WSGI0188` /
+   :ref:`WSGI0189`); this entry records the operational consequence.
 
 :Outcome:
    ``wsgi_python_initialized`` is set to 0 and the function returns
@@ -1085,9 +1092,11 @@ WSGI0038 — Unable to create main Python interpreter wrapper
    requests.
 
 :Operator action:
-   Check free memory on the host. Reduce ``threads=`` or
-   ``processes=`` on heavily configured daemon groups if the system
-   is at memory pressure during Apache startup.
+   Read the preceding :ref:`WSGI0035` block and its traceback to
+   identify the cause. Check free memory on the host. Reduce
+   ``threads=`` or ``processes=`` on heavily configured daemon
+   groups if the system is at memory pressure during Apache
+   startup.
 
 .. _WSGI0039:
 
@@ -2380,11 +2389,15 @@ WSGI0090 — signal.signal call failed when registering exit-function callback
 
 :Logged message:
    ``Call to 'signal.signal()' to register exit-function callback
-   failed; continuing without callback.``
+   failed for <interpreter-context> in <process-context>; continuing
+   without callback.`` Interpreter context is ``main interpreter`` or
+   ``sub-interpreter '<name>'``; process context is ``embedded mode``
+   or ``daemon process '<group>'``.
 
 :Cause:
    ``PyObject_CallObject`` on ``signal.signal()`` returned ``NULL``
-   during interpreter setup. Almost always indicates a corrupted
+   during interpreter setup of a service-script daemon (a daemon
+   group with ``threads=0``). Almost always indicates a corrupted
    Python state or an unusual import-time state of the ``signal``
    module.
 
@@ -2400,8 +2413,8 @@ WSGI0090 — signal.signal call failed when registering exit-function callback
 
 .. _WSGI0091:
 
-WSGI0091 — Call to site.addsitedir() failed (initial python-path entry)
------------------------------------------------------------------------
+WSGI0091 — Call to site.addsitedir() failed
+-------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2413,63 +2426,40 @@ WSGI0091 — Call to site.addsitedir() failed (initial python-path entry)
    ``daemon process '<group>'``.
 
 :Cause:
-   When applying a ``python-path=`` directive, mod_wsgi calls
-   ``site.addsitedir()`` for each colon-separated entry. The first
-   entry's call failed (likely a missing or unreadable directory).
+   When applying a ``WSGIPythonPath`` / ``python-path=`` directive,
+   mod_wsgi calls ``site.addsitedir()`` once per delim-separated
+   entry. One of the calls failed — typically a missing or
+   unreadable directory, a malformed ``.pth`` file, or a permission
+   issue. The actual Python exception is logged immediately after
+   this entry as :ref:`WSGI0188`.
 
 :Outcome:
-   This and subsequent entries on the directive are not added to
-   ``sys.path``. Imports that depend on those entries will fail at
-   runtime.
+   Iteration over the path stops on first failure. The failed entry
+   and any remaining entries are not added to ``sys.path``. Imports
+   that depend on those entries will fail at runtime.
 
 :Operator action:
-   Verify the ``python-path=`` entries exist and are readable by
-   the daemon's user.
+   Read the accompanying :ref:`WSGI0188` traceback for the actual
+   failure. Verify the named entry exists, is a directory, and is
+   readable by the daemon's user.
 
 .. _WSGI0092:
 
-WSGI0092 — Call to site.addsitedir() failed (subsequent python-path entry)
---------------------------------------------------------------------------
+WSGI0092 — (retired)
+--------------------
 
-:Severity: ERR
-:Source: ``src/server/wsgi_interp.c``
-
-:Logged message:
-   ``Call to 'site.addsitedir()' failed for '<path>' in
-   <process-context>; remaining python-path entries will not be
-   added.`` Process context shape as for :ref:`WSGI0091`.
-
-:Cause:
-   Same as :ref:`WSGI0091`, but for an entry past the first in the
-   colon-separated ``python-path=`` list.
-
-:Outcome:
-   Same as :ref:`WSGI0091`.
-
-:Operator action:
-   Same as :ref:`WSGI0091`.
+Previously logged a separate code for failures on subsequent
+``python-path=`` entries. Consolidated into :ref:`WSGI0091`, which
+now covers all addsitedir failures regardless of which entry was
+being processed.
 
 .. _WSGI0093:
 
-WSGI0093 — Call to site.addsitedir() failed (final python-path entry)
----------------------------------------------------------------------
+WSGI0093 — (retired)
+--------------------
 
-:Severity: ERR
-:Source: ``src/server/wsgi_interp.c``
-
-:Logged message:
-   ``Call to 'site.addsitedir()' failed for '<path>' in
-   <process-context>.`` Process context shape as for :ref:`WSGI0091`.
-
-:Cause:
-   The final entry of the ``python-path=`` list failed in
-   ``site.addsitedir()``.
-
-:Outcome:
-   This entry is not added to ``sys.path``.
-
-:Operator action:
-   Same as :ref:`WSGI0091`.
+Previously logged a separate code for failure on the final
+``python-path=`` entry. Consolidated into :ref:`WSGI0091`.
 
 .. _WSGI0094:
 
@@ -2547,18 +2537,19 @@ WSGI0097 — SystemExit from Python atexit functions ignored
 ----------------------------------------------------------
 
 :Severity: ERR
-:Source: ``src/server/wsgi_interp.c``
+:Source: ``src/server/wsgi_logger.c``
 
 :Logged message:
-   ``SystemExit exception raised by Python atexit functions for
-   <interpreter-context>; ignored.`` Interpreter context is of the
-   form ``main interpreter in embedded mode`` or ``sub-interpreter
-   '<name>' of daemon process '<group>'``.
+   ``SystemExit (<type>) raised by Python atexit functions during
+   shutdown of <interpreter-context>; ignored.`` Interpreter context
+   is of the form ``main interpreter in embedded mode`` or
+   ``sub-interpreter '<name>' of daemon process '<group>'``.
 
 :Cause:
    A Python ``atexit``-registered function raised ``SystemExit``
-   during interpreter shutdown. mod_wsgi swallows the exception
-   so it does not propagate further.
+   during interpreter shutdown. mod_wsgi swallows the exception so
+   it does not propagate further. The traceback is emitted as
+   continuation lines after this header.
 
 :Outcome:
    Interpreter shutdown continues; subsequent ``atexit`` handlers
@@ -2574,16 +2565,16 @@ WSGI0098 — Exception within Python atexit functions during shutdown
 -------------------------------------------------------------------
 
 :Severity: ERR
-:Source: ``src/server/wsgi_interp.c``
+:Source: ``src/server/wsgi_logger.c``
 
 :Logged message:
-   ``Exception occurred within Python atexit functions during
-   shutdown of <interpreter-context>.`` Interpreter context shape
-   as for :ref:`WSGI0097`.
+   ``Exception (<type>) raised by Python atexit functions during
+   shutdown of <interpreter-context>.`` Interpreter context shape as
+   for :ref:`WSGI0097`.
 
 :Cause:
    An ``atexit`` handler raised a non-``SystemExit`` exception. The
-   corresponding traceback is printed via ``wsgi_log_python_error``.
+   traceback is emitted as continuation lines after this header.
 
 :Outcome:
    Interpreter shutdown continues.
@@ -2694,25 +2685,26 @@ WSGI0102 — Python home is not accessible
 
 .. _WSGI0103:
 
-WSGI0103 — Unable to create Python sub-interpreter on demand
-------------------------------------------------------------
+WSGI0103 — Python based handlers unavailable for sub-interpreter
+----------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Unable to create sub-interpreter '<name>' in <process-context>.``
-   The process context is either ``embedded mode`` or ``daemon
-   process '<group>'``.
+   ``Python based handlers will not be available for
+   <interpreter-context> in <process-context>.`` Interpreter context
+   is ``main interpreter`` or ``sub-interpreter '<name>'``; process
+   context is ``embedded mode`` or ``daemon process '<group>'``.
 
 :Cause:
    ``newInterpreterObject()`` returned ``NULL`` while
    ``wsgi_acquire_interpreter()`` was lazily creating the named
-   sub-interpreter on the first request that needed it. Almost
-   always a memory exhaustion at the moment of allocation, but a
-   corrupted Python state can also surface here. Any Python-level
-   traceback is printed via ``PyErr_Print()`` to the Apache error
-   log immediately after this message.
+   sub-interpreter on the first request that needed it. The cause
+   and underlying Python exception are logged immediately above this
+   entry by :ref:`WSGI0035` and the accompanying interpreter-init
+   traceback (:ref:`WSGI0188` / :ref:`WSGI0189`); this entry records
+   the operational consequence.
 
 :Outcome:
    ``wsgi_acquire_interpreter()`` returns ``NULL``. The caller
@@ -2721,10 +2713,11 @@ WSGI0103 — Unable to create Python sub-interpreter on demand
    creation.
 
 :Operator action:
-   Check free memory on the host. If the failure repeats, look for
-   any preceding :ref:`WSGI0001` or :ref:`WSGI0028` message
-   indicating the embedded interpreter is broken. The startup-time
-   counterpart is :ref:`WSGI0035`.
+   Read the preceding :ref:`WSGI0035` block and its traceback to
+   identify the cause. Check free memory on the host. If the
+   failure repeats, look for any preceding :ref:`WSGI0001` or
+   :ref:`WSGI0028` message indicating the embedded interpreter is
+   broken.
 
 .. _WSGI0104:
 
@@ -4597,3 +4590,290 @@ WSGI0179 — Digest auth provider returned unexpected type
 :Operator action:
    Fix the ``get_realm_hash`` implementation to return one of the
    accepted values.
+
+.. _WSGI0180:
+
+WSGI0180 — Unable to register interpreter in dictionary
+-------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to register <interpreter-context> in interpreters
+   dictionary for <process-context>.`` Interpreter context is
+   ``main interpreter`` or ``sub-interpreter '<name>'``; process
+   context is ``embedded mode`` or ``daemon process '<group>'``.
+
+:Cause:
+   ``PyDict_SetItemString()`` failed when ``wsgi_acquire_interpreter()``
+   tried to register a freshly created sub-interpreter in mod_wsgi's
+   per-process interpreters dictionary. Almost always a Python heap
+   allocation failure.
+
+:Outcome:
+   The newly created sub-interpreter is decremented and discarded;
+   ``wsgi_acquire_interpreter()`` returns ``NULL``. The caller
+   (typically an auth or dispatch hook) returns 500 to the client.
+   The next request for the same application group will retry
+   creation.
+
+:Operator action:
+   Check free memory on the host. If recurrent, reduce
+   ``threads=`` / ``processes=`` on heavily configured daemon
+   groups.
+
+.. _WSGI0181:
+
+WSGI0181 — Unable to install threading._shutdown wrapper
+--------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to install 'threading._shutdown' wrapper for
+   <interpreter-context> in <process-context>; continuing without
+   atexit callback support in sub interpreters.`` Interpreter and
+   process context shape as for :ref:`WSGI0180`.
+
+:Cause:
+   ``PyDict_SetItemString()`` failed when assigning the wrapper
+   into the ``threading`` module dictionary during sub-interpreter
+   setup. The wrapper exists because CPython does not call
+   ``atexit`` handlers when a sub-interpreter is destroyed; mod_wsgi
+   replaces ``threading._shutdown`` to drive them.
+
+:Outcome:
+   The interpreter is created without the wrapper installed.
+   ``atexit`` handlers registered in the sub-interpreter will not
+   run on its destruction. Application is otherwise functional.
+
+:Operator action:
+   Likely indicates severe memory pressure; check free memory and
+   look for accompanying ``MemoryError``-class log messages. The
+   process is in a degraded state.
+
+.. _WSGI0182:
+
+WSGI0182 — Unable to create threading._shutdown wrapper
+-------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to create 'threading._shutdown' wrapper for
+   <interpreter-context> in <process-context>; continuing without
+   atexit callback support in sub interpreters.`` Interpreter and
+   process context shape as for :ref:`WSGI0180`.
+
+:Cause:
+   ``newShutdownInterpreterObject()`` returned ``NULL`` when allocating
+   the wrapper object during sub-interpreter setup. Almost always a
+   Python heap allocation failure.
+
+:Outcome:
+   Same as :ref:`WSGI0181`.
+
+:Operator action:
+   Same as :ref:`WSGI0181`.
+
+.. _WSGI0183:
+
+WSGI0183 — Unable to install signal.signal intercept
+----------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to install 'signal.signal' intercept for
+   <interpreter-context> in <process-context>; continuing without
+   signal handler restrictions.`` Interpreter and process context
+   shape as for :ref:`WSGI0180`.
+
+:Cause:
+   ``PyDict_SetItemString()`` failed when assigning the intercept
+   into the ``signal`` module dictionary during interpreter setup.
+   The intercept exists to prevent application code from registering
+   signal handlers that would interfere with Apache or the daemon.
+
+:Outcome:
+   The interpreter is created without the intercept installed.
+   Application code can install signal handlers via ``signal.signal()``
+   that may interfere with Apache or daemon signal handling.
+
+:Operator action:
+   Likely indicates severe memory pressure; check free memory and
+   look for accompanying ``MemoryError``-class log messages.
+
+.. _WSGI0184:
+
+WSGI0184 — Unable to create signal.signal intercept
+---------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to create 'signal.signal' intercept for
+   <interpreter-context> in <process-context>; continuing without
+   signal handler restrictions.`` Interpreter and process context
+   shape as for :ref:`WSGI0180`.
+
+:Cause:
+   ``newSignalInterceptObject()`` returned ``NULL`` when allocating
+   the intercept object during interpreter setup. Almost always a
+   Python heap allocation failure.
+
+:Outcome:
+   Same as :ref:`WSGI0183`.
+
+:Operator action:
+   Same as :ref:`WSGI0183`.
+
+.. _WSGI0185:
+
+WSGI0185 — Unable to replace sys.stderr with log object
+-------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to replace 'sys.stderr' with log object for
+   <interpreter-context> in <process-context>; continuing with
+   default stream object.`` Interpreter and process context shape as
+   for :ref:`WSGI0180`.
+
+:Cause:
+   Either ``newLogObject()`` returned ``NULL`` or ``PySys_SetObject()``
+   failed when wiring ``sys.stderr`` to a mod_wsgi log object during
+   interpreter setup. Almost always a Python heap allocation failure.
+
+:Outcome:
+   The interpreter retains whatever ``sys.stderr`` object Python
+   defaulted to. Output that the application writes to ``sys.stderr``
+   may not reach the Apache error log.
+
+:Operator action:
+   Check free memory; the process is in a degraded state.
+
+.. _WSGI0186:
+
+WSGI0186 — Unable to replace sys.stdout
+---------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to replace 'sys.stdout' for <interpreter-context> in
+   <process-context>; continuing with default stream object.``
+   Interpreter and process context shape as for :ref:`WSGI0180`.
+
+:Cause:
+   Either the constructor (``newRestrictedObject()`` when
+   ``WSGIRestrictStdout On`` is in effect, otherwise ``newLogObject()``)
+   returned ``NULL`` or ``PySys_SetObject()`` failed when wiring
+   ``sys.stdout`` during interpreter setup.
+
+:Outcome:
+   The interpreter retains whatever ``sys.stdout`` object Python
+   defaulted to. Application writes to ``sys.stdout`` may go to the
+   process stdout (typically the Apache error log) rather than being
+   restricted as configured.
+
+:Operator action:
+   Check free memory; the process is in a degraded state.
+
+.. _WSGI0187:
+
+WSGI0187 — Unable to replace sys.stdin with restricted object
+-------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to replace 'sys.stdin' with restricted object for
+   <interpreter-context> in <process-context>; continuing with
+   default stream object.`` Interpreter and process context shape as
+   for :ref:`WSGI0180`.
+
+:Cause:
+   Either ``newRestrictedObject()`` returned ``NULL`` or
+   ``PySys_SetObject()`` failed when wiring ``sys.stdin`` to a
+   restricted object (``WSGIRestrictStdin On``) during interpreter
+   setup.
+
+:Outcome:
+   The interpreter retains whatever ``sys.stdin`` object Python
+   defaulted to. Application reads from ``sys.stdin`` are not
+   restricted as configured.
+
+:Operator action:
+   Check free memory; the process is in a degraded state.
+
+.. _WSGI0188:
+
+WSGI0188 — Exception raised during Python interpreter initialisation
+--------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_logger.c``
+
+:Logged message:
+   ``Exception (<type>) raised during Python interpreter
+   initialisation for <interpreter-context>.`` Interpreter context
+   is ``main interpreter in embedded mode``, ``sub-interpreter
+   '<name>' of daemon process '<group>'``, or any combination.
+
+:Cause:
+   A Python exception (other than ``SystemExit``) was raised at any
+   step of interpreter construction in ``newInterpreterObject()`` —
+   sub-interpreter creation, optional ``mod_wsgi`` / ``apache``
+   user-supplied module imports, ``WSGIPythonPath`` entry processing,
+   etc. The traceback is emitted as continuation lines after this
+   header. This entry usually appears between the :ref:`WSGI0035`
+   header and the consequence message (:ref:`WSGI0038` /
+   :ref:`WSGI0103`).
+
+:Outcome:
+   Interpreter setup is aborted; the partially constructed
+   interpreter is destroyed. The caller propagates failure to its
+   own caller via the consequence message.
+
+:Operator action:
+   Read the traceback to identify the underlying cause. If a user
+   has supplied a ``mod_wsgi.py`` or ``apache.py`` on the Python
+   search path that raises during import, fix or remove it.
+
+.. _WSGI0189:
+
+WSGI0189 — SystemExit raised during Python interpreter initialisation
+---------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_logger.c``
+
+:Logged message:
+   ``SystemExit (<type>) raised during Python interpreter
+   initialisation for <interpreter-context>; ignored.`` Interpreter
+   context shape as for :ref:`WSGI0188`.
+
+:Cause:
+   A ``SystemExit`` exception was raised at some step of interpreter
+   construction. mod_wsgi swallows it rather than letting it
+   terminate the process.
+
+:Outcome:
+   Same as :ref:`WSGI0188`. The interpreter is destroyed and the
+   caller propagates failure.
+
+:Operator action:
+   Investigate any user code (typically a user-supplied ``mod_wsgi.py``
+   or import-time side effect of a ``WSGIPythonPath`` entry) that
+   may be calling ``sys.exit()`` or raising ``SystemExit`` during
+   import.

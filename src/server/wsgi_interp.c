@@ -66,10 +66,18 @@ static int wsgi_module_add_object(PyObject *module, const char *name,
                                   PyObject *value)
 {
     if (!value)
+    {
+        PyErr_Format(PyExc_RuntimeError,
+                     "Allocation of value for module attribute '%s' failed",
+                     name);
         return -1;
+    }
 
     if (PyModule_AddObject(module, name, value) < 0)
     {
+        PyErr_Format(PyExc_RuntimeError,
+                     "PyModule_AddObject() failed for attribute '%s'",
+                     name);
         Py_DECREF(value);
         return -1;
     }
@@ -105,9 +113,62 @@ static int wsgi_set_environ_item(PyObject *environ, const char *key,
     result = 0;
 
 done:
+    if (result < 0)
+        PyErr_Format(PyExc_RuntimeError,
+                     "Setting os.environ['%s'] failed", key);
     Py_XDECREF(py_key);
     Py_XDECREF(py_value);
     return result;
+}
+
+/*
+ * Helper to invoke site.addsitedir() for one delim-separated entry
+ * of WSGIPythonPath / python-path. Decodes the byte range using
+ * the filesystem default encoding, logs the addition at INFO, then
+ * dispatches the call. Returns 0 on success, -1 on failure with a
+ * Python exception set; the caller is responsible for logging the
+ * failure detail.
+ */
+
+static int wsgi_addsitedir_entry(PyObject *addsitedir, const char *start,
+                                 Py_ssize_t len)
+{
+    PyObject *path_entry = NULL;
+    PyObject *args = NULL;
+    PyObject *result = NULL;
+    const char *value = NULL;
+    int rv = -1;
+
+    path_entry = PyUnicode_DecodeFSDefaultAndSize(start, len);
+    if (!path_entry)
+        goto done;
+
+    value = PyUnicode_AsUTF8(path_entry);
+    if (!value)
+        goto done;
+
+    wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
+                          "Adding '%s' to Python module search "
+                          "path for %s.",
+                          value,
+                          wsgi_format_process_context(
+                              wsgi_server->process->pool));
+
+    args = Py_BuildValue("(O)", path_entry);
+    if (!args)
+        goto done;
+
+    result = PyObject_CallObject(addsitedir, args);
+    if (!result)
+        goto done;
+
+    rv = 0;
+
+done:
+    Py_XDECREF(result);
+    Py_XDECREF(args);
+    Py_XDECREF(path_entry);
+    return rv;
 }
 
 InterpreterObject *newInterpreterObject(const char *name)
@@ -133,12 +194,6 @@ InterpreterObject *newInterpreterObject(const char *name)
     const char *python_home = 0;
 #endif
 
-    /* Create handle for interpreter and local data. */
-
-    self = PyObject_New(InterpreterObject, &Interpreter_Type);
-    if (self == NULL)
-        return NULL;
-
     /*
      * If interpreter not named, then we want to bind
      * to the first Python interpreter instance created.
@@ -152,8 +207,24 @@ InterpreterObject *newInterpreterObject(const char *name)
         name = "";
     }
 
-    /* Save away the interpreter name. */
+    /* Create handle for interpreter and local data. */
 
+    self = PyObject_New(InterpreterObject, &Interpreter_Type);
+    if (self == NULL)
+    {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "PyObject_New() for InterpreterObject failed");
+        goto failure;
+    }
+
+    /*
+     * Initialize fields immediately so the failure label can run
+     * safely from any later point without tripping on uninitialized
+     * self->owner. Set name from a strdup of the (now finalized)
+     * local 'name' parameter.
+     */
+
+    self->owner = 0;
     self->name = strdup(name);
 
     if (interp)
@@ -170,7 +241,6 @@ InterpreterObject *newInterpreterObject(const char *name)
                            wsgi_server->process->pool));
 
         self->interp = interp;
-        self->owner = 0;
 
         /* Force import of threading module so that main
          * thread attribute of module is correctly set to
@@ -181,6 +251,7 @@ InterpreterObject *newInterpreterObject(const char *name)
         module = PyImport_ImportModule("threading");
 
         Py_XDECREF(module);
+        module = NULL;
     }
     else
     {
@@ -204,10 +275,7 @@ InterpreterObject *newInterpreterObject(const char *name)
         if (!tstate)
         {
             PyErr_SetString(PyExc_RuntimeError, "Py_NewInterpreter() failed");
-
-            Py_DECREF(self);
-
-            return NULL;
+            goto failure;
         }
 
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
@@ -243,12 +311,60 @@ InterpreterObject *newInterpreterObject(const char *name)
                 PyObject *wrapper = NULL;
 
                 wrapper = (PyObject *)newShutdownInterpreterObject(func);
-                PyDict_SetItemString(dict, "_shutdown", wrapper);
-                Py_DECREF(wrapper);
+
+                if (wrapper)
+                {
+                    if (PyDict_SetItemString(dict, "_shutdown",
+                                             wrapper) < 0)
+                    {
+                        wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                              WSGI_APLOGNO(0181) "Unable to "
+                                                                 "install "
+                                                                 "'threading."
+                                                                 "_shutdown' "
+                                                                 "wrapper for "
+                                                                 "%s in %s; "
+                                                                 "continuing "
+                                                                 "without "
+                                                                 "atexit "
+                                                                 "callback "
+                                                                 "support in "
+                                                                 "sub "
+                                                                 "interpreters.",
+                                              wsgi_format_interp_name(
+                                                  wsgi_server->process->pool,
+                                                  name),
+                                              wsgi_format_process_context(
+                                                  wsgi_server->process->pool));
+                        PyErr_Clear();
+                    }
+                    Py_DECREF(wrapper);
+                }
+                else
+                {
+                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                          WSGI_APLOGNO(0182) "Unable to create "
+                                                             "'threading."
+                                                             "_shutdown' "
+                                                             "wrapper for %s "
+                                                             "in %s; "
+                                                             "continuing "
+                                                             "without atexit "
+                                                             "callback support "
+                                                             "in sub "
+                                                             "interpreters.",
+                                          wsgi_format_interp_name(
+                                              wsgi_server->process->pool,
+                                              name),
+                                          wsgi_format_process_context(
+                                              wsgi_server->process->pool));
+                    PyErr_Clear();
+                }
             }
         }
 
         Py_XDECREF(module);
+        module = NULL;
     }
 
     /*
@@ -261,31 +377,70 @@ InterpreterObject *newInterpreterObject(const char *name)
      */
 
     object = newLogObject(NULL, APLOG_ERR, "<stderr>", 1);
-    PySys_SetObject("stderr", object);
-    Py_DECREF(object);
+    if (!object || PySys_SetObject("stderr", object) < 0)
+    {
+        wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                              WSGI_APLOGNO(0185) "Unable to replace "
+                                                 "'sys.stderr' with log "
+                                                 "object for %s in %s; "
+                                                 "continuing with default "
+                                                 "stream object.",
+                              wsgi_format_interp_name(
+                                  wsgi_server->process->pool, name),
+                              wsgi_format_process_context(
+                                  wsgi_server->process->pool));
+        PyErr_Clear();
+    }
+    Py_XDECREF(object);
 
 #ifndef WIN32
     if (wsgi_parent_pid != getpid())
     {
 #endif
         if (wsgi_server_config->restrict_stdout == 1)
-        {
             object = (PyObject *)newRestrictedObject("sys.stdout");
-            PySys_SetObject("stdout", object);
-            Py_DECREF(object);
-        }
         else
-        {
             object = newLogObject(NULL, APLOG_ERR, "<stdout>", 1);
-            PySys_SetObject("stdout", object);
-            Py_DECREF(object);
+
+        if (!object || PySys_SetObject("stdout", object) < 0)
+        {
+            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                  WSGI_APLOGNO(0186) "Unable to replace "
+                                                     "'sys.stdout' for %s "
+                                                     "in %s; continuing "
+                                                     "with default stream "
+                                                     "object.",
+                                  wsgi_format_interp_name(
+                                      wsgi_server->process->pool, name),
+                                  wsgi_format_process_context(
+                                      wsgi_server->process->pool));
+            PyErr_Clear();
         }
+        Py_XDECREF(object);
 
         if (wsgi_server_config->restrict_stdin == 1)
         {
             object = (PyObject *)newRestrictedObject("sys.stdin");
-            PySys_SetObject("stdin", object);
-            Py_DECREF(object);
+            if (!object || PySys_SetObject("stdin", object) < 0)
+            {
+                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                      WSGI_APLOGNO(0187) "Unable to "
+                                                         "replace "
+                                                         "'sys.stdin' "
+                                                         "with restricted "
+                                                         "object for %s "
+                                                         "in %s; "
+                                                         "continuing with "
+                                                         "default stream "
+                                                         "object.",
+                                      wsgi_format_interp_name(
+                                          wsgi_server->process->pool,
+                                          name),
+                                      wsgi_format_process_context(
+                                          wsgi_server->process->pool));
+                PyErr_Clear();
+            }
+            Py_XDECREF(object);
         }
 #ifndef WIN32
     }
@@ -299,17 +454,25 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     object = PyList_New(0);
     if (!object)
+    {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "PyList_New() for sys.argv failed");
         goto failure;
+    }
 
     item = PyUnicode_FromString("mod_wsgi");
     if (!item)
     {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "PyUnicode_FromString() for sys.argv[0] failed");
         Py_DECREF(object);
         goto failure;
     }
 
     if (PyList_Append(object, item) < 0)
     {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "PyList_Append() for sys.argv[0] failed");
         Py_DECREF(item);
         Py_DECREF(object);
         goto failure;
@@ -356,15 +519,30 @@ InterpreterObject *newInterpreterObject(const char *name)
 
                 callback = PyCFunction_New(&wsgi_system_exit_method[0], NULL);
 
-                args = Py_BuildValue("(iO)", SIGTERM, callback);
-                res = PyObject_CallObject(func, args);
+                if (callback)
+                    args = Py_BuildValue("(iO)", SIGTERM, callback);
+
+                if (args)
+                    res = PyObject_CallObject(func, args);
 
                 if (!res)
                 {
-                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0090) "Call to 'signal.signal()' to "
-                                                                                        "register exit-function "
-                                                                                        "callback failed; continuing "
-                                                                                        "without callback.");
+                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                          WSGI_APLOGNO(0090) "Call to "
+                                                             "'signal.signal()' "
+                                                             "to register "
+                                                             "exit-function "
+                                                             "callback failed "
+                                                             "for %s in %s; "
+                                                             "continuing "
+                                                             "without "
+                                                             "callback.",
+                                          wsgi_format_interp_name(
+                                              wsgi_server->process->pool,
+                                              name),
+                                          wsgi_format_process_context(
+                                              wsgi_server->process->pool));
+                    PyErr_Clear();
                 }
 
                 Py_XDECREF(res);
@@ -377,6 +555,7 @@ InterpreterObject *newInterpreterObject(const char *name)
         }
 
         Py_XDECREF(module);
+        module = NULL;
     }
 #endif
 
@@ -397,12 +576,56 @@ InterpreterObject *newInterpreterObject(const char *name)
                 PyObject *wrapper = NULL;
 
                 wrapper = (PyObject *)newSignalInterceptObject(func);
-                PyDict_SetItemString(dict, "signal", wrapper);
-                Py_DECREF(wrapper);
+
+                if (wrapper)
+                {
+                    if (PyDict_SetItemString(dict, "signal", wrapper) < 0)
+                    {
+                        wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                              WSGI_APLOGNO(0183) "Unable to "
+                                                                 "install "
+                                                                 "'signal."
+                                                                 "signal' "
+                                                                 "intercept "
+                                                                 "for %s in "
+                                                                 "%s; "
+                                                                 "continuing "
+                                                                 "without "
+                                                                 "signal "
+                                                                 "handler "
+                                                                 "restrictions.",
+                                              wsgi_format_interp_name(
+                                                  wsgi_server->process->pool,
+                                                  name),
+                                              wsgi_format_process_context(
+                                                  wsgi_server->process->pool));
+                        PyErr_Clear();
+                    }
+                    Py_DECREF(wrapper);
+                }
+                else
+                {
+                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                          WSGI_APLOGNO(0184) "Unable to create "
+                                                             "'signal.signal' "
+                                                             "intercept for %s "
+                                                             "in %s; "
+                                                             "continuing "
+                                                             "without signal "
+                                                             "handler "
+                                                             "restrictions.",
+                                          wsgi_format_interp_name(
+                                              wsgi_server->process->pool,
+                                              name),
+                                          wsgi_format_process_context(
+                                              wsgi_server->process->pool));
+                    PyErr_Clear();
+                }
             }
         }
 
         Py_XDECREF(module);
+        module = NULL;
     }
 
     /*
@@ -452,6 +675,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                                               pwent->pw_name) < 0)
                     {
                         Py_DECREF(module);
+                        module = NULL;
                         goto failure;
                     }
                 }
@@ -462,6 +686,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                                               pwent->pw_name) < 0)
                     {
                         Py_DECREF(module);
+                        module = NULL;
                         goto failure;
                     }
                 }
@@ -472,12 +697,14 @@ InterpreterObject *newInterpreterObject(const char *name)
                                               pwent->pw_name) < 0)
                     {
                         Py_DECREF(module);
+                        module = NULL;
                         goto failure;
                     }
                 }
             }
 
             Py_DECREF(module);
+            module = NULL;
         }
     }
 #endif
@@ -517,12 +744,14 @@ InterpreterObject *newInterpreterObject(const char *name)
                                               pwent->pw_dir) < 0)
                     {
                         Py_DECREF(module);
+                        module = NULL;
                         goto failure;
                     }
                 }
             }
 
             Py_DECREF(module);
+            module = NULL;
         }
     }
 #endif
@@ -555,11 +784,13 @@ InterpreterObject *newInterpreterObject(const char *name)
                                           wsgi_python_eggs) < 0)
                 {
                     Py_DECREF(module);
+                    module = NULL;
                     goto failure;
                 }
             }
 
             Py_DECREF(module);
+            module = NULL;
         }
     }
 
@@ -633,15 +864,27 @@ InterpreterObject *newInterpreterObject(const char *name)
 
             if (!old || !new || !tmp)
             {
+                PyErr_SetString(PyExc_RuntimeError,
+                                "PyList_New() for sys.path reorder "
+                                "buffers failed");
                 Py_XDECREF(old);
                 Py_XDECREF(new);
                 Py_XDECREF(tmp);
                 Py_DECREF(module);
+                module = NULL;
                 goto failure;
             }
 
+            /* Snapshot pre-addsitedir sys.path into 'old'. */
+
             for (i = 0; i < PyList_Size(path); i++)
-                PyList_Append(old, PyList_GetItem(path, i));
+            {
+                if (PyList_Append(old, PyList_GetItem(path, i)) < 0)
+                {
+                    PyErr_Clear();
+                    break;
+                }
+            }
 
             dict = PyModule_GetDict(module);
             object = PyDict_GetItemString(dict, "addsitedir");
@@ -649,118 +892,45 @@ InterpreterObject *newInterpreterObject(const char *name)
             if (object)
             {
                 const char *start;
-                const char *end;
-                const char *value;
-
-                PyObject *path_entry;
-                PyObject *args;
-
-                PyObject *result = NULL;
+                const char *end_ptr;
 
                 Py_INCREF(object);
 
                 start = wsgi_python_path;
-                end = strchr(start, DELIM);
 
-                if (end)
+                for (;;)
                 {
-                    path_entry = PyUnicode_DecodeFSDefaultAndSize(start, end - start);
-                    value = PyUnicode_AsUTF8(path_entry);
-                    start = end + 1;
+                    Py_ssize_t entry_len;
 
-                    wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                                          "Adding '%s' to Python module "
-                                          "search path for %s.",
-                                          value,
-                                          wsgi_format_process_context(
-                                              wsgi_server->process->pool));
+                    end_ptr = strchr(start, DELIM);
+                    entry_len = end_ptr ? (Py_ssize_t)(end_ptr - start)
+                                        : (Py_ssize_t)strlen(start);
 
-                    args = Py_BuildValue("(O)", path_entry);
-                    result = PyObject_CallObject(object, args);
-
-                    if (!result)
+                    if (wsgi_addsitedir_entry(object, start, entry_len) < 0)
                     {
                         wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                              WSGI_APLOGNO(0091) "Call to 'site.addsitedir()' "
-                                                                 "failed for '%s' in %s; "
-                                                                 "remaining python-path "
-                                                                 "entries will not be added.",
-                                              value,
+                                              WSGI_APLOGNO(0091) "Call to "
+                                                                 "'site."
+                                                                 "addsitedir()' "
+                                                                 "failed for "
+                                                                 "'%.*s' in "
+                                                                 "%s; "
+                                                                 "remaining "
+                                                                 "python-path "
+                                                                 "entries "
+                                                                 "will not be "
+                                                                 "added.",
+                                              (int)entry_len, start,
                                               wsgi_format_process_context(
                                                   wsgi_server->process->pool));
+                        wsgi_log_python_interp_init_error(name);
+                        break;
                     }
 
-                    Py_XDECREF(result);
-                    Py_DECREF(path_entry);
-                    Py_DECREF(args);
-
-                    end = strchr(start, DELIM);
-
-                    while (result && end)
-                    {
-                        path_entry = PyUnicode_DecodeFSDefaultAndSize(start,
-                                                                      end - start);
-                        value = PyUnicode_AsUTF8(path_entry);
-                        start = end + 1;
-
-                        wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                                              "Adding '%s' to Python "
-                                              "module search path for %s.",
-                                              value,
-                                              wsgi_format_process_context(
-                                                  wsgi_server->process->pool));
-
-                        args = Py_BuildValue("(O)", path_entry);
-                        result = PyObject_CallObject(object, args);
-
-                        if (!result)
-                        {
-                            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                                  WSGI_APLOGNO(0092) "Call to "
-                                                                     "'site.addsitedir()' "
-                                                                     "failed for '%s' in %s; "
-                                                                     "remaining python-path "
-                                                                     "entries will not be "
-                                                                     "added.",
-                                                  value,
-                                                  wsgi_format_process_context(
-                                                      wsgi_server->process->pool));
-                        }
-
-                        Py_XDECREF(result);
-                        Py_DECREF(path_entry);
-                        Py_DECREF(args);
-
-                        end = strchr(start, DELIM);
-                    }
+                    if (!end_ptr)
+                        break;
+                    start = end_ptr + 1;
                 }
-
-                path_entry = PyUnicode_DecodeFSDefault(start);
-                value = PyUnicode_AsUTF8(path_entry);
-
-                wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                                      "Adding '%s' to Python module "
-                                      "search path for %s.",
-                                      value,
-                                      wsgi_format_process_context(
-                                          wsgi_server->process->pool));
-
-                args = Py_BuildValue("(O)", path_entry);
-                result = PyObject_CallObject(object, args);
-
-                if (!result)
-                {
-                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                          WSGI_APLOGNO(0093) "Call to 'site.addsitedir()' "
-                                                             "failed for '%s' in %s.",
-                                          start,
-                                          wsgi_format_process_context(
-                                              wsgi_server->process->pool));
-                }
-
-                Py_XDECREF(result);
-                Py_XDECREF(path_entry);
-                Py_DECREF(args);
 
                 Py_DECREF(object);
             }
@@ -773,8 +943,24 @@ InterpreterObject *newInterpreterObject(const char *name)
                                           wsgi_server->process->pool));
             }
 
+            /*
+             * Reorder sys.path so entries added by site.addsitedir
+             * land at the front. Snapshot post-addsitedir state into
+             * 'tmp', diff against pre-state in 'old', accumulate the
+             * new entries in 'new', then prepend. List operations
+             * here are best-effort: any failure clears the exception
+             * and continues with whatever ordering we end up with.
+             * The interpreter remains usable in any case.
+             */
+
             for (i = 0; i < PyList_Size(path); i++)
-                PyList_Append(tmp, PyList_GetItem(path, i));
+            {
+                if (PyList_Append(tmp, PyList_GetItem(path, i)) < 0)
+                {
+                    PyErr_Clear();
+                    break;
+                }
+            }
 
             for (i = 0; i < PyList_Size(tmp); i++)
             {
@@ -782,6 +968,11 @@ InterpreterObject *newInterpreterObject(const char *name)
                 int contains;
 
                 path_item = PyList_GetItem(tmp, i);
+                if (!path_item)
+                {
+                    PyErr_Clear();
+                    continue;
+                }
 
                 contains = PySequence_Contains(old, path_item);
 
@@ -794,13 +985,26 @@ InterpreterObject *newInterpreterObject(const char *name)
                 if (!contains)
                 {
                     Py_ssize_t index = PySequence_Index(path, path_item);
-                    PyList_Append(new, path_item);
-                    if (index != -1)
-                        PySequence_DelItem(path, index);
+
+                    if (index == -1)
+                    {
+                        PyErr_Clear();
+                        continue;
+                    }
+
+                    if (PyList_Append(new, path_item) < 0)
+                    {
+                        PyErr_Clear();
+                        continue;
+                    }
+
+                    if (PySequence_DelItem(path, index) < 0)
+                        PyErr_Clear();
                 }
             }
 
-            PyList_SetSlice(path, 0, 0, new);
+            if (PyList_SetSlice(path, 0, 0, new) < 0)
+                PyErr_Clear();
 
             Py_DECREF(old);
             Py_DECREF(new);
@@ -848,13 +1052,32 @@ InterpreterObject *newInterpreterObject(const char *name)
             PyObject *item;
 
             item = PyUnicode_DecodeFSDefault(home);
-            PyList_Insert(path, 0, item);
+            if (!item)
+            {
+                PyErr_SetString(PyExc_RuntimeError,
+                                "PyUnicode_DecodeFSDefault() for daemon "
+                                "home directory failed");
+                Py_XDECREF(module);
+                module = NULL;
+                goto failure;
+            }
+            if (PyList_Insert(path, 0, item) < 0)
+            {
+                PyErr_SetString(PyExc_RuntimeError,
+                                "PyList_Insert() of daemon home directory "
+                                "into sys.path failed");
+                Py_DECREF(item);
+                Py_XDECREF(module);
+                module = NULL;
+                goto failure;
+            }
             Py_DECREF(item);
         }
     }
 #endif
 
     Py_XDECREF(module);
+    module = NULL;
 
     /*
      * Create 'mod_wsgi' Python module. We first try and import an
@@ -874,19 +1097,43 @@ InterpreterObject *newInterpreterObject(const char *name)
     {
         PyObject *modules = NULL;
 
-        modules = PyImport_GetModuleDict();
-        module = PyDict_GetItemString(modules, "mod_wsgi");
+        /*
+         * If the import failed because no user-supplied 'mod_wsgi'
+         * Python module exists on the search path (the common
+         * case), silently fall back to creating an empty module
+         * ourselves. For any other failure (a real bug in the
+         * user's module — syntax error, exception during module
+         * body execution, etc.) surface the traceback so the
+         * operator sees what actually went wrong instead of a
+         * silent fallback masking the bug.
+         */
 
-        if (module)
-        {
-            PyErr_Print();
-
-            PyDict_DelItemString(modules, "mod_wsgi");
-        }
+        if (!PyErr_ExceptionMatches(PyExc_ModuleNotFoundError))
+            wsgi_log_python_interp_init_error(name);
 
         PyErr_Clear();
 
+        /*
+         * Defensive cleanup of any orphan entry in sys.modules.
+         * Modern CPython removes the entry itself on import
+         * failure, but historically this was not always reliable.
+         */
+
+        modules = PyImport_GetModuleDict();
+        if (PyDict_GetItemString(modules, "mod_wsgi"))
+        {
+            if (PyDict_DelItemString(modules, "mod_wsgi") < 0)
+                PyErr_Clear();
+        }
+
         module = PyImport_AddModule("mod_wsgi");
+
+        if (!module)
+        {
+            PyErr_SetString(PyExc_RuntimeError,
+                            "PyImport_AddModule(\"mod_wsgi\") failed");
+            goto failure;
+        }
 
         Py_INCREF(module);
     }
@@ -1094,23 +1341,34 @@ InterpreterObject *newInterpreterObject(const char *name)
         {
             PyObject *modules = NULL;
 
-            modules = PyImport_GetModuleDict();
-            module = PyDict_GetItemString(modules, "apache");
+            /*
+             * If the import failed because no user-supplied
+             * 'apache' Python module exists on the search path
+             * (the common case), silently fall back to creating an
+             * empty module ourselves. For any other failure (a
+             * real bug in the user's module) surface the traceback
+             * so the operator sees what actually went wrong
+             * instead of a silent fallback masking the bug.
+             */
 
-            if (module)
-            {
-                wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                                      "Unable to import 'apache' extension "
-                                      "module.");
-
-                PyErr_Print();
-
-                PyDict_DelItemString(modules, "apache");
-
-                module = NULL;
-            }
+            if (!PyErr_ExceptionMatches(PyExc_ModuleNotFoundError))
+                wsgi_log_python_interp_init_error(name);
 
             PyErr_Clear();
+
+            /*
+             * Defensive cleanup of any orphan entry in sys.modules.
+             * Modern CPython removes the entry itself on import
+             * failure, but historically this was not always
+             * reliable.
+             */
+
+            modules = PyImport_GetModuleDict();
+            if (PyDict_GetItemString(modules, "apache"))
+            {
+                if (PyDict_DelItemString(modules, "apache") < 0)
+                    PyErr_Clear();
+            }
         }
         else
         {
@@ -1122,6 +1380,13 @@ InterpreterObject *newInterpreterObject(const char *name)
     if (!module)
     {
         module = PyImport_AddModule("apache");
+
+        if (!module)
+        {
+            PyErr_SetString(PyExc_RuntimeError,
+                            "PyImport_AddModule(\"apache\") failed");
+            goto failure;
+        }
 
         Py_INCREF(module);
     }
@@ -1232,30 +1497,51 @@ InterpreterObject *newInterpreterObject(const char *name)
 failure:
     /*
      * Cleanup partially constructed interpreter on allocation
-     * failure. If we still hold a reference to a Python module
-     * being populated, decrement it. If we own the sub interpreter
-     * we created, end it which also cleans up all Python objects
-     * created within it. Then restore the original thread state,
-     * free the heap allocated name and decrement reference count
-     * on self.
+     * failure. self may be NULL if PyObject_New itself failed, so
+     * fall back to the local name parameter for the log; everything
+     * else is conditional on what was reached. If we still hold a
+     * reference to a Python module being populated, decrement it.
+     * If we own the sub interpreter we created, end it which also
+     * cleans up all Python objects created within it. Then restore
+     * the original thread state, free the heap allocated name and
+     * decrement reference count on self.
      */
 
-    wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0035) "Unable to create %s in %s.",
-                          wsgi_format_interp_name(
-                              wsgi_server->process->pool, self->name),
-                          wsgi_format_process_context(
-                              wsgi_server->process->pool));
+    {
+        const char *log_name = (self && self->name) ? self->name : name;
+
+        wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0035) "Unable to setup %s in %s.",
+                              wsgi_format_interp_name(
+                                  wsgi_server->process->pool, log_name),
+                              wsgi_format_process_context(
+                                  wsgi_server->process->pool));
+
+        /*
+         * Surface any pending Python exception (the actual cause of
+         * the failure) before we tear down the sub-interpreter. The
+         * header logged above has no detail; once Py_EndInterpreter
+         * runs the exception is destroyed with the tstate, so
+         * callers would otherwise never see what actually went
+         * wrong.
+         */
+
+        if (PyErr_Occurred())
+            wsgi_log_python_interp_init_error(log_name);
+    }
 
     Py_XDECREF(module);
 
-    if (self->owner)
+    if (self && self->owner)
     {
         Py_EndInterpreter(tstate);
         PyThreadState_Swap(save_tstate);
     }
 
-    free(self->name);
-    Py_DECREF(self);
+    if (self)
+    {
+        free(self->name);
+        Py_DECREF(self);
+    }
 
     return NULL;
 }
@@ -1375,27 +1661,19 @@ static void Interpreter_dealloc(InterpreterObject *self)
         }
     }
 
-    /*
-     * In Python 2.5.1 an exit function is no longer used to
-     * shutdown and wait on non daemon threads which were created
-     * from Python code. Instead, in Py_Main() it explicitly
-     * calls 'threading._shutdown()'. Thus need to emulate this
-     * behaviour for those versions.
-     */
-
     /* Finally done with 'threading' module. */
 
     Py_XDECREF(module);
 
     /*
-     * Invoke exit functions by calling sys.exitfunc() for
-     * Python 2.X and atexit._run_exitfuncs() for Python 3.X.
-     * Note that in Python 3.X we can't call this on main Python
-     * interpreter as for Python 3.X it doesn't deregister
-     * functions as called, so have no choice but to rely on
-     * Py_Finalize() to do it for the main interpreter. Now
-     * that simplified GIL state API usage sorted out, this
-     * should be okay.
+     * Invoke registered atexit handlers via atexit._run_exitfuncs()
+     * for sub interpreters we own. Python does not call atexit
+     * handlers itself when a sub interpreter is destroyed by
+     * Py_EndInterpreter, so we have to drive them here. Skip this
+     * for the main interpreter: atexit doesn't deregister handlers
+     * as it calls them, so calling here would also call them again
+     * from Py_Finalize() during process shutdown. Rely on
+     * Py_Finalize() to handle the main interpreter's atexit chain.
      */
 
     module = NULL;
@@ -1423,99 +1701,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
         res = PyObject_CallObject(exitfunc, (PyObject *)NULL);
 
         if (res == NULL)
-        {
-            PyObject *m = NULL;
-            PyObject *tb_result = NULL;
-
-            PyObject *type = NULL;
-            PyObject *value = NULL;
-            PyObject *traceback = NULL;
-
-            if (PyErr_ExceptionMatches(PyExc_SystemExit))
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                      WSGI_APLOGNO(0097) "SystemExit exception raised by "
-                                                         "Python atexit functions for %s; "
-                                                         "ignored.",
-                                      wsgi_format_interp_context(
-                                          wsgi_server->process->pool, NULL,
-                                          self->name));
-            else
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                      WSGI_APLOGNO(0098) "Exception occurred within Python "
-                                                         "atexit functions during shutdown "
-                                                         "of %s.",
-                                      wsgi_format_interp_context(
-                                          wsgi_server->process->pool, NULL,
-                                          self->name));
-
-            PyErr_Fetch(&type, &value, &traceback);
-            PyErr_NormalizeException(&type, &value, &traceback);
-
-            if (!value)
-            {
-                value = Py_None;
-                Py_INCREF(value);
-            }
-
-            m = PyImport_ImportModule("traceback");
-
-            if (m)
-            {
-                PyObject *d = NULL;
-                PyObject *o = NULL;
-                d = PyModule_GetDict(m);
-                o = PyDict_GetItemString(d, "print_exception");
-                if (o)
-                {
-                    PyObject *log = NULL;
-                    PyObject *tb_args = NULL;
-                    PyObject *tb_kwargs = NULL;
-                    Py_INCREF(o);
-                    log = newLogObject(NULL, APLOG_ERR, NULL, 0);
-                    tb_args = Py_BuildValue("(O)", value);
-                    tb_kwargs = Py_BuildValue("{s:O}", "file", log);
-                    tb_result = PyObject_Call(o, tb_args, tb_kwargs);
-                    Py_DECREF(tb_kwargs);
-                    Py_DECREF(tb_args);
-                    Py_DECREF(log);
-                    Py_DECREF(o);
-                }
-            }
-
-            if (!tb_result)
-            {
-                /*
-                 * If can't output exception and traceback then
-                 * use PyErr_Print to dump out details of the
-                 * exception. For SystemExit though if we do
-                 * that the process will actually be terminated
-                 * so can only clear the exception information
-                 * and keep going.
-                 */
-
-                PyErr_Restore(type, value, traceback);
-
-                if (!PyErr_ExceptionMatches(PyExc_SystemExit))
-                {
-                    PyErr_Print();
-                    PyErr_Clear();
-                }
-                else
-                {
-                    PyErr_Clear();
-                }
-            }
-            else
-            {
-                Py_XDECREF(type);
-                Py_XDECREF(value);
-                Py_XDECREF(traceback);
-            }
-
-            Py_XDECREF(tb_result);
-
-            Py_XDECREF(m);
-        }
+            wsgi_log_python_interp_atexit_error(self->name);
 
         Py_XDECREF(res);
         Py_DECREF(exitfunc);
@@ -1746,18 +1932,21 @@ void wsgi_python_set_switch_interval(double seconds)
     gstate = PyGILState_Ensure();
 
     sys = PyImport_ImportModule("sys");
-    if (sys) {
+    if (sys)
+    {
         result = PyObject_CallMethod(sys, "setswitchinterval",
                                      "d", seconds);
         Py_DECREF(sys);
     }
 
-    if (!result) {
+    if (!result)
+    {
         PyErr_Clear();
         PyGILState_Release(gstate);
         wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
                        "mod_wsgi: failed to apply Python GIL switch "
-                       "interval %.6fs in %s.", seconds,
+                       "interval %.6fs in %s.",
+                       seconds,
                        wsgi_format_process_context(
                            wsgi_server->process->pool));
         return;
@@ -1768,7 +1957,8 @@ void wsgi_python_set_switch_interval(double seconds)
 
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                    "mod_wsgi: Python GIL switch interval set to "
-                   "%.6fs in %s.", seconds,
+                   "%.6fs in %s.",
+                   seconds,
                    wsgi_format_process_context(
                        wsgi_server->process->pool));
 }
@@ -2091,8 +2281,7 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
          * from daemon->group->switch_interval after wsgi_python_child_init
          * (see wsgi_daemon.c) — applying the server-config value here
          * would shadow that and emit a redundant INFO log line. */
-        if (wsgi_daemon_process == NULL
-                && wsgi_server_config->switch_interval > 0.0)
+        if (wsgi_daemon_process == NULL && wsgi_server_config->switch_interval > 0.0)
             wsgi_python_set_switch_interval(
                 wsgi_server_config->switch_interval);
 
@@ -2175,14 +2364,13 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
         if (!handle)
         {
             wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                  WSGI_APLOGNO(0103) "Unable to create %s in %s.",
+                                  WSGI_APLOGNO(0103) "Python based handlers "
+                                                     "will not be available "
+                                                     "for %s in %s.",
                                   wsgi_format_interp_name(
                                       wsgi_server->process->pool, name),
                                   wsgi_format_process_context(
                                       wsgi_server->process->pool));
-
-            PyErr_Print();
-            PyErr_Clear();
 
             PyGILState_Release(state);
 
@@ -2192,7 +2380,29 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
             return NULL;
         }
 
-        PyDict_SetItemString(wsgi_interpreters, name, (PyObject *)handle);
+        if (PyDict_SetItemString(wsgi_interpreters, name,
+                                 (PyObject *)handle) < 0)
+        {
+            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                  WSGI_APLOGNO(0180) "Unable to register %s in "
+                                                     "interpreters dictionary "
+                                                     "for %s.",
+                                  wsgi_format_interp_name(
+                                      wsgi_server->process->pool, name),
+                                  wsgi_format_process_context(
+                                      wsgi_server->process->pool));
+
+            PyErr_Clear();
+
+            Py_DECREF(handle);
+
+            PyGILState_Release(state);
+
+#if APR_HAS_THREADS
+            apr_thread_mutex_unlock(wsgi_interp_lock);
+#endif
+            return NULL;
+        }
 
         /*
          * Add interpreter name to index kept in Apache data
@@ -2901,12 +3111,12 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
 
     if (!object)
     {
-        wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0038) "Unable to create wrapper object for main "
-                                                                             "Python interpreter in %s; Python based "
-                                                                             "handlers will not be available.",
+        wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                              WSGI_APLOGNO(0038) "Python based handlers "
+                                                 "will not be available in "
+                                                 "%s.",
                               wsgi_format_process_context(
                                   wsgi_server->process->pool));
-        PyErr_Clear();
         PyGILState_Release(state);
         wsgi_python_initialized = 0;
         return APR_EGENERAL;
