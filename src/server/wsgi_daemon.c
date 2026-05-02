@@ -2113,8 +2113,20 @@ static void wsgi_log_thread_stack(unsigned long thread_id)
 
         code = PyFrame_GetCode(current);
         lineno = PyFrame_GetLineNumber(current);
-        filename = PyUnicode_AsUTF8(code->co_filename);
-        name = PyUnicode_AsUTF8(code->co_name);
+
+        if (code)
+        {
+            filename = PyUnicode_AsUTF8(code->co_filename);
+            name = PyUnicode_AsUTF8(code->co_name);
+        }
+
+        if (!filename)
+            filename = "<unknown>";
+        if (!name)
+            name = "<unknown>";
+
+        if (PyErr_Occurred())
+            PyErr_Clear();
 
         next_frame = PyFrame_GetBack(current);
 
@@ -2139,7 +2151,7 @@ static void wsgi_log_thread_stack(unsigned long thread_id)
                            filename, lineno, name);
         }
 
-        Py_DECREF(code);
+        Py_XDECREF(code);
         Py_DECREF(current);
         current = next_frame;
     }
@@ -2627,10 +2639,13 @@ static void wsgi_log_stack_traces(void)
                 apr_int64_t thread_id = 0;
 
                 PyFrameObject *current = NULL;
+                PyFrameObject *next_frame = NULL;
+                int is_first = 1;
 
                 thread_id = PyLong_AsLong(id);
 
                 current = (PyFrameObject *)frame;
+                Py_INCREF(current);
 
                 while (current)
                 {
@@ -2638,39 +2653,54 @@ static void wsgi_log_stack_traces(void)
 
                     const char *filename = NULL;
                     const char *name = NULL;
+                    PyCodeObject *code = NULL;
 
+                    code = PyFrame_GetCode(current);
                     lineno = PyFrame_GetLineNumber(current);
 
-                    filename = PyUnicode_AsUTF8(PyFrame_GetCode(current)->co_filename);
-                    name = PyUnicode_AsUTF8(PyFrame_GetCode(current)->co_name);
+                    if (code)
+                    {
+                        filename = PyUnicode_AsUTF8(code->co_filename);
+                        name = PyUnicode_AsUTF8(code->co_name);
+                    }
 
-                    if (current == (PyFrameObject *)frame)
+                    if (!filename)
+                        filename = "<unknown>";
+                    if (!name)
+                        name = "<unknown>";
+
+                    if (PyErr_Occurred())
+                        PyErr_Clear();
+
+                    next_frame = PyFrame_GetBack(current);
+
+                    if (is_first)
                     {
                         wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                        "Thread %" APR_INT64_T_FMT
                                        " executing file \"%s\", line "
                                        "%d, in %s",
                                        thread_id, filename, lineno, name);
+                        is_first = 0;
+                    }
+                    else if (next_frame)
+                    {
+                        wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                                       "called from file \"%s\", "
+                                       "line %d, in %s,",
+                                       filename, lineno, name);
                     }
                     else
                     {
-                        if (PyFrame_GetBack(current))
-                        {
-                            wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                                           "called from file \"%s\", "
-                                           "line %d, in %s,",
-                                           filename, lineno, name);
-                        }
-                        else
-                        {
-                            wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                                           "called from file \"%s\", "
-                                           "line %d, in %s.",
-                                           filename, lineno, name);
-                        }
+                        wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                                       "called from file \"%s\", "
+                                       "line %d, in %s.",
+                                       filename, lineno, name);
                     }
 
-                    current = PyFrame_GetBack(current);
+                    Py_XDECREF(code);
+                    Py_DECREF(current);
+                    current = next_frame;
                 }
             }
         }
