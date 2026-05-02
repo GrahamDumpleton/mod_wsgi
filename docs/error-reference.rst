@@ -4403,15 +4403,15 @@ WSGI0173 — Parent directory is writable to group (script-user)
 
 .. _WSGI0174:
 
-WSGI0174 — Exception occurred processing WSGI script
-----------------------------------------------------
+WSGI0174 — Exception raised processing WSGI script
+--------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_logger.c``
 
 :Logged message:
-   ``Exception occurred processing WSGI script '<filename>' for
-   <interpreter-context>.`` The interpreter context is of the form
+   ``Exception (<type>) raised processing WSGI script '<filename>'
+   for <interpreter-context>.`` The interpreter context is of the form
    ``main interpreter in embedded mode``, ``sub-interpreter '<name>'
    of daemon process '<group>'``, or any combination thereof. The
    header line is followed by the formatted Python traceback,
@@ -4443,14 +4443,14 @@ WSGI0174 — Exception occurred processing WSGI script
 
 .. _WSGI0175:
 
-WSGI0175 — SystemExit exception raised by WSGI script ignored
--------------------------------------------------------------
+WSGI0175 — SystemExit raised by WSGI script ignored
+---------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_logger.c``
 
 :Logged message:
-   ``SystemExit exception raised by WSGI script '<filename>' for
+   ``SystemExit (<type>) raised by WSGI script '<filename>' for
    <interpreter-context> ignored.`` Interpreter context shape as
    for :ref:`WSGI0174`. The header line is followed by the
    formatted Python traceback, emitted line-by-line as

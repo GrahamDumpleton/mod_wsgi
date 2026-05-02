@@ -34,6 +34,8 @@ def application(environ, start_response):
         "/raise-first": handle_raise_first,
         "/raise-midway": handle_raise_midway,
         "/raise-with-finally": handle_raise_with_finally,
+        "/raise-systemexit": handle_raise_systemexit,
+        "/raise-request-timeout": handle_raise_request_timeout,
         "/non-bytes-first": handle_non_bytes_first,
         "/non-bytes-midway": handle_non_bytes_midway,
         "/content-length-exact": handle_content_length_exact,
@@ -174,6 +176,15 @@ def handle_raise_with_finally(environ, start_response):
 
     start_response("200 OK", [("Content-Type", "text/plain")])
     return gen()
+
+
+def handle_raise_systemexit(environ, start_response):
+    raise SystemExit("raise-systemexit-msg")
+
+
+def handle_raise_request_timeout(environ, start_response):
+    import mod_wsgi
+    raise mod_wsgi.RequestTimeout("raise-request-timeout-msg")
 
 
 def handle_non_bytes_first(environ, start_response):

@@ -71,6 +71,12 @@ assert_log_contains "MARKER_CLOSE_GEXIT_77777" \
 assert_status "$URL/raise-first" "500" \
     "app that raises before yielding returns 500"
 
+sleep 1
+assert_log_contains "Exception (RuntimeError) raised processing WSGI script" \
+    "raise-first: WSGI0174 header names the exception class"
+assert_log_contains "RuntimeError: raise-first-boom" \
+    "raise-first: traceback continuation includes type and message"
+
 # ----- Exception after first yield -----
 
 assert_status "$URL/raise-midway" "200" \
@@ -87,6 +93,44 @@ assert_body_equals "$URL/raise-with-finally" "before-fin-err" \
 sleep 1
 assert_log_contains "MARKER_RAISE_FINALLY_77777" \
     "finally block runs when generator raises after yielding"
+
+# ----- SystemExit raised directly from the WSGI application -----
+#
+# Raising before start_response means the WSGI app call itself raises
+# (no sequence returned), so the adapter takes the "no-sequence" path
+# at the bottom of Adapter_run. SystemExit (not a subclass of
+# RuntimeError) is logged via WSGI0175 rather than WSGI0174.
+
+assert_status "$URL/raise-systemexit" "500" \
+    "app that raises SystemExit before start_response returns 500"
+
+sleep 1
+assert_log_contains "SystemExit (SystemExit) raised by WSGI script" \
+    "raise-systemexit: WSGI0175 header for SystemExit"
+assert_log_contains "SystemExit: raise-systemexit-msg" \
+    "raise-systemexit: traceback continuation includes type and message"
+
+# ----- mod_wsgi.RequestTimeout raised directly (not via timeout) -----
+#
+# mod_wsgi.RequestTimeout is a SystemExit subclass that the adapter
+# special-cases: it converts the exception into a 504 Gateway Timeout
+# response, emits an INFO log line, and clears the exception without
+# logging a traceback. Raising it manually (as opposed to having the
+# daemon monitor inject it via PyThreadState_SetAsyncExc) exercises
+# the same special-case path. We deliberately raise before
+# start_response so the adapter takes the "no-sequence" branch where
+# the 504 path applies cleanly.
+
+assert_status "$URL/raise-request-timeout" "504" \
+    "app that raises mod_wsgi.RequestTimeout returns 504 Gateway Timeout"
+
+sleep 1
+assert_log_contains "Request interrupted by RequestTimeout; thread recovered." \
+    "raise-request-timeout: INFO log replaces the traceback"
+assert_log_not_contains "RequestTimeout: raise-request-timeout-msg" \
+    "raise-request-timeout: not logged as a normal traceback (special-cased)"
+assert_log_not_contains "(RequestTimeout) raised" \
+    "raise-request-timeout: no WSGI0174/WSGI0175 header is emitted"
 
 # ----- Non-bytes items in iterable -----
 
