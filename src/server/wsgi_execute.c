@@ -230,7 +230,8 @@ int wsgi_execute_script(request_rec *r)
                  * finished.
                  */
 
-                PyDict_DelItemString(modules, name);
+                if (PyDict_DelItemString(modules, name) < 0)
+                    PyErr_Clear();
             }
         }
     }
@@ -376,8 +377,11 @@ int wsgi_execute_script(request_rec *r)
                 else
                 {
                     args = PyTuple_New(0);
-                    close_result = PyObject_CallObject(method, args);
-                    Py_DECREF(args);
+                    if (args)
+                    {
+                        close_result = PyObject_CallObject(method, args);
+                        Py_DECREF(args);
+                    }
                 }
 
                 Py_XDECREF(close_result);
