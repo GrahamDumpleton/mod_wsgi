@@ -685,29 +685,68 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
 
     thread_info = wsgi_thread_info(1, 1);
 
+    /* Best-effort. A failure here must not tear down the request — the
+     * downstream wsgi_request_data accessor handles a NULL request_data
+     * by raising RuntimeError to the caller. Each failure path replaces
+     * the underlying (likely MemoryError) exception with a site-specific
+     * RuntimeError before logging so the log identifies the failing
+     * operation rather than just the allocation primitive. */
+
     thread_info->request_data = PyDict_New();
-
-    thread_info->request_id = PyUnicode_DecodeLatin1(r->log_id,
-                                                     strlen(r->log_id), NULL);
-
-    module = PyImport_ImportModule("mod_wsgi");
-
-    if (module)
+    if (!thread_info->request_data)
     {
-        PyObject *dict = NULL;
-        PyObject *requests = NULL;
-
-        dict = PyModule_GetDict(module);
-        requests = PyDict_GetItemString(dict, "active_requests");
-
-        if (requests)
-            PyDict_SetItem(requests, thread_info->request_id,
-                           thread_info->request_data);
-
-        Py_DECREF(module);
+        PyErr_Format(PyExc_RuntimeError,
+                              "Failed to allocate request_data dict "
+                              "for request %s",
+                              r->uri ? r->uri : "(unknown)");
+        wsgi_log_python_error(r, NULL, NULL, 0);
     }
-    else
-        PyErr_Clear();
+
+    if (r->log_id)
+    {
+        thread_info->request_id = PyUnicode_DecodeLatin1(
+            r->log_id, strlen(r->log_id), NULL);
+        if (!thread_info->request_id)
+        {
+            PyErr_Format(PyExc_RuntimeError,
+                                  "Failed to decode request_id "
+                                  "for request %s",
+                                  r->uri ? r->uri : "(unknown)");
+            wsgi_log_python_error(r, NULL, NULL, 0);
+        }
+    }
+
+    if (thread_info->request_data && thread_info->request_id)
+    {
+        module = PyImport_ImportModule("mod_wsgi");
+
+        if (module)
+        {
+            PyObject *dict = NULL;
+            PyObject *requests = NULL;
+
+            dict = PyModule_GetDict(module);
+            requests = PyDict_GetItemString(dict, "active_requests");
+
+            if (requests)
+            {
+                if (PyDict_SetItem(requests, thread_info->request_id,
+                                   thread_info->request_data) < 0)
+                {
+                    PyErr_Format(PyExc_RuntimeError,
+                                          "Failed to register request_id "
+                                          "in active_requests for "
+                                          "request %s",
+                                          r->uri ? r->uri : "(unknown)");
+                    wsgi_log_python_error(r, NULL, NULL, 0);
+                }
+            }
+
+            Py_DECREF(module);
+        }
+        else
+            PyErr_Clear();
+    }
 
     /* Capture per-thread CPU baselines before taking the lock — the
      * underlying thread_info()/getrusage() syscall only reads this
@@ -3245,13 +3284,19 @@ static PyObject *wsgi_subscribe_events(PyObject *Py_UNUSED(self), PyObject *args
         dict = PyModule_GetDict(module);
         list = PyDict_GetItemString(dict, "event_callbacks");
 
-        if (list)
-            PyList_Append(list, callback);
-        else
+        if (!list)
         {
             Py_DECREF(module);
             PyErr_SetString(PyExc_RuntimeError,
                             "mod_wsgi event_callbacks not initialised");
+            return NULL;
+        }
+
+        if (PyList_Append(list, callback) < 0)
+        {
+            PyErr_Format(PyExc_RuntimeError,
+                                  "Failed to register event subscriber");
+            Py_DECREF(module);
             return NULL;
         }
 
@@ -3282,13 +3327,19 @@ static PyObject *wsgi_subscribe_shutdown(PyObject *Py_UNUSED(self), PyObject *ar
         dict = PyModule_GetDict(module);
         list = PyDict_GetItemString(dict, "shutdown_callbacks");
 
-        if (list)
-            PyList_Append(list, callback);
-        else
+        if (!list)
         {
             Py_DECREF(module);
             PyErr_SetString(PyExc_RuntimeError,
                             "mod_wsgi shutdown_callbacks not initialised");
+            return NULL;
+        }
+
+        if (PyList_Append(list, callback) < 0)
+        {
+            PyErr_Format(PyExc_RuntimeError,
+                                  "Failed to register shutdown subscriber");
+            Py_DECREF(module);
             return NULL;
         }
 
@@ -3344,6 +3395,15 @@ void wsgi_call_callbacks(const char *name, PyObject *callbacks,
         Py_INCREF(callback);
 
         args = Py_BuildValue("(s)", name);
+        if (!args)
+        {
+            PyErr_Format(PyExc_RuntimeError,
+                                  "Failed to build callback args tuple "
+                                  "for event %s", name);
+            wsgi_log_python_event_callback_error(name);
+            Py_DECREF(callback);
+            continue;
+        }
 
         res = PyObject_Call(callback, args, event);
 
