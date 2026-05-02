@@ -665,7 +665,8 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
             Py_DECREF(module);
             module = NULL;
 
-            PyDict_DelItemString(modules, name);
+            if (PyDict_DelItemString(modules, name) < 0)
+                PyErr_Clear();
         }
     }
 
@@ -937,7 +938,8 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
             Py_DECREF(module);
             module = NULL;
 
-            PyDict_DelItemString(modules, name);
+            if (PyDict_DelItemString(modules, name) < 0)
+                PyErr_Clear();
         }
     }
 
@@ -1229,7 +1231,8 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
             Py_DECREF(module);
             module = NULL;
 
-            PyDict_DelItemString(modules, name);
+            if (PyDict_DelItemString(modules, name) < 0)
+                PyErr_Clear();
         }
     }
 
@@ -1523,7 +1526,8 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
             Py_DECREF(module);
             module = NULL;
 
-            PyDict_DelItemString(modules, name);
+            if (PyDict_DelItemString(modules, name) < 0)
+                PyErr_Clear();
         }
     }
 
