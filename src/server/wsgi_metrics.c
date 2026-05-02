@@ -1025,7 +1025,7 @@ void wsgi_metrics_telemetry_init(void)
 
     telemetry_start_time = (double)apr_time_now();
     telemetry_start_request_busy_time = wsgi_utilization_time_locked(0,
-                                                  &telemetry_start_request_count);
+                                                                     &telemetry_start_request_count);
 
     wsgi_request_metrics_enabled = 1;
 
@@ -2040,6 +2040,101 @@ static void wsgi_initialize_interned_strings(void)
 
 /* ------------------------------------------------------------------------- */
 
+/* Each helper sets a typed value on `dict` under `key` and returns 0 on
+ * success, or -1 with a Python exception set on failure. The caller
+ * pattern is `if (wsgi_dict_set_*(...) < 0) goto error;` paired with an
+ * `error:` label that Py_XDECREFs partially-built containers and
+ * returns NULL. */
+
+static int wsgi_dict_set_steal(PyObject *dict, PyObject *key, PyObject *value)
+{
+    int rc;
+
+    if (!value)
+        return -1;
+    rc = PyDict_SetItem(dict, key, value);
+    Py_DECREF(value);
+    return rc;
+}
+
+static int wsgi_dict_set_long(PyObject *dict, PyObject *key, long val)
+{
+    return wsgi_dict_set_steal(dict, key, PyLong_FromLong(val));
+}
+
+static int wsgi_dict_set_longlong(PyObject *dict, PyObject *key,
+                                  long long val)
+{
+    return wsgi_dict_set_steal(dict, key, PyLong_FromLongLong(val));
+}
+
+static int wsgi_dict_set_ulonglong(PyObject *dict, PyObject *key,
+                                   unsigned long long val)
+{
+    return wsgi_dict_set_steal(dict, key, PyLong_FromUnsignedLongLong(val));
+}
+
+static int wsgi_dict_set_double(PyObject *dict, PyObject *key, double val)
+{
+    return wsgi_dict_set_steal(dict, key, PyFloat_FromDouble(val));
+}
+
+static int wsgi_dict_set_bool(PyObject *dict, PyObject *key, int val)
+{
+    return wsgi_dict_set_steal(dict, key, PyBool_FromLong(val));
+}
+
+static int wsgi_dict_set_none(PyObject *dict, PyObject *key)
+{
+    return PyDict_SetItem(dict, key, Py_None);
+}
+
+static int wsgi_dict_set_latin1(PyObject *dict, PyObject *key,
+                                const char *s)
+{
+    /* NULL s is treated as an empty string to match scoreboard call
+     * sites where Apache may hand back NULL for an empty field. */
+    PyObject *value = PyUnicode_DecodeLatin1(s ? s : "",
+                                             s ? strlen(s) : 0, NULL);
+    return wsgi_dict_set_steal(dict, key, value);
+}
+
+static int wsgi_dict_set_borrowed(PyObject *dict, PyObject *key,
+                                  PyObject *value)
+{
+    if (!value)
+    {
+        PyErr_SetString(PyExc_SystemError,
+                        "wsgi_dict_set_borrowed called with NULL value");
+        return -1;
+    }
+    return PyDict_SetItem(dict, key, value);
+}
+
+static int wsgi_dict_set_long_list(PyObject *dict, PyObject *key,
+                                   const int *vals, Py_ssize_t n)
+{
+    PyObject *lst;
+    Py_ssize_t i;
+
+    lst = PyList_New(n);
+    if (!lst)
+        return -1;
+    for (i = 0; i < n; i++)
+    {
+        PyObject *o = PyLong_FromLong(vals[i]);
+        if (!o)
+        {
+            Py_DECREF(lst);
+            return -1;
+        }
+        PyList_SET_ITEM(lst, i, o);
+    }
+    return wsgi_dict_set_steal(dict, key, lst);
+}
+
+/* ------------------------------------------------------------------------- */
+
 static PyObject *wsgi_request_metrics(void)
 {
     PyObject *result = NULL;
@@ -2942,13 +3037,11 @@ PyMethodDef wsgi_request_metrics_method[] = {
 static PyObject *wsgi_process_metrics(void)
 {
     PyObject *result = NULL;
-
-    PyObject *object = NULL;
-
     PyObject *thread_list = NULL;
     WSGIThreadInfo **thread_info = NULL;
 
     apr_uint64_t request_count = 0;
+    double busy_time = 0.0;
 
     int i;
 
@@ -2964,39 +3057,31 @@ static PyObject *wsgi_process_metrics(void)
         wsgi_initialize_interned_strings();
 
     result = PyDict_New();
+    if (!result)
+        return NULL;
 
-    object = PyLong_FromLong(getpid());
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(pid), object);
-    Py_DECREF(object);
+    apr_thread_mutex_lock(wsgi_monitor_lock);
+    busy_time = wsgi_utilization_time_locked(0, &request_count);
+    apr_thread_mutex_unlock(wsgi_monitor_lock);
 
-    {
-        double busy_time;
-
-        apr_thread_mutex_lock(wsgi_monitor_lock);
-        busy_time = wsgi_utilization_time_locked(0, &request_count);
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
-
-        object = PyFloat_FromDouble(busy_time);
-    }
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(request_busy_time), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromLongLong(request_count);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(request_count), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromLongLong(wsgi_get_peak_memory_RSS());
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(memory_max_rss), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromLongLong(wsgi_get_current_memory_RSS());
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(memory_rss), object);
-    Py_DECREF(object);
+    if (wsgi_dict_set_long(result, WSGI_INTERNED_STRING(pid), getpid()) < 0)
+        goto error;
+    if (wsgi_dict_set_double(result,
+                             WSGI_INTERNED_STRING(request_busy_time),
+                             busy_time) < 0)
+        goto error;
+    if (wsgi_dict_set_longlong(result,
+                               WSGI_INTERNED_STRING(request_count),
+                               (long long)request_count) < 0)
+        goto error;
+    if (wsgi_dict_set_longlong(result,
+                               WSGI_INTERNED_STRING(memory_max_rss),
+                               wsgi_get_peak_memory_RSS()) < 0)
+        goto error;
+    if (wsgi_dict_set_longlong(result,
+                               WSGI_INTERNED_STRING(memory_rss),
+                               wsgi_get_current_memory_RSS()) < 0)
+        goto error;
 
 #ifdef HAVE_TIMES
     if (!tick)
@@ -3010,82 +3095,83 @@ static PyObject *wsgi_process_metrics(void)
 
     times(&tmsbuf);
 
-    object = PyFloat_FromDouble(tmsbuf.tms_utime / tick);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_user_time), object);
-    Py_DECREF(object);
-
-    object = PyFloat_FromDouble(tmsbuf.tms_stime / tick);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_system_time), object);
-    Py_DECREF(object);
-
-    object = PyFloat_FromDouble((tmsbuf.tms_utime + tmsbuf.tms_stime) / tick);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(cpu_time), object);
-    Py_DECREF(object);
+    if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(cpu_user_time),
+                             tmsbuf.tms_utime / tick) < 0)
+        goto error;
+    if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(cpu_system_time),
+                             tmsbuf.tms_stime / tick) < 0)
+        goto error;
+    if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(cpu_time),
+                             (tmsbuf.tms_utime + tmsbuf.tms_stime) / tick) < 0)
+        goto error;
 #endif
 
-    object = PyFloat_FromDouble(apr_time_sec((double)wsgi_restart_time));
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(restart_time), object);
-    Py_DECREF(object);
+    if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(restart_time),
+                             apr_time_sec((double)wsgi_restart_time)) < 0)
+        goto error;
 
     current_time = apr_time_now();
-
-    object = PyFloat_FromDouble(apr_time_sec((double)current_time));
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(current_time), object);
-    Py_DECREF(object);
+    if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(current_time),
+                             apr_time_sec((double)current_time)) < 0)
+        goto error;
 
     running_time = apr_time_sec((double)current_time - wsgi_restart_time);
+    if (wsgi_dict_set_longlong(result, WSGI_INTERNED_STRING(running_time),
+                               (long long)running_time) < 0)
+        goto error;
 
-    object = PyLong_FromLongLong(running_time);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(running_time), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromLong(wsgi_request_threads);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(request_threads), object);
-    Py_DECREF(object);
-
-    object = PyLong_FromLong(wsgi_active_requests);
-    PyDict_SetItem(result,
-                   WSGI_INTERNED_STRING(active_requests), object);
-    Py_DECREF(object);
+    if (wsgi_dict_set_long(result, WSGI_INTERNED_STRING(request_threads),
+                           wsgi_request_threads) < 0)
+        goto error;
+    if (wsgi_dict_set_long(result, WSGI_INTERNED_STRING(active_requests),
+                           wsgi_active_requests) < 0)
+        goto error;
 
     thread_list = PyList_New(0);
-
-    PyDict_SetItem(result, WSGI_INTERNED_STRING(threads), thread_list);
+    if (!thread_list)
+        goto error;
 
     thread_info = (WSGIThreadInfo **)wsgi_thread_details->elts;
 
     for (i = 0; i < wsgi_thread_details->nelts; i++)
     {
-        PyObject *entry = NULL;
+        PyObject *entry;
 
-        if (thread_info[i]->request_thread)
+        if (!thread_info[i]->request_thread)
+            continue;
+
+        entry = PyDict_New();
+        if (!entry)
+            goto error;
+
+        if (wsgi_dict_set_long(entry, WSGI_INTERNED_STRING(thread_id),
+                               thread_info[i]->thread_id) < 0 ||
+            wsgi_dict_set_longlong(entry, WSGI_INTERNED_STRING(request_count),
+                                   thread_info[i]->request_count) < 0)
         {
-            entry = PyDict_New();
-
-            object = PyLong_FromLong(thread_info[i]->thread_id);
-            PyDict_SetItem(entry, WSGI_INTERNED_STRING(thread_id), object);
-            Py_DECREF(object);
-
-            object = PyLong_FromLongLong(thread_info[i]->request_count);
-            PyDict_SetItem(entry, WSGI_INTERNED_STRING(request_count), object);
-            Py_DECREF(object);
-
-            PyList_Append(thread_list, entry);
-
             Py_DECREF(entry);
+            goto error;
         }
+
+        if (PyList_Append(thread_list, entry) < 0)
+        {
+            Py_DECREF(entry);
+            goto error;
+        }
+        Py_DECREF(entry);
     }
 
+    if (PyDict_SetItem(result, WSGI_INTERNED_STRING(threads),
+                       thread_list) < 0)
+        goto error;
     Py_DECREF(thread_list);
 
     return result;
+
+error:
+    Py_XDECREF(thread_list);
+    Py_DECREF(result);
+    return NULL;
 }
 
 PyMethodDef wsgi_process_metrics_method[] = {
