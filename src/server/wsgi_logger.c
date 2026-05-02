@@ -826,12 +826,14 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
         case WSGI_LOG_PYTHON_PHASE_INTERP_INIT:
             apr_snprintf(header, sizeof(header),
                          is_systemexit
-                             ? WSGI_APLOGNO(0189) "SystemExit (%s) raised "
-                                                  "during Python interpreter "
+                             ? WSGI_APLOGNO(0189) "%s exception raised "
+                                                  "during Python "
+                                                  "interpreter "
                                                   "initialisation for %s; "
                                                   "ignored."
-                             : WSGI_APLOGNO(0188) "Exception (%s) raised "
-                                                  "during Python interpreter "
+                             : WSGI_APLOGNO(0188) "%s exception raised "
+                                                  "during Python "
+                                                  "interpreter "
                                                   "initialisation for %s.",
                          exception_type, context);
             break;
@@ -839,26 +841,24 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
         case WSGI_LOG_PYTHON_PHASE_INTERP_ATEXIT:
             apr_snprintf(header, sizeof(header),
                          is_systemexit
-                             ? WSGI_APLOGNO(0097) "SystemExit (%s) raised "
-                                                  "by Python atexit "
-                                                  "functions during "
-                                                  "shutdown of %s; "
+                             ? WSGI_APLOGNO(0097) "%s exception raised by "
+                                                  "Python atexit functions "
+                                                  "during shutdown of %s; "
                                                   "ignored."
-                             : WSGI_APLOGNO(0098) "Exception (%s) raised "
-                                                  "by Python atexit "
-                                                  "functions during "
-                                                  "shutdown of %s.",
+                             : WSGI_APLOGNO(0098) "%s exception raised by "
+                                                  "Python atexit functions "
+                                                  "during shutdown of %s.",
                          exception_type, context);
             break;
 
         case WSGI_LOG_PYTHON_PHASE_EVENT_CALLBACK:
             apr_snprintf(header, sizeof(header),
                          is_systemexit
-                             ? WSGI_APLOGNO(0190) "SystemExit (%s) raised "
-                                                  "by event callback for "
+                             ? WSGI_APLOGNO(0190) "%s exception raised by "
+                                                  "event callback for "
                                                   "'%s'; ignored."
-                             : WSGI_APLOGNO(0112) "Exception (%s) raised "
-                                                  "by event callback for "
+                             : WSGI_APLOGNO(0112) "%s exception raised by "
+                                                  "event callback for "
                                                   "'%s'.",
                          exception_type, filename);
             break;
@@ -869,9 +869,9 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
             {
                 apr_snprintf(header, sizeof(header),
                              is_systemexit
-                                 ? WSGI_APLOGNO(0175) "[script %s] SystemExit (%s) raised "
-                                                      "by WSGI script '%s' for %s ignored."
-                                 : WSGI_APLOGNO(0174) "[script %s] Exception (%s) raised "
+                                 ? WSGI_APLOGNO(0175) "[script %s] %s exception raised "
+                                                      "by WSGI script '%s' for %s; ignored."
+                                 : WSGI_APLOGNO(0174) "[script %s] %s exception raised "
                                                       "processing WSGI script '%s' for %s.",
                              r->filename ? r->filename : "(unknown)",
                              exception_type, filename, context);
@@ -880,9 +880,9 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
             {
                 apr_snprintf(header, sizeof(header),
                              is_systemexit
-                                 ? WSGI_APLOGNO(0175) "SystemExit (%s) raised by WSGI "
-                                                      "script '%s' for %s ignored."
-                                 : WSGI_APLOGNO(0174) "Exception (%s) raised processing "
+                                 ? WSGI_APLOGNO(0175) "%s exception raised by WSGI "
+                                                      "script '%s' for %s; ignored."
+                                 : WSGI_APLOGNO(0174) "%s exception raised processing "
                                                       "WSGI script '%s' for %s.",
                              exception_type, filename, context);
             }

@@ -2540,10 +2540,13 @@ WSGI0097 — SystemExit from Python atexit functions ignored
 :Source: ``src/server/wsgi_logger.c``
 
 :Logged message:
-   ``SystemExit (<type>) raised by Python atexit functions during
-   shutdown of <interpreter-context>; ignored.`` Interpreter context
+   ``<type> exception raised by Python atexit functions during
+   shutdown of <interpreter-context>; ignored.`` ``<type>`` is the
+   exception class name (typically ``SystemExit`` itself, but a
+   user-defined subclass surfaces here too). Interpreter context
    is of the form ``main interpreter in embedded mode`` or
-   ``sub-interpreter '<name>' of daemon process '<group>'``.
+   ``sub-interpreter
+   '<name>' of daemon process '<group>'``.
 
 :Cause:
    A Python ``atexit``-registered function raised ``SystemExit``
@@ -2568,9 +2571,9 @@ WSGI0098 — Exception within Python atexit functions during shutdown
 :Source: ``src/server/wsgi_logger.c``
 
 :Logged message:
-   ``Exception (<type>) raised by Python atexit functions during
-   shutdown of <interpreter-context>.`` Interpreter context shape as
-   for :ref:`WSGI0097`.
+   ``<type> exception raised by Python atexit functions during
+   shutdown of <interpreter-context>.`` ``<type>`` is the exception
+   class name. Interpreter context shape as for :ref:`WSGI0097`.
 
 :Cause:
    An ``atexit`` handler raised a non-``SystemExit`` exception. The
@@ -2924,10 +2927,11 @@ WSGI0112 — Exception within event callback
 :Source: ``src/server/wsgi_logger.c``
 
 :Logged message:
-   ``Exception (<type>) raised by event callback for '<event-name>'.``
-   Event name is the string passed to ``wsgi_publish_event()`` (e.g.
-   ``request_started``, ``response_started``, ``request_finished``,
-   ``request_exception``, ``process_stopping``).
+   ``<type> exception raised by event callback for '<event-name>'.``
+   ``<type>`` is the exception class name. Event name is the string
+   passed to ``wsgi_publish_event()`` (e.g. ``request_started``,
+   ``response_started``, ``request_finished``, ``request_exception``,
+   ``process_stopping``).
 
 :Cause:
    A subscriber registered via ``mod_wsgi.subscribe_events()`` or
@@ -4408,12 +4412,13 @@ WSGI0174 — Exception raised processing WSGI script
 :Source: ``src/server/wsgi_logger.c``
 
 :Logged message:
-   ``Exception (<type>) raised processing WSGI script '<filename>'
-   for <interpreter-context>.`` The interpreter context is of the form
-   ``main interpreter in embedded mode``, ``sub-interpreter '<name>'
-   of daemon process '<group>'``, or any combination thereof. The
-   header line is followed by the formatted Python traceback,
-   emitted line-by-line as continuation log entries.
+   ``<type> exception raised processing WSGI script '<filename>'
+   for <interpreter-context>.`` ``<type>`` is the exception class
+   name. The interpreter context is of the form ``main interpreter
+   in embedded mode``, ``sub-interpreter '<name>' of daemon process
+   '<group>'``, or any combination thereof. The header line is
+   followed by the formatted Python traceback, emitted line-by-line
+   as continuation log entries.
 
 :Cause:
    A Python exception other than ``SystemExit`` propagated out of
@@ -4448,11 +4453,13 @@ WSGI0175 — SystemExit raised by WSGI script ignored
 :Source: ``src/server/wsgi_logger.c``
 
 :Logged message:
-   ``SystemExit (<type>) raised by WSGI script '<filename>' for
-   <interpreter-context> ignored.`` Interpreter context shape as
-   for :ref:`WSGI0174`. The header line is followed by the
-   formatted Python traceback, emitted line-by-line as
-   continuation log entries.
+   ``<type> exception raised by WSGI script '<filename>' for
+   <interpreter-context>; ignored.`` ``<type>`` is the exception
+   class name (typically ``SystemExit`` itself, but a user-defined
+   subclass surfaces here too). Interpreter context shape as for
+   :ref:`WSGI0174`. The header line is followed by the formatted
+   Python traceback, emitted line-by-line as continuation log
+   entries.
 
 :Cause:
    The WSGI application or a hook script raised ``SystemExit``
@@ -4830,10 +4837,11 @@ WSGI0188 — Exception raised during Python interpreter initialisation
 :Source: ``src/server/wsgi_logger.c``
 
 :Logged message:
-   ``Exception (<type>) raised during Python interpreter
-   initialisation for <interpreter-context>.`` Interpreter context
-   is ``main interpreter in embedded mode``, ``sub-interpreter
-   '<name>' of daemon process '<group>'``, or any combination.
+   ``<type> exception raised during Python interpreter
+   initialisation for <interpreter-context>.`` ``<type>`` is the
+   exception class name. Interpreter context is ``main interpreter
+   in embedded mode``, ``sub-interpreter '<name>' of daemon process
+   '<group>'``, or any combination.
 
 :Cause:
    A Python exception (other than ``SystemExit``) was raised at any
@@ -4864,8 +4872,10 @@ WSGI0189 — SystemExit raised during Python interpreter initialisation
 :Source: ``src/server/wsgi_logger.c``
 
 :Logged message:
-   ``SystemExit (<type>) raised during Python interpreter
-   initialisation for <interpreter-context>; ignored.`` Interpreter
+   ``<type> exception raised during Python interpreter
+   initialisation for <interpreter-context>; ignored.`` ``<type>``
+   is the exception class name (typically ``SystemExit`` itself,
+   but a user-defined subclass surfaces here too). Interpreter
    context shape as for :ref:`WSGI0188`.
 
 :Cause:
@@ -4892,8 +4902,10 @@ WSGI0190 — SystemExit raised by event callback ignored
 :Source: ``src/server/wsgi_logger.c``
 
 :Logged message:
-   ``SystemExit (<type>) raised by event callback for '<event-name>';
-   ignored.`` Event name shape as for :ref:`WSGI0112`.
+   ``<type> exception raised by event callback for '<event-name>';
+   ignored.`` ``<type>`` is the exception class name (typically
+   ``SystemExit`` itself, but a user-defined subclass surfaces here
+   too). Event name shape as for :ref:`WSGI0112`.
 
 :Cause:
    A subscriber registered via ``mod_wsgi.subscribe_events()`` or

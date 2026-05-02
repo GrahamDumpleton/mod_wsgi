@@ -72,7 +72,7 @@ assert_status "$URL/raise-first" "500" \
     "app that raises before yielding returns 500"
 
 sleep 1
-assert_log_contains "Exception (RuntimeError) raised processing WSGI script" \
+assert_log_contains "RuntimeError exception raised processing WSGI script" \
     "raise-first: WSGI0174 header names the exception class"
 assert_log_contains "RuntimeError: raise-first-boom" \
     "raise-first: traceback continuation includes type and message"
@@ -105,7 +105,7 @@ assert_status "$URL/raise-systemexit" "500" \
     "app that raises SystemExit before start_response returns 500"
 
 sleep 1
-assert_log_contains "SystemExit (SystemExit) raised by WSGI script" \
+assert_log_contains "SystemExit exception raised by WSGI script" \
     "raise-systemexit: WSGI0175 header for SystemExit"
 assert_log_contains "SystemExit: raise-systemexit-msg" \
     "raise-systemexit: traceback continuation includes type and message"
