@@ -231,8 +231,7 @@ int wsgi_execute_dispatch(request_rec *r)
 
     if (!config->dispatch_script)
     {
-        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0085)
-                       "Location of WSGI dispatch script not provided.");
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0085) "Location of WSGI dispatch script not provided.");
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -249,8 +248,7 @@ int wsgi_execute_dispatch(request_rec *r)
 
     if (!interp)
     {
-        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0086)
-                        "Unable to acquire %s for dispatch hook.",
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0086) "Unable to acquire %s for dispatch hook.",
                         wsgi_format_interp_name(r->pool, group));
 
         return HTTP_INTERNAL_SERVER_ERROR;

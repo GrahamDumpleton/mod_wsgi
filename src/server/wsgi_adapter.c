@@ -77,10 +77,10 @@ void Input_finish(InputObject *self)
     if (self->bb)
     {
         WSGI_BEGIN_ALLOW_THREADS
-            apr_brigade_destroy(self->bb);
+        apr_brigade_destroy(self->bb);
         WSGI_END_ALLOW_THREADS
 
-            self->bb = NULL;
+        self->bb = NULL;
     }
 
     self->r = NULL;
@@ -147,7 +147,7 @@ static apr_int64_t Input_read_from_input(InputObject *self, char *buffer,
 
     WSGI_BEGIN_ALLOW_THREADS
 
-        start = apr_time_now();
+    start = apr_time_now();
 
     self->reads += 1;
 
@@ -246,13 +246,13 @@ finally:
 
     WSGI_END_ALLOW_THREADS
 
-        /*
-         * Set any Python exception when an error has occurred and
-         * remember there was an error so can flag on subsequent
-         * reads that already in an error state.
-         */
+    /*
+     * Set any Python exception when an error has occurred and
+     * remember there was an error so can flag on subsequent
+     * reads that already in an error state.
+     */
 
-        if (error_status)
+    if (error_status)
     {
         char status_buffer[512];
 
@@ -1539,14 +1539,14 @@ static int Adapter_output(AdapterObject *self, const char *data,
         APR_BRIGADE_INSERT_TAIL(self->bb, b);
 
         WSGI_BEGIN_ALLOW_THREADS
-            output_start = apr_time_now();
-            rv = ap_pass_brigade(r->output_filters, self->bb);
-            output_finish = apr_time_now();
-            if (output_finish > output_start)
-                self->output_time += (output_finish - output_start);
+        output_start = apr_time_now();
+        rv = ap_pass_brigade(r->output_filters, self->bb);
+        output_finish = apr_time_now();
+        if (output_finish > output_start)
+            self->output_time += (output_finish - output_start);
         WSGI_END_ALLOW_THREADS
 
-            if (rv != APR_SUCCESS)
+        if (rv != APR_SUCCESS)
         {
             char status_buffer[512];
             const char *error_message;
@@ -1577,11 +1577,11 @@ static int Adapter_output(AdapterObject *self, const char *data,
         }
 
         WSGI_BEGIN_ALLOW_THREADS
-            output_start = apr_time_now();
-            apr_brigade_cleanup(self->bb);
-            output_finish = apr_time_now();
-            if (output_finish > output_start)
-                self->output_time += (output_finish - output_start);
+        output_start = apr_time_now();
+        apr_brigade_cleanup(self->bb);
+        output_finish = apr_time_now();
+        if (output_finish > output_start)
+            self->output_time += (output_finish - output_start);
         WSGI_END_ALLOW_THREADS
     }
 
@@ -1664,11 +1664,11 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
         PyErr_SetString(PyExc_IOError, error_message);
 
         WSGI_BEGIN_ALLOW_THREADS
-            output_start = apr_time_now();
-            apr_brigade_destroy(bb);
-            output_finish = apr_time_now();
-            if (output_finish > output_start)
-                self->output_time += (output_finish - output_start);
+        output_start = apr_time_now();
+        apr_brigade_destroy(bb);
+        output_finish = apr_time_now();
+        if (output_finish > output_start)
+            self->output_time += (output_finish - output_start);
         WSGI_END_ALLOW_THREADS
 
         return 0;
@@ -1719,14 +1719,14 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
     APR_BRIGADE_INSERT_TAIL(bb, b);
 
     WSGI_BEGIN_ALLOW_THREADS
-        output_start = apr_time_now();
-        rv = ap_pass_brigade(r->output_filters, bb);
-        output_finish = apr_time_now();
-        if (output_finish > output_start)
-            self->output_time += (output_finish - output_start);
+    output_start = apr_time_now();
+    rv = ap_pass_brigade(r->output_filters, bb);
+    output_finish = apr_time_now();
+    if (output_finish > output_start)
+        self->output_time += (output_finish - output_start);
     WSGI_END_ALLOW_THREADS
 
-        if (rv != APR_SUCCESS)
+    if (rv != APR_SUCCESS)
     {
         char status_buffer[512];
         const char *error_message;
@@ -1741,14 +1741,14 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
     }
 
     WSGI_BEGIN_ALLOW_THREADS
-        output_start = apr_time_now();
-        apr_brigade_destroy(bb);
-        output_finish = apr_time_now();
-        if (output_finish > output_start)
-            self->output_time += (output_finish - output_start);
+    output_start = apr_time_now();
+    apr_brigade_destroy(bb);
+    output_finish = apr_time_now();
+    if (output_finish > output_start)
+        self->output_time += (output_finish - output_start);
     WSGI_END_ALLOW_THREADS
 
-        if (r->connection->aborted)
+    if (r->connection->aborted)
     {
         PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client connection "
                                        "closed.");
@@ -2917,7 +2917,7 @@ int Adapter_run(AdapterObject *self, PyObject *object)
              * aren't invoked with an error pending.
              */
 
-event_error:
+        event_error:
             if (PyErr_Occurred())
                 wsgi_log_python_error(self->r, self->r->filename, NULL, 1);
             else

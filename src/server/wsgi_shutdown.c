@@ -95,15 +95,13 @@ static PyObject *ShutdownInterpreter_call(
                 PyObject *traceback = NULL;
 
                 if (PyErr_ExceptionMatches(PyExc_SystemExit))
-                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0130)
-                                          "SystemExit exception raised "
-                                          "by Python atexit/sys.exitfunc; "
-                                          "ignored.");
+                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0130) "SystemExit exception raised "
+                                                                                        "by Python atexit/sys.exitfunc; "
+                                                                                        "ignored.");
                 else
-                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0131)
-                                          "Exception occurred within "
-                                          "Python atexit/sys.exitfunc "
-                                          "during shutdown.");
+                    wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0131) "Exception occurred within "
+                                                                                        "Python atexit/sys.exitfunc "
+                                                                                        "during shutdown.");
 
                 PyErr_Fetch(&type, &value, &traceback);
                 PyErr_NormalizeException(&type, &value, &traceback);

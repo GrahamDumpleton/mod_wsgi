@@ -1123,9 +1123,8 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
     {
         if (chroot(daemon->group->root) == -1)
         {
-            wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0003)
-                           "Unable to change root directory to '%s'. "
-                           "Daemon process will exit.",
+            wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0003) "Unable to change root directory to '%s'. "
+                                                                               "Daemon process will exit.",
                            daemon->group->root);
 
             return -1;
@@ -1140,9 +1139,8 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
 
         if (setgid(daemon->group->gid) == -1)
         {
-            wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0004)
-                           "Unable to set group id to gid=%u. "
-                           "Daemon process will exit.",
+            wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0004) "Unable to set group id to gid=%u. "
+                                                                               "Daemon process will exit.",
                            (unsigned)daemon->group->gid);
 
             return -1;
@@ -1154,10 +1152,9 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
                 if (setgroups(daemon->group->groups_count,
                               daemon->group->groups) == -1)
                 {
-                    wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0005)
-                                   "Unable to set supplementary groups "
-                                   "for uname=%s of '%s'. Daemon process "
-                                   "will exit.",
+                    wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0005) "Unable to set supplementary groups "
+                                                                                       "for uname=%s of '%s'. Daemon process "
+                                                                                       "will exit.",
                                    daemon->group->user,
                                    daemon->group->groups_list);
 
@@ -1167,9 +1164,8 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
             else if (initgroups(daemon->group->user,
                                 daemon->group->gid) == -1)
             {
-                wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0006)
-                               "Unable to initialise groups for uname=%s "
-                               "and gid=%u. Daemon process will exit.",
+                wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0006) "Unable to initialise groups for uname=%s "
+                                                                                   "and gid=%u. Daemon process will exit.",
                                daemon->group->user,
                                (unsigned)daemon->group->gid);
 
@@ -1181,9 +1177,8 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
 
         if (setuid(daemon->group->uid) == -1)
         {
-            wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0007)
-                           "Unable to change to uid=%ld. "
-                           "Daemon process will exit.",
+            wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0007) "Unable to change to uid=%ld. "
+                                                                               "Daemon process will exit.",
                            (long)daemon->group->uid);
 
             /*
@@ -1195,10 +1190,9 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
              * failure.
              */
 
-            wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0008)
-                           "Daemon process configuration failed; process "
-                           "left in unspecified state. Daemon process "
-                           "will exit and be restarted after a delay.");
+            wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0008) "Daemon process configuration failed; process "
+                                                                           "left in unspecified state. Daemon process "
+                                                                           "will exit and be restarted after a delay.");
 
             wsgi_daemon_init_failure_exit();
 
@@ -1217,9 +1211,8 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
     {
         if (chdir(daemon->group->home) == -1)
         {
-            wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0009)
-                           "Unable to change working directory to '%s'. "
-                           "Daemon process will exit.",
+            wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0009) "Unable to change working directory to '%s'. "
+                                                                               "Daemon process will exit.",
                            daemon->group->home);
 
             return -1;
@@ -1235,10 +1228,9 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
         {
             if (chdir(pwent->pw_dir) == -1)
             {
-                wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0010)
-                               "Unable to change working directory to "
-                               "home directory '%s' for uid=%ld. "
-                               "Daemon process will exit.",
+                wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0010) "Unable to change working directory to "
+                                                                                   "home directory '%s' for uid=%ld. "
+                                                                                   "Daemon process will exit.",
                                pwent->pw_dir, (long)geteuid());
 
                 return -1;
@@ -1246,9 +1238,8 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
         }
         else
         {
-            wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0011)
-                           "Unable to determine home directory for "
-                           "uid=%ld. Daemon process will exit.",
+            wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0011) "Unable to determine home directory for "
+                                                                               "uid=%ld. Daemon process will exit.",
                            (long)geteuid());
 
             return -1;
@@ -1273,10 +1264,9 @@ static int wsgi_setup_access(WSGIDaemonProcess *daemon)
     {
         if (prctl(PR_SET_DUMPABLE, 1))
         {
-            wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0061)
-                           "Unable to set process dumpable flag in "
-                           "Apache child; coredumps will not be produced "
-                           "after software errors.");
+            wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0061) "Unable to set process dumpable flag in "
+                                                                                 "Apache child; coredumps will not be produced "
+                                                                                 "after software errors.");
         }
     }
 #endif
@@ -1300,9 +1290,8 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
     if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
     {
-        wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0012)
-                       "Unable to create unix domain socket for daemon "
-                       "process '%s'. Daemon group will not start.",
+        wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0012) "Unable to create unix domain socket for daemon "
+                                                                           "process '%s'. Daemon group will not start.",
                        process->name);
         return -1;
     }
@@ -1313,9 +1302,8 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
         if (setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF,
                        (void *)&sendsz, sizeof(sendsz)) == -1)
         {
-            wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0062)
-                           "Unable to set send buffer size on daemon "
-                           "process socket; default size will be used.");
+            wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0062) "Unable to set send buffer size on daemon "
+                                                                                 "process socket; default size will be used.");
         }
     }
 #endif
@@ -1325,19 +1313,17 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
         if (setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF,
                        (void *)&recvsz, sizeof(recvsz)) == -1)
         {
-            wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0063)
-                           "Unable to set receive buffer size on daemon "
-                           "process socket; default size will be used.");
+            wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0063) "Unable to set receive buffer size on daemon "
+                                                                                 "process socket; default size will be used.");
         }
     }
 #endif
 
     if (strlen(process->socket_path) > sizeof(addr.sun_path))
     {
-        wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0064)
-                       "Length of path for daemon process socket exceeds "
-                       "maximum allowed value and will be truncated; the "
-                       "subsequent bind() is likely to fail.");
+        wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0064) "Length of path for daemon process socket exceeds "
+                                                                         "maximum allowed value and will be truncated; the "
+                                                                         "subsequent bind() is likely to fail.");
     }
 
     memset(&addr, 0, sizeof(addr));
@@ -1349,9 +1335,8 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
     if (rc < 0 && errno == EADDRINUSE)
     {
-        wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0065)
-                       "Removing stale unix domain socket '%s' before "
-                       "re-binding daemon process listener.",
+        wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0065) "Removing stale unix domain socket '%s' before "
+                                                                             "re-binding daemon process listener.",
                        process->socket_path);
 
         unlink(process->socket_path);
@@ -1363,9 +1348,8 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
     if (rc < 0)
     {
-        wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0013)
-                       "Unable to bind unix domain socket '%s'. "
-                       "Daemon group will not start.",
+        wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0013) "Unable to bind unix domain socket '%s'. "
+                                                                           "Daemon group will not start.",
                        process->socket_path);
 
         close(sockfd);
@@ -1379,9 +1363,8 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
     if (listen(sockfd, process->listen_backlog) < 0)
     {
-        wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0014)
-                       "Unable to listen on unix domain socket '%s'. "
-                       "Daemon group will not start.",
+        wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0014) "Unable to listen on unix domain socket '%s'. "
+                                                                           "Daemon group will not start.",
                        process->socket_path);
 
         close(sockfd);
@@ -1418,9 +1401,8 @@ static int wsgi_setup_socket(WSGIProcessGroup *process)
 
         if (chown(process->socket_path, socket_uid, -1) < 0)
         {
-            wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0015)
-                           "Unable to change owner of unix domain socket "
-                           "'%s' to uid=%ld. Daemon group will not start.",
+            wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0015) "Unable to change owner of unix domain socket "
+                                                                               "'%s' to uid=%ld. Daemon group will not start.",
                            process->socket_path, (long)socket_uid);
 
             close(sockfd);
@@ -1563,9 +1545,8 @@ static apr_status_t wsgi_worker_acquire(int id)
 
             if (rv != APR_SUCCESS)
             {
-                wsgi_log_error(APLOG_CRIT, rv, wsgi_server, WSGI_APLOGNO(0016)
-                               "Wait on thread %d wakeup condition "
-                               "variable failed; worker thread will exit.",
+                wsgi_log_error(APLOG_CRIT, rv, wsgi_server, WSGI_APLOGNO(0016) "Wait on thread %d wakeup condition "
+                                                                               "variable failed; worker thread will exit.",
                                id);
             }
 
@@ -1737,9 +1718,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
                 if (!wsgi_daemon_shutdown)
                 {
-                    wsgi_log_error(APLOG_CRIT, rv, wsgi_server, WSGI_APLOGNO(0017)
-                                   "Unable to acquire accept mutex '%s'. "
-                                   "Daemon process will shut down.",
+                    wsgi_log_error(APLOG_CRIT, rv, wsgi_server, WSGI_APLOGNO(0017) "Unable to acquire accept mutex '%s'. "
+                                                                                   "Daemon process will shut down.",
                                    group->socket_path);
 
                     /*
@@ -1799,9 +1779,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
         if (rv != APR_SUCCESS && !APR_STATUS_IS_EINTR(rv))
         {
-            wsgi_log_error(APLOG_CRIT, rv, wsgi_server, WSGI_APLOGNO(0018)
-                           "Unable to poll daemon socket for '%s'. "
-                           "Daemon process will shut down.",
+            wsgi_log_error(APLOG_CRIT, rv, wsgi_server, WSGI_APLOGNO(0018) "Unable to poll daemon socket for '%s'. "
+                                                                           "Daemon process will shut down.",
                            group->socket_path);
 
             /*
@@ -1858,9 +1837,8 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                 {
                     wsgi_worker_release();
 
-                    wsgi_log_error(APLOG_CRIT, rv, wsgi_server, WSGI_APLOGNO(0019)
-                                   "Unable to release accept mutex '%s'; "
-                                   "worker thread will exit.",
+                    wsgi_log_error(APLOG_CRIT, rv, wsgi_server, WSGI_APLOGNO(0019) "Unable to release accept mutex '%s'; "
+                                                                                   "worker thread will exit.",
                                    group->socket_path);
 
                     apr_pool_destroy(ptrans);
@@ -1914,7 +1892,7 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
                 apr_thread_mutex_lock(wsgi_monitor_lock);
                 has_active = wsgi_has_active_non_stale_request_locked(
-                                 apr_time_now());
+                    apr_time_now());
 
                 if (wsgi_graceful_timeout && has_active)
                 {
@@ -1955,7 +1933,7 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
             apr_thread_mutex_lock(wsgi_monitor_lock);
             has_active = wsgi_has_active_non_stale_request_locked(
-                             apr_time_now());
+                apr_time_now());
             apr_thread_mutex_unlock(wsgi_monitor_lock);
 
             if (!has_active)
@@ -2211,7 +2189,8 @@ static int wsgi_has_active_non_stale_request_locked(apr_time_t now)
     n = wsgi_daemon_process->group->threads;
     cutoff = wsgi_request_timeout + wsgi_interrupt_timeout;
 
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         apr_time_t start = wsgi_worker_threads[i].request;
 
         if (!start)
@@ -2458,7 +2437,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                             wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                            "Application restart timer "
                                            "expired, stopping process "
-                                           "'%s'.", daemon->group->name);
+                                           "'%s'.",
+                                           daemon->group->name);
 
                             if (!*wsgi_shutdown_reason)
                                 wsgi_shutdown_reason = "restart_interval";
@@ -2484,7 +2464,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Daemon process deadlock timer "
                                    "expired, stopping daemon process "
-                                   "'%s'.", group->name);
+                                   "'%s'.",
+                                   group->name);
 
                     if (!*wsgi_shutdown_reason)
                         wsgi_shutdown_reason = "deadlock_timeout";
@@ -2522,7 +2503,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                         wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                        "Daemon process idle inactivity "
                                        "timer expired, stopping process "
-                                       "'%s'.", group->name);
+                                       "'%s'.",
+                                       group->name);
 
                         if (!*wsgi_shutdown_reason)
                             wsgi_shutdown_reason = "inactivity_timeout";
@@ -2700,9 +2682,8 @@ static void wsgi_log_stack_traces(void)
     }
     else
     {
-        wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0067)
-                       "Unable to obtain current frames for active "
-                       "threads; stack-trace dump will be skipped.");
+        wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0067) "Unable to obtain current frames for active "
+                                                                         "threads; stack-trace dump will be skipped.");
 
         PyErr_Print();
         PyErr_Clear();
@@ -2790,10 +2771,10 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_ERR, rv, wsgi_server, WSGI_APLOGNO(0068)
-                           "Unable to create monitor thread in daemon "
-                           "process '%s'; request and idle timeouts will "
-                           "not be enforced.", daemon->group->name);
+            wsgi_log_error(APLOG_ERR, rv, wsgi_server, WSGI_APLOGNO(0068) "Unable to create monitor thread in daemon "
+                                                                          "process '%s'; request and idle timeouts will "
+                                                                          "not be enforced.",
+                           daemon->group->name);
         }
     }
 
@@ -2804,10 +2785,10 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_ERR, rv, wsgi_server, WSGI_APLOGNO(0069)
-                           "Unable to create deadlock-detection thread "
-                           "in daemon process '%s'; deadlock timeouts "
-                           "will not be enforced.", daemon->group->name);
+            wsgi_log_error(APLOG_ERR, rv, wsgi_server, WSGI_APLOGNO(0069) "Unable to create deadlock-detection thread "
+                                                                          "in daemon process '%s'; deadlock timeouts "
+                                                                          "will not be enforced.",
+                           daemon->group->name);
         }
     }
 
@@ -2844,11 +2825,10 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_ALERT, rv, wsgi_server, WSGI_APLOGNO(0020)
-                           "Unable to create worker thread %d condition "
-                           "variable in daemon process '%s'. Daemon "
-                           "process will exit and be restarted after "
-                           "a delay.",
+            wsgi_log_error(APLOG_ALERT, rv, wsgi_server, WSGI_APLOGNO(0020) "Unable to create worker thread %d condition "
+                                                                            "variable in daemon process '%s'. Daemon "
+                                                                            "process will exit and be restarted after "
+                                                                            "a delay.",
                            i, daemon->group->name);
 
             wsgi_daemon_init_failure_exit();
@@ -2859,10 +2839,9 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_ALERT, rv, wsgi_server, WSGI_APLOGNO(0021)
-                           "Unable to create worker thread %d mutex in "
-                           "daemon process '%s'. Daemon process will "
-                           "exit and be restarted after a delay.",
+            wsgi_log_error(APLOG_ALERT, rv, wsgi_server, WSGI_APLOGNO(0021) "Unable to create worker thread %d mutex in "
+                                                                            "daemon process '%s'. Daemon process will "
+                                                                            "exit and be restarted after a delay.",
                            i, daemon->group->name);
 
             wsgi_daemon_init_failure_exit();
@@ -2880,10 +2859,9 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_ALERT, rv, wsgi_server, WSGI_APLOGNO(0022)
-                           "Unable to create worker thread %d in daemon "
-                           "process '%s'. Daemon process will exit and "
-                           "be restarted after a delay.",
+            wsgi_log_error(APLOG_ALERT, rv, wsgi_server, WSGI_APLOGNO(0022) "Unable to create worker thread %d in daemon "
+                                                                            "process '%s'. Daemon process will exit and "
+                                                                            "be restarted after a delay.",
                            i, daemon->group->name);
 
             wsgi_daemon_init_failure_exit();
@@ -2905,9 +2883,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS || nbytes != 1)
         {
-            wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0023)
-                           "Read failed on signal pipe in daemon process "
-                           "'%s'; daemon process will shut down.",
+            wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0023) "Read failed on signal pipe in daemon process "
+                                                                           "'%s'; daemon process will shut down.",
                            daemon->group->name);
 
             if (!*wsgi_shutdown_reason)
@@ -2927,7 +2904,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
                 apr_thread_mutex_lock(wsgi_monitor_lock);
                 has_active = wsgi_has_active_non_stale_request_locked(
-                                 apr_time_now());
+                    apr_time_now());
 
                 if (has_active)
                 {
@@ -2968,7 +2945,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
                 apr_thread_mutex_lock(wsgi_monitor_lock);
                 has_active = wsgi_has_active_non_stale_request_locked(
-                                 apr_time_now());
+                    apr_time_now());
 
                 if (has_active)
                 {
@@ -3009,7 +2986,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
                 apr_thread_mutex_lock(wsgi_monitor_lock);
                 has_active = wsgi_has_active_non_stale_request_locked(
-                                 apr_time_now());
+                    apr_time_now());
 
                 if (has_active)
                 {
@@ -3065,10 +3042,10 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (rv != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0070)
-                           "Unable to create reaper thread in daemon "
-                           "process '%s'; shutdown timeout will not be "
-                           "enforced.", daemon->group->name);
+            wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0070) "Unable to create reaper thread in daemon "
+                                                                              "process '%s'; shutdown timeout will not be "
+                                                                              "enforced.",
+                           daemon->group->name);
         }
     }
 
@@ -3104,9 +3081,8 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
             rv = apr_thread_join(&thread_rv, wsgi_worker_threads[i].thread);
             if (rv != APR_SUCCESS)
             {
-                wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0071)
-                               "Unable to join with worker thread %d in "
-                               "daemon process '%s' during shutdown.",
+                wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0071) "Unable to join with worker thread %d in "
+                                                                                  "daemon process '%s' during shutdown.",
                                i, daemon->group->name);
             }
         }
@@ -3139,17 +3115,15 @@ static apr_status_t wsgi_cleanup_process(void *data)
     {
         if (close(group->listener_fd) < 0)
         {
-            wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0072)
-                           "Unable to close unix domain socket '%s' "
-                           "during daemon process group cleanup.",
+            wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0072) "Unable to close unix domain socket '%s' "
+                                                                                 "during daemon process group cleanup.",
                            group->socket_path);
         }
 
         if (unlink(group->socket_path) < 0 && errno != ENOENT)
         {
-            wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0073)
-                           "Unable to unlink unix domain socket '%s' "
-                           "during daemon process group cleanup.",
+            wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0073) "Unable to unlink unix domain socket '%s' "
+                                                                                 "during daemon process group cleanup.",
                            group->socket_path);
         }
     }
@@ -3169,9 +3143,8 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
     if ((status = apr_proc_fork(&daemon->process, p)) < 0)
     {
-        wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0024)
-                       "Unable to spawn daemon process '%s'. "
-                       "Daemon group will not start.",
+        wsgi_log_error(APLOG_ALERT, errno, wsgi_server, WSGI_APLOGNO(0024) "Unable to spawn daemon process '%s'. "
+                                                                           "Daemon group will not start.",
                        daemon->group->name);
         return DECLINED;
     }
@@ -3205,10 +3178,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
                                PROCESSOR_CLASS_ANY);
         if (status != OK)
         {
-            wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0074)
-                           "Unable to unbind processor for daemon "
-                           "process; daemon will run with default CPU "
-                           "affinity.");
+            wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0074) "Unable to unbind processor for daemon "
+                                                                                 "process; daemon will run with default CPU "
+                                                                                 "affinity.");
         }
 #endif
 
@@ -3223,10 +3195,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             if (setpriority(PRIO_PROCESS, 0,
                             daemon->group->cpu_priority) == -1)
             {
-                wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0075)
-                               "Unable to set CPU priority of %d for "
-                               "daemon process '%s'; daemon will run "
-                               "with default priority.",
+                wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0075) "Unable to set CPU priority of %d for "
+                                                                                     "daemon process '%s'; daemon will run "
+                                                                                     "with default priority.",
                                daemon->group->cpu_priority,
                                daemon->group->name);
             }
@@ -3236,10 +3207,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (wsgi_setup_access(daemon) == -1)
         {
-            wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0025)
-                           "Daemon process configuration failed; process "
-                           "left in unspecified state. Daemon process "
-                           "will exit and be restarted after a delay.");
+            wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0025) "Daemon process configuration failed; process "
+                                                                           "left in unspecified state. Daemon process "
+                                                                           "will exit and be restarted after a delay.");
 
             wsgi_daemon_init_failure_exit();
         }
@@ -3253,10 +3223,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (status != APR_SUCCESS)
             {
-                wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0026)
-                               "Unable to initialise accept mutex '%s' "
-                               "in daemon process. Daemon process will "
-                               "exit and be restarted after a delay.",
+                wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0026) "Unable to initialise accept mutex '%s' "
+                                                                              "in daemon process. Daemon process will "
+                                                                              "exit and be restarted after a delay.",
                                daemon->group->mutex_path);
 
                 wsgi_daemon_init_failure_exit();
@@ -3364,10 +3333,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (status != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_ALERT, status, wsgi_server, WSGI_APLOGNO(0027)
-                           "Unable to initialise signal pipe in daemon "
-                           "process '%s'. Daemon process will exit and "
-                           "be restarted after a delay.",
+            wsgi_log_error(APLOG_ALERT, status, wsgi_server, WSGI_APLOGNO(0027) "Unable to initialise signal pipe in daemon "
+                                                                                "process '%s'. Daemon process will exit and "
+                                                                                "be restarted after a delay.",
                            daemon->group->name);
 
             wsgi_daemon_init_failure_exit();
@@ -3405,10 +3373,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (result == -1)
             {
-                wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0076)
-                               "Unable to set CPU time limit of %d seconds "
-                               "for daemon process '%s'; daemon will run "
-                               "without the configured limit.",
+                wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0076) "Unable to set CPU time limit of %d seconds "
+                                                                                     "for daemon process '%s'; daemon will run "
+                                                                                     "without the configured limit.",
                                daemon->group->cpu_time_limit,
                                daemon->group->name);
             }
@@ -3436,10 +3403,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (result == -1)
             {
-                wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0077)
-                               "Unable to set memory limit of %ld for "
-                               "daemon process '%s'; daemon will run "
-                               "without the configured limit.",
+                wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0077) "Unable to set memory limit of %ld for "
+                                                                                     "daemon process '%s'; daemon will run "
+                                                                                     "without the configured limit.",
                                (long)daemon->group->memory_limit,
                                daemon->group->name);
             }
@@ -3469,10 +3435,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (result == -1)
             {
-                wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0078)
-                               "Unable to set virtual memory limit of "
-                               "%ld for daemon process '%s'; daemon "
-                               "will run without the configured limit.",
+                wsgi_log_error(APLOG_WARNING, errno, wsgi_server, WSGI_APLOGNO(0078) "Unable to set virtual memory limit of "
+                                                                                     "%ld for daemon process '%s'; daemon "
+                                                                                     "will run without the configured limit.",
                                (long)daemon->group->virtual_memory_limit,
                                daemon->group->name);
             }
@@ -3537,12 +3502,11 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (!result)
             {
-                wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0079)
-                               "Unsupported locale setting '%s' "
-                               "specified for daemon process group "
-                               "'%s'; daemon will run with the inherited "
-                               "locale. Consider 'C.UTF-8' as a "
-                               "fallback.",
+                wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0079) "Unsupported locale setting '%s' "
+                                                                                 "specified for daemon process group "
+                                                                                 "'%s'; daemon will run with the inherited "
+                                                                                 "locale. Consider 'C.UTF-8' as a "
+                                                                                 "fallback.",
                                daemon->group->locale,
                                daemon->group->name);
             }
@@ -3565,10 +3529,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         if (wsgi_python_init(p) != APR_SUCCESS)
         {
-            wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0028)
-                           "Python initialisation failed in daemon "
-                           "process '%s'; Python based handlers will "
-                           "not be available.",
+            wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0028) "Python initialisation failed in daemon "
+                                                                          "process '%s'; Python based handlers will "
+                                                                          "not be available.",
                            daemon->group->name);
         }
 
@@ -3704,10 +3667,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
             if (wsgi_python_child_init(wsgi_daemon_pool) != APR_SUCCESS)
             {
-                wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0029)
-                               "Python child initialisation failed in "
-                               "daemon process '%s'; Python based "
-                               "handlers will not be available.",
+                wsgi_log_error(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0029) "Python child initialisation failed in "
+                                                                              "daemon process '%s'; Python based "
+                                                                              "handlers will not be available.",
                                daemon->group->name);
             }
             else if (daemon->group->switch_interval > 0.0)
@@ -3907,9 +3869,8 @@ int wsgi_start_daemons(apr_pool_t *p)
 
             if (status != APR_SUCCESS)
             {
-                wsgi_log_error(APLOG_CRIT, status, wsgi_server, WSGI_APLOGNO(0030)
-                               "Unable to create accept lock '%s'. "
-                               "Daemon group will not start.",
+                wsgi_log_error(APLOG_CRIT, status, wsgi_server, WSGI_APLOGNO(0030) "Unable to create accept lock '%s'. "
+                                                                                   "Daemon group will not start.",
                                entry->mutex_path);
                 return DECLINED;
             }
@@ -3946,10 +3907,9 @@ int wsgi_start_daemons(apr_pool_t *p)
                     ick.buf = &buf;
                     if (semctl(ospmutex.crossproc, 0, IPC_SET, ick) < 0)
                     {
-                        wsgi_log_error(APLOG_CRIT, errno, wsgi_server, WSGI_APLOGNO(0031)
-                                       "Unable to set permissions on "
-                                       "sysvsem accept mutex '%s'. "
-                                       "Daemon group will not start.",
+                        wsgi_log_error(APLOG_CRIT, errno, wsgi_server, WSGI_APLOGNO(0031) "Unable to set permissions on "
+                                                                                          "sysvsem accept mutex '%s'. "
+                                                                                          "Daemon group will not start.",
                                        entry->mutex_path);
                         return DECLINED;
                     }
@@ -3960,10 +3920,9 @@ int wsgi_start_daemons(apr_pool_t *p)
                 {
                     if (chown(entry->mutex_path, entry->uid, -1) < 0)
                     {
-                        wsgi_log_error(APLOG_CRIT, errno, wsgi_server, WSGI_APLOGNO(0032)
-                                       "Unable to set permissions on "
-                                       "flock accept mutex '%s'. "
-                                       "Daemon group will not start.",
+                        wsgi_log_error(APLOG_CRIT, errno, wsgi_server, WSGI_APLOGNO(0032) "Unable to set permissions on "
+                                                                                          "flock accept mutex '%s'. "
+                                                                                          "Daemon group will not start.",
                                        entry->mutex_path);
                         return DECLINED;
                     }
@@ -4135,9 +4094,8 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     if ((rv = wsgi_read_request(csd, r)) != APR_SUCCESS)
     {
-        wsgi_log_error(APLOG_ERR, rv, wsgi_server, WSGI_APLOGNO(0080)
-                       "Unable to read incoming WSGI request from "
-                       "Apache child; request will be aborted with 500.");
+        wsgi_log_error(APLOG_ERR, rv, wsgi_server, WSGI_APLOGNO(0080) "Unable to read incoming WSGI request from "
+                                                                      "Apache child; request will be aborted with 500.");
 
         apr_pool_destroy(p);
 
@@ -4153,9 +4111,8 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (!magic)
     {
-        wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0033)
-                       "Request origin could not be validated; "
-                       "missing magic token.");
+        wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0033) "Request origin could not be validated; "
+                                                                       "missing magic token.");
 
         apr_pool_destroy(p);
 
@@ -4171,9 +4128,8 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     if (strcmp(magic, hash) != 0)
     {
-        wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0034)
-                       "Request origin could not be validated; "
-                       "magic token mismatch.");
+        wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0034) "Request origin could not be validated; "
+                                                                       "magic token mismatch.");
 
         apr_pool_destroy(p);
 
@@ -4211,9 +4167,8 @@ int wsgi_hook_daemon_handler(conn_rec *c)
         }
         else
         {
-            wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0081)
-                           "WSGI script '%s' is not located within "
-                           "chroot directory '%s'; rejecting request.",
+            wsgi_log_error(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0081) "WSGI script '%s' is not located within "
+                                                                         "chroot directory '%s'; rejecting request.",
                            path, root);
 
             return HTTP_INTERNAL_SERVER_ERROR;
@@ -4247,8 +4202,7 @@ int wsgi_hook_daemon_handler(conn_rec *c)
              * be detected later when trying to load the script file.
              */
 
-            wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0082)
-                           "Unable to stat target handler script '%s'.",
+            wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0082) "Unable to stat target handler script '%s'.",
                            script);
 
             r->finfo.mtime = 0;
@@ -4264,8 +4218,7 @@ int wsgi_hook_daemon_handler(conn_rec *c)
              * be detected later when trying to load the script file.
              */
 
-            wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0083)
-                           "Unable to stat target WSGI script '%s'.",
+            wsgi_log_error(APLOG_WARNING, rv, wsgi_server, WSGI_APLOGNO(0083) "Unable to stat target WSGI script '%s'.",
                            filename);
 
             r->finfo.mtime = 0;
@@ -4450,9 +4403,8 @@ int wsgi_hook_daemon_handler(conn_rec *c)
                 r->status = HTTP_INTERNAL_SERVER_ERROR;
                 r->status_line = "200 Timeout";
 
-                wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0084)
-                                "Queue timeout expired for WSGI daemon "
-                                "process '%s'.",
+                wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0084) "Queue timeout expired for WSGI daemon "
+                                                                    "process '%s'.",
                                 wsgi_daemon_process->group->name);
             }
         }
