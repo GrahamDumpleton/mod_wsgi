@@ -83,7 +83,6 @@ static PyObject *ShutdownInterpreter_call(
         {
             PyObject *res = NULL;
             Py_INCREF(exitfunc);
-            PySys_SetObject("exitfunc", (PyObject *)NULL);
             res = PyObject_CallObject(exitfunc, (PyObject *)NULL);
 
             if (res == NULL)
@@ -130,12 +129,16 @@ static PyObject *ShutdownInterpreter_call(
                         PyObject *tb_kwargs = NULL;
                         Py_INCREF(o);
                         log = newLogObject(NULL, APLOG_ERR, NULL, 0);
-                        tb_args = Py_BuildValue("(O)", value);
-                        tb_kwargs = Py_BuildValue("{s:O}", "file", log);
-                        tb_result = PyObject_Call(o, tb_args, tb_kwargs);
-                        Py_DECREF(tb_kwargs);
-                        Py_DECREF(tb_args);
-                        Py_DECREF(log);
+                        if (log)
+                        {
+                            tb_args = Py_BuildValue("(O)", value);
+                            tb_kwargs = Py_BuildValue("{s:O}", "file", log);
+                        }
+                        if (tb_args && tb_kwargs)
+                            tb_result = PyObject_Call(o, tb_args, tb_kwargs);
+                        Py_XDECREF(tb_kwargs);
+                        Py_XDECREF(tb_args);
+                        Py_XDECREF(log);
                         Py_DECREF(o);
                     }
                 }
