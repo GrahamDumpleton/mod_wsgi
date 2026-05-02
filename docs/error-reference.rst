@@ -4921,3 +4921,70 @@ WSGI0190 — SystemExit raised by event callback ignored
 :Operator action:
    Investigate the offending event subscriber; raising
    ``SystemExit`` from an event callback is generally a bug.
+
+.. _WSGI0191:
+
+WSGI0191 — Unable to create thread state for request
+----------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to create thread state for thread <id> against
+   <interpreter-context> in <process-context>.`` Interpreter context
+   is ``main interpreter`` or ``sub-interpreter '<name>'``; process
+   context is ``embedded mode`` or ``daemon process '<group>'``.
+
+:Cause:
+   ``PyThreadState_New()`` returned ``NULL`` while
+   ``wsgi_acquire_interpreter()`` was creating a per-thread
+   ``PyThreadState`` for a sub-interpreter. Almost always a Python
+   heap allocation failure at the C level.
+
+:Outcome:
+   The reference taken on the interpreter handle is dropped and
+   ``wsgi_acquire_interpreter()`` returns ``NULL``. The caller
+   (typically a request, auth or dispatch hook) returns 500 to the
+   client. The interpreter itself remains registered and is still
+   reachable from later requests.
+
+:Operator action:
+   Check free memory on the host. If recurrent, reduce
+   ``threads=`` / ``processes=`` on heavily configured daemon
+   groups so fewer per-thread states are required concurrently.
+
+.. _WSGI0192:
+
+WSGI0192 — Unable to create thread state to destroy sub-interpreter
+-------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to create thread state to destroy <interpreter-context>
+   in <process-context>; sub interpreter will not be shut down
+   cleanly.`` Interpreter context is ``sub-interpreter '<name>'``
+   (the main interpreter never takes this path); process context is
+   ``embedded mode`` or ``daemon process '<group>'``.
+
+:Cause:
+   ``PyThreadState_New()`` returned ``NULL`` inside
+   ``Interpreter_dealloc()`` while constructing the temporary
+   ``PyThreadState`` needed to swap into the sub-interpreter for
+   teardown. Almost always a Python heap allocation failure at the
+   C level, occurring during process shutdown.
+
+:Outcome:
+   ``Py_EndInterpreter()`` is skipped for this sub-interpreter; its
+   resources leak. The ``InterpreterObject`` wrapper is freed and
+   the process shutdown sequence continues. No requests can be
+   affected because this code only runs while the process is
+   already terminating.
+
+:Operator action:
+   Generally none. Memory pressure during shutdown is the proximate
+   cause and the OS reclaims the process shortly afterwards. If
+   recurrent, investigate why the process is exhausting memory
+   before exit.

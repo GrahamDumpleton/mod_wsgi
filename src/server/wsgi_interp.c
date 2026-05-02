@@ -478,7 +478,15 @@ InterpreterObject *newInterpreterObject(const char *name)
         goto failure;
     }
 
-    PySys_SetObject("argv", object);
+    if (PySys_SetObject("argv", object) < 0)
+    {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "PySys_SetObject() for sys.argv failed");
+        Py_DECREF(item);
+        Py_DECREF(object);
+        goto failure;
+    }
+
     Py_DECREF(item);
     Py_DECREF(object);
 
@@ -1583,6 +1591,25 @@ static void Interpreter_dealloc(InterpreterObject *self)
         {
             tstate = PyThreadState_New(self->interp);
 
+            if (!tstate)
+            {
+                wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                               WSGI_APLOGNO(0192) "Unable to create "
+                                                  "thread state to "
+                                                  "destroy %s in %s; "
+                                                  "sub interpreter "
+                                                  "will not be shut "
+                                                  "down cleanly.",
+                               wsgi_format_interp_name(
+                                   wsgi_server->process->pool, self->name),
+                               wsgi_format_process_context(
+                                   wsgi_server->process->pool));
+
+                free(self->name);
+                PyObject_Del(self);
+                return;
+            }
+
             wsgi_log_error_locked(APLOG_TRACE1, 0, wsgi_server,
                                   "Creating thread state for thread %d "
                                   "against interpreter '%s'.",
@@ -2448,6 +2475,28 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
         {
             tstate = PyThreadState_New(interp);
 
+            if (!tstate)
+            {
+                PyGILState_STATE retry_state;
+
+                wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                               WSGI_APLOGNO(0191) "Unable to create "
+                                                  "thread state for "
+                                                  "thread %d against "
+                                                  "%s in %s.",
+                               thread_handle->thread_id,
+                               wsgi_format_interp_name(
+                                   wsgi_server->process->pool, name),
+                               wsgi_format_process_context(
+                                   wsgi_server->process->pool));
+
+                retry_state = PyGILState_Ensure();
+                Py_DECREF(handle);
+                PyGILState_Release(retry_state);
+
+                return NULL;
+            }
+
             wsgi_log_error_locked(APLOG_TRACE1, 0, wsgi_server,
                                   "Creating thread state for thread %d "
                                   "against interpreter '%s'.",
@@ -3260,7 +3309,8 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
                         Py_DECREF(module);
                         module = NULL;
 
-                        PyDict_DelItemString(modules, name);
+                        if (PyDict_DelItemString(modules, name) < 0)
+                            PyErr_Clear();
                     }
                 }
 
