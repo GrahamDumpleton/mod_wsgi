@@ -89,11 +89,13 @@ static PyObject *SignalIntercept_call(
             PyObject *result = NULL;
             Py_INCREF(o);
             log = newLogObject(NULL, APLOG_INFO, NULL, 0);
-            call_args = Py_BuildValue("(OOO)", Py_None, Py_None, log);
-            result = PyObject_CallObject(o, call_args);
+            if (log)
+                call_args = Py_BuildValue("(OOO)", Py_None, Py_None, log);
+            if (call_args)
+                result = PyObject_CallObject(o, call_args);
             Py_XDECREF(result);
-            Py_DECREF(call_args);
-            Py_DECREF(log);
+            Py_XDECREF(call_args);
+            Py_XDECREF(log);
             Py_DECREF(o);
         }
     }
