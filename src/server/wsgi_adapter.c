@@ -2658,6 +2658,10 @@ int Adapter_run(AdapterObject *self, PyObject *object)
     {
         double application_time = 0.0;
         double output_time = 0.0;
+        apr_uint64_t gil_wait_us = 0;
+        apr_uint64_t gil_wait_count = 0;
+
+        wsgi_gil_wait_current(&gil_wait_us, &gil_wait_count);
 
         event = PyDict_New();
 
@@ -2676,6 +2680,49 @@ int Adapter_run(AdapterObject *self, PyObject *object)
                 else
                     goto event_error;
             }
+
+            value = PyLong_FromLong(thread_handle->thread_id);
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "thread_id", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            value = PyFloat_FromDouble(apr_time_sec(
+                (double)self->config->request_start));
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "request_start", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            value = PyFloat_FromDouble(apr_time_sec(
+                (double)self->config->queue_start));
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "queue_start", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            value = PyFloat_FromDouble(apr_time_sec(
+                (double)self->config->daemon_start));
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "daemon_start", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
 
             value = PyLong_FromLongLong(self->input->reads);
             if (value)
@@ -2821,6 +2868,36 @@ int Adapter_run(AdapterObject *self, PyObject *object)
             if (value)
             {
                 if (PyDict_SetItemString(event, "application_time", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            value = PyLong_FromLong(self->status);
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "status", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            value = PyFloat_FromDouble((double)gil_wait_us / 1.0e6);
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "gil_wait_time", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            value = PyLong_FromUnsignedLongLong(gil_wait_count);
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "gil_wait_count", value) < 0)
                     goto event_error;
                 Py_CLEAR(value);
             }

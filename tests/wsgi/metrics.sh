@@ -27,6 +27,35 @@ assert_body_contains "$URL/events-log" "response_started" \
 assert_body_contains "$URL/events-log" "request_finished" \
     "events log contains request_finished"
 
+# -- request_finished event payload --
+# The /request-finished-keys endpoint returns the union of keys seen
+# across all request_finished events captured by the subscriber. Asserting
+# specific keys ensures the new fields are being published.
+
+assert_body_contains "$URL/request-finished-keys" "request_id" \
+    "request_finished event contains request_id"
+
+assert_body_contains "$URL/request-finished-keys" "thread_id" \
+    "request_finished event contains thread_id"
+
+assert_body_contains "$URL/request-finished-keys" "request_start" \
+    "request_finished event contains request_start"
+
+assert_body_contains "$URL/request-finished-keys" "queue_start" \
+    "request_finished event contains queue_start"
+
+assert_body_contains "$URL/request-finished-keys" "daemon_start" \
+    "request_finished event contains daemon_start"
+
+assert_body_contains "$URL/request-finished-keys" "status" \
+    "request_finished event contains status"
+
+assert_body_contains "$URL/request-finished-keys" "gil_wait_time" \
+    "request_finished event contains gil_wait_time"
+
+assert_body_contains "$URL/request-finished-keys" "gil_wait_count" \
+    "request_finished event contains gil_wait_count"
+
 # -- Request data --
 # The event handler populates request_data with thread info.
 
@@ -84,6 +113,39 @@ assert_body_contains "$URL/request-metrics" "'request_throughput'" \
 
 assert_body_contains "$URL/request-metrics" "'sample_period'" \
     "request metrics contains sample_period"
+
+assert_body_contains "$URL/request-metrics" "'gil_wait_time'" \
+    "request metrics contains gil_wait_time"
+
+assert_body_contains "$URL/request-metrics" "'gil_wait_time_buckets'" \
+    "request metrics contains gil_wait_time_buckets"
+
+assert_body_contains "$URL/request-metrics" "'gil_wait_count'" \
+    "request metrics contains gil_wait_count"
+
+assert_body_contains "$URL/request-metrics" "'input_read_time'" \
+    "request metrics contains input_read_time"
+
+assert_body_contains "$URL/request-metrics" "'input_read_time_buckets'" \
+    "request metrics contains input_read_time_buckets"
+
+assert_body_contains "$URL/request-metrics" "'output_write_time'" \
+    "request metrics contains output_write_time"
+
+assert_body_contains "$URL/request-metrics" "'output_write_time_buckets'" \
+    "request metrics contains output_write_time_buckets"
+
+assert_body_contains "$URL/request-metrics" "'input_bytes'" \
+    "request metrics contains input_bytes"
+
+assert_body_contains "$URL/request-metrics" "'input_reads'" \
+    "request metrics contains input_reads"
+
+assert_body_contains "$URL/request-metrics" "'output_bytes'" \
+    "request metrics contains output_bytes"
+
+assert_body_contains "$URL/request-metrics" "'output_writes'" \
+    "request metrics contains output_writes"
 
 # -- Server metrics --
 # May return None if server metrics not enabled. Just check it

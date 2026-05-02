@@ -126,6 +126,7 @@ static double wsgi_gil_wait_time_total = 0;
 static int wsgi_gil_wait_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
 static apr_uint64_t wsgi_gil_wait_time_min_us = UINT64_MAX;
 static apr_uint64_t wsgi_gil_wait_time_max_us = 0;
+static apr_uint64_t wsgi_gil_wait_count_total = 0;
 
 /* I/O timing overlap aggregators. input_read_time is the per-request
  * total time spent inside wsgi.input.read*; output_write_time is the
@@ -359,6 +360,47 @@ void wsgi_gil_wait_record(apr_uint64_t wait_us)
     ti->staged_gil_wait_count += 1;
 }
 
+void wsgi_gil_wait_current(apr_uint64_t *wait_us, apr_uint64_t *count)
+{
+    /* Read the calling thread's running per-request GIL-wait totals.
+     * Mirrors wsgi_gil_wait_record's slot-vs-staging branch — the active
+     * slot holds the running total once claimed; before that, the
+     * per-thread staging accumulator does. Caller passes NULL for any
+     * field they don't want. */
+    apr_uint64_t local_us = 0;
+    apr_uint64_t local_count = 0;
+
+    WSGIThreadInfo *ti = wsgi_thread_info(0, 1);
+    if (ti && ti->thread_id >= 1)
+    {
+        if (wsgi_active_slots && ti->thread_id <= wsgi_active_slots_max)
+        {
+            wsgi_active_slot_t *slot =
+                &wsgi_active_slots[ti->thread_id - 1];
+            if (slot->in_use)
+            {
+                local_us = slot->gil_wait_us;
+                local_count = slot->gil_wait_count;
+            }
+            else
+            {
+                local_us = ti->staged_gil_wait_us;
+                local_count = ti->staged_gil_wait_count;
+            }
+        }
+        else
+        {
+            local_us = ti->staged_gil_wait_us;
+            local_count = ti->staged_gil_wait_count;
+        }
+    }
+
+    if (wait_us)
+        *wait_us = local_us;
+    if (count)
+        *count = local_count;
+}
+
 void wsgi_record_time_in_buckets(int *buckets, double duration)
 {
     /* HDR-style index: 16 octaves (1 ms .. 65536 ms) × 4 linear sub-
@@ -560,6 +602,7 @@ void wsgi_record_request_times(apr_time_t request_start,
         gil_wait_us = slot->gil_wait_us;
         gil_wait_time = (double)gil_wait_us / 1.0e6;
         wsgi_gil_wait_time_total += gil_wait_time;
+        wsgi_gil_wait_count_total += slot->gil_wait_count;
         if (gil_wait_us < wsgi_gil_wait_time_min_us)
             wsgi_gil_wait_time_min_us = gil_wait_us;
         if (gil_wait_us > wsgi_gil_wait_time_max_us)
@@ -1075,6 +1118,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
         wsgi_application_time_total = 0.0;
         wsgi_request_time_total = 0.0;
         wsgi_gil_wait_time_total = 0.0;
+        wsgi_gil_wait_count_total = 0;
         wsgi_input_read_time_total = 0.0;
         wsgi_output_write_time_total = 0.0;
 
@@ -1256,6 +1300,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     wsgi_application_time_total = 0.0;
     wsgi_request_time_total = 0.0;
     wsgi_gil_wait_time_total = 0.0;
+    wsgi_gil_wait_count_total = 0;
     wsgi_input_read_time_total = 0.0;
     wsgi_output_write_time_total = 0.0;
 
@@ -1846,6 +1891,25 @@ WSGI_STATIC_INTERNED_STRING(slot_cpu_time_us);
 WSGI_STATIC_INTERNED_STRING(slot_current_elapsed_ms);
 WSGI_STATIC_INTERNED_STRING(slot_max_duration_ms);
 
+WSGI_STATIC_INTERNED_STRING(gil_wait_time);
+WSGI_STATIC_INTERNED_STRING(gil_wait_time_min_us);
+WSGI_STATIC_INTERNED_STRING(gil_wait_time_max_us);
+WSGI_STATIC_INTERNED_STRING(gil_wait_time_buckets);
+WSGI_STATIC_INTERNED_STRING(gil_wait_count);
+WSGI_STATIC_INTERNED_STRING(input_read_time);
+WSGI_STATIC_INTERNED_STRING(input_read_time_min_us);
+WSGI_STATIC_INTERNED_STRING(input_read_time_max_us);
+WSGI_STATIC_INTERNED_STRING(input_read_time_buckets);
+WSGI_STATIC_INTERNED_STRING(output_write_time);
+WSGI_STATIC_INTERNED_STRING(output_write_time_min_us);
+WSGI_STATIC_INTERNED_STRING(output_write_time_max_us);
+WSGI_STATIC_INTERNED_STRING(output_write_time_buckets);
+
+WSGI_STATIC_INTERNED_STRING(input_bytes);
+WSGI_STATIC_INTERNED_STRING(input_reads);
+WSGI_STATIC_INTERNED_STRING(output_bytes);
+WSGI_STATIC_INTERNED_STRING(output_writes);
+
 WSGI_STATIC_INTERNED_STRING(status_1xx);
 WSGI_STATIC_INTERNED_STRING(status_2xx);
 WSGI_STATIC_INTERNED_STRING(status_3xx);
@@ -1933,6 +1997,25 @@ static void wsgi_initialize_interned_strings(void)
         WSGI_CREATE_INTERNED_STRING_ID(slot_current_elapsed_ms);
         WSGI_CREATE_INTERNED_STRING_ID(slot_max_duration_ms);
 
+        WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time);
+        WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time_min_us);
+        WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time_max_us);
+        WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time_buckets);
+        WSGI_CREATE_INTERNED_STRING_ID(gil_wait_count);
+        WSGI_CREATE_INTERNED_STRING_ID(input_read_time);
+        WSGI_CREATE_INTERNED_STRING_ID(input_read_time_min_us);
+        WSGI_CREATE_INTERNED_STRING_ID(input_read_time_max_us);
+        WSGI_CREATE_INTERNED_STRING_ID(input_read_time_buckets);
+        WSGI_CREATE_INTERNED_STRING_ID(output_write_time);
+        WSGI_CREATE_INTERNED_STRING_ID(output_write_time_min_us);
+        WSGI_CREATE_INTERNED_STRING_ID(output_write_time_max_us);
+        WSGI_CREATE_INTERNED_STRING_ID(output_write_time_buckets);
+
+        WSGI_CREATE_INTERNED_STRING_ID(input_bytes);
+        WSGI_CREATE_INTERNED_STRING_ID(input_reads);
+        WSGI_CREATE_INTERNED_STRING_ID(output_bytes);
+        WSGI_CREATE_INTERNED_STRING_ID(output_writes);
+
         WSGI_CREATE_INTERNED_STRING_ID(status_1xx);
         WSGI_CREATE_INTERNED_STRING_ID(status_2xx);
         WSGI_CREATE_INTERNED_STRING_ID(status_3xx);
@@ -2015,6 +2098,25 @@ static PyObject *wsgi_request_metrics(void)
     apr_uint64_t application_time_max_snap_us = 0;
     apr_uint64_t request_time_min_snap_us = UINT64_MAX;
     apr_uint64_t request_time_max_snap_us = 0;
+    apr_uint64_t gil_wait_time_min_snap_us = UINT64_MAX;
+    apr_uint64_t gil_wait_time_max_snap_us = 0;
+    apr_uint64_t input_read_time_min_snap_us = UINT64_MAX;
+    apr_uint64_t input_read_time_max_snap_us = 0;
+    apr_uint64_t output_write_time_min_snap_us = UINT64_MAX;
+    apr_uint64_t output_write_time_max_snap_us = 0;
+
+    double gil_wait_time_total = 0;
+    double gil_wait_time_avg = 0;
+    apr_uint64_t gil_wait_count_snap = 0;
+    double input_read_time_total = 0;
+    double input_read_time_avg = 0;
+    double output_write_time_total = 0;
+    double output_write_time_avg = 0;
+
+    apr_uint64_t input_bytes_snap = 0;
+    apr_uint64_t input_reads_snap = 0;
+    apr_uint64_t output_bytes_snap = 0;
+    apr_uint64_t output_writes_snap = 0;
 
     apr_uint64_t status_1xx_snap = 0;
     apr_uint64_t status_2xx_snap = 0;
@@ -2027,6 +2129,9 @@ static PyObject *wsgi_request_metrics(void)
     int daemon_time_buckets_snap[WSGI_TELEMETRY_BUCKET_COUNT];
     int application_time_buckets_snap[WSGI_TELEMETRY_BUCKET_COUNT];
     int request_time_buckets_snap[WSGI_TELEMETRY_BUCKET_COUNT];
+    int gil_wait_time_buckets_snap[WSGI_TELEMETRY_BUCKET_COUNT];
+    int input_read_time_buckets_snap[WSGI_TELEMETRY_BUCKET_COUNT];
+    int output_write_time_buckets_snap[WSGI_TELEMETRY_BUCKET_COUNT];
 
     int request_threads_active = 0;
 
@@ -2123,6 +2228,10 @@ static PyObject *wsgi_request_metrics(void)
         wsgi_daemon_time_total = 0.0;
         wsgi_application_time_total = 0.0;
         wsgi_request_time_total = 0.0;
+        wsgi_gil_wait_time_total = 0.0;
+        wsgi_gil_wait_count_total = 0;
+        wsgi_input_read_time_total = 0.0;
+        wsgi_output_write_time_total = 0.0;
 
         wsgi_server_time_min_us = UINT64_MAX;
         wsgi_server_time_max_us = 0;
@@ -2134,12 +2243,30 @@ static PyObject *wsgi_request_metrics(void)
         wsgi_application_time_max_us = 0;
         wsgi_request_time_min_us = UINT64_MAX;
         wsgi_request_time_max_us = 0;
+        wsgi_gil_wait_time_min_us = UINT64_MAX;
+        wsgi_gil_wait_time_max_us = 0;
+        wsgi_input_read_time_min_us = UINT64_MAX;
+        wsgi_input_read_time_max_us = 0;
+        wsgi_output_write_time_min_us = UINT64_MAX;
+        wsgi_output_write_time_max_us = 0;
+
+        wsgi_input_bytes_total = 0;
+        wsgi_input_reads_total = 0;
+        wsgi_output_bytes_total = 0;
+        wsgi_output_writes_total = 0;
 
         wsgi_status_1xx_count = 0;
         wsgi_status_2xx_count = 0;
         wsgi_status_3xx_count = 0;
         wsgi_status_4xx_count = 0;
         wsgi_status_5xx_count = 0;
+
+        memset(&wsgi_gil_wait_time_buckets, 0,
+               sizeof(wsgi_gil_wait_time_buckets));
+        memset(&wsgi_input_read_time_buckets, 0,
+               sizeof(wsgi_input_read_time_buckets));
+        memset(&wsgi_output_write_time_buckets, 0,
+               sizeof(wsgi_output_write_time_buckets));
 
         if (wsgi_slot_stats && wsgi_active_slots_max > 0)
         {
@@ -2171,6 +2298,10 @@ static PyObject *wsgi_request_metrics(void)
     daemon_time_total = wsgi_daemon_time_total;
     application_time_total = wsgi_application_time_total;
     request_time_total = wsgi_request_time_total;
+    gil_wait_time_total = wsgi_gil_wait_time_total;
+    gil_wait_count_snap = wsgi_gil_wait_count_total;
+    input_read_time_total = wsgi_input_read_time_total;
+    output_write_time_total = wsgi_output_write_time_total;
 
     server_time_min_snap_us = wsgi_server_time_min_us;
     server_time_max_snap_us = wsgi_server_time_max_us;
@@ -2182,6 +2313,17 @@ static PyObject *wsgi_request_metrics(void)
     application_time_max_snap_us = wsgi_application_time_max_us;
     request_time_min_snap_us = wsgi_request_time_min_us;
     request_time_max_snap_us = wsgi_request_time_max_us;
+    gil_wait_time_min_snap_us = wsgi_gil_wait_time_min_us;
+    gil_wait_time_max_snap_us = wsgi_gil_wait_time_max_us;
+    input_read_time_min_snap_us = wsgi_input_read_time_min_us;
+    input_read_time_max_snap_us = wsgi_input_read_time_max_us;
+    output_write_time_min_snap_us = wsgi_output_write_time_min_us;
+    output_write_time_max_snap_us = wsgi_output_write_time_max_us;
+
+    input_bytes_snap = wsgi_input_bytes_total;
+    input_reads_snap = wsgi_input_reads_total;
+    output_bytes_snap = wsgi_output_bytes_total;
+    output_writes_snap = wsgi_output_writes_total;
 
     status_1xx_snap = wsgi_status_1xx_count;
     status_2xx_snap = wsgi_status_2xx_count;
@@ -2199,6 +2341,12 @@ static PyObject *wsgi_request_metrics(void)
            sizeof(application_time_buckets_snap));
     memcpy(request_time_buckets_snap, wsgi_request_time_buckets,
            sizeof(request_time_buckets_snap));
+    memcpy(gil_wait_time_buckets_snap, wsgi_gil_wait_time_buckets,
+           sizeof(gil_wait_time_buckets_snap));
+    memcpy(input_read_time_buckets_snap, wsgi_input_read_time_buckets,
+           sizeof(input_read_time_buckets_snap));
+    memcpy(output_write_time_buckets_snap, wsgi_output_write_time_buckets,
+           sizeof(output_write_time_buckets_snap));
 
     /* Per-slot capacity drain. Fold in-flight busy-tail so a long request
      * contributes to every interval it spans. CPU tails can't be folded
@@ -2260,6 +2408,10 @@ static PyObject *wsgi_request_metrics(void)
     wsgi_daemon_time_total = 0.0;
     wsgi_application_time_total = 0.0;
     wsgi_request_time_total = 0.0;
+    wsgi_gil_wait_time_total = 0.0;
+    wsgi_gil_wait_count_total = 0;
+    wsgi_input_read_time_total = 0.0;
+    wsgi_output_write_time_total = 0.0;
 
     wsgi_server_time_min_us = UINT64_MAX;
     wsgi_server_time_max_us = 0;
@@ -2271,11 +2423,18 @@ static PyObject *wsgi_request_metrics(void)
     wsgi_application_time_max_us = 0;
     wsgi_request_time_min_us = UINT64_MAX;
     wsgi_request_time_max_us = 0;
+    wsgi_gil_wait_time_min_us = UINT64_MAX;
+    wsgi_gil_wait_time_max_us = 0;
+    wsgi_input_read_time_min_us = UINT64_MAX;
+    wsgi_input_read_time_max_us = 0;
+    wsgi_output_write_time_min_us = UINT64_MAX;
+    wsgi_output_write_time_max_us = 0;
 
-    /* Drain (zero-only) the I/O totals so the telemetry reporter
-     * doesn't leak counts across the Python accessor's interval. The
-     * Python accessor doesn't currently expose the I/O totals — same
-     * drain-clash semantics as wsgi_sample_requests above. */
+    /* Drain the I/O totals. Snapshots were taken above into
+     * input_bytes_snap / input_reads_snap / output_bytes_snap /
+     * output_writes_snap; zero the globals so the telemetry reporter
+     * starts a fresh interval, matching the drain-clash semantics used
+     * for the phase totals. */
     wsgi_input_bytes_total = 0;
     wsgi_input_reads_total = 0;
     wsgi_output_bytes_total = 0;
@@ -2301,6 +2460,12 @@ static PyObject *wsgi_request_metrics(void)
            sizeof(wsgi_application_time_buckets));
     memset(&wsgi_request_time_buckets, 0,
            sizeof(wsgi_request_time_buckets));
+    memset(&wsgi_gil_wait_time_buckets, 0,
+           sizeof(wsgi_gil_wait_time_buckets));
+    memset(&wsgi_input_read_time_buckets, 0,
+           sizeof(wsgi_input_read_time_buckets));
+    memset(&wsgi_output_write_time_buckets, 0,
+           sizeof(wsgi_output_write_time_buckets));
 
     apr_thread_mutex_unlock(wsgi_monitor_lock);
 
@@ -2452,6 +2617,29 @@ static PyObject *wsgi_request_metrics(void)
                    WSGI_INTERNED_STRING(status_5xx), object);
     Py_DECREF(object);
 
+    /* Per-interval I/O byte and op totals across all completed requests
+     * in the interval. Mirrors the status counters above — drained from
+     * the same locked region. */
+    object = PyLong_FromUnsignedLongLong(input_bytes_snap);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(input_bytes), object);
+    Py_DECREF(object);
+
+    object = PyLong_FromUnsignedLongLong(input_reads_snap);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(input_reads), object);
+    Py_DECREF(object);
+
+    object = PyLong_FromUnsignedLongLong(output_bytes_snap);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(output_bytes), object);
+    Py_DECREF(object);
+
+    object = PyLong_FromUnsignedLongLong(output_writes_snap);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(output_writes), object);
+    Py_DECREF(object);
+
     object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
     for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
     {
@@ -2500,6 +2688,36 @@ static PyObject *wsgi_request_metrics(void)
     }
     PyDict_SetItem(result,
                    WSGI_INTERNED_STRING(request_time_buckets), object);
+    Py_DECREF(object);
+
+    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
+    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
+    {
+        PyList_SET_ITEM(object, i,
+                        PyLong_FromLong(gil_wait_time_buckets_snap[i]));
+    }
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(gil_wait_time_buckets), object);
+    Py_DECREF(object);
+
+    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
+    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
+    {
+        PyList_SET_ITEM(object, i,
+                        PyLong_FromLong(input_read_time_buckets_snap[i]));
+    }
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(input_read_time_buckets), object);
+    Py_DECREF(object);
+
+    object = PyList_New(WSGI_TELEMETRY_BUCKET_COUNT);
+    for (i = 0; i < WSGI_TELEMETRY_BUCKET_COUNT; i++)
+    {
+        PyList_SET_ITEM(object, i,
+                        PyLong_FromLong(output_write_time_buckets_snap[i]));
+    }
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(output_write_time_buckets), object);
     Py_DECREF(object);
 
     object = PyList_New(request_threads_maximum);
@@ -2570,6 +2788,9 @@ static PyObject *wsgi_request_metrics(void)
         daemon_time_avg = daemon_time_total / interval_requests;
         application_time_avg = application_time_total / interval_requests;
         request_time_avg = request_time_total / interval_requests;
+        gil_wait_time_avg = gil_wait_time_total / interval_requests;
+        input_read_time_avg = input_read_time_total / interval_requests;
+        output_write_time_avg = output_write_time_total / interval_requests;
     }
 
     object = PyFloat_FromDouble(server_time_avg);
@@ -2614,6 +2835,31 @@ static PyObject *wsgi_request_metrics(void)
                    WSGI_INTERNED_STRING(request_time), object);
     Py_DECREF(object);
 
+    /* Cross-cutting overlap means. Same per-tick mean shape as the phase
+     * means above (total time across completions divided by request
+     * count); not addends in the request_time invariant. gil_wait_count
+     * is the interval count of recorded GIL re-acquire events — useful
+     * for normalising gil_wait_time to a mean wait per acquire. */
+    object = PyFloat_FromDouble(gil_wait_time_avg);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(gil_wait_time), object);
+    Py_DECREF(object);
+
+    object = PyLong_FromUnsignedLongLong(gil_wait_count_snap);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(gil_wait_count), object);
+    Py_DECREF(object);
+
+    object = PyFloat_FromDouble(input_read_time_avg);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(input_read_time), object);
+    Py_DECREF(object);
+
+    object = PyFloat_FromDouble(output_write_time_avg);
+    PyDict_SetItem(result,
+                   WSGI_INTERNED_STRING(output_write_time), object);
+    Py_DECREF(object);
+
     /* Per-phase exact min/max for the interval, in microseconds. None
      * for both keys if the phase did not record any requests this tick
      * (the min accumulator still holds its UINT64_MAX sentinel).
@@ -2646,6 +2892,16 @@ static PyObject *wsgi_request_metrics(void)
     WSGI_PUBLISH_PHASE_MINMAX(request_time_min_us, request_time_max_us,
                               request_time_min_snap_us,
                               request_time_max_snap_us);
+    WSGI_PUBLISH_PHASE_MINMAX(gil_wait_time_min_us, gil_wait_time_max_us,
+                              gil_wait_time_min_snap_us,
+                              gil_wait_time_max_snap_us);
+    WSGI_PUBLISH_PHASE_MINMAX(input_read_time_min_us, input_read_time_max_us,
+                              input_read_time_min_snap_us,
+                              input_read_time_max_snap_us);
+    WSGI_PUBLISH_PHASE_MINMAX(output_write_time_min_us,
+                              output_write_time_max_us,
+                              output_write_time_min_snap_us,
+                              output_write_time_max_snap_us);
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process)

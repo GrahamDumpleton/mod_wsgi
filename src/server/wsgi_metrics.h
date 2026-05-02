@@ -134,6 +134,14 @@ extern void wsgi_gil_wait_reset(void);
  * slot claim). Cheap — APR threadkey lookup plus uint64 add, no locking. */
 extern void wsgi_gil_wait_record(apr_uint64_t wait_us);
 
+/* Read the calling thread's running per-request GIL-wait totals. Reads
+ * from the active slot when one is in_use, otherwise from the per-thread
+ * staging accumulator. Either pointer may be NULL. Intended for the
+ * request_finished event publisher, which runs before the slot is
+ * drained by wsgi_record_request_times. */
+extern void wsgi_gil_wait_current(apr_uint64_t *wait_us,
+                                  apr_uint64_t *count);
+
 /* Drop-in replacements for Py_BEGIN_ALLOW_THREADS / Py_END_ALLOW_THREADS
  * that additionally measure the time spent waiting to re-acquire the GIL
  * in the END expansion. The user's released-region code between BEGIN and

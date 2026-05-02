@@ -36,6 +36,7 @@ import threading
 
 # Track events received during process lifetime.
 _events_log = []
+_request_finished_keys = set()
 
 
 def event_handler(name, **kwargs):
@@ -47,6 +48,13 @@ def event_handler(name, **kwargs):
         request_data["thread_name"] = thread.name
         request_data["thread_id"] = thread.ident
         request_data["pid"] = os.getpid()
+    elif name == "request_finished":
+        # Filter out request_data which is always present and not a
+        # metric — we just want the lifecycle/metric keys here so the
+        # test can assert which fields are exposed.
+        for key in kwargs:
+            if key != "request_data":
+                _request_finished_keys.add(key)
 
 
 mod_wsgi.subscribe_events(event_handler)
@@ -67,6 +75,8 @@ def application(environ, start_response):
         return handle_request_data(environ, start_response)
     elif path == "/events-log":
         return handle_events_log(environ, start_response)
+    elif path == "/request-finished-keys":
+        return handle_request_finished_keys(environ, start_response)
     else:
         start_response("404 Not Found", [("Content-Type", "text/plain")])
         return [b"Unknown test path"]
@@ -113,3 +123,13 @@ def handle_events_log(environ, start_response):
 
     start_response("200 OK", [("Content-Type", "text/plain")])
     return [log_text.encode("utf-8")]
+
+
+def handle_request_finished_keys(environ, start_response):
+    # Return the union of keys observed across all request_finished
+    # events seen so far, one per line. Used by the integration test
+    # to assert which lifecycle/metric fields are being published.
+    body = "\n".join(sorted(_request_finished_keys))
+
+    start_response("200 OK", [("Content-Type", "text/plain")])
+    return [body.encode("utf-8")]
