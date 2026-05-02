@@ -41,8 +41,8 @@ New Features
   request within the ``interrupt-timeout`` grace window, the WSGI
   adapter returns ``504 Gateway Timeout`` and the worker thread returns
   to the pool — the daemon process keeps running, and other threads
-  were never disturbed. ``RequestTimeout`` is a subclass of
-  ``SystemExit`` so well-written code does not catch it via
+  were never disturbed. ``RequestTimeout`` derives directly from
+  ``BaseException`` so well-written code does not catch it via
   ``except Exception:``; user code may catch it for cleanup but should
   re-raise. When ``interrupt-timeout`` is ``0`` (the default) injection
   is skipped and recovery falls straight through to

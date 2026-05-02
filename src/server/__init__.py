@@ -2067,7 +2067,7 @@ add_option('unix', '--request-timeout', type='int', default=60,
 add_option('unix', '--interrupt-timeout', type='int', default=0,
         metavar='SECONDS', help='When non-zero, attempts to interrupt only '
         'the wedged thread when request-timeout fires by injecting a '
-        'mod_wsgi.RequestTimeout exception (subclass of SystemExit) into '
+        'mod_wsgi.RequestTimeout exception (subclass of BaseException) into '
         'it. If the injection unwinds the stuck request before this many '
         'seconds elapse, the WSGI adapter returns 504 Gateway Timeout and '
         'the worker thread continues serving further requests; otherwise '

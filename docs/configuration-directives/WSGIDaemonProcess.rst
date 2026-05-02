@@ -443,17 +443,17 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     the fire point set by ``request-timeout`` is the same regardless
     of this setting.
 
-    The injected exception is a subclass of ``SystemExit``, so
-    well-written code using ``except Exception:`` will not catch it.
+    The injected exception derives directly from ``BaseException``,
+    so well-written code using ``except Exception:`` will not catch it.
     It may be caught for cleanup purposes but should be re-raised —
-    swallowing it is counter to its purpose, similar to swallowing
-    ``SystemExit``. If the exception unwinds back to the WSGI adapter
-    within the ``interrupt-timeout`` grace window, the adapter returns
-    ``504 Gateway Timeout`` and the worker thread returns to the pool
-    to handle further requests. **The process is not restarted; other
-    threads were never disturbed.** If the grace window expires with
-    the same request still active, the daemon falls through to
-    ``graceful-timeout`` followed by ``shutdown-timeout``.
+    swallowing it is counter to its purpose. If the exception unwinds
+    back to the WSGI adapter within the ``interrupt-timeout`` grace
+    window, the adapter returns ``504 Gateway Timeout`` and the worker
+    thread returns to the pool to handle further requests. **The
+    process is not restarted; other threads were never disturbed.** If
+    the grace window expires with the same request still active, the
+    daemon falls through to ``graceful-timeout`` followed by
+    ``shutdown-timeout``.
 
     Recommended floor of ~10 seconds when enabled. Values significantly
     below that may not give the injected exception time to unwind
