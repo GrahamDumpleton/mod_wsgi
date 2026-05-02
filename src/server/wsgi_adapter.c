@@ -2408,7 +2408,8 @@ int Adapter_run(AdapterObject *self, PyObject *object)
 
     start = PyObject_GetAttrString((PyObject *)self, "start_response");
 
-    args = Py_BuildValue("(OO)", vars, start);
+    if (start)
+        args = Py_BuildValue("(OO)", vars, start);
 
     if (args)
         self->sequence = PyObject_CallObject(object, args);
