@@ -1789,27 +1789,13 @@ WSGI0065 — Removing stale unix domain socket before re-binding
 
 .. _WSGI0066:
 
-WSGI0066 — Unable to iterate over current frames for active threads
--------------------------------------------------------------------
+WSGI0066 — (retired)
+--------------------
 
-:Severity: WARNING
-:Source: ``src/server/wsgi_daemon.c``
-
-:Logged message:
-   ``Unable to iterate over current frames for active threads;
-   stack-trace dump will be incomplete.``
-
-:Cause:
-   ``PyObject_GetIter`` on the dict returned by
-   ``sys._current_frames()`` failed during the deadlock-thread
-   stack-trace dump.
-
-:Outcome:
-   Some thread stacks may be missing from the diagnostic dump.
-
-:Operator action:
-   Generally none; the dump is a best-effort diagnostic aid emitted
-   on shutdown timeout.
+Previously logged when ``PyObject_GetIter`` on the threads dict
+returned by ``sys._current_frames()`` failed. The stack-trace dumper
+now walks the dict directly via ``PyDict_Next``, so the iterator call
+and its unreachable failure branch were removed.
 
 .. _WSGI0067:
 
@@ -1830,7 +1816,8 @@ WSGI0067 — Unable to obtain current frames for active threads
    The stack-trace dump is skipped entirely.
 
 :Operator action:
-   Same as :ref:`WSGI0066`.
+   Generally none; the dump is a best-effort diagnostic aid emitted
+   on shutdown timeout.
 
 .. _WSGI0068:
 

@@ -2618,101 +2618,84 @@ static void wsgi_log_stack_traces(void)
 
     if (threads && PyDict_Size(threads) != 0)
     {
-        PyObject *seq = NULL;
+        PyObject *id = NULL;
+        PyObject *frame = NULL;
 
-        seq = PyObject_GetIter(threads);
+        Py_ssize_t i = 0;
 
-        if (seq)
+        wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                       "Dumping stack trace for active Python "
+                       "threads in daemon process '%s'.",
+                       wsgi_daemon_process->group->name);
+
+        while (PyDict_Next(threads, &i, &id, &frame))
         {
-            PyObject *id = NULL;
-            PyObject *frame = NULL;
+            apr_int64_t thread_id = 0;
 
-            Py_ssize_t i = 0;
+            PyFrameObject *current = NULL;
+            PyFrameObject *next_frame = NULL;
+            int is_first = 1;
 
-            wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                           "Dumping stack trace for active Python "
-                           "threads in daemon process '%s'.",
-                           wsgi_daemon_process->group->name);
+            thread_id = PyLong_AsLong(id);
 
-            while (PyDict_Next(threads, &i, &id, &frame))
+            current = (PyFrameObject *)frame;
+            Py_INCREF(current);
+
+            while (current)
             {
-                apr_int64_t thread_id = 0;
+                int lineno;
 
-                PyFrameObject *current = NULL;
-                PyFrameObject *next_frame = NULL;
-                int is_first = 1;
+                const char *filename = NULL;
+                const char *name = NULL;
+                PyCodeObject *code = NULL;
 
-                thread_id = PyLong_AsLong(id);
+                code = PyFrame_GetCode(current);
+                lineno = PyFrame_GetLineNumber(current);
 
-                current = (PyFrameObject *)frame;
-                Py_INCREF(current);
-
-                while (current)
+                if (code)
                 {
-                    int lineno;
-
-                    const char *filename = NULL;
-                    const char *name = NULL;
-                    PyCodeObject *code = NULL;
-
-                    code = PyFrame_GetCode(current);
-                    lineno = PyFrame_GetLineNumber(current);
-
-                    if (code)
-                    {
-                        filename = PyUnicode_AsUTF8(code->co_filename);
-                        name = PyUnicode_AsUTF8(code->co_name);
-                    }
-
-                    if (!filename)
-                        filename = "<unknown>";
-                    if (!name)
-                        name = "<unknown>";
-
-                    if (PyErr_Occurred())
-                        PyErr_Clear();
-
-                    next_frame = PyFrame_GetBack(current);
-
-                    if (is_first)
-                    {
-                        wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                                       "Thread %" APR_INT64_T_FMT
-                                       " executing file \"%s\", line "
-                                       "%d, in %s",
-                                       thread_id, filename, lineno, name);
-                        is_first = 0;
-                    }
-                    else if (next_frame)
-                    {
-                        wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                                       "called from file \"%s\", "
-                                       "line %d, in %s,",
-                                       filename, lineno, name);
-                    }
-                    else
-                    {
-                        wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                                       "called from file \"%s\", "
-                                       "line %d, in %s.",
-                                       filename, lineno, name);
-                    }
-
-                    Py_XDECREF(code);
-                    Py_DECREF(current);
-                    current = next_frame;
+                    filename = PyUnicode_AsUTF8(code->co_filename);
+                    name = PyUnicode_AsUTF8(code->co_name);
                 }
-            }
-        }
-        else
-        {
-            wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0066)
-                           "Unable to iterate over current frames for "
-                           "active threads; stack-trace dump will be "
-                           "incomplete.");
 
-            PyErr_Print();
-            PyErr_Clear();
+                if (!filename)
+                    filename = "<unknown>";
+                if (!name)
+                    name = "<unknown>";
+
+                if (PyErr_Occurred())
+                    PyErr_Clear();
+
+                next_frame = PyFrame_GetBack(current);
+
+                if (is_first)
+                {
+                    wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                                   "Thread %" APR_INT64_T_FMT
+                                   " executing file \"%s\", line "
+                                   "%d, in %s",
+                                   thread_id, filename, lineno, name);
+                    is_first = 0;
+                }
+                else if (next_frame)
+                {
+                    wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                                   "called from file \"%s\", "
+                                   "line %d, in %s,",
+                                   filename, lineno, name);
+                }
+                else
+                {
+                    wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                                   "called from file \"%s\", "
+                                   "line %d, in %s.",
+                                   filename, lineno, name);
+                }
+
+                Py_XDECREF(code);
+                Py_DECREF(current);
+                current = next_frame;
+            }
         }
     }
     else
