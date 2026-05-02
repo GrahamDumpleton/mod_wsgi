@@ -851,6 +851,18 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
                          exception_type, context);
             break;
 
+        case WSGI_LOG_PYTHON_PHASE_EVENT_CALLBACK:
+            apr_snprintf(header, sizeof(header),
+                         is_systemexit
+                             ? WSGI_APLOGNO(0190) "SystemExit (%s) raised "
+                                                  "by event callback for "
+                                                  "'%s'; ignored."
+                             : WSGI_APLOGNO(0112) "Exception (%s) raised "
+                                                  "by event callback for "
+                                                  "'%s'.",
+                         exception_type, filename);
+            break;
+
         case WSGI_LOG_PYTHON_PHASE_RUNNING:
         default:
             if (r)

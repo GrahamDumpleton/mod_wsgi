@@ -2921,18 +2921,23 @@ WSGI0112 — Exception within event callback
 ------------------------------------------
 
 :Severity: ERR
-:Source: ``src/server/wsgi_metrics.c``
+:Source: ``src/server/wsgi_logger.c``
 
 :Logged message:
-   ``Exception occurred within event callback.``
+   ``Exception (<type>) raised by event callback for '<event-name>'.``
+   Event name is the string passed to ``wsgi_publish_event()`` (e.g.
+   ``request_started``, ``response_started``, ``request_finished``,
+   ``request_exception``, ``process_stopping``).
 
 :Cause:
-   A subscriber registered via mod_wsgi's event-publish API raised
-   an exception when the corresponding event fired.
+   A subscriber registered via ``mod_wsgi.subscribe_events()`` or
+   ``mod_wsgi.subscribe_shutdown()`` raised a non-``SystemExit``
+   exception when the named event fired. The traceback is emitted
+   as continuation lines after this header.
 
 :Outcome:
-   The exception is logged with traceback; remaining subscribers
-   continue to run.
+   Iteration over subscribers continues; the next callback in the
+   list still runs.
 
 :Operator action:
    Investigate the offending event subscriber. Identify it via the
@@ -4877,3 +4882,30 @@ WSGI0189 — SystemExit raised during Python interpreter initialisation
    or import-time side effect of a ``WSGIPythonPath`` entry) that
    may be calling ``sys.exit()`` or raising ``SystemExit`` during
    import.
+
+.. _WSGI0190:
+
+WSGI0190 — SystemExit raised by event callback ignored
+------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_logger.c``
+
+:Logged message:
+   ``SystemExit (<type>) raised by event callback for '<event-name>';
+   ignored.`` Event name shape as for :ref:`WSGI0112`.
+
+:Cause:
+   A subscriber registered via ``mod_wsgi.subscribe_events()`` or
+   ``mod_wsgi.subscribe_shutdown()`` raised ``SystemExit`` when the
+   named event fired. mod_wsgi swallows the exception so it does
+   not terminate the process. The traceback is emitted as
+   continuation lines after this header.
+
+:Outcome:
+   Iteration over subscribers continues; the next callback in the
+   list still runs.
+
+:Operator action:
+   Investigate the offending event subscriber; raising
+   ``SystemExit`` from an event callback is generally a bug.

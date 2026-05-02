@@ -62,7 +62,8 @@ extern PyObject *newLogObject(request_rec *r, int level, const char *name,
 typedef enum {
     WSGI_LOG_PYTHON_PHASE_RUNNING = 0,
     WSGI_LOG_PYTHON_PHASE_INTERP_INIT,
-    WSGI_LOG_PYTHON_PHASE_INTERP_ATEXIT
+    WSGI_LOG_PYTHON_PHASE_INTERP_ATEXIT,
+    WSGI_LOG_PYTHON_PHASE_EVENT_CALLBACK
 } wsgi_log_python_phase;
 
 extern void wsgi_log_python_error_ex(const char *file, int line,
@@ -86,6 +87,11 @@ extern void wsgi_log_python_error_ex(const char *file, int line,
     wsgi_log_python_error_ex(APLOG_MARK, NULL, NULL, \
                              (application_group), 0, \
                              WSGI_LOG_PYTHON_PHASE_INTERP_ATEXIT)
+
+#define wsgi_log_python_event_callback_error(event_name) \
+    wsgi_log_python_error_ex(APLOG_MARK, NULL, (event_name), \
+                             NULL, 0, \
+                             WSGI_LOG_PYTHON_PHASE_EVENT_CALLBACK)
 
 /* ------------------------------------------------------------------------- */
 
