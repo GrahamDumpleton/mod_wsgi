@@ -226,6 +226,11 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     self->owner = 0;
     self->name = strdup(name);
+#if APR_HAS_THREADS
+    self->tstate_table = NULL;
+#else
+    self->tstate = NULL;
+#endif
 
     if (interp)
     {
@@ -1549,7 +1554,16 @@ failure:
 
     if (self)
     {
+        /*
+         * Sub-interpreter teardown (if any) is already done above; null
+         * out name and clear owner so Interpreter_dealloc skips both the
+         * tstate-management block and a second Py_EndInterpreter, and
+         * does not read freed memory at *self->name.
+         */
+
         free(self->name);
+        self->name = NULL;
+        self->owner = 0;
         Py_DECREF(self);
     }
 
@@ -1579,7 +1593,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     tstate_enter = PyThreadState_Get();
 
-    if (*self->name)
+    if (self->name && *self->name)
     {
 #if APR_HAS_THREADS
         WSGIThreadInfo *thread_handle = NULL;
