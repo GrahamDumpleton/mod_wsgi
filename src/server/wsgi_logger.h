@@ -185,6 +185,25 @@ extern void wsgi_log_rerror_locked_ex(const char *file, int line,
 
 /* ------------------------------------------------------------------------- */
 
+/*
+ * Sets a Python exception of type exc_type with a PyUnicode_FromFormat-
+ * style message, chaining any currently set exception as the cause.
+ * Equivalent to "raise NewExc from existing" when an exception is
+ * already set; equivalent to PyErr_Format when none is. Both
+ * __cause__ and __context__ are populated and __suppress_context__ is
+ * set, matching "raise X from Y". If formatting itself fails, the
+ * original exception (if any) is left in place.
+ *
+ * The format string uses Python's PyUnicode_FromFormat specifiers
+ * (%S, %R, %V, %A, %U, plus the standard %s/%d/etc.), not printf, so
+ * the function is intentionally not tagged with the printf format
+ * attribute.
+ */
+extern void wsgi_set_python_exception_from_cause(PyObject *exc_type,
+                                                 const char *format, ...);
+
+/* ------------------------------------------------------------------------- */
+
 #endif
 
 /* vi: set sw=4 expandtab : */

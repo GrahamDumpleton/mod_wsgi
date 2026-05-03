@@ -114,6 +114,60 @@ void wsgi_log_rerror_locked_ex(const char *file, int line, int module_index,
 
 /* ------------------------------------------------------------------------- */
 
+void wsgi_set_python_exception_from_cause(PyObject *exc_type,
+                                          const char *format, ...)
+{
+    PyObject *cause_type = NULL;
+    PyObject *cause_value = NULL;
+    PyObject *cause_tb = NULL;
+
+    PyErr_Fetch(&cause_type, &cause_value, &cause_tb);
+    PyErr_NormalizeException(&cause_type, &cause_value, &cause_tb);
+    if (cause_value != NULL && cause_tb != NULL) {
+        PyException_SetTraceback(cause_value, cause_tb);
+    }
+
+    va_list vargs;
+    va_start(vargs, format);
+    PyObject *msg = PyUnicode_FromFormatV(format, vargs);
+    va_end(vargs);
+
+    if (msg == NULL) {
+        /* Formatting failed. Restore the original error if one was
+         * pending; otherwise leave the formatting error in place so
+         * the caller is not silently left with no exception set. */
+        if (cause_type != NULL) {
+            PyErr_Restore(cause_type, cause_value, cause_tb);
+        }
+        return;
+    }
+
+    PyErr_SetObject(exc_type, msg);
+    Py_DECREF(msg);
+
+    if (cause_value != NULL) {
+        PyObject *new_type = NULL;
+        PyObject *new_value = NULL;
+        PyObject *new_tb = NULL;
+
+        PyErr_Fetch(&new_type, &new_value, &new_tb);
+        PyErr_NormalizeException(&new_type, &new_value, &new_tb);
+
+        /* Both PyException_SetCause and PyException_SetContext steal
+         * the reference they are given, so create one extra ref to
+         * cause_value and hand one to each. SetCause also flips
+         * __suppress_context__ = 1, matching "raise X from Y". */
+        PyException_SetCause(new_value, Py_NewRef(cause_value));
+        PyException_SetContext(new_value, cause_value);
+
+        Py_XDECREF(cause_type);
+        Py_XDECREF(cause_tb);
+        PyErr_Restore(new_type, new_value, new_tb);
+    }
+}
+
+/* ------------------------------------------------------------------------- */
+
 typedef struct
 {
     PyObject_HEAD const char *name;

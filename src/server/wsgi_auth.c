@@ -481,8 +481,9 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
         latin_item = PyUnicode_AsLatin1String(item);
         if (!latin_item)
         {
-            PyErr_Format(PyExc_TypeError, "byte string value expected, "
-                                          "value containing non 'latin-1' characters found");
+            wsgi_set_python_exception_from_cause(PyExc_TypeError,
+                    "byte string value expected, value containing non "
+                    "'latin-1' characters found");
 
             return NULL;
         }
@@ -1043,11 +1044,11 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                         latin_item = PyUnicode_AsLatin1String(result);
                         if (!latin_item)
                         {
-                            PyErr_SetString(PyExc_TypeError, "Digest auth "
-                                                             "provider must return None "
-                                                             "or string object, value "
-                                                             "containing non 'latin-1' "
-                                                             "characters found");
+                            wsgi_set_python_exception_from_cause(
+                                    PyExc_TypeError,
+                                    "Digest auth provider must return None "
+                                    "or string object, value containing "
+                                    "non 'latin-1' characters found");
                         }
                         else
                         {
