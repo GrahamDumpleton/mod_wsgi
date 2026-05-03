@@ -414,11 +414,11 @@ int wsgi_execute_dispatch(request_rec *r)
                             latin_item = PyUnicode_AsLatin1String(result);
                             if (!latin_item)
                             {
-                                PyErr_SetString(PyExc_TypeError,
-                                                "Process group must be "
-                                                "a byte string, value "
-                                                "containing non 'latin-1' "
-                                                "characters found");
+                                wsgi_set_python_exception_from_cause(
+                                        PyExc_TypeError,
+                                        "Process group must be a byte "
+                                        "string, value containing non "
+                                        "'latin-1' characters found");
 
                                 status = HTTP_INTERNAL_SERVER_ERROR;
                             }
@@ -505,11 +505,11 @@ int wsgi_execute_dispatch(request_rec *r)
                             latin_item = PyUnicode_AsLatin1String(result);
                             if (!latin_item)
                             {
-                                PyErr_SetString(PyExc_TypeError,
-                                                "Application group must "
-                                                "be a byte string, value "
-                                                "containing non 'latin-1' "
-                                                "characters found");
+                                wsgi_set_python_exception_from_cause(
+                                        PyExc_TypeError,
+                                        "Application group must be a "
+                                        "byte string, value containing "
+                                        "non 'latin-1' characters found");
 
                                 status = HTTP_INTERNAL_SERVER_ERROR;
                             }
@@ -596,11 +596,11 @@ int wsgi_execute_dispatch(request_rec *r)
                             latin_item = PyUnicode_AsLatin1String(result);
                             if (!latin_item)
                             {
-                                PyErr_SetString(PyExc_TypeError,
-                                                "Callable object must "
-                                                "be a byte string, value "
-                                                "containing non 'latin-1' "
-                                                "characters found");
+                                wsgi_set_python_exception_from_cause(
+                                        PyExc_TypeError,
+                                        "Callable object must be a "
+                                        "byte string, value containing "
+                                        "non 'latin-1' characters found");
 
                                 status = HTTP_INTERNAL_SERVER_ERROR;
                             }
@@ -660,9 +660,9 @@ int wsgi_execute_dispatch(request_rec *r)
 
             if (!method)
             {
-                PyErr_Format(PyExc_AttributeError,
-                             "'%s' object has no attribute 'close'",
-                             Py_TYPE(adapter->log)->tp_name);
+                wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                        "Failed to look up close() method on log object "
+                        "during request teardown");
             }
             else
             {

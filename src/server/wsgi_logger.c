@@ -561,8 +561,8 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
 
     if (iterator == NULL)
     {
-        PyErr_SetString(PyExc_TypeError,
-                        "argument must be sequence of strings");
+        wsgi_set_python_exception_from_cause(PyExc_TypeError,
+                "argument must be sequence of strings");
 
         return NULL;
     }

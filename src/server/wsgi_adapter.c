@@ -3099,8 +3099,9 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
         latin_item = PyUnicode_AsLatin1String(item);
         if (!latin_item)
         {
-            PyErr_Format(PyExc_TypeError, "byte string value expected, "
-                                          "value containing non 'latin-1' characters found");
+            wsgi_set_python_exception_from_cause(PyExc_TypeError,
+                    "byte string value expected, value containing non "
+                    "'latin-1' characters found");
 
             return NULL;
         }

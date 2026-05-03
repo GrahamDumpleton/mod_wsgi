@@ -370,9 +370,9 @@ int wsgi_execute_script(request_rec *r)
 
                 if (!method)
                 {
-                    PyErr_Format(PyExc_AttributeError,
-                                 "'%s' object has no attribute 'close'",
-                                 Py_TYPE(adapter->log)->tp_name);
+                    wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                            "Failed to look up close() method on log "
+                            "object during request teardown");
                 }
                 else
                 {
