@@ -139,6 +139,10 @@ PyObject *newLogBufferObject(request_rec *r, int level, const char *name,
     if (!name)
         name = "<log>";
 
+    /* Stored by pointer, not copied. Callers must pass a string with
+     * static lifetime (e.g. a literal); Log_dealloc does not free name
+     * and Log_name reads it directly. */
+
     self->name = name;
     self->proxy = proxy;
     self->r = r;
