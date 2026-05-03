@@ -344,10 +344,26 @@ InterpreterObject *newInterpreterObject(const char *name)
     }
 
     /*
+     * Build the embedded mod_wsgi module and install it as
+     * sys.modules['mod_wsgi']. Done early so the heap-allocated
+     * PyTypeObjects in WSGIModuleState are reachable by code in
+     * the rest of interpreter setup that builds instances of
+     * those types (sys.stdin/sys.stdout substitution,
+     * signal.signal interception, etc.). The module's user-
+     * facing and per-interpreter runtime attributes are
+     * installed later by wsgi_module_populate once the rest of
+     * interpreter setup has populated the surrounding
+     * environment.
+     */
+
+    if (wsgi_module_init_state(name) < 0)
+        goto failure;
+
+    /*
      * Replace sys.stderr with a Log object so writes from Python
      * code are routed into the Apache error log. Always done; the
-     * stdin/stdout substitution that follows mod_wsgi module
-     * initialisation below is gated by configuration and platform.
+     * stdin/stdout substitution that follows is gated by
+     * configuration and platform.
      */
 
     object = newLogObject(NULL, APLOG_ERR, "<stderr>", 1);
@@ -366,6 +382,82 @@ InterpreterObject *newInterpreterObject(const char *name)
         PyErr_Clear();
     }
     Py_XDECREF(object);
+
+    /*
+     * Override sys.stdout (always) and sys.stdin (when
+     * configured) for the embedded interpreter so WSGI
+     * applications cannot accidentally interact with the
+     * standard streams of the Apache worker process.
+     *
+     * sys.stdout is always replaced. With WSGIRestrictStdout set
+     * it becomes a Restricted sentinel that raises OSError on
+     * any access; otherwise it becomes a Log object that routes
+     * writes into the Apache error log, the same routing
+     * applied to sys.stderr above.
+     *
+     * sys.stdin is replaced with a Restricted sentinel only
+     * when WSGIRestrictStdin is set. Otherwise sys.stdin is
+     * left as the stream the embedded interpreter inherited.
+     *
+     * The block is skipped on non-Win32 when wsgi_parent_pid
+     * equals the current pid, indicating Apache is running in
+     * single-process mode (httpd -X) where interactive
+     * debuggers like pdb need the controlling terminal's
+     * standard streams intact.
+     */
+
+#ifndef WIN32
+    if (wsgi_parent_pid != getpid())
+    {
+#endif
+        if (wsgi_server_config->restrict_stdout == 1)
+            object = (PyObject *)newRestrictedObject("sys.stdout");
+        else
+            object = newLogObject(NULL, APLOG_ERR, "<stdout>", 1);
+
+        if (!object || PySys_SetObject("stdout", object) < 0)
+        {
+            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                  WSGI_APLOGNO(0186) "Unable to replace "
+                                                     "'sys.stdout' for %s "
+                                                     "in %s; continuing "
+                                                     "with default stream "
+                                                     "object.",
+                                  wsgi_format_interp_name(
+                                      wsgi_server->process->pool, name),
+                                  wsgi_format_process_context(
+                                      wsgi_server->process->pool));
+            PyErr_Clear();
+        }
+        Py_XDECREF(object);
+
+        if (wsgi_server_config->restrict_stdin == 1)
+        {
+            object = (PyObject *)newRestrictedObject("sys.stdin");
+            if (!object || PySys_SetObject("stdin", object) < 0)
+            {
+                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                      WSGI_APLOGNO(0187) "Unable to "
+                                                         "replace "
+                                                         "'sys.stdin' "
+                                                         "with restricted "
+                                                         "object for %s "
+                                                         "in %s; "
+                                                         "continuing with "
+                                                         "default stream "
+                                                         "object.",
+                                      wsgi_format_interp_name(
+                                          wsgi_server->process->pool,
+                                          name),
+                                      wsgi_format_process_context(
+                                          wsgi_server->process->pool));
+                PyErr_Clear();
+            }
+            Py_XDECREF(object);
+        }
+#ifndef WIN32
+    }
+#endif
 
     /*
      * Set sys.argv to one element list to fake out
@@ -1005,83 +1097,18 @@ InterpreterObject *newInterpreterObject(const char *name)
 #endif
 
     /*
-     * Create the embedded 'mod_wsgi' Python module. The helper
-     * tries to import a user-supplied module of the same name
-     * first; if not present it builds the C-defined module via
-     * PEP 489 multi-phase init. Either way the result is augmented
-     * with the per-application-group attributes before return.
+     * Populate the embedded 'mod_wsgi' module (built earlier by
+     * wsgi_module_init_state) with its user-facing attributes
+     * and the per-interpreter runtime attributes for this
+     * interpreter.
      */
 
-    module = wsgi_module_create_for_interp(name);
+    module = wsgi_module_populate(name);
     if (!module)
         goto failure;
 
     Py_DECREF(module);
     module = NULL;
-
-    /*
-     * Substitute sys.stdout (and optionally sys.stdin) for the
-     * embedded interpreter. Done after the mod_wsgi module is
-     * initialised because newRestrictedObject() needs the
-     * Restricted heap type, which lives in WSGIModuleState and
-     * is populated during that initialisation. The substitution
-     * is gated by WSGIRestrictStdout / WSGIRestrictStdin and is
-     * skipped on non-Win32 single-process mode so interactive
-     * debuggers like pdb still work.
-     */
-
-#ifndef WIN32
-    if (wsgi_parent_pid != getpid())
-    {
-#endif
-        if (wsgi_server_config->restrict_stdout == 1)
-            object = (PyObject *)newRestrictedObject("sys.stdout");
-        else
-            object = newLogObject(NULL, APLOG_ERR, "<stdout>", 1);
-
-        if (!object || PySys_SetObject("stdout", object) < 0)
-        {
-            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                  WSGI_APLOGNO(0186) "Unable to replace "
-                                                     "'sys.stdout' for %s "
-                                                     "in %s; continuing "
-                                                     "with default stream "
-                                                     "object.",
-                                  wsgi_format_interp_name(
-                                      wsgi_server->process->pool, name),
-                                  wsgi_format_process_context(
-                                      wsgi_server->process->pool));
-            PyErr_Clear();
-        }
-        Py_XDECREF(object);
-
-        if (wsgi_server_config->restrict_stdin == 1)
-        {
-            object = (PyObject *)newRestrictedObject("sys.stdin");
-            if (!object || PySys_SetObject("stdin", object) < 0)
-            {
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                      WSGI_APLOGNO(0187) "Unable to "
-                                                         "replace "
-                                                         "'sys.stdin' "
-                                                         "with restricted "
-                                                         "object for %s "
-                                                         "in %s; "
-                                                         "continuing with "
-                                                         "default stream "
-                                                         "object.",
-                                      wsgi_format_interp_name(
-                                          wsgi_server->process->pool,
-                                          name),
-                                      wsgi_format_process_context(
-                                          wsgi_server->process->pool));
-                PyErr_Clear();
-            }
-            Py_XDECREF(object);
-        }
-#ifndef WIN32
-    }
-#endif
 
     /*
      * Create 'apache' Python module. If this is not a daemon
@@ -2989,7 +3016,7 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
 
     /* Finalise any Python objects required by child process. */
 
-    if (PyType_Ready(&Log_Type) < 0 || PyType_Ready(&Stream_Type) < 0 || PyType_Ready(&Input_Type) < 0 || PyType_Ready(&Adapter_Type) < 0 || PyType_Ready(&Interpreter_Type) < 0 || PyType_Ready(&Dispatch_Type) < 0 || PyType_Ready(&Auth_Type) < 0 || PyType_Ready(&SignalIntercept_Type) < 0 || PyType_Ready(&ShutdownInterpreter_Type) < 0)
+    if (PyType_Ready(&Log_Type) < 0 || PyType_Ready(&Stream_Type) < 0 || PyType_Ready(&Input_Type) < 0 || PyType_Ready(&Adapter_Type) < 0 || PyType_Ready(&Interpreter_Type) < 0 || PyType_Ready(&Dispatch_Type) < 0 || PyType_Ready(&Auth_Type) < 0 || PyType_Ready(&ShutdownInterpreter_Type) < 0)
     {
         wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0037) "Unable to initialise Python types in %s; "
                                                                              "Python based handlers will not be "

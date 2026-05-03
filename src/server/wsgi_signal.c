@@ -24,6 +24,7 @@
 #include "wsgi_server.h"
 #include "wsgi_logger.h"
 #include "wsgi_daemon.h"
+#include "wsgi_module.h"
 
 #if APR_HAVE_UNISTD_H
 #include <unistd.h>
@@ -31,28 +32,36 @@
 
 /* ------------------------------------------------------------------------- */
 
-/* Function to restrict access to use of signal(). */
+/*
+ * Heap-type destructor. Releases the wrapped signal.signal
+ * reference held by the instance, then frees the instance memory
+ * and decrements the type's refcount (every heap-type instance
+ * owns a reference to its type).
+ */
 
 static void SignalIntercept_dealloc(SignalInterceptObject *self)
 {
+    PyTypeObject *tp = Py_TYPE(self);
+
     Py_DECREF(self->wrapped);
 
-    PyObject_Del(self);
+    tp->tp_free(self);
+    Py_DECREF(tp);
 }
 
-SignalInterceptObject *newSignalInterceptObject(PyObject *wrapped)
-{
-    SignalInterceptObject *self = NULL;
-
-    self = PyObject_New(SignalInterceptObject, &SignalIntercept_Type);
-    if (self == NULL)
-        return NULL;
-
-    Py_INCREF(wrapped);
-    self->wrapped = wrapped;
-
-    return self;
-}
+/*
+ * tp_call hook. Invoked when Python code calls the wrapper as
+ * if it were signal.signal. The pid checks pass through to the
+ * real signal.signal when running inside a process forked from
+ * the mod_wsgi daemon or the Apache worker child: the wrapper
+ * is inherited across fork, but the forked child is no longer
+ * subject to mod_wsgi's signal management and code running
+ * there must be free to install its own handlers. When the call
+ * comes from the mod_wsgi-managed process itself, log a
+ * warning, print a stack trace identifying the caller, and
+ * return the existing handler unchanged so the caller observes
+ * a no-op replacement.
+ */
 
 static PyObject *SignalIntercept_call(
     SignalInterceptObject *self, PyObject *args, PyObject *kwds)
@@ -120,48 +129,100 @@ static PyObject *SignalIntercept_call(
     return h;
 }
 
-PyTypeObject SignalIntercept_Type = {
-    PyVarObject_HEAD_INIT(NULL, 0) "mod_wsgi.SignalIntercept", /*tp_name*/
-    sizeof(SignalInterceptObject),                             /*tp_basicsize*/
-    0,                                                         /*tp_itemsize*/
-    /* methods */
-    (destructor)SignalIntercept_dealloc, /*tp_dealloc*/
-    0,                                   /*tp_print*/
-    0,                                   /*tp_getattr*/
-    0,                                   /*tp_setattr*/
-    0,                                   /*tp_compare*/
-    0,                                   /*tp_repr*/
-    0,                                   /*tp_as_number*/
-    0,                                   /*tp_as_sequence*/
-    0,                                   /*tp_as_mapping*/
-    0,                                   /*tp_hash*/
-    (ternaryfunc)SignalIntercept_call,   /*tp_call*/
-    0,                                   /*tp_str*/
-    0,                                   /*tp_getattro*/
-    0,                                   /*tp_setattro*/
-    0,                                   /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT,                  /*tp_flags*/
-    0,                                   /*tp_doc*/
-    0,                                   /*tp_traverse*/
-    0,                                   /*tp_clear*/
-    0,                                   /*tp_richcompare*/
-    0,                                   /*tp_weaklistoffset*/
-    0,                                   /*tp_iter*/
-    0,                                   /*tp_iternext*/
-    0,                                   /*tp_methods*/
-    0,                                   /*tp_members*/
-    0,                                   /*tp_getset*/
-    0,                                   /*tp_base*/
-    0,                                   /*tp_dict*/
-    0,                                   /*tp_descr_get*/
-    0,                                   /*tp_descr_set*/
-    0,                                   /*tp_dictoffset*/
-    0,                                   /*tp_init*/
-    0,                                   /*tp_alloc*/
-    0,                                   /*tp_new*/
-    0,                                   /*tp_free*/
-    0,                                   /*tp_is_gc*/
+/* ------------------------------------------------------------------------- */
+
+/*
+ * PyType_Spec for the SignalIntercept heap type. The two slots
+ * with non-default behaviour are tp_dealloc (releases the
+ * wrapped reference) and tp_call (the intercept hook); everything
+ * else falls back to the framework defaults.
+ *
+ * tp_name is "mod_wsgi.SignalIntercept" so error messages and
+ * repr() output identify where the type comes from. The type is
+ * not exposed as a module attribute; instances are installed
+ * directly into the signal module's signal slot from C.
+ */
+
+static PyType_Slot SignalIntercept_slots[] = {
+    {Py_tp_dealloc, SignalIntercept_dealloc},
+    {Py_tp_call,    SignalIntercept_call},
+    {0, NULL},
 };
+
+static PyType_Spec SignalIntercept_spec = {
+    .name      = "mod_wsgi.SignalIntercept",
+    .basicsize = sizeof(SignalInterceptObject),
+    .itemsize  = 0,
+    .flags     = Py_TPFLAGS_DEFAULT,
+    .slots     = SignalIntercept_slots,
+};
+
+/* ------------------------------------------------------------------------- */
+
+int wsgi_signal_init(PyObject *module)
+{
+    WSGIModuleState *state = NULL;
+    PyObject *type = NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+        return -1;
+
+    type = PyType_FromModuleAndSpec(module, &SignalIntercept_spec, NULL);
+    if (!type)
+        return -1;
+
+    state->SignalIntercept_Type = (PyTypeObject *)type;
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------------- */
+
+SignalInterceptObject *newSignalInterceptObject(PyObject *wrapped)
+{
+    PyObject *module = NULL;
+    WSGIModuleState *state = NULL;
+    PyTypeObject *type = NULL;
+    SignalInterceptObject *self = NULL;
+
+    /*
+     * Find the embedded mod_wsgi module for the current
+     * interpreter and pull the SignalIntercept heap type out of
+     * its state. Returns NULL with a clear error if the module
+     * is not in sys.modules or its state has not been
+     * initialised; either indicates an init ordering bug.
+     */
+
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+        return NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state || !state->SignalIntercept_Type)
+    {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "SignalIntercept type not initialised for the "
+                        "current interpreter; newSignalInterceptObject() "
+                        "called before the embedded mod_wsgi module's "
+                        "exec slot ran");
+        Py_DECREF(module);
+        return NULL;
+    }
+
+    type = state->SignalIntercept_Type;
+
+    self = (SignalInterceptObject *)type->tp_alloc(type, 0);
+    Py_DECREF(module);
+
+    if (!self)
+        return NULL;
+
+    Py_INCREF(wrapped);
+    self->wrapped = wrapped;
+
+    return self;
+}
 
 /* ------------------------------------------------------------------------- */
 

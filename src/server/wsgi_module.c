@@ -30,6 +30,7 @@
 #include "wsgi_interp.h"
 #include "wsgi_daemon.h"
 #include "wsgi_restrict.h"
+#include "wsgi_signal.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -58,7 +59,16 @@ int wsgi_module_add_object(PyObject *module, const char *name,
 
 /* ------------------------------------------------------------------------- */
 
-int wsgi_module_install_stable(PyObject *module)
+/*
+ * Install the attributes that are common to every embedded
+ * mod_wsgi module: version, FileWrapper type, RequestTimeout
+ * exception, module-level methods, and the empty
+ * event_callbacks/shutdown_callbacks lists and active_requests
+ * dict. Returns 0 on success, -1 on failure with Python exception
+ * set.
+ */
+
+static int wsgi_module_install_common(PyObject *module)
 {
     /* Apache mod_wsgi version tuple. */
 
@@ -157,7 +167,15 @@ int wsgi_module_install_stable(PyObject *module)
 
 /* ------------------------------------------------------------------------- */
 
-int wsgi_module_install_group_attrs(PyObject *module, const char *name)
+/*
+ * Install the per-interpreter runtime attributes: process_group,
+ * application_group, maximum_processes, threads_per_process.
+ * Their values reflect the application group and process the
+ * interpreter is being set up for. Returns 0 on success, -1 on
+ * failure with Python exception set.
+ */
+
+static int wsgi_module_install_runtime(PyObject *module, const char *name)
 {
     int max_threads = 0;
     int max_processes = 0;
@@ -236,6 +254,9 @@ int wsgi_module_install_group_attrs(PyObject *module, const char *name)
 static int wsgi_module_exec(PyObject *module)
 {
     if (wsgi_restricted_init(module) < 0)
+        return -1;
+
+    if (wsgi_signal_init(module) < 0)
         return -1;
 
     return 0;
@@ -346,27 +367,32 @@ static PyObject *wsgi_module_build(void)
 
 /* ------------------------------------------------------------------------- */
 
-PyObject *wsgi_module_create_for_interp(const char *name)
+int wsgi_module_init_state(const char *name)
 {
+    static int user_package_logged = 0;
+
     PyObject *state_module = NULL;
     PyObject *user_module = NULL;
     PyObject *modules = NULL;
 
     /*
-     * Step 1: build the state-bearing module via PEP 489 multi-
-     * phase init. Its exec slot populates WSGIModuleState with the
-     * Restricted heap type, which the embedded code looks up via
-     * PyImport_ImportModule + PyModule_GetState.
+     * Build the state-bearing module via PEP 489 multi-phase init.
+     * Its exec slot calls the per-type init helpers
+     * (wsgi_restricted_init, wsgi_signal_init) which create the
+     * heap-allocated PyTypeObjects and store them in
+     * WSGIModuleState. After this returns, code in the same
+     * interpreter can fetch the types via
+     * PyImport_ImportModule("mod_wsgi") + PyModule_GetState.
      */
 
     state_module = wsgi_module_build();
     if (!state_module)
-        return NULL;
+        return -1;
 
     /*
-     * Step 2: try to import a 'mod_wsgi' Python package from the
-     * normal import path. This is the companion package shipped
-     * alongside the C module by the mod_wsgi PyPi distribution
+     * Try to import a 'mod_wsgi' Python package from the normal
+     * import path. This is the companion package shipped alongside
+     * the C module by the mod_wsgi PyPi distribution
      * (mod_wsgi-express); its __init__.py extends __path__ via
      * pkgutil.extend_path so the in-tree subpackages
      * (mod_wsgi.server, mod_wsgi.images, etc.) are importable. It
@@ -388,10 +414,13 @@ PyObject *wsgi_module_create_for_interp(const char *name)
     {
         PyObject *user_path = NULL;
 
-        if (!*name)
+        if (!user_package_logged)
+        {
             wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
                                   "Imported existing 'mod_wsgi' Python "
                                   "extension module.");
+            user_package_logged = 1;
+        }
 
         user_path = PyObject_GetAttrString(user_module, "__path__");
         if (user_path)
@@ -405,7 +434,7 @@ PyObject *wsgi_module_create_for_interp(const char *name)
                 Py_DECREF(user_path);
                 Py_DECREF(user_module);
                 Py_DECREF(state_module);
-                return NULL;
+                return -1;
             }
             Py_DECREF(user_path);
         }
@@ -436,7 +465,7 @@ PyObject *wsgi_module_create_for_interp(const char *name)
     }
 
     /*
-     * Step 3: install the state module as sys.modules['mod_wsgi'].
+     * Install the state module as sys.modules['mod_wsgi'].
      * PyDict_SetItemString decrefs any prior entry and increfs
      * the new one.
      */
@@ -447,28 +476,43 @@ PyObject *wsgi_module_create_for_interp(const char *name)
         wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
                                              "Failed to register 'mod_wsgi' in sys.modules");
         Py_DECREF(state_module);
-        return NULL;
+        return -1;
     }
+
+    Py_DECREF(state_module);
+    return 0;
+}
+
+/* ------------------------------------------------------------------------- */
+
+PyObject *wsgi_module_populate(const char *name)
+{
+    PyObject *module = NULL;
 
     /*
-     * Step 4: install user-facing attributes (FileWrapper,
-     * RequestTimeout, methods, lists, dict) and per-application-
-     * group attributes onto the state module.
+     * Recover the embedded module installed by
+     * wsgi_module_init_state from sys.modules. Returns an owned
+     * reference; the caller decrefs once it is done with the
+     * module.
      */
 
-    if (wsgi_module_install_stable(state_module) < 0)
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+        return NULL;
+
+    if (wsgi_module_install_common(module) < 0)
     {
-        Py_DECREF(state_module);
+        Py_DECREF(module);
         return NULL;
     }
 
-    if (wsgi_module_install_group_attrs(state_module, name) < 0)
+    if (wsgi_module_install_runtime(module, name) < 0)
     {
-        Py_DECREF(state_module);
+        Py_DECREF(module);
         return NULL;
     }
 
-    return state_module;
+    return module;
 }
 
 /* ------------------------------------------------------------------------- */
