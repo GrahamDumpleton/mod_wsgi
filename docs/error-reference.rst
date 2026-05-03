@@ -5042,3 +5042,65 @@ WSGI0194 — Lookup of 'close' attribute on WSGI response iterable raised an exc
    ``__getattribute__`` override that raises for some attribute
    names; fix the override to either return ``AttributeError`` for
    missing attributes or to not raise during attribute access.
+
+.. _WSGI0195:
+
+WSGI0195 — Failed to close source file after reading WSGI script (request)
+---------------------------------------------------------------------------
+
+:Severity: WARNING
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Failed to close source file after reading WSGI script
+   '<path>' for <interp-context>; continuing with the data already
+   read.``
+
+:Cause:
+   While loading a WSGI script, mod_wsgi opens the file, calls
+   ``read()`` to obtain the source bytes, then calls ``close()`` to
+   release the file descriptor. The ``read()`` succeeded but
+   ``close()`` raised. The Python traceback is logged in the line
+   that immediately follows. Logged at request scope (a request was
+   driving the load).
+
+:Outcome:
+   None for this request. The source bytes were already in memory
+   before ``close()`` ran, so the load proceeds with that data and
+   the script is compiled and executed normally. The file
+   descriptor may or may not have been released by the failed
+   ``close()``; the file object's eventual garbage collection will
+   attempt to close it again.
+
+:Operator action:
+   Investigate the underlying ``OSError`` (or other exception) in
+   the accompanying traceback. Causes are typically environmental:
+   network filesystems reporting deferred I/O errors, exhausted
+   file descriptors triggering errors on the close path, or
+   filesystem unmount during load. The script itself was loaded
+   successfully; this is a diagnostic aid, not a failure.
+
+.. _WSGI0196:
+
+WSGI0196 — Failed to close source file after reading WSGI script (server)
+--------------------------------------------------------------------------
+
+:Severity: WARNING
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Failed to close source file after reading WSGI script
+   '<path>' for <interp-context>; continuing with the data already
+   read.``
+
+:Cause:
+   Same as :ref:`WSGI0195` but logged at server scope (the load was
+   not triggered by an in-flight request — typically
+   ``WSGIImportScript`` at startup or a script reload from a
+   non-request context).
+
+:Outcome:
+   Same as :ref:`WSGI0195`.
+
+:Operator action:
+   Same as :ref:`WSGI0195`.

@@ -2777,7 +2777,43 @@ PyObject *wsgi_load_source(apr_pool_t *pool, request_rec *r,
     result = PyObject_CallMethod(fileobject, "close", "");
 
     if (!result)
-        goto load_source_finally;
+    {
+        /* read() already returned the source bytes, so a close()
+         * failure cannot retroactively invalidate the data we have.
+         * Surface the failure as a warning with the Python traceback
+         * so operators have evidence, then clear the exception and
+         * proceed with the compile rather than discarding a
+         * successfully read source. */
+
+        if (r)
+            wsgi_log_rerror_locked(APLOG_WARNING, 0, r,
+                                   WSGI_APLOGNO(0195) "Failed to close "
+                                                      "source file after "
+                                                      "reading WSGI "
+                                                      "script '%s' for "
+                                                      "%s; continuing "
+                                                      "with the data "
+                                                      "already read.",
+                                   filename,
+                                   wsgi_format_interp_context(
+                                       pool, process_group,
+                                       application_group));
+        else
+            wsgi_log_error_locked(APLOG_WARNING, 0, wsgi_server,
+                                  WSGI_APLOGNO(0196) "Failed to close "
+                                                     "source file after "
+                                                     "reading WSGI "
+                                                     "script '%s' for "
+                                                     "%s; continuing "
+                                                     "with the data "
+                                                     "already read.",
+                                  filename,
+                                  wsgi_format_interp_context(
+                                      pool, process_group,
+                                      application_group));
+
+        wsgi_log_python_error(r, filename, application_group, 0);
+    }
 
     source_buf = PyBytes_AsString(source_bytes_object);
 
