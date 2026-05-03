@@ -692,6 +692,7 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
      * RuntimeError before logging so the log identifies the failing
      * operation rather than just the allocation primitive. */
 
+    Py_XDECREF(thread_info->request_data);
     thread_info->request_data = PyDict_New();
     if (!thread_info->request_data)
     {
@@ -701,6 +702,9 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
                      r->uri ? r->uri : "(unknown)");
         wsgi_log_python_error(r, NULL, NULL, 0);
     }
+
+    Py_XDECREF(thread_info->request_id);
+    thread_info->request_id = NULL;
 
     if (r->log_id)
     {
