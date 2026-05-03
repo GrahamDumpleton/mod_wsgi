@@ -2697,13 +2697,32 @@ static void wsgi_log_stack_traces(void)
             }
         }
     }
+    else if (threads)
+    {
+        /* Non-NULL but empty: _PyThread_CurrentFrames returned no
+         * frames. Common during shutdown when worker threads have
+         * already exited Python and the dump is best-effort. */
+
+        wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                       "No active Python frames in daemon process "
+                       "'%s'; stack-trace dump skipped.",
+                       wsgi_daemon_process->group->name);
+    }
     else
     {
-        wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0067) "Unable to obtain current frames for active "
-                                                                         "threads; stack-trace dump will be skipped.");
+        /* NULL: _PyThread_CurrentFrames failed with a Python
+         * exception set. Print the traceback (which also clears the
+         * indicator) so the underlying cause is visible. */
 
-        PyErr_Print();
-        PyErr_Clear();
+        wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
+                       WSGI_APLOGNO(0067) "Unable to obtain current "
+                                          "frames for active threads "
+                                          "in daemon process '%s'; "
+                                          "stack-trace dump skipped.",
+                       wsgi_daemon_process->group->name);
+
+        if (PyErr_Occurred())
+            PyErr_Print();
     }
 
     Py_XDECREF(threads);

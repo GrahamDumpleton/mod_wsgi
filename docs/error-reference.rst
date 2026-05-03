@@ -1806,18 +1806,23 @@ WSGI0067 — Unable to obtain current frames for active threads
 :Source: ``src/server/wsgi_daemon.c``
 
 :Logged message:
-   ``Unable to obtain current frames for active threads;
-   stack-trace dump will be skipped.``
+   ``Unable to obtain current frames for active threads in daemon
+   process '<group>'; stack-trace dump skipped.``
 
 :Cause:
-   ``sys._current_frames()`` returned ``NULL``.
+   ``_PyThread_CurrentFrames()`` returned ``NULL`` with a Python
+   exception set. The traceback is printed in the log line that
+   immediately follows. The benign empty-dict case (no active
+   Python frames) is logged separately at INFO and does not carry
+   this code.
 
 :Outcome:
    The stack-trace dump is skipped entirely.
 
 :Operator action:
    Generally none; the dump is a best-effort diagnostic aid emitted
-   on shutdown timeout.
+   on shutdown timeout. The accompanying traceback identifies the
+   underlying Python failure if recurrent investigation is needed.
 
 .. _WSGI0068:
 
