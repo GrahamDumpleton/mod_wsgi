@@ -484,14 +484,11 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
 
         item = latin_item;
     }
-
-    if (!PyBytes_Check(item))
+    else if (!PyBytes_Check(item))
     {
         PyErr_Format(PyExc_TypeError, "byte string value expected, value "
                                       "of type %.200s found",
                      Py_TYPE(item)->tp_name);
-
-        Py_XDECREF(latin_item);
 
         return NULL;
     }
