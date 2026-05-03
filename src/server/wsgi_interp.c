@@ -75,9 +75,9 @@ static int wsgi_module_add_object(PyObject *module, const char *name,
 
     if (PyModule_AddObject(module, name, value) < 0)
     {
-        PyErr_Format(PyExc_RuntimeError,
-                     "PyModule_AddObject() failed for attribute '%s'",
-                     name);
+        wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                "PyModule_AddObject() failed for attribute '%s'",
+                name);
         Py_DECREF(value);
         return -1;
     }
@@ -114,8 +114,8 @@ static int wsgi_set_environ_item(PyObject *environ, const char *key,
 
 done:
     if (result < 0)
-        PyErr_Format(PyExc_RuntimeError,
-                     "Setting os.environ['%s'] failed", key);
+        wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                "Setting os.environ['%s'] failed", key);
     Py_XDECREF(py_key);
     Py_XDECREF(py_value);
     return result;
@@ -212,8 +212,8 @@ InterpreterObject *newInterpreterObject(const char *name)
     self = PyObject_New(InterpreterObject, &Interpreter_Type);
     if (self == NULL)
     {
-        PyErr_SetString(PyExc_RuntimeError,
-                        "PyObject_New() for InterpreterObject failed");
+        wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                "PyObject_New() for InterpreterObject failed");
         goto failure;
     }
 
@@ -279,7 +279,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         if (!tstate)
         {
-            PyErr_SetString(PyExc_RuntimeError, "Py_NewInterpreter() failed");
+            wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                    "Py_NewInterpreter() failed");
             goto failure;
         }
 
@@ -460,24 +461,24 @@ InterpreterObject *newInterpreterObject(const char *name)
     object = PyList_New(0);
     if (!object)
     {
-        PyErr_SetString(PyExc_RuntimeError,
-                        "PyList_New() for sys.argv failed");
+        wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                "PyList_New() for sys.argv failed");
         goto failure;
     }
 
     item = PyUnicode_FromString("mod_wsgi");
     if (!item)
     {
-        PyErr_SetString(PyExc_RuntimeError,
-                        "PyUnicode_FromString() for sys.argv[0] failed");
+        wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                "PyUnicode_FromString() for sys.argv[0] failed");
         Py_DECREF(object);
         goto failure;
     }
 
     if (PyList_Append(object, item) < 0)
     {
-        PyErr_SetString(PyExc_RuntimeError,
-                        "PyList_Append() for sys.argv[0] failed");
+        wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                "PyList_Append() for sys.argv[0] failed");
         Py_DECREF(item);
         Py_DECREF(object);
         goto failure;
@@ -485,8 +486,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     if (PySys_SetObject("argv", object) < 0)
     {
-        PyErr_SetString(PyExc_RuntimeError,
-                        "PySys_SetObject() for sys.argv failed");
+        wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                "PySys_SetObject() for sys.argv failed");
         Py_DECREF(item);
         Py_DECREF(object);
         goto failure;
@@ -878,9 +879,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
             if (!old || !new || !tmp)
             {
-                PyErr_SetString(PyExc_RuntimeError,
-                                "PyList_New() for sys.path reorder "
-                                "buffers failed");
+                wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                        "PyList_New() for sys.path reorder buffers failed");
                 Py_XDECREF(old);
                 Py_XDECREF(new);
                 Py_XDECREF(tmp);
@@ -1071,16 +1071,16 @@ InterpreterObject *newInterpreterObject(const char *name)
             item = PyUnicode_DecodeFSDefault(home);
             if (!item)
             {
-                PyErr_SetString(PyExc_RuntimeError,
-                                "PyUnicode_DecodeFSDefault() for daemon "
-                                "home directory failed");
+                wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                        "PyUnicode_DecodeFSDefault() for daemon home "
+                        "directory failed");
                 goto failure;
             }
             if (PyList_Insert(path, 0, item) < 0)
             {
-                PyErr_SetString(PyExc_RuntimeError,
-                                "PyList_Insert() of daemon home directory "
-                                "into sys.path failed");
+                wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                        "PyList_Insert() of daemon home directory into "
+                        "sys.path failed");
                 Py_DECREF(item);
                 goto failure;
             }
@@ -1140,8 +1140,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         if (!module)
         {
-            PyErr_SetString(PyExc_RuntimeError,
-                            "PyImport_AddModule(\"mod_wsgi\") failed");
+            wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                    "PyImport_AddModule(\"mod_wsgi\") failed");
             goto failure;
         }
 
@@ -1393,8 +1393,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         if (!module)
         {
-            PyErr_SetString(PyExc_RuntimeError,
-                            "PyImport_AddModule(\"apache\") failed");
+            wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                    "PyImport_AddModule(\"apache\") failed");
             goto failure;
         }
 

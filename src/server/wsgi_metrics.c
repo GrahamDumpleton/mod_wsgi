@@ -687,19 +687,18 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
 
     /* Best-effort. A failure here must not tear down the request — the
      * downstream wsgi_request_data accessor handles a NULL request_data
-     * by raising RuntimeError to the caller. Each failure path replaces
-     * the underlying (likely MemoryError) exception with a site-specific
-     * RuntimeError before logging so the log identifies the failing
-     * operation rather than just the allocation primitive. */
+     * by raising RuntimeError to the caller. Each failure path chains a
+     * site-specific RuntimeError onto the underlying (likely MemoryError)
+     * exception before logging so the log identifies the failing
+     * operation as well as the allocation primitive. */
 
     Py_XDECREF(thread_info->request_data);
     thread_info->request_data = PyDict_New();
     if (!thread_info->request_data)
     {
-        PyErr_Format(PyExc_RuntimeError,
-                     "Failed to allocate request_data dict "
-                     "for request %s",
-                     r->uri ? r->uri : "(unknown)");
+        wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                "Failed to allocate request_data dict for request %s",
+                r->uri ? r->uri : "(unknown)");
         wsgi_log_python_error(r, NULL, NULL, 0);
     }
 
@@ -712,10 +711,9 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
             r->log_id, strlen(r->log_id), NULL);
         if (!thread_info->request_id)
         {
-            PyErr_Format(PyExc_RuntimeError,
-                         "Failed to decode request_id "
-                         "for request %s",
-                         r->uri ? r->uri : "(unknown)");
+            wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                    "Failed to decode request_id for request %s",
+                    r->uri ? r->uri : "(unknown)");
             wsgi_log_python_error(r, NULL, NULL, 0);
         }
     }
@@ -737,11 +735,10 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
                 if (PyDict_SetItem(requests, thread_info->request_id,
                                    thread_info->request_data) < 0)
                 {
-                    PyErr_Format(PyExc_RuntimeError,
-                                 "Failed to register request_id "
-                                 "in active_requests for "
-                                 "request %s",
-                                 r->uri ? r->uri : "(unknown)");
+                    wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                            "Failed to register request_id in "
+                            "active_requests for request %s",
+                            r->uri ? r->uri : "(unknown)");
                     wsgi_log_python_error(r, NULL, NULL, 0);
                 }
             }
@@ -3309,8 +3306,8 @@ static PyObject *wsgi_subscribe_events(PyObject *Py_UNUSED(self), PyObject *args
 
         if (PyList_Append(list, callback) < 0)
         {
-            PyErr_Format(PyExc_RuntimeError,
-                         "Failed to register event subscriber");
+            wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                    "Failed to register event subscriber");
             Py_DECREF(module);
             return NULL;
         }
@@ -3352,8 +3349,8 @@ static PyObject *wsgi_subscribe_shutdown(PyObject *Py_UNUSED(self), PyObject *ar
 
         if (PyList_Append(list, callback) < 0)
         {
-            PyErr_Format(PyExc_RuntimeError,
-                         "Failed to register shutdown subscriber");
+            wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                    "Failed to register shutdown subscriber");
             Py_DECREF(module);
             return NULL;
         }
@@ -3439,10 +3436,9 @@ void wsgi_call_callbacks(const char *name, PyObject *callbacks,
         args = Py_BuildValue("(s)", name);
         if (!args)
         {
-            PyErr_Format(PyExc_RuntimeError,
-                         "Failed to build callback args tuple "
-                         "for event %s",
-                         name);
+            wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                    "Failed to build callback args tuple for event %s",
+                    name);
             wsgi_log_python_event_callback_error(name);
             Py_DECREF(callback);
             continue;
