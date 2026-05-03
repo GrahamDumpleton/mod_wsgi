@@ -40,6 +40,17 @@ int wsgi_request_threads;
 apr_threadkey_t *wsgi_thread_key;
 apr_array_header_t *wsgi_thread_details;
 
+/*
+ * Look up (or lazily create) the per-thread WSGIThreadInfo block.
+ *
+ * With create=0 the function returns NULL when no entry has been
+ * stashed in the threadkey for the calling thread.
+ *
+ * With create=1 the function does not return NULL: APR pools abort
+ * the process on allocation failure (apr_pcalloc / apr_array_push
+ * never come back NULL under Apache's default abort handler), so
+ * callers passing create=1 may dereference the result unconditionally.
+ */
 WSGIThreadInfo *wsgi_thread_info(int create, int request)
 {
     WSGIThreadInfo *thread_handle = NULL;

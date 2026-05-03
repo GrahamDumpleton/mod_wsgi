@@ -760,7 +760,7 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
     WSGIThreadCPUUsage cpu_usage;
     int have_cpu = 0;
 
-    if (thread_info && thread_info->thread_id >= 1)
+    if (thread_info->thread_id >= 1)
         have_cpu = wsgi_thread_cpu_usage(&cpu_usage);
 
     /* Per-request phase-timing baselines come from the WSGIRequestConfig
@@ -786,7 +786,7 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
 
     wsgi_utilization_time_locked(1, NULL);
 
-    if (thread_info && thread_info->thread_id >= 1)
+    if (thread_info->thread_id >= 1)
     {
         wsgi_slots_ensure_locked();
 
