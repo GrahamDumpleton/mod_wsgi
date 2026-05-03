@@ -29,6 +29,7 @@
 #include "wsgi_metrics.h"
 #include "wsgi_interp.h"
 #include "wsgi_daemon.h"
+#include "wsgi_restrict.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -46,8 +47,8 @@ int wsgi_module_add_object(PyObject *module, const char *name,
     if (PyModule_AddObject(module, name, value) < 0)
     {
         wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
-                "PyModule_AddObject() failed for attribute '%s'",
-                name);
+                                             "PyModule_AddObject() failed for attribute '%s'",
+                                             name);
         Py_DECREF(value);
         return -1;
     }
@@ -220,21 +221,24 @@ int wsgi_module_install_group_attrs(PyObject *module, const char *name)
 /* ------------------------------------------------------------------------- */
 
 /*
- * PEP 489 multi-phase init plumbing. The exec slot installs the
- * interpreter-stable attribute set; per-application-group
- * attributes are added separately by the caller after this runs
- * because the group context is not visible here.
+ * PEP 489 multi-phase init plumbing. The exec slot runs
+ * wsgi_restricted_init to create the Restricted heap type and
+ * store it in WSGIModuleState. User-facing attribute installation
+ * (FileWrapper, RequestTimeout, methods, lists, dict) and per-
+ * application-group attribute installation are handled by
+ * wsgi_module_create_for_interp.
  *
- * The Py_mod_multiple_interpreters slot is intentionally omitted:
- * the module currently relies on static PyTypeObject definitions
- * and a process-global RequestTimeout exception, both of which
- * preclude per-interpreter isolation. The slot becomes addable
- * once those have been migrated.
+ * The Py_mod_multiple_interpreters slot is not declared: static
+ * PyTypeObject definitions and the process-shared RequestTimeout
+ * exception preclude per-interpreter isolation.
  */
 
 static int wsgi_module_exec(PyObject *module)
 {
-    return wsgi_module_install_stable(module);
+    if (wsgi_restricted_init(module) < 0)
+        return -1;
+
+    return 0;
 }
 
 static PyModuleDef_Slot wsgi_module_slots[] = {
@@ -264,11 +268,10 @@ PyMODINIT_FUNC PyInit_mod_wsgi(void)
 /*
  * Construct a minimal importlib.machinery.ModuleSpec for the
  * 'mod_wsgi' module. PyModule_FromDefAndSpec requires a real
- * spec; we are not going through the import system (so it would
- * never produce one for us) but we need an object whose 'name'
- * attribute is "mod_wsgi". A spec with loader=None and origin=None
- * matches what a no-op import would produce and gets copied onto
- * the resulting module as __spec__, __loader__, __file__.
+ * spec object whose 'name' attribute is "mod_wsgi"; loader=None
+ * and origin=None match what a no-op import would produce and
+ * get copied onto the resulting module as __spec__, __loader__,
+ * __file__.
  */
 
 static PyObject *wsgi_module_make_spec(void)
@@ -281,7 +284,7 @@ static PyObject *wsgi_module_make_spec(void)
     if (!machinery)
     {
         wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
-                "Failed to import importlib.machinery");
+                                             "Failed to import importlib.machinery");
         return NULL;
     }
 
@@ -290,7 +293,7 @@ static PyObject *wsgi_module_make_spec(void)
     if (!spec_class)
     {
         wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
-                "Failed to get importlib.machinery.ModuleSpec");
+                                             "Failed to get importlib.machinery.ModuleSpec");
         return NULL;
     }
 
@@ -299,7 +302,7 @@ static PyObject *wsgi_module_make_spec(void)
     if (!spec)
     {
         wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
-                "Failed to construct ModuleSpec for 'mod_wsgi'");
+                                             "Failed to construct ModuleSpec for 'mod_wsgi'");
         return NULL;
     }
 
@@ -307,10 +310,11 @@ static PyObject *wsgi_module_make_spec(void)
 }
 
 /*
- * Build the C-defined 'mod_wsgi' module via PEP 489 multi-phase
- * init, bypassing the import system. Used in the fallback path
- * when no user-supplied 'mod_wsgi' Python package is present.
- * Caller is responsible for registering the result in sys.modules.
+ * Build the embedded 'mod_wsgi' module via PEP 489 multi-phase
+ * init: create a ModuleSpec, instantiate the module against
+ * wsgi_module_def, then run the exec slot. Returns an owned
+ * reference, or NULL on failure with Python exception set. The
+ * caller is responsible for installing the result in sys.modules.
  */
 
 static PyObject *wsgi_module_build(void)
@@ -327,7 +331,7 @@ static PyObject *wsgi_module_build(void)
     if (!module)
     {
         wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
-                "PyModule_FromDefAndSpec() for 'mod_wsgi' failed");
+                                             "PyModule_FromDefAndSpec() for 'mod_wsgi' failed");
         return NULL;
     }
 
@@ -344,94 +348,127 @@ static PyObject *wsgi_module_build(void)
 
 PyObject *wsgi_module_create_for_interp(const char *name)
 {
-    PyObject *module = NULL;
+    PyObject *state_module = NULL;
+    PyObject *user_module = NULL;
+    PyObject *modules = NULL;
 
     /*
-     * First try and import a 'mod_wsgi' Python package from the
-     * normal import path. This is the companion package shipped
-     * alongside the C module by the mod_wsgi PyPi distribution
-     * (mod_wsgi-express); it carries optional pure-Python features
-     * that are simply easier to maintain as separate Python code
-     * than to embed in the C module. It is not a third-party
-     * extension point — only the upstream-provided package is
-     * expected here.
-     *
-     * If the import fails with ModuleNotFoundError, the companion
-     * package is simply not installed. This is the normal case
-     * when the Apache module came from a distro package that
-     * bundles only the .so and not the Python package. Fall back
-     * to building the module ourselves via PEP 489 multi-phase
-     * init so the C-level attributes are still installed.
+     * Step 1: build the state-bearing module via PEP 489 multi-
+     * phase init. Its exec slot populates WSGIModuleState with the
+     * Restricted heap type, which the embedded code looks up via
+     * PyImport_ImportModule + PyModule_GetState.
      */
 
-    module = PyImport_ImportModule("mod_wsgi");
+    state_module = wsgi_module_build();
+    if (!state_module)
+        return NULL;
 
-    if (!module)
+    /*
+     * Step 2: try to import a 'mod_wsgi' Python package from the
+     * normal import path. This is the companion package shipped
+     * alongside the C module by the mod_wsgi PyPi distribution
+     * (mod_wsgi-express); its __init__.py extends __path__ via
+     * pkgutil.extend_path so the in-tree subpackages
+     * (mod_wsgi.server, mod_wsgi.images, etc.) are importable. It
+     * is not a third-party extension point. Only the upstream-
+     * provided package is expected here.
+     *
+     * If the package is present, copy its __path__ across to the
+     * state module so subpackage imports continue to resolve once
+     * the state module takes its place in sys.modules.
+     *
+     * If the import fails with ModuleNotFoundError, the package
+     * is simply not installed. Typical when the Apache module
+     * came from a distro that bundles only the .so.
+     */
+
+    user_module = PyImport_ImportModule("mod_wsgi");
+
+    if (user_module)
     {
-        PyObject *modules = NULL;
+        PyObject *user_path = NULL;
 
+        if (!*name)
+            wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
+                                  "Imported existing 'mod_wsgi' Python "
+                                  "extension module.");
+
+        user_path = PyObject_GetAttrString(user_module, "__path__");
+        if (user_path)
+        {
+            if (PyObject_SetAttrString(state_module, "__path__",
+                                       user_path) < 0)
+            {
+                wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                                                     "Failed to copy __path__ from user-supplied "
+                                                     "'mod_wsgi' package onto embedded module");
+                Py_DECREF(user_path);
+                Py_DECREF(user_module);
+                Py_DECREF(state_module);
+                return NULL;
+            }
+            Py_DECREF(user_path);
+        }
+        else
+        {
+            /* No __path__ on the user module is unusual but not
+             * fatal: subpackage imports will simply not work. */
+            PyErr_Clear();
+        }
+
+        Py_DECREF(user_module);
+    }
+    else
+    {
         /*
-         * If the import failed because no user-supplied 'mod_wsgi'
-         * Python module exists on the search path (the common
-         * case), silently fall back to building the C module
-         * ourselves. For any other failure (a real bug in the
-         * user's module — syntax error, exception during module
-         * body execution, etc.) surface the traceback so the
-         * operator sees what actually went wrong instead of a
-         * silent fallback masking the bug.
+         * If the import failed for any reason other than
+         * ModuleNotFoundError (a real bug in the user's module:
+         * syntax error, exception during module body execution,
+         * etc.) surface the traceback so the operator sees what
+         * actually went wrong instead of a silent fallback masking
+         * the bug.
          */
 
         if (!PyErr_ExceptionMatches(PyExc_ModuleNotFoundError))
             wsgi_log_python_interp_init_error(name);
 
         PyErr_Clear();
-
-        /*
-         * Defensive cleanup of any orphan entry in sys.modules.
-         * Modern CPython removes the entry itself on import
-         * failure, but historically this was not always reliable.
-         */
-
-        modules = PyImport_GetModuleDict();
-        if (PyDict_GetItemString(modules, "mod_wsgi"))
-        {
-            if (PyDict_DelItemString(modules, "mod_wsgi") < 0)
-                PyErr_Clear();
-        }
-
-        module = wsgi_module_build();
-        if (!module)
-            return NULL;
-
-        if (PyDict_SetItemString(modules, "mod_wsgi", module) < 0)
-        {
-            wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
-                    "Failed to register 'mod_wsgi' in sys.modules");
-            Py_DECREF(module);
-            return NULL;
-        }
-    }
-    else
-    {
-        if (!*name)
-            wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                                  "Imported existing 'mod_wsgi' Python "
-                                  "extension module.");
-
-        if (wsgi_module_install_stable(module) < 0)
-        {
-            Py_DECREF(module);
-            return NULL;
-        }
     }
 
-    if (wsgi_module_install_group_attrs(module, name) < 0)
+    /*
+     * Step 3: install the state module as sys.modules['mod_wsgi'].
+     * PyDict_SetItemString decrefs any prior entry and increfs
+     * the new one.
+     */
+
+    modules = PyImport_GetModuleDict();
+    if (PyDict_SetItemString(modules, "mod_wsgi", state_module) < 0)
     {
-        Py_DECREF(module);
+        wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                                             "Failed to register 'mod_wsgi' in sys.modules");
+        Py_DECREF(state_module);
         return NULL;
     }
 
-    return module;
+    /*
+     * Step 4: install user-facing attributes (FileWrapper,
+     * RequestTimeout, methods, lists, dict) and per-application-
+     * group attributes onto the state module.
+     */
+
+    if (wsgi_module_install_stable(state_module) < 0)
+    {
+        Py_DECREF(state_module);
+        return NULL;
+    }
+
+    if (wsgi_module_install_group_attrs(state_module, name) < 0)
+    {
+        Py_DECREF(state_module);
+        return NULL;
+    }
+
+    return state_module;
 }
 
 /* ------------------------------------------------------------------------- */

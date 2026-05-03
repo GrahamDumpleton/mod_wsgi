@@ -27,15 +27,24 @@
 
 /*
  * Per-interpreter state for the embedded 'mod_wsgi' Python module.
- * Currently a placeholder; future phases will move heap-type
- * pointers and other per-interpreter PyObject references out of
- * process-level C globals into here, accessed via
- * PyModule_GetState() against wsgi_module_def.
+ * Each Python sub-interpreter created by mod_wsgi has its own
+ * instance of this struct, addressable via PyModule_GetState() on
+ * the module returned by PyImport_ImportModule("mod_wsgi"). The
+ * Restricted_Type field is populated by wsgi_restricted_init,
+ * called from the module's exec slot.
+ *
+ * Lookup from anywhere in the embedded code goes through
+ * sys.modules:
+ *
+ *     PyObject *m = PyImport_ImportModule("mod_wsgi");
+ *     WSGIModuleState *s = PyModule_GetState(m);
+ *     ... use s->Restricted_Type ...
+ *     Py_DECREF(m);
  */
 
 typedef struct
 {
-    int initialized;
+    PyTypeObject *Restricted_Type;
 } WSGIModuleState;
 
 /* ------------------------------------------------------------------------- */
@@ -56,37 +65,35 @@ extern int wsgi_module_add_object(PyObject *module, const char *name,
                                   PyObject *value);
 
 /*
- * Install the interpreter-stable attributes onto an existing
- * 'mod_wsgi' module instance: version, FileWrapper type,
- * RequestTimeout exception, module-level methods, and the empty
+ * Install the interpreter-stable attributes onto the embedded
+ * mod_wsgi module: version, FileWrapper type, RequestTimeout
+ * exception, module-level methods, and the empty
  * event_callbacks/shutdown_callbacks lists and active_requests
- * dict. Used by both the C-built fallback path (via the exec slot)
- * and the user-import augmentation path so that either form of
- * the module presents the same surface area. Returns 0 on
- * success, -1 on failure with Python exception set.
+ * dict. Returns 0 on success, -1 on failure with Python exception
+ * set.
  */
 
 extern int wsgi_module_install_stable(PyObject *module);
 
 /*
  * Install the per-application-group attributes: process_group,
- * application_group, maximum_processes, threads_per_process. The
- * exec slot cannot install these itself because the application
- * group context is not visible to it; the caller invokes this
- * after module creation in either path.
+ * application_group, maximum_processes, threads_per_process.
+ * Called after module construction because the application group
+ * context is not visible to the exec slot.
  */
 
 extern int wsgi_module_install_group_attrs(PyObject *module,
                                            const char *name);
 
 /*
- * Top-level entry point invoked from interpreter setup. First
- * tries to import a user-supplied 'mod_wsgi' Python package; if
- * not present, builds the C-defined module via PEP 489 multi-phase
- * init (PyModule_FromDefAndSpec + PyModule_ExecDef) and registers
- * it in sys.modules. Either way installs the per-group attributes
- * and returns an owned reference. Returns NULL on failure with
- * Python exception set.
+ * Construct the embedded mod_wsgi module for the current Python
+ * sub-interpreter. Builds a state-bearing module via PEP 489
+ * multi-phase init, copies __path__ from the upstream
+ * mod_wsgi-express companion package if installed (so subpackage
+ * imports still resolve), installs it as sys.modules['mod_wsgi'],
+ * and populates its user-facing attributes plus the per-application-
+ * group attributes for `name`. Returns an owned reference, or NULL
+ * on failure with Python exception set.
  */
 
 extern PyObject *wsgi_module_create_for_interp(const char *name);
