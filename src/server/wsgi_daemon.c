@@ -2613,12 +2613,26 @@ static void wsgi_log_stack_traces(void)
         while (PyDict_Next(threads, &i, &id, &frame))
         {
             apr_int64_t thread_id = 0;
+            unsigned long ident = 0;
 
             PyFrameObject *current = NULL;
             PyFrameObject *next_frame = NULL;
             int is_first = 1;
 
-            thread_id = PyLong_AsLong(id);
+            /* Thread idents are unsigned long. PyLong_AsLong truncates
+             * and sets OverflowError for values > LONG_MAX (notably on
+             * LLP64 platforms where long is 32-bit). Read as unsigned
+             * long and clear any pending error so it does not leak
+             * into the frame-walk Python C API calls below. */
+
+            ident = PyLong_AsUnsignedLong(id);
+            if (ident == (unsigned long)-1 && PyErr_Occurred())
+            {
+                PyErr_Clear();
+                thread_id = -1;
+            }
+            else
+                thread_id = (apr_int64_t)ident;
 
             current = (PyFrameObject *)frame;
             Py_INCREF(current);
