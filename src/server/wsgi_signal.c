@@ -36,6 +36,8 @@
 static void SignalIntercept_dealloc(SignalInterceptObject *self)
 {
     Py_DECREF(self->wrapped);
+
+    PyObject_Del(self);
 }
 
 SignalInterceptObject *newSignalInterceptObject(PyObject *wrapped)

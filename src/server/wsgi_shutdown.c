@@ -33,6 +33,8 @@
 static void ShutdownInterpreter_dealloc(ShutdownInterpreterObject *self)
 {
     Py_DECREF(self->wrapped);
+
+    PyObject_Del(self);
 }
 
 ShutdownInterpreterObject *newShutdownInterpreterObject(
