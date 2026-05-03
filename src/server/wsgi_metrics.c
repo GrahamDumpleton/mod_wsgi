@@ -3402,16 +3402,37 @@ long wsgi_event_subscribers(void)
 void wsgi_call_callbacks(const char *name, PyObject *callbacks,
                          PyObject *event)
 {
-    int i;
+    PyObject *snapshot = NULL;
+    Py_ssize_t n;
+    Py_ssize_t i;
 
-    for (i = 0; i < PyList_Size(callbacks); i++)
+    /* Snapshot the callback list before dispatch so a callback that
+     * subscribes or unsubscribes mid-event cannot perturb the
+     * iteration. Without the snapshot, a callback that removes an
+     * earlier entry would shift the tail down and the loop's index
+     * stepping would skip the next pending callback; a callback that
+     * appends would have the new entry invoked for the current event,
+     * which most pub/sub contracts disallow. PyList_GetSlice produces
+     * a new list with fresh strong refs, so the source list can be
+     * freely mutated during dispatch. */
+
+    snapshot = PyList_GetSlice(callbacks, 0, PyList_Size(callbacks));
+    if (!snapshot)
+    {
+        wsgi_log_python_event_callback_error(name);
+        return;
+    }
+
+    n = PyList_GET_SIZE(snapshot);
+
+    for (i = 0; i < n; i++)
     {
         PyObject *callback = NULL;
 
         PyObject *res = NULL;
         PyObject *args = NULL;
 
-        callback = PyList_GetItem(callbacks, i);
+        callback = PyList_GET_ITEM(snapshot, i);
 
         Py_INCREF(callback);
 
@@ -3447,6 +3468,8 @@ void wsgi_call_callbacks(const char *name, PyObject *callbacks,
         Py_DECREF(callback);
         Py_DECREF(args);
     }
+
+    Py_DECREF(snapshot);
 }
 
 void wsgi_publish_event(const char *name, PyObject *event)
