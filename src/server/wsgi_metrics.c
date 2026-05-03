@@ -868,7 +868,18 @@ void wsgi_end_request(void)
             dict = PyModule_GetDict(module);
             requests = PyDict_GetItemString(dict, "active_requests");
 
-            PyDict_DelItem(requests, thread_info->request_id);
+            /* Either side may be NULL if start_request never reached
+             * the registration step (request_id decode failure, missing
+             * active_requests dict, etc). A KeyError here just means
+             * registration was skipped or already failed; clear it so
+             * it doesn't leak into the next Python C API call. */
+
+            if (requests && thread_info->request_id)
+            {
+                if (PyDict_DelItem(requests,
+                                   thread_info->request_id) < 0)
+                    PyErr_Clear();
+            }
 
             Py_DECREF(module);
         }
