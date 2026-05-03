@@ -448,7 +448,10 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
             if (length != size)
             {
                 if (_PyBytes_Resize(&result, length))
+                {
+                    self->seen_error = 1;
                     return NULL;
+                }
             }
         }
     }
@@ -548,7 +551,10 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
                 size = size + (size >> 2);
 
                 if (_PyBytes_Resize(&result, size))
+                {
+                    self->seen_error = 1;
                     return NULL;
+                }
 
                 buffer = PyBytes_AS_STRING((PyBytesObject *)result);
             }
@@ -582,7 +588,10 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
         if (length != size)
         {
             if (_PyBytes_Resize(&result, length))
+            {
+                self->seen_error = 1;
                 return NULL;
+            }
         }
     }
 
@@ -761,7 +770,10 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
         if (length != size)
         {
             if (_PyBytes_Resize(&result, length))
+            {
+                self->seen_error = 1;
                 return NULL;
+            }
         }
     }
     else
@@ -911,7 +923,10 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
                     size = size + (size >> 2);
 
                     if (_PyBytes_Resize(&result, size))
+                    {
+                        self->seen_error = 1;
                         return NULL;
+                    }
 
                     buffer = PyBytes_AS_STRING((PyBytesObject *)result);
                 }
@@ -928,7 +943,10 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
         if (length != size)
         {
             if (_PyBytes_Resize(&result, length))
+            {
+                self->seen_error = 1;
                 return NULL;
+            }
         }
     }
 
@@ -1284,9 +1302,14 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
                                                        status_line_as_bytes));
     self->status = (int)strtol(self->status_line, NULL, 10);
 
+    /* Transfer ownership of headers_as_bytes to self->headers and
+     * disclaim the local so the finally XDECREF below is a no-op
+     * for this object — avoids the +1/-1 refcount round-trip the
+     * older INCREF-then-XDECREF pattern incurred. */
+
     Py_XDECREF(self->headers);
     self->headers = headers_as_bytes;
-    Py_INCREF(headers_as_bytes);
+    headers_as_bytes = NULL;
 
     result = PyObject_GetAttrString((PyObject *)self, "write");
 
@@ -2589,26 +2612,44 @@ int Adapter_run(AdapterObject *self, PyObject *object)
             }
         }
 
-        if (PyObject_HasAttrString(self->sequence, "close"))
+        /* PyObject_HasAttrString swallows all exceptions raised by
+         * the lookup, so a custom __getattribute__ that raises would
+         * be silently treated as "no close method". Use
+         * GetAttrString and only treat AttributeError as benign — any
+         * other exception gets a context preamble logged here, then
+         * is left set so the PyErr_Occurred() block below prints the
+         * traceback after our preamble. */
+
+        close = PyObject_GetAttrString(self->sequence, "close");
+
+        if (close)
         {
             PyObject *args = NULL;
             PyObject *data = NULL;
 
-            close = PyObject_GetAttrString(self->sequence, "close");
+            args = Py_BuildValue("()");
 
-            if (close)
+            if (args)
             {
-                args = Py_BuildValue("()");
-
-                if (args)
-                {
-                    data = PyObject_CallObject(close, args);
-                    Py_XDECREF(data);
-                    Py_DECREF(args);
-                }
-
-                Py_DECREF(close);
+                data = PyObject_CallObject(close, args);
+                Py_XDECREF(data);
+                Py_DECREF(args);
             }
+
+            Py_DECREF(close);
+        }
+        else if (PyErr_ExceptionMatches(PyExc_AttributeError))
+        {
+            PyErr_Clear();
+        }
+        else
+        {
+            wsgi_log_rerror_locked(APLOG_ERR, 0, self->r,
+                                   WSGI_APLOGNO(0194) "Lookup of "
+                                                      "'close' attribute "
+                                                      "on WSGI response "
+                                                      "iterable raised an "
+                                                      "exception.");
         }
 
         if (PyErr_Occurred())

@@ -5006,3 +5006,39 @@ WSGI0193 — Unable to allocate interpreters dictionary
    If recurrent, reduce per-process configuration that consumes
    memory at startup (large ``WSGIPythonPath``, eager imports via
    ``WSGIImportScript``).
+
+.. _WSGI0194:
+
+WSGI0194 — Lookup of 'close' attribute on WSGI response iterable raised an exception
+------------------------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_adapter.c``
+
+:Logged message:
+   ``Lookup of 'close' attribute on WSGI response iterable raised an
+   exception.``
+
+:Cause:
+   After the response iterable was consumed, mod_wsgi attempted
+   ``getattr(sequence, 'close')`` to invoke any WSGI ``close()``
+   method on the iterable, and the attribute lookup itself raised
+   something other than ``AttributeError`` — typically a custom
+   ``__getattribute__`` (or a descriptor protocol method) on the
+   iterable that throws for some inputs. This message is a context
+   preamble; the offending Python traceback is printed in the log
+   line that immediately follows.
+
+:Outcome:
+   ``close()`` is not invoked on the iterable. The response itself
+   is unaffected (it has already been sent to the client by the
+   time close runs). Any resources the iterable expected to release
+   in ``close()`` are not released for this request.
+
+:Operator action:
+   Inspect the application's response iterable type. Plain Python
+   objects (list, tuple, generator, simple custom iterators) will
+   not trigger this. The most likely cause is a class with a
+   ``__getattribute__`` override that raises for some attribute
+   names; fix the override to either return ``AttributeError`` for
+   missing attributes or to not raise during attribute access.
