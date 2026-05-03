@@ -733,6 +733,12 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
     PyErr_Fetch(&type, &value, &traceback);
     PyErr_NormalizeException(&type, &value, &traceback);
 
+    if (!type)
+    {
+        type = Py_None;
+        Py_INCREF(type);
+    }
+
     if (!value)
     {
         value = Py_None;
