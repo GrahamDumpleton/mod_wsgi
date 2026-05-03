@@ -3423,7 +3423,13 @@ void wsgi_call_callbacks(const char *name, PyObject *callbacks,
             wsgi_log_python_event_callback_error(name);
         else if (PyDict_Check(res))
         {
-            PyDict_Update(event, res);
+            /* A subscriber that returned a dict is asking us to merge
+             * its keys into the shared event before the next callback
+             * runs. Surface and clear any failure so it doesn't leak
+             * into the next iteration's PyObject_Call. */
+
+            if (PyDict_Update(event, res) < 0)
+                wsgi_log_python_event_callback_error(name);
         }
 
         Py_XDECREF(res);
