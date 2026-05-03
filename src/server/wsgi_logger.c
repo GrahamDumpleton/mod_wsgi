@@ -254,7 +254,8 @@ static PyObject *Log_flush(LogObject *self, PyObject *args)
     if (self->proxy)
         thread_info = wsgi_thread_info(0, 0);
 
-    if (thread_info && thread_info->log_buffer)
+    if (thread_info && thread_info->log_buffer &&
+        (LogObject *)thread_info->log_buffer != self)
         return Log_flush((LogObject *)thread_info->log_buffer, args);
 
     if (self->expired && self->s)
@@ -284,7 +285,8 @@ static PyObject *Log_close(LogObject *self, PyObject *args)
     if (self->proxy)
         thread_info = wsgi_thread_info(0, 0);
 
-    if (thread_info && thread_info->log_buffer)
+    if (thread_info && thread_info->log_buffer &&
+        (LogObject *)thread_info->log_buffer != self)
         return Log_close((LogObject *)thread_info->log_buffer, args);
 
     if (!self->expired)
@@ -458,7 +460,8 @@ static PyObject *Log_write(LogObject *self, PyObject *args)
     if (self->proxy)
         thread_info = wsgi_thread_info(0, 0);
 
-    if (thread_info && thread_info->log_buffer)
+    if (thread_info && thread_info->log_buffer &&
+        (LogObject *)thread_info->log_buffer != self)
         return Log_write((LogObject *)thread_info->log_buffer, args);
 
     if (self->expired)
@@ -487,7 +490,8 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
     if (self->proxy)
         thread_info = wsgi_thread_info(0, 0);
 
-    if (thread_info && thread_info->log_buffer)
+    if (thread_info && thread_info->log_buffer &&
+        (LogObject *)thread_info->log_buffer != self)
         return Log_writelines((LogObject *)thread_info->log_buffer, args);
 
     if (self->expired)
