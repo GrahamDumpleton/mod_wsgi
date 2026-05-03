@@ -123,29 +123,50 @@ apr_bucket *wsgi_apr_bucket_python_create(const char *buf, apr_size_t length,
 
 /* ------------------------------------------------------------------------- */
 
+/*
+ * Setaside transitions a python bucket from "borrowed" (decref_string
+ * == 0, set by wsgi_apr_bucket_python_create) to "owned"
+ * (decref_string == 1) by incref'ing the underlying PyObject and
+ * rebuilding the bucket. From that point on, destroy is responsible
+ * for the matching decref.
+ *
+ * The two branches have asymmetric GIL-handling invariants that are
+ * load-bearing — do not collapse them.
+ *
+ * else-branch (first setaside, decref_string == 0): the caller is the
+ * WSGI write path, which already holds the GIL on
+ * h->application_group's sub-interpreter (the bucket was just created
+ * by that same thread a few frames up). A bare Py_INCREF is correct
+ * and required. Calling wsgi_acquire_interpreter here would
+ *   (a) Py_FatalError inside PyEval_AcquireThread because the GIL is
+ *       already held, and
+ *   (b) misuse the PyGILState API (main-interpreter-affine by design)
+ *       on a thread whose currently-active tstate belongs to a sub-
+ *       interpreter.
+ *
+ * if-branch (second-or-later setaside, decref_string == 1): the
+ * bucket has since been deferred (e.g. ap_save_brigade) and may be
+ * shuffled in a context where the GIL is no longer held, so we
+ * acquire the named interpreter explicitly. If acquisition fails
+ * (interpreter never created or already torn down) we cannot safely
+ * incref, so we return APR_EGENERAL and let the bucket brigade clean
+ * up rather than risking an off-GIL refcount mutation.
+ *
+ * Tradeoff on the if-branch: if a future caller ever drives a second
+ * setaside while still on-GIL, wsgi_acquire_interpreter will
+ * Py_FatalError rather than incref. No such caller exists today; flag
+ * this comment if you add one.
+ */
+
 static apr_status_t wsgi_python_bucket_setaside(apr_bucket *b, apr_pool_t *p)
 {
     wsgi_apr_bucket_python *h = b->data;
 
     if (h->decref_string)
     {
-        /*
-         * XXX Not sure if this is correct. Can't assume that if doing
-         * a set aside of a bucket which was already set aside that
-         * we aren't still in context of active interpreter.
-         */
         InterpreterObject *interp = NULL;
 
         interp = wsgi_acquire_interpreter(h->application_group);
-
-        /*
-         * If the interpreter could not be acquired we cannot safely
-         * increment the reference count on the Python string object
-         * because we do not hold the GIL for it. Return an error so
-         * the bucket brigade can be cleaned up rather than risking
-         * a crash from working with the Python object without the
-         * GIL held.
-         */
 
         if (!interp)
             return APR_EGENERAL;
