@@ -3378,7 +3378,7 @@ long wsgi_event_subscribers(void)
         dict = PyModule_GetDict(module);
         list = PyDict_GetItemString(dict, "event_callbacks");
 
-        if (list)
+        if (list && PyList_Check(list))
             result = PyList_Size(list);
 
         Py_DECREF(module);
@@ -3386,7 +3386,13 @@ long wsgi_event_subscribers(void)
         return result;
     }
     else
+    {
+        /* Callers treat the return as a boolean. Clear the import
+         * error so it doesn't leak into the next Python C API call. */
+
+        PyErr_Clear();
         return 0;
+    }
 }
 
 void wsgi_call_callbacks(const char *name, PyObject *callbacks,
