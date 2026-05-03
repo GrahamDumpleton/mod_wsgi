@@ -3448,6 +3448,12 @@ void wsgi_call_callbacks(const char *name, PyObject *callbacks,
             continue;
         }
 
+        /* The event dict is passed as the kwargs argument, so subscribers
+         * receive the event name positionally and the event payload as
+         * keyword-only parameters. Subscribers should declare keyword-only
+         * parameters for the keys they care about and use **kwargs to
+         * absorb the rest, e.g. def cb(name, *, status_code, **kwargs). */
+
         res = PyObject_Call(callback, args, event);
 
         if (!res)
