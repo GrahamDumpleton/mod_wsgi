@@ -2538,14 +2538,62 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
         wsgi_gil_wait_record((apr_uint64_t)(apr_time_now() - _gil_t1));
 
         /*
-         * When simplified GIL state API is used, the thread
-         * local data only persists for the extent of the top
-         * level matching ensure/release calls. We want to
-         * extend lifetime of the thread local data beyond
-         * that, retaining it for all requests within the one
-         * thread for the life of the process. To do that we
-         * need to artificially increment the reference count
-         * for the associated thread state object.
+         * For the main interpreter we deliberately route through
+         * the simplified GIL state API (PyGILState_Ensure /
+         * PyGILState_Release) rather than driving the thread
+         * state ourselves. This is required so that any third
+         * party C extension which itself uses the simplified API
+         * can find the current thread state via the auto-TSS
+         * slot that PyGILState_Ensure populates. If we instead
+         * managed the thread state explicitly via
+         * PyThreadState_New / PyEval_AcquireThread, the auto-TSS
+         * slot would be empty and a nested PyGILState_Ensure
+         * inside an extension would create a second, parallel
+         * thread state for the same OS thread, which is
+         * undefined behaviour.
+         *
+         * The catch is that the simplified API is designed for
+         * scoped use: the matching pair Ensure/Release tears the
+         * thread state down again at the end of the outer
+         * Release. We do not want that — we want the thread
+         * state, and therefore any thread local data Python or
+         * extensions have attached to it (threading.local,
+         * contextvars defaults, extension-side TLS via
+         * PyThread_tss_*, etc.), to persist across distinct
+         * requests for the entire life of the Apache worker
+         * thread. Recreating the thread state per request would
+         * silently reset any such state at request boundaries.
+         *
+         * To extend the thread state's lifetime across requests
+         * we lean on the documented behaviour of
+         * PyGILState_Release: it decrements
+         * tstate->gilstate_counter and only destroys the thread
+         * state when the counter reaches zero. Immediately after
+         * the very first PyGILState_Ensure on this thread the
+         * counter is 1 (the sentinel CPython uses to mean
+         * "registered in the auto-TSS table; do not destroy on
+         * Release"). By bumping it to 2 here the matching
+         * Release in wsgi_release_interpreter brings it back
+         * down to 1, which is non-zero, so Release just drops
+         * the GIL via PyEval_SaveThread() and leaves the thread
+         * state — and its TSS registration — in place for the
+         * next request on this thread. We only do the bump on
+         * the first Ensure (counter == 1); any nested Ensure
+         * from inside the request leaves the counter alone so
+         * pairing inside the request still balances normally.
+         *
+         * gilstate_counter is exposed via Include/cpython/
+         * pystate.h, which is the unstable CPython tier — the
+         * field is not part of the stable ABI and could in
+         * principle be renamed or removed in a future release.
+         * There is no public API equivalent for "extend the
+         * lifetime of an auto-TSS thread state beyond
+         * Ensure/Release"; if CPython ever removes this field
+         * we will need a CPython-side replacement, since neither
+         * dropping the simplified API (breaks third party
+         * extensions, see above) nor letting the thread state
+         * be torn down each request (loses thread local data,
+         * see above) is acceptable.
          */
 
         tstate = PyThreadState_Get();
@@ -2563,13 +2611,40 @@ void wsgi_release_interpreter(InterpreterObject *handle)
     PyGILState_STATE state;
 
     /*
-     * Need to release and destroy the thread state that
-     * was created against the interpreter. This will
-     * release the GIL. Note that it should be safe to
-     * always assume that the simplified GIL state API
-     * lock was originally unlocked as always calling in
-     * from an Apache thread when we acquire the
-     * interpreter in the first place.
+     * Drop the GIL for the duration of the request. For named
+     * sub interpreters we manage the thread state explicitly
+     * and PyEval_ReleaseThread does the obvious thing.
+     *
+     * For the main interpreter we mirror the simplified GIL
+     * state API path used in wsgi_acquire_interpreter (see the
+     * long comment there for the full rationale, including why
+     * the simplified API must be used at all and why we keep
+     * the thread state alive across requests). The matching
+     * call here is PyGILState_Release with PyGILState_UNLOCKED
+     * passed in directly rather than the value originally
+     * returned by PyGILState_Ensure. We can do that safely
+     * because:
+     *
+     *  - mod_wsgi only ever enters acquire from a fresh Apache
+     *    worker thread, which by construction does not already
+     *    hold the GIL on its first call. PyGILState_Ensure
+     *    therefore returns PyGILState_UNLOCKED and that is the
+     *    correct value to feed back into Release on the way
+     *    out, regardless of how many requests this worker
+     *    thread has already processed (the gilstate_counter
+     *    bump in acquire keeps the thread state alive between
+     *    requests, so there is no nested Ensure scope to
+     *    unwind).
+     *  - We do not capture the return value of Ensure in
+     *    acquire; threading it back here as a parameter would
+     *    require plumbing it through the InterpreterObject
+     *    handle for no behavioural gain, since the value is
+     *    invariant for our call pattern.
+     *
+     * Combined with the counter bump in acquire, this Release
+     * decrements gilstate_counter from 2 to 1 (not 0), so the
+     * thread state is preserved for the next request and the
+     * GIL is released via PyEval_SaveThread() inside Release.
      */
 
     if (*handle->name)
