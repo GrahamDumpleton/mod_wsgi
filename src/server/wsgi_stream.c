@@ -54,6 +54,13 @@ static int Stream_init(StreamObject *self, PyObject *args, PyObject *kwds)
         return -1;
     }
 
+    if (blksize < 0)
+    {
+        PyErr_SetString(PyExc_ValueError,
+                        "blksize must not be negative");
+        return -1;
+    }
+
     if (filelike)
     {
         PyObject *tmp = NULL;
@@ -208,7 +215,7 @@ static PyObject *Stream_get_filelike(StreamObject *self, void *Py_UNUSED(closure
 
 static PyObject *Stream_get_blksize(StreamObject *self, void *Py_UNUSED(closure))
 {
-    return PyLong_FromSize_t(self->blksize);
+    return PyLong_FromSsize_t(self->blksize);
 }
 
 static PyMethodDef Stream_methods[] = {

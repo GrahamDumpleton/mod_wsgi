@@ -29,7 +29,7 @@
 typedef struct
 {
         PyObject_HEAD PyObject *filelike;
-        apr_size_t blksize;
+        Py_ssize_t blksize;
 } StreamObject;
 
 extern PyTypeObject Stream_Type;
