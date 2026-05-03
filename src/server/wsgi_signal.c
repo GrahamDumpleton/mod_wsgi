@@ -105,6 +105,16 @@ static PyObject *SignalIntercept_call(
 
     Py_XDECREF(m);
 
+    /* The traceback print above is a best-effort debug aid. Any step
+     * along the way (import, attribute lookup, log object allocation,
+     * tuple build, call) can leave an exception set; clear it so we
+     * never return a non-NULL handler with a pending exception, which
+     * would violate the C API contract and surface as a confusing
+     * unrelated error at the next Python C API call. */
+
+    if (PyErr_Occurred())
+        PyErr_Clear();
+
     Py_INCREF(h);
 
     return h;
