@@ -855,12 +855,11 @@ InterpreterObject *newInterpreterObject(const char *name)
     }
 #endif
 
-    module = PyImport_ImportModule("site");
-
     if (wsgi_python_path && *wsgi_python_path)
     {
         PyObject *path = NULL;
 
+        module = PyImport_ImportModule("site");
         path = PySys_GetObject("path");
 
         if (module && path)
@@ -1045,6 +1044,9 @@ InterpreterObject *newInterpreterObject(const char *name)
                                           wsgi_server->process->pool));
             }
         }
+
+        Py_XDECREF(module);
+        module = NULL;
     }
 
     /*
@@ -1062,7 +1064,7 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         path = PySys_GetObject("path");
 
-        if (module && path)
+        if (path)
         {
             PyObject *item;
 
@@ -1072,8 +1074,6 @@ InterpreterObject *newInterpreterObject(const char *name)
                 PyErr_SetString(PyExc_RuntimeError,
                                 "PyUnicode_DecodeFSDefault() for daemon "
                                 "home directory failed");
-                Py_XDECREF(module);
-                module = NULL;
                 goto failure;
             }
             if (PyList_Insert(path, 0, item) < 0)
@@ -1082,17 +1082,12 @@ InterpreterObject *newInterpreterObject(const char *name)
                                 "PyList_Insert() of daemon home directory "
                                 "into sys.path failed");
                 Py_DECREF(item);
-                Py_XDECREF(module);
-                module = NULL;
                 goto failure;
             }
             Py_DECREF(item);
         }
     }
 #endif
-
-    Py_XDECREF(module);
-    module = NULL;
 
     /*
      * Create 'mod_wsgi' Python module. We first try and import an
