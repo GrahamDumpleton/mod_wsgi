@@ -2732,8 +2732,8 @@ static PyObject *wsgi_request_metrics(void)
     if (wsgi_dict_set_double(result,
                              WSGI_INTERNED_STRING(capacity_utilization),
                              capacity_utilization) < 0 ||
-        wsgi_dict_set_longlong(result, WSGI_INTERNED_STRING(request_count),
-                               (long long)request_count) < 0 ||
+        wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(request_count),
+                                request_count) < 0 ||
         wsgi_dict_set_double(result,
                              WSGI_INTERNED_STRING(request_throughput),
                              request_throughput) < 0)
