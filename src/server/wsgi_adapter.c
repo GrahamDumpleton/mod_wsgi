@@ -1815,13 +1815,16 @@ static PyObject *Adapter_environ(AdapterObject *self)
         {
             if (elts[i].val)
             {
-                if (!strcmp(elts[i].val, "DOCUMENT_ROOT"))
+                if (!strcmp(elts[i].key, "DOCUMENT_ROOT") ||
+                    !strcmp(elts[i].key, "SCRIPT_FILENAME"))
                 {
                     object = PyUnicode_DecodeFSDefault(elts[i].val);
-                }
-                else if (!strcmp(elts[i].val, "SCRIPT_FILENAME"))
-                {
-                    object = PyUnicode_DecodeFSDefault(elts[i].val);
+                    if (!object)
+                    {
+                        PyErr_Clear();
+                        object = PyUnicode_DecodeLatin1(elts[i].val,
+                                                        strlen(elts[i].val), NULL);
+                    }
                 }
                 else
                 {

@@ -218,6 +218,11 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
     {
         object = PyUnicode_DecodeFSDefault(value);
         if (!object)
+        {
+            PyErr_Clear();
+            object = PyUnicode_DecodeLatin1(value, strlen(value), NULL);
+        }
+        if (!object)
             goto error;
         if (PyDict_SetItemString(vars, "DOCUMENT_ROOT", object) < 0)
             goto error;

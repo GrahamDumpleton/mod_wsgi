@@ -89,8 +89,22 @@ static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
         {
             if (elts[i].val)
             {
-                object = PyUnicode_DecodeLatin1(elts[i].val,
-                                                strlen(elts[i].val), NULL);
+                if (!strcmp(elts[i].key, "DOCUMENT_ROOT") ||
+                    !strcmp(elts[i].key, "SCRIPT_FILENAME"))
+                {
+                    object = PyUnicode_DecodeFSDefault(elts[i].val);
+                    if (!object)
+                    {
+                        PyErr_Clear();
+                        object = PyUnicode_DecodeLatin1(elts[i].val,
+                                                        strlen(elts[i].val), NULL);
+                    }
+                }
+                else
+                {
+                    object = PyUnicode_DecodeLatin1(elts[i].val,
+                                                    strlen(elts[i].val), NULL);
+                }
                 if (!object)
                     goto error;
                 if (PyDict_SetItemString(vars, elts[i].key, object) < 0)
