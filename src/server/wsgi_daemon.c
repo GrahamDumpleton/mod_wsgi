@@ -2089,14 +2089,17 @@ static void wsgi_log_thread_stack(unsigned long thread_id)
         const char *name = NULL;
         PyCodeObject *code = NULL;
 
+        /* PyFrame_GetCode is documented to never return NULL; the
+         * code object is guaranteed to exist for the duration of the
+         * frame. PyUnicode_AsUTF8 can still return NULL on co_filename
+         * / co_name if those aren't valid UTF-8, hence the fallbacks
+         * and the trailing PyErr_Clear. */
+
         code = PyFrame_GetCode(current);
         lineno = PyFrame_GetLineNumber(current);
 
-        if (code)
-        {
-            filename = PyUnicode_AsUTF8(code->co_filename);
-            name = PyUnicode_AsUTF8(code->co_name);
-        }
+        filename = PyUnicode_AsUTF8(code->co_filename);
+        name = PyUnicode_AsUTF8(code->co_name);
 
         if (!filename)
             filename = "<unknown>";
@@ -2129,7 +2132,7 @@ static void wsgi_log_thread_stack(unsigned long thread_id)
                            filename, lineno, name);
         }
 
-        Py_XDECREF(code);
+        Py_DECREF(code);
         Py_DECREF(current);
         current = next_frame;
     }
@@ -2645,14 +2648,14 @@ static void wsgi_log_stack_traces(void)
                 const char *name = NULL;
                 PyCodeObject *code = NULL;
 
+                /* PyFrame_GetCode is documented to never return NULL.
+                 * See sister loop above for full rationale. */
+
                 code = PyFrame_GetCode(current);
                 lineno = PyFrame_GetLineNumber(current);
 
-                if (code)
-                {
-                    filename = PyUnicode_AsUTF8(code->co_filename);
-                    name = PyUnicode_AsUTF8(code->co_name);
-                }
+                filename = PyUnicode_AsUTF8(code->co_filename);
+                name = PyUnicode_AsUTF8(code->co_name);
 
                 if (!filename)
                     filename = "<unknown>";
@@ -2688,7 +2691,7 @@ static void wsgi_log_stack_traces(void)
                                    filename, lineno, name);
                 }
 
-                Py_XDECREF(code);
+                Py_DECREF(code);
                 Py_DECREF(current);
                 current = next_frame;
             }
