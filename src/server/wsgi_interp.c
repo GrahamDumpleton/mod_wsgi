@@ -2900,7 +2900,10 @@ int wsgi_reload_required(apr_pool_t *pool, request_rec *r,
     {
         mtime = PyLong_AsLongLong(object);
         if (PyErr_Occurred())
+        {
             PyErr_Clear();
+            return 1;
+        }
 
         if (!r || strcmp(r->filename, filename))
         {
