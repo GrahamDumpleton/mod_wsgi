@@ -26,6 +26,7 @@
 #include "wsgi_server.h"
 #include "wsgi_config.h"
 #include "wsgi_logger.h"
+#include "wsgi_module.h"
 #include "wsgi_restrict.h"
 #include "wsgi_stream.h"
 #include "wsgi_metrics.h"
@@ -53,37 +54,6 @@ const char *wsgi_python_path = NULL;
 const char *wsgi_python_eggs = NULL;
 
 PyTypeObject Interpreter_Type;
-
-/*
- * Helper to add an object to a module. Properly handles the case
- * where the value is NULL (i.e. the allocator that produced it
- * failed) and where PyModule_AddObject() itself fails. The latter
- * does not steal the reference on failure, so the value must be
- * decremented in that case. Returns 0 on success, -1 on failure.
- */
-
-static int wsgi_module_add_object(PyObject *module, const char *name,
-                                  PyObject *value)
-{
-    if (!value)
-    {
-        PyErr_Format(PyExc_RuntimeError,
-                     "Allocation of value for module attribute '%s' failed",
-                     name);
-        return -1;
-    }
-
-    if (PyModule_AddObject(module, name, value) < 0)
-    {
-        wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
-                "PyModule_AddObject() failed for attribute '%s'",
-                name);
-        Py_DECREF(value);
-        return -1;
-    }
-
-    return 0;
-}
 
 /*
  * Helper to set an environment variable in the os.environ dict.
@@ -1090,242 +1060,16 @@ InterpreterObject *newInterpreterObject(const char *name)
 #endif
 
     /*
-     * Create 'mod_wsgi' Python module. We first try and import an
-     * external Python module of the same name. The intent is
-     * that this external module would provide optional features
-     * implementable using pure Python code. Don't want to
-     * include them in the main Apache mod_wsgi package as that
-     * complicates that package and also wouldn't allow them to
-     * be released to a separate schedule. It is easier for
-     * people to replace Python modules package with a new
-     * version than it is to replace Apache module package.
+     * Create the embedded 'mod_wsgi' Python module. The helper
+     * tries to import a user-supplied module of the same name
+     * first; if not present it builds the C-defined module via
+     * PEP 489 multi-phase init. Either way the result is augmented
+     * with the per-application-group attributes before return.
      */
 
-    module = PyImport_ImportModule("mod_wsgi");
-
+    module = wsgi_module_create_for_interp(name);
     if (!module)
-    {
-        PyObject *modules = NULL;
-
-        /*
-         * If the import failed because no user-supplied 'mod_wsgi'
-         * Python module exists on the search path (the common
-         * case), silently fall back to creating an empty module
-         * ourselves. For any other failure (a real bug in the
-         * user's module — syntax error, exception during module
-         * body execution, etc.) surface the traceback so the
-         * operator sees what actually went wrong instead of a
-         * silent fallback masking the bug.
-         */
-
-        if (!PyErr_ExceptionMatches(PyExc_ModuleNotFoundError))
-            wsgi_log_python_interp_init_error(name);
-
-        PyErr_Clear();
-
-        /*
-         * Defensive cleanup of any orphan entry in sys.modules.
-         * Modern CPython removes the entry itself on import
-         * failure, but historically this was not always reliable.
-         */
-
-        modules = PyImport_GetModuleDict();
-        if (PyDict_GetItemString(modules, "mod_wsgi"))
-        {
-            if (PyDict_DelItemString(modules, "mod_wsgi") < 0)
-                PyErr_Clear();
-        }
-
-        module = PyImport_AddModule("mod_wsgi");
-
-        if (!module)
-        {
-            wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
-                    "PyImport_AddModule(\"mod_wsgi\") failed");
-            goto failure;
-        }
-
-        Py_INCREF(module);
-    }
-    else if (!*name)
-    {
-        wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "Imported existing 'mod_wsgi' Python "
-                              "extension module.");
-    }
-
-    /*
-     * Add Apache module version information to the Python
-     * 'mod_wsgi' module.
-     */
-
-    if (wsgi_module_add_object(module, "version",
-                               Py_BuildValue("(iii)", MOD_WSGI_MAJORVERSION_NUMBER,
-                                             MOD_WSGI_MINORVERSION_NUMBER,
-                                             MOD_WSGI_MICROVERSION_NUMBER)) < 0)
         goto failure;
-
-    /* Add type object for file wrapper. */
-
-    Py_INCREF(&Stream_Type);
-    if (wsgi_module_add_object(module, "FileWrapper",
-                               (PyObject *)&Stream_Type) < 0)
-        goto failure;
-
-    /*
-     * Add the RequestTimeout exception class. The exception is created
-     * once at process scope and shared across all interpreters that
-     * import the 'mod_wsgi' module. Derives directly from BaseException
-     * so that well-written code does not catch it via 'except Exception:'.
-     * Used by the daemon monitor thread when injecting a timeout
-     * exception into a worker via PyThreadState_SetAsyncExc().
-     */
-
-    if (!wsgi_request_timeout_exc)
-    {
-        wsgi_request_timeout_exc = PyErr_NewExceptionWithDoc(
-            "mod_wsgi.RequestTimeout",
-            "Raised by mod_wsgi when a daemon request exceeds the "
-            "configured request-timeout and exception injection is "
-            "enabled. Derives directly from BaseException so well-written "
-            "code does not catch it via 'except Exception:'. May be "
-            "caught for cleanup but should be re-raised so the WSGI "
-            "adapter can return 504.",
-            PyExc_BaseException, NULL);
-
-        if (!wsgi_request_timeout_exc)
-            goto failure;
-    }
-
-    Py_INCREF(wsgi_request_timeout_exc);
-    if (wsgi_module_add_object(module, "RequestTimeout",
-                               wsgi_request_timeout_exc) < 0)
-        goto failure;
-
-    /*
-     * Add information about process group and application
-     * group to the Python 'mod_wsgi' module.
-     */
-
-    if (wsgi_module_add_object(module, "process_group",
-                               PyUnicode_DecodeLatin1(wsgi_daemon_group,
-                                                      strlen(wsgi_daemon_group), NULL)) < 0)
-        goto failure;
-    if (wsgi_module_add_object(module, "application_group",
-                               PyUnicode_DecodeLatin1(name, strlen(name), NULL)) < 0)
-        goto failure;
-
-    /*
-     * Add information about number of processes and threads
-     * available to the WSGI application to the 'mod_wsgi' module.
-     * When running in embedded mode, this will be the same as
-     * what the 'apache' module records for Apache itself.
-     */
-
-#if defined(MOD_WSGI_WITH_DAEMONS)
-    if (wsgi_daemon_process)
-    {
-        if (wsgi_module_add_object(module, "maximum_processes",
-                                   PyLong_FromLong(wsgi_daemon_process->group->processes)) < 0)
-            goto failure;
-
-        if (wsgi_module_add_object(module, "threads_per_process",
-                                   PyLong_FromLong(wsgi_daemon_process->group->threads)) < 0)
-            goto failure;
-    }
-    else
-    {
-        ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
-        if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
-        {
-            ap_mpm_query(AP_MPMQ_MAX_THREADS, &max_threads);
-        }
-        ap_mpm_query(AP_MPMQ_IS_FORKED, &is_forked);
-        if (is_forked != AP_MPMQ_NOT_SUPPORTED)
-        {
-            ap_mpm_query(AP_MPMQ_MAX_DAEMON_USED, &max_processes);
-            if (max_processes == -1)
-            {
-                ap_mpm_query(AP_MPMQ_MAX_DAEMONS, &max_processes);
-            }
-        }
-
-        max_threads = (max_threads <= 0) ? 1 : max_threads;
-        max_processes = (max_processes <= 0) ? 1 : max_processes;
-
-        if (wsgi_module_add_object(module, "maximum_processes",
-                                   PyLong_FromLong(max_processes)) < 0)
-            goto failure;
-
-        if (wsgi_module_add_object(module, "threads_per_process",
-                                   PyLong_FromLong(max_threads)) < 0)
-            goto failure;
-    }
-#else
-    ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
-    if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
-    {
-        ap_mpm_query(AP_MPMQ_MAX_THREADS, &max_threads);
-    }
-    ap_mpm_query(AP_MPMQ_IS_FORKED, &is_forked);
-    if (is_forked != AP_MPMQ_NOT_SUPPORTED)
-    {
-        ap_mpm_query(AP_MPMQ_MAX_DAEMON_USED, &max_processes);
-        if (max_processes == -1)
-        {
-            ap_mpm_query(AP_MPMQ_MAX_DAEMONS, &max_processes);
-        }
-    }
-
-    max_threads = (max_threads <= 0) ? 1 : max_threads;
-    max_processes = (max_processes <= 0) ? 1 : max_processes;
-
-    if (wsgi_module_add_object(module, "maximum_processes",
-                               PyLong_FromLong(max_processes)) < 0)
-        goto failure;
-
-    if (wsgi_module_add_object(module, "threads_per_process",
-                               PyLong_FromLong(max_threads)) < 0)
-        goto failure;
-#endif
-
-    if (wsgi_module_add_object(module, "server_metrics",
-                               PyCFunction_New(&wsgi_server_metrics_method[0], NULL)) < 0)
-        goto failure;
-
-    if (wsgi_module_add_object(module, "process_metrics",
-                               PyCFunction_New(&wsgi_process_metrics_method[0], NULL)) < 0)
-        goto failure;
-
-    if (wsgi_module_add_object(module, "request_metrics",
-                               PyCFunction_New(&wsgi_request_metrics_method[0], NULL)) < 0)
-        goto failure;
-
-    if (wsgi_module_add_object(module, "subscribe_events",
-                               PyCFunction_New(&wsgi_subscribe_events_method[0], NULL)) < 0)
-        goto failure;
-
-    if (wsgi_module_add_object(module, "subscribe_shutdown",
-                               PyCFunction_New(&wsgi_subscribe_shutdown_method[0], NULL)) < 0)
-        goto failure;
-
-    if (wsgi_module_add_object(module, "event_callbacks",
-                               PyList_New(0)) < 0)
-        goto failure;
-
-    if (wsgi_module_add_object(module, "shutdown_callbacks",
-                               PyList_New(0)) < 0)
-        goto failure;
-
-    if (wsgi_module_add_object(module, "active_requests",
-                               PyDict_New()) < 0)
-        goto failure;
-
-    if (wsgi_module_add_object(module, "request_data",
-                               PyCFunction_New(&wsgi_request_data_method[0], NULL)) < 0)
-        goto failure;
-
-    /* Done with the 'mod_wsgi' module. */
 
     Py_DECREF(module);
     module = NULL;
