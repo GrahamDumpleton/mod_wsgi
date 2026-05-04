@@ -29,7 +29,7 @@
 extern char *wsgi_shutdown_reason;
 
 #ifndef WIN32
-#if APR_HAS_OTHER_CHILD && APR_HAS_THREADS && APR_HAS_FORK
+#if APR_HAS_OTHER_CHILD && APR_HAS_FORK
 #define MOD_WSGI_WITH_DAEMONS 1
 #endif
 #endif
