@@ -676,11 +676,9 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
      * same time.
      */
 
-#if APR_HAS_THREADS
     Py_BEGIN_ALLOW_THREADS
         apr_thread_mutex_lock(wsgi_module_lock);
     Py_END_ALLOW_THREADS
-#endif
 
         modules = PyImport_GetModuleDict();
     module = PyDict_GetItemString(modules, name);
@@ -726,9 +724,7 @@ static authn_status wsgi_check_password(request_rec *r, const char *user,
 
     /* Safe now to release the module lock. */
 
-#if APR_HAS_THREADS
     apr_thread_mutex_unlock(wsgi_module_lock);
-#endif
 
     /* Log any details of exceptions if import failed. */
 
@@ -949,11 +945,9 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
      * same time.
      */
 
-#if APR_HAS_THREADS
     Py_BEGIN_ALLOW_THREADS
         apr_thread_mutex_lock(wsgi_module_lock);
     Py_END_ALLOW_THREADS
-#endif
 
         modules = PyImport_GetModuleDict();
     module = PyDict_GetItemString(modules, name);
@@ -999,9 +993,7 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
 
     /* Safe now to release the module lock. */
 
-#if APR_HAS_THREADS
     apr_thread_mutex_unlock(wsgi_module_lock);
-#endif
 
     /* Log any details of exceptions if import failed. */
 
@@ -1242,11 +1234,9 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
      * same time.
      */
 
-#if APR_HAS_THREADS
     Py_BEGIN_ALLOW_THREADS
         apr_thread_mutex_lock(wsgi_module_lock);
     Py_END_ALLOW_THREADS
-#endif
 
         modules = PyImport_GetModuleDict();
     module = PyDict_GetItemString(modules, name);
@@ -1292,9 +1282,7 @@ static int wsgi_groups_for_user(request_rec *r, WSGIRequestConfig *config,
 
     /* Safe now to release the module lock. */
 
-#if APR_HAS_THREADS
     apr_thread_mutex_unlock(wsgi_module_lock);
-#endif
 
     /* Log any details of exceptions if import failed. */
 
@@ -1537,11 +1525,9 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
      * same time.
      */
 
-#if APR_HAS_THREADS
     Py_BEGIN_ALLOW_THREADS
         apr_thread_mutex_lock(wsgi_module_lock);
     Py_END_ALLOW_THREADS
-#endif
 
         modules = PyImport_GetModuleDict();
     module = PyDict_GetItemString(modules, name);
@@ -1587,9 +1573,7 @@ static int wsgi_allow_access(request_rec *r, WSGIRequestConfig *config,
 
     /* Safe now to release the module lock. */
 
-#if APR_HAS_THREADS
     apr_thread_mutex_unlock(wsgi_module_lock);
-#endif
 
     /* Log any details of exceptions if import failed. */
 
