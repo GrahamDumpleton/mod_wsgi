@@ -263,15 +263,44 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         self->interp = tstate->interp;
         self->owner = 1;
+    }
 
-        /*
-         * We need to replace threading._shutdown() with our own
-         * function which will also call atexit callbacks after
-         * threads are shutdown to cope with fact that Python
-         * itself doesn't call the atexit callbacks in sub
-         * interpreters.
-         */
+    /*
+     * Build the embedded mod_wsgi module and install it as
+     * sys.modules['mod_wsgi']. Done early so the heap-allocated
+     * PyTypeObjects in WSGIModuleState are reachable by code in
+     * the rest of interpreter setup that builds instances of
+     * those types (sys.stdin/sys.stdout substitution,
+     * signal.signal interception, etc.). The module's user-
+     * facing and per-interpreter runtime attributes are
+     * installed later by wsgi_module_populate once the rest of
+     * interpreter setup has populated the surrounding
+     * environment.
+     */
 
+    if (wsgi_module_init_state(name) < 0)
+        goto failure;
+
+    /*
+     * Replace threading._shutdown() with a wrapper that also
+     * drives atexit._run_exitfuncs after the join, so atexit
+     * callbacks registered in this sub interpreter still get to
+     * run when the interpreter is torn down. CPython invokes
+     * atexit only for the main interpreter; without this wrapper
+     * sub-interpreter atexit callbacks would silently never fire.
+     * Skipped for the main interpreter, which CPython already
+     * handles itself.
+     *
+     * Disabled for now via #if 0: Python 3.7 changed CPython to
+     * run atexit callbacks in sub interpreters as well, which
+     * may make the wrapper unnecessary on supported Python
+     * versions. Left in place so the behaviour can be re-enabled
+     * if testing on newer Python versions shows otherwise.
+     */
+
+#if 0
+    if (self->owner)
+    {
         module = PyImport_ImportModule("threading");
 
         if (module)
@@ -342,22 +371,7 @@ InterpreterObject *newInterpreterObject(const char *name)
         Py_XDECREF(module);
         module = NULL;
     }
-
-    /*
-     * Build the embedded mod_wsgi module and install it as
-     * sys.modules['mod_wsgi']. Done early so the heap-allocated
-     * PyTypeObjects in WSGIModuleState are reachable by code in
-     * the rest of interpreter setup that builds instances of
-     * those types (sys.stdin/sys.stdout substitution,
-     * signal.signal interception, etc.). The module's user-
-     * facing and per-interpreter runtime attributes are
-     * installed later by wsgi_module_populate once the rest of
-     * interpreter setup has populated the surrounding
-     * environment.
-     */
-
-    if (wsgi_module_init_state(name) < 0)
-        goto failure;
+#endif
 
     /*
      * Replace sys.stderr with a Log object so writes from Python
@@ -3016,7 +3030,7 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
 
     /* Finalise any Python objects required by child process. */
 
-    if (PyType_Ready(&Log_Type) < 0 || PyType_Ready(&Stream_Type) < 0 || PyType_Ready(&Input_Type) < 0 || PyType_Ready(&Adapter_Type) < 0 || PyType_Ready(&Interpreter_Type) < 0 || PyType_Ready(&Dispatch_Type) < 0 || PyType_Ready(&Auth_Type) < 0 || PyType_Ready(&ShutdownInterpreter_Type) < 0)
+    if (PyType_Ready(&Log_Type) < 0 || PyType_Ready(&Stream_Type) < 0 || PyType_Ready(&Input_Type) < 0 || PyType_Ready(&Adapter_Type) < 0 || PyType_Ready(&Interpreter_Type) < 0 || PyType_Ready(&Dispatch_Type) < 0 || PyType_Ready(&Auth_Type) < 0)
     {
         wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0037) "Unable to initialise Python types in %s; "
                                                                              "Python based handlers will not be "

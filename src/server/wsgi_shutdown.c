@@ -23,6 +23,7 @@
 #include "wsgi_apache.h"
 #include "wsgi_server.h"
 #include "wsgi_logger.h"
+#include "wsgi_module.h"
 
 #if APR_HAVE_UNISTD_H
 #include <unistd.h>
@@ -30,27 +31,37 @@
 
 /* ------------------------------------------------------------------------- */
 
+/*
+ * Heap-type destructor. Releases the wrapped threading._shutdown
+ * reference held by the instance, then frees the instance memory
+ * and decrements the type's refcount (every heap-type instance
+ * owns a reference to its type).
+ */
+
 static void ShutdownInterpreter_dealloc(ShutdownInterpreterObject *self)
 {
+    PyTypeObject *tp = Py_TYPE(self);
+
     Py_DECREF(self->wrapped);
 
-    PyObject_Del(self);
+    tp->tp_free(self);
+    Py_DECREF(tp);
 }
 
-ShutdownInterpreterObject *newShutdownInterpreterObject(
-    PyObject *wrapped)
-{
-    ShutdownInterpreterObject *self = NULL;
-
-    self = PyObject_New(ShutdownInterpreterObject, &ShutdownInterpreter_Type);
-    if (self == NULL)
-        return NULL;
-
-    Py_INCREF(wrapped);
-    self->wrapped = wrapped;
-
-    return self;
-}
+/*
+ * tp_call hook. Invoked when CPython interpreter shutdown calls
+ * threading._shutdown to join non-daemon threads. The wrapped
+ * function is delegated to first; if it returned cleanly, the
+ * wrapper drives atexit._run_exitfuncs so atexit callbacks
+ * registered in the sub interpreter run before the interpreter
+ * is destroyed (CPython does this automatically only for the
+ * main interpreter). Any exception raised by the atexit
+ * callbacks is logged via the Apache error log; SystemExit in
+ * particular is swallowed so it cannot terminate the process
+ * during shutdown. Finally any thread states left behind by
+ * application code are cleared so the interpreter can be
+ * destroyed cleanly.
+ */
 
 static PyObject *ShutdownInterpreter_call(
     ShutdownInterpreterObject *self, PyObject *args, PyObject *kwds)
@@ -210,48 +221,101 @@ static PyObject *ShutdownInterpreter_call(
     return result;
 }
 
-PyTypeObject ShutdownInterpreter_Type = {
-    PyVarObject_HEAD_INIT(NULL, 0) "mod_wsgi.ShutdownInterpreter", /*tp_name*/
-    sizeof(ShutdownInterpreterObject),                             /*tp_basicsize*/
-    0,                                                             /*tp_itemsize*/
-    /* methods */
-    (destructor)ShutdownInterpreter_dealloc, /*tp_dealloc*/
-    0,                                       /*tp_print*/
-    0,                                       /*tp_getattr*/
-    0,                                       /*tp_setattr*/
-    0,                                       /*tp_compare*/
-    0,                                       /*tp_repr*/
-    0,                                       /*tp_as_number*/
-    0,                                       /*tp_as_sequence*/
-    0,                                       /*tp_as_mapping*/
-    0,                                       /*tp_hash*/
-    (ternaryfunc)ShutdownInterpreter_call,   /*tp_call*/
-    0,                                       /*tp_str*/
-    0,                                       /*tp_getattro*/
-    0,                                       /*tp_setattro*/
-    0,                                       /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT,                      /*tp_flags*/
-    0,                                       /*tp_doc*/
-    0,                                       /*tp_traverse*/
-    0,                                       /*tp_clear*/
-    0,                                       /*tp_richcompare*/
-    0,                                       /*tp_weaklistoffset*/
-    0,                                       /*tp_iter*/
-    0,                                       /*tp_iternext*/
-    0,                                       /*tp_methods*/
-    0,                                       /*tp_members*/
-    0,                                       /*tp_getset*/
-    0,                                       /*tp_base*/
-    0,                                       /*tp_dict*/
-    0,                                       /*tp_descr_get*/
-    0,                                       /*tp_descr_set*/
-    0,                                       /*tp_dictoffset*/
-    0,                                       /*tp_init*/
-    0,                                       /*tp_alloc*/
-    0,                                       /*tp_new*/
-    0,                                       /*tp_free*/
-    0,                                       /*tp_is_gc*/
+/* ------------------------------------------------------------------------- */
+
+/*
+ * PyType_Spec for the ShutdownInterpreter heap type. The two
+ * slots with non-default behaviour are tp_dealloc (releases the
+ * wrapped reference) and tp_call (the shutdown driver);
+ * everything else falls back to the framework defaults.
+ *
+ * tp_name is "mod_wsgi.ShutdownInterpreter" so error messages
+ * and repr() output identify where the type comes from. The
+ * type is not exposed as a module attribute; instances are
+ * installed directly into the threading module's _shutdown slot
+ * from C.
+ */
+
+static PyType_Slot ShutdownInterpreter_slots[] = {
+    {Py_tp_dealloc, ShutdownInterpreter_dealloc},
+    {Py_tp_call, ShutdownInterpreter_call},
+    {0, NULL},
 };
+
+static PyType_Spec ShutdownInterpreter_spec = {
+    .name = "mod_wsgi.ShutdownInterpreter",
+    .basicsize = sizeof(ShutdownInterpreterObject),
+    .itemsize = 0,
+    .flags = Py_TPFLAGS_DEFAULT,
+    .slots = ShutdownInterpreter_slots,
+};
+
+/* ------------------------------------------------------------------------- */
+
+int wsgi_shutdown_init(PyObject *module)
+{
+    WSGIModuleState *state = NULL;
+    PyObject *type = NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+        return -1;
+
+    type = PyType_FromModuleAndSpec(module, &ShutdownInterpreter_spec, NULL);
+    if (!type)
+        return -1;
+
+    state->ShutdownInterpreter_Type = (PyTypeObject *)type;
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------------- */
+
+ShutdownInterpreterObject *newShutdownInterpreterObject(PyObject *wrapped)
+{
+    PyObject *module = NULL;
+    WSGIModuleState *state = NULL;
+    PyTypeObject *type = NULL;
+    ShutdownInterpreterObject *self = NULL;
+
+    /*
+     * Find the embedded mod_wsgi module for the current
+     * interpreter and pull the ShutdownInterpreter heap type
+     * out of its state. Returns NULL with a clear error if the
+     * module is not in sys.modules or its state has not been
+     * initialised; either indicates an init ordering bug.
+     */
+
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+        return NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state || !state->ShutdownInterpreter_Type)
+    {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "ShutdownInterpreter type not initialised for the "
+                        "current interpreter; newShutdownInterpreterObject() "
+                        "called before the embedded mod_wsgi module's "
+                        "exec slot ran");
+        Py_DECREF(module);
+        return NULL;
+    }
+
+    type = state->ShutdownInterpreter_Type;
+
+    self = (ShutdownInterpreterObject *)type->tp_alloc(type, 0);
+    Py_DECREF(module);
+
+    if (!self)
+        return NULL;
+
+    Py_INCREF(wrapped);
+    self->wrapped = wrapped;
+
+    return self;
+}
 
 /* ------------------------------------------------------------------------- */
 

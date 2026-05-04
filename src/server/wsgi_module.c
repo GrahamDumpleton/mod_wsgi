@@ -31,6 +31,7 @@
 #include "wsgi_daemon.h"
 #include "wsgi_restrict.h"
 #include "wsgi_signal.h"
+#include "wsgi_shutdown.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -239,12 +240,12 @@ static int wsgi_module_install_runtime(PyObject *module, const char *name)
 /* ------------------------------------------------------------------------- */
 
 /*
- * PEP 489 multi-phase init plumbing. The exec slot runs
- * wsgi_restricted_init to create the Restricted heap type and
- * store it in WSGIModuleState. User-facing attribute installation
- * (FileWrapper, RequestTimeout, methods, lists, dict) and per-
- * application-group attribute installation are handled by
- * wsgi_module_create_for_interp.
+ * PEP 489 multi-phase init plumbing. The exec slot runs each
+ * per-type init helper to create the heap-allocated type for
+ * that interpreter and store it in WSGIModuleState. User-facing
+ * attribute installation (FileWrapper, RequestTimeout, methods,
+ * lists, dict) and per-application-group attribute installation
+ * are handled by wsgi_module_populate.
  *
  * The Py_mod_multiple_interpreters slot is not declared: static
  * PyTypeObject definitions and the process-shared RequestTimeout
@@ -257,6 +258,9 @@ static int wsgi_module_exec(PyObject *module)
         return -1;
 
     if (wsgi_signal_init(module) < 0)
+        return -1;
+
+    if (wsgi_shutdown_init(module) < 0)
         return -1;
 
     return 0;
