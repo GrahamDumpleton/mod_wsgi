@@ -53,8 +53,6 @@
 const char *wsgi_python_path = NULL;
 const char *wsgi_python_eggs = NULL;
 
-PyTypeObject Interpreter_Type;
-
 /*
  * Direct pointer to the main interpreter handle, set by
  * wsgi_python_child_init when it constructs the main entry.
@@ -1569,61 +1567,6 @@ static void wsgi_destroy_interpreter(InterpreterObject *self)
 }
 
 /*
- * Stub kept so Interpreter_Type's tp_dealloc slot still references
- * a valid function. After step 5 nothing in the codebase wraps
- * InterpreterObject in a Python reference, so this is unreachable;
- * it is removed in the next step along with Interpreter_Type itself.
- */
-
-static void Interpreter_dealloc(InterpreterObject *self)
-{
-    wsgi_destroy_interpreter(self);
-}
-
-PyTypeObject Interpreter_Type = {
-    PyVarObject_HEAD_INIT(NULL, 0) "mod_wsgi.Interpreter", /*tp_name*/
-    sizeof(InterpreterObject),                             /*tp_basicsize*/
-    0,                                                     /*tp_itemsize*/
-    /* methods */
-    (destructor)Interpreter_dealloc, /*tp_dealloc*/
-    0,                               /*tp_print*/
-    0,                               /*tp_getattr*/
-    0,                               /*tp_setattr*/
-    0,                               /*tp_compare*/
-    0,                               /*tp_repr*/
-    0,                               /*tp_as_number*/
-    0,                               /*tp_as_sequence*/
-    0,                               /*tp_as_mapping*/
-    0,                               /*tp_hash*/
-    0,                               /*tp_call*/
-    0,                               /*tp_str*/
-    0,                               /*tp_getattro*/
-    0,                               /*tp_setattro*/
-    0,                               /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT,              /*tp_flags*/
-    0,                               /*tp_doc*/
-    0,                               /*tp_traverse*/
-    0,                               /*tp_clear*/
-    0,                               /*tp_richcompare*/
-    0,                               /*tp_weaklistoffset*/
-    0,                               /*tp_iter*/
-    0,                               /*tp_iternext*/
-    0,                               /*tp_methods*/
-    0,                               /*tp_members*/
-    0,                               /*tp_getset*/
-    0,                               /*tp_base*/
-    0,                               /*tp_dict*/
-    0,                               /*tp_descr_get*/
-    0,                               /*tp_descr_set*/
-    0,                               /*tp_dictoffset*/
-    0,                               /*tp_init*/
-    0,                               /*tp_alloc*/
-    0,                               /*tp_new*/
-    0,                               /*tp_free*/
-    0,                               /*tp_is_gc*/
-};
-
-/*
  * Startup and shutdown of Python interpreter.
  */
 
@@ -2966,21 +2909,6 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
     /* Working with Python, so must acquire GIL. */
 
     state = PyGILState_Ensure();
-
-    /* Finalise any Python objects required by child process. */
-
-    if (PyType_Ready(&Interpreter_Type) < 0)
-    {
-        wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0037) "Unable to initialise Python types in %s; "
-                                                                             "Python based handlers will not be "
-                                                                             "available.",
-                              wsgi_format_process_context(
-                                  wsgi_server->process->pool));
-        PyErr_Clear();
-        PyGILState_Release(state);
-        wsgi_python_initialized = 0;
-        return APR_EGENERAL;
-    }
 
     apr_thread_mutex_create(&wsgi_interp_lock, APR_THREAD_MUTEX_UNNESTED, p);
     apr_thread_mutex_create(&wsgi_module_lock, APR_THREAD_MUTEX_UNNESTED, p);

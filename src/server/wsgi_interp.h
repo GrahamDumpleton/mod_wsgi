@@ -33,8 +33,6 @@ typedef struct
     apr_hash_t *tstate_table;
 } InterpreterObject;
 
-extern PyTypeObject Interpreter_Type;
-
 extern InterpreterObject *newInterpreterObject(const char *name);
 
 extern int wsgi_python_initialized;
