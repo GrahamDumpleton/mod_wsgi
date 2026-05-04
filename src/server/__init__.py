@@ -534,6 +534,7 @@ MinSpareServers 1
 MaxSpareServers 1
 </IfDefine>
 MaxRequestsPerChild 0
+MaxKeepAliveRequests %(prefork_max_keep_alive_requests)s
 </IfModule>
 
 <IfModule mpm_worker_module>
@@ -549,13 +550,14 @@ ThreadsPerChild %(worker_threads_per_child)s
 <IfDefine ONE_PROCESS>
 ServerLimit 1
 ThreadLimit 1
-StartServers 1 
+StartServers 1
 MaxClients 1
 MinSpareThreads 1
 MaxSpareThreads 1
 ThreadsPerChild 1
 </IfDefine>
 MaxRequestsPerChild 0
+MaxKeepAliveRequests %(worker_max_keep_alive_requests)s
 ThreadStackSize 262144
 </IfModule>
 
@@ -579,6 +581,7 @@ MaxSpareThreads 1
 ThreadsPerChild 1
 </IfDefine>
 MaxRequestsPerChild 0
+MaxKeepAliveRequests %(event_max_keep_alive_requests)s
 ThreadStackSize 262144
 </IfModule>
 
@@ -3142,6 +3145,44 @@ def _cmd_setup_server(command, args, options):
         options['worker_start_servers'] = options['processes']
         options['worker_min_spare_threads'] = max_clients
         options['worker_max_spare_threads'] = max_clients
+
+    # Choose MaxKeepAliveRequests per MPM. The Apache core default is
+    # 100 across all MPMs, but the cost of holding a long-lived
+    # keep-alive connection differs sharply by MPM and by mod_wsgi
+    # mode:
+    #
+    #   - event: idle keep-alive connections are parked on the listener
+    #     thread and do not pin a worker, so an unlimited cap (0) is
+    #     fine and avoids needless TCP/TLS handshake churn.
+    #
+    #   - worker / prefork in daemon mode: the MPM child that accepts
+    #     a connection is just a multiplexer and the actual Python
+    #     work is dispatched per-request to the daemon pool, so
+    #     connection-pinning at the MPM layer does not translate to
+    #     daemon-side pinning. The cap is purely TCP / connection
+    #     hygiene; raising it modestly above the Apache default
+    #     amortises handshakes for clients that send many requests.
+    #
+    #   - worker / prefork in embedded mode: the MPM child IS the
+    #     Python worker, so the cap is a fairness knob bounding how
+    #     long one keep-alive client can hold a worker slot away from
+    #     other clients. The static-asset case argues for a high cap
+    #     and the slow-Python-request case argues for a low one;
+    #     Apache's default of 100 is left in place as a defensible
+    #     compromise.
+    #
+    # mpm_winnt and any third-party MPM are not matched by the
+    # IfModule blocks in the generated config, so they fall through
+    # to Apache's core default of 100. That outcome is intentional:
+    # without an empirical basis for tuning a non-listed MPM the
+    # safe choice is to inherit the upstream default.
+    options['event_max_keep_alive_requests'] = 0
+    if options['embedded_mode']:
+        options['prefork_max_keep_alive_requests'] = 100
+        options['worker_max_keep_alive_requests'] = 100
+    else:
+        options['prefork_max_keep_alive_requests'] = 500
+        options['worker_max_keep_alive_requests'] = 500
 
     options['httpd_conf'] = posixpath.join(options['server_root'], 'httpd.conf')
 

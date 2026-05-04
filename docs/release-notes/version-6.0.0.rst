@@ -193,6 +193,26 @@ Features Changed
   children. Applications that depended on any of these will need
   to source the value another way.
 
+* The Apache ``MaxKeepAliveRequests`` directive is now set explicitly
+  in the ``mod_wsgi-express`` generated configuration, with a value
+  chosen per MPM and per mode. For ``mpm_event`` the value is ``0``
+  (unlimited), since idle keep-alive connections are parked on the
+  listener thread and do not pin a worker. For ``mpm_worker`` and
+  ``mpm_prefork`` in daemon mode the value is ``500``: the MPM
+  child is just a connection multiplexer and the cap is purely TCP
+  hygiene, so a higher value than Apache's core default of ``100``
+  amortises handshakes for clients that send many requests. For
+  ``mpm_worker`` and ``mpm_prefork`` in embedded mode the value is
+  ``100`` to match Apache's core default, reflecting that the MPM
+  child is the Python worker and the cap trades off fairness
+  between keep-alive clients against handshake overhead. Other
+  MPMs, including ``mpm_winnt`` on Windows and any third-party
+  MPM, are not matched by the per-MPM blocks in the generated
+  configuration and continue to inherit Apache's core default.
+  Operators who want a different value can override via the
+  existing ``--include-file`` option until a dedicated
+  ``mod_wsgi-express`` option is added.
+
 Features Removed
 ----------------
 
