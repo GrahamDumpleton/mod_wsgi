@@ -1545,13 +1545,46 @@ static void Interpreter_dealloc(InterpreterObject *self)
     if (self->owner)
     {
         /*
-         * We need to destroy all the thread state objects
-         * associated with the interpreter. If there are
-         * background threads that were created then this
-         * may well cause them to crash the next time they
-         * try to run. Only saving grace is that we are
-         * trying to shutdown the process.
+         * Clear and delete every thread state still attached to the
+         * sub interpreter other than the one we will use to drive
+         * Py_EndInterpreter. Py_EndInterpreter requires the tstate
+         * passed to it to be the only thread state remaining in the
+         * interpreter; without this cleanup CPython aborts the
+         * process with "Py_EndInterpreter: not the last thread"
+         * whenever more than one Apache worker thread bound a
+         * tstate against the sub interpreter via PyThreadState_New.
+         *
+         * The interpreter's full thread chain is walked rather than
+         * just our own tstate_table so any tstate that ended up on
+         * the chain by some path other than Interpreter_New /
+         * wsgi_acquire_interpreter is still released. Each tstate
+         * is swapped in before being cleared so finalizers triggered
+         * by the clear see that tstate as current, then current is
+         * restored before delete because PyThreadState_Delete
+         * requires its argument not to be the current tstate.
+         * tstate_next is captured before the clear so the iteration
+         * stays valid across the unlinking that delete performs.
          */
+
+        {
+            PyThreadState *iter = PyInterpreterState_ThreadHead(self->interp);
+            PyThreadState *next = NULL;
+
+            while (iter)
+            {
+                next = PyThreadState_Next(iter);
+
+                if (iter != tstate)
+                {
+                    PyThreadState_Swap(iter);
+                    PyThreadState_Clear(iter);
+                    PyThreadState_Swap(tstate);
+                    PyThreadState_Delete(iter);
+                }
+
+                iter = next;
+            }
+        }
 
         /* Can now destroy the interpreter. */
 
