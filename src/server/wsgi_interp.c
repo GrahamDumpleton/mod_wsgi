@@ -2167,6 +2167,16 @@ PyObject *wsgi_request_timeout_exc = NULL;
 
 apr_hash_t *wsgi_interpreters_index = NULL;
 
+/*
+ * Direct pointer to the main interpreter handle, set by
+ * wsgi_python_child_init alongside the "" entry in the
+ * interpreters dictionary. The dictionary still owns the
+ * reference; this pointer is a fast path so wsgi_acquire_interpreter
+ * can resolve the main interpreter without a dict lookup.
+ */
+
+static InterpreterObject *wsgi_main_interpreter = NULL;
+
 InterpreterObject *wsgi_acquire_interpreter(const char *name)
 {
     PyThreadState *tstate = NULL;
@@ -2176,88 +2186,105 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
     PyGILState_STATE state;
 
     /*
-     * In a multithreaded MPM must protect the
-     * interpreters table. This lock is only needed to
-     * avoid a secondary thread coming in and creating
-     * the same interpreter if Python releases the GIL
-     * when an interpreter is being created.
+     * Normalise the empty/NULL name to "" so the main interpreter
+     * fast path and the later *name discriminator can both rely
+     * on a non-NULL pointer.
      */
 
-    apr_thread_mutex_lock(wsgi_interp_lock);
+    if (name == NULL)
+        name = "";
 
     /*
-     * This function should never be called when the
-     * Python GIL is held, so need to acquire it. Even
-     * though we may need to work with a sub
-     * interpreter, we need to acquire GIL against main
-     * interpreter first to work with interpreter
-     * dictionary.
+     * Main interpreter is held by a static pointer set during child
+     * init, so the lookup avoids the per-request dict access. The
+     * dict still owns the reference (the "" entry holds it), so the
+     * Py_INCREF here matches the existing refcount discipline; the
+     * GIL is acquired only for the duration of that incref.
      */
 
-    state = PyGILState_Ensure();
-
-    /*
-     * Check if already have interpreter instance and
-     * if not need to create one.
-     */
-
-    handle = (InterpreterObject *)PyDict_GetItemString(wsgi_interpreters,
-                                                       name);
-
-    if (!handle)
+    if (*name == '\0')
     {
-        handle = newInterpreterObject(name);
+        handle = wsgi_main_interpreter;
+
+        state = PyGILState_Ensure();
+        Py_INCREF(handle);
+        PyGILState_Release(state);
+    }
+    else
+    {
+        /*
+         * Sub interpreter path. The mutex avoids a second thread
+         * creating the same named interpreter if Python releases
+         * the GIL during creation. The GIL is still acquired here
+         * to mediate access to the interpreters dictionary.
+         */
+
+        apr_thread_mutex_lock(wsgi_interp_lock);
+
+        state = PyGILState_Ensure();
+
+        handle = (InterpreterObject *)PyDict_GetItemString(wsgi_interpreters,
+                                                           name);
 
         if (!handle)
         {
-            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                  WSGI_APLOGNO(0103) "Python based handlers "
-                                                     "will not be available "
-                                                     "for %s in %s.",
-                                  wsgi_format_interp_name(
-                                      wsgi_server->process->pool, name),
-                                  wsgi_format_process_context(
-                                      wsgi_server->process->pool));
+            handle = newInterpreterObject(name);
 
-            PyGILState_Release(state);
+            if (!handle)
+            {
+                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                      WSGI_APLOGNO(0103) "Python based handlers "
+                                                         "will not be available "
+                                                         "for %s in %s.",
+                                      wsgi_format_interp_name(
+                                          wsgi_server->process->pool, name),
+                                      wsgi_format_process_context(
+                                          wsgi_server->process->pool));
 
-            apr_thread_mutex_unlock(wsgi_interp_lock);
-            return NULL;
+                PyGILState_Release(state);
+
+                apr_thread_mutex_unlock(wsgi_interp_lock);
+                return NULL;
+            }
+
+            if (PyDict_SetItemString(wsgi_interpreters, name,
+                                     (PyObject *)handle) < 0)
+            {
+                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                      WSGI_APLOGNO(0180) "Unable to register %s in "
+                                                         "interpreters dictionary "
+                                                         "for %s.",
+                                      wsgi_format_interp_name(
+                                          wsgi_server->process->pool, name),
+                                      wsgi_format_process_context(
+                                          wsgi_server->process->pool));
+
+                PyErr_Clear();
+
+                Py_DECREF(handle);
+
+                PyGILState_Release(state);
+
+                apr_thread_mutex_unlock(wsgi_interp_lock);
+                return NULL;
+            }
+
+            /*
+             * Add interpreter name to index kept in Apache data
+             * structure as well. Make a copy of the name just in
+             * case we have been given temporary value.
+             */
+
+            apr_hash_set(wsgi_interpreters_index, apr_pstrdup(apr_hash_pool_get(wsgi_interpreters_index), name),
+                         APR_HASH_KEY_STRING, "");
         }
+        else
+            Py_INCREF(handle);
 
-        if (PyDict_SetItemString(wsgi_interpreters, name,
-                                 (PyObject *)handle) < 0)
-        {
-            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                  WSGI_APLOGNO(0180) "Unable to register %s in "
-                                                     "interpreters dictionary "
-                                                     "for %s.",
-                                  wsgi_format_interp_name(
-                                      wsgi_server->process->pool, name),
-                                  wsgi_format_process_context(
-                                      wsgi_server->process->pool));
+        PyGILState_Release(state);
 
-            PyErr_Clear();
-
-            Py_DECREF(handle);
-
-            PyGILState_Release(state);
-
-            apr_thread_mutex_unlock(wsgi_interp_lock);
-            return NULL;
-        }
-
-        /*
-         * Add interpreter name to index kept in Apache data
-         * strcuture as well. Make a copy of the name just in
-         * case we have been given temporary value.
-         */
-
-        apr_hash_set(wsgi_interpreters_index, apr_pstrdup(apr_hash_pool_get(wsgi_interpreters_index), name),
-                     APR_HASH_KEY_STRING, "");
+        apr_thread_mutex_unlock(wsgi_interp_lock);
     }
-    else
-        Py_INCREF(handle);
 
     interp = handle->interp;
 
@@ -2269,10 +2296,6 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
      * use the simplified API for GIL locking so any
      * extension modules which use that will still work.
      */
-
-    PyGILState_Release(state);
-
-    apr_thread_mutex_unlock(wsgi_interp_lock);
 
     if (*name)
     {
@@ -2946,17 +2969,17 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     PyEval_AcquireThread(wsgi_main_tstate);
 
     /*
-     * Extract a handle to the main Python interpreter from
-     * interpreters dictionary as want to process that one last.
-     * The entry for the main interpreter is seeded by
-     * wsgi_python_child_init and should always be present; if it
-     * is not, something has gone seriously wrong. Log and skip
-     * the special-case hold so the rest of the cleanup (clearing
-     * the dict, releasing the interp lock, tearing down Python
-     * itself) still runs.
+     * Take a handle to the main Python interpreter so we can
+     * destroy it last, after the sub interpreters have been torn
+     * down via PyDict_Clear. The static is set by
+     * wsgi_python_child_init alongside the "" entry in the
+     * interpreters dictionary; if it is NULL, something has gone
+     * seriously wrong. Log and skip the special-case hold so the
+     * rest of the cleanup (clearing the dict, releasing the
+     * interp lock, tearing down Python itself) still runs.
      */
 
-    interp = PyDict_GetItemString(wsgi_interpreters, "");
+    interp = (PyObject *)wsgi_main_interpreter;
 
     if (interp)
     {
@@ -2964,8 +2987,8 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     }
     else
     {
-        wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0111) "Main interpreter reference is missing from "
-                                                                         "interpreters dictionary during cleanup in %s.",
+        wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0111) "Main interpreter reference is missing "
+                                                                         "during cleanup in %s.",
                        wsgi_format_process_context(
                            wsgi_server->process->pool));
     }
@@ -3122,6 +3145,8 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
         wsgi_python_initialized = 0;
         return APR_EGENERAL;
     }
+
+    wsgi_main_interpreter = (InterpreterObject *)object;
 
     Py_DECREF(object);
 
