@@ -33,6 +33,7 @@
 #include "wsgi_signal.h"
 #include "wsgi_shutdown.h"
 #include "wsgi_dispatch.h"
+#include "wsgi_auth.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -280,6 +281,9 @@ static int wsgi_module_exec(PyObject *module)
         return -1;
 
     if (wsgi_dispatch_init(module) < 0)
+        return -1;
+
+    if (wsgi_auth_init(module) < 0)
         return -1;
 
     return 0;

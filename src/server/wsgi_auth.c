@@ -23,6 +23,7 @@
 #include "wsgi_daemon.h"
 #include "wsgi_interp.h"
 #include "wsgi_logger.h"
+#include "wsgi_module.h"
 #include "wsgi_version.h"
 
 /* ------------------------------------------------------------------------- */
@@ -36,10 +37,40 @@ typedef struct
 
 static AuthObject *newAuthObject(request_rec *r, WSGIRequestConfig *config)
 {
-    AuthObject *self;
+    PyObject *module = NULL;
+    WSGIModuleState *state = NULL;
+    PyTypeObject *type = NULL;
+    AuthObject *self = NULL;
 
-    self = PyObject_New(AuthObject, &Auth_Type);
-    if (self == NULL)
+    /*
+     * Find the embedded mod_wsgi module for the current
+     * interpreter and pull the Auth heap type out of its state.
+     * Returns NULL with a clear error if the module is not in
+     * sys.modules or its state has not been initialised; either
+     * indicates an init ordering bug.
+     */
+
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+        return NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state || !state->Auth_Type)
+    {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "Auth type not initialised for the current "
+                        "interpreter; newAuthObject() called before "
+                        "the embedded mod_wsgi module's exec slot ran");
+        Py_DECREF(module);
+        return NULL;
+    }
+
+    type = state->Auth_Type;
+
+    self = (AuthObject *)type->tp_alloc(type, 0);
+    Py_DECREF(module);
+
+    if (!self)
         return NULL;
 
     self->config = config;
@@ -57,11 +88,21 @@ static AuthObject *newAuthObject(request_rec *r, WSGIRequestConfig *config)
     return self;
 }
 
+/*
+ * Heap-type destructor. Releases the per-request log reference,
+ * frees the instance memory via the type's tp_free, and decrements
+ * the type's refcount (every heap-type instance owns a reference
+ * to its type).
+ */
+
 static void Auth_dealloc(AuthObject *self)
 {
+    PyTypeObject *tp = Py_TYPE(self);
+
     Py_XDECREF(self->log);
 
-    PyObject_Del(self);
+    tp->tp_free(self);
+    Py_DECREF(tp);
 }
 
 static PyObject *Auth_environ(AuthObject *self, const char *group)
@@ -482,8 +523,8 @@ static PyObject *Auth_ssl_var_lookup(AuthObject *self, PyObject *args)
         if (!latin_item)
         {
             wsgi_set_python_exception_from_cause(PyExc_TypeError,
-                    "byte string value expected, value containing non "
-                    "'latin-1' characters found");
+                                                 "byte string value expected, value containing non "
+                                                 "'latin-1' characters found");
 
             return NULL;
         }
@@ -532,48 +573,52 @@ static PyMethodDef Auth_methods[] = {
     {"ssl_var_lookup", (PyCFunction)Auth_ssl_var_lookup, METH_VARARGS, 0},
     {NULL, NULL}};
 
-PyTypeObject Auth_Type = {
-    PyVarObject_HEAD_INIT(NULL, 0) "mod_wsgi.Auth", /*tp_name*/
-    sizeof(AuthObject),                             /*tp_basicsize*/
-    0,                                              /*tp_itemsize*/
-    /* methods */
-    (destructor)Auth_dealloc, /*tp_dealloc*/
-    0,                        /*tp_print*/
-    0,                        /*tp_getattr*/
-    0,                        /*tp_setattr*/
-    0,                        /*tp_compare*/
-    0,                        /*tp_repr*/
-    0,                        /*tp_as_number*/
-    0,                        /*tp_as_sequence*/
-    0,                        /*tp_as_mapping*/
-    0,                        /*tp_hash*/
-    0,                        /*tp_call*/
-    0,                        /*tp_str*/
-    0,                        /*tp_getattro*/
-    0,                        /*tp_setattro*/
-    0,                        /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT,       /*tp_flags*/
-    0,                        /*tp_doc*/
-    0,                        /*tp_traverse*/
-    0,                        /*tp_clear*/
-    0,                        /*tp_richcompare*/
-    0,                        /*tp_weaklistoffset*/
-    0,                        /*tp_iter*/
-    0,                        /*tp_iternext*/
-    Auth_methods,             /*tp_methods*/
-    0,                        /*tp_members*/
-    0,                        /*tp_getset*/
-    0,                        /*tp_base*/
-    0,                        /*tp_dict*/
-    0,                        /*tp_descr_get*/
-    0,                        /*tp_descr_set*/
-    0,                        /*tp_dictoffset*/
-    0,                        /*tp_init*/
-    0,                        /*tp_alloc*/
-    0,                        /*tp_new*/
-    0,                        /*tp_free*/
-    0,                        /*tp_is_gc*/
+/*
+ * PyType_Spec for the Auth heap type. The slots with non-default
+ * behaviour are tp_dealloc (releases the per-request log) and
+ * tp_methods (ssl_is_https / ssl_var_lookup); everything else
+ * falls back to the framework defaults.
+ *
+ * tp_name is "mod_wsgi.Auth" so error messages and repr() output
+ * identify where the type comes from. The type is not exposed
+ * as a module attribute; instances are produced by newAuthObject
+ * from C and consumed by the auth/access hooks in the same
+ * request.
+ */
+
+static PyType_Slot Auth_slots[] = {
+    {Py_tp_dealloc, Auth_dealloc},
+    {Py_tp_methods, Auth_methods},
+    {0, NULL},
 };
+
+static PyType_Spec Auth_spec = {
+    .name = "mod_wsgi.Auth",
+    .basicsize = sizeof(AuthObject),
+    .itemsize = 0,
+    .flags = Py_TPFLAGS_DEFAULT,
+    .slots = Auth_slots,
+};
+
+/* ------------------------------------------------------------------------- */
+
+int wsgi_auth_init(PyObject *module)
+{
+    WSGIModuleState *state = NULL;
+    PyObject *type = NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+        return -1;
+
+    type = PyType_FromModuleAndSpec(module, &Auth_spec, NULL);
+    if (!type)
+        return -1;
+
+    state->Auth_Type = (PyTypeObject *)type;
+
+    return 0;
+}
 
 static authn_status wsgi_check_password(request_rec *r, const char *user,
                                         const char *password)
@@ -1045,10 +1090,10 @@ static authn_status wsgi_get_realm_hash(request_rec *r, const char *user,
                         if (!latin_item)
                         {
                             wsgi_set_python_exception_from_cause(
-                                    PyExc_TypeError,
-                                    "Digest auth provider must return None "
-                                    "or string object, value containing "
-                                    "non 'latin-1' characters found");
+                                PyExc_TypeError,
+                                "Digest auth provider must return None "
+                                "or string object, value containing "
+                                "non 'latin-1' characters found");
                         }
                         else
                         {
