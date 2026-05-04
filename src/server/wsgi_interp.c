@@ -196,11 +196,7 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     self->owner = 0;
     self->name = strdup(name);
-#if APR_HAS_THREADS
     self->tstate_table = NULL;
-#else
-    self->tstate = NULL;
-#endif
 
     if (interp)
     {
@@ -1274,7 +1270,6 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     if (self->owner)
     {
-#if APR_HAS_THREADS
         WSGIThreadInfo *thread_handle = NULL;
 
         self->tstate_table = apr_hash_make(wsgi_server->process->pool);
@@ -1290,10 +1285,6 @@ InterpreterObject *newInterpreterObject(const char *name)
                      sizeof(thread_handle->thread_id), tstate);
 
         PyThreadState_Swap(save_tstate);
-#else
-        self->tstate = tstate;
-        PyThreadState_Swap(save_tstate);
-#endif
     }
 
     return self;
@@ -1384,7 +1375,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     if (self->name && *self->name)
     {
-#if APR_HAS_THREADS
         WSGIThreadInfo *thread_handle = NULL;
 
         thread_handle = wsgi_thread_info(1, 0);
@@ -1423,9 +1413,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
             apr_hash_set(self->tstate_table, &thread_handle->thread_id,
                          sizeof(thread_handle->thread_id), tstate);
         }
-#else
-        tstate = self->tstate;
-#endif
 
         /*
          * Swap to interpreter thread state that was used when
@@ -2171,10 +2158,8 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
  * interpreter is acquired.
  */
 
-#if APR_HAS_THREADS
 apr_thread_mutex_t *wsgi_interp_lock = NULL;
 apr_thread_mutex_t *wsgi_shutdown_lock = NULL;
-#endif
 
 PyObject *wsgi_interpreters = NULL;
 
@@ -2198,9 +2183,7 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
      * when an interpreter is being created.
      */
 
-#if APR_HAS_THREADS
     apr_thread_mutex_lock(wsgi_interp_lock);
-#endif
 
     /*
      * This function should never be called when the
@@ -2238,9 +2221,7 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
             PyGILState_Release(state);
 
-#if APR_HAS_THREADS
             apr_thread_mutex_unlock(wsgi_interp_lock);
-#endif
             return NULL;
         }
 
@@ -2262,9 +2243,7 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
             PyGILState_Release(state);
 
-#if APR_HAS_THREADS
             apr_thread_mutex_unlock(wsgi_interp_lock);
-#endif
             return NULL;
         }
 
@@ -2293,14 +2272,11 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
     PyGILState_Release(state);
 
-#if APR_HAS_THREADS
     apr_thread_mutex_unlock(wsgi_interp_lock);
-#endif
 
     if (*name)
     {
         apr_time_t _gil_t1;
-#if APR_HAS_THREADS
         WSGIThreadInfo *thread_handle = NULL;
 
         thread_handle = wsgi_thread_info(1, 0);
@@ -2342,11 +2318,8 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
             apr_hash_set(handle->tstate_table, &thread_handle->thread_id,
                          sizeof(thread_handle->thread_id), tstate);
         }
-#else
-        tstate = handle->tstate;
-#endif
 
-        /* Time the narrow GIL acquire only — interpreter creation and
+        /* Time the narrow GIL acquire only: interpreter creation and
          * threadstate creation above are cold-path costs that belong on
          * the lifecycle datagram, not the per-request indicator. */
         _gil_t1 = apr_time_now();
@@ -2915,9 +2888,7 @@ const char *wsgi_format_process_context(apr_pool_t *p)
     return "embedded mode";
 }
 
-#if APR_HAS_THREADS
 apr_thread_mutex_t *wsgi_module_lock = NULL;
-#endif
 
 /*
  * Apache child process initialisation and cleanup. Initialise
@@ -2963,9 +2934,7 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
 
     /* In a multithreaded MPM must protect table. */
 
-#if APR_HAS_THREADS
     apr_thread_mutex_lock(wsgi_interp_lock);
-#endif
 
     /*
      * We should be executing in the main thread again at this
@@ -3014,9 +2983,7 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
 
     PyDict_Clear(wsgi_interpreters);
 
-#if APR_HAS_THREADS
     apr_thread_mutex_unlock(wsgi_interp_lock);
-#endif
 
     /*
      * Now we decrement reference on handle for main Python
@@ -3096,11 +3063,9 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
         return APR_EGENERAL;
     }
 
-#if APR_HAS_THREADS
     apr_thread_mutex_create(&wsgi_interp_lock, APR_THREAD_MUTEX_UNNESTED, p);
     apr_thread_mutex_create(&wsgi_module_lock, APR_THREAD_MUTEX_UNNESTED, p);
     apr_thread_mutex_create(&wsgi_shutdown_lock, APR_THREAD_MUTEX_UNNESTED, p);
-#endif
 
     /*
      * Create an interpreters index using Apache data structure so
@@ -3242,11 +3207,9 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
                  * speaking shouldn't be required at this point.
                  */
 
-#if APR_HAS_THREADS
                 Py_BEGIN_ALLOW_THREADS
                     apr_thread_mutex_lock(wsgi_module_lock);
                 Py_END_ALLOW_THREADS
-#endif
 
                     modules = PyImport_GetModuleDict();
                 module = PyDict_GetItemString(modules, name);
@@ -3300,9 +3263,7 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
 
                 /* Safe now to release the module lock. */
 
-#if APR_HAS_THREADS
                 apr_thread_mutex_unlock(wsgi_module_lock);
-#endif
 
                 /* Cleanup and release interpreter, */
 

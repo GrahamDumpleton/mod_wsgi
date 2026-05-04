@@ -31,11 +31,7 @@ typedef struct
     PyObject_HEAD char *name;
     PyInterpreterState *interp;
     int owner;
-#if APR_HAS_THREADS
     apr_hash_t *tstate_table;
-#else
-    PyThreadState *tstate;
-#endif
 } InterpreterObject;
 
 extern PyTypeObject Interpreter_Type;
@@ -55,11 +51,9 @@ extern PyObject *wsgi_request_timeout_exc;
 
 extern apr_hash_t *wsgi_interpreters_index;
 
-#if APR_HAS_THREADS
 extern apr_thread_mutex_t *wsgi_interp_lock;
 extern apr_thread_mutex_t *wsgi_module_lock;
 extern apr_thread_mutex_t *wsgi_shutdown_lock;
-#endif
 
 extern char *wsgi_module_name(apr_pool_t *pool, const char *filename);
 
