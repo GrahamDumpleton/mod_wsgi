@@ -25,6 +25,7 @@
 #include "wsgi_thread.h"
 #include "wsgi_interp.h"
 #include "wsgi_daemon.h"
+#include "wsgi_module.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -123,7 +124,8 @@ void wsgi_set_python_exception_from_cause(PyObject *exc_type,
 
     PyErr_Fetch(&cause_type, &cause_value, &cause_tb);
     PyErr_NormalizeException(&cause_type, &cause_value, &cause_tb);
-    if (cause_value != NULL && cause_tb != NULL) {
+    if (cause_value != NULL && cause_tb != NULL)
+    {
         PyException_SetTraceback(cause_value, cause_tb);
     }
 
@@ -132,11 +134,13 @@ void wsgi_set_python_exception_from_cause(PyObject *exc_type,
     PyObject *msg = PyUnicode_FromFormatV(format, vargs);
     va_end(vargs);
 
-    if (msg == NULL) {
+    if (msg == NULL)
+    {
         /* Formatting failed. Restore the original error if one was
          * pending; otherwise leave the formatting error in place so
          * the caller is not silently left with no exception set. */
-        if (cause_type != NULL) {
+        if (cause_type != NULL)
+        {
             PyErr_Restore(cause_type, cause_value, cause_tb);
         }
         return;
@@ -145,7 +149,8 @@ void wsgi_set_python_exception_from_cause(PyObject *exc_type,
     PyErr_SetObject(exc_type, msg);
     Py_DECREF(msg);
 
-    if (cause_value != NULL) {
+    if (cause_value != NULL)
+    {
         PyObject *new_type = NULL;
         PyObject *new_value = NULL;
         PyObject *new_tb = NULL;
@@ -179,15 +184,43 @@ typedef struct
     int expired;
 } LogObject;
 
-PyTypeObject Log_Type;
-
 PyObject *newLogBufferObject(request_rec *r, int level, const char *name,
                              int proxy)
 {
-    LogObject *self;
+    PyObject *module = NULL;
+    WSGIModuleState *state = NULL;
+    PyTypeObject *type = NULL;
+    LogObject *self = NULL;
 
-    self = PyObject_New(LogObject, &Log_Type);
-    if (self == NULL)
+    /*
+     * Find the embedded mod_wsgi module for the current
+     * interpreter and pull the Log heap type out of its state.
+     * Returns NULL with a clear error if the module is not in
+     * sys.modules or its state has not been initialised; either
+     * indicates an init ordering bug.
+     */
+
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+        return NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state || !state->Log_Type)
+    {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "Log type not initialised for the current "
+                        "interpreter; newLogBufferObject() called before "
+                        "the embedded mod_wsgi module's exec slot ran");
+        Py_DECREF(module);
+        return NULL;
+    }
+
+    type = state->Log_Type;
+
+    self = (LogObject *)type->tp_alloc(type, 0);
+    Py_DECREF(module);
+
+    if (!self)
         return NULL;
 
     if (!name)
@@ -290,6 +323,8 @@ static void Log_call(LogObject *self, const char *s, long l)
 
 static void Log_dealloc(LogObject *self)
 {
+    PyTypeObject *tp = Py_TYPE(self);
+
     if (self->s)
     {
         if (!self->expired)
@@ -298,7 +333,8 @@ static void Log_dealloc(LogObject *self)
         free(self->s);
     }
 
-    PyObject_Del(self);
+    tp->tp_free(self);
+    Py_DECREF(tp);
 }
 
 static PyObject *Log_flush(LogObject *self, PyObject *args)
@@ -562,7 +598,7 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
     if (iterator == NULL)
     {
         wsgi_set_python_exception_from_cause(PyExc_TypeError,
-                "argument must be sequence of strings");
+                                             "argument must be sequence of strings");
 
         return NULL;
     }
@@ -676,48 +712,53 @@ static PyGetSetDef Log_getset[] = {
     {NULL},
 };
 
-PyTypeObject Log_Type = {
-    PyVarObject_HEAD_INIT(NULL, 0) "mod_wsgi.Log", /*tp_name*/
-    sizeof(LogObject),                             /*tp_basicsize*/
-    0,                                             /*tp_itemsize*/
-    /* methods */
-    (destructor)Log_dealloc, /*tp_dealloc*/
-    0,                       /*tp_print*/
-    0,                       /*tp_getattr*/
-    0,                       /*tp_setattr*/
-    0,                       /*tp_compare*/
-    0,                       /*tp_repr*/
-    0,                       /*tp_as_number*/
-    0,                       /*tp_as_sequence*/
-    0,                       /*tp_as_mapping*/
-    0,                       /*tp_hash*/
-    0,                       /*tp_call*/
-    0,                       /*tp_str*/
-    0,                       /*tp_getattro*/
-    0,                       /*tp_setattro*/
-    0,                       /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT,      /*tp_flags*/
-    0,                       /*tp_doc*/
-    0,                       /*tp_traverse*/
-    0,                       /*tp_clear*/
-    0,                       /*tp_richcompare*/
-    0,                       /*tp_weaklistoffset*/
-    0,                       /*tp_iter*/
-    0,                       /*tp_iternext*/
-    Log_methods,             /*tp_methods*/
-    0,                       /*tp_members*/
-    Log_getset,              /*tp_getset*/
-    0,                       /*tp_base*/
-    0,                       /*tp_dict*/
-    0,                       /*tp_descr_get*/
-    0,                       /*tp_descr_set*/
-    0,                       /*tp_dictoffset*/
-    0,                       /*tp_init*/
-    0,                       /*tp_alloc*/
-    0,                       /*tp_new*/
-    0,                       /*tp_free*/
-    0,                       /*tp_is_gc*/
+/*
+ * PyType_Spec for the Log heap type. Only the slots with non-
+ * default behaviour are listed (tp_dealloc, tp_methods,
+ * tp_getset); everything else falls back to the framework
+ * defaults that PyType_FromModuleAndSpec wires in.
+ *
+ * tp_name is "mod_wsgi.Log" so error messages and repr() output
+ * identify where the type comes from. The type is not exposed
+ * as a module attribute; instances are produced by
+ * newLogBufferObject and (typically) wrapped in an
+ * io.TextIOWrapper before being handed out.
+ */
+
+static PyType_Slot Log_slots[] = {
+    {Py_tp_dealloc, Log_dealloc},
+    {Py_tp_methods, Log_methods},
+    {Py_tp_getset, Log_getset},
+    {0, NULL},
 };
+
+static PyType_Spec Log_spec = {
+    .name = "mod_wsgi.Log",
+    .basicsize = sizeof(LogObject),
+    .itemsize = 0,
+    .flags = Py_TPFLAGS_DEFAULT,
+    .slots = Log_slots,
+};
+
+/* ------------------------------------------------------------------------- */
+
+int wsgi_logger_init(PyObject *module)
+{
+    WSGIModuleState *state = NULL;
+    PyObject *type = NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+        return -1;
+
+    type = PyType_FromModuleAndSpec(module, &Log_spec, NULL);
+    if (!type)
+        return -1;
+
+    state->Log_Type = (PyTypeObject *)type;
+
+    return 0;
+}
 
 void wsgi_log_python_error_ex(const char *file, int line, int module_index,
                               request_rec *r, const char *filename,

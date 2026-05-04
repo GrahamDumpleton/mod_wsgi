@@ -263,6 +263,9 @@ static int wsgi_module_exec(PyObject *module)
     if (wsgi_shutdown_init(module) < 0)
         return -1;
 
+    if (wsgi_logger_init(module) < 0)
+        return -1;
+
     return 0;
 }
 

@@ -47,6 +47,7 @@ typedef struct
     PyTypeObject *Restricted_Type;
     PyTypeObject *SignalIntercept_Type;
     PyTypeObject *ShutdownInterpreter_Type;
+    PyTypeObject *Log_Type;
 } WSGIModuleState;
 
 /* ------------------------------------------------------------------------- */

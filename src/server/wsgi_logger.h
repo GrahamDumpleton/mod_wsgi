@@ -26,15 +26,76 @@
 
 /* ------------------------------------------------------------------------- */
 
-extern PyTypeObject Log_Type;
+/*
+ * Log: a write-only file-like Python object that routes writes
+ * into the Apache error log via ap_log_error / ap_log_rerror.
+ * mod_wsgi installs Log instances in place of sys.stderr (always)
+ * and sys.stdout (when WSGIRestrictStdout is unset) in every
+ * embedded interpreter, and exposes per-request instances to
+ * Python application code as environ["wsgi.errors"], including
+ * the environ dicts passed to authentication and dispatch
+ * handlers.
+ *
+ * The type implements enough of the io.IOBase / io.RawIOBase
+ * surface (write, writelines, flush, close, isatty, fileno,
+ * readable/writable/seekable, name, closed, encoding, errors)
+ * for typical user code that writes text via print() or via the
+ * logging module to work without errors. A raw Log buffer is
+ * produced by newLogBufferObject; newLogObject wraps that buffer
+ * in an io.TextIOWrapper so encoding is handled by the standard
+ * library rather than reimplemented here.
+ *
+ * The Python type backing this object is heap-allocated, created
+ * via PyType_FromModuleAndSpec, so each Python sub-interpreter
+ * has its own type instance. The type pointer lives in
+ * WSGIModuleState and is looked up via
+ * PyImport_ImportModule("mod_wsgi") + PyModule_GetState.
+ */
+
+/*
+ * Construct a raw Log buffer that writes to the Apache error log
+ * at `level`. When `r` is non-NULL the writes are tied to that
+ * request (ap_log_rerror), otherwise they are server-scope
+ * (ap_log_error). `name` is the value reported as the Python
+ * `name` attribute (e.g. "<stderr>", "<wsgi.errors>") and must
+ * have static lifetime: it is stored by pointer, not copied.
+ * `proxy` enables per-thread buffer redirection used by the
+ * adapter to interleave wsgi.errors writes with the active
+ * request's log.
+ */
 
 extern PyObject *newLogBufferObject(request_rec *r, int level,
                                     const char *name, int proxy);
 
+/*
+ * Wrap a Log buffer in an io.TextIOWrapper so user code can use
+ * Python's standard text-mode write protocol (UTF-8, "replace"
+ * error handler, line-buffered) against the buffer. Returns a
+ * new reference to the wrapper, or NULL with a Python exception
+ * set if io.TextIOWrapper is unavailable or rejects the buffer.
+ */
+
 extern PyObject *newLogWrapperObject(PyObject *buffer);
+
+/*
+ * Convenience composition of newLogBufferObject and
+ * newLogWrapperObject: returns a TextIOWrapper around a fresh
+ * Log buffer, suitable for installation as sys.stderr / sys.stdout
+ * or for use as wsgi.errors. The intermediate buffer is owned
+ * solely by the wrapper.
+ */
 
 extern PyObject *newLogObject(request_rec *r, int level, const char *name,
                               int proxy);
+
+/*
+ * Create the heap-allocated Log PyTypeObject for `module`'s
+ * interpreter and store it in WSGIModuleState. Called from the
+ * embedded mod_wsgi module's exec slot. Returns 0 on success,
+ * -1 on failure with Python exception set.
+ */
+
+extern int wsgi_logger_init(PyObject *module);
 
 /*
  * wsgi_log_python_error logs a Python exception to the Apache error log:
@@ -59,7 +120,8 @@ extern PyObject *newLogObject(request_rec *r, int level, const char *name,
  * detail and live in the function body.
  */
 
-typedef enum {
+typedef enum
+{
     WSGI_LOG_PYTHON_PHASE_RUNNING = 0,
     WSGI_LOG_PYTHON_PHASE_INTERP_INIT,
     WSGI_LOG_PYTHON_PHASE_INTERP_ATEXIT,
@@ -74,23 +136,23 @@ extern void wsgi_log_python_error_ex(const char *file, int line,
                                      wsgi_log_python_phase phase);
 
 #define wsgi_log_python_error(r, filename, application_group, publish) \
-    wsgi_log_python_error_ex(APLOG_MARK, (r), (filename), \
-                             (application_group), (publish), \
+    wsgi_log_python_error_ex(APLOG_MARK, (r), (filename),              \
+                             (application_group), (publish),           \
                              WSGI_LOG_PYTHON_PHASE_RUNNING)
 
 #define wsgi_log_python_interp_init_error(application_group) \
-    wsgi_log_python_error_ex(APLOG_MARK, NULL, NULL, \
-                             (application_group), 0, \
+    wsgi_log_python_error_ex(APLOG_MARK, NULL, NULL,         \
+                             (application_group), 0,         \
                              WSGI_LOG_PYTHON_PHASE_INTERP_INIT)
 
 #define wsgi_log_python_interp_atexit_error(application_group) \
-    wsgi_log_python_error_ex(APLOG_MARK, NULL, NULL, \
-                             (application_group), 0, \
+    wsgi_log_python_error_ex(APLOG_MARK, NULL, NULL,           \
+                             (application_group), 0,           \
                              WSGI_LOG_PYTHON_PHASE_INTERP_ATEXIT)
 
-#define wsgi_log_python_event_callback_error(event_name) \
+#define wsgi_log_python_event_callback_error(event_name)     \
     wsgi_log_python_error_ex(APLOG_MARK, NULL, (event_name), \
-                             NULL, 0, \
+                             NULL, 0,                        \
                              WSGI_LOG_PYTHON_PHASE_EVENT_CALLBACK)
 
 /* ------------------------------------------------------------------------- */
@@ -155,32 +217,36 @@ extern void wsgi_log_rerror_locked_ex(const char *file, int line,
                                       const char *fmt, ...)
     __attribute__((format(printf, 7, 8)));
 
-#define wsgi_log_error(level, rv, s, ...) \
-    do { \
+#define wsgi_log_error(level, rv, s, ...)                            \
+    do                                                               \
+    {                                                                \
         if (APLOG_MODULE_IS_LEVEL((s), APLOG_MODULE_INDEX, (level))) \
-            wsgi_log_error_ex(APLOG_MARK, (level), (rv), (s), \
-                              __VA_ARGS__); \
+            wsgi_log_error_ex(APLOG_MARK, (level), (rv), (s),        \
+                              __VA_ARGS__);                          \
     } while (0)
 
-#define wsgi_log_error_locked(level, rv, s, ...) \
-    do { \
+#define wsgi_log_error_locked(level, rv, s, ...)                     \
+    do                                                               \
+    {                                                                \
         if (APLOG_MODULE_IS_LEVEL((s), APLOG_MODULE_INDEX, (level))) \
             wsgi_log_error_locked_ex(APLOG_MARK, (level), (rv), (s), \
-                                     __VA_ARGS__); \
+                                     __VA_ARGS__);                   \
     } while (0)
 
-#define wsgi_log_rerror(level, rv, r, ...) \
-    do { \
+#define wsgi_log_rerror(level, rv, r, ...)                             \
+    do                                                                 \
+    {                                                                  \
         if (APLOG_R_MODULE_IS_LEVEL((r), APLOG_MODULE_INDEX, (level))) \
-            wsgi_log_rerror_ex(APLOG_MARK, (level), (rv), (r), \
-                               __VA_ARGS__); \
+            wsgi_log_rerror_ex(APLOG_MARK, (level), (rv), (r),         \
+                               __VA_ARGS__);                           \
     } while (0)
 
-#define wsgi_log_rerror_locked(level, rv, r, ...) \
-    do { \
+#define wsgi_log_rerror_locked(level, rv, r, ...)                      \
+    do                                                                 \
+    {                                                                  \
         if (APLOG_R_MODULE_IS_LEVEL((r), APLOG_MODULE_INDEX, (level))) \
-            wsgi_log_rerror_locked_ex(APLOG_MARK, (level), (rv), (r), \
-                                      __VA_ARGS__); \
+            wsgi_log_rerror_locked_ex(APLOG_MARK, (level), (rv), (r),  \
+                                      __VA_ARGS__);                    \
     } while (0)
 
 /* ------------------------------------------------------------------------- */
