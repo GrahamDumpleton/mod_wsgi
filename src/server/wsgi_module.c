@@ -80,12 +80,21 @@ static int wsgi_module_install_common(PyObject *module)
                                              MOD_WSGI_MICROVERSION_NUMBER)) < 0)
         return -1;
 
-    /* File wrapper type. */
+    /*
+     * File wrapper type. The heap-allocated Stream type was
+     * created in this interpreter's WSGIModuleState by the exec
+     * slot; expose it under the user-facing name FileWrapper.
+     */
 
-    Py_INCREF(&Stream_Type);
-    if (wsgi_module_add_object(module, "FileWrapper",
-                               (PyObject *)&Stream_Type) < 0)
-        return -1;
+    {
+        WSGIModuleState *state =
+            (WSGIModuleState *)PyModule_GetState(module);
+
+        Py_INCREF(state->Stream_Type);
+        if (wsgi_module_add_object(module, "FileWrapper",
+                                   (PyObject *)state->Stream_Type) < 0)
+            return -1;
+    }
 
     /*
      * RequestTimeout exception class. Created once at process scope
@@ -264,6 +273,9 @@ static int wsgi_module_exec(PyObject *module)
         return -1;
 
     if (wsgi_logger_init(module) < 0)
+        return -1;
+
+    if (wsgi_stream_init(module) < 0)
         return -1;
 
     return 0;

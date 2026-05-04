@@ -20,9 +20,9 @@
 
 #include "wsgi_stream.h"
 
-/* ------------------------------------------------------------------------- */
+#include "wsgi_module.h"
 
-PyTypeObject Stream_Type;
+/* ------------------------------------------------------------------------- */
 
 static PyObject *Stream_new(PyTypeObject *type, PyObject *args,
                             PyObject *kwds)
@@ -76,11 +76,21 @@ static int Stream_init(StreamObject *self, PyObject *args, PyObject *kwds)
     return 0;
 }
 
+/*
+ * Heap-type destructor. Releases the wrapped file-like reference,
+ * frees the instance memory via the type's tp_free, and decrements
+ * the type's refcount (every heap-type instance owns a reference
+ * to its type).
+ */
+
 static void Stream_dealloc(StreamObject *self)
 {
+    PyTypeObject *tp = Py_TYPE(self);
+
     Py_XDECREF(self->filelike);
 
-    Py_TYPE(self)->tp_free(self);
+    tp->tp_free(self);
+    Py_DECREF(tp);
 }
 
 static PyObject *Stream_iter(StreamObject *self)
@@ -200,7 +210,8 @@ static PyObject *Stream_close(StreamObject *self, PyObject *Py_UNUSED(args))
     Py_RETURN_NONE;
 }
 
-static PyObject *Stream_get_filelike(StreamObject *self, void *Py_UNUSED(closure))
+static PyObject *Stream_get_filelike(StreamObject *self,
+                                     void *Py_UNUSED(closure))
 {
     if (!self->filelike)
     {
@@ -213,7 +224,8 @@ static PyObject *Stream_get_filelike(StreamObject *self, void *Py_UNUSED(closure
     return self->filelike;
 }
 
-static PyObject *Stream_get_blksize(StreamObject *self, void *Py_UNUSED(closure))
+static PyObject *Stream_get_blksize(StreamObject *self,
+                                    void *Py_UNUSED(closure))
 {
     return PyLong_FromSsize_t(self->blksize);
 }
@@ -228,48 +240,99 @@ static PyGetSetDef Stream_getset[] = {
     {NULL},
 };
 
-PyTypeObject Stream_Type = {
-    PyVarObject_HEAD_INIT(NULL, 0) "mod_wsgi.FileWrapper", /*tp_name*/
-    sizeof(StreamObject),                                  /*tp_basicsize*/
-    0,                                                     /*tp_itemsize*/
-    /* methods */
-    (destructor)Stream_dealloc,               /*tp_dealloc*/
-    0,                                        /*tp_print*/
-    0,                                        /*tp_getattr*/
-    0,                                        /*tp_setattr*/
-    0,                                        /*tp_compare*/
-    0,                                        /*tp_repr*/
-    0,                                        /*tp_as_number*/
-    0,                                        /*tp_as_sequence*/
-    0,                                        /*tp_as_mapping*/
-    0,                                        /*tp_hash*/
-    0,                                        /*tp_call*/
-    0,                                        /*tp_str*/
-    0,                                        /*tp_getattro*/
-    0,                                        /*tp_setattro*/
-    0,                                        /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
-    0,                                        /*tp_doc*/
-    0,                                        /*tp_traverse*/
-    0,                                        /*tp_clear*/
-    0,                                        /*tp_richcompare*/
-    0,                                        /*tp_weaklistoffset*/
-    (getiterfunc)Stream_iter,                 /*tp_iter*/
-    (iternextfunc)Stream_iternext,            /*tp_iternext*/
-    Stream_methods,                           /*tp_methods*/
-    0,                                        /*tp_members*/
-    Stream_getset,                            /*tp_getset*/
-    0,                                        /*tp_base*/
-    0,                                        /*tp_dict*/
-    0,                                        /*tp_descr_get*/
-    0,                                        /*tp_descr_set*/
-    0,                                        /*tp_dictoffset*/
-    (initproc)Stream_init,                    /*tp_init*/
-    0,                                        /*tp_alloc*/
-    Stream_new,                               /*tp_new*/
-    0,                                        /*tp_free*/
-    0,                                        /*tp_is_gc*/
+/* ------------------------------------------------------------------------- */
+
+/*
+ * PyType_Spec for the Stream heap type. The slots with non-default
+ * behaviour are tp_dealloc (releases the wrapped file-like),
+ * tp_iter / tp_iternext (the chunk-reader iteration protocol),
+ * tp_methods (close), tp_getset (filelike / blksize properties),
+ * tp_init / tp_new (Python-level construction). Everything else
+ * falls back to the framework defaults.
+ *
+ * tp_name is "mod_wsgi.FileWrapper" because the type is exposed
+ * to applications under that name. Py_TPFLAGS_BASETYPE is set so
+ * that Python code can subclass FileWrapper to extend the basic
+ * file_wrapper behaviour.
+ */
+
+static PyType_Slot Stream_slots[] = {
+    {Py_tp_dealloc, Stream_dealloc},
+    {Py_tp_iter, Stream_iter},
+    {Py_tp_iternext, Stream_iternext},
+    {Py_tp_methods, Stream_methods},
+    {Py_tp_getset, Stream_getset},
+    {Py_tp_init, Stream_init},
+    {Py_tp_new, Stream_new},
+    {0, NULL},
 };
+
+static PyType_Spec Stream_spec = {
+    .name = "mod_wsgi.FileWrapper",
+    .basicsize = sizeof(StreamObject),
+    .itemsize = 0,
+    .flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .slots = Stream_slots,
+};
+
+/* ------------------------------------------------------------------------- */
+
+int wsgi_stream_init(PyObject *module)
+{
+    WSGIModuleState *state = NULL;
+    PyObject *type = NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+        return -1;
+
+    type = PyType_FromModuleAndSpec(module, &Stream_spec, NULL);
+    if (!type)
+        return -1;
+
+    state->Stream_Type = (PyTypeObject *)type;
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------------- */
+
+PyTypeObject *wsgi_stream_type(void)
+{
+    PyObject *module = NULL;
+    WSGIModuleState *state = NULL;
+    PyTypeObject *type = NULL;
+
+    /*
+     * Find the embedded mod_wsgi module for the current
+     * interpreter and pull the Stream heap type out of its
+     * state. The module reference is dropped before returning;
+     * the type pointer remains valid for the lifetime of the
+     * interpreter because WSGIModuleState owns a reference to
+     * the type.
+     */
+
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+        return NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state || !state->Stream_Type)
+    {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "Stream type not initialised for the current "
+                        "interpreter; wsgi_stream_type() called before "
+                        "the embedded mod_wsgi module's exec slot ran");
+        Py_DECREF(module);
+        return NULL;
+    }
+
+    type = state->Stream_Type;
+
+    Py_DECREF(module);
+
+    return type;
+}
 
 /* ------------------------------------------------------------------------- */
 

@@ -1964,9 +1964,14 @@ static PyObject *Adapter_environ(AdapterObject *self)
 
     /* Setup file wrapper object for efficient file responses. */
 
-    if (PyDict_SetItemString(vars, "wsgi.file_wrapper",
-                             (PyObject *)&Stream_Type) < 0)
-        goto error;
+    {
+        PyTypeObject *file_wrapper = wsgi_stream_type();
+        if (!file_wrapper)
+            goto error;
+        if (PyDict_SetItemString(vars, "wsgi.file_wrapper",
+                                 (PyObject *)file_wrapper) < 0)
+            goto error;
+    }
 
     /* Add Apache and mod_wsgi version information. */
 
@@ -2036,9 +2041,16 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
 
     {
         int is_instance;
+        PyTypeObject *file_wrapper = wsgi_stream_type();
+
+        if (!file_wrapper)
+        {
+            PyErr_Clear();
+            return 0;
+        }
 
         is_instance = PyObject_IsInstance(self->sequence,
-                                          (PyObject *)&Stream_Type);
+                                          (PyObject *)file_wrapper);
 
         if (is_instance == -1)
         {
@@ -3100,8 +3112,8 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
         if (!latin_item)
         {
             wsgi_set_python_exception_from_cause(PyExc_TypeError,
-                    "byte string value expected, value containing non "
-                    "'latin-1' characters found");
+                                                 "byte string value expected, value containing non "
+                                                 "'latin-1' characters found");
 
             return NULL;
         }
