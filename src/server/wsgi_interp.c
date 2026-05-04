@@ -2227,16 +2227,18 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
         /*
          * Sub interpreter path. The mutex avoids a second thread
          * creating the same named interpreter if Python releases
-         * the GIL during creation. The GIL is still acquired here
-         * to mediate access to the interpreters dictionary.
+         * the GIL during creation. The GIL is still acquired up
+         * front because the lazy-create branch below needs it for
+         * newInterpreterObject and the dict insert; the lookup
+         * itself goes through the apr_hash mirror.
          */
 
         apr_thread_mutex_lock(wsgi_interp_lock);
 
         state = PyGILState_Ensure();
 
-        handle = (InterpreterObject *)PyDict_GetItemString(wsgi_interpreters,
-                                                           name);
+        handle = apr_hash_get(wsgi_interpreters_table, name,
+                              APR_HASH_KEY_STRING);
 
         if (!handle)
         {
