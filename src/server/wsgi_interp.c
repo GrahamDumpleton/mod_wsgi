@@ -2177,6 +2177,18 @@ apr_hash_t *wsgi_interpreters_index = NULL;
 
 static InterpreterObject *wsgi_main_interpreter = NULL;
 
+/*
+ * Mirror of the interpreters dictionary as an apr_hash, populated
+ * in lockstep with the dict by both wsgi_python_child_init (the
+ * "" main entry) and wsgi_acquire_interpreter (named sub entries).
+ * Values are InterpreterObject pointers, not the empty-string
+ * sentinel used by wsgi_interpreters_index. Read paths still go
+ * through the dict for now; this table exists so a later step can
+ * switch the read paths over without holding the GIL.
+ */
+
+static apr_hash_t *wsgi_interpreters_table = NULL;
+
 InterpreterObject *wsgi_acquire_interpreter(const char *name)
 {
     PyThreadState *tstate = NULL;
@@ -2270,13 +2282,21 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
             }
 
             /*
-             * Add interpreter name to index kept in Apache data
-             * structure as well. Make a copy of the name just in
-             * case we have been given temporary value.
+             * Add interpreter name to the apr_hash mirror and to the
+             * index kept in Apache data structure. The name is copied
+             * once into the shared pool so both hashes can use the
+             * same key without owning their own strdup.
              */
 
-            apr_hash_set(wsgi_interpreters_index, apr_pstrdup(apr_hash_pool_get(wsgi_interpreters_index), name),
-                         APR_HASH_KEY_STRING, "");
+            {
+                const char *name_copy = apr_pstrdup(
+                    apr_hash_pool_get(wsgi_interpreters_index), name);
+
+                apr_hash_set(wsgi_interpreters_index, name_copy,
+                             APR_HASH_KEY_STRING, "");
+                apr_hash_set(wsgi_interpreters_table, name_copy,
+                             APR_HASH_KEY_STRING, handle);
+            }
         }
         else
             Py_INCREF(handle);
@@ -3098,6 +3118,13 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
     wsgi_interpreters_index = apr_hash_make(p);
 
     /*
+     * Create the apr_hash mirror of the interpreters dictionary;
+     * populated alongside the dict, read by a later step.
+     */
+
+    wsgi_interpreters_table = apr_hash_make(p);
+
+    /*
      * Initialise the key for data related to a thread and force
      * creation of thread info.
      */
@@ -3151,6 +3178,8 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
     Py_DECREF(object);
 
     apr_hash_set(wsgi_interpreters_index, "", APR_HASH_KEY_STRING, "");
+    apr_hash_set(wsgi_interpreters_table, "", APR_HASH_KEY_STRING,
+                 wsgi_main_interpreter);
 
     /* Restore the prior thread state and release the GIL. */
 
