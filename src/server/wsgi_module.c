@@ -35,6 +35,7 @@
 #include "wsgi_dispatch.h"
 #include "wsgi_auth.h"
 #include "wsgi_input.h"
+#include "wsgi_adapter.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -288,6 +289,9 @@ static int wsgi_module_exec(PyObject *module)
         return -1;
 
     if (wsgi_input_init(module) < 0)
+        return -1;
+
+    if (wsgi_adapter_init(module) < 0)
         return -1;
 
     return 0;

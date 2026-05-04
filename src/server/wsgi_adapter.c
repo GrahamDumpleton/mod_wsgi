@@ -26,6 +26,7 @@
 #include "wsgi_interp.h"
 #include "wsgi_logger.h"
 #include "wsgi_metrics.h"
+#include "wsgi_module.h"
 #include "wsgi_stream.h"
 #include "wsgi_thread.h"
 #include "wsgi_validate.h"
@@ -35,10 +36,40 @@
 
 AdapterObject *newAdapterObject(request_rec *r)
 {
-    AdapterObject *self;
+    PyObject *module = NULL;
+    WSGIModuleState *state = NULL;
+    PyTypeObject *type = NULL;
+    AdapterObject *self = NULL;
 
-    self = PyObject_New(AdapterObject, &Adapter_Type);
-    if (self == NULL)
+    /*
+     * Find the embedded mod_wsgi module for the current
+     * interpreter and pull the Adapter heap type out of its
+     * state. Returns NULL with a clear error if the module is
+     * not in sys.modules or its state has not been initialised;
+     * either indicates an init ordering bug.
+     */
+
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+        return NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state || !state->Adapter_Type)
+    {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "Adapter type not initialised for the current "
+                        "interpreter; newAdapterObject() called before "
+                        "the embedded mod_wsgi module's exec slot ran");
+        Py_DECREF(module);
+        return NULL;
+    }
+
+    type = state->Adapter_Type;
+
+    self = (AdapterObject *)type->tp_alloc(type, 0);
+    Py_DECREF(module);
+
+    if (!self)
         return NULL;
 
     self->result = HTTP_INTERNAL_SERVER_ERROR;
@@ -93,8 +124,18 @@ AdapterObject *newAdapterObject(request_rec *r)
     return self;
 }
 
+/*
+ * Heap-type destructor. Releases all per-request Python state
+ * (headers, response sequence, Input reader, log buffer/wrapper),
+ * frees the instance memory via the type's tp_free, and decrements
+ * the type's refcount (every heap-type instance owns a reference
+ * to its type).
+ */
+
 static void Adapter_dealloc(AdapterObject *self)
 {
+    PyTypeObject *tp = Py_TYPE(self);
+
     Py_XDECREF(self->headers);
     Py_XDECREF(self->sequence);
 
@@ -103,7 +144,8 @@ static void Adapter_dealloc(AdapterObject *self)
     Py_XDECREF(self->log_buffer);
     Py_XDECREF(self->log);
 
-    PyObject_Del(self);
+    tp->tp_free(self);
+    Py_DECREF(tp);
 }
 
 static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
@@ -2078,48 +2120,52 @@ static PyMethodDef Adapter_methods[] = {
     {"ssl_var_lookup", (PyCFunction)Adapter_ssl_var_lookup, METH_VARARGS, 0},
     {NULL, NULL}};
 
-PyTypeObject Adapter_Type = {
-    PyVarObject_HEAD_INIT(NULL, 0) "mod_wsgi.Adapter", /*tp_name*/
-    sizeof(AdapterObject),                             /*tp_basicsize*/
-    0,                                                 /*tp_itemsize*/
-    /* methods */
-    (destructor)Adapter_dealloc, /*tp_dealloc*/
-    0,                           /*tp_print*/
-    0,                           /*tp_getattr*/
-    0,                           /*tp_setattr*/
-    0,                           /*tp_compare*/
-    0,                           /*tp_repr*/
-    0,                           /*tp_as_number*/
-    0,                           /*tp_as_sequence*/
-    0,                           /*tp_as_mapping*/
-    0,                           /*tp_hash*/
-    0,                           /*tp_call*/
-    0,                           /*tp_str*/
-    0,                           /*tp_getattro*/
-    0,                           /*tp_setattro*/
-    0,                           /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT,          /*tp_flags*/
-    0,                           /*tp_doc*/
-    0,                           /*tp_traverse*/
-    0,                           /*tp_clear*/
-    0,                           /*tp_richcompare*/
-    0,                           /*tp_weaklistoffset*/
-    0,                           /*tp_iter*/
-    0,                           /*tp_iternext*/
-    Adapter_methods,             /*tp_methods*/
-    0,                           /*tp_members*/
-    0,                           /*tp_getset*/
-    0,                           /*tp_base*/
-    0,                           /*tp_dict*/
-    0,                           /*tp_descr_get*/
-    0,                           /*tp_descr_set*/
-    0,                           /*tp_dictoffset*/
-    0,                           /*tp_init*/
-    0,                           /*tp_alloc*/
-    0,                           /*tp_new*/
-    0,                           /*tp_free*/
-    0,                           /*tp_is_gc*/
+/*
+ * PyType_Spec for the Adapter heap type. The slots with non-default
+ * behaviour are tp_dealloc (releases per-request Python state) and
+ * tp_methods (start_response / write / ssl_is_https /
+ * ssl_var_lookup); everything else falls back to the framework
+ * defaults.
+ *
+ * tp_name is "mod_wsgi.Adapter" so error messages and repr() output
+ * identify where the type comes from. The type is not exposed as a
+ * module attribute; instances are produced by newAdapterObject from
+ * C and consumed by Adapter_run in the same request.
+ */
+
+static PyType_Slot Adapter_slots[] = {
+    {Py_tp_dealloc, Adapter_dealloc},
+    {Py_tp_methods, Adapter_methods},
+    {0, NULL},
 };
+
+static PyType_Spec Adapter_spec = {
+    .name = "mod_wsgi.Adapter",
+    .basicsize = sizeof(AdapterObject),
+    .itemsize = 0,
+    .flags = Py_TPFLAGS_DEFAULT,
+    .slots = Adapter_slots,
+};
+
+/* ------------------------------------------------------------------------- */
+
+int wsgi_adapter_init(PyObject *module)
+{
+    WSGIModuleState *state = NULL;
+    PyObject *type = NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+        return -1;
+
+    type = PyType_FromModuleAndSpec(module, &Adapter_spec, NULL);
+    if (!type)
+        return -1;
+
+    state->Adapter_Type = (PyTypeObject *)type;
+
+    return 0;
+}
 
 /* ------------------------------------------------------------------------- */
 

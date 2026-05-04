@@ -29,6 +29,35 @@
 
 /* ------------------------------------------------------------------------- */
 
+/*
+ * Adapter: the per-request WSGI adapter. Built once per request
+ * by the request handler, owns all per-request Python state for
+ * the lifetime of the request: the wsgi.input reader, the
+ * wsgi.errors log buffer/wrapper, the captured response status
+ * line and headers, and the response body iterable returned by
+ * the WSGI callable. Adapter_run drives the WSGI protocol
+ * end-to-end: it builds the environ, invokes the application,
+ * processes the start_response callback, streams the response
+ * body through Apache's bucket brigades, and updates the metrics
+ * counters.
+ *
+ * The type exposes start_response and write to the WSGI
+ * application via bound methods on the environ dict; ssl_is_https
+ * and ssl_var_lookup are also exposed as environ entries (under
+ * mod_ssl.is_https / mod_ssl.var_lookup) so applications can
+ * query mod_ssl from the request context.
+ *
+ * The type is internal: instances are never constructed from
+ * Python and the type is not exposed as a module attribute.
+ *
+ * The Python type backing this object is heap-allocated, created
+ * via PyType_FromModuleAndSpec, so each Python sub-interpreter
+ * has its own type instance. The type pointer lives in
+ * WSGIModuleState and is looked up via
+ * PyImport_ImportModule("mod_wsgi") + PyModule_GetState by
+ * newAdapterObject.
+ */
+
 typedef struct
 {
     PyObject_HEAD int result;
@@ -50,11 +79,36 @@ typedef struct
     apr_time_t start_time;
 } AdapterObject;
 
-extern PyTypeObject Adapter_Type;
+/*
+ * Construct an Adapter for `r`. Initialises the per-request
+ * Python state (Input, log buffer, log wrapper) and returns the
+ * adapter ready for Adapter_run. Returns NULL with a Python
+ * exception set on failure; the most likely failure mode is the
+ * embedded mod_wsgi module not yet being in sys.modules for the
+ * current interpreter, which indicates an init order bug.
+ */
 
 extern AdapterObject *newAdapterObject(request_rec *r);
 
+/*
+ * Drive the WSGI application end-to-end for `self`'s request,
+ * calling `object` (the WSGI callable resolved from the script)
+ * with environ + start_response, streaming the returned iterable
+ * back through Apache's bucket brigades, and updating per-request
+ * metrics. Returns OK on success or an Apache HTTP status on
+ * failure.
+ */
+
 extern int Adapter_run(AdapterObject *self, PyObject *object);
+
+/*
+ * Create the heap-allocated Adapter PyTypeObject for `module`'s
+ * interpreter and store it in WSGIModuleState. Called from the
+ * embedded mod_wsgi module's exec slot. Returns 0 on success,
+ * -1 on failure with Python exception set.
+ */
+
+extern int wsgi_adapter_init(PyObject *module);
 
 /* ------------------------------------------------------------------------- */
 
