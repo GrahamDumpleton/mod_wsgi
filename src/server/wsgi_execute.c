@@ -102,11 +102,9 @@ int wsgi_execute_script(request_rec *r)
      * same time.
      */
 
-#if APR_HAS_THREADS
     WSGI_BEGIN_ALLOW_THREADS
     apr_thread_mutex_lock(wsgi_module_lock);
     WSGI_END_ALLOW_THREADS
-#endif
 
     /* Determine the script path to be loaded. */
 
@@ -201,9 +199,7 @@ int wsgi_execute_script(request_rec *r)
                                           "modification of script '%s'.",
                                           config->process_group, script);
 
-#if APR_HAS_THREADS
                     apr_thread_mutex_unlock(wsgi_module_lock);
-#endif
 
                     wsgi_release_interpreter(interp);
 
@@ -303,9 +299,7 @@ int wsgi_execute_script(request_rec *r)
 
     /* Safe now to release the module lock. */
 
-#if APR_HAS_THREADS
     apr_thread_mutex_unlock(wsgi_module_lock);
-#endif
 
     /*
      * Clear startup timeout and prevent from running again if the
