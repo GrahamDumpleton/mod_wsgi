@@ -22,15 +22,46 @@
 
 #include "wsgi_daemon.h"
 #include "wsgi_metrics.h"
+#include "wsgi_module.h"
 
 /* ------------------------------------------------------------------------- */
 
 InputObject *newInputObject(request_rec *r, int ignore_activity)
 {
-    InputObject *self;
+    PyObject *module = NULL;
+    WSGIModuleState *state = NULL;
+    PyTypeObject *type = NULL;
+    InputObject *self = NULL;
 
-    self = PyObject_New(InputObject, &Input_Type);
-    if (self == NULL)
+    /*
+     * Find the embedded mod_wsgi module for the current
+     * interpreter and pull the Input heap type out of its state.
+     * Returns NULL with a clear error if the module is not in
+     * sys.modules or its state has not been initialised; either
+     * indicates an init ordering bug.
+     */
+
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+        return NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state || !state->Input_Type)
+    {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "Input type not initialised for the current "
+                        "interpreter; newInputObject() called before "
+                        "the embedded mod_wsgi module's exec slot ran");
+        Py_DECREF(module);
+        return NULL;
+    }
+
+    type = state->Input_Type;
+
+    self = (InputObject *)type->tp_alloc(type, 0);
+    Py_DECREF(module);
+
+    if (!self)
         return NULL;
 
     self->r = r;
@@ -56,12 +87,27 @@ InputObject *newInputObject(request_rec *r, int ignore_activity)
     return self;
 }
 
+/*
+ * Heap-type destructor. Frees the residual readline buffer (if
+ * any), then releases the instance memory via the type's tp_free
+ * and decrements the type's refcount (every heap-type instance
+ * owns a reference to its type).
+ *
+ * Note that the bucket brigade and request_rec back-pointer are
+ * released by Input_finish at end of request, not here. Dealloc
+ * runs whenever the last Python reference goes away, which may
+ * be long after the request has completed.
+ */
+
 static void Input_dealloc(InputObject *self)
 {
+    PyTypeObject *tp = Py_TYPE(self);
+
     if (self->buffer)
         free(self->buffer);
 
-    PyObject_Del(self);
+    tp->tp_free(self);
+    Py_DECREF(tp);
 }
 
 void Input_finish(InputObject *self)
@@ -1063,52 +1109,55 @@ static PyObject *Input_iternext(InputObject *self)
     return line;
 }
 
-PyTypeObject Input_Type = {
-    PyVarObject_HEAD_INIT(NULL, 0) "mod_wsgi.Input", /*tp_name*/
-    sizeof(InputObject),                             /*tp_basicsize*/
-    0,                                               /*tp_itemsize*/
-    /* methods */
-    (destructor)Input_dealloc, /*tp_dealloc*/
-    0,                         /*tp_print*/
-    0,                         /*tp_getattr*/
-    0,                         /*tp_setattr*/
-    0,                         /*tp_compare*/
-    0,                         /*tp_repr*/
-    0,                         /*tp_as_number*/
-    0,                         /*tp_as_sequence*/
-    0,                         /*tp_as_mapping*/
-    0,                         /*tp_hash*/
-    0,                         /*tp_call*/
-    0,                         /*tp_str*/
-    0,                         /*tp_getattro*/
-    0,                         /*tp_setattro*/
-    0,                         /*tp_as_buffer*/
-#if defined(Py_TPFLAGS_HAVE_ITER)
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER, /*tp_flags*/
-#else
-    Py_TPFLAGS_DEFAULT, /*tp_flags*/
-#endif
-    0,                            /*tp_doc*/
-    0,                            /*tp_traverse*/
-    0,                            /*tp_clear*/
-    0,                            /*tp_richcompare*/
-    0,                            /*tp_weaklistoffset*/
-    (getiterfunc)Input_iter,      /*tp_iter*/
-    (iternextfunc)Input_iternext, /*tp_iternext*/
-    Input_methods,                /*tp_methods*/
-    0,                            /*tp_members*/
-    0,                            /*tp_getset*/
-    0,                            /*tp_base*/
-    0,                            /*tp_dict*/
-    0,                            /*tp_descr_get*/
-    0,                            /*tp_descr_set*/
-    0,                            /*tp_dictoffset*/
-    0,                            /*tp_init*/
-    0,                            /*tp_alloc*/
-    0,                            /*tp_new*/
-    0,                            /*tp_free*/
-    0,                            /*tp_is_gc*/
+/*
+ * PyType_Spec for the Input heap type. The slots with non-default
+ * behaviour are tp_dealloc (frees the residual readline buffer),
+ * tp_iter / tp_iternext (line-by-line iteration), and tp_methods
+ * (read / readline / readlines / close); everything else falls
+ * back to the framework defaults.
+ *
+ * tp_name is "mod_wsgi.Input" so error messages and repr() output
+ * identify where the type comes from. The type is not exposed as
+ * a module attribute; instances are produced by newInputObject
+ * from C and handed to the WSGI application as
+ * environ["wsgi.input"].
+ */
+
+static PyType_Slot Input_slots[] = {
+    {Py_tp_dealloc, Input_dealloc},
+    {Py_tp_iter, Input_iter},
+    {Py_tp_iternext, Input_iternext},
+    {Py_tp_methods, Input_methods},
+    {0, NULL},
 };
+
+static PyType_Spec Input_spec = {
+    .name = "mod_wsgi.Input",
+    .basicsize = sizeof(InputObject),
+    .itemsize = 0,
+    .flags = Py_TPFLAGS_DEFAULT,
+    .slots = Input_slots,
+};
+
+/* ------------------------------------------------------------------------- */
+
+int wsgi_input_init(PyObject *module)
+{
+    WSGIModuleState *state = NULL;
+    PyObject *type = NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+        return -1;
+
+    type = PyType_FromModuleAndSpec(module, &Input_spec, NULL);
+    if (!type)
+        return -1;
+
+    state->Input_Type = (PyTypeObject *)type;
+
+    return 0;
+}
 
 /* ------------------------------------------------------------------------- */
 

@@ -51,6 +51,7 @@ typedef struct
     PyTypeObject *Stream_Type;
     PyTypeObject *Dispatch_Type;
     PyTypeObject *Auth_Type;
+    PyTypeObject *Input_Type;
 } WSGIModuleState;
 
 /* ------------------------------------------------------------------------- */
