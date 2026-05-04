@@ -1,5 +1,5 @@
-#ifndef WSGI_ADAPTER_H
-#define WSGI_ADAPTER_H
+#ifndef WSGI_INPUT_H
+#define WSGI_INPUT_H
 
 /* ------------------------------------------------------------------------- */
 
@@ -23,38 +23,32 @@
 
 #include "wsgi_python.h"
 #include "wsgi_apache.h"
-#include "wsgi_server.h"
-
-#include "wsgi_input.h"
 
 /* ------------------------------------------------------------------------- */
 
 typedef struct
 {
-    PyObject_HEAD int result;
-    request_rec *r;
+    PyObject_HEAD request_rec *r;
+    int init;
+    int done;
+    char *buffer;
+    apr_off_t size;
+    apr_off_t offset;
+    apr_off_t length;
     apr_bucket_brigade *bb;
-    WSGIRequestConfig *config;
-    InputObject *input;
-    PyObject *log_buffer;
-    PyObject *log;
-    int status;
-    const char *status_line;
-    PyObject *headers;
-    PyObject *sequence;
-    int content_length_set;
-    apr_off_t content_length;
-    apr_off_t output_length;
-    apr_off_t output_writes;
-    apr_time_t output_time;
-    apr_time_t start_time;
-} AdapterObject;
+    int seen_eos;
+    int seen_error;
+    apr_off_t bytes;
+    apr_off_t reads;
+    apr_time_t time;
+    int ignore_activity;
+} InputObject;
 
-extern PyTypeObject Adapter_Type;
+extern PyTypeObject Input_Type;
 
-extern AdapterObject *newAdapterObject(request_rec *r);
+extern InputObject *newInputObject(request_rec *r, int ignore_activity);
 
-extern int Adapter_run(AdapterObject *self, PyObject *object);
+extern void Input_finish(InputObject *self);
 
 /* ------------------------------------------------------------------------- */
 
