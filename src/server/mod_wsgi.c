@@ -987,17 +987,6 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
     apr_thread_mutex_create(&wsgi_monitor_lock,
                             APR_THREAD_MUTEX_UNNESTED, p);
 
-    /*
-     * Start the telemetry reporter in this MPM child only if embedded
-     * mode is permitted. WSGIRestrictEmbedded On disables WSGI request
-     * handling in embedded mode entirely, so even if a Python
-     * interpreter is initialised here for auth scripts there are no
-     * request metrics to report.
-     */
-
-    if (wsgi_server_config->restrict_embedded != 1)
-        wsgi_telemetry_start_reporter(p);
-
     /* Retrieve optional functions from peer modules. */
 
     wsgi_environ_child_init();
@@ -1034,6 +1023,20 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
             }
         }
     }
+
+    /*
+     * Start the telemetry reporter in this MPM child only if embedded
+     * mode is permitted and Python is available. WSGIRestrictEmbedded On
+     * disables WSGI request handling in embedded mode entirely, so even
+     * if a Python interpreter is initialised here for auth scripts
+     * there are no request metrics to report. The reporter thread also
+     * acquires the GIL to read sys.getswitchinterval(), so it must not
+     * start until Python has been initialised in this child.
+     */
+
+    if (wsgi_server_config->restrict_embedded != 1 &&
+        wsgi_python_initialized)
+        wsgi_telemetry_start_reporter(p);
 }
 
 APR_OPTIONAL_FN_TYPE(ap_logio_add_bytes_out) * wsgi_logio_add_bytes_out;
