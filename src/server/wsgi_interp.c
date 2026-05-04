@@ -56,6 +56,30 @@ const char *wsgi_python_eggs = NULL;
 PyTypeObject Interpreter_Type;
 
 /*
+ * Direct pointer to the main interpreter handle, set by
+ * wsgi_python_child_init when it constructs the main entry.
+ * The same pointer is also stored in wsgi_interpreters under the
+ * empty-string key so iteration over all interpreters sees main
+ * uniformly; the static is the fast path for wsgi_acquire_interpreter
+ * and the canonical "is this main?" identity used inside
+ * wsgi_destroy_interpreter.
+ */
+
+static InterpreterObject *wsgi_main_interpreter = NULL;
+
+/*
+ * Apache-side table of all interpreters keyed by application
+ * group name, with the empty string keying the main interpreter.
+ * Values are InterpreterObject pointers, allocated from the same
+ * pool as the table itself so their lifetime is bounded by the
+ * Apache child. Read by wsgi_acquire_interpreter for the cache-hit
+ * lookup, by wsgi_publish_process_stopping for shutdown event
+ * publication, and by wsgi_python_child_cleanup to drive teardown.
+ */
+
+static apr_hash_t *wsgi_interpreters = NULL;
+
+/*
  * Helper to set an environment variable in the os.environ dict.
  * Allocates the key as a Python unicode object and decodes the
  * value using the filesystem default encoding. Returns 0 on
@@ -177,26 +201,17 @@ InterpreterObject *newInterpreterObject(const char *name)
         name = "";
     }
 
-    /* Create handle for interpreter and local data. */
-
-    self = PyObject_New(InterpreterObject, &Interpreter_Type);
-    if (self == NULL)
-    {
-        wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
-                                             "PyObject_New() for InterpreterObject failed");
-        goto failure;
-    }
-
     /*
-     * Initialize fields immediately so the failure label can run
-     * safely from any later point without tripping on uninitialized
-     * self->owner. Set name from a strdup of the (now finalized)
-     * local 'name' parameter.
+     * Allocate the handle from the same pool as the interpreters
+     * table so its lifetime is bounded by the Apache child. The
+     * pool reclaims the struct (and the duplicated name string) on
+     * child shutdown; no explicit free is required from the
+     * destructor or the failure path.
      */
 
-    self->owner = 0;
-    self->name = strdup(name);
-    self->tstate_table = NULL;
+    self = apr_pcalloc(apr_hash_pool_get(wsgi_interpreters),
+                       sizeof(InterpreterObject));
+    self->name = apr_pstrdup(apr_hash_pool_get(wsgi_interpreters), name);
 
     if (interp)
     {
@@ -258,7 +273,6 @@ InterpreterObject *newInterpreterObject(const char *name)
                                   wsgi_server->process->pool));
 
         self->interp = tstate->interp;
-        self->owner = 1;
     }
 
     /*
@@ -295,7 +309,7 @@ InterpreterObject *newInterpreterObject(const char *name)
      */
 
 #if 0
-    if (self->owner)
+    if (*self->name)
     {
         module = PyImport_ImportModule("threading");
 
@@ -1268,7 +1282,7 @@ InterpreterObject *newInterpreterObject(const char *name)
      * data persists between requests.
      */
 
-    if (self->owner)
+    if (*self->name)
     {
         WSGIThreadInfo *thread_handle = NULL;
 
@@ -1292,65 +1306,42 @@ InterpreterObject *newInterpreterObject(const char *name)
 failure:
     /*
      * Cleanup partially constructed interpreter on allocation
-     * failure. self may be NULL if PyObject_New itself failed, so
-     * fall back to the local name parameter for the log; everything
-     * else is conditional on what was reached. If we still hold a
-     * reference to a Python module being populated, decrement it.
-     * If we own the sub interpreter we created, end it which also
-     * cleans up all Python objects created within it. Then restore
-     * the original thread state, free the heap allocated name and
-     * decrement reference count on self.
+     * failure. The struct itself was apr_palloc'd from the
+     * interpreters table pool and is reclaimed when the pool is
+     * destroyed at child shutdown, so no explicit free is needed
+     * here; we just unwind any Python-side state that was set up.
      */
 
-    {
-        const char *log_name = (self && self->name) ? self->name : name;
+    wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0035) "Unable to setup %s in %s.",
+                          wsgi_format_interp_name(
+                              wsgi_server->process->pool, name),
+                          wsgi_format_process_context(
+                              wsgi_server->process->pool));
 
-        wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0035) "Unable to setup %s in %s.",
-                              wsgi_format_interp_name(
-                                  wsgi_server->process->pool, log_name),
-                              wsgi_format_process_context(
-                                  wsgi_server->process->pool));
+    /*
+     * Surface any pending Python exception (the actual cause of
+     * the failure) before we tear down the sub-interpreter. The
+     * header logged above has no detail; once Py_EndInterpreter
+     * runs the exception is destroyed with the tstate, so
+     * callers would otherwise never see what actually went
+     * wrong.
+     */
 
-        /*
-         * Surface any pending Python exception (the actual cause of
-         * the failure) before we tear down the sub-interpreter. The
-         * header logged above has no detail; once Py_EndInterpreter
-         * runs the exception is destroyed with the tstate, so
-         * callers would otherwise never see what actually went
-         * wrong.
-         */
-
-        if (PyErr_Occurred())
-            wsgi_log_python_interp_init_error(log_name);
-    }
+    if (PyErr_Occurred())
+        wsgi_log_python_interp_init_error(name);
 
     Py_XDECREF(module);
 
-    if (self && self->owner)
+    if (tstate)
     {
         Py_EndInterpreter(tstate);
         PyThreadState_Swap(save_tstate);
     }
 
-    if (self)
-    {
-        /*
-         * Sub-interpreter teardown (if any) is already done above; null
-         * out name and clear owner so Interpreter_dealloc skips both the
-         * tstate-management block and a second Py_EndInterpreter, and
-         * does not read freed memory at *self->name.
-         */
-
-        free(self->name);
-        self->name = NULL;
-        self->owner = 0;
-        Py_DECREF(self);
-    }
-
     return NULL;
 }
 
-static void Interpreter_dealloc(InterpreterObject *self)
+static void wsgi_destroy_interpreter(InterpreterObject *self)
 {
     PyThreadState *tstate = NULL;
     PyObject *module = NULL;
@@ -1358,22 +1349,19 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     PyThreadState *tstate_enter = NULL;
 
+    int is_sub = (self != wsgi_main_interpreter);
+
     /*
-     * We should always enter here with the Python GIL
-     * held and an active thread state. This should only
-     * now occur when shutting down interpreter and not
-     * when releasing interpreter as don't support
-     * recyling of interpreters within the process. Thus
-     * the thread state should be that for the main
-     * Python interpreter. Where dealing with a named
-     * sub interpreter, we need to change the thread
-     * state to that which was originally used to create
-     * that sub interpreter before doing anything.
+     * Caller (wsgi_python_child_cleanup) holds the Python GIL and
+     * has the main interpreter's thread state active. For named
+     * sub interpreters we swap to a thread state on the target
+     * interpreter before doing any cleanup; for the main interpreter
+     * the entry tstate is already the right one.
      */
 
     tstate_enter = PyThreadState_Get();
 
-    if (self->name && *self->name)
+    if (is_sub)
     {
         WSGIThreadInfo *thread_handle = NULL;
 
@@ -1400,8 +1388,6 @@ static void Interpreter_dealloc(InterpreterObject *self)
                                wsgi_format_process_context(
                                    wsgi_server->process->pool));
 
-                free(self->name);
-                PyObject_Del(self);
                 return;
             }
 
@@ -1422,9 +1408,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
         PyThreadState_Swap(tstate);
     }
 
-    /* Now destroy the sub interpreter. */
-
-    if (self->owner)
+    if (is_sub)
     {
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
                               "Destroying %s in %s.",
@@ -1486,8 +1470,8 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     /*
      * Invoke registered atexit handlers via atexit._run_exitfuncs()
-     * for sub interpreters we own. Python does not call atexit
-     * handlers itself when a sub interpreter is destroyed by
+     * for sub interpreters. Python does not call atexit handlers
+     * itself when a sub interpreter is destroyed by
      * Py_EndInterpreter, so we have to drive them here. Skip this
      * for the main interpreter: atexit doesn't deregister handlers
      * as it calls them, so calling here would also call them again
@@ -1497,7 +1481,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     module = NULL;
 
-    if (self->owner)
+    if (is_sub)
     {
         module = PyImport_ImportModule("atexit");
 
@@ -1527,9 +1511,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
 
     Py_XDECREF(module);
 
-    /* If we own it, we destroy it. */
-
-    if (self->owner)
+    if (is_sub)
     {
         /*
          * Clear and delete every thread state still attached to the
@@ -1543,7 +1525,7 @@ static void Interpreter_dealloc(InterpreterObject *self)
          *
          * The interpreter's full thread chain is walked rather than
          * just our own tstate_table so any tstate that ended up on
-         * the chain by some path other than Interpreter_New /
+         * the chain by some path other than newInterpreterObject /
          * wsgi_acquire_interpreter is still released. Each tstate
          * is swapped in before being cleared so finalizers triggered
          * by the clear see that tstate as current, then current is
@@ -1573,16 +1555,29 @@ static void Interpreter_dealloc(InterpreterObject *self)
             }
         }
 
-        /* Can now destroy the interpreter. */
-
         Py_EndInterpreter(tstate);
 
         PyThreadState_Swap(tstate_enter);
     }
 
-    free(self->name);
+    /*
+     * The struct and the duplicated name string are owned by the
+     * interpreters table pool, so no explicit free is required;
+     * the pool reclaims them when wsgi_python_child_cleanup
+     * returns.
+     */
+}
 
-    PyObject_Del(self);
+/*
+ * Stub kept so Interpreter_Type's tp_dealloc slot still references
+ * a valid function. After step 5 nothing in the codebase wraps
+ * InterpreterObject in a Python reference, so this is unreachable;
+ * it is removed in the next step along with Interpreter_Type itself.
+ */
+
+static void Interpreter_dealloc(InterpreterObject *self)
+{
+    wsgi_destroy_interpreter(self);
 }
 
 PyTypeObject Interpreter_Type = {
@@ -2161,32 +2156,7 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
 apr_thread_mutex_t *wsgi_interp_lock = NULL;
 apr_thread_mutex_t *wsgi_shutdown_lock = NULL;
 
-PyObject *wsgi_interpreters = NULL;
-
 PyObject *wsgi_request_timeout_exc = NULL;
-
-/*
- * Direct pointer to the main interpreter handle, set by
- * wsgi_python_child_init alongside the "" entry in the
- * interpreters dictionary. The dictionary still owns the
- * reference; this pointer is a fast path so wsgi_acquire_interpreter
- * can resolve the main interpreter without a dict lookup.
- */
-
-static InterpreterObject *wsgi_main_interpreter = NULL;
-
-/*
- * Apache-side index of all interpreters keyed by application
- * group name, with the empty string keying the main interpreter.
- * Values are the InterpreterObject pointers themselves.
- * Populated in lockstep with the wsgi_interpreters dict by both
- * wsgi_python_child_init (the "" main entry) and
- * wsgi_acquire_interpreter (named sub entries). Read by
- * wsgi_acquire_interpreter for the cache-hit lookup and by
- * wsgi_publish_process_stopping for shutdown event publication.
- */
-
-static apr_hash_t *wsgi_interpreters_table = NULL;
 
 InterpreterObject *wsgi_acquire_interpreter(const char *name)
 {
@@ -2206,42 +2176,38 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
         name = "";
 
     /*
-     * Main interpreter is held by a static pointer set during child
-     * init, so the lookup avoids the per-request dict access. The
-     * dict still owns the reference (the "" entry holds it), so the
-     * Py_INCREF here matches the existing refcount discipline; the
-     * GIL is acquired only for the duration of that incref.
+     * Main interpreter resolves through a static pointer; no
+     * lookup, no GIL, no refcount. The struct is owned by the
+     * interpreters table for the lifetime of the Apache child.
      */
 
     if (*name == '\0')
     {
         handle = wsgi_main_interpreter;
-
-        state = PyGILState_Ensure();
-        Py_INCREF(handle);
-        PyGILState_Release(state);
     }
     else
     {
         /*
-         * Sub interpreter path. The mutex avoids a second thread
-         * creating the same named interpreter if Python releases
-         * the GIL during creation. The GIL is still acquired up
-         * front because the lazy-create branch below needs it for
-         * newInterpreterObject and the dict insert; the lookup
-         * itself goes through the apr_hash mirror.
+         * Sub interpreter path. The mutex serialises lookup-then-
+         * create so two threads cannot race to construct the same
+         * named interpreter. The cache-hit lookup is a plain
+         * apr_hash_get and never touches the GIL; only the lazy-
+         * create branch acquires the GIL, for the duration of
+         * Py_NewInterpreter and the rest of newInterpreterObject.
          */
 
         apr_thread_mutex_lock(wsgi_interp_lock);
 
-        state = PyGILState_Ensure();
-
-        handle = apr_hash_get(wsgi_interpreters_table, name,
+        handle = apr_hash_get(wsgi_interpreters, name,
                               APR_HASH_KEY_STRING);
 
         if (!handle)
         {
+            state = PyGILState_Ensure();
+
             handle = newInterpreterObject(name);
+
+            PyGILState_Release(state);
 
             if (!handle)
             {
@@ -2254,49 +2220,19 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
                                       wsgi_format_process_context(
                                           wsgi_server->process->pool));
 
-                PyGILState_Release(state);
-
-                apr_thread_mutex_unlock(wsgi_interp_lock);
-                return NULL;
-            }
-
-            if (PyDict_SetItemString(wsgi_interpreters, name,
-                                     (PyObject *)handle) < 0)
-            {
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                      WSGI_APLOGNO(0180) "Unable to register %s in "
-                                                         "interpreters dictionary "
-                                                         "for %s.",
-                                      wsgi_format_interp_name(
-                                          wsgi_server->process->pool, name),
-                                      wsgi_format_process_context(
-                                          wsgi_server->process->pool));
-
-                PyErr_Clear();
-
-                Py_DECREF(handle);
-
-                PyGILState_Release(state);
-
                 apr_thread_mutex_unlock(wsgi_interp_lock);
                 return NULL;
             }
 
             /*
-             * Register the new interpreter in the Apache-side
-             * lookup table. The name is copied into the table's
-             * pool because the caller may have passed a temporary.
+             * Register the new interpreter in the table. The struct
+             * has already duplicated its own name into the pool,
+             * which the table can reuse as the key.
              */
 
-            apr_hash_set(wsgi_interpreters_table,
-                         apr_pstrdup(apr_hash_pool_get(
-                             wsgi_interpreters_table), name),
+            apr_hash_set(wsgi_interpreters, handle->name,
                          APR_HASH_KEY_STRING, handle);
         }
-        else
-            Py_INCREF(handle);
-
-        PyGILState_Release(state);
 
         apr_thread_mutex_unlock(wsgi_interp_lock);
     }
@@ -2328,8 +2264,6 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
             if (!tstate)
             {
-                PyGILState_STATE retry_state;
-
                 wsgi_log_error(APLOG_ERR, 0, wsgi_server,
                                WSGI_APLOGNO(0191) "Unable to create "
                                                   "thread state for "
@@ -2340,10 +2274,6 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
                                    wsgi_server->process->pool, name),
                                wsgi_format_process_context(
                                    wsgi_server->process->pool));
-
-                retry_state = PyGILState_Ensure();
-                Py_DECREF(handle);
-                PyGILState_Release(retry_state);
 
                 return NULL;
             }
@@ -2441,8 +2371,6 @@ void wsgi_release_interpreter(InterpreterObject *handle)
 {
     PyThreadState *tstate = NULL;
 
-    PyGILState_STATE state;
-
     /*
      * Drop the GIL for the duration of the request. For named
      * sub interpreters we manage the thread state explicitly
@@ -2489,18 +2417,9 @@ void wsgi_release_interpreter(InterpreterObject *handle)
         PyGILState_Release(PyGILState_UNLOCKED);
 
     /*
-     * Need to reacquire the Python GIL just so we can
-     * decrement our reference count to the interpreter
-     * itself. If the interpreter has since been removed
-     * from the table of interpreters this will result
-     * in its destruction if its the last reference.
+     * The handle itself is not refcounted; it lives in the
+     * interpreters table for the lifetime of the Apache child.
      */
-
-    state = PyGILState_Ensure();
-
-    Py_DECREF(handle);
-
-    PyGILState_Release(state);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -2510,7 +2429,7 @@ void wsgi_publish_process_stopping(char *reason)
     InterpreterObject *interp = NULL;
     apr_hash_index_t *hi;
 
-    hi = apr_hash_first(NULL, wsgi_interpreters_table);
+    hi = apr_hash_first(NULL, wsgi_interpreters);
 
     while (hi)
     {
@@ -2937,8 +2856,6 @@ apr_thread_mutex_t *wsgi_module_lock = NULL;
 
 static apr_status_t wsgi_python_child_cleanup(void *data)
 {
-    PyObject *interp = NULL;
-
     /*
      * If not a daemon process need to publish that process
      * is shutting down here. For daemon we did it earlier
@@ -2984,34 +2901,12 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     PyEval_AcquireThread(wsgi_main_tstate);
 
     /*
-     * Take a handle to the main Python interpreter so we can
-     * destroy it last, after the sub interpreters have been torn
-     * down via PyDict_Clear. The static is set by
-     * wsgi_python_child_init alongside the "" entry in the
-     * interpreters dictionary; if it is NULL, something has gone
-     * seriously wrong. Log and skip the special-case hold so the
-     * rest of the cleanup (clearing the dict, releasing the
-     * interp lock, tearing down Python itself) still runs.
-     */
-
-    interp = (PyObject *)wsgi_main_interpreter;
-
-    if (interp)
-    {
-        Py_INCREF(interp);
-    }
-    else
-    {
-        wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0111) "Main interpreter reference is missing "
-                                                                         "during cleanup in %s.",
-                       wsgi_format_process_context(
-                           wsgi_server->process->pool));
-    }
-
-    /*
-     * Remove all items from interpreters dictionary. This will
-     * have side affect of calling any exit functions and
-     * destroying interpreters we own.
+     * Tear down sub interpreters first, then the main interpreter.
+     * Iteration over wsgi_interpreters yields every entry, so the
+     * sub-interpreter pass skips the "" entry by pointer identity
+     * against wsgi_main_interpreter; main is destroyed explicitly
+     * after the loop so the existing subs-first / main-last
+     * ordering is preserved.
      */
 
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
@@ -3019,23 +2914,30 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
                    wsgi_format_process_context(
                        wsgi_server->process->pool));
 
-    PyDict_Clear(wsgi_interpreters);
+    {
+        apr_hash_index_t *hi;
+
+        for (hi = apr_hash_first(NULL, wsgi_interpreters); hi;
+             hi = apr_hash_next(hi))
+        {
+            void *value = NULL;
+
+            apr_hash_this(hi, NULL, NULL, &value);
+
+            if (value != wsgi_main_interpreter)
+                wsgi_destroy_interpreter((InterpreterObject *)value);
+        }
+    }
 
     apr_thread_mutex_unlock(wsgi_interp_lock);
 
-    /*
-     * Now we decrement reference on handle for main Python
-     * interpreter. This only causes exit functions to be called
-     * and doesn't result in interpreter being destroyed as we
-     * we didn't previously mark ourselves as the owner of the
-     * interpreter. Note that when Python as a whole is later
-     * being destroyed it will also call exit functions, but by
-     * then the exit function registrations have been removed
-     * and so they will not actually be run a second time.
-     */
-
-    if (interp)
-        Py_DECREF(interp);
+    if (wsgi_main_interpreter)
+        wsgi_destroy_interpreter(wsgi_main_interpreter);
+    else
+        wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0111) "Main interpreter reference is missing "
+                                                                         "during cleanup in %s.",
+                       wsgi_format_process_context(
+                           wsgi_server->process->pool));
 
     /*
      * The code which performs actual shutdown of the main
@@ -3058,7 +2960,6 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
 apr_status_t wsgi_python_child_init(apr_pool_t *p)
 {
     PyGILState_STATE state;
-    PyObject *object = NULL;
 
     int ignore_system_exit = 0;
 
@@ -3081,36 +2982,18 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
         return APR_EGENERAL;
     }
 
-    /* Initialise Python interpreter instance table and lock. */
-
-    wsgi_interpreters = PyDict_New();
-
-    if (!wsgi_interpreters)
-    {
-        wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server,
-                              WSGI_APLOGNO(0193) "Unable to allocate "
-                                                 "interpreters dictionary "
-                                                 "for %s; Python based "
-                                                 "handlers will not be "
-                                                 "available.",
-                              wsgi_format_process_context(
-                                  wsgi_server->process->pool));
-        PyErr_Clear();
-        PyGILState_Release(state);
-        wsgi_python_initialized = 0;
-        return APR_EGENERAL;
-    }
-
     apr_thread_mutex_create(&wsgi_interp_lock, APR_THREAD_MUTEX_UNNESTED, p);
     apr_thread_mutex_create(&wsgi_module_lock, APR_THREAD_MUTEX_UNNESTED, p);
     apr_thread_mutex_create(&wsgi_shutdown_lock, APR_THREAD_MUTEX_UNNESTED, p);
 
     /*
-     * Create the Apache-side interpreters table so lookups and
-     * iteration can run without needing the Python GIL.
+     * Create the interpreters table so lookups and iteration can
+     * run without needing the Python GIL. Allocated from the child
+     * pool so its lifetime matches the Apache child; every
+     * InterpreterObject is then allocated from the same pool.
      */
 
-    wsgi_interpreters_table = apr_hash_make(p);
+    wsgi_interpreters = apr_hash_make(p);
 
     /*
      * Initialise the key for data related to a thread and force
@@ -3122,18 +3005,17 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
     wsgi_thread_info(1, 0);
 
     /*
-     * Cache a reference to the first Python interpreter
-     * instance. This interpreter is special as some third party
-     * Python modules will only work when used from within this
-     * interpreter. This is generally when they use the Python
-     * simplified GIL API or otherwise don't use threading API
-     * properly. An empty string for name is used to identify
-     * the first Python interpreter instance.
+     * Construct the wrapper for the main Python interpreter and
+     * register it in the table under the empty-string key. The
+     * main interpreter is special as some third party Python
+     * modules will only work when used from within it. This is
+     * generally when they use the Python simplified GIL API or
+     * otherwise don't use the threading API properly.
      */
 
-    object = (PyObject *)newInterpreterObject(NULL);
+    wsgi_main_interpreter = newInterpreterObject(NULL);
 
-    if (!object)
+    if (!wsgi_main_interpreter)
     {
         wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
                               WSGI_APLOGNO(0038) "Python based handlers "
@@ -3146,26 +3028,7 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
         return APR_EGENERAL;
     }
 
-    if (PyDict_SetItemString(wsgi_interpreters, "", object) < 0)
-    {
-        wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0039) "Unable to register wrapper for main "
-                                                                             "Python interpreter in interpreter cache "
-                                                                             "in %s; Python based handlers will not "
-                                                                             "be available.",
-                              wsgi_format_process_context(
-                                  wsgi_server->process->pool));
-        Py_DECREF(object);
-        PyErr_Clear();
-        PyGILState_Release(state);
-        wsgi_python_initialized = 0;
-        return APR_EGENERAL;
-    }
-
-    wsgi_main_interpreter = (InterpreterObject *)object;
-
-    Py_DECREF(object);
-
-    apr_hash_set(wsgi_interpreters_table, "", APR_HASH_KEY_STRING,
+    apr_hash_set(wsgi_interpreters, "", APR_HASH_KEY_STRING,
                  wsgi_main_interpreter);
 
     /* Restore the prior thread state and release the GIL. */

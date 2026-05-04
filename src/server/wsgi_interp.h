@@ -28,9 +28,8 @@
 
 typedef struct
 {
-    PyObject_HEAD char *name;
+    char *name;
     PyInterpreterState *interp;
-    int owner;
     apr_hash_t *tstate_table;
 } InterpreterObject;
 
@@ -44,8 +43,6 @@ extern int wsgi_python_required;
 
 extern const char *wsgi_python_path;
 extern const char *wsgi_python_eggs;
-
-extern PyObject *wsgi_interpreters;
 
 extern PyObject *wsgi_request_timeout_exc;
 
