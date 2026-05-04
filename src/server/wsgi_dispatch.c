@@ -322,11 +322,9 @@ int wsgi_execute_dispatch(request_rec *r)
      * same time.
      */
 
-#if APR_HAS_THREADS
     Py_BEGIN_ALLOW_THREADS
         apr_thread_mutex_lock(wsgi_module_lock);
     Py_END_ALLOW_THREADS
-#endif
 
         modules = PyImport_GetModuleDict();
     module = PyDict_GetItemString(modules, name);
@@ -372,9 +370,7 @@ int wsgi_execute_dispatch(request_rec *r)
 
     /* Safe now to release the module lock. */
 
-#if APR_HAS_THREADS
     apr_thread_mutex_unlock(wsgi_module_lock);
-#endif
 
     /* Log any details of exceptions if import failed. */
 
