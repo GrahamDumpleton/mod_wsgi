@@ -2119,8 +2119,8 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
         name = "";
 
     /*
-     * Main interpreter resolves through a static pointer; no
-     * lookup, no GIL, no refcount. The struct is owned by the
+     * Main interpreter resolves through a static pointer with no
+     * lookup or GIL acquire. The struct is owned by the
      * interpreters table for the lifetime of the Apache child.
      */
 
@@ -2844,12 +2844,11 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     PyEval_AcquireThread(wsgi_main_tstate);
 
     /*
-     * Tear down sub interpreters first, then the main interpreter.
-     * Iteration over wsgi_interpreters yields every entry, so the
-     * sub-interpreter pass skips the "" entry by pointer identity
-     * against wsgi_main_interpreter; main is destroyed explicitly
-     * after the loop so the existing subs-first / main-last
-     * ordering is preserved.
+     * Tear down sub interpreters first, then the main interpreter
+     * (subs depend on main's runtime state). Iteration over
+     * wsgi_interpreters skips the "" entry by pointer identity
+     * against wsgi_main_interpreter; main is destroyed by an
+     * explicit call after the loop.
      */
 
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
@@ -2883,16 +2882,11 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
                            wsgi_server->process->pool));
 
     /*
-     * The code which performs actual shutdown of the main
-     * interpreter expects to be called without the GIL, so
-     * we release it here again.
+     * wsgi_python_term() drives Py_Finalize, which expects to be
+     * entered without the GIL.
      */
 
     PyEval_ReleaseThread(wsgi_main_tstate);
-
-    /*
-     * Destroy Python itself including the main interpreter.
-     */
 
     if (wsgi_python_initialized)
         wsgi_python_term();

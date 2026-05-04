@@ -1038,33 +1038,13 @@ WSGI0036 — Python interpreter configuration failed
 
 .. _WSGI0037:
 
-WSGI0037 — Unable to initialise Python types for child process
---------------------------------------------------------------
+WSGI0037 — (retired)
+--------------------
 
-:Severity: CRIT
-:Source: ``src/server/wsgi_interp.c``
-
-:Logged message:
-   ``Unable to initialise Python types in <process-context>; Python
-   based handlers will not be available.`` Process context shape
-   as for :ref:`WSGI0036`.
-
-:Cause:
-   One of mod_wsgi's internal Python type objects failed
-   ``PyType_Ready()`` during ``wsgi_python_child_init()``. This
-   normally indicates that the running Python version's C-API has
-   changed in a way mod_wsgi does not handle, or that Python state
-   is corrupted at the time of initialisation.
-
-:Outcome:
-   ``wsgi_python_initialized`` is set to 0 and the function returns
-   ``APR_EGENERAL``. The child or daemon process cannot serve Python
-   requests for the rest of its lifetime.
-
-:Operator action:
-   Verify the running Python version is supported by this build of
-   mod_wsgi. Rebuild mod_wsgi against the target Python if needed.
-   If recurrent on a supported version, escalate as a likely bug.
+Previously logged when ``PyType_Ready(&Interpreter_Type)`` failed
+during ``wsgi_python_child_init()``. ``InterpreterObject`` is no
+longer a Python type: it is a plain APR-pool-allocated C struct,
+so there is no ``PyType_Ready`` call left to fail.
 
 .. _WSGI0038:
 
@@ -1100,30 +1080,15 @@ WSGI0038 — Python based handlers unavailable in process
 
 .. _WSGI0039:
 
-WSGI0039 — Unable to register main Python interpreter wrapper
--------------------------------------------------------------
+WSGI0039 — (retired)
+--------------------
 
-:Severity: CRIT
-:Source: ``src/server/wsgi_interp.c``
-
-:Logged message:
-   ``Unable to register wrapper for main Python interpreter in
-   interpreter cache in <process-context>; Python based handlers
-   will not be available.`` Process context shape as for
-   :ref:`WSGI0036`.
-
-:Cause:
-   ``PyDict_SetItemString()`` failed when adding the freshly created
-   main-interpreter wrapper to mod_wsgi's interpreter cache. Almost
-   always a Python heap allocation failure.
-
-:Outcome:
-   ``wsgi_python_initialized`` is set to 0 and the function returns
-   ``APR_EGENERAL``. The child or daemon process cannot serve Python
-   requests.
-
-:Operator action:
-   Same as :ref:`WSGI0038`.
+Previously logged when ``PyDict_SetItemString()`` failed registering
+the main-interpreter wrapper in mod_wsgi's per-process interpreters
+dictionary at ``wsgi_python_child_init()`` time. The interpreters
+dictionary has been replaced by an ``apr_hash`` indexed by
+application group; insertion into the hash cannot fail in the same
+way, so the failure path no longer exists.
 
 .. _WSGI0040:
 
@@ -2891,20 +2856,21 @@ WSGI0111 — Main interpreter reference missing during child cleanup
 :Source: ``src/server/wsgi_interp.c``
 
 :Logged message:
-   ``Main interpreter reference is missing from interpreters
-   dictionary during cleanup in <process-context>.`` Process
-   context is either ``embedded mode`` or ``daemon process
-   '<group>'``.
+   ``Main interpreter reference is missing during cleanup in
+   <process-context>.`` Process context is either ``embedded mode``
+   or ``daemon process '<group>'``.
 
 :Cause:
-   The cached ``""`` key is missing from mod_wsgi's interpreters
-   dictionary at child-cleanup time. Indicates a state-corruption
-   bug or unusual shutdown order.
+   The ``wsgi_main_interpreter`` static is NULL at child-cleanup
+   time. It is set by ``wsgi_python_child_init()`` immediately after
+   the main wrapper is constructed, so a NULL value here indicates
+   a state-corruption bug or an unusual shutdown order in which
+   cleanup ran before init completed.
 
 :Outcome:
-   Interpreter cleanup proceeds; the missing main wrapper means
-   the main interpreter's exit functions are not driven through
-   mod_wsgi's normal path.
+   Sub-interpreter cleanup proceeds via the explicit teardown loop;
+   the main interpreter is not destroyed through mod_wsgi's normal
+   path, so its exit functions are left to ``Py_Finalize()`` to drive.
 
 :Operator action:
    No immediate action. If the message recurs, file an issue with
@@ -4597,35 +4563,15 @@ WSGI0179 — Digest auth provider returned unexpected type
 
 .. _WSGI0180:
 
-WSGI0180 — Unable to register interpreter in dictionary
--------------------------------------------------------
+WSGI0180 — (retired)
+--------------------
 
-:Severity: ERR
-:Source: ``src/server/wsgi_interp.c``
-
-:Logged message:
-   ``Unable to register <interpreter-context> in interpreters
-   dictionary for <process-context>.`` Interpreter context is
-   ``main interpreter`` or ``sub-interpreter '<name>'``; process
-   context is ``embedded mode`` or ``daemon process '<group>'``.
-
-:Cause:
-   ``PyDict_SetItemString()`` failed when ``wsgi_acquire_interpreter()``
-   tried to register a freshly created sub-interpreter in mod_wsgi's
-   per-process interpreters dictionary. Almost always a Python heap
-   allocation failure.
-
-:Outcome:
-   The newly created sub-interpreter is decremented and discarded;
-   ``wsgi_acquire_interpreter()`` returns ``NULL``. The caller
-   (typically an auth or dispatch hook) returns 500 to the client.
-   The next request for the same application group will retry
-   creation.
-
-:Operator action:
-   Check free memory on the host. If recurrent, reduce
-   ``threads=`` / ``processes=`` on heavily configured daemon
-   groups.
+Previously logged when ``PyDict_SetItemString()`` failed registering
+a freshly created sub-interpreter in mod_wsgi's per-process
+interpreters dictionary from ``wsgi_acquire_interpreter()``. The
+interpreters dictionary has been replaced by an ``apr_hash``;
+insertion into the hash cannot fail in the same way, so the
+failure path no longer exists.
 
 .. _WSGI0181:
 
@@ -4983,34 +4929,14 @@ WSGI0192 — Unable to create thread state to destroy sub-interpreter
 
 .. _WSGI0193:
 
-WSGI0193 — Unable to allocate interpreters dictionary
------------------------------------------------------
+WSGI0193 — (retired)
+--------------------
 
-:Severity: CRIT
-:Source: ``src/server/wsgi_interp.c``
-
-:Logged message:
-   ``Unable to allocate interpreters dictionary for <process-context>;
-   Python based handlers will not be available.`` Process context is
-   ``embedded mode`` or ``daemon process '<group>'``.
-
-:Cause:
-   ``PyDict_New()`` returned ``NULL`` during ``wsgi_python_child_init``
-   when constructing the per-process map of interpreter wrappers.
-   Almost always a Python heap allocation failure at the C level
-   during process startup.
-
-:Outcome:
-   Python initialisation aborts; the process refuses to handle Python
-   requests for the remainder of its lifetime. Apache treats this as
-   a startup failure and any request that would have been handled by
-   mod_wsgi gets a 500 internal server error.
-
-:Operator action:
-   Check free memory on the host at the time the process started.
-   If recurrent, reduce per-process configuration that consumes
-   memory at startup (large ``WSGIPythonPath``, eager imports via
-   ``WSGIImportScript``).
+Previously logged when ``PyDict_New()`` returned ``NULL`` while
+constructing mod_wsgi's per-process interpreters dictionary in
+``wsgi_python_child_init()``. The dictionary has been replaced by
+an ``apr_hash`` allocated from the Apache child pool, so there is
+no equivalent Python-level allocation that can fail at this point.
 
 .. _WSGI0194:
 
