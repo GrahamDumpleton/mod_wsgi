@@ -49,8 +49,6 @@ extern PyObject *wsgi_interpreters;
 
 extern PyObject *wsgi_request_timeout_exc;
 
-extern apr_hash_t *wsgi_interpreters_index;
-
 extern apr_thread_mutex_t *wsgi_interp_lock;
 extern apr_thread_mutex_t *wsgi_module_lock;
 extern apr_thread_mutex_t *wsgi_shutdown_lock;
