@@ -49,6 +49,7 @@ typedef struct
     PyTypeObject *ShutdownInterpreter_Type;
     PyTypeObject *Log_Type;
     PyTypeObject *Stream_Type;
+    PyTypeObject *Dispatch_Type;
 } WSGIModuleState;
 
 /* ------------------------------------------------------------------------- */

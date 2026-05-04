@@ -27,14 +27,55 @@
 
 /* ------------------------------------------------------------------------- */
 
+/*
+ * Dispatch: an internal per-request scratch object used by
+ * wsgi_execute_dispatch to build the environ dict passed to the
+ * dispatch script callables (process_group, application_group,
+ * callable_object) installed by WSGIDispatchScript. It carries
+ * the Apache request_rec, the resolved WSGIRequestConfig, and a
+ * Log object that gets installed into the environ dict as
+ * environ["wsgi.errors"]. The Dispatch instance itself is not
+ * exposed to the script: only the environ dict it produces is
+ * passed to the callables. Built fresh per request and
+ * discarded once the script's callables have returned.
+ *
+ * The type is internal; instances are never constructed from
+ * Python and the type is not exposed as a module attribute. It
+ * exists as a Python type purely so reference counting can
+ * govern the lifetime of the wrapped per-request resources.
+ *
+ * The Python type backing this object is heap-allocated, created
+ * via PyType_FromModuleAndSpec, so each Python sub-interpreter
+ * has its own type instance. The type pointer lives in
+ * WSGIModuleState and is looked up via
+ * PyImport_ImportModule("mod_wsgi") + PyModule_GetState by
+ * newDispatchObject.
+ */
+
 typedef struct
 {
-    PyObject_HEAD request_rec *r;
+    PyObject_HEAD
+    request_rec *r;
     WSGIRequestConfig *config;
     PyObject *log;
 } DispatchObject;
 
-extern PyTypeObject Dispatch_Type;
+/*
+ * Create the heap-allocated Dispatch PyTypeObject for `module`'s
+ * interpreter and store it in WSGIModuleState. Called from the
+ * embedded mod_wsgi module's exec slot. Returns 0 on success,
+ * -1 on failure with Python exception set.
+ */
+
+extern int wsgi_dispatch_init(PyObject *module);
+
+/*
+ * Run the configured WSGIDispatchScript callables (process_group,
+ * application_group, callable_object) for the current request,
+ * applying any returned overrides to the request config. Returns
+ * an Apache HTTP status (OK on success, HTTP_INTERNAL_SERVER_ERROR
+ * on failure to load or execute the script).
+ */
 
 extern int wsgi_execute_dispatch(request_rec *r);
 

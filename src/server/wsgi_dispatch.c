@@ -23,16 +23,47 @@
 #include "wsgi_daemon.h"
 #include "wsgi_interp.h"
 #include "wsgi_logger.h"
+#include "wsgi_module.h"
 
 /* ------------------------------------------------------------------------- */
 
 static DispatchObject *newDispatchObject(request_rec *r,
                                          WSGIRequestConfig *config)
 {
-    DispatchObject *self;
+    PyObject *module = NULL;
+    WSGIModuleState *state = NULL;
+    PyTypeObject *type = NULL;
+    DispatchObject *self = NULL;
 
-    self = PyObject_New(DispatchObject, &Dispatch_Type);
-    if (self == NULL)
+    /*
+     * Find the embedded mod_wsgi module for the current
+     * interpreter and pull the Dispatch heap type out of its
+     * state. Returns NULL with a clear error if the module is
+     * not in sys.modules or its state has not been initialised;
+     * either indicates an init ordering bug.
+     */
+
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+        return NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state || !state->Dispatch_Type)
+    {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "Dispatch type not initialised for the current "
+                        "interpreter; newDispatchObject() called before "
+                        "the embedded mod_wsgi module's exec slot ran");
+        Py_DECREF(module);
+        return NULL;
+    }
+
+    type = state->Dispatch_Type;
+
+    self = (DispatchObject *)type->tp_alloc(type, 0);
+    Py_DECREF(module);
+
+    if (!self)
         return NULL;
 
     self->config = config;
@@ -50,11 +81,21 @@ static DispatchObject *newDispatchObject(request_rec *r,
     return self;
 }
 
+/*
+ * Heap-type destructor. Releases the per-request log reference,
+ * frees the instance memory via the type's tp_free, and decrements
+ * the type's refcount (every heap-type instance owns a reference
+ * to its type).
+ */
+
 static void Dispatch_dealloc(DispatchObject *self)
 {
+    PyTypeObject *tp = Py_TYPE(self);
+
     Py_XDECREF(self->log);
 
-    PyObject_Del(self);
+    tp->tp_free(self);
+    Py_DECREF(tp);
 }
 
 static PyObject *Dispatch_environ(DispatchObject *self, const char *group)
@@ -180,48 +221,50 @@ error:
     return NULL;
 }
 
-PyTypeObject Dispatch_Type = {
-    PyVarObject_HEAD_INIT(NULL, 0) "mod_wsgi.Dispatch", /*tp_name*/
-    sizeof(DispatchObject),                             /*tp_basicsize*/
-    0,                                                  /*tp_itemsize*/
-    /* methods */
-    (destructor)Dispatch_dealloc, /*tp_dealloc*/
-    0,                            /*tp_print*/
-    0,                            /*tp_getattr*/
-    0,                            /*tp_setattr*/
-    0,                            /*tp_compare*/
-    0,                            /*tp_repr*/
-    0,                            /*tp_as_number*/
-    0,                            /*tp_as_sequence*/
-    0,                            /*tp_as_mapping*/
-    0,                            /*tp_hash*/
-    0,                            /*tp_call*/
-    0,                            /*tp_str*/
-    0,                            /*tp_getattro*/
-    0,                            /*tp_setattro*/
-    0,                            /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT,           /*tp_flags*/
-    0,                            /*tp_doc*/
-    0,                            /*tp_traverse*/
-    0,                            /*tp_clear*/
-    0,                            /*tp_richcompare*/
-    0,                            /*tp_weaklistoffset*/
-    0,                            /*tp_iter*/
-    0,                            /*tp_iternext*/
-    0,                            /*tp_methods*/
-    0,                            /*tp_members*/
-    0,                            /*tp_getset*/
-    0,                            /*tp_base*/
-    0,                            /*tp_dict*/
-    0,                            /*tp_descr_get*/
-    0,                            /*tp_descr_set*/
-    0,                            /*tp_dictoffset*/
-    0,                            /*tp_init*/
-    0,                            /*tp_alloc*/
-    0,                            /*tp_new*/
-    0,                            /*tp_free*/
-    0,                            /*tp_is_gc*/
+/*
+ * PyType_Spec for the Dispatch heap type. The only slot with
+ * non-default behaviour is tp_dealloc (releases the per-request
+ * log); everything else falls back to the framework defaults.
+ *
+ * tp_name is "mod_wsgi.Dispatch" so error messages and repr()
+ * output identify where the type comes from. The type is not
+ * exposed as a module attribute; instances are produced by
+ * newDispatchObject from C and consumed by the dispatch script
+ * machinery in the same request.
+ */
+
+static PyType_Slot Dispatch_slots[] = {
+    {Py_tp_dealloc, Dispatch_dealloc},
+    {0, NULL},
 };
+
+static PyType_Spec Dispatch_spec = {
+    .name      = "mod_wsgi.Dispatch",
+    .basicsize = sizeof(DispatchObject),
+    .itemsize  = 0,
+    .flags     = Py_TPFLAGS_DEFAULT,
+    .slots     = Dispatch_slots,
+};
+
+/* ------------------------------------------------------------------------- */
+
+int wsgi_dispatch_init(PyObject *module)
+{
+    WSGIModuleState *state = NULL;
+    PyObject *type = NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+        return -1;
+
+    type = PyType_FromModuleAndSpec(module, &Dispatch_spec, NULL);
+    if (!type)
+        return -1;
+
+    state->Dispatch_Type = (PyTypeObject *)type;
+
+    return 0;
+}
 
 int wsgi_execute_dispatch(request_rec *r)
 {
