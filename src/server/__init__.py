@@ -1,6 +1,5 @@
 from __future__ import absolute_import, division, print_function
 
-import atexit
 import copy
 import getpass
 import inspect
@@ -1178,7 +1177,6 @@ def _monitor():
             pass
 
 _thread = threading.Thread(target=_monitor)
-_thread.daemon = True
 
 def _exiting():
     try:
@@ -1203,7 +1201,8 @@ def start_reloader(interval=1.0):
         print('%s Starting change monitor.' % prefix, file=sys.stderr)
         _running = True
         _thread.start()
-        atexit.register(_exiting)
+        from mod_wsgi import subscribe_shutdown
+        subscribe_shutdown(lambda *args, **kwargs: _exiting())
     _lock.release()
 
 class PostMortemDebugger(object):
