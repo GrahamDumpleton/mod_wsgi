@@ -35,6 +35,19 @@ typedef struct
     PyObject *request_data;
     PyObject *log_buffer;
 
+    /* Application group name of the interpreter this thread is currently
+     * servicing a request in. Set by wsgi_execute_script just after
+     * wsgi_acquire_interpreter succeeds, cleared just before
+     * wsgi_release_interpreter. NULL when the thread is not currently
+     * inside a request handler. The string is owned by Apache config
+     * memory and lives for process lifetime, so no copy is needed.
+     *
+     * In daemon mode this is read by the monitor thread (via the
+     * back-pointer on WSGIDaemonThread) to discover which sub-interpreter
+     * to acquire when injecting a RequestTimeout exception into the
+     * worker. */
+    const char *current_application_group;
+
     /* Staging accumulator for GIL wait time observed at instrumented
      * Py_BEGIN/END_ALLOW_THREADS sites that fire before the per-request
      * active slot has been claimed (initial wsgi_acquire_interpreter,

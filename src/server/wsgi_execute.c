@@ -25,6 +25,7 @@
 #include "wsgi_adapter.h"
 #include "wsgi_logger.h"
 #include "wsgi_metrics.h"
+#include "wsgi_thread.h"
 #include "wsgi_daemon.h"
 
 int wsgi_execute_script(request_rec *r)
@@ -71,6 +72,37 @@ int wsgi_execute_script(request_rec *r)
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
+
+    /*
+     * Publish the application group on this thread's WSGIThreadInfo so
+     * that, in daemon mode, the monitor can see which sub-interpreter
+     * the worker is currently in (via WSGIDaemonThread::thread_info).
+     * Cleared again before each wsgi_release_interpreter below. The
+     * field is harmless in embedded mode but kept uniform across modes
+     * so any future self-introspective code can rely on it.
+     */
+
+    wsgi_thread_info(1, 0)->current_application_group =
+        config->application_group;
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_daemon_process)
+    {
+        /*
+         * Drop any RequestTimeout injection that the daemon monitor
+         * may have landed on this tstate during the gap between the
+         * prior request's release and this acquire (the monitor
+         * decides under wsgi_monitor_lock then injects after release;
+         * the worker may have already moved on by the time the inject
+         * lands). Without this clear, the eval loop would raise the
+         * stale RequestTimeout against this innocent request on its
+         * first bytecode tick. PyErr_Clear() does not help because
+         * tstate->async_exc is a separate slot from tstate->curexc_*.
+         */
+
+        PyThreadState_SetAsyncExc(PyThread_get_thread_ident(), NULL);
+    }
+#endif
 
     /* Setup startup timeout if first request and specified. */
 
@@ -201,6 +233,7 @@ int wsgi_execute_script(request_rec *r)
 
                     apr_thread_mutex_unlock(wsgi_module_lock);
 
+                    wsgi_thread_info(1, 0)->current_application_group = NULL;
                     wsgi_release_interpreter(interp);
 
                     r->status = HTTP_INTERNAL_SERVER_ERROR;
@@ -411,6 +444,7 @@ int wsgi_execute_script(request_rec *r)
 
     /* Cleanup and release interpreter. */
 
+    wsgi_thread_info(1, 0)->current_application_group = NULL;
     wsgi_release_interpreter(interp);
 
     return status;

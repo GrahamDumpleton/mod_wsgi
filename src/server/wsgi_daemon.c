@@ -1973,6 +1973,18 @@ static void *wsgi_daemon_thread(apr_thread_t *thd, void *data)
 
     thread->python_thread_id = PyThread_get_thread_ident();
 
+    /*
+     * Eagerly create the per-thread WSGIThreadInfo and publish a back-
+     * pointer to it on the daemon thread slot. The monitor follows this
+     * pointer (from outside the worker's OS thread) to read the
+     * worker's current application group when deciding which sub-
+     * interpreter to acquire for a RequestTimeout injection.
+     * wsgi_thread_info(create=1, ...) is documented never to return
+     * NULL on success.
+     */
+
+    thread->thread_info = wsgi_thread_info(1, 1);
+
     apr_thread_mutex_lock(thread->mutex);
 
     wsgi_daemon_worker(p, thread);
@@ -2142,9 +2154,27 @@ static void wsgi_log_thread_stack(unsigned long thread_id)
 
 static void wsgi_inject_request_timeout(WSGIDaemonThread *thread)
 {
-    PyGILState_STATE state;
+    InterpreterObject *interp = NULL;
+    WSGIThreadInfo *thread_info = NULL;
+    const char *application_group = NULL;
 
     if (!wsgi_request_timeout_exc)
+        return;
+
+    /*
+     * Discover which sub-interpreter the worker is currently servicing
+     * a request in via the WSGIThreadInfo back-pointer published at
+     * worker startup. If thread_info has not yet been published, or
+     * the worker is not currently inside a request handler, there is
+     * nothing to inject into.
+     */
+
+    thread_info = thread->thread_info;
+    if (!thread_info)
+        return;
+
+    application_group = thread_info->current_application_group;
+    if (!application_group)
         return;
 
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
@@ -2154,14 +2184,34 @@ static void wsgi_inject_request_timeout(WSGIDaemonThread *thread)
                    thread->id, wsgi_daemon_process->group->name,
                    (int)apr_time_sec(wsgi_request_timeout));
 
-    state = PyGILState_Ensure();
+    /*
+     * Acquire the worker's current interpreter from the monitor's OS
+     * thread so that PyThreadState_SetAsyncExc walks the right
+     * interpreter's tstate list when locating the worker tstate.
+     * PyGILState_Ensure would attach to the main interpreter and miss
+     * any worker that is currently in a sub-interpreter (silent
+     * no-op).
+     */
+
+    interp = wsgi_acquire_interpreter(application_group);
+    if (!interp)
+    {
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                       "Unable to acquire %s for RequestTimeout "
+                       "injection into thread %d of daemon process "
+                       "'%s'.",
+                       wsgi_format_interp_name(wsgi_server->process->pool,
+                                               application_group),
+                       thread->id, wsgi_daemon_process->group->name);
+        return;
+    }
 
     wsgi_log_thread_stack(thread->python_thread_id);
 
     PyThreadState_SetAsyncExc(thread->python_thread_id,
                               wsgi_request_timeout_exc);
 
-    PyGILState_Release(state);
+    wsgi_release_interpreter(interp);
 
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                    "Injected RequestTimeout into thread %d of daemon "

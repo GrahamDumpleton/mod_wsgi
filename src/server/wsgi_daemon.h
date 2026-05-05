@@ -23,6 +23,7 @@
 
 #include "wsgi_python.h"
 #include "wsgi_apache.h"
+#include "wsgi_thread.h"
 
 /* ------------------------------------------------------------------------- */
 
@@ -167,6 +168,14 @@ typedef struct
     apr_time_t request;
     unsigned long python_thread_id;
     apr_time_t injected_at;
+
+    /* Back-pointer to this worker's WSGIThreadInfo, published once at
+     * thread startup. Lets the daemon monitor follow the chain to per-
+     * thread per-request state (specifically current_application_group)
+     * without needing apr_threadkey access from outside the worker's
+     * own thread. NULL until the worker thread has run far enough
+     * through wsgi_daemon_thread to publish it. */
+    WSGIThreadInfo *thread_info;
 } WSGIDaemonThread;
 
 typedef struct
