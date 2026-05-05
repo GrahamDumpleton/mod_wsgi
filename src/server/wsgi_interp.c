@@ -2099,8 +2099,6 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
 apr_thread_mutex_t *wsgi_interp_lock = NULL;
 apr_thread_mutex_t *wsgi_shutdown_lock = NULL;
 
-PyObject *wsgi_request_timeout_exc = NULL;
-
 InterpreterObject *wsgi_acquire_interpreter(const char *name)
 {
     PyThreadState *tstate = NULL;

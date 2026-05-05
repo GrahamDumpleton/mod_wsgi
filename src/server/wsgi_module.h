@@ -61,6 +61,18 @@ typedef struct
     PyTypeObject *Adapter_Type;
 
     /*
+     * Per-interpreter mod_wsgi.RequestTimeout exception class.
+     * Populated by wsgi_request_timeout_init from the module exec
+     * slot. Exposed to user code as the mod_wsgi.RequestTimeout
+     * attribute. The adapter's PyErr_ExceptionMatches checks read
+     * this field, and the daemon monitor reads it too (under the
+     * target sub-interpreter's GIL) when choosing the exception
+     * object to pass to PyThreadState_SetAsyncExc.
+     */
+
+    PyObject *RequestTimeout;
+
+    /*
      * Interned key strings used as dict keys when building the
      * mod_wsgi.request_metrics / process_metrics / server_metrics
      * result dicts. Populated by wsgi_metrics_init_state.

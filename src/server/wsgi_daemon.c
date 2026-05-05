@@ -24,6 +24,7 @@
 #include "wsgi_config.h"
 #include "wsgi_remote.h"
 #include "wsgi_metrics.h"
+#include "wsgi_module.h"
 #include "wsgi_shutdown.h"
 #include "wsgi_logger.h"
 #include "wsgi_thread.h"
@@ -2158,8 +2159,8 @@ static void wsgi_inject_request_timeout(WSGIDaemonThread *thread)
     WSGIThreadInfo *thread_info = NULL;
     const char *application_group = NULL;
 
-    if (!wsgi_request_timeout_exc)
-        return;
+    PyObject *module = NULL;
+    WSGIModuleState *state = NULL;
 
     /*
      * Discover which sub-interpreter the worker is currently servicing
@@ -2206,10 +2207,43 @@ static void wsgi_inject_request_timeout(WSGIDaemonThread *thread)
         return;
     }
 
+    /*
+     * Look up this interpreter's RequestTimeout class from its
+     * WSGIModuleState. The class identity must be this interpreter's
+     * for the adapter's PyErr_ExceptionMatches check on the injected
+     * exception to succeed.
+     */
+
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+    {
+        PyErr_Clear();
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                       "Unable to import 'mod_wsgi' for RequestTimeout "
+                       "injection into thread %d of daemon process '%s'.",
+                       thread->id, wsgi_daemon_process->group->name);
+        wsgi_release_interpreter(interp);
+        return;
+    }
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state || !state->RequestTimeout)
+    {
+        wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                       "RequestTimeout class not initialised for thread %d "
+                       "of daemon process '%s'.",
+                       thread->id, wsgi_daemon_process->group->name);
+        Py_DECREF(module);
+        wsgi_release_interpreter(interp);
+        return;
+    }
+
     wsgi_log_thread_stack(thread->python_thread_id);
 
     PyThreadState_SetAsyncExc(thread->python_thread_id,
-                              wsgi_request_timeout_exc);
+                              state->RequestTimeout);
+
+    Py_DECREF(module);
 
     wsgi_release_interpreter(interp);
 

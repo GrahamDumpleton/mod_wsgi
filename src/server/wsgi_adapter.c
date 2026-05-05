@@ -1214,6 +1214,9 @@ static int Adapter_process_file_wrapper(AdapterObject *self)
 
 int Adapter_run(AdapterObject *self, PyObject *object)
 {
+    PyObject *module = NULL;
+    WSGIModuleState *state = NULL;
+
     PyObject *vars = NULL;
     PyObject *start = NULL;
     PyObject *args = NULL;
@@ -1236,6 +1239,21 @@ int Adapter_run(AdapterObject *self, PyObject *object)
     WSGIThreadCPUUsage end_usage;
 
     int aborted = 0;
+
+    /*
+     * The per-interpreter mod_wsgi.RequestTimeout exception class is
+     * read from WSGIModuleState by the PyErr_ExceptionMatches checks
+     * in the request-completion path below. Fetched once up front so
+     * every consumer site can reach it without redoing the import.
+     */
+
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+        goto error;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+        goto error;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_idle_timeout && !self->config->ignore_activity)
@@ -1515,8 +1533,8 @@ int Adapter_run(AdapterObject *self, PyObject *object)
         {
             int is_request_timeout = 0;
 
-            if (wsgi_request_timeout_exc &&
-                PyErr_ExceptionMatches(wsgi_request_timeout_exc))
+            if (state->RequestTimeout &&
+                PyErr_ExceptionMatches(state->RequestTimeout))
                 is_request_timeout = 1;
 
             if (is_request_timeout && !(self->status_line && !self->headers))
@@ -1626,8 +1644,8 @@ int Adapter_run(AdapterObject *self, PyObject *object)
 
         if (PyErr_Occurred())
         {
-            if (wsgi_request_timeout_exc &&
-                PyErr_ExceptionMatches(wsgi_request_timeout_exc))
+            if (state->RequestTimeout &&
+                PyErr_ExceptionMatches(state->RequestTimeout))
             {
                 PyErr_Clear();
             }
@@ -1645,8 +1663,8 @@ int Adapter_run(AdapterObject *self, PyObject *object)
          * normally and let the default 500 result apply.
          */
 
-        if (wsgi_request_timeout_exc &&
-            PyErr_ExceptionMatches(wsgi_request_timeout_exc))
+        if (state->RequestTimeout &&
+            PyErr_ExceptionMatches(state->RequestTimeout))
         {
             self->r->status = HTTP_GATEWAY_TIME_OUT;
             self->r->status_line = "504 Gateway Timeout";
@@ -1985,6 +2003,8 @@ error:
     Py_XDECREF(evwrapper);
 
     Py_CLEAR(self->sequence);
+
+    Py_XDECREF(module);
 
     return self->result;
 }

@@ -101,34 +101,24 @@ static int wsgi_module_install_common(PyObject *module)
     }
 
     /*
-     * RequestTimeout exception class. Created once at process scope
-     * and shared across every interpreter that imports the module.
-     * Derives directly from BaseException so that well-written code
-     * does not catch it via 'except Exception:'. Used by the daemon
-     * monitor thread when injecting a timeout exception into a
-     * worker via PyThreadState_SetAsyncExc().
+     * RequestTimeout exception class. The heap exception lives on
+     * this interpreter's WSGIModuleState; expose it under the user-
+     * facing name RequestTimeout. Derives directly from BaseException
+     * so that well-written code does not catch it via
+     * 'except Exception:'. Used by the daemon monitor thread when
+     * injecting a timeout exception into a worker via
+     * PyThreadState_SetAsyncExc().
      */
 
-    if (!wsgi_request_timeout_exc)
     {
-        wsgi_request_timeout_exc = PyErr_NewExceptionWithDoc(
-            "mod_wsgi.RequestTimeout",
-            "Raised by mod_wsgi when a daemon request exceeds the "
-            "configured request-timeout and exception injection is "
-            "enabled. Derives directly from BaseException so well-written "
-            "code does not catch it via 'except Exception:'. May be "
-            "caught for cleanup but should be re-raised so the WSGI "
-            "adapter can return 504.",
-            PyExc_BaseException, NULL);
+        WSGIModuleState *state =
+            (WSGIModuleState *)PyModule_GetState(module);
 
-        if (!wsgi_request_timeout_exc)
+        Py_INCREF(state->RequestTimeout);
+        if (wsgi_module_add_object(module, "RequestTimeout",
+                                   state->RequestTimeout) < 0)
             return -1;
     }
-
-    Py_INCREF(wsgi_request_timeout_exc);
-    if (wsgi_module_add_object(module, "RequestTimeout",
-                               wsgi_request_timeout_exc) < 0)
-        return -1;
 
     /* Module-level methods. */
 
@@ -253,9 +243,46 @@ static int wsgi_module_install_runtime(PyObject *module, const char *name)
 /* ------------------------------------------------------------------------- */
 
 /*
+ * Create the per-interpreter mod_wsgi.RequestTimeout exception
+ * class and store it on WSGIModuleState. Called from the embedded
+ * mod_wsgi module's exec slot so that the class is reachable via
+ * PyImport_ImportModule + PyModule_GetState by both the adapter's
+ * PyErr_ExceptionMatches consumers and the daemon monitor's
+ * SetAsyncExc injector.
+ */
+
+static int wsgi_request_timeout_init(PyObject *module)
+{
+    WSGIModuleState *state = NULL;
+    PyObject *exc = NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+        return -1;
+
+    exc = PyErr_NewExceptionWithDoc(
+        "mod_wsgi.RequestTimeout",
+        "Raised by mod_wsgi when a daemon request exceeds the "
+        "configured request-timeout and exception injection is "
+        "enabled. Derives directly from BaseException so well-written "
+        "code does not catch it via 'except Exception:'. May be "
+        "caught for cleanup but should be re-raised so the WSGI "
+        "adapter can return 504.",
+        PyExc_BaseException, NULL);
+
+    if (!exc)
+        return -1;
+
+    state->RequestTimeout = exc;
+
+    return 0;
+}
+
+/*
  * PEP 489 multi-phase init plumbing. The exec slot runs each
  * per-type init helper to create the heap-allocated type for
- * that interpreter and store it in WSGIModuleState, then
+ * that interpreter and store it in WSGIModuleState, the
+ * RequestTimeout exception class init, then
  * wsgi_metrics_init_state to populate the per-interpreter
  * interned strings and scoreboard status flags used by the
  * metrics dict-builders. User-facing attribute installation
@@ -263,9 +290,10 @@ static int wsgi_module_install_runtime(PyObject *module, const char *name)
  * per-application-group attribute installation are handled by
  * wsgi_module_populate.
  *
- * The Py_mod_multiple_interpreters slot is not declared: the
- * process-shared RequestTimeout exception precludes
- * per-interpreter isolation.
+ * The Py_mod_multiple_interpreters slot is not declared: per-
+ * interpreter isolation across the rest of the embedded code
+ * (GIL acquisition sites, metrics state, interpreter config
+ * plumbing) has not yet been audited.
  */
 
 static int wsgi_module_exec(PyObject *module)
@@ -295,6 +323,9 @@ static int wsgi_module_exec(PyObject *module)
         return -1;
 
     if (wsgi_adapter_init(module) < 0)
+        return -1;
+
+    if (wsgi_request_timeout_init(module) < 0)
         return -1;
 
     if (wsgi_metrics_init_state(module) < 0)

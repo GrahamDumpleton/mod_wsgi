@@ -42,8 +42,6 @@ extern int wsgi_python_required;
 extern const char *wsgi_python_path;
 extern const char *wsgi_python_eggs;
 
-extern PyObject *wsgi_request_timeout_exc;
-
 extern apr_thread_mutex_t *wsgi_interp_lock;
 extern apr_thread_mutex_t *wsgi_module_lock;
 extern apr_thread_mutex_t *wsgi_shutdown_lock;
