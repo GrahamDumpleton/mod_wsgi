@@ -347,3 +347,16 @@ Bugs Fixed
   ``--https-port`` is set, leaving operators with a server that
   listened only on plain HTTP and no indication that their TLS
   configuration had been ignored.
+
+* Fixed the shutdown stack-trace dump that fires after a request-timeout
+  escalation in daemon mode so it now reports frames from the
+  interpreter the offending request was running in. Previously the dump
+  acquired the GIL via ``PyGILState_Ensure`` (which attaches to the main
+  interpreter) and called ``_PyThread_CurrentFrames``, whose semantics
+  changed in Python 3.12 to return frames for the current interpreter
+  only. On Python 3.12 and later, requests served in a named
+  ``WSGIApplicationGroup`` silently produced an empty or misleading
+  dump because the dumping thread was attached to the main interpreter
+  while the wedged worker was in a sub-interpreter. The escalation site
+  now records which application group triggered the timeout and the
+  dump scopes itself to that interpreter.
