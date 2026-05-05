@@ -252,8 +252,31 @@ InterpreterObject *newInterpreterObject(const char *name)
          * interpreter fails it will restore the
          * existing active thread state for us so don't
          * need to worry about it in that case.
+         *
+         * On Python 3.12+ the interpreter is created via
+         * Py_NewInterpreterFromConfig with _PyInterpreterConfig_LEGACY_INIT,
+         * which expands to the same defaults Py_NewInterpreter applies
+         * internally on 3.12+ (shared GIL, main obmalloc, fork/exec/
+         * threads/daemon threads allowed, multi-interp extensions
+         * unchecked outside free-threaded builds). The configuration
+         * is spelled out via the macro rather than left implicit.
+         * Older Python versions fall through to the legacy entry
+         * point.
          */
 
+#if PY_VERSION_HEX >= 0x030c0000
+        {
+            PyInterpreterConfig config = _PyInterpreterConfig_LEGACY_INIT;
+            PyStatus status = Py_NewInterpreterFromConfig(&tstate, &config);
+
+            if (PyStatus_Exception(status))
+            {
+                wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                        "Py_NewInterpreterFromConfig() failed");
+                goto failure;
+            }
+        }
+#else
         tstate = Py_NewInterpreter();
 
         if (!tstate)
@@ -262,6 +285,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                                                  "Py_NewInterpreter() failed");
             goto failure;
         }
+#endif
 
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
                               "Creating %s in %s.",
