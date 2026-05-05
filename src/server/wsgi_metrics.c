@@ -25,6 +25,7 @@
 #include "wsgi_server.h"
 #include "wsgi_memory.h"
 #include "wsgi_logger.h"
+#include "wsgi_module.h"
 #include "wsgi_thread.h"
 #include "wsgi_telemetry.h"
 
@@ -1870,223 +1871,125 @@ int wsgi_metrics_snapshot_slow_active(wsgi_slow_request_t *out, int out_cap,
 
 /* ------------------------------------------------------------------------- */
 
-static int wsgi_interns_initialized = 0;
-
-WSGI_STATIC_INTERNED_STRING(server_limit);
-WSGI_STATIC_INTERNED_STRING(thread_limit);
-WSGI_STATIC_INTERNED_STRING(running_generation);
-WSGI_STATIC_INTERNED_STRING(restart_time);
-WSGI_STATIC_INTERNED_STRING(current_time);
-WSGI_STATIC_INTERNED_STRING(running_time);
-WSGI_STATIC_INTERNED_STRING(process_num);
-WSGI_STATIC_INTERNED_STRING(pid);
-WSGI_STATIC_INTERNED_STRING(generation);
-WSGI_STATIC_INTERNED_STRING(quiescing);
-WSGI_STATIC_INTERNED_STRING(workers);
-WSGI_STATIC_INTERNED_STRING(thread_num);
-WSGI_STATIC_INTERNED_STRING(status);
-WSGI_STATIC_INTERNED_STRING(access_count);
-WSGI_STATIC_INTERNED_STRING(bytes_served);
-WSGI_STATIC_INTERNED_STRING(start_time);
-WSGI_STATIC_INTERNED_STRING(stop_time);
-WSGI_STATIC_INTERNED_STRING(last_used);
-WSGI_STATIC_INTERNED_STRING(client);
-WSGI_STATIC_INTERNED_STRING(request);
-WSGI_STATIC_INTERNED_STRING(vhost);
-WSGI_STATIC_INTERNED_STRING(processes);
-
-WSGI_STATIC_INTERNED_STRING(request_count);
-WSGI_STATIC_INTERNED_STRING(request_busy_time);
-WSGI_STATIC_INTERNED_STRING(memory_max_rss);
-WSGI_STATIC_INTERNED_STRING(memory_rss);
-WSGI_STATIC_INTERNED_STRING(cpu_user_time);
-WSGI_STATIC_INTERNED_STRING(cpu_system_time);
-WSGI_STATIC_INTERNED_STRING(cpu_time);
-WSGI_STATIC_INTERNED_STRING(cpu_user_utilization);
-WSGI_STATIC_INTERNED_STRING(cpu_system_utilization);
-WSGI_STATIC_INTERNED_STRING(cpu_utilization);
-WSGI_STATIC_INTERNED_STRING(request_threads);
-WSGI_STATIC_INTERNED_STRING(active_requests);
-WSGI_STATIC_INTERNED_STRING(threads);
-WSGI_STATIC_INTERNED_STRING(thread_id);
-
-WSGI_STATIC_INTERNED_STRING(sample_period);
-WSGI_STATIC_INTERNED_STRING(request_threads_maximum);
-WSGI_STATIC_INTERNED_STRING(request_threads_started);
-WSGI_STATIC_INTERNED_STRING(request_threads_active);
-WSGI_STATIC_INTERNED_STRING(capacity_utilization);
-WSGI_STATIC_INTERNED_STRING(request_throughput);
-WSGI_STATIC_INTERNED_STRING(server_time);
-WSGI_STATIC_INTERNED_STRING(queue_time);
-WSGI_STATIC_INTERNED_STRING(daemon_time);
-WSGI_STATIC_INTERNED_STRING(application_time);
-WSGI_STATIC_INTERNED_STRING(request_time);
-WSGI_STATIC_INTERNED_STRING(server_time_min_us);
-WSGI_STATIC_INTERNED_STRING(queue_time_min_us);
-WSGI_STATIC_INTERNED_STRING(daemon_time_min_us);
-WSGI_STATIC_INTERNED_STRING(application_time_min_us);
-WSGI_STATIC_INTERNED_STRING(request_time_min_us);
-WSGI_STATIC_INTERNED_STRING(server_time_max_us);
-WSGI_STATIC_INTERNED_STRING(queue_time_max_us);
-WSGI_STATIC_INTERNED_STRING(daemon_time_max_us);
-WSGI_STATIC_INTERNED_STRING(application_time_max_us);
-WSGI_STATIC_INTERNED_STRING(request_time_max_us);
-WSGI_STATIC_INTERNED_STRING(server_time_buckets);
-WSGI_STATIC_INTERNED_STRING(queue_time_buckets);
-WSGI_STATIC_INTERNED_STRING(daemon_time_buckets);
-WSGI_STATIC_INTERNED_STRING(application_time_buckets);
-WSGI_STATIC_INTERNED_STRING(request_time_buckets);
-WSGI_STATIC_INTERNED_STRING(request_threads_buckets);
-WSGI_STATIC_INTERNED_STRING(slot_busy_time_us);
-WSGI_STATIC_INTERNED_STRING(slot_cpu_time_us);
-WSGI_STATIC_INTERNED_STRING(slot_current_elapsed_ms);
-WSGI_STATIC_INTERNED_STRING(slot_max_duration_ms);
-
-WSGI_STATIC_INTERNED_STRING(gil_wait_time);
-WSGI_STATIC_INTERNED_STRING(gil_wait_time_min_us);
-WSGI_STATIC_INTERNED_STRING(gil_wait_time_max_us);
-WSGI_STATIC_INTERNED_STRING(gil_wait_time_buckets);
-WSGI_STATIC_INTERNED_STRING(gil_wait_count);
-WSGI_STATIC_INTERNED_STRING(input_read_time);
-WSGI_STATIC_INTERNED_STRING(input_read_time_min_us);
-WSGI_STATIC_INTERNED_STRING(input_read_time_max_us);
-WSGI_STATIC_INTERNED_STRING(input_read_time_buckets);
-WSGI_STATIC_INTERNED_STRING(output_write_time);
-WSGI_STATIC_INTERNED_STRING(output_write_time_min_us);
-WSGI_STATIC_INTERNED_STRING(output_write_time_max_us);
-WSGI_STATIC_INTERNED_STRING(output_write_time_buckets);
-
-WSGI_STATIC_INTERNED_STRING(input_bytes);
-WSGI_STATIC_INTERNED_STRING(input_reads);
-WSGI_STATIC_INTERNED_STRING(output_bytes);
-WSGI_STATIC_INTERNED_STRING(output_writes);
-
-WSGI_STATIC_INTERNED_STRING(status_1xx);
-WSGI_STATIC_INTERNED_STRING(status_2xx);
-WSGI_STATIC_INTERNED_STRING(status_3xx);
-WSGI_STATIC_INTERNED_STRING(status_4xx);
-WSGI_STATIC_INTERNED_STRING(status_5xx);
-
-static PyObject *wsgi_status_flags[SERVER_NUM_STATUS];
-
 #define WSGI_CREATE_STATUS_FLAG(name, val) \
-    wsgi_status_flags[name] = PyUnicode_InternFromString(val)
+    state->status_flags[name] = PyUnicode_InternFromString(val)
 
-static void wsgi_initialize_interned_strings(void)
+int wsgi_metrics_init_state(PyObject *module)
 {
-    /* Initialise interned strings the first time. */
+    WSGIModuleState *state = NULL;
 
-    if (!wsgi_interns_initialized)
-    {
-        WSGI_CREATE_INTERNED_STRING_ID(server_limit);
-        WSGI_CREATE_INTERNED_STRING_ID(thread_limit);
-        WSGI_CREATE_INTERNED_STRING_ID(running_generation);
-        WSGI_CREATE_INTERNED_STRING_ID(restart_time);
-        WSGI_CREATE_INTERNED_STRING_ID(current_time);
-        WSGI_CREATE_INTERNED_STRING_ID(running_time);
-        WSGI_CREATE_INTERNED_STRING_ID(process_num);
-        WSGI_CREATE_INTERNED_STRING_ID(pid);
-        WSGI_CREATE_INTERNED_STRING_ID(generation);
-        WSGI_CREATE_INTERNED_STRING_ID(quiescing);
-        WSGI_CREATE_INTERNED_STRING_ID(workers);
-        WSGI_CREATE_INTERNED_STRING_ID(thread_num);
-        WSGI_CREATE_INTERNED_STRING_ID(status);
-        WSGI_CREATE_INTERNED_STRING_ID(access_count);
-        WSGI_CREATE_INTERNED_STRING_ID(bytes_served);
-        WSGI_CREATE_INTERNED_STRING_ID(start_time);
-        WSGI_CREATE_INTERNED_STRING_ID(stop_time);
-        WSGI_CREATE_INTERNED_STRING_ID(last_used);
-        WSGI_CREATE_INTERNED_STRING_ID(client);
-        WSGI_CREATE_INTERNED_STRING_ID(request);
-        WSGI_CREATE_INTERNED_STRING_ID(vhost);
-        WSGI_CREATE_INTERNED_STRING_ID(processes);
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+        return -1;
 
-        WSGI_CREATE_INTERNED_STRING_ID(request_count);
-        WSGI_CREATE_INTERNED_STRING_ID(request_busy_time);
-        WSGI_CREATE_INTERNED_STRING_ID(memory_max_rss);
-        WSGI_CREATE_INTERNED_STRING_ID(memory_rss);
-        WSGI_CREATE_INTERNED_STRING_ID(cpu_user_time);
-        WSGI_CREATE_INTERNED_STRING_ID(cpu_system_time);
-        WSGI_CREATE_INTERNED_STRING_ID(cpu_time);
-        WSGI_CREATE_INTERNED_STRING_ID(cpu_user_utilization);
-        WSGI_CREATE_INTERNED_STRING_ID(cpu_system_utilization);
-        WSGI_CREATE_INTERNED_STRING_ID(cpu_utilization);
-        WSGI_CREATE_INTERNED_STRING_ID(request_threads);
-        WSGI_CREATE_INTERNED_STRING_ID(active_requests);
-        WSGI_CREATE_INTERNED_STRING_ID(threads);
-        WSGI_CREATE_INTERNED_STRING_ID(thread_id);
+    WSGI_CREATE_INTERNED_STRING_ID(server_limit);
+    WSGI_CREATE_INTERNED_STRING_ID(thread_limit);
+    WSGI_CREATE_INTERNED_STRING_ID(running_generation);
+    WSGI_CREATE_INTERNED_STRING_ID(restart_time);
+    WSGI_CREATE_INTERNED_STRING_ID(current_time);
+    WSGI_CREATE_INTERNED_STRING_ID(running_time);
+    WSGI_CREATE_INTERNED_STRING_ID(process_num);
+    WSGI_CREATE_INTERNED_STRING_ID(pid);
+    WSGI_CREATE_INTERNED_STRING_ID(generation);
+    WSGI_CREATE_INTERNED_STRING_ID(quiescing);
+    WSGI_CREATE_INTERNED_STRING_ID(workers);
+    WSGI_CREATE_INTERNED_STRING_ID(thread_num);
+    WSGI_CREATE_INTERNED_STRING_ID(status);
+    WSGI_CREATE_INTERNED_STRING_ID(access_count);
+    WSGI_CREATE_INTERNED_STRING_ID(bytes_served);
+    WSGI_CREATE_INTERNED_STRING_ID(start_time);
+    WSGI_CREATE_INTERNED_STRING_ID(stop_time);
+    WSGI_CREATE_INTERNED_STRING_ID(last_used);
+    WSGI_CREATE_INTERNED_STRING_ID(client);
+    WSGI_CREATE_INTERNED_STRING_ID(request);
+    WSGI_CREATE_INTERNED_STRING_ID(vhost);
+    WSGI_CREATE_INTERNED_STRING_ID(processes);
 
-        WSGI_CREATE_INTERNED_STRING_ID(sample_period);
-        WSGI_CREATE_INTERNED_STRING_ID(request_threads_maximum);
-        WSGI_CREATE_INTERNED_STRING_ID(request_threads_started);
-        WSGI_CREATE_INTERNED_STRING_ID(request_threads_active);
-        WSGI_CREATE_INTERNED_STRING_ID(capacity_utilization);
-        WSGI_CREATE_INTERNED_STRING_ID(request_throughput);
-        WSGI_CREATE_INTERNED_STRING_ID(server_time);
-        WSGI_CREATE_INTERNED_STRING_ID(queue_time);
-        WSGI_CREATE_INTERNED_STRING_ID(daemon_time);
-        WSGI_CREATE_INTERNED_STRING_ID(application_time);
-        WSGI_CREATE_INTERNED_STRING_ID(request_time);
-        WSGI_CREATE_INTERNED_STRING_ID(server_time_min_us);
-        WSGI_CREATE_INTERNED_STRING_ID(queue_time_min_us);
-        WSGI_CREATE_INTERNED_STRING_ID(daemon_time_min_us);
-        WSGI_CREATE_INTERNED_STRING_ID(application_time_min_us);
-        WSGI_CREATE_INTERNED_STRING_ID(request_time_min_us);
-        WSGI_CREATE_INTERNED_STRING_ID(server_time_max_us);
-        WSGI_CREATE_INTERNED_STRING_ID(queue_time_max_us);
-        WSGI_CREATE_INTERNED_STRING_ID(daemon_time_max_us);
-        WSGI_CREATE_INTERNED_STRING_ID(application_time_max_us);
-        WSGI_CREATE_INTERNED_STRING_ID(request_time_max_us);
-        WSGI_CREATE_INTERNED_STRING_ID(server_time_buckets);
-        WSGI_CREATE_INTERNED_STRING_ID(daemon_time_buckets);
-        WSGI_CREATE_INTERNED_STRING_ID(queue_time_buckets);
-        WSGI_CREATE_INTERNED_STRING_ID(application_time_buckets);
-        WSGI_CREATE_INTERNED_STRING_ID(request_time_buckets);
-        WSGI_CREATE_INTERNED_STRING_ID(request_threads_buckets);
-        WSGI_CREATE_INTERNED_STRING_ID(slot_busy_time_us);
-        WSGI_CREATE_INTERNED_STRING_ID(slot_cpu_time_us);
-        WSGI_CREATE_INTERNED_STRING_ID(slot_current_elapsed_ms);
-        WSGI_CREATE_INTERNED_STRING_ID(slot_max_duration_ms);
+    WSGI_CREATE_INTERNED_STRING_ID(request_count);
+    WSGI_CREATE_INTERNED_STRING_ID(request_busy_time);
+    WSGI_CREATE_INTERNED_STRING_ID(memory_max_rss);
+    WSGI_CREATE_INTERNED_STRING_ID(memory_rss);
+    WSGI_CREATE_INTERNED_STRING_ID(cpu_user_time);
+    WSGI_CREATE_INTERNED_STRING_ID(cpu_system_time);
+    WSGI_CREATE_INTERNED_STRING_ID(cpu_time);
+    WSGI_CREATE_INTERNED_STRING_ID(cpu_user_utilization);
+    WSGI_CREATE_INTERNED_STRING_ID(cpu_system_utilization);
+    WSGI_CREATE_INTERNED_STRING_ID(cpu_utilization);
+    WSGI_CREATE_INTERNED_STRING_ID(request_threads);
+    WSGI_CREATE_INTERNED_STRING_ID(active_requests);
+    WSGI_CREATE_INTERNED_STRING_ID(threads);
+    WSGI_CREATE_INTERNED_STRING_ID(thread_id);
 
-        WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time);
-        WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time_min_us);
-        WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time_max_us);
-        WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time_buckets);
-        WSGI_CREATE_INTERNED_STRING_ID(gil_wait_count);
-        WSGI_CREATE_INTERNED_STRING_ID(input_read_time);
-        WSGI_CREATE_INTERNED_STRING_ID(input_read_time_min_us);
-        WSGI_CREATE_INTERNED_STRING_ID(input_read_time_max_us);
-        WSGI_CREATE_INTERNED_STRING_ID(input_read_time_buckets);
-        WSGI_CREATE_INTERNED_STRING_ID(output_write_time);
-        WSGI_CREATE_INTERNED_STRING_ID(output_write_time_min_us);
-        WSGI_CREATE_INTERNED_STRING_ID(output_write_time_max_us);
-        WSGI_CREATE_INTERNED_STRING_ID(output_write_time_buckets);
+    WSGI_CREATE_INTERNED_STRING_ID(sample_period);
+    WSGI_CREATE_INTERNED_STRING_ID(request_threads_maximum);
+    WSGI_CREATE_INTERNED_STRING_ID(request_threads_started);
+    WSGI_CREATE_INTERNED_STRING_ID(request_threads_active);
+    WSGI_CREATE_INTERNED_STRING_ID(capacity_utilization);
+    WSGI_CREATE_INTERNED_STRING_ID(request_throughput);
+    WSGI_CREATE_INTERNED_STRING_ID(server_time);
+    WSGI_CREATE_INTERNED_STRING_ID(queue_time);
+    WSGI_CREATE_INTERNED_STRING_ID(daemon_time);
+    WSGI_CREATE_INTERNED_STRING_ID(application_time);
+    WSGI_CREATE_INTERNED_STRING_ID(request_time);
+    WSGI_CREATE_INTERNED_STRING_ID(server_time_min_us);
+    WSGI_CREATE_INTERNED_STRING_ID(queue_time_min_us);
+    WSGI_CREATE_INTERNED_STRING_ID(daemon_time_min_us);
+    WSGI_CREATE_INTERNED_STRING_ID(application_time_min_us);
+    WSGI_CREATE_INTERNED_STRING_ID(request_time_min_us);
+    WSGI_CREATE_INTERNED_STRING_ID(server_time_max_us);
+    WSGI_CREATE_INTERNED_STRING_ID(queue_time_max_us);
+    WSGI_CREATE_INTERNED_STRING_ID(daemon_time_max_us);
+    WSGI_CREATE_INTERNED_STRING_ID(application_time_max_us);
+    WSGI_CREATE_INTERNED_STRING_ID(request_time_max_us);
+    WSGI_CREATE_INTERNED_STRING_ID(server_time_buckets);
+    WSGI_CREATE_INTERNED_STRING_ID(daemon_time_buckets);
+    WSGI_CREATE_INTERNED_STRING_ID(queue_time_buckets);
+    WSGI_CREATE_INTERNED_STRING_ID(application_time_buckets);
+    WSGI_CREATE_INTERNED_STRING_ID(request_time_buckets);
+    WSGI_CREATE_INTERNED_STRING_ID(request_threads_buckets);
+    WSGI_CREATE_INTERNED_STRING_ID(slot_busy_time_us);
+    WSGI_CREATE_INTERNED_STRING_ID(slot_cpu_time_us);
+    WSGI_CREATE_INTERNED_STRING_ID(slot_current_elapsed_ms);
+    WSGI_CREATE_INTERNED_STRING_ID(slot_max_duration_ms);
 
-        WSGI_CREATE_INTERNED_STRING_ID(input_bytes);
-        WSGI_CREATE_INTERNED_STRING_ID(input_reads);
-        WSGI_CREATE_INTERNED_STRING_ID(output_bytes);
-        WSGI_CREATE_INTERNED_STRING_ID(output_writes);
+    WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time);
+    WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time_min_us);
+    WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time_max_us);
+    WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time_buckets);
+    WSGI_CREATE_INTERNED_STRING_ID(gil_wait_count);
+    WSGI_CREATE_INTERNED_STRING_ID(input_read_time);
+    WSGI_CREATE_INTERNED_STRING_ID(input_read_time_min_us);
+    WSGI_CREATE_INTERNED_STRING_ID(input_read_time_max_us);
+    WSGI_CREATE_INTERNED_STRING_ID(input_read_time_buckets);
+    WSGI_CREATE_INTERNED_STRING_ID(output_write_time);
+    WSGI_CREATE_INTERNED_STRING_ID(output_write_time_min_us);
+    WSGI_CREATE_INTERNED_STRING_ID(output_write_time_max_us);
+    WSGI_CREATE_INTERNED_STRING_ID(output_write_time_buckets);
 
-        WSGI_CREATE_INTERNED_STRING_ID(status_1xx);
-        WSGI_CREATE_INTERNED_STRING_ID(status_2xx);
-        WSGI_CREATE_INTERNED_STRING_ID(status_3xx);
-        WSGI_CREATE_INTERNED_STRING_ID(status_4xx);
-        WSGI_CREATE_INTERNED_STRING_ID(status_5xx);
+    WSGI_CREATE_INTERNED_STRING_ID(input_bytes);
+    WSGI_CREATE_INTERNED_STRING_ID(input_reads);
+    WSGI_CREATE_INTERNED_STRING_ID(output_bytes);
+    WSGI_CREATE_INTERNED_STRING_ID(output_writes);
 
-        WSGI_CREATE_STATUS_FLAG(SERVER_DEAD, ".");
-        WSGI_CREATE_STATUS_FLAG(SERVER_READY, "_");
-        WSGI_CREATE_STATUS_FLAG(SERVER_STARTING, "S");
-        WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_READ, "R");
-        WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_WRITE, "W");
-        WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_KEEPALIVE, "K");
-        WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_LOG, "L");
-        WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_DNS, "D");
-        WSGI_CREATE_STATUS_FLAG(SERVER_CLOSING, "C");
-        WSGI_CREATE_STATUS_FLAG(SERVER_GRACEFUL, "G");
-        WSGI_CREATE_STATUS_FLAG(SERVER_IDLE_KILL, "I");
+    WSGI_CREATE_INTERNED_STRING_ID(status_1xx);
+    WSGI_CREATE_INTERNED_STRING_ID(status_2xx);
+    WSGI_CREATE_INTERNED_STRING_ID(status_3xx);
+    WSGI_CREATE_INTERNED_STRING_ID(status_4xx);
+    WSGI_CREATE_INTERNED_STRING_ID(status_5xx);
 
-        wsgi_interns_initialized = 1;
-    }
+    WSGI_CREATE_STATUS_FLAG(SERVER_DEAD, ".");
+    WSGI_CREATE_STATUS_FLAG(SERVER_READY, "_");
+    WSGI_CREATE_STATUS_FLAG(SERVER_STARTING, "S");
+    WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_READ, "R");
+    WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_WRITE, "W");
+    WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_KEEPALIVE, "K");
+    WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_LOG, "L");
+    WSGI_CREATE_STATUS_FLAG(SERVER_BUSY_DNS, "D");
+    WSGI_CREATE_STATUS_FLAG(SERVER_CLOSING, "C");
+    WSGI_CREATE_STATUS_FLAG(SERVER_GRACEFUL, "G");
+    WSGI_CREATE_STATUS_FLAG(SERVER_IDLE_KILL, "I");
+
+    return 0;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -2209,6 +2112,9 @@ static int wsgi_dict_set_minmax_or_none(PyObject *dict, PyObject *min_key,
 
 static PyObject *wsgi_request_metrics(void)
 {
+    PyObject *module = NULL;
+    WSGIModuleState *state = NULL;
+
     PyObject *result = NULL;
 
     apr_time_t stop_time;
@@ -2316,8 +2222,16 @@ static PyObject *wsgi_request_metrics(void)
     }
 #endif
 
-    if (!wsgi_interns_initialized)
-        wsgi_initialize_interned_strings();
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+        return NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+    {
+        Py_DECREF(module);
+        return NULL;
+    }
 
     if (!request_threads_maximum)
     {
@@ -2927,9 +2841,11 @@ static PyObject *wsgi_request_metrics(void)
             goto error;
     }
 
+    Py_DECREF(module);
     return result;
 
 error:
+    Py_DECREF(module);
     Py_DECREF(result);
     return NULL;
 }
@@ -2944,6 +2860,9 @@ PyMethodDef wsgi_request_metrics_method[] = {
 
 static PyObject *wsgi_process_metrics(void)
 {
+    PyObject *module = NULL;
+    WSGIModuleState *state = NULL;
+
     PyObject *result = NULL;
     PyObject *thread_list = NULL;
     WSGIThreadInfo **thread_info = NULL;
@@ -2961,12 +2880,23 @@ static PyObject *wsgi_process_metrics(void)
     apr_time_t current_time;
     apr_interval_time_t running_time;
 
-    if (!wsgi_interns_initialized)
-        wsgi_initialize_interned_strings();
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+        return NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+    {
+        Py_DECREF(module);
+        return NULL;
+    }
 
     result = PyDict_New();
     if (!result)
+    {
+        Py_DECREF(module);
         return NULL;
+    }
 
     apr_thread_mutex_lock(wsgi_monitor_lock);
     busy_time = wsgi_utilization_time_locked(0, &request_count);
@@ -3074,9 +3004,11 @@ static PyObject *wsgi_process_metrics(void)
         goto error;
     Py_DECREF(thread_list);
 
+    Py_DECREF(module);
     return result;
 
 error:
+    Py_DECREF(module);
     Py_XDECREF(thread_list);
     Py_DECREF(result);
     return NULL;
@@ -3092,6 +3024,9 @@ PyMethodDef wsgi_process_metrics_method[] = {
 
 static PyObject *wsgi_server_metrics(void)
 {
+    PyObject *module = NULL;
+    WSGIModuleState *state = NULL;
+
     PyObject *scoreboard_dict = NULL;
     PyObject *process_list = NULL;
     PyObject *process_dict = NULL;
@@ -3106,9 +3041,6 @@ static PyObject *wsgi_server_metrics(void)
     process_score *ps_record;
 
     int j, i;
-
-    if (!wsgi_interns_initialized)
-        wsgi_initialize_interned_strings();
 
     /* Scoreboard needs to exist and server metrics enabled. */
 
@@ -3133,9 +3065,23 @@ static PyObject *wsgi_server_metrics(void)
     if (!gs_record)
         Py_RETURN_NONE;
 
+    module = PyImport_ImportModule("mod_wsgi");
+    if (!module)
+        return NULL;
+
+    state = (WSGIModuleState *)PyModule_GetState(module);
+    if (!state)
+    {
+        Py_DECREF(module);
+        return NULL;
+    }
+
     scoreboard_dict = PyDict_New();
     if (!scoreboard_dict)
+    {
+        Py_DECREF(module);
         return NULL;
+    }
 
     current_time = apr_time_now();
     running_time = apr_time_sec((double)current_time -
@@ -3206,7 +3152,7 @@ static PyObject *wsgi_server_metrics(void)
                                    ws_record->generation) < 0 ||
                 wsgi_dict_set_borrowed(worker_dict,
                                        WSGI_INTERNED_STRING(status),
-                                       wsgi_status_flags[ws_record->status]) < 0 ||
+                                       state->status_flags[ws_record->status]) < 0 ||
                 wsgi_dict_set_long(worker_dict,
                                    WSGI_INTERNED_STRING(access_count),
                                    ws_record->access_count) < 0 ||
@@ -3256,9 +3202,11 @@ static PyObject *wsgi_server_metrics(void)
         goto error;
     Py_DECREF(process_list);
 
+    Py_DECREF(module);
     return scoreboard_dict;
 
 error:
+    Py_DECREF(module);
     Py_XDECREF(worker_dict);
     Py_XDECREF(worker_list);
     Py_XDECREF(process_dict);

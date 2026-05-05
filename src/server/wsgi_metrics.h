@@ -38,6 +38,16 @@ extern PyMethodDef wsgi_request_metrics_method[];
 
 extern PyMethodDef wsgi_process_metrics_method[];
 
+/*
+ * Populate the metrics-owned fields of `module`'s WSGIModuleState
+ * (the wsgi_id_* interned key strings and the scoreboard
+ * status_flags array). Called from the embedded mod_wsgi module's
+ * exec slot. Returns 0 on success, -1 on failure with Python
+ * exception set.
+ */
+
+extern int wsgi_metrics_init_state(PyObject *module);
+
 extern WSGIThreadInfo *wsgi_start_request(request_rec *r);
 extern void wsgi_end_request(void);
 

@@ -40,25 +40,23 @@
 
 /* ------------------------------------------------------------------------- */
 
-#define WSGI_STATIC_INTERNED_STRING(name) \
-    static PyObject *wsgi_id_##name
+/*
+ * Helpers for the per-interpreter interned-string pool stored on
+ * WSGIModuleState. Both create and access macros assume a local
+ * `state` (a WSGIModuleState pointer) is in scope at the point of
+ * use. WSGI_CREATE_INTERNED_STRING_ID is called from the metrics
+ * exec-slot init helper; WSGI_INTERNED_STRING is the read accessor
+ * used at every dict-build site in the metrics entry points.
+ */
 
 #define WSGI_CREATE_INTERNED_STRING(name, val) \
-    if (wsgi_id_##name)                        \
-        ;                                      \
-    else                                       \
-        wsgi_id_##name =                       \
-            PyUnicode_InternFromString(val)
+    state->wsgi_id_##name = PyUnicode_InternFromString(val)
 
 #define WSGI_CREATE_INTERNED_STRING_ID(name) \
-    if (wsgi_id_##name)                      \
-        ;                                    \
-    else                                     \
-        wsgi_id_##name =                     \
-            PyUnicode_InternFromString(#name)
+    state->wsgi_id_##name = PyUnicode_InternFromString(#name)
 
 #define WSGI_INTERNED_STRING(name) \
-    wsgi_id_##name
+    state->wsgi_id_##name
 
 /* ------------------------------------------------------------------------- */
 

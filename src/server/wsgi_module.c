@@ -255,14 +255,17 @@ static int wsgi_module_install_runtime(PyObject *module, const char *name)
 /*
  * PEP 489 multi-phase init plumbing. The exec slot runs each
  * per-type init helper to create the heap-allocated type for
- * that interpreter and store it in WSGIModuleState. User-facing
- * attribute installation (FileWrapper, RequestTimeout, methods,
- * lists, dict) and per-application-group attribute installation
- * are handled by wsgi_module_populate.
+ * that interpreter and store it in WSGIModuleState, then
+ * wsgi_metrics_init_state to populate the per-interpreter
+ * interned strings and scoreboard status flags used by the
+ * metrics dict-builders. User-facing attribute installation
+ * (FileWrapper, RequestTimeout, methods, lists, dict) and
+ * per-application-group attribute installation are handled by
+ * wsgi_module_populate.
  *
- * The Py_mod_multiple_interpreters slot is not declared: static
- * PyTypeObject definitions and the process-shared RequestTimeout
- * exception preclude per-interpreter isolation.
+ * The Py_mod_multiple_interpreters slot is not declared: the
+ * process-shared RequestTimeout exception precludes
+ * per-interpreter isolation.
  */
 
 static int wsgi_module_exec(PyObject *module)
@@ -292,6 +295,9 @@ static int wsgi_module_exec(PyObject *module)
         return -1;
 
     if (wsgi_adapter_init(module) < 0)
+        return -1;
+
+    if (wsgi_metrics_init_state(module) < 0)
         return -1;
 
     return 0;
