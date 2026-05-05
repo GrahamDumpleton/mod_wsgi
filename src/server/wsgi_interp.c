@@ -1448,16 +1448,14 @@ static void wsgi_destroy_interpreter(InterpreterObject *self)
                                   wsgi_server->process->pool));
     }
 
+#if 0
     /*
-     * Because the thread state we are using was created outside
-     * of any Python code and is not the same as the Python main
-     * thread, there is no record of it within the 'threading'
-     * module. We thus need to access current thread function of
-     * the 'threading' module to force it to create a thread
-     * handle for the thread. If we do not do this, then the
-     * 'threading' modules exit function will always fail
-     * because it will not be able to find a handle for this
-     * thread.
+     * Disabled: Py_EndInterpreter on Python 3.7+ runs the
+     * threading._shutdown atexit hook itself during sub-interpreter
+     * teardown, so the destroy thread no longer needs to be
+     * pre-registered in threading._active for that hook to find a
+     * Thread handle. Left in #if 0 so the original rationale and
+     * call shape are recoverable if a regression turns up.
      */
 
     module = PyImport_ImportModule("threading");
@@ -1486,19 +1484,16 @@ static void wsgi_destroy_interpreter(InterpreterObject *self)
         }
     }
 
-    /* Finally done with 'threading' module. */
-
     Py_XDECREF(module);
+#endif
 
+#if 0
     /*
-     * Invoke registered atexit handlers via atexit._run_exitfuncs()
-     * for sub interpreters. Python does not call atexit handlers
-     * itself when a sub interpreter is destroyed by
-     * Py_EndInterpreter, so we have to drive them here. Skip this
-     * for the main interpreter: atexit doesn't deregister handlers
-     * as it calls them, so calling here would also call them again
-     * from Py_Finalize() during process shutdown. Rely on
-     * Py_Finalize() to handle the main interpreter's atexit chain.
+     * Disabled: Py_EndInterpreter on Python 3.7+ calls
+     * _PyAtExit_Call on the sub-interpreter itself, so driving
+     * atexit._run_exitfuncs here just runs every callback twice
+     * (atexit does not deregister as it calls). Left in #if 0 so
+     * the original call shape is recoverable.
      */
 
     module = NULL;
@@ -1532,6 +1527,7 @@ static void wsgi_destroy_interpreter(InterpreterObject *self)
     }
 
     Py_XDECREF(module);
+#endif
 
     if (is_sub)
     {
