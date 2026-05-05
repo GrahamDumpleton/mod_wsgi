@@ -290,10 +290,16 @@ static int wsgi_request_timeout_init(PyObject *module)
  * per-application-group attribute installation are handled by
  * wsgi_module_populate.
  *
- * The Py_mod_multiple_interpreters slot is not declared: per-
- * interpreter isolation across the rest of the embedded code
- * (GIL acquisition sites, metrics state, interpreter config
- * plumbing) has not yet been audited.
+ * The Py_mod_multiple_interpreters slot is declared with
+ * Py_MOD_PER_INTERPRETER_GIL_SUPPORTED on Python 3.12+ where
+ * that constant exists. Every PyTypeObject and module-level
+ * PyObject created by mod_wsgi is per-interpreter (heap types
+ * stored in WSGIModuleState; cached objects fetched per
+ * interpreter via PyImport_ImportModule + PyModule_GetState),
+ * and the GIL acquisition sites have been audited for safety
+ * under per-interpreter GIL. Process-wide C state (metrics
+ * counters, interpreter table) is guarded by apr_thread_mutex_t
+ * which is independent of the GIL.
  */
 
 static int wsgi_module_exec(PyObject *module)
@@ -336,6 +342,9 @@ static int wsgi_module_exec(PyObject *module)
 
 static PyModuleDef_Slot wsgi_module_slots[] = {
     {Py_mod_exec, (void *)wsgi_module_exec},
+#if PY_VERSION_HEX >= 0x030c0000
+    {Py_mod_multiple_interpreters, Py_MOD_PER_INTERPRETER_GIL_SUPPORTED},
+#endif
     {0, NULL},
 };
 
