@@ -92,6 +92,19 @@ extern void wsgi_python_set_switch_interval(double seconds);
 extern InterpreterObject *wsgi_acquire_interpreter(const char *name);
 extern void wsgi_release_interpreter(InterpreterObject *handle);
 
+/*
+ * Check whether a named interpreter has already been built in this
+ * process. Returns 1 for the main interpreter (NULL or empty name)
+ * since main is created during wsgi_python_child_init and lives for
+ * the Apache child. Returns 1 for a named sub-interpreter only if
+ * an entry exists in the interpreters table; returns 0 otherwise.
+ *
+ * Lookup-only: never builds an interpreter, never acquires the GIL.
+ * Briefly takes wsgi_interp_lock for the table access.
+ */
+
+extern int wsgi_interpreter_exists(const char *name);
+
 extern void wsgi_publish_process_stopping(char *reason);
 
 extern apr_status_t wsgi_python_child_init(apr_pool_t *p);

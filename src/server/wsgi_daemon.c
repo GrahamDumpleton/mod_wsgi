@@ -61,6 +61,20 @@ int volatile wsgi_daemon_shutdown = 0;
 static int volatile wsgi_daemon_graceful = 0;
 static int wsgi_dump_stack_traces = 0;
 
+/*
+ * Application group of the interpreter whose worker thread tripped
+ * the request-timeout escalation. Set inside the monitor loop at
+ * the same point wsgi_dump_stack_traces is raised; consumed once
+ * at shutdown by wsgi_log_stack_traces to scope the frame dump to
+ * just that interpreter. NULL when no escalation has fired or when
+ * the offending thread had already cleared its application group
+ * by the time the monitor read it. Empty string for the main
+ * interpreter. The pointer is the interpreter handle's process-
+ * lifetime name (see wsgi_execute_script), so no copy is needed.
+ */
+
+static const char *wsgi_dump_stack_traces_group = NULL;
+
 apr_interval_time_t wsgi_startup_timeout = 0;
 static apr_interval_time_t wsgi_deadlock_timeout = 0;
 apr_interval_time_t wsgi_idle_timeout = 0;
@@ -2405,6 +2419,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                 if (!wsgi_interrupt_timeout)
                 {
                     escalate = 1;
+                    wsgi_dump_stack_traces_group = t->thread_info ?
+                        t->thread_info->current_application_group : NULL;
                     break;
                 }
 
@@ -2418,6 +2434,8 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                 if ((now - t->injected_at) > wsgi_interrupt_timeout)
                 {
                     escalate = 1;
+                    wsgi_dump_stack_traces_group = t->thread_info ?
+                        t->thread_info->current_application_group : NULL;
                     break;
                 }
             }
@@ -2672,16 +2690,61 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
 
 static void wsgi_log_stack_traces(void)
 {
-    PyGILState_STATE state;
+    InterpreterObject *interp = NULL;
+    const char *group = wsgi_dump_stack_traces_group;
 
     PyObject *threads = NULL;
 
     /*
-     * This should only be called on shutdown so don't try and log
-     * any errors, just dump them straight out.
+     * This is called on shutdown after the request-timeout
+     * escalation flag was raised. The escalation site captured
+     * the offending application group into
+     * wsgi_dump_stack_traces_group; without one there is nothing
+     * to scope the dump against (the worker had cleared its
+     * application group between the escalate decision and the
+     * field read).
      */
 
-    state = PyGILState_Ensure();
+    if (!group)
+    {
+        wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                       "Stack-trace dump skipped: no offending "
+                       "application group was recorded for "
+                       "daemon process '%s'.",
+                       wsgi_daemon_process->group->name);
+        return;
+    }
+
+    /*
+     * Skip the dump if a named sub-interpreter has gone from the
+     * interpreters table (the wsgi_acquire_interpreter wrapper would
+     * otherwise build a fresh empty one just to inspect it). The
+     * exists check returns 1 unconditionally for the empty/main
+     * group, so the main path falls straight through to acquire.
+     */
+
+    if (!wsgi_interpreter_exists(group))
+    {
+        wsgi_log_error(APLOG_INFO, 0, wsgi_server,
+                       "Stack-trace dump skipped: %s no longer "
+                       "exists in daemon process '%s'.",
+                       wsgi_format_interp_name(
+                           wsgi_server->process->pool, group),
+                       wsgi_daemon_process->group->name);
+        return;
+    }
+
+    interp = wsgi_acquire_interpreter(group);
+    if (!interp)
+    {
+        wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
+                       "Stack-trace dump skipped: unable to acquire "
+                       "%s in daemon process '%s'.",
+                       wsgi_format_interp_name(
+                           wsgi_server->process->pool, group),
+                       wsgi_daemon_process->group->name);
+        return;
+    }
 
     threads = _PyThread_CurrentFrames();
 
@@ -2694,7 +2757,9 @@ static void wsgi_log_stack_traces(void)
 
         wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                        "Dumping stack trace for active Python "
-                       "threads in daemon process '%s'.",
+                       "threads of %s in daemon process '%s'.",
+                       wsgi_format_interp_name(
+                           wsgi_server->process->pool, group),
                        wsgi_daemon_process->group->name);
 
         while (PyDict_Next(threads, &i, &id, &frame))
@@ -2788,8 +2853,10 @@ static void wsgi_log_stack_traces(void)
          * already exited Python and the dump is best-effort. */
 
         wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                       "No active Python frames in daemon process "
-                       "'%s'; stack-trace dump skipped.",
+                       "No active Python frames in %s of daemon "
+                       "process '%s'; stack-trace dump skipped.",
+                       wsgi_format_interp_name(
+                           wsgi_server->process->pool, group),
                        wsgi_daemon_process->group->name);
     }
     else
@@ -2801,8 +2868,11 @@ static void wsgi_log_stack_traces(void)
         wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
                        WSGI_APLOGNO(0067) "Unable to obtain current "
                                           "frames for active threads "
-                                          "in daemon process '%s'; "
-                                          "stack-trace dump skipped.",
+                                          "of %s in daemon process "
+                                          "'%s'; stack-trace dump "
+                                          "skipped.",
+                       wsgi_format_interp_name(
+                           wsgi_server->process->pool, group),
                        wsgi_daemon_process->group->name);
 
         if (PyErr_Occurred())
@@ -2811,7 +2881,7 @@ static void wsgi_log_stack_traces(void)
 
     Py_XDECREF(threads);
 
-    PyGILState_Release(state);
+    wsgi_release_interpreter(interp);
 }
 
 static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)

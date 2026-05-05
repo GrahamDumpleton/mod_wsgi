@@ -77,13 +77,15 @@ int wsgi_execute_script(request_rec *r)
      * Publish the application group on this thread's WSGIThreadInfo so
      * that, in daemon mode, the monitor can see which sub-interpreter
      * the worker is currently in (via WSGIDaemonThread::thread_info).
-     * Cleared again before each wsgi_release_interpreter below. The
-     * field is harmless in embedded mode but kept uniform across modes
-     * so any future self-introspective code can rely on it.
+     * Cleared again before each wsgi_release_interpreter below.
+     *
+     * The interpreter handle's name is duplicated into the
+     * wsgi_interpreters pool (process-lifetime), so the pointer
+     * stored here remains valid for any reader for the rest of the
+     * Apache child's life — no dependency on the request pool.
      */
 
-    wsgi_thread_info(1, 0)->current_application_group =
-        config->application_group;
+    wsgi_thread_info(1, 0)->current_application_group = interp->name;
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_daemon_process)

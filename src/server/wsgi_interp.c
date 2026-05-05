@@ -2387,6 +2387,26 @@ void wsgi_release_interpreter(InterpreterObject *handle)
      */
 }
 
+int wsgi_interpreter_exists(const char *name)
+{
+    int found = 0;
+
+    /*
+     * Main interpreter (NULL or empty name) is always present
+     * after wsgi_python_child_init has run.
+     */
+
+    if (name == NULL || *name == '\0')
+        return 1;
+
+    apr_thread_mutex_lock(wsgi_interp_lock);
+    found = (apr_hash_get(wsgi_interpreters, name,
+                          APR_HASH_KEY_STRING) != NULL);
+    apr_thread_mutex_unlock(wsgi_interp_lock);
+
+    return found;
+}
+
 /* ------------------------------------------------------------------------- */
 
 void wsgi_publish_process_stopping(char *reason)
