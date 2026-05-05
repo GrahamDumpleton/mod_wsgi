@@ -2176,14 +2176,14 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
             if (!handle)
             {
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                      WSGI_APLOGNO(0103) "Python based handlers "
-                                                         "will not be available "
-                                                         "for %s in %s.",
-                                      wsgi_format_interp_name(
-                                          wsgi_server->process->pool, name),
-                                      wsgi_format_process_context(
-                                          wsgi_server->process->pool));
+                wsgi_log_error(APLOG_ERR, 0, wsgi_server,
+                               WSGI_APLOGNO(0103) "Python based handlers "
+                                                  "will not be available "
+                                                  "for %s in %s.",
+                               wsgi_format_interp_name(
+                                   wsgi_server->process->pool, name),
+                               wsgi_format_process_context(
+                                   wsgi_server->process->pool));
 
                 apr_thread_mutex_unlock(wsgi_interp_lock);
                 return NULL;
