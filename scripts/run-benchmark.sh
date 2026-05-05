@@ -283,8 +283,10 @@ if ! command -v bombardier >/dev/null 2>&1; then
     exit 1
 fi
 
-if [ -x "$PROJECT_DIR/.venv/bin/mod_wsgi-express" ]; then
-    MOD_WSGI_EXPRESS="$PROJECT_DIR/.venv/bin/mod_wsgi-express"
+VENV_DIR="${MOD_WSGI_VENV:-$PROJECT_DIR/.venv}"
+
+if [ -x "$VENV_DIR/bin/mod_wsgi-express" ]; then
+    MOD_WSGI_EXPRESS="$VENV_DIR/bin/mod_wsgi-express"
 elif command -v mod_wsgi-express >/dev/null 2>&1; then
     MOD_WSGI_EXPRESS="$(command -v mod_wsgi-express)"
 else
@@ -292,8 +294,8 @@ else
     exit 1
 fi
 
-if [ -x "$PROJECT_DIR/.venv/bin/python" ]; then
-    PYTHON="$PROJECT_DIR/.venv/bin/python"
+if [ -x "$VENV_DIR/bin/python" ]; then
+    PYTHON="$VENV_DIR/bin/python"
 elif command -v python3 >/dev/null 2>&1; then
     PYTHON="$(command -v python3)"
 else
