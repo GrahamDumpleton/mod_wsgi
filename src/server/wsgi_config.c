@@ -463,50 +463,6 @@ const char *wsgi_set_python_hash_seed(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
-const char *wsgi_set_switch_interval(cmd_parms *cmd, void *mconfig,
-                                     const char *f)
-{
-    const char *error = NULL;
-    WSGIServerConfig *sconfig = NULL;
-    char *endp = NULL;
-    double v;
-
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
-
-    v = strtod(f, &endp);
-    if (endp == f || *endp != '\0' || v <= 0.0)
-        return "WSGISwitchInterval must be a positive number of seconds.";
-
-    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
-    sconfig->switch_interval = v;
-
-    return NULL;
-}
-
-const char *wsgi_set_destroy_interpreter(cmd_parms *cmd, void *mconfig,
-                                         const char *f)
-{
-    const char *error = NULL;
-    WSGIServerConfig *sconfig = NULL;
-
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
-
-    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
-
-    if (strcasecmp(f, "Off") == 0)
-        sconfig->destroy_interpreter = 0;
-    else if (strcasecmp(f, "On") == 0)
-        sconfig->destroy_interpreter = 1;
-    else
-        return "WSGIDestroyInterpreter must be one of: Off | On";
-
-    return NULL;
-}
-
 /*
  * Identify whether the directive currently being processed is nested
  * inside a <WSGIInterpreterOptions> section. The section handler
@@ -542,6 +498,59 @@ static int wsgi_parse_on_off(const char *value, int *out)
     }
 
     return -1;
+}
+
+const char *wsgi_set_switch_interval(cmd_parms *cmd, void *mconfig,
+                                     const char *f)
+{
+    WSGIServerConfig *sconfig = NULL;
+    WSGIInterpreterOptionsBlock *block = NULL;
+    char *endp = NULL;
+    double v;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    block = wsgi_active_options_block(cmd);
+
+    if (!block)
+    {
+        const char *error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+        if (error != NULL)
+            return error;
+    }
+
+    v = strtod(f, &endp);
+    if (endp == f || *endp != '\0' || v <= 0.0)
+        return "WSGISwitchInterval must be a positive number of seconds.";
+
+    if (block)
+        block->switch_interval = v;
+    else
+        sconfig->switch_interval = v;
+
+    return NULL;
+}
+
+const char *wsgi_set_destroy_interpreter(cmd_parms *cmd, void *mconfig,
+                                         const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (strcasecmp(f, "Off") == 0)
+        sconfig->destroy_interpreter = 0;
+    else if (strcasecmp(f, "On") == 0)
+        sconfig->destroy_interpreter = 1;
+    else
+        return "WSGIDestroyInterpreter must be one of: Off | On";
+
+    return NULL;
 }
 
 const char *wsgi_set_per_interpreter_gil(cmd_parms *cmd, void *mconfig,
@@ -623,6 +632,7 @@ const char *wsgi_interpreter_options_section(cmd_parms *cmd, void *mconfig,
 
     block = apr_pcalloc(cmd->pool, sizeof(*block));
     block->per_interpreter_gil = -1;
+    block->switch_interval = 0.0;
 
     while ((word = ap_getword_conf(cmd->pool, (const char **)&args_copy)) &&
            *word)
