@@ -163,6 +163,219 @@ done:
     return rv;
 }
 
+/*
+ * Apply a platform-separator-separated python-path string to the
+ * current interpreter's sys.path. For each entry, calls
+ * site.addsitedir which appends the directory and processes any
+ * .pth files (path-style lines get added; import lines execute);
+ * mod_wsgi then hoists all newly-added entries to the front of
+ * sys.path so the python-path entries take precedence over the
+ * standard library and site-packages.
+ *
+ * The 'name' parameter is the interpreter name used in logging.
+ *
+ * Returns 0 on success or partial success (some entries may have
+ * failed but the interpreter remains usable), -1 only on a fatal
+ * allocation failure where the caller should abort interpreter
+ * setup.
+ */
+
+static int wsgi_apply_python_path(const char *python_path,
+                                  const char *name)
+{
+    PyObject *module = NULL;
+    PyObject *path = NULL;
+    PyObject *dict = NULL;
+    PyObject *addsitedir = NULL;
+    PyObject *old = NULL;
+    PyObject *new = NULL;
+    PyObject *tmp = NULL;
+    Py_ssize_t i = 0;
+
+    if (!python_path || !*python_path)
+        return 0;
+
+    module = PyImport_ImportModule("site");
+    path = PySys_GetObject("path");
+
+    if (!module || !path)
+    {
+        if (!module)
+        {
+            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                  WSGI_APLOGNO(0095) "Unable to import 'site' module "
+                                                     "in %s.",
+                                  wsgi_format_process_context(
+                                      wsgi_server->process->pool));
+        }
+
+        if (!path)
+        {
+            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                  WSGI_APLOGNO(0096) "Unable to look up 'sys.path' "
+                                                     "attribute on 'sys' module in %s.",
+                                  wsgi_format_process_context(
+                                      wsgi_server->process->pool));
+        }
+
+        Py_XDECREF(module);
+        return 0;
+    }
+
+    old = PyList_New(0);
+    new = PyList_New(0);
+    tmp = PyList_New(0);
+
+    if (!old || !new || !tmp)
+    {
+        wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                                             "PyList_New() for sys.path reorder buffers failed");
+        Py_XDECREF(old);
+        Py_XDECREF(new);
+        Py_XDECREF(tmp);
+        Py_DECREF(module);
+        return -1;
+    }
+
+    /* Snapshot pre-addsitedir sys.path into 'old'. */
+
+    for (i = 0; i < PyList_Size(path); i++)
+    {
+        if (PyList_Append(old, PyList_GetItem(path, i)) < 0)
+        {
+            PyErr_Clear();
+            break;
+        }
+    }
+
+    dict = PyModule_GetDict(module);
+    addsitedir = PyDict_GetItemString(dict, "addsitedir");
+
+    if (addsitedir)
+    {
+        const char *start;
+        const char *end_ptr;
+
+        Py_INCREF(addsitedir);
+
+        start = python_path;
+
+        for (;;)
+        {
+            Py_ssize_t entry_len;
+
+            end_ptr = strchr(start, DELIM);
+            entry_len = end_ptr ? (Py_ssize_t)(end_ptr - start)
+                                : (Py_ssize_t)strlen(start);
+
+            if (wsgi_addsitedir_entry(addsitedir, start, entry_len) < 0)
+            {
+                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                      WSGI_APLOGNO(0091) "Call to "
+                                                         "'site."
+                                                         "addsitedir()' "
+                                                         "failed for "
+                                                         "'%.*s' in "
+                                                         "%s; "
+                                                         "remaining "
+                                                         "python-path "
+                                                         "entries "
+                                                         "will not be "
+                                                         "added.",
+                                      (int)entry_len, start,
+                                      wsgi_format_process_context(
+                                          wsgi_server->process->pool));
+                wsgi_log_python_interp_init_error(name);
+                break;
+            }
+
+            if (!end_ptr)
+                break;
+            start = end_ptr + 1;
+        }
+
+        Py_DECREF(addsitedir);
+    }
+    else
+    {
+        wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                              WSGI_APLOGNO(0094) "Unable to locate "
+                                                 "'site.addsitedir()' in %s.",
+                              wsgi_format_process_context(
+                                  wsgi_server->process->pool));
+    }
+
+    /*
+     * Reorder sys.path so entries added by site.addsitedir land
+     * at the front. Snapshot post-addsitedir state into 'tmp',
+     * diff against pre-state in 'old', accumulate the new entries
+     * in 'new', then prepend. List operations here are best-
+     * effort: any failure clears the exception and continues with
+     * whatever ordering we end up with. The interpreter remains
+     * usable in any case.
+     */
+
+    for (i = 0; i < PyList_Size(path); i++)
+    {
+        if (PyList_Append(tmp, PyList_GetItem(path, i)) < 0)
+        {
+            PyErr_Clear();
+            break;
+        }
+    }
+
+    for (i = 0; i < PyList_Size(tmp); i++)
+    {
+        PyObject *path_item;
+        int contains;
+
+        path_item = PyList_GetItem(tmp, i);
+        if (!path_item)
+        {
+            PyErr_Clear();
+            continue;
+        }
+
+        contains = PySequence_Contains(old, path_item);
+
+        if (contains == -1)
+        {
+            PyErr_Clear();
+            contains = 0;
+        }
+
+        if (!contains)
+        {
+            Py_ssize_t index = PySequence_Index(path, path_item);
+
+            if (index == -1)
+            {
+                PyErr_Clear();
+                continue;
+            }
+
+            if (PyList_Append(new, path_item) < 0)
+            {
+                PyErr_Clear();
+                continue;
+            }
+
+            if (PySequence_DelItem(path, index) < 0)
+                PyErr_Clear();
+        }
+    }
+
+    if (PyList_SetSlice(path, 0, 0, new) < 0)
+        PyErr_Clear();
+
+    Py_DECREF(old);
+    Py_DECREF(new);
+    Py_DECREF(tmp);
+    Py_DECREF(module);
+
+    return 0;
+}
+
 InterpreterObject *newInterpreterObject(const char *name)
 {
     PyInterpreterState *interp = NULL;
@@ -909,198 +1122,8 @@ InterpreterObject *newInterpreterObject(const char *name)
     }
 #endif
 
-    if (wsgi_python_path && *wsgi_python_path)
-    {
-        PyObject *path = NULL;
-
-        module = PyImport_ImportModule("site");
-        path = PySys_GetObject("path");
-
-        if (module && path)
-        {
-            PyObject *dict = NULL;
-
-            PyObject *old = NULL;
-            PyObject *new = NULL;
-            PyObject *tmp = NULL;
-
-            Py_ssize_t i = 0;
-
-            old = PyList_New(0);
-            new = PyList_New(0);
-            tmp = PyList_New(0);
-
-            if (!old || !new || !tmp)
-            {
-                wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
-                                                     "PyList_New() for sys.path reorder buffers failed");
-                Py_XDECREF(old);
-                Py_XDECREF(new);
-                Py_XDECREF(tmp);
-                Py_DECREF(module);
-                module = NULL;
-                goto failure;
-            }
-
-            /* Snapshot pre-addsitedir sys.path into 'old'. */
-
-            for (i = 0; i < PyList_Size(path); i++)
-            {
-                if (PyList_Append(old, PyList_GetItem(path, i)) < 0)
-                {
-                    PyErr_Clear();
-                    break;
-                }
-            }
-
-            dict = PyModule_GetDict(module);
-            object = PyDict_GetItemString(dict, "addsitedir");
-
-            if (object)
-            {
-                const char *start;
-                const char *end_ptr;
-
-                Py_INCREF(object);
-
-                start = wsgi_python_path;
-
-                for (;;)
-                {
-                    Py_ssize_t entry_len;
-
-                    end_ptr = strchr(start, DELIM);
-                    entry_len = end_ptr ? (Py_ssize_t)(end_ptr - start)
-                                        : (Py_ssize_t)strlen(start);
-
-                    if (wsgi_addsitedir_entry(object, start, entry_len) < 0)
-                    {
-                        wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                              WSGI_APLOGNO(0091) "Call to "
-                                                                 "'site."
-                                                                 "addsitedir()' "
-                                                                 "failed for "
-                                                                 "'%.*s' in "
-                                                                 "%s; "
-                                                                 "remaining "
-                                                                 "python-path "
-                                                                 "entries "
-                                                                 "will not be "
-                                                                 "added.",
-                                              (int)entry_len, start,
-                                              wsgi_format_process_context(
-                                                  wsgi_server->process->pool));
-                        wsgi_log_python_interp_init_error(name);
-                        break;
-                    }
-
-                    if (!end_ptr)
-                        break;
-                    start = end_ptr + 1;
-                }
-
-                Py_DECREF(object);
-            }
-            else
-            {
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                      WSGI_APLOGNO(0094) "Unable to locate "
-                                                         "'site.addsitedir()' in %s.",
-                                      wsgi_format_process_context(
-                                          wsgi_server->process->pool));
-            }
-
-            /*
-             * Reorder sys.path so entries added by site.addsitedir
-             * land at the front. Snapshot post-addsitedir state into
-             * 'tmp', diff against pre-state in 'old', accumulate the
-             * new entries in 'new', then prepend. List operations
-             * here are best-effort: any failure clears the exception
-             * and continues with whatever ordering we end up with.
-             * The interpreter remains usable in any case.
-             */
-
-            for (i = 0; i < PyList_Size(path); i++)
-            {
-                if (PyList_Append(tmp, PyList_GetItem(path, i)) < 0)
-                {
-                    PyErr_Clear();
-                    break;
-                }
-            }
-
-            for (i = 0; i < PyList_Size(tmp); i++)
-            {
-                PyObject *path_item;
-                int contains;
-
-                path_item = PyList_GetItem(tmp, i);
-                if (!path_item)
-                {
-                    PyErr_Clear();
-                    continue;
-                }
-
-                contains = PySequence_Contains(old, path_item);
-
-                if (contains == -1)
-                {
-                    PyErr_Clear();
-                    contains = 0;
-                }
-
-                if (!contains)
-                {
-                    Py_ssize_t index = PySequence_Index(path, path_item);
-
-                    if (index == -1)
-                    {
-                        PyErr_Clear();
-                        continue;
-                    }
-
-                    if (PyList_Append(new, path_item) < 0)
-                    {
-                        PyErr_Clear();
-                        continue;
-                    }
-
-                    if (PySequence_DelItem(path, index) < 0)
-                        PyErr_Clear();
-                }
-            }
-
-            if (PyList_SetSlice(path, 0, 0, new) < 0)
-                PyErr_Clear();
-
-            Py_DECREF(old);
-            Py_DECREF(new);
-            Py_DECREF(tmp);
-        }
-        else
-        {
-            if (!module)
-            {
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                      WSGI_APLOGNO(0095) "Unable to import 'site' module "
-                                                         "in %s.",
-                                      wsgi_format_process_context(
-                                          wsgi_server->process->pool));
-            }
-
-            if (!path)
-            {
-                wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
-                                      WSGI_APLOGNO(0096) "Unable to look up 'sys.path' "
-                                                         "attribute on 'sys' module in %s.",
-                                      wsgi_format_process_context(
-                                          wsgi_server->process->pool));
-            }
-        }
-
-        Py_XDECREF(module);
-        module = NULL;
-    }
+    if (wsgi_apply_python_path(wsgi_python_path, name) < 0)
+        goto failure;
 
     /*
      * If running in daemon mode and a home directory was set then
