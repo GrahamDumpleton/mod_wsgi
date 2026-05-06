@@ -58,6 +58,13 @@ typedef struct
     const char *pass_authorization;
 } WSGIScriptFile;
 
+typedef struct
+{
+    const char *process_group;
+    const char *application_group;
+    int per_interpreter_gil;
+} WSGIInterpreterOptionsBlock;
+
 extern module AP_MODULE_DECLARE_DATA wsgi_module;
 
 extern int wsgi_multiprocess;
@@ -98,6 +105,8 @@ typedef struct
     int restrict_signal;
 
     int per_interpreter_gil;
+
+    apr_array_header_t *interpreter_option_blocks;
 
     int case_sensitivity;
 

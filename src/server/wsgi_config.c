@@ -507,26 +507,70 @@ const char *wsgi_set_destroy_interpreter(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+/*
+ * Identify whether the directive currently being processed is nested
+ * inside a <WSGIInterpreterOptions> section. The section handler
+ * stashes a pointer to the active block in cmd->directive->parent->data,
+ * so any contained directive that wants to scope its value to that
+ * block looks for it there.
+ */
+
+static WSGIInterpreterOptionsBlock *wsgi_active_options_block(
+        cmd_parms *cmd)
+{
+    if (cmd->directive && cmd->directive->parent &&
+        cmd->directive->parent->data)
+    {
+        return (WSGIInterpreterOptionsBlock *)cmd->directive->parent->data;
+    }
+
+    return NULL;
+}
+
+static int wsgi_parse_on_off(const char *value, int *out)
+{
+    if (strcasecmp(value, "Off") == 0)
+    {
+        *out = 0;
+        return 0;
+    }
+
+    if (strcasecmp(value, "On") == 0)
+    {
+        *out = 1;
+        return 0;
+    }
+
+    return -1;
+}
+
 const char *wsgi_set_per_interpreter_gil(cmd_parms *cmd, void *mconfig,
                                          const char *f)
 {
-    const char *error = NULL;
     WSGIServerConfig *sconfig = NULL;
-
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
+    WSGIInterpreterOptionsBlock *block = NULL;
+    int value = 0;
 
     sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
 
-    if (strcasecmp(f, "Off") == 0)
-        sconfig->per_interpreter_gil = 0;
-    else if (strcasecmp(f, "On") == 0)
-        sconfig->per_interpreter_gil = 1;
-    else
+    block = wsgi_active_options_block(cmd);
+
+    if (!block)
+    {
+        const char *error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+        if (error != NULL)
+            return error;
+    }
+
+    if (wsgi_parse_on_off(f, &value) < 0)
         return "WSGIPerInterpreterGIL must be one of: Off | On";
 
-    if (sconfig->per_interpreter_gil > 0)
+    if (block)
+        block->per_interpreter_gil = value;
+    else
+        sconfig->per_interpreter_gil = value;
+
+    if (value > 0)
     {
 #if defined(Py_GIL_DISABLED)
         wsgi_log_error(APLOG_WARNING, 0, cmd->server,
@@ -542,6 +586,102 @@ const char *wsgi_set_per_interpreter_gil(cmd_parms *cmd, void *mconfig,
     }
 
     return NULL;
+}
+
+/*
+ * Section handler for <WSGIInterpreterOptions>. Parses the opening-
+ * tag arguments (process-group=NAME and/or application-group=NAME),
+ * appends a new options block to the server config, and stashes a
+ * pointer to it on the directive's data field so that contained
+ * directive setters can find it via cmd->directive->parent->data.
+ *
+ * Apache walks the inner directives automatically as part of the
+ * standard config walk; we don't call ap_walk_config ourselves.
+ */
+
+const char *wsgi_interpreter_options_section(cmd_parms *cmd, void *mconfig,
+                                             const char *arg)
+{
+    WSGIServerConfig *sconfig = NULL;
+    WSGIInterpreterOptionsBlock *block = NULL;
+    const char *endp = NULL;
+    char *args_copy = NULL;
+    char *word = NULL;
+    const char *error = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    endp = ap_strrchr_c(arg, '>');
+    if (endp == NULL)
+        return "<WSGIInterpreterOptions> directive missing closing '>'";
+
+    args_copy = apr_pstrndup(cmd->pool, arg, endp - arg);
+
+    block = apr_pcalloc(cmd->pool, sizeof(*block));
+    block->per_interpreter_gil = -1;
+
+    while ((word = ap_getword_conf(cmd->pool, (const char **)&args_copy)) &&
+           *word)
+    {
+        char *eq = strchr(word, '=');
+        const char *key = NULL;
+        const char *val = NULL;
+
+        if (!eq)
+            return apr_pstrcat(cmd->pool,
+                               "<WSGIInterpreterOptions>: argument '", word,
+                               "' is not of the form key=value", NULL);
+
+        *eq = '\0';
+        key = word;
+        val = eq + 1;
+
+        if (strcasecmp(key, "process-group") == 0)
+        {
+            if (block->process_group)
+                return "<WSGIInterpreterOptions>: process-group given more "
+                       "than once";
+            if (!strcmp(val, "%{GLOBAL}"))
+                block->process_group = "";
+            else
+                block->process_group = apr_pstrdup(cmd->pool, val);
+        }
+        else if (strcasecmp(key, "application-group") == 0)
+        {
+            if (block->application_group)
+                return "<WSGIInterpreterOptions>: application-group given "
+                       "more than once";
+            if (!strcmp(val, "%{GLOBAL}"))
+                block->application_group = "";
+            else
+                block->application_group = apr_pstrdup(cmd->pool, val);
+        }
+        else
+        {
+            return apr_pstrcat(cmd->pool,
+                               "<WSGIInterpreterOptions>: unknown selector '",
+                               key, "', expected process-group or "
+                               "application-group", NULL);
+        }
+    }
+
+    if (!sconfig->interpreter_option_blocks)
+    {
+        sconfig->interpreter_option_blocks = apr_array_make(cmd->pool, 4,
+                sizeof(WSGIInterpreterOptionsBlock *));
+    }
+
+    *(WSGIInterpreterOptionsBlock **)apr_array_push(
+            sconfig->interpreter_option_blocks) = block;
+
+    cmd->directive->data = block;
+
+    return ap_walk_config(cmd->directive->first_child, cmd,
+                          cmd->server->lookup_defaults);
 }
 
 const char *wsgi_set_restrict_embedded(cmd_parms *cmd, void *mconfig,

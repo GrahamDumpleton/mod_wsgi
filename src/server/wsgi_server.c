@@ -108,6 +108,8 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 
     object->per_interpreter_gil = -1;
 
+    object->interpreter_option_blocks = NULL;
+
 #if defined(WIN32) || defined(DARWIN)
     object->case_sensitivity = 0;
 #else

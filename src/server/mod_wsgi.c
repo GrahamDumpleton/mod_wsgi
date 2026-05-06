@@ -1146,6 +1146,12 @@ static const command_rec wsgi_commands[] =
                       NULL, RSRC_CONF, "Enable/Disable per-interpreter GIL "
                                        "for sub-interpreters (Python 3.12+)."),
 
+        AP_INIT_RAW_ARGS("<WSGIInterpreterOptions",
+                         wsgi_interpreter_options_section,
+                         NULL, RSRC_CONF,
+                         "Container scoping per-interpreter options to a "
+                         "named process-group and/or application-group."),
+
 #if defined(MOD_WSGI_WITH_DAEMONS)
         AP_INIT_TAKE1("WSGIRestrictEmbedded", wsgi_set_restrict_embedded,
                       NULL, RSRC_CONF, "Enable/Disable use of embedded mode."),

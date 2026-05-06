@@ -376,6 +376,64 @@ static int wsgi_apply_python_path(const char *python_path,
     return 0;
 }
 
+/*
+ * Resolve the effective WSGIPerInterpreterGIL value for a sub-
+ * interpreter being created with the given application-group name.
+ * Walks any <WSGIInterpreterOptions> blocks defined in the server
+ * config, filtering by process-group and application-group selectors,
+ * and picks the most-specific matching block's value (specificity =
+ * count of non-wildcard selectors). Source order breaks ties between
+ * same-specificity blocks: last in file wins. Falls back to the
+ * top-level WSGIPerInterpreterGIL value, which itself defaults to
+ * Off when unset.
+ */
+
+static int wsgi_resolve_per_interpreter_gil(const char *name)
+{
+    int resolved = 0;
+    int best_specificity = -1;
+    int i;
+
+    if (wsgi_server_config->per_interpreter_gil > 0)
+        resolved = 1;
+
+    if (!wsgi_server_config->interpreter_option_blocks)
+        return resolved;
+
+    for (i = 0; i < wsgi_server_config->interpreter_option_blocks->nelts; i++)
+    {
+        WSGIInterpreterOptionsBlock *block = APR_ARRAY_IDX(
+                wsgi_server_config->interpreter_option_blocks, i,
+                WSGIInterpreterOptionsBlock *);
+        int specificity = 0;
+
+        if (block->process_group)
+        {
+            if (!wsgi_daemon_group ||
+                strcmp(block->process_group, wsgi_daemon_group) != 0)
+                continue;
+            specificity++;
+        }
+
+        if (block->application_group)
+        {
+            if (!name ||
+                strcmp(block->application_group, name) != 0)
+                continue;
+            specificity++;
+        }
+
+        if (block->per_interpreter_gil >= 0 &&
+            specificity >= best_specificity)
+        {
+            resolved = (block->per_interpreter_gil > 0) ? 1 : 0;
+            best_specificity = specificity;
+        }
+    }
+
+    return resolved;
+}
+
 InterpreterObject *newInterpreterObject(const char *name)
 {
     PyInterpreterState *interp = NULL;
@@ -392,6 +450,8 @@ InterpreterObject *newInterpreterObject(const char *name)
     int is_forked = 0;
 
     int is_service_script = 0;
+
+    int use_own_gil = 0;
 
     const char *str = NULL;
 
@@ -482,10 +542,9 @@ InterpreterObject *newInterpreterObject(const char *name)
 #if PY_VERSION_HEX >= 0x030c0000
         {
             PyStatus status;
-            int use_own_gil = 0;
 
 #if !defined(Py_GIL_DISABLED)
-            use_own_gil = (wsgi_server_config->per_interpreter_gil > 0);
+            use_own_gil = wsgi_resolve_per_interpreter_gil(name);
 #endif
 
             if (use_own_gil)
@@ -518,11 +577,12 @@ InterpreterObject *newInterpreterObject(const char *name)
 #endif
 
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                              "Creating %s in %s.",
+                              "Creating %s in %s%s.",
                               wsgi_format_interp_name(
                                   wsgi_server->process->pool, name),
                               wsgi_format_process_context(
-                                  wsgi_server->process->pool));
+                                  wsgi_server->process->pool),
+                              use_own_gil ? " with own GIL" : "");
 
         self->interp = tstate->interp;
     }
