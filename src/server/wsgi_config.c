@@ -472,7 +472,7 @@ const char *wsgi_set_python_hash_seed(cmd_parms *cmd, void *mconfig,
  */
 
 static WSGIInterpreterOptionsBlock *wsgi_active_options_block(
-        cmd_parms *cmd)
+    cmd_parms *cmd)
 {
     if (cmd->directive && cmd->directive->parent &&
         cmd->directive->parent->data)
@@ -633,6 +633,9 @@ const char *wsgi_interpreter_options_section(cmd_parms *cmd, void *mconfig,
     block = apr_pcalloc(cmd->pool, sizeof(*block));
     block->per_interpreter_gil = -1;
     block->switch_interval = 0.0;
+    block->restrict_stdin = -1;
+    block->restrict_stdout = -1;
+    block->restrict_signal = -1;
 
     while ((word = ap_getword_conf(cmd->pool, (const char **)&args_copy)) &&
            *word)
@@ -675,18 +678,19 @@ const char *wsgi_interpreter_options_section(cmd_parms *cmd, void *mconfig,
             return apr_pstrcat(cmd->pool,
                                "<WSGIInterpreterOptions>: unknown selector '",
                                key, "', expected process-group or "
-                               "application-group", NULL);
+                                    "application-group",
+                               NULL);
         }
     }
 
     if (!sconfig->interpreter_option_blocks)
     {
         sconfig->interpreter_option_blocks = apr_array_make(cmd->pool, 4,
-                sizeof(WSGIInterpreterOptionsBlock *));
+                                                            sizeof(WSGIInterpreterOptionsBlock *));
     }
 
     *(WSGIInterpreterOptionsBlock **)apr_array_push(
-            sconfig->interpreter_option_blocks) = block;
+        sconfig->interpreter_option_blocks) = block;
 
     cmd->directive->data = block;
 
@@ -725,21 +729,28 @@ const char *wsgi_set_restrict_embedded(cmd_parms *cmd, void *mconfig,
 const char *wsgi_set_restrict_stdin(cmd_parms *cmd, void *mconfig,
                                     const char *f)
 {
-    const char *error = NULL;
     WSGIServerConfig *sconfig = NULL;
-
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
+    WSGIInterpreterOptionsBlock *block = NULL;
+    int value = 0;
 
     sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
 
-    if (strcasecmp(f, "Off") == 0)
-        sconfig->restrict_stdin = 0;
-    else if (strcasecmp(f, "On") == 0)
-        sconfig->restrict_stdin = 1;
-    else
+    block = wsgi_active_options_block(cmd);
+
+    if (!block)
+    {
+        const char *error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+        if (error != NULL)
+            return error;
+    }
+
+    if (wsgi_parse_on_off(f, &value) < 0)
         return "WSGIRestrictStdin must be one of: Off | On";
+
+    if (block)
+        block->restrict_stdin = value;
+    else
+        sconfig->restrict_stdin = value;
 
     return NULL;
 }
@@ -747,21 +758,28 @@ const char *wsgi_set_restrict_stdin(cmd_parms *cmd, void *mconfig,
 const char *wsgi_set_restrict_stdout(cmd_parms *cmd, void *mconfig,
                                      const char *f)
 {
-    const char *error = NULL;
     WSGIServerConfig *sconfig = NULL;
-
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
+    WSGIInterpreterOptionsBlock *block = NULL;
+    int value = 0;
 
     sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
 
-    if (strcasecmp(f, "Off") == 0)
-        sconfig->restrict_stdout = 0;
-    else if (strcasecmp(f, "On") == 0)
-        sconfig->restrict_stdout = 1;
-    else
+    block = wsgi_active_options_block(cmd);
+
+    if (!block)
+    {
+        const char *error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+        if (error != NULL)
+            return error;
+    }
+
+    if (wsgi_parse_on_off(f, &value) < 0)
         return "WSGIRestrictStdout must be one of: Off | On";
+
+    if (block)
+        block->restrict_stdout = value;
+    else
+        sconfig->restrict_stdout = value;
 
     return NULL;
 }
@@ -769,21 +787,28 @@ const char *wsgi_set_restrict_stdout(cmd_parms *cmd, void *mconfig,
 const char *wsgi_set_restrict_signal(cmd_parms *cmd, void *mconfig,
                                      const char *f)
 {
-    const char *error = NULL;
     WSGIServerConfig *sconfig = NULL;
-
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
+    WSGIInterpreterOptionsBlock *block = NULL;
+    int value = 0;
 
     sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
 
-    if (strcasecmp(f, "Off") == 0)
-        sconfig->restrict_signal = 0;
-    else if (strcasecmp(f, "On") == 0)
-        sconfig->restrict_signal = 1;
-    else
+    block = wsgi_active_options_block(cmd);
+
+    if (!block)
+    {
+        const char *error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+        if (error != NULL)
+            return error;
+    }
+
+    if (wsgi_parse_on_off(f, &value) < 0)
         return "WSGIRestrictSignal must be one of: Off | On";
+
+    if (block)
+        block->restrict_signal = value;
+    else
+        sconfig->restrict_signal = value;
 
     return NULL;
 }

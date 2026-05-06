@@ -386,13 +386,23 @@ static int wsgi_apply_python_path(const char *python_path,
  * being overridden by an unset entry from a more-specific block.
  */
 
-typedef struct {
+typedef struct
+{
     int per_interpreter_gil;
     int per_interpreter_gil_specificity;
 
     double switch_interval;
     int switch_interval_specificity;
     int switch_interval_app_scoped;
+
+    int restrict_stdin;
+    int restrict_stdin_specificity;
+
+    int restrict_stdout;
+    int restrict_stdout_specificity;
+
+    int restrict_signal;
+    int restrict_signal_specificity;
 } WSGIResolvedInterpreterOptions;
 
 /*
@@ -408,17 +418,27 @@ typedef struct {
  */
 
 static void wsgi_resolve_interpreter_options(
-        const char *name, WSGIResolvedInterpreterOptions *out)
+    const char *name, WSGIResolvedInterpreterOptions *out)
 {
     int i;
 
     out->per_interpreter_gil = (wsgi_server_config->per_interpreter_gil > 0)
-                               ? 1 : 0;
+                                   ? 1
+                                   : 0;
     out->per_interpreter_gil_specificity = -1;
 
     out->switch_interval = wsgi_server_config->switch_interval;
     out->switch_interval_specificity = -1;
     out->switch_interval_app_scoped = 0;
+
+    out->restrict_stdin = wsgi_server_config->restrict_stdin;
+    out->restrict_stdin_specificity = -1;
+
+    out->restrict_stdout = wsgi_server_config->restrict_stdout;
+    out->restrict_stdout_specificity = -1;
+
+    out->restrict_signal = wsgi_server_config->restrict_signal;
+    out->restrict_signal_specificity = -1;
 
     if (!wsgi_server_config->interpreter_option_blocks)
         return;
@@ -426,8 +446,8 @@ static void wsgi_resolve_interpreter_options(
     for (i = 0; i < wsgi_server_config->interpreter_option_blocks->nelts; i++)
     {
         WSGIInterpreterOptionsBlock *block = APR_ARRAY_IDX(
-                wsgi_server_config->interpreter_option_blocks, i,
-                WSGIInterpreterOptionsBlock *);
+            wsgi_server_config->interpreter_option_blocks, i,
+            WSGIInterpreterOptionsBlock *);
         int specificity = 0;
 
         if (block->process_group)
@@ -450,7 +470,8 @@ static void wsgi_resolve_interpreter_options(
             specificity >= out->per_interpreter_gil_specificity)
         {
             out->per_interpreter_gil = (block->per_interpreter_gil > 0)
-                                       ? 1 : 0;
+                                           ? 1
+                                           : 0;
             out->per_interpreter_gil_specificity = specificity;
         }
 
@@ -460,7 +481,28 @@ static void wsgi_resolve_interpreter_options(
             out->switch_interval = block->switch_interval;
             out->switch_interval_specificity = specificity;
             out->switch_interval_app_scoped =
-                    (block->application_group != NULL);
+                (block->application_group != NULL);
+        }
+
+        if (block->restrict_stdin >= 0 &&
+            specificity >= out->restrict_stdin_specificity)
+        {
+            out->restrict_stdin = block->restrict_stdin;
+            out->restrict_stdin_specificity = specificity;
+        }
+
+        if (block->restrict_stdout >= 0 &&
+            specificity >= out->restrict_stdout_specificity)
+        {
+            out->restrict_stdout = block->restrict_stdout;
+            out->restrict_stdout_specificity = specificity;
+        }
+
+        if (block->restrict_signal >= 0 &&
+            specificity >= out->restrict_signal_specificity)
+        {
+            out->restrict_signal = block->restrict_signal;
+            out->restrict_signal_specificity = specificity;
         }
     }
 }
@@ -504,6 +546,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
         name = "";
     }
+
+    wsgi_resolve_interpreter_options(name, &resolved_options);
 
     /*
      * Allocate the handle from the same pool as the interpreters
@@ -572,8 +616,6 @@ InterpreterObject *newInterpreterObject(const char *name)
          * directive is a no-op.
          */
 
-        wsgi_resolve_interpreter_options(name, &resolved_options);
-
 #if PY_VERSION_HEX >= 0x030c0000
         {
             PyStatus status;
@@ -596,7 +638,7 @@ InterpreterObject *newInterpreterObject(const char *name)
             if (PyStatus_Exception(status))
             {
                 wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
-                        "Py_NewInterpreterFromConfig() failed");
+                                                     "Py_NewInterpreterFromConfig() failed");
                 goto failure;
             }
         }
@@ -619,52 +661,51 @@ InterpreterObject *newInterpreterObject(const char *name)
                                   wsgi_server->process->pool),
                               use_own_gil ? " with own GIL" : "");
 
-        if (resolved_options.switch_interval > 0.0)
+        self->interp = tstate->interp;
+    }
+
+    if (resolved_options.switch_interval > 0.0)
+    {
+        if (resolved_options.switch_interval_app_scoped && !use_own_gil)
         {
-            if (resolved_options.switch_interval_app_scoped && !use_own_gil)
+            wsgi_log_error_locked(APLOG_WARNING, 0, wsgi_server,
+                                  "Skipping per-interpreter switch "
+                                  "interval %.6fs for %s: setting it "
+                                  "would mutate the process-global "
+                                  "value because this interpreter does "
+                                  "not have its own GIL.",
+                                  resolved_options.switch_interval,
+                                  wsgi_format_interp_name(
+                                      wsgi_server->process->pool, name));
+        }
+        else
+        {
+            PyObject *sys = PyImport_ImportModule("sys");
+
+            if (sys)
             {
-                wsgi_log_error_locked(APLOG_WARNING, 0, wsgi_server,
-                                      "Skipping per-interpreter switch "
-                                      "interval %.6fs for %s: setting it "
-                                      "would mutate the process-global "
-                                      "value because this interpreter does "
-                                      "not have its own GIL.",
-                                      resolved_options.switch_interval,
-                                      wsgi_format_interp_name(
-                                          wsgi_server->process->pool, name));
+                PyObject *result = PyObject_CallMethod(sys,
+                                                       "setswitchinterval", "d",
+                                                       resolved_options.switch_interval);
+                Py_XDECREF(result);
+                Py_DECREF(sys);
+            }
+
+            if (PyErr_Occurred())
+            {
+                wsgi_log_python_interp_init_error(name);
+                PyErr_Clear();
             }
             else
             {
-                PyObject *sys = PyImport_ImportModule("sys");
-
-                if (sys)
-                {
-                    PyObject *result = PyObject_CallMethod(sys,
-                            "setswitchinterval", "d",
-                            resolved_options.switch_interval);
-                    Py_XDECREF(result);
-                    Py_DECREF(sys);
-                }
-
-                if (PyErr_Occurred())
-                {
-                    wsgi_log_python_interp_init_error(name);
-                    PyErr_Clear();
-                }
-                else
-                {
-                    wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
-                                          "Set switch interval %.6fs for "
-                                          "%s.",
-                                          resolved_options.switch_interval,
-                                          wsgi_format_interp_name(
-                                              wsgi_server->process->pool,
-                                              name));
-                }
+                wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
+                                      "Set switch interval %.6fs for %s.",
+                                      resolved_options.switch_interval,
+                                      wsgi_format_interp_name(
+                                          wsgi_server->process->pool,
+                                          name));
             }
         }
-
-        self->interp = tstate->interp;
     }
 
     /*
@@ -826,7 +867,7 @@ InterpreterObject *newInterpreterObject(const char *name)
     if (wsgi_parent_pid != getpid())
     {
 #endif
-        if (wsgi_server_config->restrict_stdout == 1)
+        if (resolved_options.restrict_stdout == 1)
             object = (PyObject *)newRestrictedObject("sys.stdout");
         else
             object = newLogObject(NULL, APLOG_ERR, "<stdout>", 1);
@@ -847,7 +888,7 @@ InterpreterObject *newInterpreterObject(const char *name)
         }
         Py_XDECREF(object);
 
-        if (wsgi_server_config->restrict_stdin == 1)
+        if (resolved_options.restrict_stdin == 1)
         {
             object = (PyObject *)newRestrictedObject("sys.stdin");
             if (!object || PySys_SetObject("stdin", object) < 0)
@@ -996,7 +1037,7 @@ InterpreterObject *newInterpreterObject(const char *name)
     }
 #endif
 
-    if (!is_service_script && wsgi_server_config->restrict_signal != 0)
+    if (!is_service_script && resolved_options.restrict_signal != 0)
     {
         module = PyImport_ImportModule("signal");
 

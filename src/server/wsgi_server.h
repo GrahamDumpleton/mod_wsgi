@@ -64,6 +64,9 @@ typedef struct
     const char *application_group;
     int per_interpreter_gil;
     double switch_interval;
+    int restrict_stdin;
+    int restrict_stdout;
+    int restrict_signal;
 } WSGIInterpreterOptionsBlock;
 
 extern module AP_MODULE_DECLARE_DATA wsgi_module;
