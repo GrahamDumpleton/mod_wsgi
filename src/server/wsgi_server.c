@@ -106,6 +106,8 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->restrict_stdout = -1;
     object->restrict_signal = -1;
 
+    object->per_interpreter_gil = -1;
+
 #if defined(WIN32) || defined(DARWIN)
     object->case_sensitivity = 0;
 #else

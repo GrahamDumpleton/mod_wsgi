@@ -467,20 +467,37 @@ InterpreterObject *newInterpreterObject(const char *name)
          * need to worry about it in that case.
          *
          * On Python 3.12+ the interpreter is created via
-         * Py_NewInterpreterFromConfig with _PyInterpreterConfig_LEGACY_INIT,
-         * which expands to the same defaults Py_NewInterpreter applies
-         * internally on 3.12+ (shared GIL, main obmalloc, fork/exec/
-         * threads/daemon threads allowed, multi-interp extensions
-         * unchecked outside free-threaded builds). The configuration
-         * is spelled out via the macro rather than left implicit.
-         * Older Python versions fall through to the legacy entry
-         * point.
+         * Py_NewInterpreterFromConfig. WSGIPerInterpreterGIL selects
+         * between _PyInterpreterConfig_INIT (own GIL, multi-interp
+         * extension check enabled) and _PyInterpreterConfig_LEGACY_INIT
+         * (shared GIL, main obmalloc, fork/exec/threads/daemon threads
+         * allowed, multi-interp extensions unchecked outside free-
+         * threaded builds). Default and unset both resolve to the
+         * legacy config. On free-threaded builds the own-GIL path is
+         * skipped because there is no GIL to flip. Older Python
+         * versions fall through to the legacy entry point and the
+         * directive is a no-op.
          */
 
 #if PY_VERSION_HEX >= 0x030c0000
         {
-            PyInterpreterConfig config = _PyInterpreterConfig_LEGACY_INIT;
-            PyStatus status = Py_NewInterpreterFromConfig(&tstate, &config);
+            PyStatus status;
+            int use_own_gil = 0;
+
+#if !defined(Py_GIL_DISABLED)
+            use_own_gil = (wsgi_server_config->per_interpreter_gil > 0);
+#endif
+
+            if (use_own_gil)
+            {
+                PyInterpreterConfig config = _PyInterpreterConfig_INIT;
+                status = Py_NewInterpreterFromConfig(&tstate, &config);
+            }
+            else
+            {
+                PyInterpreterConfig config = _PyInterpreterConfig_LEGACY_INIT;
+                status = Py_NewInterpreterFromConfig(&tstate, &config);
+            }
 
             if (PyStatus_Exception(status))
             {

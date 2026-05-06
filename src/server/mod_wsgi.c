@@ -1142,6 +1142,10 @@ static const command_rec wsgi_commands[] =
         AP_INIT_TAKE1("WSGIDestroyInterpreter", wsgi_set_destroy_interpreter,
                       NULL, RSRC_CONF, "Enable/Disable destruction of Python interpreter."),
 
+        AP_INIT_TAKE1("WSGIPerInterpreterGIL", wsgi_set_per_interpreter_gil,
+                      NULL, RSRC_CONF, "Enable/Disable per-interpreter GIL "
+                                       "for sub-interpreters (Python 3.12+)."),
+
 #if defined(MOD_WSGI_WITH_DAEMONS)
         AP_INIT_TAKE1("WSGIRestrictEmbedded", wsgi_set_restrict_embedded,
                       NULL, RSRC_CONF, "Enable/Disable use of embedded mode."),

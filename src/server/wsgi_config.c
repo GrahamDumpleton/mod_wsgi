@@ -507,6 +507,43 @@ const char *wsgi_set_destroy_interpreter(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+const char *wsgi_set_per_interpreter_gil(cmd_parms *cmd, void *mconfig,
+                                         const char *f)
+{
+    const char *error = NULL;
+    WSGIServerConfig *sconfig = NULL;
+
+    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+    if (error != NULL)
+        return error;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    if (strcasecmp(f, "Off") == 0)
+        sconfig->per_interpreter_gil = 0;
+    else if (strcasecmp(f, "On") == 0)
+        sconfig->per_interpreter_gil = 1;
+    else
+        return "WSGIPerInterpreterGIL must be one of: Off | On";
+
+    if (sconfig->per_interpreter_gil > 0)
+    {
+#if defined(Py_GIL_DISABLED)
+        wsgi_log_error(APLOG_WARNING, 0, cmd->server,
+                       "WSGIPerInterpreterGIL has no effect on free-threaded "
+                       "Python builds; PEP 684 per-interpreter GIL "
+                       "configuration does not apply when the GIL is "
+                       "already disabled runtime-wide.");
+#elif PY_VERSION_HEX < 0x030c0000
+        wsgi_log_error(APLOG_WARNING, 0, cmd->server,
+                       "WSGIPerInterpreterGIL requires Python 3.12 or "
+                       "later; directive has no effect on this build.");
+#endif
+    }
+
+    return NULL;
+}
+
 const char *wsgi_set_restrict_embedded(cmd_parms *cmd, void *mconfig,
                                        const char *f)
 {

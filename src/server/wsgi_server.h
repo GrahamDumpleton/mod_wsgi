@@ -97,6 +97,8 @@ typedef struct
     int restrict_stdout;
     int restrict_signal;
 
+    int per_interpreter_gil;
+
     int case_sensitivity;
 
     apr_table_t *restrict_process;
