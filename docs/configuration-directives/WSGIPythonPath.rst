@@ -36,3 +36,12 @@ the ``python-path`` option to the WSGIDaemonProcess directive instead.
 For most modern deployments, daemon mode is the preferred deployment
 method, in which case configure the Python search path via
 WSGIDaemonProcess rather than this directive.
+
+The directive is also valid inside a :doc:`WSGIInterpreterOptions`
+container. When nested, the directories listed are added on top of
+the applicable base layer (the top-level ``WSGIPythonPath`` for
+embedded mode, or the ``python-path=`` parameter on
+``WSGIDaemonProcess`` for daemon mode) rather than replacing it.
+Multiple matching containers each contribute their own layer; the
+most-specific layer ends up at the front of ``sys.path``. See
+:doc:`WSGIInterpreterOptions` for the full layering rules.

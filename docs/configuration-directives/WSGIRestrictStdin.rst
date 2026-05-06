@@ -25,3 +25,8 @@ intent of promoting portable WSGI code proved ineffective in practice.
 When the restriction is off, ``sys.stdin`` is whatever the hosting
 process inherits, typically a closed or ``/dev/null`` stream, and
 reads from it will return no data.
+
+The directive is also valid inside a :doc:`WSGIInterpreterOptions`
+container. When nested, the setting applies only to interpreters
+matched by the container's selectors and overrides the top-level
+value for those interpreters.

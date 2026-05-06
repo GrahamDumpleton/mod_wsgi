@@ -51,6 +51,8 @@ Python environment
    configuration-directives/WSGIPythonWarnings
    configuration-directives/WSGIDontWriteBytecode
    configuration-directives/WSGISwitchInterval
+   configuration-directives/WSGIPerInterpreterGIL
+   configuration-directives/WSGIInterpreterOptions
 
 Authentication and access control
 ---------------------------------
@@ -115,9 +117,11 @@ Alphabetical index
 * :doc:`configuration-directives/WSGIHandlerScript`
 * :doc:`configuration-directives/WSGIIgnoreActivity`
 * :doc:`configuration-directives/WSGIImportScript`
+* :doc:`configuration-directives/WSGIInterpreterOptions`
 * :doc:`configuration-directives/WSGIMapHEADToGET`
 * :doc:`configuration-directives/WSGIPassApacheRequest`
 * :doc:`configuration-directives/WSGIPassAuthorization`
+* :doc:`configuration-directives/WSGIPerInterpreterGIL`
 * :doc:`configuration-directives/WSGIProcessGroup`
 * :doc:`configuration-directives/WSGIPythonEggs`
 * :doc:`configuration-directives/WSGIPythonHashSeed`

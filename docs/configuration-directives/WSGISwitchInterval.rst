@@ -32,3 +32,12 @@ each ``WSGIDaemonProcess`` directive.
 For most modern deployments, daemon mode is the preferred deployment
 method, in which case configure the switch interval via
 ``WSGIDaemonProcess`` rather than this directive.
+
+The directive is also valid inside a :doc:`WSGIInterpreterOptions`
+container. When nested, the value applies only to interpreters
+matched by the container's selectors, and may differ between
+interpreters in the same process when those interpreters have been
+given their own GIL via :doc:`WSGIPerInterpreterGIL`. Under the
+shared GIL the switch interval is a process-global value and
+``application-group=`` scoping of this directive is rejected; see
+:doc:`WSGIInterpreterOptions` for the full rules.

@@ -26,3 +26,8 @@ This restriction is off by default since mod_wsgi 3.0, as the original
 intent of promoting portable WSGI code proved ineffective in practice.
 When the restriction is off, any data written to ``sys.stdout`` will
 instead be directed to the Apache error log.
+
+The directive is also valid inside a :doc:`WSGIInterpreterOptions`
+container. When nested, the setting applies only to interpreters
+matched by the container's selectors and overrides the top-level
+value for those interpreters.

@@ -47,3 +47,8 @@ execute from secondary threads. Similarly, when using daemon mode, request
 handlers would execute from secondary threads. Only code run as a side
 effect of WSGIImportScript is guaranteed to be executed in main Python
 interpreter thread.
+
+The directive is also valid inside a :doc:`WSGIInterpreterOptions`
+container. When nested, the setting applies only to interpreters
+matched by the container's selectors and overrides the top-level
+value for those interpreters.
