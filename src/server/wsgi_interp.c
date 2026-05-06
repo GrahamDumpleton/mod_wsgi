@@ -723,7 +723,8 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     if (resolved_options.switch_interval > 0.0)
     {
-        if (resolved_options.switch_interval_app_scoped && !use_own_gil)
+        if (resolved_options.switch_interval_app_scoped && !use_own_gil &&
+            name && *name)
         {
             wsgi_log_error_locked(APLOG_WARNING, 0, wsgi_server,
                                   "Skipping per-interpreter switch "
