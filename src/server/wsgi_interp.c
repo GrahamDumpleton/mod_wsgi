@@ -403,6 +403,8 @@ typedef struct
 
     int restrict_signal;
     int restrict_signal_specificity;
+
+    apr_array_header_t *python_path_layers;
 } WSGIResolvedInterpreterOptions;
 
 /*
@@ -417,10 +419,27 @@ typedef struct
  * to "unset" when not configured.
  */
 
+typedef struct {
+    int specificity;
+    int source_idx;
+    const char *path;
+} WSGIPythonPathLayer;
+
+static int wsgi_python_path_layer_compare(const void *a, const void *b)
+{
+    const WSGIPythonPathLayer *la = (const WSGIPythonPathLayer *)a;
+    const WSGIPythonPathLayer *lb = (const WSGIPythonPathLayer *)b;
+
+    if (la->specificity != lb->specificity)
+        return la->specificity - lb->specificity;
+    return la->source_idx - lb->source_idx;
+}
+
 static void wsgi_resolve_interpreter_options(
     const char *name, WSGIResolvedInterpreterOptions *out)
 {
     int i;
+    apr_array_header_t *layer_collection = NULL;
 
     out->per_interpreter_gil = (wsgi_server_config->per_interpreter_gil > 0)
                                    ? 1
@@ -439,6 +458,8 @@ static void wsgi_resolve_interpreter_options(
 
     out->restrict_signal = wsgi_server_config->restrict_signal;
     out->restrict_signal_specificity = -1;
+
+    out->python_path_layers = NULL;
 
     if (!wsgi_server_config->interpreter_option_blocks)
         return;
@@ -503,6 +524,42 @@ static void wsgi_resolve_interpreter_options(
         {
             out->restrict_signal = block->restrict_signal;
             out->restrict_signal_specificity = specificity;
+        }
+
+        if (block->python_path && *block->python_path)
+        {
+            WSGIPythonPathLayer *layer;
+
+            if (!layer_collection)
+            {
+                layer_collection = apr_array_make(
+                    wsgi_server->process->pool, 4,
+                    sizeof(WSGIPythonPathLayer));
+            }
+
+            layer = (WSGIPythonPathLayer *)apr_array_push(layer_collection);
+            layer->specificity = specificity;
+            layer->source_idx = i;
+            layer->path = block->python_path;
+        }
+    }
+
+    if (layer_collection && layer_collection->nelts > 0)
+    {
+        qsort(layer_collection->elts, layer_collection->nelts,
+              sizeof(WSGIPythonPathLayer),
+              wsgi_python_path_layer_compare);
+
+        out->python_path_layers = apr_array_make(
+            wsgi_server->process->pool, layer_collection->nelts,
+            sizeof(const char *));
+
+        for (i = 0; i < layer_collection->nelts; i++)
+        {
+            WSGIPythonPathLayer *layer = &APR_ARRAY_IDX(
+                layer_collection, i, WSGIPythonPathLayer);
+            APR_ARRAY_PUSH(out->python_path_layers, const char *) =
+                layer->path;
         }
     }
 }
@@ -1322,6 +1379,20 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     if (wsgi_apply_python_path(wsgi_python_path, name) < 0)
         goto failure;
+
+    if (resolved_options.python_path_layers)
+    {
+        int li;
+
+        for (li = 0; li < resolved_options.python_path_layers->nelts; li++)
+        {
+            const char *layer_path = APR_ARRAY_IDX(
+                resolved_options.python_path_layers, li, const char *);
+
+            if (wsgi_apply_python_path(layer_path, name) < 0)
+                goto failure;
+        }
+    }
 
     /*
      * If running in daemon mode and a home directory was set then

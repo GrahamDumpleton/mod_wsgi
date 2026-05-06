@@ -395,18 +395,64 @@ const char *wsgi_set_python_home(cmd_parms *cmd, void *mconfig,
     return NULL;
 }
 
+/*
+ * Identify whether the directive currently being processed is nested
+ * inside a <WSGIInterpreterOptions> section. The section handler
+ * stashes a pointer to the active block in cmd->directive->parent->data,
+ * so any contained directive that wants to scope its value to that
+ * block looks for it there.
+ */
+
+static WSGIInterpreterOptionsBlock *wsgi_active_options_block(
+    cmd_parms *cmd)
+{
+    if (cmd->directive && cmd->directive->parent &&
+        cmd->directive->parent->data)
+    {
+        return (WSGIInterpreterOptionsBlock *)cmd->directive->parent->data;
+    }
+
+    return NULL;
+}
+
+static int wsgi_parse_on_off(const char *value, int *out)
+{
+    if (strcasecmp(value, "Off") == 0)
+    {
+        *out = 0;
+        return 0;
+    }
+
+    if (strcasecmp(value, "On") == 0)
+    {
+        *out = 1;
+        return 0;
+    }
+
+    return -1;
+}
+
 const char *wsgi_set_python_path(cmd_parms *cmd, void *mconfig,
                                  const char *f)
 {
-    const char *error = NULL;
     WSGIServerConfig *sconfig = NULL;
-
-    error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-    if (error != NULL)
-        return error;
+    WSGIInterpreterOptionsBlock *block = NULL;
 
     sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
-    sconfig->python_path = f;
+
+    block = wsgi_active_options_block(cmd);
+
+    if (!block)
+    {
+        const char *error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+        if (error != NULL)
+            return error;
+    }
+
+    if (block)
+        block->python_path = apr_pstrdup(cmd->pool, f);
+    else
+        sconfig->python_path = f;
 
     return NULL;
 }
@@ -461,43 +507,6 @@ const char *wsgi_set_python_hash_seed(cmd_parms *cmd, void *mconfig,
     sconfig->python_hash_seed = f;
 
     return NULL;
-}
-
-/*
- * Identify whether the directive currently being processed is nested
- * inside a <WSGIInterpreterOptions> section. The section handler
- * stashes a pointer to the active block in cmd->directive->parent->data,
- * so any contained directive that wants to scope its value to that
- * block looks for it there.
- */
-
-static WSGIInterpreterOptionsBlock *wsgi_active_options_block(
-    cmd_parms *cmd)
-{
-    if (cmd->directive && cmd->directive->parent &&
-        cmd->directive->parent->data)
-    {
-        return (WSGIInterpreterOptionsBlock *)cmd->directive->parent->data;
-    }
-
-    return NULL;
-}
-
-static int wsgi_parse_on_off(const char *value, int *out)
-{
-    if (strcasecmp(value, "Off") == 0)
-    {
-        *out = 0;
-        return 0;
-    }
-
-    if (strcasecmp(value, "On") == 0)
-    {
-        *out = 1;
-        return 0;
-    }
-
-    return -1;
 }
 
 const char *wsgi_set_switch_interval(cmd_parms *cmd, void *mconfig,
@@ -636,6 +645,7 @@ const char *wsgi_interpreter_options_section(cmd_parms *cmd, void *mconfig,
     block->restrict_stdin = -1;
     block->restrict_stdout = -1;
     block->restrict_signal = -1;
+    block->python_path = NULL;
 
     while ((word = ap_getword_conf(cmd->pool, (const char **)&args_copy)) &&
            *word)

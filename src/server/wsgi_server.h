@@ -67,6 +67,7 @@ typedef struct
     int restrict_stdin;
     int restrict_stdout;
     int restrict_signal;
+    const char *python_path;
 } WSGIInterpreterOptionsBlock;
 
 extern module AP_MODULE_DECLARE_DATA wsgi_module;
