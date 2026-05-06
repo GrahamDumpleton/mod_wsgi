@@ -739,6 +739,7 @@ AccessFileName .htaccess
     Options +ExecCGI
 </IfDefine>
     RewriteEngine On
+    RewriteOptions InheritDownBefore
     Include %(rewrite_rules)s
     Require all granted
 </Directory>
