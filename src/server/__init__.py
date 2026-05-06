@@ -789,30 +789,38 @@ WSGIErrorOverride On
 <IfDefine !EMBEDDED_MODE>
 WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%(application_group)s
+<IfDefine MOD_WSGI_IMPORT_HANDLER_SCRIPT>
 WSGIImportScript '%(server_root)s/handler.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%(application_group)s
+</IfDefine>
 </IfDefine>
 </IfDefine>
 
 <IfDefine EMBEDDED_MODE>
 WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
     process-group='%%{GLOBAL}' application-group=%(application_group)s
+<IfDefine MOD_WSGI_IMPORT_HANDLER_SCRIPT>
 WSGIImportScript '%(server_root)s/handler.wsgi' \\
     process-group='%%{GLOBAL}' application-group=%(application_group)s
+</IfDefine>
 </IfDefine>
 
 <IfDefine ONE_PROCESS>
 <IfDefine !MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
 WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
     process-group='%%{GLOBAL}' application-group=%(application_group)s
+<IfDefine MOD_WSGI_IMPORT_HANDLER_SCRIPT>
 WSGIImportScript '%(server_root)s/handler.wsgi' \\
     process-group='%%{GLOBAL}' application-group=%(application_group)s
+</IfDefine>
 </IfDefine>
 <IfDefine MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
 WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
     application-group=%(application_group)s
+<IfDefine MOD_WSGI_IMPORT_HANDLER_SCRIPT>
 WSGIImportScript '%(server_root)s/handler.wsgi' \\
     application-group=%(application_group)s
+</IfDefine>
 </IfDefine>
 </IfDefine>
 """
@@ -1852,15 +1860,12 @@ add_option('all', '--entry-point', default=None,
         'point actually is. If both methods are used, that specified '
         'by this option will take precedence.')
 
-add_option('hidden', '--application-group', default=None,
-        metavar='NAME', help='Override the WSGI application group '
-        'used for the generated WSGI handler and import script '
-        'directives. The default is the %{GLOBAL} token, which '
-        'places the WSGI application in the Python main interpreter. '
-        'Setting this to a name routes the application into a named '
-        'sub-interpreter instead. Intended only as a testing aid '
-        'for verifying that mod_wsgi continues to work correctly '
-        'under sub-interpreters; not for production use.')
+add_option('all', '--application-group', default=None,
+        metavar='NAME', help='Override the WSGI application group used '
+        'for the generated WSGI handler directives. The default is the '
+        '%{GLOBAL} token, which places the WSGI application in the '
+        'Python main interpreter. Setting this to a name routes the '
+        'application into a named sub-interpreter instead.')
 
 add_option('all', '--host', default=None, metavar='IP-ADDRESS',
         help='The specific host (IP address) interface on which '
@@ -3320,6 +3325,13 @@ def _cmd_setup_server(command, args, options):
     if options['embedded_mode']:
         options['httpd_arguments_list'].append('-DEMBEDDED_MODE')
         options['disable_reloading'] = True
+
+    # %{GLOBAL} is a mod_wsgi sentinel for the main interpreter, not a
+    # request-time variable expansion; any other %{...} resolves per
+    # request and so cannot be pre-imported into a fixed sub-interpreter.
+    if (options['application_group'] == '%{GLOBAL}'
+            or '%{' not in options['application_group']):
+        options['httpd_arguments_list'].append('-DMOD_WSGI_IMPORT_HANDLER_SCRIPT')
 
     if any((options['enable_debugger'], options['enable_coverage'],
             options['enable_profiler'], options['enable_recorder'],
