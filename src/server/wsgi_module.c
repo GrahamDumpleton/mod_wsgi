@@ -345,6 +345,9 @@ static PyModuleDef_Slot wsgi_module_slots[] = {
 #if PY_VERSION_HEX >= 0x030c0000
     {Py_mod_multiple_interpreters, Py_MOD_PER_INTERPRETER_GIL_SUPPORTED},
 #endif
+#if defined(Py_GIL_DISABLED)
+    {Py_mod_gil, Py_MOD_GIL_NOT_USED},
+#endif
     {0, NULL},
 };
 
