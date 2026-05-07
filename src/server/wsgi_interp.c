@@ -727,11 +727,11 @@ InterpreterObject *newInterpreterObject(const char *name)
             name && *name)
         {
             wsgi_log_error_locked(APLOG_WARNING, 0, wsgi_server,
-                                  "Skipping per-interpreter switch "
-                                  "interval %.6fs for %s: setting it "
-                                  "would mutate the process-global "
-                                  "value because this interpreter does "
-                                  "not have its own GIL.",
+                                  WSGI_APLOGNO(0199) "Skipping "
+                                  "per-interpreter switch interval %.6fs "
+                                  "for %s: setting it would mutate the "
+                                  "process-global value because this "
+                                  "interpreter does not have its own GIL.",
                                   resolved_options.switch_interval,
                                   wsgi_format_interp_name(
                                       wsgi_server->process->pool, name));

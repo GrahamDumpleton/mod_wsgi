@@ -592,14 +592,15 @@ const char *wsgi_set_per_interpreter_gil(cmd_parms *cmd, void *mconfig,
     {
 #if defined(Py_GIL_DISABLED)
         wsgi_log_error(APLOG_WARNING, 0, cmd->server,
-                       "WSGIPerInterpreterGIL has no effect on free-threaded "
-                       "Python builds; PEP 684 per-interpreter GIL "
-                       "configuration does not apply when the GIL is "
-                       "already disabled runtime-wide.");
+                       WSGI_APLOGNO(0197) "WSGIPerInterpreterGIL has no "
+                       "effect on free-threaded Python builds; PEP 684 "
+                       "per-interpreter GIL configuration does not apply "
+                       "when the GIL is already disabled runtime-wide.");
 #elif PY_VERSION_HEX < 0x030c0000
         wsgi_log_error(APLOG_WARNING, 0, cmd->server,
-                       "WSGIPerInterpreterGIL requires Python 3.12 or "
-                       "later; directive has no effect on this build.");
+                       WSGI_APLOGNO(0198) "WSGIPerInterpreterGIL requires "
+                       "Python 3.12 or later; directive has no effect on "
+                       "this build.");
 #endif
     }
 

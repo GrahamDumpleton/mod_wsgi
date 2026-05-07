@@ -5035,3 +5035,92 @@ WSGI0196 — Failed to close source file after reading WSGI script (server)
 
 :Operator action:
    Same as :ref:`WSGI0195`.
+
+.. _WSGI0197:
+
+WSGI0197 — WSGIPerInterpreterGIL ignored on free-threaded Python build
+----------------------------------------------------------------------
+
+:Severity: WARNING
+:Source: ``src/server/wsgi_config.c``
+
+:Logged message:
+   ``WSGIPerInterpreterGIL has no effect on free-threaded Python builds;
+   PEP 684 per-interpreter GIL configuration does not apply when the GIL
+   is already disabled runtime-wide.``
+
+:Cause:
+   ``WSGIPerInterpreterGIL On`` was set in the configuration but mod_wsgi
+   was built against a free-threaded Python (PEP 703,
+   ``--disable-gil``). PEP 684's per-interpreter GIL configuration is
+   meaningless when the runtime has no GIL at all.
+
+:Outcome:
+   The directive value is recorded but has no effect at sub-interpreter
+   creation time on this Python build. All sub-interpreters share the
+   (disabled) runtime-global GIL state.
+
+:Operator action:
+   Remove ``WSGIPerInterpreterGIL`` from the configuration on
+   free-threaded builds, or use the regular GIL-enabled Python build if
+   per-interpreter GIL is the goal.
+
+.. _WSGI0198:
+
+WSGI0198 — WSGIPerInterpreterGIL requires Python 3.12 or later
+--------------------------------------------------------------
+
+:Severity: WARNING
+:Source: ``src/server/wsgi_config.c``
+
+:Logged message:
+   ``WSGIPerInterpreterGIL requires Python 3.12 or later; directive has
+   no effect on this build.``
+
+:Cause:
+   ``WSGIPerInterpreterGIL On`` was set in the configuration but
+   mod_wsgi was built against a Python older than 3.12. PEP 684 per-
+   interpreter GIL is a 3.12+ feature.
+
+:Outcome:
+   The directive value is recorded but has no effect at sub-interpreter
+   creation time. Sub-interpreters are created without the own-GIL
+   request, matching how the older Python builds always behaved.
+
+:Operator action:
+   Either upgrade to Python 3.12 or later, or remove the directive from
+   the configuration to silence the warning.
+
+.. _WSGI0199:
+
+WSGI0199 — Per-interpreter switch interval skipped because interpreter does not have its own GIL
+------------------------------------------------------------------------------------------------
+
+:Severity: WARNING
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Skipping per-interpreter switch interval <N>s for <interpreter>:
+   setting it would mutate the process-global value because this
+   interpreter does not have its own GIL.``
+
+:Cause:
+   A ``WSGISwitchInterval`` directive scoped via
+   ``<WSGIInterpreterOptions application-group=...>`` resolved at sub-
+   interpreter creation time, but the same interpreter did not also
+   resolve to per-interpreter GIL. Under the shared GIL the switch
+   interval is a process-global value; mod_wsgi declines to apply it
+   from an application-group-scoped directive because the change would
+   silently leak across other application groups in the same process.
+
+:Outcome:
+   The ``sys.setswitchinterval()`` call is skipped for that
+   sub-interpreter. The interpreter is created and the request proceeds
+   normally with the process-wide switch interval still in force.
+
+:Operator action:
+   Either also enable ``WSGIPerInterpreterGIL On`` in the same
+   container so the interpreter has its own GIL, or move the
+   ``WSGISwitchInterval`` directive to a wider scope (top-level, or a
+   ``process-group=`` container that covers every interpreter in the
+   process).
