@@ -41,3 +41,9 @@ given their own GIL via :doc:`WSGIPerInterpreterGIL`. Under the
 shared GIL the switch interval is a process-global value and
 ``application-group=`` scoping of this directive is rejected; see
 :doc:`WSGIInterpreterOptions` for the full rules.
+
+This directive has no effect in a process where free-threading is
+active via :doc:`WSGIFreeThreading`. The switch interval governs how
+often the GIL is yielded; with no GIL there is nothing to yield.
+mod_wsgi logs a warning and skips the ``sys.setswitchinterval()``
+call.

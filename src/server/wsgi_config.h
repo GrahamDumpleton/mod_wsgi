@@ -64,6 +64,8 @@ extern const char *wsgi_set_destroy_interpreter(cmd_parms *cmd, void *mconfig,
                                                 const char *f);
 extern const char *wsgi_set_per_interpreter_gil(cmd_parms *cmd, void *mconfig,
                                                 const char *f);
+extern const char *wsgi_set_free_threading(cmd_parms *cmd, void *mconfig,
+                                           const char *f);
 extern const char *wsgi_interpreter_options_section(cmd_parms *cmd,
                                                     void *mconfig,
                                                     const char *arg);

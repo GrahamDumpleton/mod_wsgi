@@ -5038,32 +5038,16 @@ WSGI0196 — Failed to close source file after reading WSGI script (server)
 
 .. _WSGI0197:
 
-WSGI0197 — WSGIPerInterpreterGIL ignored on free-threaded Python build
-----------------------------------------------------------------------
+WSGI0197 — (retired)
+--------------------
 
-:Severity: WARNING
-:Source: ``src/server/wsgi_config.c``
-
-:Logged message:
-   ``WSGIPerInterpreterGIL has no effect on free-threaded Python builds;
-   PEP 684 per-interpreter GIL configuration does not apply when the GIL
-   is already disabled runtime-wide.``
-
-:Cause:
-   ``WSGIPerInterpreterGIL On`` was set in the configuration but mod_wsgi
-   was built against a free-threaded Python (PEP 703,
-   ``--disable-gil``). PEP 684's per-interpreter GIL configuration is
-   meaningless when the runtime has no GIL at all.
-
-:Outcome:
-   The directive value is recorded but has no effect at sub-interpreter
-   creation time on this Python build. All sub-interpreters share the
-   (disabled) runtime-global GIL state.
-
-:Operator action:
-   Remove ``WSGIPerInterpreterGIL`` from the configuration on
-   free-threaded builds, or use the regular GIL-enabled Python build if
-   per-interpreter GIL is the goal.
+Previously logged at config load when ``WSGIPerInterpreterGIL On`` was
+set on a free-threaded Python build. With the addition of
+``WSGIFreeThreading``, the meaning of "free-threaded build" changed:
+free-threading is now opt-in per process, and ``WSGIPerInterpreterGIL``
+works normally on free-threaded builds where ``WSGIFreeThreading`` is
+not active. The new per-process conflict is reported by
+:ref:`WSGI0202` instead.
 
 .. _WSGI0198:
 
@@ -5124,3 +5108,181 @@ WSGI0199 — Per-interpreter switch interval skipped because interpreter does no
    ``WSGISwitchInterval`` directive to a wider scope (top-level, or a
    ``process-group=`` container that covers every interpreter in the
    process).
+
+.. _WSGI0200:
+
+WSGI0200 — WSGIFreeThreading On has no effect on this Python build
+------------------------------------------------------------------
+
+:Severity: WARNING
+:Source: ``src/server/wsgi_config.c``
+
+:Logged message:
+   ``WSGIFreeThreading On has no effect: this Python build does not
+   support free-threading (PEP 703). Rebuild Python with --disable-gil
+   to use it.``
+
+:Cause:
+   ``WSGIFreeThreading On`` was set in the configuration but mod_wsgi
+   was built against a Python that does not support free-threading.
+   PEP 703 free-threading requires Python 3.13 or later configured
+   with ``--disable-gil``.
+
+:Outcome:
+   The directive value is recorded but ignored at process initialisation
+   time. The process runs with the GIL enabled as on any non-free-
+   threaded build.
+
+:Operator action:
+   Either rebuild against a free-threaded Python (``python3.13t`` or
+   later, configured with ``--disable-gil``), or remove the
+   ``WSGIFreeThreading`` directive from the configuration to silence
+   the warning.
+
+.. _WSGI0201:
+
+WSGI0201 — WSGIFreeThreading inside container with application-group= is ignored
+--------------------------------------------------------------------------------
+
+:Severity: WARNING
+:Source: ``src/server/wsgi_config.c``
+
+:Logged message:
+   ``WSGIFreeThreading inside <WSGIInterpreterOptions> with
+   application-group= set is ignored: free-threading is a process-wide
+   setting and cannot be scoped per application group.``
+
+:Cause:
+   ``WSGIFreeThreading`` appeared inside a ``<WSGIInterpreterOptions>``
+   container that has ``application-group=`` set. Free-threading is
+   fixed at ``Py_InitializeFromConfig`` time and is therefore process-
+   wide; it cannot be scoped to a single application group.
+
+:Outcome:
+   The container's ``WSGIFreeThreading`` value is recorded but skipped
+   by the per-process resolver. The process inherits whatever value
+   resolves from top-level, the empty container, or a container scoped
+   only by ``process-group=``.
+
+:Operator action:
+   Move the ``WSGIFreeThreading`` directive out of the application-
+   group container. Use a ``process-group=`` container (or top level)
+   to scope it.
+
+.. _WSGI0202:
+
+WSGI0202 — Per-interpreter GIL skipped because free-threading is active
+-----------------------------------------------------------------------
+
+:Severity: WARNING
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Skipping per-interpreter GIL for <interpreter> in <process>:
+   free-threading is active in this process so there is no GIL to
+   allocate per interpreter.``
+
+:Cause:
+   A sub-interpreter was about to be created with PEP 684 per-
+   interpreter GIL (resolved from ``WSGIPerInterpreterGIL On`` at top
+   level or in a matching container) but ``WSGIFreeThreading`` is also
+   active for this process. Free-threading wins; there is no GIL state
+   for the per-interpreter request to apply to.
+
+:Outcome:
+   The sub-interpreter is created via the legacy entry point without
+   the own-GIL request. The interpreter functions normally under
+   free-threading.
+
+:Operator action:
+   Decide which mode is intended for this process. To use per-
+   interpreter GIL, remove or disable ``WSGIFreeThreading`` for the
+   process. To run free-threaded, remove the redundant
+   ``WSGIPerInterpreterGIL`` directive from the matching scope.
+
+.. _WSGI0203:
+
+WSGI0203 — WSGISwitchInterval skipped in embedded process because free-threading is active
+------------------------------------------------------------------------------------------
+
+:Severity: WARNING
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Skipping WSGISwitchInterval <N>s in <process>: free-threading
+   is active in this process so there is no GIL switch interval to
+   set.``
+
+:Cause:
+   A top-level ``WSGISwitchInterval`` directive resolved at embedded-
+   process initialisation time but ``WSGIFreeThreading`` is active
+   for the embedded process. Without a GIL there is no switch
+   interval to apply.
+
+:Outcome:
+   ``sys.setswitchinterval()`` is not called for the embedded process.
+   The process initialises normally; embedded request handling
+   proceeds without the configured switch interval.
+
+:Operator action:
+   Remove ``WSGISwitchInterval`` (or scope it away from this process
+   via ``<WSGIInterpreterOptions>``) when free-threading is the
+   intended mode. The directive has no meaning when there is no GIL.
+
+.. _WSGI0204:
+
+WSGI0204 — Daemon-group switch-interval skipped because free-threading is active
+--------------------------------------------------------------------------------
+
+:Severity: WARNING
+:Source: ``src/server/wsgi_daemon.c``
+
+:Logged message:
+   ``Skipping WSGISwitchInterval <N>s in daemon process '<group>':
+   free-threading is active in this process so there is no GIL switch
+   interval to set.``
+
+:Cause:
+   ``WSGIDaemonProcess switch-interval=`` was set on the daemon group
+   but ``WSGIFreeThreading`` is active for the daemon process.
+   Without a GIL there is no switch interval to apply.
+
+:Outcome:
+   ``sys.setswitchinterval()`` is not called for the daemon process.
+   The daemon initialises normally; request handling proceeds without
+   the configured switch interval.
+
+:Operator action:
+   Remove the ``switch-interval=`` parameter from the
+   ``WSGIDaemonProcess`` directive (or remove ``WSGIFreeThreading``
+   for that group) depending on which mode is intended. The parameter
+   has no meaning when there is no GIL.
+
+.. _WSGI0205:
+
+WSGI0205 — Per-interpreter switch interval skipped because free-threading is active
+-----------------------------------------------------------------------------------
+
+:Severity: WARNING
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Skipping per-interpreter switch interval <N>s for <interpreter>:
+   free-threading is active in this process so there is no GIL switch
+   interval to set.``
+
+:Cause:
+   A ``WSGISwitchInterval`` directive scoped via
+   ``<WSGIInterpreterOptions>`` resolved at sub-interpreter creation
+   time, but ``WSGIFreeThreading`` is also active for this process.
+   Without a GIL there is no switch interval to apply.
+
+:Outcome:
+   ``sys.setswitchinterval()`` is not called for the sub-interpreter.
+   The interpreter is created and the request proceeds normally.
+
+:Operator action:
+   Remove the per-interpreter ``WSGISwitchInterval`` from any
+   container that resolves into a free-threaded process, or move
+   ``WSGIFreeThreading`` away from this process. The directive has
+   no meaning when there is no GIL.

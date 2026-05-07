@@ -39,6 +39,8 @@ extern int wsgi_python_initialized;
 
 extern int wsgi_python_required;
 
+extern int wsgi_free_threading_active;
+
 extern const char *wsgi_python_path;
 extern const char *wsgi_python_eggs;
 

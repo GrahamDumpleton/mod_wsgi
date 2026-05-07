@@ -63,6 +63,7 @@ typedef struct
     const char *process_group;
     const char *application_group;
     int per_interpreter_gil;
+    int free_threading;
     double switch_interval;
     int restrict_stdin;
     int restrict_stdout;
@@ -110,6 +111,7 @@ typedef struct
     int restrict_signal;
 
     int per_interpreter_gil;
+    int free_threading;
 
     apr_array_header_t *interpreter_option_blocks;
 

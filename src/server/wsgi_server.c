@@ -107,6 +107,7 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->restrict_signal = -1;
 
     object->per_interpreter_gil = -1;
+    object->free_threading = -1;
 
     object->interpreter_option_blocks = NULL;
 

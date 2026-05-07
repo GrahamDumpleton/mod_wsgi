@@ -19,6 +19,53 @@ in production deployments.
 New Features
 ------------
 
+* Added support for opting Python sub interpreters into PEP 684's
+  per-interpreter GIL. The new ``WSGIPerInterpreterGIL`` directive
+  enables it process-wide as a default. The new
+  ``<WSGIInterpreterOptions>`` section directive scopes the setting
+  (and a small set of related per-interpreter directives) to
+  individual sub interpreters via ``process-group=`` and
+  ``application-group=`` selectors, so per-interpreter GIL can be
+  enabled only for selected applications while the rest of the
+  process continues on the shared GIL. ``WSGISwitchInterval``,
+  ``WSGIPythonPath``, ``WSGIRestrictStdin``, ``WSGIRestrictStdout``
+  and ``WSGIRestrictSignal`` are also valid inside the container and
+  resolve per interpreter; ``WSGIPythonPath`` layers additively on
+  top of the embedded mode or daemon mode base path. Per-interpreter
+  GIL requires Python 3.12 or later; on older Python versions the
+  directive is accepted but logs a configuration-time warning and
+  has no effect. C extensions imported by an opted-in sub
+  interpreter must declare ``Py_mod_multiple_interpreters`` with
+  ``Py_MOD_PER_INTERPRETER_GIL_SUPPORTED`` (or be pure Python),
+  otherwise import will fail. The main Python interpreter always
+  uses the original process-wide GIL and a setting that resolves to
+  it is silently ignored.
+
+* Added support for being built against and run on free-threaded
+  Python (PEP 703, Python 3.13 or later configured with
+  ``--disable-gil``). The embedded ``mod_wsgi`` Python module
+  declares ``Py_mod_gil`` as ``Py_MOD_GIL_NOT_USED`` when compiled
+  against a free-threaded build. By default mod_wsgi forces the GIL
+  on even on a free-threaded build by setting
+  ``PyConfig.enable_gil = _PyConfig_GIL_ENABLE`` at process
+  initialisation: free-threading is opt-in per process via the new
+  ``WSGIFreeThreading`` directive. ``WSGIFreeThreading On`` at top
+  level enables free-threading for every process; placed inside an
+  ``<WSGIInterpreterOptions process-group=...>`` container it
+  enables free-threading only for the matched embedded or daemon
+  process. ``application-group=`` cannot scope this directive
+  because free-threading is process-wide. In a process where
+  free-threading is active, ``WSGIPerInterpreterGIL`` and
+  ``WSGISwitchInterval`` (and the
+  ``WSGIDaemonProcess switch-interval=`` parameter) are no-ops and
+  log a warning at the relevant initialisation site. C extensions
+  loaded under free-threading should declare ``Py_mod_gil`` in
+  their multi-phase init table; extensions that do not declare it
+  are imported anyway under mod_wsgi's explicit
+  ``_PyConfig_GIL_DISABLE`` but CPython logs a per-extension
+  warning to flag that they have not been audited for the no-GIL
+  runtime.
+
 * ``request-timeout`` recovery overhauled, with a new ``interrupt-timeout``
   option for opt-in injection-based recovery, a new natural-log scaling
   rule for the per-thread fire point, and a stale-aware

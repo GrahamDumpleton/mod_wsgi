@@ -52,6 +52,7 @@ Python environment
    configuration-directives/WSGIDontWriteBytecode
    configuration-directives/WSGISwitchInterval
    configuration-directives/WSGIPerInterpreterGIL
+   configuration-directives/WSGIFreeThreading
    configuration-directives/WSGIInterpreterOptions
 
 Authentication and access control
@@ -114,6 +115,7 @@ Alphabetical index
 * :doc:`configuration-directives/WSGIDontWriteBytecode`
 * :doc:`configuration-directives/WSGIEnableSendfile`
 * :doc:`configuration-directives/WSGIErrorOverride`
+* :doc:`configuration-directives/WSGIFreeThreading`
 * :doc:`configuration-directives/WSGIHandlerScript`
 * :doc:`configuration-directives/WSGIIgnoreActivity`
 * :doc:`configuration-directives/WSGIImportScript`

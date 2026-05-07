@@ -419,7 +419,8 @@ typedef struct
  * to "unset" when not configured.
  */
 
-typedef struct {
+typedef struct
+{
     int specificity;
     int source_idx;
     const char *path;
@@ -667,19 +668,34 @@ InterpreterObject *newInterpreterObject(const char *name)
          * (shared GIL, main obmalloc, fork/exec/threads/daemon threads
          * allowed, multi-interp extensions unchecked outside free-
          * threaded builds). Default and unset both resolve to the
-         * legacy config. On free-threaded builds the own-GIL path is
-         * skipped because there is no GIL to flip. Older Python
-         * versions fall through to the legacy entry point and the
-         * directive is a no-op.
+         * legacy config. When WSGIFreeThreading is active for this
+         * process the own-GIL path is skipped because there is no GIL
+         * to flip; a warning is logged so the operator can see the
+         * directive was overridden. Older Python versions fall through
+         * to the legacy entry point and the directive is a no-op.
          */
 
 #if PY_VERSION_HEX >= 0x030c0000
         {
             PyStatus status;
 
-#if !defined(Py_GIL_DISABLED)
             use_own_gil = resolved_options.per_interpreter_gil;
-#endif
+
+            if (use_own_gil && wsgi_free_threading_active)
+            {
+                wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
+                               WSGI_APLOGNO(0202) "Skipping "
+                                                  "per-interpreter GIL for %s in %s: "
+                                                  "free-threading is active in this "
+                                                  "process so there is no GIL to "
+                                                  "allocate per interpreter.",
+                               wsgi_format_interp_name(
+                                   wsgi_server->process->pool,
+                                   name),
+                               wsgi_format_process_context(
+                                   wsgi_server->process->pool));
+                use_own_gil = 0;
+            }
 
             if (use_own_gil)
             {
@@ -723,15 +739,27 @@ InterpreterObject *newInterpreterObject(const char *name)
 
     if (resolved_options.switch_interval > 0.0)
     {
-        if (resolved_options.switch_interval_app_scoped && !use_own_gil &&
-            name && *name)
+        if (wsgi_free_threading_active)
+        {
+            wsgi_log_error_locked(APLOG_WARNING, 0, wsgi_server,
+                                  WSGI_APLOGNO(0205) "Skipping "
+                                                     "per-interpreter switch interval %.6fs "
+                                                     "for %s: free-threading is active in "
+                                                     "this process so there is no GIL "
+                                                     "switch interval to set.",
+                                  resolved_options.switch_interval,
+                                  wsgi_format_interp_name(
+                                      wsgi_server->process->pool, name));
+        }
+        else if (resolved_options.switch_interval_app_scoped && !use_own_gil &&
+                 name && *name)
         {
             wsgi_log_error_locked(APLOG_WARNING, 0, wsgi_server,
                                   WSGI_APLOGNO(0199) "Skipping "
-                                  "per-interpreter switch interval %.6fs "
-                                  "for %s: setting it would mutate the "
-                                  "process-global value because this "
-                                  "interpreter does not have its own GIL.",
+                                                     "per-interpreter switch interval %.6fs "
+                                                     "for %s: setting it would mutate the "
+                                                     "process-global value because this "
+                                                     "interpreter does not have its own GIL.",
                                   resolved_options.switch_interval,
                                   wsgi_format_interp_name(
                                       wsgi_server->process->pool, name));
@@ -2065,6 +2093,55 @@ void wsgi_python_set_switch_interval(double seconds)
                        wsgi_server->process->pool));
 }
 
+/*
+ * Process-wide free-threading state. Resolved once at wsgi_python_init
+ * time from the top-level WSGIFreeThreading directive and any matching
+ * <WSGIInterpreterOptions process-group=...> containers. Read by
+ * newInterpreterObject and the switch-interval application sites to
+ * suppress configuration that would have no effect under a disabled
+ * GIL.
+ */
+
+int wsgi_free_threading_active = 0;
+
+static int wsgi_resolve_free_threading(void)
+{
+    int resolved = (wsgi_server_config->free_threading > 0) ? 1 : 0;
+    int resolved_specificity = -1;
+    int i;
+
+    if (!wsgi_server_config->interpreter_option_blocks)
+        return resolved;
+
+    for (i = 0; i < wsgi_server_config->interpreter_option_blocks->nelts;
+         i++)
+    {
+        WSGIInterpreterOptionsBlock *block = APR_ARRAY_IDX(
+            wsgi_server_config->interpreter_option_blocks, i,
+            WSGIInterpreterOptionsBlock *);
+        int specificity = 0;
+
+        if (block->application_group)
+            continue;
+
+        if (block->process_group)
+        {
+            if (strcmp(block->process_group, wsgi_daemon_group) != 0)
+                continue;
+            specificity++;
+        }
+
+        if (block->free_threading >= 0 &&
+            specificity >= resolved_specificity)
+        {
+            resolved = (block->free_threading > 0) ? 1 : 0;
+            resolved_specificity = specificity;
+        }
+    }
+
+    return resolved;
+}
+
 apr_status_t wsgi_python_init(apr_pool_t *p)
 {
     const char *python_home = 0;
@@ -2349,6 +2426,41 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
             return APR_EGENERAL;
         }
 
+        /*
+         * Resolve free-threading for this process. The resolver walks
+         * the top-level WSGIFreeThreading directive and any matching
+         * <WSGIInterpreterOptions process-group=...> containers; the
+         * result is cached in wsgi_free_threading_active for later
+         * use by sub-interpreter creation and switch-interval sites.
+         * On a free-threaded Python build the result also drives
+         * PyConfig.enable_gil. On a non-free-threaded build the
+         * resolver value is recorded but PyConfig.enable_gil is left
+         * untouched (the warning fired at config load).
+         */
+
+        wsgi_free_threading_active = wsgi_resolve_free_threading();
+
+#if defined(Py_GIL_DISABLED)
+/*
+ * The named values for PyConfig.enable_gil
+ * (_PyConfig_GIL_DEFAULT, _PyConfig_GIL_DISABLE,
+ * _PyConfig_GIL_ENABLE) live in CPython's
+ * Include/internal/pycore_initconfig.h and are not part of the
+ * public C API. The integer values themselves are documented
+ * for the field at
+ * https://docs.python.org/3/c-api/init_config.html (-1 default,
+ * 0 disable, 1 enable), so we define mod_wsgi-local names with
+ * the documented values rather than including a private
+ * header.
+ */
+#define WSGI_PYCONFIG_GIL_DISABLE 0
+#define WSGI_PYCONFIG_GIL_ENABLE 1
+
+        config.enable_gil = wsgi_free_threading_active
+                                ? WSGI_PYCONFIG_GIL_DISABLE
+                                : WSGI_PYCONFIG_GIL_ENABLE;
+#endif
+
         /* Initialise Python. */
 
         wsgi_log_error(APLOG_INFO, 0, wsgi_server,
@@ -2383,9 +2495,27 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
          * from daemon->group->switch_interval after wsgi_python_child_init
          * (see wsgi_daemon.c) — applying the server-config value here
          * would shadow that and emit a redundant INFO log line. */
-        if (wsgi_daemon_process == NULL && wsgi_server_config->switch_interval > 0.0)
-            wsgi_python_set_switch_interval(
-                wsgi_server_config->switch_interval);
+        if (wsgi_daemon_process == NULL &&
+            wsgi_server_config->switch_interval > 0.0)
+        {
+            if (wsgi_free_threading_active)
+            {
+                wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
+                               WSGI_APLOGNO(0203) "Skipping "
+                                                  "WSGISwitchInterval %.6fs in %s: "
+                                                  "free-threading is active in this process "
+                                                  "so there is no GIL switch interval to "
+                                                  "set.",
+                               wsgi_server_config->switch_interval,
+                               wsgi_format_process_context(
+                                   wsgi_server->process->pool));
+            }
+            else
+            {
+                wsgi_python_set_switch_interval(
+                    wsgi_server_config->switch_interval);
+            }
+        }
 
         /*
          * Register cleanups to be performed on parent restart

@@ -3864,8 +3864,22 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             }
             else if (daemon->group->switch_interval > 0.0)
             {
-                wsgi_python_set_switch_interval(
-                    daemon->group->switch_interval);
+                if (wsgi_free_threading_active)
+                {
+                    wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
+                                   WSGI_APLOGNO(0204) "Skipping "
+                                   "WSGISwitchInterval %.6fs in daemon "
+                                   "process '%s': free-threading is "
+                                   "active in this process so there is "
+                                   "no GIL switch interval to set.",
+                                   daemon->group->switch_interval,
+                                   daemon->group->name);
+                }
+                else
+                {
+                    wsgi_python_set_switch_interval(
+                        daemon->group->switch_interval);
+                }
             }
         }
 

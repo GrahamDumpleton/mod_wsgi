@@ -37,8 +37,13 @@ application group name at interpreter-creation time. So
 ``application-group=app1`` matches when a ``WSGIApplicationGroup app1``
 directive (or equivalent ``application-group=`` parameter on
 ``WSGIScriptAlias``, ``WSGIImportScript`` or ``WSGIHandlerScript``)
-selects ``app1``. The literal value ``%{GLOBAL}`` is accepted as a
-synonym for the empty string and matches the main Python interpreter.
+selects ``app1``.
+
+The literal value ``%{GLOBAL}`` is accepted as a synonym for the
+empty string on **both** selectors. On ``application-group=`` it
+matches the main Python interpreter. On ``process-group=`` it matches
+embedded mode (Apache child processes that have not been routed to a
+daemon group).
 
 Variable-expanded application group names of the form ``%{ENV:VAR}``
 are resolved at request time, after the configuration has been loaded,
@@ -50,6 +55,7 @@ Permitted child directives
 Only the following directives are valid inside the container:
 
 * :doc:`WSGIPerInterpreterGIL`
+* :doc:`WSGIFreeThreading`
 * :doc:`WSGISwitchInterval`
 * :doc:`WSGIPythonPath`
 * :doc:`WSGIRestrictStdin`
@@ -85,6 +91,17 @@ value applies.
 
 For ``WSGIPythonPath`` every matching layer contributes. See
 `WSGIPythonPath layering`_ below.
+
+``WSGIFreeThreading`` is resolved separately from the per-interpreter
+directives because free-threading is a process-wide setting fixed at
+``Py_InitializeFromConfig`` time. The resolver walks containers
+matching the current process's ``process-group=`` selector only;
+containers with ``application-group=`` set are skipped (and warned
+at config load). The resolved value drives ``PyConfig.enable_gil``
+and is then read back by sub interpreter creation and switch
+interval sites to suppress configuration that has no effect when
+the GIL is disabled. See :doc:`WSGIFreeThreading` for the full
+rules.
 
 WSGIPythonPath layering
 -----------------------

@@ -1146,6 +1146,12 @@ static const command_rec wsgi_commands[] =
                       NULL, RSRC_CONF, "Enable/Disable per-interpreter GIL "
                                        "for sub-interpreters (Python 3.12+)."),
 
+        AP_INIT_TAKE1("WSGIFreeThreading", wsgi_set_free_threading,
+                      NULL, RSRC_CONF, "Enable/Disable free-threaded Python "
+                                       "(GIL disabled) for the matched "
+                                       "process (Python 3.13+ free-threaded "
+                                       "build)."),
+
         AP_INIT_RAW_ARGS("<WSGIInterpreterOptions",
                          wsgi_interpreter_options_section,
                          NULL, RSRC_CONF,

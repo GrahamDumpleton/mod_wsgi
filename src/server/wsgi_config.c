@@ -588,21 +588,65 @@ const char *wsgi_set_per_interpreter_gil(cmd_parms *cmd, void *mconfig,
     else
         sconfig->per_interpreter_gil = value;
 
+#if PY_VERSION_HEX < 0x030c0000
     if (value > 0)
     {
-#if defined(Py_GIL_DISABLED)
-        wsgi_log_error(APLOG_WARNING, 0, cmd->server,
-                       WSGI_APLOGNO(0197) "WSGIPerInterpreterGIL has no "
-                       "effect on free-threaded Python builds; PEP 684 "
-                       "per-interpreter GIL configuration does not apply "
-                       "when the GIL is already disabled runtime-wide.");
-#elif PY_VERSION_HEX < 0x030c0000
         wsgi_log_error(APLOG_WARNING, 0, cmd->server,
                        WSGI_APLOGNO(0198) "WSGIPerInterpreterGIL requires "
-                       "Python 3.12 or later; directive has no effect on "
-                       "this build.");
-#endif
+                                          "Python 3.12 or later; directive has no effect on "
+                                          "this build.");
     }
+#endif
+
+    return NULL;
+}
+
+const char *wsgi_set_free_threading(cmd_parms *cmd, void *mconfig,
+                                    const char *f)
+{
+    WSGIServerConfig *sconfig = NULL;
+    WSGIInterpreterOptionsBlock *block = NULL;
+    int value = 0;
+
+    sconfig = ap_get_module_config(cmd->server->module_config, &wsgi_module);
+
+    block = wsgi_active_options_block(cmd);
+
+    if (!block)
+    {
+        const char *error = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+        if (error != NULL)
+            return error;
+    }
+
+    if (wsgi_parse_on_off(f, &value) < 0)
+        return "WSGIFreeThreading must be one of: Off | On";
+
+    if (block && block->application_group)
+    {
+        wsgi_log_error(APLOG_WARNING, 0, cmd->server,
+                       WSGI_APLOGNO(0201) "WSGIFreeThreading inside "
+                                          "<WSGIInterpreterOptions> with application-group= "
+                                          "set is ignored: free-threading is a process-wide "
+                                          "setting and cannot be scoped per application "
+                                          "group.");
+    }
+
+    if (block)
+        block->free_threading = value;
+    else
+        sconfig->free_threading = value;
+
+#if !defined(Py_GIL_DISABLED)
+    if (value > 0)
+    {
+        wsgi_log_error(APLOG_WARNING, 0, cmd->server,
+                       WSGI_APLOGNO(0200) "WSGIFreeThreading On has no "
+                                          "effect: this Python build does not support "
+                                          "free-threading (PEP 703). Rebuild Python with "
+                                          "--disable-gil to use it.");
+    }
+#endif
 
     return NULL;
 }
@@ -642,6 +686,7 @@ const char *wsgi_interpreter_options_section(cmd_parms *cmd, void *mconfig,
 
     block = apr_pcalloc(cmd->pool, sizeof(*block));
     block->per_interpreter_gil = -1;
+    block->free_threading = -1;
     block->switch_interval = 0.0;
     block->restrict_stdin = -1;
     block->restrict_stdout = -1;

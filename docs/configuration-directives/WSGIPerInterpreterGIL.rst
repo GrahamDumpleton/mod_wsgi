@@ -35,14 +35,19 @@ creation.
 Python version requirements
 ---------------------------
 
-Per-interpreter GIL requires Python 3.12 or later built with the
-default GIL-enabled configuration. On older Python versions the
-directive is accepted but logs a configuration-time warning and has no
-effect; sub interpreters continue to share the process-wide GIL.
+Per-interpreter GIL requires Python 3.12 or later. On older Python
+versions the directive is accepted but logs a configuration-time
+warning and has no effect; sub interpreters continue to share the
+process-wide GIL.
 
-On free-threaded Python builds (PEP 703, ``Py_GIL_DISABLED``) there is
-no GIL at all, so the directive is also a no-op. A configuration-time
-warning is logged in that case as well.
+A free-threaded Python build (PEP 703) does not by itself prevent the
+directive from working. mod_wsgi defaults to running with the GIL
+enabled even on free-threaded builds, so per-interpreter GIL applies
+normally unless free-threading has been opted in for the process via
+:doc:`WSGIFreeThreading`. When free-threading is active in the
+process, ``WSGIPerInterpreterGIL`` is a per-interpreter no-op (there
+is no GIL to allocate per interpreter); a warning is logged at sub
+interpreter creation time.
 
 C extension compatibility
 -------------------------
