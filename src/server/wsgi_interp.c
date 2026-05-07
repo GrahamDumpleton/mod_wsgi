@@ -2464,9 +2464,12 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
         /* Initialise Python. */
 
         wsgi_log_error(APLOG_INFO, 0, wsgi_server,
-                       "Initializing Python runtime in %s.",
+                       "Initializing Python runtime in %s%s.",
                        wsgi_format_process_context(
-                           wsgi_server->process->pool));
+                           wsgi_server->process->pool),
+                       wsgi_free_threading_active
+                           ? " with free-threading enabled"
+                           : "");
 
         status = Py_InitializeFromConfig(&config);
         if (PyStatus_Exception(status))
