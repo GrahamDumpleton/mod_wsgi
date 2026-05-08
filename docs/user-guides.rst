@@ -15,6 +15,7 @@ Installation
    user-guides/installation-on-macosx
    user-guides/installation-on-windows
    user-guides/quick-installation-guide
+   user-guides/mod-wsgi-express-quickstart
 
 Configuration basics
 --------------------

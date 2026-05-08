@@ -95,9 +95,11 @@ by your user::
 
     mod_wsgi-express start-server myapp.wsgi
 
-For a complete option reference run
-``mod_wsgi-express start-server --help``. For a basic walkthrough
-see :doc:`../getting-started`.
+For a basic walkthrough see :doc:`../getting-started`. For
+operational use (privileged ports, Django integration, running
+under a process supervisor or in a container) see
+:doc:`mod-wsgi-express-quickstart`. For a complete option
+reference run ``mod_wsgi-express start-server --help``.
 
 Connecting the pip-built module to system Apache
 ------------------------------------------------

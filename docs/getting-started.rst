@@ -99,7 +99,11 @@ your user — there is no system Apache involved and nothing in
 
 For the bigger picture of what mod_wsgi and ``mod_wsgi-express``
 are doing under the hood, and the deployment shapes available
-for production use, see :doc:`how-mod-wsgi-works`.
+for production use, see :doc:`how-mod-wsgi-works`. For going
+further with ``mod_wsgi-express`` itself (running on privileged
+ports, Django integration, running under a process supervisor or
+in a container), see
+:doc:`user-guides/mod-wsgi-express-quickstart`.
 
 Integrating with an existing Apache installation
 ------------------------------------------------
@@ -125,6 +129,9 @@ Where to go next
 
 Once you have a Hello world running:
 
+* :doc:`user-guides/mod-wsgi-express-quickstart` — going further
+  with ``mod_wsgi-express`` (privileged ports, Django, process
+  supervisors, containers).
 * :doc:`how-mod-wsgi-works` — architectural picture and the
   common deployment patterns.
 * :doc:`installation` — installation methods and trade-offs.
