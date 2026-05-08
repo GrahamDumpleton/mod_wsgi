@@ -55,5 +55,6 @@ Concepts and advanced topics
    user-guides/running-behind-a-reverse-proxy
    user-guides/enabling-https
    user-guides/security-hardening
+   user-guides/upgrading-an-application
    user-guides/issues-with-pickle-module
    user-guides/assorted-tips-and-tricks
