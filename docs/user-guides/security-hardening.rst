@@ -739,8 +739,12 @@ Where to go next
 * :doc:`running-behind-a-reverse-proxy` for trusted-proxy
   header configuration and the corresponding front-end proxy
   setup.
-* :doc:`processes-and-threading` for the daemon-mode process
-  model in depth.
+* :doc:`daemon-mode` for the conceptual model and the
+  ``WSGIDaemonProcess`` / ``WSGIProcessGroup`` /
+  ``WSGIApplicationGroup`` configuration patterns referenced
+  on this page.
+* :doc:`processes-and-threading` for the underlying Apache MPM
+  and Python sub interpreter model that daemon mode builds on.
 * :doc:`../configuration-directives/WSGIDaemonProcess`,
   :doc:`../configuration-directives/WSGIRestrictEmbedded`, and
   :doc:`../configuration-directives/WSGIRestrictProcess` for

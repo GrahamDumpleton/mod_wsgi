@@ -677,6 +677,8 @@ being safe.
 See Also
 --------
 
+* :doc:`daemon-mode` for the conceptual model behind the parallel
+  daemon process groups used in the blue/green pattern.
 * :doc:`reloading-source-code` for the full mechanics of
   script-file recycling and signal-driven daemon restart, plus an
   automatic source-change monitor.

@@ -66,5 +66,9 @@ further restricted if the WSGIRestrictProcess directive has been used.
 Note that the WSGIProcessGroup directive and corresponding features are not
 available on Windows.
 
+For the conceptual model behind daemon mode and the patterns for
+delegating WSGI applications to daemon process groups, see
+:doc:`../user-guides/daemon-mode`.
+
 .. _SetEnv: http://httpd.apache.org/docs/2.4/mod/mod_env.html#setenv
 .. _RewriteRule: http://httpd.apache.org/docs/2.4/mod/mod_rewrite.html#rewriterule

@@ -446,12 +446,13 @@ threads defined is adequate to cope with the expected load.
 
 In addition to ``processes`` and ``threads``, ``WSGIDaemonProcess``
 exposes a number of options for controlling how individual daemon
-processes are recycled — among them ``maximum-requests``,
-``inactivity-timeout``, ``request-timeout`` and ``cpu-time-limit`` —
+processes are recycled, among them ``maximum-requests``,
+``inactivity-timeout``, ``request-timeout`` and ``cpu-time-limit``,
 together with timeouts that govern shutdown and request-handling
-deadlines. See the
-:doc:`../configuration-directives/WSGIDaemonProcess` reference for
-the full set of options; this guide is concerned only with the
+deadlines. See :doc:`daemon-mode` for the conceptual model
+covering process-group sizing, recycling, and timeout choice, and
+the :doc:`../configuration-directives/WSGIDaemonProcess` reference
+for the full set of options. This guide is concerned only with the
 process and thread counts.
 
 Sharing Of Global Data
