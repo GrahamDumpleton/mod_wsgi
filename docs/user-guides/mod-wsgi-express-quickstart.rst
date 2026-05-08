@@ -261,8 +261,9 @@ Process supervisors and containers
 ----------------------------------
 
 When ``mod_wsgi-express`` runs under a process supervisor
-(systemd, supervisord, runit, s6) or as a container ``CMD``,
-two things change relative to running it interactively:
+(systemd, supervisord, runit, s6) or as the main process inside
+a container, two things change relative to running it
+interactively:
 
 * Logs need to go to standard output and standard error rather
   than to files under the server root, so the supervisor or
@@ -271,11 +272,10 @@ two things change relative to running it interactively:
   as a running process. ``start-server`` already runs in the
   foreground, so no additional flag is needed.
 
-A typical container ``CMD`` looks like::
-
-    CMD ["mod_wsgi-express", "start-server", "wsgi.py", \
-         "--port=80", "--log-to-terminal", \
-         "--user=www-data", "--group=www-data"]
+For a Dockerfile walkthrough including base-image package
+requirements, the PID 1 reaping behaviour, and running as a
+non-root user inside the container, see
+:doc:`installing-with-docker`.
 
 Where to go next
 ----------------

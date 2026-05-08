@@ -21,3 +21,6 @@ Each entry may be a single IP address or a CIDR range::
 This directive only has effect when used in conjunction with the
 ``WSGITrustedProxyHeaders`` directive. For more details see the documentation
 for the ``WSGITrustedProxyHeaders`` directive.
+
+For an end-to-end walkthrough including the matching front-end proxy
+configuration, see :doc:`../user-guides/running-behind-a-reverse-proxy`.

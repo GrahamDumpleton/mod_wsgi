@@ -527,44 +527,25 @@ Reverse Proxy And HTTPS Termination
 -----------------------------------
 
 A common production deployment pattern places mod_wsgi behind a
-separate reverse proxy that terminates TLS — typically nginx,
-HAProxy, or a managed load balancer such as AWS ALB. mod_wsgi sees
-plain HTTP requests on a private interface and information about
-the original client connection (real IP, original protocol,
-original Host header) is carried in HTTP headers added by the
-proxy.
-
-For the WSGI application to see the original client information
+separate reverse proxy that terminates TLS, typically nginx,
+HAProxy, or a managed load balancer such as AWS ALB. The proxy
+adds ``X-Forwarded-*`` headers carrying the original client
+information; mod_wsgi rewrites the WSGI environment from those
+headers so the application sees the original client context
 rather than the connection-level details between the proxy and
-Apache, mod_wsgi must be told which front-end proxies are trusted
-and which headers to honour. The two relevant directives are:
+Apache.
 
-* :doc:`../configuration-directives/WSGITrustedProxies` — IP
-  addresses or CIDR ranges of front-end proxies whose forwarded
-  headers should be trusted.
-* :doc:`../configuration-directives/WSGITrustedProxyHeaders` —
-  which proxy headers (``X-Forwarded-For``, ``X-Forwarded-Proto``,
-  ``X-Forwarded-Host``, etc.) to consume.
+The two directives that control this are
+:doc:`../configuration-directives/WSGITrustedProxies` (IP
+addresses or CIDR ranges of front-end proxies whose forwarded
+headers should be trusted) and
+:doc:`../configuration-directives/WSGITrustedProxyHeaders`
+(which forwarded headers to honour).
 
-Without these directives the WSGI environment keys ``REMOTE_ADDR``,
-``HTTP_HOST``, and ``wsgi.url_scheme`` reflect the connection
-between the proxy and Apache, not the original client request. With
-the directives in place mod_wsgi rewrites those keys based on the
-trusted proxy headers so the application sees the original client
-context.
-
-A typical configuration for a single trusted front-end proxy at
-``192.0.2.10``::
-
-    WSGITrustedProxies 192.0.2.10
-    WSGITrustedProxyHeaders X-Forwarded-For X-Forwarded-Proto \
-        X-Forwarded-Host
-
-Trust only the proxies you actually operate. ``WSGITrustedProxies``
-defaults to no trusted proxies (that is, the forwarded headers are
-ignored regardless of source) for safety; trusting an arbitrary
-client to set ``X-Forwarded-For`` is an authentication bypass for
-applications that gate behaviour on ``REMOTE_ADDR``.
+For the full picture, including the matching front-end proxy
+configuration, redirect / ``Location``-header rewriting issues,
+and the equivalent ``mod_wsgi-express`` options, see
+:doc:`running-behind-a-reverse-proxy`.
 
 The Apache Alias Directive
 --------------------------

@@ -16,6 +16,7 @@ Installation
    user-guides/installation-on-windows
    user-guides/quick-installation-guide
    user-guides/mod-wsgi-express-quickstart
+   user-guides/installing-with-docker
 
 Configuration basics
 --------------------
@@ -51,5 +52,6 @@ Concepts and advanced topics
    user-guides/access-control-mechanisms
    user-guides/file-wrapper-extension
    user-guides/registering-cleanup-code
+   user-guides/running-behind-a-reverse-proxy
    user-guides/issues-with-pickle-module
    user-guides/assorted-tips-and-tricks

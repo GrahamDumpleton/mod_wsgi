@@ -229,3 +229,7 @@ Finally, if using this feature to trust proxies and designated headers, do not
 enable in any WSGI framework or application separate functionality it may have
 for also processing the proxy headers. You should only rely on what mod_wsgi
 has done to update variables special to WSGI.
+
+For an end-to-end walkthrough including the matching front-end proxy
+configuration and common redirect / ``Location``-header issues, see
+:doc:`../user-guides/running-behind-a-reverse-proxy`.
