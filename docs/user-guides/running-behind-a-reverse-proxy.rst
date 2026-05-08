@@ -342,19 +342,20 @@ which is at best ugly and at worst unreachable from the client.
 
 There are two complementary fixes:
 
-* **Front-end rewriting of the ``Location`` header.** Apache's
-  ``ProxyPassReverse`` and nginx's default ``proxy_redirect``
-  behaviour both rewrite the ``Location`` header on the way
-  back through the proxy: any URL matching the back-end's
-  proxied prefix is rewritten to the front-end's prefix. This
-  works for any ``Location`` header that the back-end emits,
-  whether from Apache or from the WSGI application.
-* **Back-end constructing the right ``Location`` in the first
-  place.** Apache's ``ProxyPreserveHost On`` (or nginx's
-  ``proxy_set_header Host $host;``) makes the back-end see the
-  original ``Host`` header, so the back-end Apache constructs
-  its directory redirects with the public hostname and the
-  rewriting on the way out is redundant.
+* **Front-end rewriting** of the ``Location`` header.
+  Apache's ``ProxyPassReverse`` and nginx's default
+  ``proxy_redirect`` behaviour both rewrite the ``Location``
+  header on the way back through the proxy: any URL matching
+  the back-end's proxied prefix is rewritten to the
+  front-end's prefix. This works for any ``Location`` header
+  that the back-end emits, whether from Apache or from the
+  WSGI application.
+* **Back-end construction** of the right ``Location`` in the
+  first place. Apache's ``ProxyPreserveHost On`` (or nginx's
+  ``proxy_set_header Host $host;``) makes the back-end see
+  the original ``Host`` header, so the back-end Apache
+  constructs its directory redirects with the public
+  hostname and the rewriting on the way out is redundant.
 
 Both can be in place at once and they do not conflict. The
 front-end rewriting also covers the case where the WSGI
@@ -377,7 +378,7 @@ correct.
 
 Two ways to address this:
 
-* **Apache ``mod_proxy_html``** on the front-end, which rewrites
+* **Apache mod_proxy_html** on the front-end, which rewrites
   URLs inside HTML response bodies::
 
       ProxyHTMLEnable On
