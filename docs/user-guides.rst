@@ -48,6 +48,7 @@ Concepts and advanced topics
 
    user-guides/processes-and-threading
    user-guides/daemon-mode
+   user-guides/request-pipeline
    user-guides/reloading-source-code
    user-guides/virtual-environments
    user-guides/access-control-mechanisms

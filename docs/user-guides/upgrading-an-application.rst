@@ -196,12 +196,17 @@ daemon group directly after the symlink swap::
     mv -T /srv/myapp/current.tmp /srv/myapp/current
     pkill -USR1 -f 'wsgi:app'
 
-SIGUSR1 is Apache's graceful restart signal; it routes through
-the ``eviction-timeout``/``graceful-timeout`` chain, so each
-daemon process continues serving in-flight requests until they
-complete (up to the configured timeout) before exiting and being
-replaced by a fresh process that picks up the new symlink
-target. The ``display-name=%{GROUP}`` option is what makes
+SIGUSR1 sent directly to a daemon process (as ``pkill -USR1``
+does here) routes through the ``eviction-timeout`` /
+``graceful-timeout`` chain, so each daemon process continues
+serving in-flight requests until they complete (up to the
+configured timeout) before exiting and being replaced by a
+fresh process that picks up the new symlink target. Note that
+``apachectl graceful`` does not produce this behaviour: the
+Apache parent forwards ``SIGTERM`` to mod_wsgi daemons even on
+a graceful restart, which goes straight to ``shutdown-timeout``.
+This pattern works because the SIGUSR1 is delivered directly
+to the daemon, not via Apache. The ``display-name=%{GROUP}`` option is what makes
 ``pkill -f`` targetable. Script reloading must be disabled
 because the symlink swap changes the WSGI script's resolved
 mtime; with the default ``WSGIScriptReloading On``, mod_wsgi's
@@ -679,6 +684,8 @@ See Also
 
 * :doc:`daemon-mode` for the conceptual model behind the parallel
   daemon process groups used in the blue/green pattern.
+* :doc:`request-pipeline` for the SIGUSR1 / ``eviction-timeout``
+  / ``graceful-timeout`` drain semantics that govern the cutover.
 * :doc:`reloading-source-code` for the full mechanics of
   script-file recycling and signal-driven daemon restart, plus an
   automatic source-change monitor.

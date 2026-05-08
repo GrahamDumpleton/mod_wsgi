@@ -495,8 +495,11 @@ Timeouts
 
 ``WSGIDaemonProcess`` exposes a family of timeout options.
 This page gives a one-paragraph orientation for each;
+:doc:`request-pipeline` walks them through in the context of
+the request flow they govern, including the recovery path
+when one fires; and
 :doc:`../configuration-directives/WSGIDaemonProcess` is the
-reference for behaviour, defaults, and edge cases.
+per-option reference for behaviour, defaults, and edge cases.
 
 The fault-recovery timeouts:
 
@@ -522,10 +525,13 @@ The shutdown timeouts:
   after a recycle trigger fires, waiting to reach idle. Also
   applied as the wait for in-flight requests when
   ``request-timeout`` causes a forced recycle.
-* ``eviction-timeout`` is the corresponding wait when the
-  process receives an Apache graceful-restart signal
-  (``SIGUSR1``). Falls back to ``graceful-timeout`` when not
-  set.
+* ``eviction-timeout`` is the corresponding wait when an
+  operator sends ``SIGUSR1`` directly to the daemon process
+  (for example via ``pkill -USR1``). Falls back to
+  ``graceful-timeout`` when not set. ``apachectl graceful``
+  does not take this path: the Apache parent sends
+  ``SIGTERM`` to mod_wsgi daemons even on a graceful
+  restart.
 * ``shutdown-timeout`` is the hard cutoff once shutdown is
   actually under way. The process is force-killed when this
   expires regardless of remaining state. The default of 5
@@ -549,12 +555,12 @@ The transport timeouts (between Apache and the daemon process):
 * ``response-socket-timeout`` is the timeout on flushes back
   to the client when the response buffer has filled.
 
-The :doc:`../configuration-directives/WSGIDaemonProcess`
-reference page suggests a starter set of timeout values mirrored
-from the defaults ``mod_wsgi-express`` uses. Many of the
-timeouts are off by default, but the recommendation is to set
-them explicitly so the pool can recover from backlogging and
-hung requests.
+The :doc:`request-pipeline` guide reproduces the
+``mod_wsgi-express`` starter set of timeout values inline as a
+baseline for hand-written ``WSGIDaemonProcess`` configurations.
+Many of the timeouts are off by default, but the recommendation
+is to set them explicitly so the pool can recover from
+backlogging and hung requests.
 
 The socket plumbing
 -------------------
