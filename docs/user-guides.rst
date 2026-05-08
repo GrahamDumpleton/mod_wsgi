@@ -53,5 +53,6 @@ Concepts and advanced topics
    user-guides/file-wrapper-extension
    user-guides/registering-cleanup-code
    user-guides/running-behind-a-reverse-proxy
+   user-guides/enabling-https
    user-guides/issues-with-pickle-module
    user-guides/assorted-tips-and-tricks

@@ -17,9 +17,9 @@ page.
 
 HTTPS termination at the front-end proxy is the typical reason
 for this deployment shape, but the proxy and trust mechanics
-covered here apply equally to plain-HTTP proxying. HTTPS-specific
-configuration (TLS certificate handling, ``--https-only``, HSTS)
-is not covered on this page.
+covered here apply equally to plain-HTTP proxying. For
+configuring TLS at the mod_wsgi instance itself (the other
+deployment shape), see :doc:`enabling-https`.
 
 What goes wrong without proxy configuration
 -------------------------------------------
@@ -472,6 +472,9 @@ Where to go next
   :doc:`../configuration-directives/WSGITrustedProxyHeaders`
   for the directive-level reference, including the full
   enumeration of equivalent headers in each group.
+* :doc:`enabling-https` for the other deployment shape,
+  where TLS is terminated at the mod_wsgi instance itself
+  rather than at a separate proxy.
 * :doc:`mod-wsgi-express-quickstart` for ``mod_wsgi-express``
   options in general.
 * :doc:`installing-with-docker` for the related case of
