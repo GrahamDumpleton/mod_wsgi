@@ -110,6 +110,66 @@ come up are:
     name imported through the standard import mechanism) or
     ``static`` (serve a directory of static files only).
 
+Hosting static files
+--------------------
+
+For applications that do not have static-file routing wired
+up by their framework, ``mod_wsgi-express`` can serve static
+assets directly from Apache rather than routing them through
+the WSGI application. The ``--url-alias`` option maps a URL
+prefix to a file or directory on disk; it is the express
+equivalent of Apache's ``Alias`` directive.
+
+To serve a directory of CSS, JavaScript, and image assets at
+the ``/static/`` URL::
+
+    mod_wsgi-express start-server wsgi.py \
+        --url-alias /static/ /srv/myapp/static/
+
+A ``GET /static/site.css`` request is now served by Apache
+directly out of ``/srv/myapp/static/site.css`` without
+entering the WSGI application.
+
+The option is repeatable, and the second argument can be
+either a directory or a single file. A typical mix::
+
+    mod_wsgi-express start-server wsgi.py \
+        --url-alias /static/ /srv/myapp/static/ \
+        --url-alias /media/ /srv/myapp/media/ \
+        --url-alias /favicon.ico /srv/myapp/static/favicon.ico \
+        --url-alias /robots.txt /srv/myapp/static/robots.txt
+
+The single-file form (the last two lines above) maps just
+that one file to the exact URL given. Apache requires
+longer/more-specific URL prefixes to be configured before
+shorter ones, but ``mod_wsgi-express`` sorts the aliases
+internally so the order on the command line does not
+matter.
+
+A separate ``--document-root`` option sets Apache's
+``DocumentRoot`` directly. Files inside the document root
+are reachable at their corresponding URL paths without
+needing an alias. This is most useful when the WSGI
+application is mounted at a sub-URL via ``--mount-point``
+and the document root holds the rest of the site::
+
+    mod_wsgi-express start-server wsgi.py \
+        --mount-point /api/ \
+        --document-root /srv/myapp/public/
+
+In this example the WSGI application handles requests under
+``/api/...`` while Apache serves the contents of
+``/srv/myapp/public/`` at all other URLs. The default for
+``--mount-point`` is ``/``, which is the typical "WSGI
+application at the root, static assets at sub-URLs" shape
+and is what the ``--url-alias`` examples above assume.
+
+When ``mod_wsgi-express`` runs behind a reverse proxy,
+static files served this way are subject to the same
+``Location`` header rewriting and HTML-body URL leakage
+caveats as the WSGI application itself; see
+:doc:`running-behind-a-reverse-proxy`.
+
 Running on a privileged port
 ----------------------------
 
