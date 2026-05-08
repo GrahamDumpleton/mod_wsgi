@@ -78,3 +78,15 @@ releases in particular can lag upstream by some time. Check what
 version your distribution provides and, if security currency matters
 for your deployment, weigh that against installing a more recent
 version yourself either from source or via ``pip install mod_wsgi``.
+
+Hardening your deployment
+-------------------------
+
+For operational hardening of a mod_wsgi deployment (running as
+a dedicated unprivileged user, isolating application components
+from each other, filesystem and socket permissions, resource
+limits, suppressing information disclosure), see
+:doc:`user-guides/security-hardening`. TLS-related hardening
+(certificate handling, HSTS, mutual TLS) is in
+:doc:`user-guides/enabling-https`, and reverse-proxy header
+trust is in :doc:`user-guides/running-behind-a-reverse-proxy`.

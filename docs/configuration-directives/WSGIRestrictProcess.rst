@@ -60,4 +60,8 @@ WSGI applications to different daemon process groups using the
 Note that the WSGIRestrictProcess directive and corresponding features are
 not available on Windows.
 
+For the broader security rationale and a worked example using this
+directive to isolate multiple application components hosted on a
+single Apache instance, see :doc:`../user-guides/security-hardening`.
+
 .. _SetEnv: http://httpd.apache.org/docs/2.4/mod/mod_env.html#setenv

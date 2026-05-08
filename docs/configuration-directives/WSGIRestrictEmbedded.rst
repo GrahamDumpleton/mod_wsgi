@@ -21,3 +21,7 @@ this to 'On', ensuring you have set up and are always using daemon mode::
 
 This option does not exist on Windows or any other configuration where
 daemon mode is not available.
+
+For the broader security rationale and the related directives that
+work together to isolate application components from each other, see
+:doc:`../user-guides/security-hardening`.

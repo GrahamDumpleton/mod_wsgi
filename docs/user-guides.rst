@@ -54,5 +54,6 @@ Concepts and advanced topics
    user-guides/registering-cleanup-code
    user-guides/running-behind-a-reverse-proxy
    user-guides/enabling-https
+   user-guides/security-hardening
    user-guides/issues-with-pickle-module
    user-guides/assorted-tips-and-tricks
