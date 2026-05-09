@@ -119,7 +119,7 @@ daemon process groups.
 For the conceptual model behind sub interpreter selection, the
 cases that call for ``%{GLOBAL}`` over the ``%{RESOURCE}``
 default, and the per-interpreter GIL and free-threading
-mechanisms, see :doc:`../user-guides/daemon-mode` and
+mechanisms, see :doc:`../user-guides/embedded-and-daemon-mode` and
 :doc:`../user-guides/processes-and-threading`.
 
 .. _SetEnv: http://httpd.apache.org/docs/2.4/mod/mod_env.html#setenv

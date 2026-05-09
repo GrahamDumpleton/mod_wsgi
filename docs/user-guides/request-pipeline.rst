@@ -9,7 +9,7 @@ own recovery flow. This page walks the pipeline so each
 timeout lands in context, then covers the recovery flows when
 one fires.
 
-The :doc:`daemon-mode` guide is the structural companion: it
+The :doc:`embedded-and-daemon-mode` guide is the structural companion: it
 covers process and thread sizing, recycling triggers, and the
 process-group patterns that this page builds on. Read that
 page first if the daemon-mode model is unfamiliar.
@@ -405,7 +405,7 @@ a trade-off the operator selected. See
 model and its implications.
 
 For any deployment where daemon mode is available, prefer
-it. See :doc:`daemon-mode` for the model and patterns.
+it. See :doc:`embedded-and-daemon-mode` for the model and patterns.
 
 Recovery flow when ``request-timeout`` fires
 --------------------------------------------
@@ -538,7 +538,7 @@ remediation is typically not to tune the timeout; it is to
 find which C extension is misbehaving and stop using it
 (or fix it).
 
-See :doc:`daemon-mode` for the structural overview of how
+See :doc:`embedded-and-daemon-mode` for the structural overview of how
 this fits with the other recycling triggers.
 
 Recovery flow on graceful restart (SIGUSR1)
@@ -777,7 +777,7 @@ Mixing user-facing SLA expectations with mod_wsgi's fail-safe
 See Also
 --------
 
-* :doc:`daemon-mode` for the structural model behind this
+* :doc:`embedded-and-daemon-mode` for the structural model behind this
   page: process and thread sizing, recycling triggers,
   and process-group patterns.
 * :doc:`../configuration-directives/WSGIDaemonProcess` for

@@ -889,7 +889,7 @@ not available on Windows.
 For the conceptual model behind daemon mode, the patterns for
 choosing process and thread counts, and the interaction with
 ``WSGIProcessGroup`` and ``WSGIApplicationGroup``, see
-:doc:`../user-guides/daemon-mode`. For a walkthrough of where
+:doc:`../user-guides/embedded-and-daemon-mode`. For a walkthrough of where
 each of the timeout options above applies in the request flow
 and what the recovery path looks like when one fires, see
 :doc:`../user-guides/request-pipeline`.

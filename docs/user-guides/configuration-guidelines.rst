@@ -191,7 +191,7 @@ Defining Process Groups
 mod_wsgi can run a WSGI application in either *embedded* mode or
 *daemon* mode. This section covers the configuration shape; for
 the conceptual model, sizing guidance, and the patterns that come
-up in production deployments see :doc:`daemon-mode`.
+up in production deployments see :doc:`embedded-and-daemon-mode`.
 
 In embedded mode the application runs in Python sub-interpreters
 hosted inside the Apache child processes themselves. This gives the

@@ -739,7 +739,7 @@ Where to go next
 * :doc:`running-behind-a-reverse-proxy` for trusted-proxy
   header configuration and the corresponding front-end proxy
   setup.
-* :doc:`daemon-mode` for the conceptual model and the
+* :doc:`embedded-and-daemon-mode` for the conceptual model and the
   ``WSGIDaemonProcess`` / ``WSGIProcessGroup`` /
   ``WSGIApplicationGroup`` configuration patterns referenced
   on this page.

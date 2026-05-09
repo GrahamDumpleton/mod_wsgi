@@ -682,7 +682,7 @@ being safe.
 See Also
 --------
 
-* :doc:`daemon-mode` for the conceptual model behind the parallel
+* :doc:`embedded-and-daemon-mode` for the conceptual model behind the parallel
   daemon process groups used in the blue/green pattern.
 * :doc:`request-pipeline` for the SIGUSR1 / ``eviction-timeout``
   / ``graceful-timeout`` drain semantics that govern the cutover.

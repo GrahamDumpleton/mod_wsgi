@@ -449,7 +449,7 @@ exposes a number of options for controlling how individual daemon
 processes are recycled, among them ``maximum-requests``,
 ``inactivity-timeout``, ``request-timeout`` and ``cpu-time-limit``,
 together with timeouts that govern shutdown and request-handling
-deadlines. See :doc:`daemon-mode` for the conceptual model
+deadlines. See :doc:`embedded-and-daemon-mode` for the conceptual model
 covering process-group sizing, recycling, and timeout choice, and
 the :doc:`../configuration-directives/WSGIDaemonProcess` reference
 for the full set of options. This guide is concerned only with the

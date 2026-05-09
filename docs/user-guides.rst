@@ -47,7 +47,7 @@ Concepts and advanced topics
    :maxdepth: 1
 
    user-guides/processes-and-threading
-   user-guides/daemon-mode
+   user-guides/embedded-and-daemon-mode
    user-guides/request-pipeline
    user-guides/reloading-source-code
    user-guides/virtual-environments
