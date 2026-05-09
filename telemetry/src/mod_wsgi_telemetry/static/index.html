@@ -5155,7 +5155,8 @@ function setConn(ok, label) {
 }
 
 function connect() {
-  const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+  const base = window.TELEMETRY_BASE || "";
+  const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${base}/ws`;
   const ws = new WebSocket(url);
   ws.onopen = () => setConn(true, "connected");
   ws.onclose = () => { setConn(false, "disconnected, reconnecting…"); setTimeout(connect, 1500); };
@@ -5288,7 +5289,7 @@ for (const id of ["c_rps", "c_cap", "c_cpu", "c_resp", "c_mem", "c_phase"]) {
 (function () {
   const btn = document.getElementById("slow_clear");
   btn.addEventListener("click", () => {
-    fetch("/api/slow/clear", { method: "POST" }).catch(() => {});
+    fetch((window.TELEMETRY_BASE || "") + "/api/slow/clear", { method: "POST" }).catch(() => {});
   });
 })();
 

@@ -29,8 +29,30 @@ log = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-async def index(request: web.Request) -> web.FileResponse:
-    return web.FileResponse(STATIC_DIR / "index.html")
+async def index(request: web.Request) -> web.Response:
+    # Explicit --root-path wins; otherwise honour X-Forwarded-Prefix from
+    # the request, which mod_wsgi-express sets automatically for any
+    # mount-point proxy. With neither, base is empty and the JS builds
+    # root-anchored URLs (correct for direct access).
+    base = request.app["root_path"]
+    if not base:
+        base = _normalize_root_path(
+            request.headers.get("X-Forwarded-Prefix", ""))
+    inject = f"<script>window.TELEMETRY_BASE = {json.dumps(base)};</script>\n"
+    html = request.app["index_html_raw"].replace(
+        "</head>", inject + "</head>", 1)
+    return web.Response(text=html, content_type="text/html")
+
+
+def _normalize_root_path(value: str) -> str:
+    # "" / "/" mean no prefix; otherwise enforce one leading slash and no
+    # trailing slash so concatenation in the JS (`${BASE}/ws`) is safe.
+    value = value.strip()
+    if not value or value == "/":
+        return ""
+    if not value.startswith("/"):
+        value = "/" + value
+    return value.rstrip("/")
 
 
 async def api_state(request: web.Request) -> web.Response:
@@ -108,11 +130,14 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
-async def build_app(listen_spec: str) -> web.Application:
+async def build_app(listen_spec: str, root_path: str = "") -> web.Application:
     ingester = Ingester(listen_spec)
     app = web.Application()
     app["ingester"] = ingester
     app["websockets"] = set()
+    app["root_path"] = root_path
+    app["index_html_raw"] = (STATIC_DIR / "index.html").read_text(
+        encoding="utf-8")
     app.router.add_get("/", index)
     app.router.add_get("/ws", websocket)
     app.router.add_get("/api/state", api_state)
@@ -148,8 +173,17 @@ def main(argv: list[str] | None = None) -> int:
                     help="unix:/path/to/sock  (default: %(default)s)")
     ap.add_argument("--http-host", default="127.0.0.1")
     ap.add_argument("--http-port", type=int, default=8877)
+    ap.add_argument("--root-path", default="",
+                    help="URL prefix when fronted by a reverse proxy that "
+                         "strips it (e.g. /ui). Used to build links and the "
+                         "WebSocket URL in the served HTML. The proxy must "
+                         "strip the prefix before the request reaches this "
+                         "server. When unset, the X-Forwarded-Prefix request "
+                         "header is honoured if present (mod_wsgi-express's "
+                         "--proxy-mount-point sets it automatically).")
     ap.add_argument("--log-level", default="INFO")
     args = ap.parse_args(argv)
+    root_path = _normalize_root_path(args.root_path)
 
     logging.basicConfig(
         level=args.log_level.upper(),
@@ -157,12 +191,13 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     async def run() -> None:
-        app = await build_app(args.listen)
+        app = await build_app(args.listen, root_path)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, args.http_host, args.http_port)
         await site.start()
-        log.info("UI on http://%s:%d/", args.http_host, args.http_port)
+        log.info("UI on http://%s:%d/ (root-path=%r)",
+                 args.http_host, args.http_port, root_path)
 
         loop = asyncio.get_running_loop()
         stop = loop.create_future()
