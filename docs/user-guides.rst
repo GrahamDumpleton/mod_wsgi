@@ -55,6 +55,7 @@ Concepts and advanced topics
    user-guides/file-wrapper-extension
    user-guides/registering-cleanup-code
    user-guides/running-behind-a-reverse-proxy
+   user-guides/hosting-websocket-applications
    user-guides/enabling-https
    user-guides/security-hardening
    user-guides/upgrading-an-application
