@@ -8,8 +8,8 @@ typical Apache + Python WSGI deployments. Active work today is focused
 on polish, internal cleanup, and rounding out auxiliary capabilities
 rather than on changing the core hosting model.
 
-Maintenance
------------
+Active development
+------------------
 
 The project is maintained by its original author, Graham Dumpleton.
 The 6.x release line is the current focus of development. Recent and
@@ -18,6 +18,8 @@ ongoing themes include:
 * Surfacing and documenting mod_wsgi's internal metrics, including a
   monitoring UI and paths for integration with external monitoring
   systems.
+* Opt-in support for Python's evolving concurrency models: the
+  per-interpreter GIL (PEP 684) and free-threaded Python (PEP 703).
 * Reliability improvements, such as the v6 request-timeout machinery.
 * Bringing this documentation up to date and giving it a clearer
   structure.
