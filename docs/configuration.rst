@@ -36,6 +36,7 @@ Process model and daemon mode
    configuration-directives/WSGIDestroyInterpreter
    configuration-directives/WSGIRestrictProcess
    configuration-directives/WSGIIgnoreActivity
+   configuration-directives/WSGIServerMetrics
 
 Python environment
 ------------------
@@ -139,6 +140,7 @@ Alphabetical index
 * :doc:`configuration-directives/WSGIScriptAlias`
 * :doc:`configuration-directives/WSGIScriptAliasMatch`
 * :doc:`configuration-directives/WSGIScriptReloading`
+* :doc:`configuration-directives/WSGIServerMetrics`
 * :doc:`configuration-directives/WSGISocketPrefix`
 * :doc:`configuration-directives/WSGISocketRotation`
 * :doc:`configuration-directives/WSGISwitchInterval`

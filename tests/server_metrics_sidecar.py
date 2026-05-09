@@ -66,9 +66,10 @@ async def metrics_loop(app: web.Application) -> None:
         if snapshot is None:
             payload = json.dumps({
                 "error": (
-                    "WSGIServerMetrics is not enabled, or this "
-                    "daemon process group does not have "
-                    "server-metrics=on"
+                    "scoreboard access is not enabled for this daemon "
+                    "process group; set server-metrics=on on its "
+                    "WSGIDaemonProcess directive (or pass "
+                    "--server-metrics to mod_wsgi-express)"
                 ),
             }, indent=2)
         else:

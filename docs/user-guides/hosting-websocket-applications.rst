@@ -349,9 +349,10 @@ Save this as ``/etc/mod_wsgi/server_metrics_sidecar.py``::
             if snapshot is None:
                 payload = json.dumps({
                     "error": (
-                        "WSGIServerMetrics is not enabled, or this "
-                        "daemon process group does not have "
-                        "server-metrics=on"
+                        "scoreboard access is not enabled for this daemon "
+                        "process group; set server-metrics=on on its "
+                        "WSGIDaemonProcess directive (or pass "
+                        "--server-metrics to mod_wsgi-express)"
                     ),
                 }, indent=2)
             else:
@@ -395,12 +396,17 @@ awaits an event that is never set, so the import call never
 completes. ``WSGIImportScript`` is happy with this; the daemon
 process just stays in that import for its lifetime.
 
-``mod_wsgi.server_metrics()`` returns ``None`` if either
-``WSGIServerMetrics On`` is missing at server scope or
-``server-metrics=on`` is missing on the daemon process group
-running the script. The script handles that case explicitly by
-broadcasting an error frame, so the dashboard tells the user
-which flag they forgot rather than silently showing stale data.
+``mod_wsgi.server_metrics()`` returns ``None`` unless the daemon
+process group running the script was configured with
+``server-metrics=on``. The script runs in a daemon process, so
+that per-group option is the only flag that matters; the
+server-wide :doc:`../configuration-directives/WSGIServerMetrics`
+directive only applies in embedded mode and does not propagate to
+daemon groups. The script handles the ``None`` case explicitly by
+broadcasting an error frame so the dashboard tells the user which
+option they forgot rather than silently showing stale data. The
+directive page also covers the information-disclosure implications
+of opening the API up.
 
 The ``X-Forwarded-Prefix`` handling in ``index`` is what makes
 the dashboard work both directly (``http://127.0.0.1:8765/``,
@@ -423,12 +429,14 @@ Wiring it up: ``mod_wsgi-express``
 
 What each option contributes:
 
-* ``--server-metrics`` enables ``WSGIServerMetrics On`` in the
-  generated configuration *and* sets ``server-metrics=on`` on
-  every daemon process group ``mod_wsgi-express`` creates,
-  including the one ``--service-script`` adds. So this single
-  flag covers both scopes the C-side
-  ``mod_wsgi.server_metrics()`` checks.
+* ``--server-metrics`` sets ``server-metrics=on`` on every daemon
+  process group ``mod_wsgi-express`` creates, including the one
+  ``--service-script`` adds. That per-group option is what
+  actually gates the sidecar's
+  ``mod_wsgi.server_metrics()`` calls; the same flag also emits
+  ``WSGIServerMetrics On`` at server scope, which is what would
+  gate the same call from any embedded-mode handler in the
+  generated configuration.
 * ``--service-script`` declares the daemon process group
   (``service:metrics-sidecar``) with ``threads=0`` and starts
   the script in it.
@@ -447,8 +455,6 @@ configuration::
     LoadModule proxy_module        modules/mod_proxy.so
     LoadModule proxy_http_module   modules/mod_proxy_http.so
 
-    WSGIServerMetrics On
-
     WSGIDaemonProcess metrics-sidecar \
         threads=0 server-metrics=on
     WSGIImportScript /etc/mod_wsgi/server_metrics_sidecar.py \
@@ -462,13 +468,16 @@ configuration::
     </Location>
     RedirectMatch 301 "^/metrics$" "/metrics/"
 
-The two flags that ``--server-metrics`` covers in the express
-form here have to be set explicitly: ``WSGIServerMetrics On``
-at server scope, and ``server-metrics=on`` on the
-``WSGIDaemonProcess`` directive that hosts the sidecar. The
-mod_wsgi C side rejects ``mod_wsgi.server_metrics()`` calls if
-either flag is off, returning ``None`` rather than scoreboard
-data.
+Note that the raw form does not include ``WSGIServerMetrics On``.
+The sidecar runs in a daemon process, so the only flag that
+gates its ``mod_wsgi.server_metrics()`` calls is the
+``server-metrics=on`` option on the ``WSGIDaemonProcess``
+directive that hosts it. The server-wide
+:doc:`../configuration-directives/WSGIServerMetrics` directive
+applies only to embedded mode and does not propagate to daemon
+process groups; it would only be needed here if some other
+handler running in an Apache child process also called the same
+API.
 
 What the user sees
 ~~~~~~~~~~~~~~~~~~
@@ -527,6 +536,10 @@ Where to go next
   capacity tuning when the front-end is itself a separate
   Apache, nginx, or cloud load balancer rather than the same
   ``mod_wsgi-express`` instance hosting the sidecar.
+* :doc:`../configuration-directives/WSGIServerMetrics` for the
+  directive-level reference of the scoreboard-access flag the
+  worked example exercises, including the information-disclosure
+  considerations the dual-flag arrangement is intended to limit.
 * :doc:`../configuration-directives/WSGIDaemonProcess` and
   :doc:`../configuration-directives/WSGIImportScript` for the
   directive-level reference of the two pieces that the service

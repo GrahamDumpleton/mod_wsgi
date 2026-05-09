@@ -779,6 +779,22 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     indicating that it will default to the value of the ``socket-timeout``
     option.
 
+.. _server-metrics:
+
+**server-metrics=on|off**
+    Controls whether code running in this daemon process group is allowed
+    to read Apache scoreboard data via the ``mod_wsgi.server_metrics()``
+    Python API. Defaults to ``off``.
+
+    This option is the daemon-mode equivalent of the
+    :doc:`WSGIServerMetrics` directive, and is independent of it: the
+    server-wide directive does not propagate to daemon process groups
+    as a default, so each daemon group that should have scoreboard
+    access must opt in explicitly via this option. See
+    :doc:`WSGIServerMetrics` for the full description of what
+    ``mod_wsgi.server_metrics()`` returns and the information-disclosure
+    considerations of opening up access to it.
+
 To delegate a particular WSGI application to run in a named set of daemon
 processes, the ``WSGIProcessGroup`` directive should be specified in
 appropriate context for that application, or the ``process-group`` option
