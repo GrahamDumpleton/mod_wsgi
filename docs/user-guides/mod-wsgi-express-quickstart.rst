@@ -229,6 +229,118 @@ directories:
     Daemon mode only; has no effect under
     ``--embedded-mode``.
 
+Server name and virtual hosts
+-----------------------------
+
+By default ``mod_wsgi-express`` accepts requests on
+the configured port regardless of the host header.
+The following options shape its name-based
+virtual-host behaviour, which matters when the
+express instance is fronted by a reverse proxy that
+routes by hostname, or when the same instance hosts
+more than one hostname.
+
+``--server-name HOSTNAME``
+    The primary host name the server identifies as.
+    Generates the Apache ``ServerName`` directive.
+    When ``HOSTNAME`` begins with ``www.``,
+    ``mod_wsgi-express`` also adds an automatic
+    redirect from the parent domain (without
+    ``www.``) to the ``www.`` form.
+
+``--server-alias HOSTNAME``
+    Additional host name served by the same WSGI
+    application. Generates the Apache
+    ``ServerAlias`` directive. Repeatable, and
+    wildcard patterns (``*.example.com``) are
+    accepted.
+
+``--allow-localhost``
+    Allow ``localhost`` (and ``127.0.0.1``) to reach
+    the WSGI application even when ``--server-name``
+    is set to a different public hostname. By default
+    the name-based virtual-host gate rejects requests
+    that do not match the server name; this flag
+    keeps a side door open for health checks,
+    sidecars, and other on-host clients that connect
+    by loopback.
+
+Environment plumbing
+--------------------
+
+Several options shape the runtime environment the
+WSGI application sees, both at process startup and
+per request.
+
+``--working-directory DIRECTORY-PATH``
+    The current working directory of the WSGI
+    application. Defaults to the directory the
+    ``mod_wsgi-express`` command was run from, which
+    can be a surprising value (the user's home, the
+    directory ``systemd`` placed the unit in, the
+    directory ``cron`` ran the job from). Set this
+    explicitly. The directory is also searched for
+    Python imports unless the application later
+    changes its working directory.
+
+``--python-path DIRECTORY-PATH``
+    Additional directory added to ``sys.path``.
+    Repeatable. ``.pth`` files in these directories
+    are not processed; if ``.pth`` processing is
+    needed, set ``PYTHONPATH`` via an
+    ``--envvars-script`` instead.
+
+``--python-eggs DIRECTORY-PATH``
+    Directory used for unpacking Python eggs.
+    Defaults to a sub-directory of the server root.
+    Override when the server root is on a tmpfs or
+    transient filesystem and the egg cache should
+    persist across restarts.
+
+``--locale NAME``
+    Locale for the WSGI process, equivalent to
+    setting ``LC_ALL``. If unset and the inherited
+    locale is ``C`` or ``POSIX``, ``mod_wsgi-express``
+    tries ``en_US.UTF-8``, then ``C.UTF-8``, falling
+    back to the inherited locale if neither is
+    available. The fallback chain avoids the silent
+    ASCII-only behaviour that follows from running
+    under ``C``.
+
+``--setenv KEY VALUE``
+    Add a name/value pair to every request's WSGI
+    ``environ`` dictionary. Repeatable. Useful for
+    static configuration the application reads from
+    ``environ`` rather than from the OS process
+    environment.
+
+``--passenv KEY``
+    Pass a named OS process environment variable
+    into every request's WSGI ``environ`` dictionary
+    as a name/value pair. Repeatable. The express
+    invocation must already have the variable in
+    its process environment (typically via the
+    supervisor unit, the container runtime, or the
+    user's shell).
+
+Compression
+-----------
+
+``--compress-responses``
+    Enable compression of common text-based response
+    types (plain text, HTML, XML, CSS, JavaScript).
+    Off by default. Generates the Apache
+    ``mod_deflate`` configuration that compresses
+    responses for clients advertising
+    ``Accept-Encoding: gzip`` or ``deflate``.
+
+When ``mod_wsgi-express`` runs behind a front-end
+proxy, response compression is more often handled at
+the proxy than at the back-end. Using both is
+wasteful (double compression and decompression at
+the proxy), so enable this flag only when the
+express instance is the front-line server.
+
 Running on a privileged port
 ----------------------------
 
@@ -467,6 +579,41 @@ logged and where it goes.
     one discovered alongside the system Apache; set
     when ``rotatelogs`` is in a non-standard location
     or has been renamed.
+
+Custom Apache configuration
+---------------------------
+
+``mod_wsgi-express`` generates a complete Apache
+configuration from its options, but a few escape
+hatches allow hand-written Apache directives or
+shell-level setup to be injected without giving up
+the ``mod_wsgi-express`` flow:
+
+``--include-file FILE-PATH``
+    Path to a file of additional Apache directives
+    appended at the end of the generated
+    configuration. Use for directives that have no
+    ``mod_wsgi-express`` option of their own
+    (security headers, custom ``Location`` blocks,
+    third-party module configuration). Repeatable.
+
+``--rewrite-rules FILE-PATH``
+    Path to a file of ``mod_rewrite`` rules included
+    inside the generated configuration. Defaults to
+    ``rewrite.conf`` under the server root if such a
+    file exists. Override when the rules live
+    alongside the application source rather than
+    inside the generated server root.
+
+``--envvars-script FILE-PATH``
+    Path to a shell script sourced before Apache
+    starts. Use to set process-level environment
+    variables (``DATABASE_URL``,
+    ``OAUTH_CLIENT_SECRET``, ``PYTHONPATH``) that
+    the WSGI application reads at import time, or
+    that other Apache modules consult during
+    startup. Defaults to ``envvars`` under the
+    server root if such a file exists.
 
 Where to go next
 ----------------
