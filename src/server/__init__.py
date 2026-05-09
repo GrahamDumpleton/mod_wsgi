@@ -843,6 +843,10 @@ RewriteRule .* - [E=URL_SCHEME:https,NE]
 RequestHeader set X-Forwarded-Scheme %%{URL_SCHEME}e env=URL_SCHEME
 RequestHeader set X-Forwarded-Prefix %(prefix)s
 </Location>
+<LocationMatch '^%(prefix)s$'>
+RewriteEngine On
+RewriteRule .* http://%%{HTTP_HOST}%%{REQUEST_URI}/ [R=302,L]
+</LocationMatch>
 """
 
 APACHE_PROXY_PASS_MOUNT_POINT_SLASH_CONFIG = """
@@ -859,7 +863,7 @@ RequestHeader set X-Forwarded-Prefix %(prefix)s
 </Location>
 <LocationMatch '^%(mount_point)s$'>
 RewriteEngine On
-RewriteRule - http://%%{HTTP_HOST}%%{REQUEST_URI}/ [R=302,L]
+RewriteRule .* http://%%{HTTP_HOST}%%{REQUEST_URI}/ [R=302,L]
 </LocationMatch>
 """
 
