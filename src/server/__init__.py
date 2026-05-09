@@ -935,8 +935,27 @@ PassEnv '%(name)s'
 """
 
 APACHE_HANDLER_SCRIPT_CONFIG = """
+<IfDefine !ONE_PROCESS>
+<IfDefine !EMBEDDED_MODE>
 WSGIHandlerScript wsgi-resource '%(server_root)s/resource.wsgi' \\
     process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
+</IfDefine>
+<IfDefine EMBEDDED_MODE>
+WSGIHandlerScript wsgi-resource '%(server_root)s/resource.wsgi' \\
+    process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
+</IfDefine>
+</IfDefine>
+
+<IfDefine ONE_PROCESS>
+<IfDefine !MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
+WSGIHandlerScript wsgi-resource '%(server_root)s/resource.wsgi' \\
+    process-group='%%{GLOBAL}' application-group=%%{GLOBAL}
+</IfDefine>
+<IfDefine MOD_WSGI_MPM_ENABLE_WINNT_MODULE>
+WSGIHandlerScript wsgi-resource '%(server_root)s/resource.wsgi' \\
+    application-group=%%{GLOBAL}
+</IfDefine>
+</IfDefine>
 """
 
 APACHE_HANDLER_CONFIG = """

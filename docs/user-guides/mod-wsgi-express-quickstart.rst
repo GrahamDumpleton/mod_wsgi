@@ -229,6 +229,54 @@ directories:
     Daemon mode only; has no effect under
     ``--embedded-mode``.
 
+Per-extension handlers and CGI scripts
+--------------------------------------
+
+Two options route requests for files with specific
+extensions away from the WSGI application and into
+dedicated handlers.
+
+``--add-handler EXTENSION SCRIPT-PATH``
+    Map files matching ``EXTENSION`` under the
+    document root to a Python WSGI handler at
+    ``SCRIPT-PATH``. ``EXTENSION`` includes the
+    leading dot (for example ``.tmpl``). The handler
+    module must define a WSGI callable named
+    ``application``, or alternatively a function
+    named ``handle_request``; optionally
+    ``reload_required(resource)`` to control source
+    reloading. Repeatable. Handlers run in the same
+    WSGI execution context as the main application:
+    the same daemon process group in default daemon
+    mode, the Apache child workers under
+    ``--embedded-mode``. The matched file's path is
+    exposed to the handler via
+    ``environ['SCRIPT_NAME']``::
+
+        mod_wsgi-express start-server wsgi.py \
+            --document-root /srv/myapp/public \
+            --add-handler .tmpl /srv/myapp/render_tmpl.py
+
+``--with-cgi``
+    Enable plain Apache CGI handling for ``.cgi``
+    files under the document root. Loads Apache's
+    ``mod_cgid`` (or ``mod_cgi`` where ``mod_cgid``
+    is unavailable) and emits
+    ``AddHandler cgi-script .cgi``. Files with the
+    ``.cgi`` extension that are also marked
+    executable on the filesystem run as standalone
+    CGI scripts in any language, following the
+    standard CGI contract. This is not WSGI: each
+    invocation forks a fresh process and exits when
+    it finishes, independent of the WSGI
+    application's daemon pool.
+
+The two mechanisms are complementary.
+``--add-handler`` is for in-process Python handling
+of specific file types. ``--with-cgi`` is for legacy
+``.cgi`` scripts that already exist in the document
+root and are not worth rewriting.
+
 Server name and virtual hosts
 -----------------------------
 
