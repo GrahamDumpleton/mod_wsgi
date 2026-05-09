@@ -170,6 +170,65 @@ static files served this way are subject to the same
 caveats as the WSGI application itself; see
 :doc:`running-behind-a-reverse-proxy`.
 
+Other static-file options
+-------------------------
+
+Beyond ``--url-alias`` and ``--document-root``, a few
+options shape how Apache handles requests that map to
+the document root or to ``--url-alias``-mapped
+directories:
+
+``--directory-index FILE-NAME``
+    Name of the index resource Apache serves when a
+    request maps to a directory rather than a file (for
+    example ``index.html``). Equivalent to Apache's
+    ``DirectoryIndex``. Without it, a directory request
+    is passed through to the WSGI application or, if
+    the document root is the static target, returns
+    404.
+
+``--directory-listing``
+    Enable Apache's automatic directory listing when a
+    request maps to a directory and no
+    ``--directory-index`` match is found. Off by
+    default. Most useful with
+    ``--application-type static``; rarely useful when
+    a WSGI application is also mounted.
+
+``--allow-override DIRECTIVE-TYPE``
+    Permit ``.htaccess`` files inside the document root
+    or ``--url-alias``-mapped directories to override
+    the named Apache directive types. Defaults to
+    ``None`` (``.htaccess`` ignored). Repeatable to
+    list more than one directive type. Equivalent to
+    Apache's ``AllowOverride``.
+
+``--error-document STATUS URL-PATH``
+    Replace Apache's default error page for the given
+    HTTP status code with a static resource at the
+    named URL. Repeatable. Equivalent to Apache's
+    ``ErrorDocument``::
+
+        mod_wsgi-express start-server wsgi.py \
+            --error-document 404 /errors/404.html \
+            --error-document 500 /errors/500.html
+
+    The named URL paths typically resolve to files
+    served from the document root or from a
+    ``--url-alias``-mapped directory.
+
+``--error-override``
+    Make Apache's error documents replace the WSGI
+    application's error responses. Without this flag
+    the WSGI application's response body is sent
+    through to the client as-is; with it, Apache
+    substitutes the matching ``ErrorDocument`` page.
+    Useful when the deployment should present a
+    uniform error experience across the WSGI
+    application and any co-hosted static content.
+    Daemon mode only; has no effect under
+    ``--embedded-mode``.
+
 Running on a privileged port
 ----------------------------
 
@@ -336,6 +395,78 @@ For a Dockerfile walkthrough including base-image package
 requirements, the PID 1 reaping behaviour, and running as a
 non-root user inside the container, see
 :doc:`installing-with-docker`.
+
+Logging
+-------
+
+By default ``mod_wsgi-express`` writes its Apache error
+log to a file under the server root and does not write
+an access log at all. Several options shape what gets
+logged and where it goes.
+
+``--log-to-terminal``
+    Send Apache's access and error logs to standard
+    output / standard error rather than to files. Used
+    under a process supervisor or in a container; see
+    `Process supervisors and containers`_. When
+    ``--log-directory`` is also set, ``--log-directory``
+    wins.
+
+``--access-log``
+    Enable the Apache access log. Off by default;
+    enabling it adds a ``CustomLog`` directive to the
+    generated configuration. The destination is governed
+    by ``--log-to-terminal``, ``--log-directory`` and
+    ``--access-log-name``.
+
+``--startup-log``
+    Enable a separate startup log file capturing
+    Apache's own startup-phase output. Off by default;
+    enable when troubleshooting startup failures.
+
+``--log-directory DIRECTORY-PATH``
+    Directory the log files are written to. Defaults to
+    the server root. Override to redirect logs to a
+    persistent or distinct location.
+
+``--log-level NAME``
+    Apache ``LogLevel`` value. Defaults to ``warn``.
+    Raise to ``info`` or ``debug`` only when
+    troubleshooting; verbose levels emit per-request
+    detail and grow the log quickly.
+
+``--access-log-name FILE-NAME`` / ``--error-log-name FILE-NAME`` / ``--startup-log-name FILE-NAME``
+    File names for the access, error and startup logs
+    when they are written to the log directory.
+    Defaults are ``access_log``, ``error_log`` and
+    ``startup_log`` respectively.
+
+``--access-log-format FORMAT``
+    Format string for access log records. The values
+    ``common`` and ``combined`` are recognised as
+    Apache log-format nicknames; any other value is
+    used verbatim as the ``LogFormat`` directive value.
+
+``--error-log-format FORMAT``
+    Format string for error log records. Used verbatim
+    as the Apache ``ErrorLogFormat`` directive value.
+
+``--rotate-logs``
+    Pipe log output through Apache's ``rotatelogs``
+    helper so files rotate at a size threshold. Off by
+    default. Has no effect when ``--log-to-terminal``
+    is on, since rotation is meaningless against
+    standard streams.
+
+``--max-log-size MB``
+    Size threshold in megabytes for log rotation when
+    ``--rotate-logs`` is on. Defaults to 5.
+
+``--rotatelogs-executable FILE-PATH``
+    Path to the ``rotatelogs`` binary. Defaults to the
+    one discovered alongside the system Apache; set
+    when ``rotatelogs`` is in a non-standard location
+    or has been renamed.
 
 Where to go next
 ----------------
