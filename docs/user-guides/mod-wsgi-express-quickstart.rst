@@ -615,6 +615,52 @@ the ``mod_wsgi-express`` flow:
     startup. Defaults to ``envvars`` under the
     server root if such a file exists.
 
+Auxiliary service processes
+---------------------------
+
+``mod_wsgi-express`` can run a long-lived auxiliary
+process alongside the WSGI application, supervised by
+the same Apache parent. Typical uses are a queue
+consumer, a metrics emitter, a periodic batch worker,
+or a WebSocket sidecar reached via
+``--proxy-mount-point``. The mechanism is the
+*service script*: a Python script imported into a
+dedicated daemon process group that runs forever
+rather than handling HTTP requests.
+
+``--service-script SERVICE SCRIPT-PATH``
+    Declare a service named ``SERVICE`` and start it
+    by importing the script at ``SCRIPT-PATH`` into a
+    dedicated daemon process group. The script's
+    top-level code runs as the daemon process body; if
+    it never returns (because it enters an event loop,
+    for example) the daemon process simply runs that
+    code until Apache shuts it down. Repeatable to
+    declare more than one service.
+
+``--service-user SERVICE USERNAME``
+    User the named service runs as. Required when
+    starting as root; ignored otherwise. Analogous to
+    ``--user``, but per service.
+
+``--service-group SERVICE GROUP``
+    Group the named service runs as. Analogous to
+    ``--group``, per service.
+
+``--service-log-file SERVICE FILE-NAME``
+    Send the named service's log output to a separate
+    file rather than the shared error log. Useful
+    when the service is verbose and would otherwise
+    crowd out the WSGI application's error log.
+
+For a worked example covering the
+``WSGIDaemonProcess`` and ``WSGIImportScript`` pair
+the ``--service-script`` option translates into, the
+service-script lifecycle (no recycling triggers, only
+restart on Apache restart or external signal), and a
+running aiohttp-based metrics dashboard, see
+:doc:`hosting-websocket-applications`.
+
 Where to go next
 ----------------
 
