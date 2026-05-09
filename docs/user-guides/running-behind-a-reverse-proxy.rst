@@ -466,6 +466,66 @@ issue entirely and is faster. The back-end ``mod_wsgi-express``
 instance only handles requests that the front-end could not
 satisfy from disk.
 
+mod_wsgi-express as a front-end proxy
+-------------------------------------
+
+The rest of this page covers ``mod_wsgi-express`` as the
+*back-end* of a proxy, with the front-end terminating TLS
+and adding forwarded headers. ``mod_wsgi-express`` can also
+play the *front-end* role: serve a WSGI application on its
+primary hostname while proxying selected sub-URLs or other
+hostnames out to upstream backends. Two options drive this:
+
+``--proxy-mount-point URL-PATH URL``
+    Mounts an upstream URL at a sub-URL of the express
+    server. Requests under the prefix are forwarded to the
+    upstream; everything else is still handled by the WSGI
+    application or static files. Repeatable.
+
+``--proxy-virtual-host HOSTNAME URL``
+    Proxies every request for the named hostname out to the
+    upstream URL. The express instance's primary hostname
+    continues to serve the WSGI application; the listed
+    hostnames are proxied wholesale. Repeatable.
+
+A small example combining the two::
+
+    mod_wsgi-express start-server wsgi.py \
+        --server-name www.example.com \
+        --proxy-mount-point /api/ http://api-backend.internal:9000/ \
+        --proxy-virtual-host static.example.com http://cdn.internal/
+
+In the generated Apache configuration,
+``--proxy-mount-point`` emits ``ProxyPass`` and
+``ProxyPassReverse`` directives wrapped in a ``<Location>``
+block, and ``--proxy-virtual-host`` emits a sibling
+``<VirtualHost *:port>`` block (where ``port`` is the port
+express is listening on) with ``ProxyPass /`` and
+``ProxyPassReverse /`` proxying the entire hostname.
+
+Both forms additionally inject ``X-Forwarded-Port`` and
+``X-Forwarded-Scheme`` headers on the outbound request, so
+the upstream sees the public-facing port and scheme without
+``RequestHeader`` lines added by hand. Apache's
+``ProxyPass`` and ``ProxyPassReverse`` also add
+``X-Forwarded-For``, ``X-Forwarded-Host`` and
+``X-Forwarded-Server`` automatically; combined, the upstream
+receives the full forwarded-header set that the rest of this
+page describes mod_wsgi consuming.
+
+Trust on the upstream side remains the upstream's
+responsibility. If the upstream is itself a mod_wsgi
+instance, it needs ``WSGITrustedProxies`` listing the IP
+that requests reach it from (the express front-end's IP),
+in exactly the way described in `Telling mod_wsgi to trust
+the proxy`_ above.
+
+When ``--proxy-mount-point`` is given a URL-PATH without a
+trailing slash (``/api`` rather than ``/api/``),
+``mod_wsgi-express`` also adds a 302 redirect from the bare
+prefix to the slash form. Specifying the trailing-slash form
+directly avoids that hop.
+
 Where to go next
 ----------------
 
