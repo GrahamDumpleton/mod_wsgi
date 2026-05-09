@@ -275,3 +275,61 @@ By default the access checking code is executed in the context of the main
 Python interpreter, ie., '%{GLOBAL}', and always in the Apache child
 processes, never in a daemon process. The interpreter used can be
 overridden using the 'application-group' option to the script directive.
+
+Using mod_wsgi-express
+----------------------
+
+When running under ``mod_wsgi-express``, the three script
+directives covered above are configured through dedicated
+command-line options. Each option emits the underlying
+directive together with the surrounding ``AuthType`` /
+``AuthBasicProvider`` / ``Require`` block needed to activate
+it under a sitewide ``<Location />``, so the only argument you
+need to supply is the script path itself.
+
+``--host-access-script SCRIPT-PATH``
+    Emits a ``WSGIAccessScript`` directive. The named script
+    must define ``allow_access()`` as described in
+    `Host Access Controls`_.
+
+``--auth-user-script SCRIPT-PATH``
+    Emits a ``WSGIAuthUserScript`` directive together with the
+    ``AuthType``, ``AuthName``, ``Auth<scheme>Provider wsgi``
+    and ``Require valid-user`` directives needed to make it
+    active.
+
+``--auth-type TYPE``
+    Selects the authentication scheme: ``Basic`` (the default)
+    or ``Digest``. The script function the named script must
+    define is determined by this choice (``check_password()``
+    for Basic, ``get_realm_hash()`` for Digest), as described
+    in `Apache Authentication Provider`_.
+
+``--auth-group-script SCRIPT-PATH``
+    Emits a ``WSGIAuthGroupScript`` directive together with a
+    ``Require wsgi-group`` directive. The named script must
+    define ``groups_for_user()`` as described in
+    `Apache Group Authorisation`_. Group authorisation is
+    layered on top of user authentication, so this option is
+    only meaningful in combination with ``--auth-user-script``.
+
+``--auth-group NAME``
+    Group name used in the generated ``Require wsgi-group``
+    directive. Defaults to ``wsgi`` as a placeholder; override
+    this to match the actual group name returned by your
+    ``groups_for_user()`` function.
+
+A typical invocation combining user authentication and group
+authorisation::
+
+    mod_wsgi-express start-server wsgi.py \
+        --auth-user-script /srv/myapp/auth.wsgi \
+        --auth-group-script /srv/myapp/auth.wsgi \
+        --auth-group secret-agents
+
+A single script file can supply both ``check_password()`` and
+``groups_for_user()``, in which case ``--auth-user-script`` and
+``--auth-group-script`` point at the same path. The scripts
+run in the Apache child processes, with the same embedded-mode
+caveats about framework loading costs described in the
+sections above.
