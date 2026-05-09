@@ -526,6 +526,78 @@ trailing slash (``/api`` rather than ``/api/``),
 prefix to the slash form. Specifying the trailing-slash form
 directly avoids that hop.
 
+Both ``--proxy-mount-point`` and ``--proxy-virtual-host``
+generate ``ProxyPass`` directives with the
+``upgrade=websocket`` parameter set, so clients that initiate
+the WebSocket handshake (``Upgrade: websocket``,
+``Connection: Upgrade``) are tunnelled through to the upstream
+without further configuration. ``mod_proxy_wstunnel`` is not
+required; ``mod_proxy_http`` handles the upgrade in place.
+This requires Apache 2.4.47 or newer.
+
+Idle WebSocket connections (no traffic for longer than
+``--socket-timeout``, default 60 seconds) are otherwise
+dropped by Apache. The ``--proxy-timeout SECONDS`` option
+overrides ``ProxyTimeout`` for proxied connections only,
+leaving the regular request-handling timeout untouched, and is
+the knob to raise when WebSocket clients do not heartbeat
+often enough::
+
+    mod_wsgi-express start-server wsgi.py \
+        --proxy-mount-point /ws/ http://api.internal:9000/ \
+        --proxy-timeout 300
+
+The upstream URL accepted by ``--proxy-mount-point`` and
+``--proxy-virtual-host`` may be either a regular HTTP URL or
+Apache's unix-socket form
+``unix:/path/to/socket|http://host/``. ``mod_wsgi-express``
+does not parse the URL: it is passed through to ``mod_proxy``
+as written, and ``mod_proxy`` understands the unix-socket form
+natively::
+
+    mod_wsgi-express start-server wsgi.py \
+        --proxy-mount-point /api/ \
+            'unix:/var/run/api.sock|http://localhost/'
+
+The host name after ``|`` is a syntactic placeholder required
+by Apache, not used for routing; the actual connection goes to
+the unix-domain socket path. Quote the whole URL, since ``|``
+is special in most shells.
+
+When ``--proxy-mount-point`` is in use, Apache strips the
+prefix before forwarding the request to the upstream: a
+request for ``/api/users`` mounted at ``/api/`` reaches the
+backend as ``/users``. The backend cannot infer its public
+mount point from the path it sees, and must be told the prefix
+explicitly anywhere it constructs URLs the client is expected
+to follow (``Location`` headers, HTML links, JSON-embedded
+URLs, OpenAPI specs, WebSocket addresses).
+
+To make the prefix discoverable, ``mod_wsgi-express``
+automatically emits ``X-Forwarded-Prefix`` on every request
+forwarded by ``--proxy-mount-point``. The header value is the
+mount point with any trailing slash removed, so both
+``/api`` and ``/api/`` send ``X-Forwarded-Prefix: /api``. This
+is the de-facto convention used by Traefik, Spring, and
+Werkzeug-derived stacks. ``--proxy-virtual-host`` does not set
+the header, since hostname-based proxying does not strip a
+path prefix and the backend already sees the same URL space
+as the client.
+
+Whether the upstream uses the header is up to the framework
+on the upstream side. Werkzeug's ``ProxyFix`` (used by Flask)
+honours ``X-Forwarded-Prefix`` directly. ASGI servers and
+frameworks (uvicorn, Hypercorn, FastAPI, Starlette) instead
+take the prefix as a ``root_path`` setting passed at startup
+(``uvicorn --root-path /api``,
+``Starlette(..., root_path="/api")``). WSGI servers and
+frameworks read ``SCRIPT_NAME`` from the environment, set
+either by the server (``gunicorn --mount-point /api``) or by
+the framework (Django's ``FORCE_SCRIPT_NAME``, Werkzeug
+``ProxyFix``). Frameworks that do not consume
+``X-Forwarded-Prefix`` simply ignore it; the header is
+harmless when unused.
+
 Where to go next
 ----------------
 

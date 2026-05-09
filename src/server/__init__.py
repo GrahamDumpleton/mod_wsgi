@@ -832,7 +832,7 @@ WSGIIgnoreActivity On
 """
 
 APACHE_PROXY_PASS_MOUNT_POINT_CONFIG = """
-ProxyPass '%(mount_point)s' '%(url)s'
+ProxyPass '%(mount_point)s' '%(url)s' upgrade=websocket
 ProxyPassReverse '%(mount_point)s' '%(url)s'
 <Location '%(mount_point)s'>
 RewriteEngine On
@@ -841,11 +841,12 @@ RequestHeader set X-Forwarded-Port %%{SERVER_PORT}e
 RewriteCond %%{HTTPS} on
 RewriteRule .* - [E=URL_SCHEME:https,NE]
 RequestHeader set X-Forwarded-Scheme %%{URL_SCHEME}e env=URL_SCHEME
+RequestHeader set X-Forwarded-Prefix %(prefix)s
 </Location>
 """
 
 APACHE_PROXY_PASS_MOUNT_POINT_SLASH_CONFIG = """
-ProxyPass '%(mount_point)s/' '%(url)s/'
+ProxyPass '%(mount_point)s/' '%(url)s/' upgrade=websocket
 ProxyPassReverse '%(mount_point)s/' '%(url)s/'
 <Location '%(mount_point)s/'>
 RewriteEngine On
@@ -854,6 +855,7 @@ RequestHeader set X-Forwarded-Port %%{SERVER_PORT}e
 RewriteCond %%{HTTPS} on
 RewriteRule .* - [E=URL_SCHEME:https,NE]
 RequestHeader set X-Forwarded-Scheme %%{URL_SCHEME}e env=URL_SCHEME
+RequestHeader set X-Forwarded-Prefix %(prefix)s
 </Location>
 <LocationMatch '^%(mount_point)s$'>
 RewriteEngine On
@@ -864,7 +866,7 @@ RewriteRule - http://%%{HTTP_HOST}%%{REQUEST_URI}/ [R=302,L]
 APACHE_PROXY_PASS_HOST_CONFIG = """
 <VirtualHost *:%(port)s>
 ServerName %(host)s
-ProxyPass / '%(url)s'
+ProxyPass / '%(url)s' upgrade=websocket
 ProxyPassReverse / '%(url)s'
 RequestHeader set X-Forwarded-Port %(port)s
 RewriteEngine On
@@ -993,14 +995,33 @@ def generate_apache_config(options):
             for url in options['ignore_activity']:
                 print(APACHE_IGNORE_ACTIVITY_CONFIG % dict(url=url), file=fp)
 
+        if (options['proxy_timeout'] is not None and
+                (options['proxy_mount_points'] or
+                    options['proxy_virtual_hosts'])):
+            print(f"ProxyTimeout {options['proxy_timeout']}", file=fp)
+
         if options['proxy_mount_points']:
             for mount_point, url in options['proxy_mount_points']:
+                # X-Forwarded-Prefix is the conventional Traefik / Werkzeug /
+                # Spring form: leading slash, no trailing slash. Strip any
+                # user-supplied trailing slash so '/api' and '/api/' both
+                # produce '/api'.
+                prefix = str(mount_point).rstrip('/')
                 if mount_point.endswith('/'):
                     print(APACHE_PROXY_PASS_MOUNT_POINT_CONFIG % dict(
-                            mount_point=mount_point, url=url), file=fp)
+                            mount_point=mount_point, url=url,
+                            prefix=prefix), file=fp)
                 else:
+                    # Template forces a trailing "/" on both sides of the
+                    # ProxyPass; strip any user-provided trailing slash on
+                    # url so we end up single-slash terminated. Matters
+                    # especially for unix-socket URLs of the form
+                    # 'unix:/path|http://host/' where the trailing "/" is
+                    # canonical.
                     print(APACHE_PROXY_PASS_MOUNT_POINT_SLASH_CONFIG % dict(
-                            mount_point=mount_point, url=url), file=fp)
+                            mount_point=mount_point,
+                            url=str(url).rstrip('/'),
+                            prefix=prefix), file=fp)
 
         if options['proxy_virtual_hosts']:
             for host, url in options['proxy_virtual_hosts']:
@@ -2104,6 +2125,14 @@ add_option('all', '--socket-timeout', type='int', default=60,
         metavar='SECONDS', help='Maximum number of seconds allowed '
         'to pass before timing out on a read or write operation on '
         'a socket and aborting the request. Defaults to 60 seconds.')
+
+add_option('all', '--proxy-timeout', type='int', default=None,
+        metavar='SECONDS', help='Override the timeout used for connections '
+        'to a proxied backend (Apache ProxyTimeout directive). When unset '
+        'this falls back to --socket-timeout. Raise it for backends with '
+        'idle WebSocket clients that do not heartbeat more often than '
+        '--socket-timeout, since otherwise idle WebSocket connections will '
+        'be dropped at that interval.')
 
 add_option('all', '--queue-timeout', type='int', default=45,
         metavar='SECONDS', help='Maximum number of seconds allowed '
