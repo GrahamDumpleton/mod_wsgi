@@ -670,9 +670,55 @@ across the connection layer are independent of mod_wsgi:
   will accept before invoking mod_wsgi.
 * ``LimitRequestFields`` and ``LimitRequestFieldSize`` cap the
   number and individual size of request headers.
-* ``RequestReadTimeout`` (from ``mod_reqtimeout``) caps how
-  long Apache will wait for a slow client to send the request
-  headers and body, mitigating slowloris-style attacks.
+
+**Slow-client and slowloris defence.**
+
+Apache's ``RequestReadTimeout`` directive (from
+``mod_reqtimeout``) sets per-request limits on how long a
+client may take to send the request headers and the request
+body, with optional dynamic extension based on the
+byte-arrival rate. A typical configuration::
+
+    RequestReadTimeout header=15-30,MinRate=500 \
+                       body=15,MinRate=500
+
+The header timeout starts at 15 seconds, extends by 1
+second for every 500 bytes received, and caps at 30
+seconds. The body timeout starts at 15 seconds with the
+same per-500-byte extension and no hard ceiling. A
+genuinely slow client (poor mobile connection, large
+upload) benefits from the dynamic extension; an attacker
+that opens a connection without sending bytes is cut off
+at the base limit.
+
+Under ``mod_wsgi-express`` the equivalent options drop
+into the generated configuration as ``RequestReadTimeout``
+directives:
+
+``--header-timeout SECONDS``
+    Base header-read timeout. Defaults to 15.
+
+``--header-max-timeout SECONDS``
+    Hard ceiling on the header-read timeout when the
+    dynamic extension is in play. Defaults to 30.
+
+``--header-min-rate BYTES``
+    Each ``BYTES`` worth of headers received extends the
+    header-read timeout by 1 second, up to
+    ``--header-max-timeout``. Defaults to 500.
+
+``--body-timeout SECONDS``
+    Base body-read timeout. Defaults to 15.
+
+``--body-max-timeout SECONDS``
+    Hard ceiling on the body-read timeout. Defaults to 0
+    (no ceiling, so the timeout extends without bound as
+    long as ``--body-min-rate`` continues to be met).
+
+``--body-min-rate BYTES``
+    Each ``BYTES`` worth of body bytes received extends
+    the body-read timeout by 1 second, up to
+    ``--body-max-timeout`` if set. Defaults to 500.
 
 Information disclosure
 ----------------------
