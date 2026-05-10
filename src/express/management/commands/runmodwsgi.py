@@ -23,7 +23,7 @@ class Command(BaseCommand):
     if hasattr(BaseCommand, 'option_list'):
         # Used prior to Django 1.10.
 
-        option_list = BaseCommand.option_list + mod_wsgi.express.option_list
+        option_list = BaseCommand.option_list + mod_wsgi.express.options.option_list
 
     else:
         # This horrible mess tries to convert optparse option list to
@@ -36,7 +36,7 @@ class Command(BaseCommand):
                           'callback_kwargs'])
             types = { 'int': int, 'string': str }
 
-            for option in mod_wsgi.express.option_list:
+            for option in mod_wsgi.express.options.option_list:
                 opts = option._short_opts + option._long_opts
                 kwargs = {}
 
