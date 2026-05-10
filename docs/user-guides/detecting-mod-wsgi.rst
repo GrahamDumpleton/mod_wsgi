@@ -1,13 +1,6 @@
-﻿========================
-Assorted Tips And Tricks
-========================
-
-This document contains various tips and tricks related to using mod_wsgi
-which don't deserve a document of their own or which don't fit within other
-documentation.
-
-Determining If Running Under mod_wsgi
--------------------------------------
+﻿=============================
+Detecting mod_wsgi at Runtime
+=============================
 
 As a WSGI application developer you should always be striving to write
 portable WSGI applications. That is, you should not write your code so as

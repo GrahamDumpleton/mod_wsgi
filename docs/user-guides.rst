@@ -60,4 +60,4 @@ Concepts and advanced topics
    user-guides/security-hardening
    user-guides/upgrading-an-application
    user-guides/issues-with-pickle-module
-   user-guides/assorted-tips-and-tricks
+   user-guides/detecting-mod-wsgi
