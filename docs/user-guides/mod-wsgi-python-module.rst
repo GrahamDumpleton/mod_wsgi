@@ -223,6 +223,39 @@ Types
    :doc:`../configuration-directives/WSGIDaemonProcess` for
    ``request-timeout=`` semantics.
 
+Companion ``apache`` module
+---------------------------
+
+Alongside ``mod_wsgi``, mod_wsgi installs an ``apache`` module
+into ``sys.modules`` carrying introspection attributes about the
+Apache server hosting the application. Application code can
+``import apache`` to inspect the server configuration; the module
+is available in both embedded and daemon mode.
+
+``version``
+   Apache server version as a ``(major, minor, patchlevel)``
+   tuple, distinct from ``mod_wsgi.version`` (which is the
+   mod_wsgi extension version).
+
+``maximum_processes``
+   Maximum number of processes hosting interpreters. Same value
+   as ``mod_wsgi.maximum_processes``.
+
+``threads_per_process``
+   Maximum number of worker threads per process. Same value as
+   ``mod_wsgi.threads_per_process``.
+
+``description``
+   The Apache server description string, as returned by
+   ``ap_get_server_description()``, e.g. ``"Apache/2.4.58 (Unix)"``.
+
+``mpm_name``
+   The name of the active Apache MPM, e.g. ``"event"``,
+   ``"worker"`` or ``"prefork"``.
+
+``build_date``
+   The date on which the running Apache binary was built.
+
 WSGI environ keys
 -----------------
 
