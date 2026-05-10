@@ -24,8 +24,25 @@ Choosing an install method
   package. See :doc:`user-guides/installation-on-linux`.
 
 * **Want a from-source build that installs into Apache the
-  traditional way (``configure`` / ``make`` / ``make install``)?**
-  See :doc:`user-guides/quick-installation-guide`.
+  traditional way?** A ``configure`` / ``make`` / ``make install``
+  flow. See :doc:`user-guides/quick-installation-guide`.
+
+Choosing a runtime shape
+------------------------
+
+How mod_wsgi runs your application is a separate choice from how
+it is installed:
+
+* :doc:`user-guides/embedded-and-daemon-mode` — embedded mode runs
+  WSGI inside Apache worker processes; daemon mode runs it in
+  separate mod_wsgi-managed processes that Apache forwards
+  requests to. Daemon mode is the usual choice.
+* :doc:`user-guides/running-behind-a-reverse-proxy` — running
+  mod_wsgi behind nginx, a load balancer, or another HTTP
+  front-end.
+* :doc:`user-guides/mod-wsgi-express-quickstart` — for PyPI
+  installs, ``mod_wsgi-express`` provides a single command-line
+  interface that wraps both modes.
 
 Platform-specific notes
 -----------------------
