@@ -37,6 +37,83 @@ the equivalent HTTP request header is present. You will still need to
 provide your own code to process the header and perform the required hand
 shaking with the client to indicate whether the client is permitted access.
 
+Reflecting Application Level Authentication Back to Apache
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When a WSGI application performs its own authentication, the result is
+visible only inside the application. Apache itself does not know who the
+request was authenticated as, so ``r->user`` and ``r->ap_auth_type`` remain
+unset. The practical consequences are:
+
+* The ``%u`` placeholder in ``LogFormat`` records the literal ``-`` rather
+  than the authenticated user name, and ``mod_log_forensic`` and similar
+  modules see no user either.
+* Authorisation directives that need to evaluate against an identity, such
+  as ``Require user`` and ``Require group``, have nothing to evaluate.
+
+A small amount of glue can bridge this. The WSGI application emits the
+authenticated user name and authentication scheme as response headers,
+and a short ``mod_lua`` hook running in the logging phase copies the
+values into ``r->user`` and ``r->ap_auth_type`` and strips the headers so
+they are never sent to the HTTP client.
+
+``mod_lua`` is part of the standard Apache distribution, although on some
+platforms it is packaged as a separately installable module. Once it is
+loaded, register a logging hook against a small Lua script::
+
+    LoadModule lua_module modules/mod_lua.so
+
+    LuaHookLog /etc/apache2/lua/wsgi-auth-reflect.lua reflect_auth
+
+The script ``wsgi-auth-reflect.lua`` contains::
+
+    function reflect_auth(r)
+        local user = r.headers_out['X-Remote-User']
+        if user then
+            r.user = user
+            r.headers_out['X-Remote-User'] = nil
+        end
+
+        local auth_type = r.headers_out['X-Auth-Type']
+        if auth_type then
+            r.ap_auth_type = auth_type
+            r.headers_out['X-Auth-Type'] = nil
+        end
+
+        return apache2.OK
+    end
+
+The hook runs at the start of the logging phase, after the content
+handler has produced the response but before ``mod_log_config`` writes
+the access log entry, so ``%u`` records the user that the WSGI
+application authenticated.
+
+The WSGI application includes the two headers in the response when it
+has authenticated the request::
+
+    def application(environ, start_response):
+        user = authenticate(environ)  # application specific
+
+        headers = [('Content-Type', 'text/html; charset=utf-8')]
+        if user is not None:
+            headers.append(('X-Remote-User', user))
+            headers.append(('X-Auth-Type', 'Bearer'))
+
+        start_response('200 OK', headers)
+        return [b'...']
+
+The response headers are stripped only if the Lua hook is wired up
+correctly. If the hook is not in place, the application leaks the
+authenticated user name to the client, so the application should be
+deployed together with the matching ``LuaHookLog`` configuration.
+
+This bridge affects only what Apache logs and what downstream modules
+observe at log time. It does not reactivate the Apache authorisation
+phase, so it is not a substitute for ``Require user`` based access
+control. Where Apache itself needs to make access decisions based on
+the authenticated identity, the Apache authentication provider
+mechanism described below should be used instead.
+
 Apache Authentication Provider
 ------------------------------
 
