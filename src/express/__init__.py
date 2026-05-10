@@ -14,6 +14,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import threading
 import time
@@ -26,102 +27,10 @@ except ImportError:
     import queue
 
 from . import apxs_config
-
-_py_version = '%s%s' % sys.version_info[:2]
-_py_soabi = ''
-_py_soext = '.so'
-_py_dylib = ''
-
-try:
-    import sysconfig
-
-    _py_soabi = sysconfig.get_config_var('SOABI')
-
-    _py_soext = sysconfig.get_config_var('EXT_SUFFIX')
-
-    if _py_soext is None:
-        _py_soext = sysconfig.get_config_var('SO')
-
-    if (sysconfig.get_config_var('WITH_DYLD') and
-            sysconfig.get_config_var('LIBDIR') and
-            sysconfig.get_config_var('LDLIBRARY')):
-        _py_dylib = posixpath.join(sysconfig.get_config_var('LIBDIR'),
-                sysconfig.get_config_var('LDLIBRARY'))
-        if not os.path.exists(_py_dylib):
-            _py_dylib = ''
-
-except ImportError:
-    pass
-
-_MOD_WSGI_SO_DIR = posixpath.join(
-        posixpath.dirname(posixpath.dirname(__file__)), 'server')
-
-MOD_WSGI_SO = 'mod_wsgi-py%s%s' % (_py_version, _py_soext)
-MOD_WSGI_SO = posixpath.join(_MOD_WSGI_SO_DIR, MOD_WSGI_SO)
-
-if not os.path.exists(MOD_WSGI_SO) and _py_soabi:
-    MOD_WSGI_SO = 'mod_wsgi-py%s.%s%s' % (_py_version, _py_soabi, _py_soext)
-    MOD_WSGI_SO = posixpath.join(_MOD_WSGI_SO_DIR, MOD_WSGI_SO)
-
-if not os.path.exists(MOD_WSGI_SO) and os.name == 'nt':
-    MOD_WSGI_SO = 'mod_wsgi%s' % sysconfig.get_config_var('EXT_SUFFIX')
-    MOD_WSGI_SO = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), 'server', MOD_WSGI_SO)
-    MOD_WSGI_SO = MOD_WSGI_SO.replace('\\', '/')
-
-def where():
-    return MOD_WSGI_SO
-
-def default_run_user():
-    if os.name == 'nt':
-        return '#0'
-
-    try:
-        import pwd
-        uid = os.getuid()
-        return pwd.getpwuid(uid).pw_name
-    except KeyError:
-        return '#%d' % uid
-
-def default_run_group():
-    if os.name == 'nt':
-        return '#0'
-
-    try:
-        import pwd
-        uid = os.getuid()
-        entry = pwd.getpwuid(uid)
-    except KeyError:
-        return '#%d' % uid
-
-    try:
-        import grp
-        gid = entry.pw_gid
-        return grp.getgrgid(gid).gr_name
-    except KeyError:
-        return '#%d' % gid
-
-def find_program(names, default=None, paths=[]):
-    for name in names:
-        for path in os.environ['PATH'].split(':') + paths:
-            program = posixpath.join(path, name)
-            if os.path.exists(program):
-                return program
-    return default
-
-def find_mimetypes():
-    if os.name == 'nt':
-        return posixpath.join(posixpath.dirname(posixpath.dirname(
-                apxs_config.HTTPD)), 'conf', 'mime.types')
-    else:
-        import mimetypes
-        for name in mimetypes.knownfiles:
-            if os.path.exists(name):
-                return name
-        else:
-            return '/dev/null'
-
-SHELL = find_program(['bash', 'sh'], ['/usr/local/bin'])
+from .platform import (
+    default_run_user, default_run_group, find_program,
+    find_mimetypes, MOD_WSGI_SO, SHELL, PYTHON_DYLIB,
+)
 
 APACHE_GENERAL_CONFIG = """
 ServerName %(host)s
@@ -2774,7 +2683,7 @@ class ConfigurationError(Exception):
 def _cmd_setup_server(command, args, options):
     options['sys_argv'] = repr(sys.argv)
 
-    options['mod_wsgi_so'] = where()
+    options['mod_wsgi_so'] = MOD_WSGI_SO
 
     options['working_directory'] = options['working_directory'] or os.getcwd()
     options['working_directory'] = os.path.abspath(options['working_directory'])
@@ -3585,10 +3494,10 @@ def _cmd_setup_server(command, args, options):
     options['shlibpath_var'] = apxs_config.SHLIBPATH_VAR
     options['shlibpath'] = apxs_config.SHLIBPATH
 
-    if _py_dylib:
+    if PYTHON_DYLIB:
         options['httpd_arguments_list'].append('-DMOD_WSGI_LOAD_PYTHON_DYLIB')
 
-    options['python_dylib'] = _py_dylib
+    options['python_dylib'] = PYTHON_DYLIB
 
     options['httpd_arguments'] = '-f %s %s' % (options['httpd_conf'],
             ' '.join(options['httpd_arguments_list']))
@@ -3801,7 +3710,7 @@ def cmd_module_config(params):
 
             print('LoadFile "%s"' % library_path)
 
-        module_path = where()
+        module_path = MOD_WSGI_SO
         module_path = module_path.replace('\\', '/')
 
         prefix = sys.prefix
@@ -3812,13 +3721,13 @@ def cmd_module_config(params):
         print('WSGIPythonHome "%s"' % prefix)
 
     else:
-        module_path = where()
+        module_path = MOD_WSGI_SO
 
         prefix = sys.prefix
         prefix = posixpath.normpath(prefix)
 
-        if _py_dylib:
-            print('LoadFile "%s"' % _py_dylib)
+        if PYTHON_DYLIB:
+            print('LoadFile "%s"' % PYTHON_DYLIB)
 
         print('LoadModule wsgi_module "%s"' % module_path)
         print('WSGIPythonHome "%s"' % prefix)
@@ -3841,10 +3750,10 @@ def cmd_install_module(params):
     target = posixpath.abspath(posixpath.join(options.modules_directory,
             posixpath.basename(MOD_WSGI_SO)))
 
-    shutil.copyfile(where(), target)
+    shutil.copyfile(MOD_WSGI_SO, target)
 
-    if _py_dylib:
-        print('LoadFile "%s"' % _py_dylib)
+    if PYTHON_DYLIB:
+        print('LoadFile "%s"' % PYTHON_DYLIB)
     print('LoadModule wsgi_module "%s"' % target)
     print('WSGIPythonHome "%s"' % posixpath.normpath(sys.prefix))
 
@@ -3860,7 +3769,7 @@ def cmd_module_location(params):
     if len(args) != 0:
         parser.error('Incorrect number of arguments.')
 
-    print(where())
+    print(MOD_WSGI_SO)
 
 if os.name == 'nt':
     main_usage="""
