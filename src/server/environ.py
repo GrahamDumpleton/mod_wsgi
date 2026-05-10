@@ -1,107 +1,82 @@
-from __future__ import print_function
-
 import os
 import sys
 import locale
 
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from io import StringIO
+from io import StringIO
 
 import mod_wsgi
 import apache
 
-def application(environ, start_response):
-    headers = []
-    headers.append(('Content-Type', 'text/plain; charset="UTF-8"'))
-    write = start_response('200 OK', headers)
 
-    input = environ['wsgi.input']
+def application(environ, start_response):
+    headers = [("Content-Type", 'text/plain; charset="UTF-8"')]
+    write = start_response("200 OK", headers)
+
+    input = environ["wsgi.input"]
     output = StringIO()
 
-    print('PID: %s' % os.getpid(), file=output)
-    print('UID: %s' % os.getuid(), file=output)
-    print('GID: %s' % os.getgid(), file=output)
-    print('CWD: %s' % os.getcwd(), file=output)
+    print(f"PID: {os.getpid()}", file=output)
+    print(f"UID: {os.getuid()}", file=output)
+    print(f"GID: {os.getgid()}", file=output)
+    print(f"CWD: {os.getcwd()}", file=output)
     print(file=output)
 
-    print('python.version: %r' % (sys.version,), file=output)
-    print('python.prefix: %r' % (sys.prefix,), file=output)
-    print('python.path: %r' % (sys.path,), file=output)
+    print(f"python.version: {sys.version!r}", file=output)
+    print(f"python.prefix: {sys.prefix!r}", file=output)
+    print(f"python.path: {sys.path!r}", file=output)
     print(file=output)
 
-    print('apache.version: %r' % (apache.version,), file=output)
-    print('mod_wsgi.version: %r' % (mod_wsgi.version,), file=output)
+    print(f"apache.version: {apache.version!r}", file=output)
+    print(f"mod_wsgi.version: {mod_wsgi.version!r}", file=output)
     print(file=output)
 
-    print('mod_wsgi.process_group: %s' % mod_wsgi.process_group,
-            file=output)
-    print('mod_wsgi.application_group: %s' % mod_wsgi.application_group,
-            file=output)
+    print(f"mod_wsgi.process_group: {mod_wsgi.process_group}", file=output)
+    print(f"mod_wsgi.application_group: {mod_wsgi.application_group}", file=output)
     print(file=output)
 
-    print('mod_wsgi.maximum_processes: %s' % mod_wsgi.maximum_processes,
-            file=output)
-    print('mod_wsgi.threads_per_process: %s' % mod_wsgi.threads_per_process,
-            file=output)
-    print('mod_wsgi.process_metrics: %s' % mod_wsgi.process_metrics(),
-            file=output)
-    print('mod_wsgi.server_metrics: %s' % mod_wsgi.server_metrics(),
-            file=output)
+    print(f"mod_wsgi.maximum_processes: {mod_wsgi.maximum_processes}", file=output)
+    print(f"mod_wsgi.threads_per_process: {mod_wsgi.threads_per_process}", file=output)
+    print(f"mod_wsgi.process_metrics: {mod_wsgi.process_metrics()}", file=output)
+    print(f"mod_wsgi.server_metrics: {mod_wsgi.server_metrics()}", file=output)
     print(file=output)
 
     metrics = mod_wsgi.server_metrics()
 
     if metrics:
-        for process in metrics['processes']:
-           for worker in process['workers']:
-               print(worker['status'], file=output, end='')
+        for process in metrics["processes"]:
+            for worker in process["workers"]:
+                print(worker["status"], file=output, end="")
         print(file=output)
         print(file=output)
 
-    print('apache.description: %s' % apache.description, file=output)
-    print('apache.build_date: %s' % apache.build_date, file=output)
-    print('apache.mpm_name: %s' % apache.mpm_name, file=output)
-    print('apache.maximum_processes: %s' % apache.maximum_processes,
-            file=output)
-    print('apache.threads_per_process: %s' % apache.threads_per_process,
-            file=output)
+    print(f"apache.description: {apache.description}", file=output)
+    print(f"apache.build_date: {apache.build_date}", file=output)
+    print(f"apache.mpm_name: {apache.mpm_name}", file=output)
+    print(f"apache.maximum_processes: {apache.maximum_processes}", file=output)
+    print(f"apache.threads_per_process: {apache.threads_per_process}", file=output)
     print(file=output)
 
-    print('PATH: %s' % sys.path, file=output)
+    print(f"PATH: {sys.path}", file=output)
     print(file=output)
 
-    print('LANG: %s' % os.environ.get('LANG'), file=output)
-    print('LC_ALL: %s' % os.environ.get('LC_ALL'), file=output)
-    print('sys.getdefaultencoding(): %s' % sys.getdefaultencoding(),
-            file=output)
-    print('sys.getfilesystemencoding(): %s' % sys.getfilesystemencoding(),
-            file=output)
-    print('locale.getlocale(): %s' % (locale.getlocale(),),
-            file=output)
-    print('locale.getdefaultlocale(): %s' % (locale.getdefaultlocale(),),
-            file=output)
-    print('locale.getpreferredencoding(): %s' % locale.getpreferredencoding(),
-            file=output)
+    print(f"LANG: {os.environ.get('LANG')}", file=output)
+    print(f"LC_ALL: {os.environ.get('LC_ALL')}", file=output)
+    print(f"sys.getdefaultencoding(): {sys.getdefaultencoding()}", file=output)
+    print(f"sys.getfilesystemencoding(): {sys.getfilesystemencoding()}", file=output)
+    print(f"locale.getlocale(): {locale.getlocale()}", file=output)
+    print(f"locale.getdefaultlocale(): {locale.getdefaultlocale()}", file=output)
+    print(f"locale.getpreferredencoding(): {locale.getpreferredencoding()}", file=output)
     print(file=output)
 
-    keys = sorted(environ.keys())
-    for key in keys:
-        print('%s: %s' % (key, repr(environ[key])), file=output)
+    for key in sorted(environ):
+        print(f"{key}: {environ[key]!r}", file=output)
     print(file=output)
 
-    keys = sorted(os.environ.keys())
-    for key in keys:
-        print('%s: %s' % (key, repr(os.environ[key])), file=output)
+    for key in sorted(os.environ):
+        print(f"{key}: {os.environ[key]!r}", file=output)
     print(file=output)
 
-    result = output.getvalue()
-
-    if not isinstance(result, bytes):
-        result = result.encode('UTF-8')
-
-    yield result
+    yield output.getvalue().encode("UTF-8")
 
     block_size = 8192
 
