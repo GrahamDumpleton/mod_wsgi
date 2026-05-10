@@ -2746,7 +2746,7 @@ def cmd_setup_server(params):
 
     (options, args) = parser.parse_args(params)
 
-    _cmd_setup_server('setup-server', args, vars(options))
+    _cmd_setup_server('setup-server', args, vars(options), parser)
 
 def _mpm_module_defines(modules_directory, preferred=None):
     if os.name == 'nt':
@@ -2765,7 +2765,7 @@ def _mpm_module_defines(modules_directory, preferred=None):
                 result.append('-DMOD_WSGI_MPM_EXISTS_%s_MODULE' % name.upper())
     return result
 
-def _cmd_setup_server(command, args, options):
+def _cmd_setup_server(command, args, options, parser):
     options['sys_argv'] = repr(sys.argv)
 
     options['mod_wsgi_so'] = where()
@@ -2840,7 +2840,7 @@ def _cmd_setup_server(command, args, options):
             options['ssl_ca_certificate_file'] or
             options['ssl_certificate_chain_file']) and \
             not options['https_port']:
-        raise ValueError(
+        parser.error(
             '--https-port must be specified when SSL certificate '
             'options are provided.')
 
@@ -3103,7 +3103,7 @@ def _cmd_setup_server(command, args, options):
     if options['metrics_service']:
         target = options['metrics_service']
         if not target.startswith('unix:'):
-            raise ValueError(
+            parser.error(
                 "--metrics-service must be 'unix:/path' "
                 "(remote 'udp:host:port' targets are no longer supported)")
     else:
@@ -3111,17 +3111,17 @@ def _cmd_setup_server(command, args, options):
 
     if options['slow_requests'] is not None:
         if options['slow_requests'] < 0:
-            raise ValueError(
+            parser.error(
                 "--slow-requests threshold must be non-negative")
         if not options['metrics_service']:
-            raise ValueError(
+            parser.error(
                 "--slow-requests requires --metrics-service")
     else:
         options['slow_requests'] = ''
 
     if options['switch_interval'] is not None:
         if options['switch_interval'] <= 0.0:
-            raise ValueError(
+            parser.error(
                 "--switch-interval must be a positive number of seconds")
         options['daemon_switch_interval_option'] = (
             ' \\\n   switch-interval=%s' % options['switch_interval'])
@@ -3404,6 +3404,10 @@ def _cmd_setup_server(command, args, options):
     if (options['application_group'] == '%{GLOBAL}'
             or '%{' not in options['application_group']):
         options['httpd_arguments_list'].append('-DMOD_WSGI_IMPORT_HANDLER_SCRIPT')
+
+    if options['debugger_startup'] and not options['enable_debugger']:
+        parser.error(
+            "--debugger-startup requires --enable-debugger")
 
     if any((options['enable_debugger'], options['enable_coverage'],
             options['enable_profiler'], options['enable_recorder'],
@@ -3692,7 +3696,7 @@ def cmd_start_server(params):
 
     (options, args) = parser.parse_args(params)
 
-    config = _cmd_setup_server('start-server', args, vars(options))
+    config = _cmd_setup_server('start-server', args, vars(options), parser)
 
     if config['setup_only']:
         return
