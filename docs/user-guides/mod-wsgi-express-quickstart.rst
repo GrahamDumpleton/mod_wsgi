@@ -52,6 +52,35 @@ The ``module-config`` and ``install-module`` paths are covered in
 detail under "Connecting the pip-built module to system Apache"
 in :doc:`installation-from-pypi`.
 
+Verifying the installation
+--------------------------
+
+The ``mod_wsgi.diagnostics`` submodule ships two minimal WSGI
+applications usable as quick install checks before pointing
+``mod_wsgi-express`` at a real application::
+
+    mod_wsgi-express start-server --application-type module \
+        mod_wsgi.diagnostics.environ
+
+This serves the diagnostic page at http://localhost:8000/. A
+successful request confirms that the Python interpreter, the
+built ``mod_wsgi.so``, the generated Apache configuration, and
+the request path through to the WSGI handler all line up.
+
+The bundled applications are:
+
+``mod_wsgi.diagnostics.environ``
+    Diagnostic page showing the WSGI ``environ`` dictionary, the
+    process and host environment, mod_wsgi process and server
+    metrics, Apache build details, and the Python interpreter's
+    locale and path settings.
+
+``mod_wsgi.diagnostics.hello``
+    The smallest possible "Hello World!" WSGI application. Useful
+    when the diagnostic page is too noisy and the goal is just to
+    confirm that an HTTP response makes it back from a WSGI
+    application running under ``mod_wsgi-express``.
+
 Common options
 --------------
 
