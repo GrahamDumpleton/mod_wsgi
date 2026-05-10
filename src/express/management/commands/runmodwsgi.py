@@ -4,7 +4,7 @@ import inspect
 import signal
 import subprocess
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 import mod_wsgi.express
 
@@ -134,8 +134,11 @@ class Command(BaseCommand):
 
         options['url_aliases'] = url_aliases
 
-        options = mod_wsgi.express._cmd_setup_server(
-                'start-server', args, options)
+        try:
+            options = mod_wsgi.express._cmd_setup_server(
+                    'start-server', args, options)
+        except mod_wsgi.express.ConfigurationError as exc:
+            raise CommandError(str(exc))
 
         if options['setup_only']:
             return
