@@ -454,7 +454,7 @@ setup(name = package_name,
     package_data = {'mod_wsgi.images': ['snake-whiskey.jpg']},
     ext_modules = [extension],
     entry_points = { 'console_scripts':
-        ['mod_wsgi-express = mod_wsgi.express:main'],},
+        ['mod_wsgi-express = mod_wsgi.express.cli:main'],},
     zip_safe = False,
     install_requires = standalone and ['mod_wsgi-httpd==2.4.62.1'] or [],
     python_requires='>=3.10',
