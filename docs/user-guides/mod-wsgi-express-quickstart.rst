@@ -313,6 +313,55 @@ more than one hostname.
     sidecars, and other on-host clients that connect
     by loopback.
 
+Process and application groups
+------------------------------
+
+Most users do not need to set either of these
+options. The defaults (``<host>:<port>`` for the
+daemon process group name, ``%{GLOBAL}`` for the
+application group, placing the application in the
+Python main interpreter) are correct for normal
+single-application deployments. Both options exist
+for testing, experimentation, and the cases below.
+
+``--process-group NAME``
+    Override the WSGI daemon process group name used
+    in the generated configuration. The default uses
+    the listening host and port as the group name.
+    Has no effect under ``--embedded-mode``. Useful
+    when a stable, recognisable name is wanted for
+    signal-driven recycling: with ``--process-group
+    myapp`` set, the daemon appears as
+    ``(wsgi:myapp)`` in ``ps`` output, so
+    ``pkill -USR1 -f wsgi:myapp`` targets it
+    directly without needing to know its
+    host/port-derived default name.
+
+``--application-group NAME``
+    Override the WSGI application group used by the
+    generated handler directives. The default is
+    ``%{GLOBAL}`` (the Python main interpreter); a
+    name routes the application into a named
+    sub-interpreter instead. The mod_wsgi
+    ``%{ENV:VARIABLE}`` token is accepted as a value,
+    in which case the application group is determined
+    per request from an environment variable set by
+    other means (typically a ``WSGIDispatchScript``).
+
+Combining ``--application-group %{ENV:VARIABLE}``
+with a ``WSGIDispatchScript`` and the
+:doc:`../configuration-directives/WSGIPerInterpreterGIL`
+directive enabled via ``--include-file`` is the basis
+for experimenting with load-balancing requests across
+multiple sub-interpreters that each hold their own
+GIL. ``mod_wsgi-express`` does not have first-class
+options for the dispatch script or
+``WSGIPerInterpreterGIL``, so both are wired up
+through ``--include-file`` alongside the dispatch
+script source file. See the
+:doc:`../configuration-directives/WSGIPerInterpreterGIL`
+directive page for a worked example.
+
 Environment plumbing
 --------------------
 

@@ -332,7 +332,7 @@ WSGIDestroyInterpreter On
 <IfDefine !EMBEDDED_MODE>
 WSGIRestrictEmbedded On
 <IfDefine MOD_WSGI_MULTIPROCESS>
-WSGIDaemonProcess %(host)s:%(port)s \\
+WSGIDaemonProcess %(process_group)s \\
    display-name='%(daemon_name)s' \\
    home='%(working_directory)s' \\
    processes=%(processes)s \\
@@ -364,7 +364,7 @@ WSGIDaemonProcess %(host)s:%(port)s \\
    server-metrics=%(server_metrics_flag)s%(daemon_switch_interval_option)s
 </IfDefine>
 <IfDefine !MOD_WSGI_MULTIPROCESS>
-WSGIDaemonProcess %(host)s:%(port)s \\
+WSGIDaemonProcess %(process_group)s \\
    display-name='%(daemon_name)s' \\
    home='%(working_directory)s' \\
    threads=%(threads)s \\
@@ -788,10 +788,10 @@ WSGIErrorOverride On
 <IfDefine !ONE_PROCESS>
 <IfDefine !EMBEDDED_MODE>
 WSGIHandlerScript wsgi-handler '%(server_root)s/handler.wsgi' \\
-    process-group='%(host)s:%(port)s' application-group=%(application_group)s
+    process-group=%(process_group)s application-group=%(application_group)s
 <IfDefine MOD_WSGI_IMPORT_HANDLER_SCRIPT>
 WSGIImportScript '%(server_root)s/handler.wsgi' \\
-    process-group='%(host)s:%(port)s' application-group=%(application_group)s
+    process-group=%(process_group)s application-group=%(application_group)s
 </IfDefine>
 </IfDefine>
 </IfDefine>
@@ -938,7 +938,7 @@ APACHE_HANDLER_SCRIPT_CONFIG = """
 <IfDefine !ONE_PROCESS>
 <IfDefine !EMBEDDED_MODE>
 WSGIHandlerScript wsgi-resource '%(server_root)s/resource.wsgi' \\
-    process-group='%(host)s:%(port)s' application-group=%%{GLOBAL}
+    process-group=%(process_group)s application-group=%%{GLOBAL}
 </IfDefine>
 <IfDefine EMBEDDED_MODE>
 WSGIHandlerScript wsgi-resource '%(server_root)s/resource.wsgi' \\
@@ -1911,6 +1911,14 @@ add_option('all', '--application-group', default=None,
         'Python main interpreter. Setting this to a name routes the '
         'application into a named sub-interpreter instead.')
 
+add_option('all', '--process-group', default=None,
+        metavar='NAME', help='Override the WSGI daemon process group '
+        'name used in the generated configuration. The default uses '
+        'the listening host and port as the group name. Has no effect '
+        'under --embedded-mode. Useful when a stable, recognisable '
+        'name is wanted, for example for signal-driven recycling via '
+        'pkill against a known wsgi:NAME process name.')
+
 add_option('all', '--host', default=None, metavar='IP-ADDRESS',
         help='The specific host (IP address) interface on which '
         'requests are to be accepted. Defaults to listening on '
@@ -2767,7 +2775,9 @@ def _cmd_setup_server(command, args, options):
     else:
         options['listener_host'] = options['host']
 
-    if os.name == 'nt':
+    if options['process_group']:
+        options['daemon_name'] = '(wsgi:%s)' % options['process_group']
+    elif os.name == 'nt':
         options['daemon_name'] = '(wsgi:%s:%s:%s)' % (options['host'],
             options['port'], getpass.getuser())
     else:
@@ -2865,6 +2875,12 @@ def _cmd_setup_server(command, args, options):
         options['application_group'] = "'%s'" % options['application_group']
     else:
         options['application_group'] = '%{GLOBAL}'
+
+    if options['process_group']:
+        options['process_group'] = "'%s'" % options['process_group']
+    else:
+        options['process_group'] = "'%s:%s'" % (
+                options['host'], options['port'])
 
     if options['host_access_script']:
         options['host_access_script'] = posixpath.abspath(
