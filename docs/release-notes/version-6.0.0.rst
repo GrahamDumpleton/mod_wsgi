@@ -260,6 +260,18 @@ Features Changed
   existing ``--include-file`` option until a dedicated
   ``mod_wsgi-express`` option is added.
 
+* The ``mod_wsgi-express`` wrapper implementation, including the
+  Django ``runmodwsgi`` management command, has moved from the
+  ``mod_wsgi.server`` Python package to ``mod_wsgi.express``. The
+  Apache ``mod_wsgi.so`` shared library continues to be installed
+  under ``mod_wsgi.server`` and is unaffected. Django projects that
+  currently list ``'mod_wsgi.server'`` in ``INSTALLED_APPS`` should
+  update the entry to ``'mod_wsgi.express'``. The old
+  ``mod_wsgi.server`` Python module remains importable for backward
+  compatibility, including the ``runmodwsgi`` management command, but
+  importing it now emits a ``FutureWarning`` and the module will be
+  removed in a future release.
+
 Features Removed
 ----------------
 

@@ -254,7 +254,7 @@ else:
 """
 
 with open(os.path.join(os.path.dirname(__file__),
-        'src/server/apxs_config.py'), 'w') as fp:
+        'src/express/apxs_config.py'), 'w') as fp:
     print(APXS_CONFIG_TEMPLATE % dict(
             WITH_HTTPD_PACKAGE=WITH_HTTPD_PACKAGE,
             BINDIR=BINDIR, SBINDIR=SBINDIR, LIBEXECDIR=LIBEXECDIR,
@@ -446,13 +446,15 @@ setup(name = package_name,
         'Topic :: Internet :: WWW/HTTP :: WSGI :: Server'
     ],
     keywords = 'mod_wsgi wsgi apache',
-    packages = ['mod_wsgi', 'mod_wsgi.server', 'mod_wsgi.server.management',
-        'mod_wsgi.server.management.commands', 'mod_wsgi.images'],
+    packages = ['mod_wsgi', 'mod_wsgi.server',
+        'mod_wsgi.server.management', 'mod_wsgi.server.management.commands',
+        'mod_wsgi.express', 'mod_wsgi.express.management',
+        'mod_wsgi.express.management.commands', 'mod_wsgi.images'],
     package_dir = {'mod_wsgi': 'src', 'mod_wsgi.images': 'images'},
     package_data = {'mod_wsgi.images': ['snake-whiskey.jpg']},
     ext_modules = [extension],
     entry_points = { 'console_scripts':
-        ['mod_wsgi-express = mod_wsgi.server:main'],},
+        ['mod_wsgi-express = mod_wsgi.express:main'],},
     zip_safe = False,
     install_requires = standalone and ['mod_wsgi-httpd==2.4.62.1'] or [],
     python_requires='>=3.10',

@@ -540,7 +540,7 @@ Django integration
 ``manage.py`` so that it picks up the Django project's settings
 and static files automatically.
 
-Add ``mod_wsgi.server`` to ``INSTALLED_APPS`` in the Django
+Add ``mod_wsgi.express`` to ``INSTALLED_APPS`` in the Django
 settings module::
 
     INSTALLED_APPS = [
@@ -550,7 +550,7 @@ settings module::
         'django.contrib.sessions',
         'django.contrib.messages',
         'django.contrib.staticfiles',
-        'mod_wsgi.server',
+        'mod_wsgi.express',
     ]
 
 Collect static assets into the directory the Django settings

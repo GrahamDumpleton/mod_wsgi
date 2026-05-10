@@ -7,6 +7,6 @@ include README-standalone.rst
 include CREDITS.rst
 include src/server/*.h
 include src/server/*.c
-exclude src/server/apxs_config.py
+exclude src/express/apxs_config.py
 include images/*
 include pyproject.toml

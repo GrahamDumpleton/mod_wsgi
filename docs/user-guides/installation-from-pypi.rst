@@ -82,7 +82,7 @@ A successful install provides three things:
   installed ``mod_wsgi`` Python package directory.
 * The ``mod_wsgi-express`` command-line program for starting a
   self-contained Apache plus mod_wsgi instance.
-* A ``mod_wsgi.server`` Python module which Django and other
+* A ``mod_wsgi.express`` Python module which Django and other
   frameworks can use as an integration point.
 
 Running mod_wsgi-express

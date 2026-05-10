@@ -309,7 +309,7 @@ Using mod_wsgi-express with Django
 
 To use ``mod_wsgi-express`` with Django, after having installed the
 mod_wsgi package into your Python installation, edit your Django settings
-module and add ``mod_wsgi.server`` to the list of installed apps.
+module and add ``mod_wsgi.express`` to the list of installed apps.
 
 ::
 
@@ -320,7 +320,7 @@ module and add ``mod_wsgi.server`` to the list of installed apps.
         'django.contrib.sessions',
         'django.contrib.messages',
         'django.contrib.staticfiles',
-        'mod_wsgi.server',
+        'mod_wsgi.express',
     )
 
 To prepare for running ``mod_wsgi-express``, ensure that you first collect
