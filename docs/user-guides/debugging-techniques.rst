@@ -487,7 +487,7 @@ version that can be added to any WSGI script::
     _profiler = Profile()
     _profiler.enable()
 
-    def _dump_profile(event):
+    def _dump_profile(*args, **kwargs):
         _profiler.disable()
         output = '%d-%d.pstats' % (
                 int(time.time() * 1000000), os.getpid())
@@ -546,7 +546,7 @@ shutdown::
     _cov = coverage()
     _cov.start()
 
-    def _dump_coverage(event):
+    def _dump_coverage(*args, **kwargs):
         _cov.stop()
         _cov.html_report(directory='/tmp/htmlcov')
 

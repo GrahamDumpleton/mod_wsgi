@@ -121,16 +121,26 @@ mechanism is to register a callback with ``mod_wsgi.subscribe_shutdown()``::
 
     import mod_wsgi
 
-    def cleanup(event):
+    def cleanup(*args, **kwargs):
         # Perform required cleanup task.
         ...
 
     mod_wsgi.subscribe_shutdown(cleanup)
 
-The callback receives a single ``event`` argument, a dictionary that
-includes a ``shutdown_reason`` key describing why the process is
-stopping (graceful shutdown, eviction, request-time-limit eviction,
-and so on).
+``mod_wsgi.subscribe_shutdown()`` is a shortcut for subscribing to
+the single ``process_stopping`` event published by mod_wsgi when a
+process is shutting down, and shares the calling convention used
+for subscribers registered via ``mod_wsgi.subscribe_events()``: the
+event name is passed positionally and the event payload is passed
+as keyword arguments. A callback that does not need either, like
+the example above, can absorb both with ``*args, **kwargs``.
+
+To act on why the process is stopping (graceful shutdown, eviction,
+request-time-limit eviction, and so on), declare ``shutdown_reason``
+as a keyword-only parameter::
+
+    def cleanup(name, *, shutdown_reason, **kwargs):
+        ...
 
 The standard Python ``atexit`` module can also be used::
 
