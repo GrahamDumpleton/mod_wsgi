@@ -135,9 +135,9 @@ class Command(BaseCommand):
         options['url_aliases'] = url_aliases
 
         try:
-            options = mod_wsgi.express._cmd_setup_server(
+            options = mod_wsgi.express.server.setup_server(
                     'start-server', args, options)
-        except mod_wsgi.express.ConfigurationError as exc:
+        except mod_wsgi.express.server.ConfigurationError as exc:
             raise CommandError(str(exc))
 
         if options['setup_only']:
