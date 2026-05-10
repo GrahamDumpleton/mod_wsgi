@@ -127,6 +127,16 @@ mechanism is to register a callback with ``mod_wsgi.subscribe_shutdown()``::
 
     mod_wsgi.subscribe_shutdown(cleanup)
 
+The function returns the callback so it can equivalently be used
+as a decorator::
+
+    import mod_wsgi
+
+    @mod_wsgi.subscribe_shutdown
+    def cleanup(*args, **kwargs):
+        # Perform required cleanup task.
+        ...
+
 ``mod_wsgi.subscribe_shutdown()`` is a shortcut for subscribing to
 the single ``process_stopping`` event published by mod_wsgi when a
 process is shutting down, and shares the calling convention used
@@ -153,28 +163,32 @@ The standard Python ``atexit`` module can also be used::
     atexit.register(cleanup)
 
 However, ``atexit`` callbacks under mod_wsgi are not always
-delivered. mod_wsgi runs them by patching ``threading._shutdown`` so
-they fire when a sub interpreter is destroyed via
-``Py_EndInterpreter``. Two situations make this unreliable:
+delivered. mod_wsgi relies on the Python interpreter's normal
+finalisation to drive atexit callbacks: CPython joins all
+non-daemon threads first and then runs atexit callbacks as the
+interpreter is torn down. Two situations make this unreliable:
 
 * If
   :doc:`../configuration-directives/WSGIDestroyInterpreter`
-  is set to ``Off``, sub interpreters are not destroyed at process
-  shutdown and the patched ``threading._shutdown`` path is never
-  taken — registered ``atexit`` functions will not run at all.
-* Internal Python changes to the order in which threads are shut
-  down relative to ``atexit`` invocation can leave the patched
-  path unreached even when interpreter destruction is enabled.
+  is set to ``Off``, sub interpreters are not torn down at process
+  shutdown so the finalisation path is never taken and registered
+  ``atexit`` functions will not run at all.
+* Because Python joins non-daemon threads before running atexit
+  callbacks, an application that creates background threads as
+  non-daemon threads (when they should have been daemon threads)
+  blocks finalisation indefinitely. Apache will then force-kill
+  the process after its shutdown grace period and the atexit
+  callbacks never fire.
 
 By contrast, ``mod_wsgi.subscribe_shutdown()`` callbacks are
 dispatched directly by mod_wsgi early in the shutdown sequence,
-before in-flight requests are waited on and before any interpreter
+before non-daemon threads are joined and before any interpreter
 destruction is attempted. They run regardless of
-``WSGIDestroyInterpreter`` and regardless of how Python orders its
-internal thread shutdown. New code should prefer
+``WSGIDestroyInterpreter`` and regardless of whether the
+application has stuck non-daemon threads. New code should prefer
 ``mod_wsgi.subscribe_shutdown()``; existing ``atexit`` registrations
-will keep working in the cases where the patched path still fires
-but should be migrated where reliability matters.
+will keep working in the common case but should be migrated where
+reliability matters.
 
 Note that ``mod_wsgi.subscribe_shutdown()`` is a mod_wsgi-specific
 extension and not portable to other WSGI hosting solutions; ``atexit``

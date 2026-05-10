@@ -3265,7 +3265,9 @@ static PyObject *wsgi_subscribe_events(PyObject *Py_UNUSED(self), PyObject *args
     else
         return NULL;
 
-    Py_RETURN_NONE;
+    /* Return the callback so the function can be used as a decorator. */
+    Py_INCREF(callback);
+    return callback;
 }
 
 static PyObject *wsgi_subscribe_shutdown(PyObject *Py_UNUSED(self), PyObject *args)
@@ -3308,7 +3310,9 @@ static PyObject *wsgi_subscribe_shutdown(PyObject *Py_UNUSED(self), PyObject *ar
     else
         return NULL;
 
-    Py_RETURN_NONE;
+    /* Return the callback so the function can be used as a decorator. */
+    Py_INCREF(callback);
+    return callback;
 }
 
 long wsgi_event_subscribers(void)

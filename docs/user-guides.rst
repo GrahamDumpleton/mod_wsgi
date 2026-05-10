@@ -54,6 +54,7 @@ Concepts and advanced topics
    user-guides/access-control-mechanisms
    user-guides/file-wrapper-extension
    user-guides/registering-cleanup-code
+   user-guides/mod-wsgi-python-module
    user-guides/running-behind-a-reverse-proxy
    user-guides/hosting-websocket-applications
    user-guides/enabling-https
