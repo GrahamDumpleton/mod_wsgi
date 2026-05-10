@@ -369,6 +369,23 @@ preexisting directory. For each request four files will be saved. These
 correspond to input headers, input content, response status and headers,
 and request content.
 
+Under ``mod_wsgi-express`` the equivalent capability is
+built in via ``--enable-recorder``, which wraps the
+application in a middleware functionally equivalent to the
+``LoggingMiddleware`` shown above. Per-request files use
+the same ``.iheaders`` / ``.icontent`` / ``.oheaders`` /
+``.ocontent`` naming, plus ``.oaexcept`` / ``.orexcept`` /
+``.ofexcept`` capturing exceptions raised during the
+application call, response iteration, and ``close()``
+respectively. The headers files contain a
+``pprint``-formatted Python repr (inspectable in any text
+editor; round-trip with ``ast.literal_eval()``). The
+output directory defaults to ``<server-root>/archive/``
+and is overridable with ``--recorder-directory``.
+``--enable-recorder`` implies ``--debug-mode`` (single
+process, single-threaded) so output from concurrent
+workers does not interleave.
+
 Poorly Performing Code
 ----------------------
 
@@ -445,6 +462,124 @@ types, the following code can be used::
         ...
 
     application = ValidatingMiddleware(application)
+
+Profiling Code Execution
+------------------------
+
+When a WSGI application is slower than expected and the
+cause is not obvious from the patterns covered above,
+profiling is the next step. The standard library
+``cProfile`` module measures call counts and total /
+inline time per function for the duration the profiler is
+running.
+
+The pattern that works for an Apache + mod_wsgi
+deployment is to start the profiler at WSGI script load
+time and dump its data on process shutdown. A minimal
+version that can be added to any WSGI script::
+
+    import os
+    import time
+
+    import mod_wsgi
+    from cProfile import Profile
+
+    _profiler = Profile()
+    _profiler.enable()
+
+    def _dump_profile(event):
+        _profiler.disable()
+        output = '%d-%d.pstats' % (
+                int(time.time() * 1000000), os.getpid())
+        _profiler.dump_stats(os.path.join('/tmp/pstats', output))
+
+    mod_wsgi.subscribe_shutdown(_dump_profile)
+
+This produces a ``.pstats`` file in ``/tmp/pstats/``
+(which must already exist) every time the daemon process
+shuts down. The filename includes a microsecond timestamp
+and the process ID so concurrent workers do not collide.
+``mod_wsgi.subscribe_shutdown()`` is preferred over
+``atexit`` for dumping data on shutdown because it fires
+reliably regardless of interpreter-shutdown ordering; see
+:doc:`registering-cleanup-code`.
+
+Inspect the data with the standard library's ``pstats``
+module, or with ``snakeviz`` (browser-rendered icicle /
+sunburst) or ``gprof2dot`` plus Graphviz for a
+call-graph visualisation.
+
+For meaningful results the profiler should observe a
+single process; with multiple daemon processes the
+measurements split across them. Restrict the daemon to
+one process before profiling::
+
+    WSGIDaemonProcess myapp processes=1 threads=N
+
+Under ``mod_wsgi-express`` the equivalent of the manual
+recipe is automated by ``--enable-profiler``. It implies
+``--debug-mode`` (single process, single-threaded), and
+writes ``.pstats`` files under ``<server-root>/pstats/``
+by default; override with ``--profiler-directory``::
+
+    mod_wsgi-express start-server wsgi.py \
+        --enable-profiler \
+        --profiler-directory /tmp/pstats
+
+For profiling under realistic concurrency the manual
+recipe above is preferable, since ``--enable-profiler``
+forces single-process / single-threaded operation.
+
+Measuring Code Coverage
+-----------------------
+
+Code coverage measurement records which Python source
+lines actually execute during a run. The third-party
+``coverage`` package (installable from PyPI) plugs into
+mod_wsgi the same way profiling does: start it at WSGI
+script load time and emit its report on process
+shutdown::
+
+    import mod_wsgi
+    from coverage import coverage
+
+    _cov = coverage()
+    _cov.start()
+
+    def _dump_coverage(event):
+        _cov.stop()
+        _cov.html_report(directory='/tmp/htmlcov')
+
+    mod_wsgi.subscribe_shutdown(_dump_coverage)
+
+This writes an HTML coverage report under
+``/tmp/htmlcov/`` (created on demand) every time the
+daemon process shuts down; open ``index.html`` in a
+browser to see per-line coverage with red / green
+highlighting. As with the profiler recipe above,
+``mod_wsgi.subscribe_shutdown()`` is the recommended way
+to register the dump callback rather than
+``atexit.register()``; see :doc:`registering-cleanup-code`.
+
+As with profiling, multi-process operation produces one
+report per process. Restrict the daemon to a single
+process before measuring::
+
+    WSGIDaemonProcess myapp processes=1 threads=N
+
+Under ``mod_wsgi-express`` the equivalent is
+``--enable-coverage``, which implies ``--debug-mode``.
+The output directory defaults to
+``<server-root>/htmlcov/`` and is overridable with
+``--coverage-directory``::
+
+    mod_wsgi-express start-server wsgi.py \
+        --enable-coverage \
+        --coverage-directory /tmp/htmlcov
+
+The ``coverage`` package must be installed in the same
+environment as ``mod_wsgi-express`` for the express form
+to work.
 
 Error Catching Middleware
 -------------------------
@@ -612,6 +747,38 @@ framework or middleware replaces ``sys.stdout`` (capturing or
 redirecting it), the Python debugger will not be usable until that
 behaviour is disabled.
 
+Under ``mod_wsgi-express`` two flags provide a similar but
+narrower capability than the per-call ``settrace`` wrapper
+above:
+
+* ``--debug-mode`` runs Apache in single-process mode with
+  stdin/stdout attached to the terminal. This is the
+  equivalent of the ``apachectl stop`` plus ``httpd -X``
+  flow described above; the express form does not require
+  manual control of the underlying Apache.
+
+* ``--enable-debugger`` wraps the WSGI application in a
+  *post-mortem* ``pdb`` handler. Rather than stepping
+  through every line, it activates ``pdb`` only when an
+  exception propagates out of the application. The
+  controlling terminal then drops into
+  ``pdb.Pdb().interaction(None, traceback)`` so the
+  failing frame can be inspected. ``c`` or ``q`` lets the
+  request finish with a 500 response and the server keeps
+  running.
+
+* ``--debugger-startup`` pairs with ``--enable-debugger``
+  and drops into ``pdb`` once *immediately* after the WSGI
+  script has been imported, before any request is served.
+  Use this to set breakpoints (``b file.py:NN``) on
+  application code, then ``c`` to resume into normal
+  request handling.
+
+``--enable-debugger`` and ``--debugger-startup`` both
+imply ``--debug-mode``. For the per-line ``settrace``
+pattern the manual ``Debugger`` wrapper above is still
+the right tool.
+
 Browser Based Debugger
 ----------------------
 
@@ -744,6 +911,18 @@ and WSGIProcessGroup directives. This is because the above procedure will
 only catch crashes which occur when the application is running in embedded
 mode. If it turns out that the application only crashes when run in mod_wsgi
 daemon mode, an alternate method of using 'gdb' will be required.
+
+Under ``mod_wsgi-express`` the embedded-mode flow above
+(``apachectl stop`` plus ``gdb httpd`` plus ``run -X``) is
+automated by the ``--enable-gdb`` flag. The generated
+``apachectl`` wrapper substitutes ``gdb`` for the direct
+``httpd`` exec, with a small ``gdb.cmds`` script
+supplying ``run`` plus the single-process Apache argv.
+``--gdb-executable FILE-PATH`` overrides the path to the
+``gdb`` binary if needed. ``--enable-gdb`` implies
+``--debug-mode`` and so only catches crashes occurring in
+embedded mode; the daemon-mode attach-by-pid procedure
+described next has no equivalent express flag.
 
 In this circumstance you should run Apache as normal, but ensure that you
 only create one mod_wsgi daemon process and have it use only a single
