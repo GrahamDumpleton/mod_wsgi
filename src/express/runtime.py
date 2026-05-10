@@ -7,7 +7,7 @@ import time
 import traceback
 import types
 
-class PostMortemDebugger(object):
+class PostMortemDebugger:
 
     def __init__(self, application, startup):
         self.application = application
@@ -50,7 +50,7 @@ class PostMortemDebugger(object):
             self.run_post_mortem()
             raise
 
-class RequestRecorder(object):
+class RequestRecorder:
 
     def __init__(self, application, savedir):
         self.application = application
@@ -152,7 +152,7 @@ class RequestRecorder(object):
             orexcept_fp.close()
             ofexcept_fp.close()
 
-class ApplicationHandler(object):
+class ApplicationHandler:
 
     def __init__(self, entry_point, application_type='script',
             callable_object='application', mount_point='/',
@@ -262,7 +262,7 @@ class ApplicationHandler(object):
     def __call__(self, environ, start_response):
         return self.handle_request(environ, start_response)
 
-class ResourceHandler(object):
+class ResourceHandler:
 
     def __init__(self, resources):
         self.resources = {}
