@@ -33,6 +33,17 @@
 
 /* ------------------------------------------------------------------------- */
 
+WSGIProcessMetrics *wsgi_process_metrics = NULL;
+
+void wsgi_process_metrics_init(apr_pool_t *pool)
+{
+    WSGIProcessMetrics *m = apr_pcalloc(pool, sizeof(*m));
+
+    apr_thread_mutex_create(&m->monitor_lock, APR_THREAD_MUTEX_UNNESTED, pool);
+
+    wsgi_process_metrics = m;
+}
+
 /*
  * Thread utilisation. On start and end of requests,
  * and when utilisation is requested, we acrue an
@@ -40,47 +51,39 @@
  * busy we are handling requests.
  */
 
-apr_uint64_t wsgi_total_requests = 0;
-int wsgi_active_requests = 0;
-static double wsgi_thread_utilization = 0.0;
-static apr_time_t wsgi_utilization_last = 0;
-
-/* Request tracking and timing. */
-
-apr_thread_mutex_t *wsgi_monitor_lock = NULL;
-
-/* Caller MUST hold wsgi_monitor_lock. Touches wsgi_thread_utilization,
- * wsgi_utilization_last, wsgi_active_requests and wsgi_total_requests —
- * all covered by that same lock. */
+/* Caller MUST hold the monitor lock. Touches thread_utilization,
+ * utilization_last, active_requests and total_requests on
+ * wsgi_process_metrics; all covered by that same lock. */
 
 static double wsgi_utilization_time_locked(int adjustment,
                                            apr_uint64_t *request_count)
 {
+    WSGIProcessMetrics *m = wsgi_process_metrics;
     apr_time_t now;
-    double utilization = wsgi_thread_utilization;
+    double utilization = m->thread_utilization;
 
     now = apr_time_now();
 
-    if (wsgi_utilization_last != 0)
+    if (m->utilization_last != 0)
     {
-        utilization = (now - wsgi_utilization_last) / 1000000.0;
+        utilization = (now - m->utilization_last) / 1000000.0;
 
         if (utilization < 0)
             utilization = 0;
 
-        utilization = wsgi_active_requests * utilization;
-        wsgi_thread_utilization += utilization;
-        utilization = wsgi_thread_utilization;
+        utilization = m->active_requests * utilization;
+        m->thread_utilization += utilization;
+        utilization = m->thread_utilization;
     }
 
-    wsgi_utilization_last = now;
-    wsgi_active_requests += adjustment;
+    m->utilization_last = now;
+    m->active_requests += adjustment;
 
     if (adjustment < 0)
-        wsgi_total_requests += -adjustment;
+        m->total_requests += -adjustment;
 
     if (request_count)
-        *request_count = wsgi_total_requests;
+        *request_count = m->total_requests;
 
     return utilization;
 }
@@ -102,7 +105,7 @@ static apr_uint64_t wsgi_sample_requests = 0;
  * = request. Surfaced as separate series in the breakdown /
  * distribution dropdowns.
  *
- * Updated under wsgi_monitor_lock alongside the per-tick counters via
+ * Updated under the monitor lock alongside the per-tick counters via
  * wsgi_phase_aggregate_record(); drained back to the empty-interval
  * state by wsgi_phase_aggregate_reset(). */
 static WSGIPhaseAggregate wsgi_server_time = {.min_us = UINT64_MAX};
@@ -207,10 +210,10 @@ typedef struct
     apr_time_t application_start_us;
     apr_time_t application_finish_us;
 
-    /* In-flight request count (= wsgi_active_requests including this
-     * one) at slot claim. Snapshotted into the slow record at
-     * completion alongside the live wsgi_active_requests value to give
-     * the "saturation when this request was running" picture. */
+    /* In-flight request count (= active_requests including this one)
+     * at slot claim. Snapshotted into the slow record at completion
+     * alongside the live active_requests value to give the "saturation
+     * when this request was running" picture. */
     uint64_t active_at_start;
 
     /* Per-request I/O counters, written by wsgi_record_request_times
@@ -514,7 +517,7 @@ void wsgi_record_request_times(apr_time_t request_start,
      * only the current thread's APR threadkey storage. */
     thread_info = wsgi_thread_info(0, 1);
 
-    apr_thread_mutex_lock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
     wsgi_sample_requests += 1;
 
@@ -598,7 +601,7 @@ void wsgi_record_request_times(apr_time_t request_start,
     }
 #endif
 
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 }
 
 void wsgi_record_application_start(apr_time_t application_start)
@@ -615,7 +618,7 @@ void wsgi_record_application_start(apr_time_t application_start)
     if (!thread_info || thread_info->thread_id < 1)
         return;
 
-    apr_thread_mutex_lock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
     if (wsgi_active_slots &&
         thread_info->thread_id <= wsgi_active_slots_max)
@@ -627,7 +630,7 @@ void wsgi_record_application_start(apr_time_t application_start)
             slot->application_start_us = application_start;
     }
 
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 }
 
 WSGIThreadInfo *wsgi_start_request(request_rec *r)
@@ -731,9 +734,9 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
      * copy) lets the telemetry reporter thread read URL / identity
      * fields on demand and keeps the hot path cheap. r->pool stays
      * alive until after wsgi_end_request clears the slot, so reads
-     * under wsgi_monitor_lock are always against a live request_rec. */
+     * under the monitor lock are always against a live request_rec. */
 
-    apr_thread_mutex_lock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
     wsgi_utilization_time_locked(1, NULL);
 
@@ -773,9 +776,10 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
             slot->application_finish_us = 0;
 
             /* wsgi_utilization_time_locked(1, ...) above already
-             * incremented wsgi_active_requests, so this snapshot
-             * reflects the in-flight count *including* this request. */
-            slot->active_at_start = (uint64_t)wsgi_active_requests;
+             * incremented active_requests, so this snapshot reflects
+             * the in-flight count *including* this request. */
+            slot->active_at_start =
+                (uint64_t)wsgi_process_metrics->active_requests;
 
             /* Drain any GIL-wait time accumulated during the daemon-
              * phase sites that fired before this slot was claimed
@@ -789,7 +793,7 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
         }
     }
 
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
     return thread_info;
 }
@@ -859,7 +863,7 @@ void wsgi_end_request(void)
      * Clearing the slot under the same lock ensures the reporter never
      * sees a slot with a dangling r. */
 
-    apr_thread_mutex_lock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
     if (wsgi_active_slots && thread_info && thread_info->thread_id >= 1 &&
         thread_info->thread_id <= wsgi_active_slots_max)
@@ -923,10 +927,11 @@ void wsgi_end_request(void)
                 rec.cpu_system_us = (uint64_t)(cpu_system_delta * 1.0e6);
                 rec.status = (uint16_t)slot->last_status;
                 rec.active_at_start = slot->active_at_start;
-                /* wsgi_active_requests still includes this request at
-                 * this point; the matching decrement happens below in
+                /* active_requests still includes this request at this
+                 * point; the matching decrement happens below in
                  * wsgi_utilization_time_locked(-1, ...). */
-                rec.active_at_completion = (uint64_t)wsgi_active_requests;
+                rec.active_at_completion =
+                    (uint64_t)wsgi_process_metrics->active_requests;
                 rec.gil_wait_us = slot->gil_wait_us;
                 rec.gil_wait_count = slot->gil_wait_count;
                 wsgi_slow_fill_phase_durations(&rec, slot, now);
@@ -953,7 +958,7 @@ void wsgi_end_request(void)
 
     wsgi_utilization_time_locked(-1, NULL);
 
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1020,11 +1025,11 @@ void wsgi_metrics_telemetry_init(void)
      * Idempotent: a second call is a no-op so the periodic snapshot's
      * legacy first-call seeding (kept as a fallback for the non-telemetry
      * Python-accessor path) doesn't fight this initialiser. */
-    apr_thread_mutex_lock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
     if (telemetry_start_time != 0.0)
     {
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
         return;
     }
 
@@ -1034,7 +1039,7 @@ void wsgi_metrics_telemetry_init(void)
 
     wsgi_request_metrics_enabled = 1;
 
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
 #ifdef HAVE_TIMES
     {
@@ -1102,7 +1107,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 
     stop_time = apr_time_now();
 
-    apr_thread_mutex_lock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
     stop_request_busy_time = wsgi_utilization_time_locked(0,
                                                           &stop_request_count);
@@ -1146,7 +1151,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 
         wsgi_request_metrics_enabled = 1;
 
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
         telemetry_start_time = stop_time;
         telemetry_start_request_busy_time = stop_request_busy_time;
@@ -1289,7 +1294,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     wsgi_status_4xx_count = 0;
     wsgi_status_5xx_count = 0;
 
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
     out->seeded = 1;
 
@@ -1364,7 +1369,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 
 /* Slow-request helpers. Lazy-allocate the slot array on first request so
  * there is no cost when the feature is off. Copy strings out of a
- * live request_rec under wsgi_monitor_lock, truncating each field with
+ * live request_rec under the monitor lock, truncating each field with
  * an "..." suffix so the UI can show where the cut was made. */
 
 static void wsgi_slots_ensure_locked(void)
@@ -1648,7 +1653,7 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
     }
 }
 
-/* Caller must hold wsgi_monitor_lock. */
+/* Caller must hold the monitor lock. */
 
 static void wsgi_slow_push_completed_locked(const wsgi_slow_request_t *rec)
 {
@@ -1684,7 +1689,7 @@ int wsgi_metrics_pop_slow_completed(wsgi_slow_request_t *out)
     if (!out)
         return 0;
 
-    apr_thread_mutex_lock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
     if (wsgi_completed_ring && wsgi_completed_ring_count > 0)
     {
@@ -1695,7 +1700,7 @@ int wsgi_metrics_pop_slow_completed(wsgi_slow_request_t *out)
         got = 1;
     }
 
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
     return got;
 }
@@ -1710,11 +1715,11 @@ int wsgi_metrics_snapshot_slow_active(wsgi_slow_request_t *out, int out_cap,
     if (!out || out_cap <= 0)
         return 0;
 
-    apr_thread_mutex_lock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
     if (!wsgi_active_slots)
     {
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
         return 0;
     }
 
@@ -1755,7 +1760,7 @@ int wsgi_metrics_snapshot_slow_active(wsgi_slow_request_t *out, int out_cap,
         n++;
     }
 
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
     return n;
 }
@@ -2184,7 +2189,7 @@ static PyObject *wsgi_request_metrics(void)
      * drain so the emitted sample is internally consistent. Python object
      * construction happens afterwards, using the local snapshots. */
 
-    apr_thread_mutex_lock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
     stop_request_busy_time = wsgi_utilization_time_locked(0,
                                                           &stop_request_count);
@@ -2224,7 +2229,7 @@ static PyObject *wsgi_request_metrics(void)
 
         wsgi_request_metrics_enabled = 1;
 
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
         start_time = stop_time;
         start_request_busy_time = stop_request_busy_time;
@@ -2381,7 +2386,7 @@ static PyObject *wsgi_request_metrics(void)
     wsgi_status_4xx_count = 0;
     wsgi_status_5xx_count = 0;
 
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
     /* Compute derived values used as inputs to several publishes, plus
      * the per-slot active-thread count, before any Python construction
@@ -2691,7 +2696,7 @@ PyMethodDef wsgi_request_metrics_method[] = {
 
 /* ------------------------------------------------------------------------- */
 
-static PyObject *wsgi_process_metrics(void)
+static PyObject *wsgi_process_metrics_dict(void)
 {
     PyObject *module = NULL;
     WSGIModuleState *state = NULL;
@@ -2731,9 +2736,9 @@ static PyObject *wsgi_process_metrics(void)
         return NULL;
     }
 
-    apr_thread_mutex_lock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
     busy_time = wsgi_utilization_time_locked(0, &request_count);
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
     if (wsgi_dict_set_long(result, WSGI_INTERNED_STRING(pid), getpid()) < 0)
         goto error;
@@ -2778,7 +2783,8 @@ static PyObject *wsgi_process_metrics(void)
 #endif
 
     if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(restart_time),
-                             apr_time_sec((double)wsgi_restart_time)) < 0)
+                             apr_time_sec(
+                                 (double)wsgi_process_metrics->process_start_us)) < 0)
         goto error;
 
     current_time = apr_time_now();
@@ -2786,7 +2792,8 @@ static PyObject *wsgi_process_metrics(void)
                              apr_time_sec((double)current_time)) < 0)
         goto error;
 
-    running_time = apr_time_sec((double)current_time - wsgi_restart_time);
+    running_time = apr_time_sec((double)current_time -
+                                wsgi_process_metrics->process_start_us);
     if (wsgi_dict_set_longlong(result, WSGI_INTERNED_STRING(running_time),
                                (long long)running_time) < 0)
         goto error;
@@ -2795,7 +2802,7 @@ static PyObject *wsgi_process_metrics(void)
                            wsgi_request_threads) < 0)
         goto error;
     if (wsgi_dict_set_long(result, WSGI_INTERNED_STRING(active_requests),
-                           wsgi_active_requests) < 0)
+                           wsgi_process_metrics->active_requests) < 0)
         goto error;
 
     thread_list = PyList_New(0);
@@ -2848,7 +2855,7 @@ error:
 }
 
 PyMethodDef wsgi_process_metrics_method[] = {
-    {"process_metrics", (PyCFunction)wsgi_process_metrics,
+    {"process_metrics", (PyCFunction)wsgi_process_metrics_dict,
      METH_NOARGS, 0},
     {NULL},
 };

@@ -37,8 +37,6 @@ pid_t wsgi_parent_pid = 0;
 pid_t wsgi_worker_pid = 0;
 pid_t wsgi_daemon_pid = 0;
 
-apr_time_t wsgi_restart_time = 0;
-
 /* Python interpreter state. */
 
 PyThreadState *wsgi_main_tstate = NULL;

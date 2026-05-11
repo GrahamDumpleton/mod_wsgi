@@ -94,7 +94,7 @@ int wsgi_execute_script(request_rec *r)
          * Drop any RequestTimeout injection that the daemon monitor
          * may have landed on this tstate during the gap between the
          * prior request's release and this acquire (the monitor
-         * decides under wsgi_monitor_lock then injects after release;
+         * decides under the monitor lock then injects after release;
          * the worker may have already moved on by the time the inject
          * lands). Without this clear, the eval loop would raise the
          * stale RequestTimeout against this innocent request on its
@@ -120,10 +120,10 @@ int wsgi_execute_script(request_rec *r)
                                       "for daemon process '%s'.",
                                       config->process_group);
 
-                apr_thread_mutex_lock(wsgi_monitor_lock);
+                apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
                 wsgi_startup_shutdown_time = apr_time_now();
                 wsgi_startup_shutdown_time += wsgi_startup_timeout;
-                apr_thread_mutex_unlock(wsgi_monitor_lock);
+                apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
             }
         }
     }
@@ -400,8 +400,8 @@ int wsgi_execute_script(request_rec *r)
                 if (!method)
                 {
                     wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
-                            "Failed to look up close() method on log "
-                            "object during request teardown");
+                                                         "Failed to look up close() method on log "
+                                                         "object during request teardown");
                 }
                 else
                 {

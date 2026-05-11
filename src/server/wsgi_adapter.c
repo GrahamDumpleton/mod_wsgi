@@ -303,7 +303,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_idle_timeout && !self->config->ignore_activity)
     {
-        apr_thread_mutex_lock(wsgi_monitor_lock);
+        apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
         if (wsgi_idle_timeout)
         {
@@ -311,7 +311,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
             wsgi_idle_shutdown_time += wsgi_idle_timeout;
         }
 
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
     }
 #endif
 
@@ -1258,7 +1258,7 @@ int Adapter_run(AdapterObject *self, PyObject *object)
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_idle_timeout && !self->config->ignore_activity)
     {
-        apr_thread_mutex_lock(wsgi_monitor_lock);
+        apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
         if (wsgi_idle_timeout)
         {
@@ -1266,7 +1266,7 @@ int Adapter_run(AdapterObject *self, PyObject *object)
             wsgi_idle_shutdown_time += wsgi_idle_timeout;
         }
 
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
     }
 #endif
 
@@ -1287,7 +1287,7 @@ int Adapter_run(AdapterObject *self, PyObject *object)
     if (!vars)
         goto error;
 
-    value = PyLong_FromLongLong(wsgi_total_requests);
+    value = PyLong_FromLongLong(wsgi_process_metrics->total_requests);
     if (!value)
         goto error;
     if (PyDict_SetItemString(vars, "mod_wsgi.total_requests", value) < 0)

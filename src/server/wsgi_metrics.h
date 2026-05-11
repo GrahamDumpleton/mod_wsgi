@@ -44,10 +44,36 @@ typedef struct
     apr_uint64_t max_us;
 } WSGIPhaseAggregate;
 
-extern apr_uint64_t wsgi_total_requests;
-extern int wsgi_active_requests;
+/* Process-wide metrics state. One instance per Apache child process
+ * (embedded mode) or per daemon process (daemon mode), allocated from
+ * the process pool at child init by wsgi_process_metrics_init. Holds
+ * the synchronisation primitive, process identity, and lifetime
+ * aggregates that are shared across every recorder/snapshot path.
+ *
+ * monitor_lock is the coarse mutex covering the per-tick aggregators,
+ * lifetime counters, the per-thread slot arrays, and the slow-completion
+ * ring. It is held across every recorder write and every snapshot read.
+ *
+ * total_requests, active_requests, thread_utilization and
+ * utilization_last form the request-busy-time integral and the gauge
+ * pair, all read-modify-write under monitor_lock by
+ * wsgi_utilization_time_locked. */
+typedef struct
+{
+    apr_time_t process_start_us;
+    apr_thread_mutex_t *monitor_lock;
+    apr_uint64_t total_requests;
+    int active_requests;
+    double thread_utilization;
+    apr_time_t utilization_last;
+} WSGIProcessMetrics;
 
-extern apr_thread_mutex_t *wsgi_monitor_lock;
+extern WSGIProcessMetrics *wsgi_process_metrics;
+
+/* Allocate the WSGIProcessMetrics instance and create its monitor lock
+ * from the supplied pool. Called once per child / daemon process at
+ * child init, before any other metrics-touching code runs. */
+extern void wsgi_process_metrics_init(apr_pool_t *pool);
 
 extern PyMethodDef wsgi_request_metrics_method[];
 
@@ -102,13 +128,13 @@ extern apr_time_t wsgi_slow_threshold_us;
 
 /* Pop one completed slow-request record from the finalize ring. Returns 1
  * if one was copied into *out, 0 if the ring was empty. Takes
- * wsgi_monitor_lock internally. */
+ * the monitor lock internally. */
 extern int wsgi_metrics_pop_slow_completed(wsgi_slow_request_t *out);
 
 /* Snapshot up to out_cap currently-active slots whose elapsed time is at
  * least threshold_us. now_us is the caller's current timestamp (so a
  * consistent "elapsed" can be computed across all slots). Returns the
- * number of records copied. Takes wsgi_monitor_lock internally. */
+ * number of records copied. Takes the monitor lock internally. */
 extern int wsgi_metrics_snapshot_slow_active(wsgi_slow_request_t *out,
                                              int out_cap,
                                              apr_time_t now_us,

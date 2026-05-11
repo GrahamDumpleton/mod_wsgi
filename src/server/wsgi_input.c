@@ -349,7 +349,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 #if defined(MOD_WSGI_WITH_DAEMONS)
     if (wsgi_idle_timeout && !self->ignore_activity)
     {
-        apr_thread_mutex_lock(wsgi_monitor_lock);
+        apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
         if (wsgi_idle_timeout)
         {
@@ -357,7 +357,7 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
             wsgi_idle_shutdown_time += wsgi_idle_timeout;
         }
 
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
     }
 #endif
 

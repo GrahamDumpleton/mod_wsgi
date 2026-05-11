@@ -978,14 +978,14 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
 
     wsgi_worker_pid = getpid();
 
+    /* Allocate the process metrics struct (and its monitor lock) before
+     * recording the start time, since process_start_us lives on it. */
+
+    wsgi_process_metrics_init(p);
+
     /* Time child process started waiting for requests. */
 
-    wsgi_restart_time = apr_time_now();
-
-    /* Create lock for request monitoring. */
-
-    apr_thread_mutex_create(&wsgi_monitor_lock,
-                            APR_THREAD_MUTEX_UNNESTED, p);
+    wsgi_process_metrics->process_start_us = apr_time_now();
 
     /* Retrieve optional functions from peer modules. */
 

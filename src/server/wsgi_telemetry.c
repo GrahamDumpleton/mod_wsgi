@@ -1173,8 +1173,8 @@ void wsgi_telemetry_pause_reporter(void)
 /*
  * Emit the STOPPING chart-marker datagram. Called from the daemon main
  * thread (or the embedded-mode child cleanup) at the moment shutdown
- * is decided, before drain begins. Reads wsgi_active_requests under
- * the monitor lock so the at-decision count is consistent with whoever
+ * is decided, before drain begins. Reads active_requests under the
+ * monitor lock so the at-decision count is consistent with whoever
  * else may be reading it. Safe to call concurrently with the reporter
  * thread — both share the socket and seq is atomic.
  */
@@ -1189,9 +1189,9 @@ void wsgi_telemetry_emit_process_stopping(const char *reason)
     if (!wsgi_telemetry_ctx_ready)
         return;
 
-    apr_thread_mutex_lock(wsgi_monitor_lock);
-    active = (uint64_t)wsgi_active_requests;
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
+    active = (uint64_t)wsgi_process_metrics->active_requests;
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
     seq = wsgi_telemetry_next_seq();
     n = wsgi_telemetry_encode_stopping(&wsgi_telemetry_ctx, reason, active,
@@ -1235,10 +1235,10 @@ void wsgi_telemetry_emit_process_stopped(const char *reason, int graceful)
     if (apr_atomic_cas32(&wsgi_telemetry_stopped_emitted, 1, 0) != 0)
         return;
 
-    apr_thread_mutex_lock(wsgi_monitor_lock);
-    lifetime = wsgi_total_requests;
-    active = (uint64_t)wsgi_active_requests;
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
+    lifetime = wsgi_process_metrics->total_requests;
+    active = (uint64_t)wsgi_process_metrics->active_requests;
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
     seq = wsgi_telemetry_next_seq();
     n = wsgi_telemetry_encode_stopped(&wsgi_telemetry_ctx, reason, lifetime,
@@ -1274,9 +1274,9 @@ void wsgi_telemetry_emit_final_tick(const char *reason)
     /* Graceful drain succeeded iff no requests are still in-flight at
      * this point — drain has completed and pause_reporter has joined
      * the reporter, so this is the authoritative reading. */
-    apr_thread_mutex_lock(wsgi_monitor_lock);
-    active = (uint64_t)wsgi_active_requests;
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
+    active = (uint64_t)wsgi_process_metrics->active_requests;
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
     wsgi_telemetry_emit_process_stopped(reason, active == 0);
 

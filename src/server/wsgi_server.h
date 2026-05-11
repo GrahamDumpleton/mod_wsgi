@@ -32,8 +32,6 @@ extern pid_t wsgi_worker_pid;
 extern pid_t wsgi_daemon_pid;
 extern const char *wsgi_daemon_group;
 
-extern apr_time_t wsgi_restart_time;
-
 /* Python interpreter state. */
 
 extern PyThreadState *wsgi_main_tstate;

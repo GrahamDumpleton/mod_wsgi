@@ -1876,17 +1876,17 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
 
         /* Process the request proxied from the child process. */
 
-        apr_thread_mutex_lock(wsgi_monitor_lock);
+        apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
         thread->request = apr_time_now();
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
         bucket_alloc = apr_bucket_alloc_create(ptrans);
         wsgi_process_socket(ptrans, socket, bucket_alloc, daemon);
 
-        apr_thread_mutex_lock(wsgi_monitor_lock);
+        apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
         thread->request = 0;
         thread->injected_at = 0;
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
         /* Cleanup ready for next request. */
 
@@ -1905,7 +1905,7 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                 if (!*wsgi_shutdown_reason)
                     wsgi_shutdown_reason = "maximum_requests";
 
-                apr_thread_mutex_lock(wsgi_monitor_lock);
+                apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
                 has_active = wsgi_has_active_non_stale_request_locked(
                     apr_time_now());
 
@@ -1913,7 +1913,7 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                 {
                     wsgi_graceful_shutdown_time = apr_time_now();
                     wsgi_graceful_shutdown_time += wsgi_graceful_timeout;
-                    apr_thread_mutex_unlock(wsgi_monitor_lock);
+                    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Maximum requests reached; attempting "
@@ -1923,7 +1923,7 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
                 }
                 else
                 {
-                    apr_thread_mutex_unlock(wsgi_monitor_lock);
+                    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
                     if (!wsgi_daemon_shutdown)
                     {
@@ -1946,10 +1946,10 @@ static void wsgi_daemon_worker(apr_pool_t *p, WSGIDaemonThread *thread)
         {
             int has_active;
 
-            apr_thread_mutex_lock(wsgi_monitor_lock);
+            apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
             has_active = wsgi_has_active_non_stale_request_locked(
                 apr_time_now());
-            apr_thread_mutex_unlock(wsgi_monitor_lock);
+            apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
             if (!has_active)
             {
@@ -2042,10 +2042,10 @@ static void *wsgi_deadlock_thread(apr_thread_t *thd, void *data)
                    "Enabling deadlock thread in daemon process '%s'.",
                    daemon->group->name);
 
-    apr_thread_mutex_lock(wsgi_monitor_lock);
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
     wsgi_deadlock_shutdown_time = apr_time_now();
     wsgi_deadlock_shutdown_time += wsgi_deadlock_timeout;
-    apr_thread_mutex_unlock(wsgi_monitor_lock);
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
     while (1)
     {
@@ -2061,10 +2061,10 @@ static void *wsgi_deadlock_thread(apr_thread_t *thd, void *data)
 
         apr_thread_mutex_unlock(wsgi_shutdown_lock);
 
-        apr_thread_mutex_lock(wsgi_monitor_lock);
+        apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
         wsgi_deadlock_shutdown_time = apr_time_now();
         wsgi_deadlock_shutdown_time += wsgi_deadlock_timeout;
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
     }
 
     return NULL;
@@ -2275,7 +2275,7 @@ static void wsgi_inject_request_timeout(WSGIDaemonThread *thread)
  * has been wedged for longer than that is treated as already-gone for
  * drain purposes — it will not unwind voluntarily, so waiting for it
  * before progressing to shutdown-timeout serves no purpose. Caller
- * MUST hold wsgi_monitor_lock; thread->request mutations are guarded
+ * MUST hold the monitor lock; thread->request mutations are guarded
  * by that same lock.
  */
 static int wsgi_has_active_non_stale_request_locked(apr_time_t now)
@@ -2372,7 +2372,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
 
         now = apr_time_now();
 
-        apr_thread_mutex_lock(wsgi_monitor_lock);
+        apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
         startup_time = wsgi_startup_shutdown_time;
         deadlock_time = wsgi_deadlock_shutdown_time;
@@ -2419,8 +2419,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                 if (!wsgi_interrupt_timeout)
                 {
                     escalate = 1;
-                    wsgi_dump_stack_traces_group = t->thread_info ?
-                        t->thread_info->current_application_group : NULL;
+                    wsgi_dump_stack_traces_group = t->thread_info ? t->thread_info->current_application_group : NULL;
                     break;
                 }
 
@@ -2434,14 +2433,13 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                 if ((now - t->injected_at) > wsgi_interrupt_timeout)
                 {
                     escalate = 1;
-                    wsgi_dump_stack_traces_group = t->thread_info ?
-                        t->thread_info->current_application_group : NULL;
+                    wsgi_dump_stack_traces_group = t->thread_info ? t->thread_info->current_application_group : NULL;
                     break;
                 }
             }
         }
 
-        apr_thread_mutex_unlock(wsgi_monitor_lock);
+        apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
         if (to_inject)
             wsgi_inject_request_timeout(to_inject);
@@ -2455,7 +2453,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
 
             wsgi_dump_stack_traces = 1;
 
-            apr_thread_mutex_lock(wsgi_monitor_lock);
+            apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
             has_active = wsgi_has_active_non_stale_request_locked(now);
 
             if (wsgi_graceful_timeout && has_active)
@@ -2463,7 +2461,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                 wsgi_daemon_graceful++;
                 wsgi_graceful_shutdown_time = apr_time_now();
                 wsgi_graceful_shutdown_time += wsgi_graceful_timeout;
-                apr_thread_mutex_unlock(wsgi_monitor_lock);
+                apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
                 wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                "Daemon process request time limit "
@@ -2473,7 +2471,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
             }
             else
             {
-                apr_thread_mutex_unlock(wsgi_monitor_lock);
+                apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
                 wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                "Daemon process request time limit "
@@ -2517,7 +2515,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                     {
                         int has_active;
 
-                        apr_thread_mutex_lock(wsgi_monitor_lock);
+                        apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
                         has_active =
                             wsgi_has_active_non_stale_request_locked(now);
 
@@ -2526,7 +2524,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                             wsgi_daemon_graceful++;
                             wsgi_graceful_shutdown_time = apr_time_now();
                             wsgi_graceful_shutdown_time += wsgi_graceful_timeout;
-                            apr_thread_mutex_unlock(wsgi_monitor_lock);
+                            apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
                             wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                            "Application restart timer "
@@ -2537,7 +2535,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                         }
                         else
                         {
-                            apr_thread_mutex_unlock(wsgi_monitor_lock);
+                            apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
                             wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                            "Application restart timer "
@@ -2598,10 +2596,10 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
                 {
                     int has_active;
 
-                    apr_thread_mutex_lock(wsgi_monitor_lock);
+                    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
                     has_active =
                         wsgi_has_active_non_stale_request_locked(now);
-                    apr_thread_mutex_unlock(wsgi_monitor_lock);
+                    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
                     if (!has_active)
                     {
@@ -3092,7 +3090,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                 if (!*wsgi_shutdown_reason)
                     wsgi_shutdown_reason = "cpu_time_limit";
 
-                apr_thread_mutex_lock(wsgi_monitor_lock);
+                apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
                 has_active = wsgi_has_active_non_stale_request_locked(
                     apr_time_now());
 
@@ -3101,7 +3099,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                     wsgi_daemon_graceful++;
                     wsgi_graceful_shutdown_time = apr_time_now();
                     wsgi_graceful_shutdown_time += wsgi_graceful_timeout;
-                    apr_thread_mutex_unlock(wsgi_monitor_lock);
+                    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Exceeded CPU time limit; waiting "
@@ -3111,7 +3109,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                 }
                 else
                 {
-                    apr_thread_mutex_unlock(wsgi_monitor_lock);
+                    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Exceeded CPU time limit; triggering "
@@ -3133,7 +3131,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                 if (!*wsgi_shutdown_reason)
                     wsgi_shutdown_reason = "eviction_signal";
 
-                apr_thread_mutex_lock(wsgi_monitor_lock);
+                apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
                 has_active = wsgi_has_active_non_stale_request_locked(
                     apr_time_now());
 
@@ -3142,7 +3140,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                     wsgi_daemon_graceful++;
                     wsgi_graceful_shutdown_time = apr_time_now();
                     wsgi_graceful_shutdown_time += wsgi_eviction_timeout;
-                    apr_thread_mutex_unlock(wsgi_monitor_lock);
+                    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Process eviction requested; waiting "
@@ -3152,7 +3150,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                 }
                 else
                 {
-                    apr_thread_mutex_unlock(wsgi_monitor_lock);
+                    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Process eviction requested; "
@@ -3174,7 +3172,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                 if (!*wsgi_shutdown_reason)
                     wsgi_shutdown_reason = "graceful_signal";
 
-                apr_thread_mutex_lock(wsgi_monitor_lock);
+                apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
                 has_active = wsgi_has_active_non_stale_request_locked(
                     apr_time_now());
 
@@ -3183,7 +3181,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                     wsgi_daemon_graceful++;
                     wsgi_graceful_shutdown_time = apr_time_now();
                     wsgi_graceful_shutdown_time += wsgi_graceful_timeout;
-                    apr_thread_mutex_unlock(wsgi_monitor_lock);
+                    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Graceful restart requested; waiting "
@@ -3193,7 +3191,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                 }
                 else
                 {
-                    apr_thread_mutex_unlock(wsgi_monitor_lock);
+                    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
                     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                                    "Graceful restart requested; "
@@ -3702,10 +3700,9 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             }
         }
 
-        /* Create lock for request monitoring. */
+        /* Allocate the process metrics struct (and its monitor lock). */
 
-        apr_thread_mutex_create(&wsgi_monitor_lock,
-                                APR_THREAD_MUTEX_UNNESTED, p);
+        wsgi_process_metrics_init(p);
 
         /*
          * Initialise Python if required to be done in the child
@@ -3841,7 +3838,7 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         /* Time daemon process started waiting for requests. */
 
-        wsgi_restart_time = apr_time_now();
+        wsgi_process_metrics->process_start_us = apr_time_now();
 
         /*
          * Setup Python in the child daemon process. We need
@@ -3868,10 +3865,10 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
                 {
                     wsgi_log_error(APLOG_WARNING, 0, wsgi_server,
                                    WSGI_APLOGNO(0204) "Skipping "
-                                   "WSGISwitchInterval %.6fs in daemon "
-                                   "process '%s': free-threading is "
-                                   "active in this process so there is "
-                                   "no GIL switch interval to set.",
+                                                      "WSGISwitchInterval %.6fs in daemon "
+                                                      "process '%s': free-threading is "
+                                                      "active in this process so there is "
+                                                      "no GIL switch interval to set.",
                                    daemon->group->switch_interval,
                                    daemon->group->name);
                 }
