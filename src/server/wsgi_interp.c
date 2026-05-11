@@ -3386,7 +3386,7 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
      * creation of thread info.
      */
 
-    apr_threadkey_private_create(&wsgi_thread_key, NULL, p);
+    apr_threadkey_private_create(&wsgi_process_metrics->thread_key, NULL, p);
 
     wsgi_thread_info(1, 0);
 

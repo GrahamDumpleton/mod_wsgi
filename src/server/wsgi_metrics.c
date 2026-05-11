@@ -1273,7 +1273,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     out->memory_max_rss = (uint64_t)wsgi_get_peak_memory_RSS();
 
     out->request_threads_maximum = (uint32_t)telemetry_request_threads_maximum;
-    out->request_threads_started = (uint32_t)wsgi_request_threads;
+    out->request_threads_started = (uint32_t)wsgi_process_metrics->request_threads;
 
     request_busy_time = stop_request_busy_time -
                         telemetry_start_request_busy_time;
@@ -2421,7 +2421,7 @@ static PyObject *wsgi_request_metrics(void)
                            request_threads_maximum) < 0 ||
         wsgi_dict_set_long(result,
                            WSGI_INTERNED_STRING(request_threads_started),
-                           wsgi_request_threads) < 0 ||
+                           wsgi_process_metrics->request_threads) < 0 ||
         wsgi_dict_set_long(result,
                            WSGI_INTERNED_STRING(request_threads_active),
                            request_threads_active) < 0)
@@ -2744,7 +2744,7 @@ static PyObject *wsgi_process_metrics_dict(void)
         goto error;
 
     if (wsgi_dict_set_long(result, WSGI_INTERNED_STRING(request_threads),
-                           wsgi_request_threads) < 0)
+                           wsgi_process_metrics->request_threads) < 0)
         goto error;
     if (wsgi_dict_set_long(result, WSGI_INTERNED_STRING(active_requests),
                            wsgi_process_metrics->active_requests) < 0)
@@ -2754,9 +2754,9 @@ static PyObject *wsgi_process_metrics_dict(void)
     if (!thread_list)
         goto error;
 
-    thread_info = (WSGIThreadInfo **)wsgi_thread_details->elts;
+    thread_info = (WSGIThreadInfo **)wsgi_process_metrics->thread_details->elts;
 
-    for (i = 0; i < wsgi_thread_details->nelts; i++)
+    for (i = 0; i < wsgi_process_metrics->thread_details->nelts; i++)
     {
         PyObject *entry;
 

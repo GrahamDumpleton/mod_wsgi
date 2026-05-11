@@ -71,7 +71,13 @@ typedef struct
  * wsgi_metrics_pop_slow_completed. The matching slow-request
  * threshold and metrics-options bitmask live as config-time globals
  * (wsgi_slow_threshold_us, wsgi_metrics_options) since they are set
- * by directive handlers before this struct is allocated. */
+ * by directive handlers before this struct is allocated.
+ *
+ * total_threads, request_threads, thread_key and thread_details form
+ * the per-process thread directory. wsgi_thread_info uses thread_key
+ * to look up (or lazily create) the per-thread WSGIThreadInfo block,
+ * pushing newly created entries onto thread_details under monitor_lock
+ * so the snapshot/accessor paths can iterate the directory safely. */
 typedef struct
 {
     apr_time_t process_start_us;
@@ -109,6 +115,11 @@ typedef struct
     int slow_completed_ring_size;
     int slow_completed_ring_head;
     int slow_completed_ring_count;
+
+    int total_threads;
+    int request_threads;
+    apr_threadkey_t *thread_key;
+    apr_array_header_t *thread_details;
 } WSGIProcessMetrics;
 
 extern WSGIProcessMetrics *wsgi_process_metrics;

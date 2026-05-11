@@ -59,11 +59,6 @@ typedef struct
     apr_uint64_t staged_gil_wait_count;
 } WSGIThreadInfo;
 
-extern int wsgi_total_threads;
-extern int wsgi_request_threads;
-extern apr_threadkey_t *wsgi_thread_key;
-extern apr_array_header_t *wsgi_thread_details;
-
 extern WSGIThreadInfo *wsgi_thread_info(int create, int request);
 
 typedef struct

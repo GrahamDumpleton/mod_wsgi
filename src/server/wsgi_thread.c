@@ -21,6 +21,7 @@
 #include "wsgi_thread.h"
 
 #include "wsgi_server.h"
+#include "wsgi_metrics.h"
 
 #if defined(__APPLE__)
 #include <mach/mach_init.h>
@@ -35,11 +36,6 @@
 
 /* ------------------------------------------------------------------------- */
 
-int wsgi_total_threads;
-int wsgi_request_threads;
-apr_threadkey_t *wsgi_thread_key;
-apr_array_header_t *wsgi_thread_details;
-
 /*
  * Look up (or lazily create) the per-thread WSGIThreadInfo block.
  *
@@ -50,40 +46,54 @@ apr_array_header_t *wsgi_thread_details;
  * the process on allocation failure (apr_pcalloc / apr_array_push
  * never come back NULL under Apache's default abort handler), so
  * callers passing create=1 may dereference the result unconditionally.
+ *
+ * The lazy-create path takes the monitor lock around the directory
+ * allocation, the directory push, and the total_threads counter
+ * increment so two threads first-touching simultaneously cannot race
+ * the apr_array_make / apr_array_push or read a torn counter. The
+ * request_thread promotion takes the same lock around the
+ * request_threads counter increment.
  */
 WSGIThreadInfo *wsgi_thread_info(int create, int request)
 {
+    WSGIProcessMetrics *m = wsgi_process_metrics;
     WSGIThreadInfo *thread_handle = NULL;
 
-    apr_threadkey_private_get((void **)&thread_handle, wsgi_thread_key);
+    apr_threadkey_private_get((void **)&thread_handle, m->thread_key);
 
     if (!thread_handle && create)
     {
         WSGIThreadInfo **entry = NULL;
-
-        if (!wsgi_thread_details)
-        {
-            wsgi_thread_details = apr_array_make(
-                wsgi_server->process->pool, 3, sizeof(WSGIThreadInfo *));
-        }
 
         thread_handle = (WSGIThreadInfo *)apr_pcalloc(
             wsgi_server->process->pool, sizeof(WSGIThreadInfo));
 
         thread_handle->log_buffer = NULL;
 
-        thread_handle->thread_id = wsgi_total_threads++;
+        apr_thread_mutex_lock(m->monitor_lock);
 
-        entry = (WSGIThreadInfo **)apr_array_push(wsgi_thread_details);
+        if (!m->thread_details)
+        {
+            m->thread_details = apr_array_make(
+                wsgi_server->process->pool, 3, sizeof(WSGIThreadInfo *));
+        }
+
+        thread_handle->thread_id = m->total_threads++;
+
+        entry = (WSGIThreadInfo **)apr_array_push(m->thread_details);
         *entry = thread_handle;
 
-        apr_threadkey_private_set(thread_handle, wsgi_thread_key);
+        apr_thread_mutex_unlock(m->monitor_lock);
+
+        apr_threadkey_private_set(thread_handle, m->thread_key);
     }
 
     if (thread_handle && request && !thread_handle->request_thread)
     {
+        apr_thread_mutex_lock(m->monitor_lock);
         thread_handle->request_thread = 1;
-        wsgi_request_threads++;
+        m->request_threads++;
+        apr_thread_mutex_unlock(m->monitor_lock);
     }
 
     return thread_handle;
