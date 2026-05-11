@@ -1829,6 +1829,12 @@ static PyObject *wsgi_request_metrics(void)
 
     PyObject *result = NULL;
 
+    /* External telemetry reporter is the canonical metrics consumer
+     * when enabled; suppress the Python API path so consumers can
+     * detect the configured mode by checking for None. */
+    if (wsgi_telemetry_is_enabled())
+        Py_RETURN_NONE;
+
     apr_time_t stop_time;
     double stop_request_busy_time = 0.0;
     apr_uint64_t stop_request_count = 0;
@@ -2523,6 +2529,12 @@ static PyObject *wsgi_process_metrics_dict(void)
     PyObject *result = NULL;
     PyObject *thread_list = NULL;
     WSGIThreadInfo **thread_info = NULL;
+
+    /* External telemetry reporter is the canonical metrics consumer
+     * when enabled; suppress the Python API path so consumers can
+     * detect the configured mode by checking for None. */
+    if (wsgi_telemetry_is_enabled())
+        Py_RETURN_NONE;
 
     apr_uint64_t request_count = 0;
     double busy_time = 0.0;

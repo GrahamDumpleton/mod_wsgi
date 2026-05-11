@@ -59,6 +59,11 @@ double wsgi_telemetry_interval = 1.0;
 static int wsgi_telemetry_enabled = 0;
 static int wsgi_telemetry_started = 0;
 
+int wsgi_telemetry_is_enabled(void)
+{
+    return wsgi_telemetry_enabled;
+}
+
 static apr_thread_t *wsgi_telemetry_thread = NULL;
 static volatile int wsgi_telemetry_shutdown = 0;
 

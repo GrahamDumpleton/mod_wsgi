@@ -79,6 +79,14 @@
 
 extern int wsgi_metrics_options;
 
+/* Returns non-zero if external telemetry reporting is enabled (turned
+ * on at config time by the WSGITelemetry directive). When enabled, the
+ * external reporter is the canonical metrics consumer and the Python
+ * accessors mod_wsgi.request_metrics() and mod_wsgi.process_metrics()
+ * return None to signal that the Python API path is not the active
+ * consumer. */
+extern int wsgi_telemetry_is_enabled(void);
+
 /* Field IDs. Grouped in blocks of 10 by concept. Must stay in lockstep
  * with the Python decoder table in telemetry/src/mod_wsgi_telemetry/wire.py.
  * IDs are kept stable while the wire format is in development; once a
