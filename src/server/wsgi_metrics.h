@@ -73,6 +73,21 @@ typedef struct
  * (wsgi_slow_threshold_us, wsgi_metrics_options) since they are set
  * by directive handlers before this struct is allocated.
  *
+ * The start_* fields are the per-reader baselines (last-observed
+ * snapshot of the lifetime counters). Seeded by either
+ * wsgi_metrics_telemetry_init or wsgi_start_recording_metrics; advanced
+ * on each call to whichever reader is live (wsgi_metrics_snapshot or
+ * wsgi_request_metrics). The two readers are mutually exclusive (Stage
+ * D gate ensures one returns None when the other is active), so a
+ * single shared baseline set serves both. start_time == 0.0 is the
+ * not-yet-seeded sentinel.
+ *
+ * request_threads_maximum and tick_hz are per-process constants
+ * captured once by wsgi_process_metrics_init. request_threads_maximum
+ * is the MaxRequestWorkers / WSGIDaemonProcess threads= value (queried
+ * from the daemon group or the active MPM); tick_hz is sysconf(_SC_CLK_TCK)
+ * for converting times(2) tick counts to seconds.
+ *
  * total_threads, request_threads, thread_key and thread_details form
  * the per-process thread directory. wsgi_thread_info uses thread_key
  * to look up (or lazily create) the per-thread WSGIThreadInfo block,
@@ -90,6 +105,15 @@ typedef struct
 
     int request_metrics_enabled;
     apr_uint64_t sample_requests;
+
+    double start_time;
+    double start_cpu_user_time;
+    double start_cpu_system_time;
+    double start_request_busy_time;
+    apr_uint64_t start_request_count;
+
+    int request_threads_maximum;
+    double tick_hz;
 
     WSGIPhaseAggregate server_time;
     WSGIPhaseAggregate queue_time;

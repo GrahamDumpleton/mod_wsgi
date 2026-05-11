@@ -36,6 +36,7 @@
 WSGIProcessMetrics *wsgi_process_metrics = NULL;
 
 static void wsgi_phase_aggregate_reset(WSGIPhaseAggregate *p);
+static int wsgi_query_request_threads_maximum(void);
 
 void wsgi_process_metrics_init(apr_pool_t *pool)
 {
@@ -54,6 +55,16 @@ void wsgi_process_metrics_init(apr_pool_t *pool)
     wsgi_phase_aggregate_reset(&m->gil_wait_time);
     wsgi_phase_aggregate_reset(&m->input_read_time);
     wsgi_phase_aggregate_reset(&m->output_write_time);
+
+    m->request_threads_maximum = wsgi_query_request_threads_maximum();
+
+#ifdef HAVE_TIMES
+#ifdef _SC_CLK_TCK
+    m->tick_hz = (double)sysconf(_SC_CLK_TCK);
+#else
+    m->tick_hz = (double)HZ;
+#endif
+#endif
 
     wsgi_process_metrics = m;
 }
@@ -116,21 +127,6 @@ static double wsgi_utilization_time_locked(int adjustment,
 
 apr_time_t wsgi_slow_threshold_us = 0;
 extern double wsgi_telemetry_interval;
-
-/* Per-reader baselines for the wsgi_request_metrics() Python accessor.
- * Seeded by wsgi_start_recording_metrics() (or by the legacy first-call
- * fallback in wsgi_request_metrics if start_recording_metrics was never
- * called); each subsequent wsgi_request_metrics() call computes its
- * sample interval as "now minus these baselines" and then advances them
- * to the new now. Distinct from the telemetry reporter's
- * telemetry_start_* baselines: the reporter and Python accessor are
- * mutually exclusive consumers (Stage D gate), but each maintains its
- * own baseline state for clarity. */
-static double wsgi_request_metrics_start_time = 0.0;
-static double wsgi_request_metrics_start_cpu_user_time = 0.0;
-static double wsgi_request_metrics_start_cpu_system_time = 0.0;
-static double wsgi_request_metrics_start_request_busy_time = 0.0;
-static apr_uint64_t wsgi_request_metrics_start_request_count = 0;
 
 /* Forward declarations — implementations live after wsgi_metrics_snapshot. */
 
@@ -786,28 +782,13 @@ void wsgi_end_request(void)
 /*
  * C-native interval snapshot for the telemetry reporter thread. Reads the
  * same aggregation globals as wsgi_request_metrics() but builds no Python
- * objects, so it does not require the GIL. Maintains its own per-caller
- * state (telemetry_*) so it does not interfere with the Python accessor's
- * sampling window.
+ * objects, so it does not require the GIL. Shares the per-reader baselines
+ * (start_*) on WSGIProcessMetrics with the Python accessor; the two
+ * readers are mutually exclusive (Stage D gate) so the shared baselines
+ * are only ever advanced by one of them.
  */
 
-/* C-native snapshot state. File-static so wsgi_metrics_telemetry_init can
- * seed these baselines at telemetry-start time, before any request can be
- * served. Without that early seed, the first snapshot tick (typically 1s
- * after server start) would seed with already-incremented counters and
- * lose every request that completed in the startup window. */
-static double telemetry_start_time = 0.0;
-static double telemetry_start_request_busy_time = 0.0;
-static apr_uint64_t telemetry_start_request_count = 0;
-static double telemetry_start_cpu_user_time = 0.0;
-static double telemetry_start_cpu_system_time = 0.0;
-static int telemetry_request_threads_maximum = 0;
-
-#ifdef HAVE_TIMES
-static double telemetry_tick_hz = 0.0;
-#endif
-
-static int telemetry_query_threads_maximum(void)
+static int wsgi_query_request_threads_maximum(void)
 {
     int max = 0;
     int is_threaded = 0;
@@ -836,26 +817,29 @@ static int telemetry_query_threads_maximum(void)
 
 void wsgi_metrics_telemetry_init(void)
 {
-    /* Seed the C-native snapshot baselines and enable per-request
-     * accounting from this point. Called from wsgi_telemetry_start_reporter
-     * in the daemon main thread before any worker thread has had a chance
-     * to serve a request — so wsgi_record_request_times sees enabled=1 on
-     * its very first call and request data from t=0 onwards is captured.
+    /* Seed the per-reader baselines on WSGIProcessMetrics and enable
+     * per-request accounting from this point. Called from
+     * wsgi_telemetry_start_reporter in the daemon main thread before
+     * any worker thread has had a chance to serve a request — so
+     * wsgi_record_request_times sees enabled=1 on its very first call
+     * and request data from t=0 onwards is captured.
      *
-     * Idempotent: a second call is a no-op so the periodic snapshot's
-     * legacy first-call seeding (kept as a fallback for the non-telemetry
-     * Python-accessor path) doesn't fight this initialiser. */
+     * Idempotent: a second call is a no-op. The baseline set is shared
+     * with the wsgi_request_metrics() Python accessor (Stage D gate
+     * makes the two readers mutually exclusive), so this initialiser
+     * and wsgi_start_recording_metrics seed the same fields. */
     apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
-    if (telemetry_start_time != 0.0)
+    if (wsgi_process_metrics->start_time != 0.0)
     {
         apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
         return;
     }
 
-    telemetry_start_time = (double)apr_time_now();
-    telemetry_start_request_busy_time = wsgi_utilization_time_locked(0,
-                                                                     &telemetry_start_request_count);
+    wsgi_process_metrics->start_time = (double)apr_time_now();
+    wsgi_process_metrics->start_request_busy_time =
+        wsgi_utilization_time_locked(0,
+                                     &wsgi_process_metrics->start_request_count);
 
     wsgi_process_metrics->request_metrics_enabled = 1;
 
@@ -864,22 +848,13 @@ void wsgi_metrics_telemetry_init(void)
 #ifdef HAVE_TIMES
     {
         struct tms tmsbuf;
-        if (!telemetry_tick_hz)
-        {
-#ifdef _SC_CLK_TCK
-            telemetry_tick_hz = sysconf(_SC_CLK_TCK);
-#else
-            telemetry_tick_hz = HZ;
-#endif
-        }
         times(&tmsbuf);
-        telemetry_start_cpu_user_time = tmsbuf.tms_utime / telemetry_tick_hz;
-        telemetry_start_cpu_system_time = tmsbuf.tms_stime / telemetry_tick_hz;
+        wsgi_process_metrics->start_cpu_user_time =
+            tmsbuf.tms_utime / wsgi_process_metrics->tick_hz;
+        wsgi_process_metrics->start_cpu_system_time =
+            tmsbuf.tms_stime / wsgi_process_metrics->tick_hz;
     }
 #endif
-
-    if (!telemetry_request_threads_maximum)
-        telemetry_request_threads_maximum = telemetry_query_threads_maximum();
 }
 
 /* Python-API entry point: mod_wsgi.start_recording_metrics(). Enables
@@ -897,16 +872,16 @@ static PyObject *wsgi_start_recording_metrics(void)
 {
     apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
-    if (wsgi_request_metrics_start_time != 0.0)
+    if (wsgi_process_metrics->start_time != 0.0)
     {
         apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
         Py_RETURN_NONE;
     }
 
-    wsgi_request_metrics_start_time = (double)apr_time_now();
-    wsgi_request_metrics_start_request_busy_time =
+    wsgi_process_metrics->start_time = (double)apr_time_now();
+    wsgi_process_metrics->start_request_busy_time =
         wsgi_utilization_time_locked(0,
-                                     &wsgi_request_metrics_start_request_count);
+                                     &wsgi_process_metrics->start_request_count);
 
     wsgi_process_metrics->request_metrics_enabled = 1;
 
@@ -915,17 +890,11 @@ static PyObject *wsgi_start_recording_metrics(void)
 #ifdef HAVE_TIMES
     {
         struct tms tmsbuf;
-        long ticks;
-#ifdef _SC_CLK_TCK
-        ticks = sysconf(_SC_CLK_TCK);
-#else
-        ticks = HZ;
-#endif
         times(&tmsbuf);
-        wsgi_request_metrics_start_cpu_user_time =
-            (double)tmsbuf.tms_utime / (double)ticks;
-        wsgi_request_metrics_start_cpu_system_time =
-            (double)tmsbuf.tms_stime / (double)ticks;
+        wsgi_process_metrics->start_cpu_user_time =
+            (double)tmsbuf.tms_utime / wsgi_process_metrics->tick_hz;
+        wsgi_process_metrics->start_cpu_system_time =
+            (double)tmsbuf.tms_stime / wsgi_process_metrics->tick_hz;
     }
 #endif
 
@@ -962,24 +931,12 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 
 #ifdef HAVE_TIMES
     struct tms tmsbuf;
-
-    if (!telemetry_tick_hz)
-    {
-#ifdef _SC_CLK_TCK
-        telemetry_tick_hz = sysconf(_SC_CLK_TCK);
-#else
-        telemetry_tick_hz = HZ;
-#endif
-    }
 #endif
 
     if (!out)
         return 0;
 
     memset(out, 0, sizeof(*out));
-
-    if (!telemetry_request_threads_maximum)
-        telemetry_request_threads_maximum = telemetry_query_threads_maximum();
 
     stop_time = apr_time_now();
 
@@ -995,7 +952,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     wsgi_slow_ring_ensure_locked();
 
     /* First call seeds counters and returns a not-yet-seeded sample. */
-    if (!telemetry_start_time)
+    if (!wsgi_process_metrics->start_time)
     {
         wsgi_process_metrics->sample_requests = 0;
         wsgi_phase_aggregate_reset(&wsgi_process_metrics->server_time);
@@ -1023,14 +980,16 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 
         apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
-        telemetry_start_time = stop_time;
-        telemetry_start_request_busy_time = stop_request_busy_time;
-        telemetry_start_request_count = stop_request_count;
+        wsgi_process_metrics->start_time = stop_time;
+        wsgi_process_metrics->start_request_busy_time = stop_request_busy_time;
+        wsgi_process_metrics->start_request_count = stop_request_count;
 
 #ifdef HAVE_TIMES
         times(&tmsbuf);
-        telemetry_start_cpu_user_time = tmsbuf.tms_utime / telemetry_tick_hz;
-        telemetry_start_cpu_system_time = tmsbuf.tms_stime / telemetry_tick_hz;
+        wsgi_process_metrics->start_cpu_user_time =
+            tmsbuf.tms_utime / wsgi_process_metrics->tick_hz;
+        wsgi_process_metrics->start_cpu_system_time =
+            tmsbuf.tms_stime / wsgi_process_metrics->tick_hz;
 #endif
 
         out->seeded = 0;
@@ -1093,7 +1052,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
      * getrusage(RUSAGE_THREAD) / thread_info() only sees the current
      * thread; worker threads publish their CPU delta at request-end. */
 
-    emitted_slots = telemetry_request_threads_maximum;
+    emitted_slots = wsgi_process_metrics->request_threads_maximum;
     if (emitted_slots > WSGI_TELEMETRY_MAX_SLOTS)
         emitted_slots = WSGI_TELEMETRY_MAX_SLOTS;
 
@@ -1181,7 +1140,7 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     out->seeded = 1;
 
     sample_period = apr_time_sec((double)stop_time) -
-                    apr_time_sec((double)telemetry_start_time);
+                    apr_time_sec((double)wsgi_process_metrics->start_time);
     if (sample_period <= 0.0)
         sample_period = 1e-9; /* avoid divide by zero */
 
@@ -1190,39 +1149,43 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 #ifdef HAVE_TIMES
     times(&tmsbuf);
     {
-        double stop_user = tmsbuf.tms_utime / telemetry_tick_hz;
-        double stop_system = tmsbuf.tms_stime / telemetry_tick_hz;
-        double user_rate = (stop_user - telemetry_start_cpu_user_time) /
-                           sample_period;
-        double system_rate = (stop_system - telemetry_start_cpu_system_time) /
-                             sample_period;
+        double stop_user = tmsbuf.tms_utime / wsgi_process_metrics->tick_hz;
+        double stop_system = tmsbuf.tms_stime / wsgi_process_metrics->tick_hz;
+        double user_rate =
+            (stop_user - wsgi_process_metrics->start_cpu_user_time) /
+            sample_period;
+        double system_rate =
+            (stop_system - wsgi_process_metrics->start_cpu_system_time) /
+            sample_period;
 
         out->cpu_user_utilization = user_rate;
         out->cpu_system_utilization = system_rate;
         out->cpu_utilization = user_rate + system_rate;
 
-        telemetry_start_cpu_user_time = stop_user;
-        telemetry_start_cpu_system_time = stop_system;
+        wsgi_process_metrics->start_cpu_user_time = stop_user;
+        wsgi_process_metrics->start_cpu_system_time = stop_system;
     }
 #endif
 
     out->memory_rss = (uint64_t)wsgi_get_current_memory_RSS();
     out->memory_max_rss = (uint64_t)wsgi_get_peak_memory_RSS();
 
-    out->request_threads_maximum = (uint32_t)telemetry_request_threads_maximum;
+    out->request_threads_maximum =
+        (uint32_t)wsgi_process_metrics->request_threads_maximum;
     out->request_threads_started = (uint32_t)wsgi_process_metrics->request_threads;
 
     request_busy_time = stop_request_busy_time -
-                        telemetry_start_request_busy_time;
+                        wsgi_process_metrics->start_request_busy_time;
     out->capacity_utilization = request_busy_time / sample_period /
-                                telemetry_request_threads_maximum;
+                                wsgi_process_metrics->request_threads_maximum;
 
-    out->request_count = stop_request_count - telemetry_start_request_count;
+    out->request_count =
+        stop_request_count - wsgi_process_metrics->start_request_count;
     out->request_throughput = (sample_period > 0) ? (double)out->request_count / sample_period : 0.0;
 
-    telemetry_start_time = stop_time;
-    telemetry_start_request_busy_time = stop_request_busy_time;
-    telemetry_start_request_count = stop_request_count;
+    wsgi_process_metrics->start_time = stop_time;
+    wsgi_process_metrics->start_request_busy_time = stop_request_busy_time;
+    wsgi_process_metrics->start_request_count = stop_request_count;
 
     out->request_threads_active = (uint32_t)threads_active;
 
@@ -1908,11 +1871,11 @@ static PyObject *wsgi_request_metrics(void)
 
     /* Per-request recording must be opted in via
      * mod_wsgi.start_recording_metrics() before this accessor returns
-     * data. The opt-in seeds the per-reader baselines used below; an
-     * uninitialised wsgi_request_metrics_start_time means the caller
-     * has not yet opted in, so signal that with None rather than
-     * synthesising an empty "first call" sample. */
-    if (wsgi_request_metrics_start_time == 0.0)
+     * data. The opt-in seeds the shared per-reader baselines used
+     * below; an uninitialised start_time means the caller has not yet
+     * opted in, so signal that with None rather than synthesising an
+     * empty "first call" sample. */
+    if (wsgi_process_metrics->start_time == 0.0)
         Py_RETURN_NONE;
 
     apr_time_t stop_time;
@@ -1932,7 +1895,7 @@ static PyObject *wsgi_request_metrics(void)
     double cpu_user_time = 0.0;
     double total_cpu_time = 0.0;
 
-    static int request_threads_maximum = 0;
+    int request_threads_maximum = wsgi_process_metrics->request_threads_maximum;
     static int *slot_completed_snap = NULL;
     static int *slot_busy_us_snap = NULL;
     static int *slot_cpu_us_snap = NULL;
@@ -2002,16 +1965,6 @@ static PyObject *wsgi_request_metrics(void)
 
 #ifdef HAVE_TIMES
     struct tms tmsbuf;
-    static double tick = 0.0;
-
-    if (!tick)
-    {
-#ifdef _SC_CLK_TCK
-        tick = sysconf(_SC_CLK_TCK);
-#else
-        tick = HZ;
-#endif
-    }
 #endif
 
     module = PyImport_ImportModule("mod_wsgi");
@@ -2025,33 +1978,8 @@ static PyObject *wsgi_request_metrics(void)
         return NULL;
     }
 
-    if (!request_threads_maximum)
+    if (!slot_completed_snap)
     {
-        int is_threaded = 0;
-
-#if defined(MOD_WSGI_WITH_DAEMONS)
-        if (wsgi_daemon_process)
-        {
-            request_threads_maximum = wsgi_daemon_process->group->threads;
-        }
-        else
-        {
-            ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
-            if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
-            {
-                ap_mpm_query(AP_MPMQ_MAX_THREADS, &request_threads_maximum);
-            }
-        }
-#else
-        ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
-        if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
-        {
-            ap_mpm_query(AP_MPMQ_MAX_THREADS, &request_threads_maximum);
-        }
-#endif
-
-        request_threads_maximum = ((request_threads_maximum <= 0) ? 1 : request_threads_maximum);
-
         slot_completed_snap = (int *)apr_pcalloc(
             wsgi_server_config->pool,
             request_threads_maximum * sizeof(slot_completed_snap[0]));
@@ -2077,8 +2005,8 @@ static PyObject *wsgi_request_metrics(void)
 
 #ifdef HAVE_TIMES
     times(&tmsbuf);
-    stop_cpu_user_time = tmsbuf.tms_utime / tick;
-    stop_cpu_system_time = tmsbuf.tms_stime / tick;
+    stop_cpu_user_time = tmsbuf.tms_utime / wsgi_process_metrics->tick_hz;
+    stop_cpu_system_time = tmsbuf.tms_stime / wsgi_process_metrics->tick_hz;
 #endif
 
     /* One locked region covers the utilization read AND the accumulator
@@ -2250,24 +2178,24 @@ static PyObject *wsgi_request_metrics(void)
      * the per-slot active-thread count, before any Python construction
      * begins so the publish path is purely "encode + dict-set". */
     sample_period = (apr_time_sec((double)stop_time) -
-                     apr_time_sec((double)wsgi_request_metrics_start_time));
+                     apr_time_sec((double)wsgi_process_metrics->start_time));
 
 #ifdef HAVE_TIMES
     cpu_user_time =
-        ((stop_cpu_user_time - wsgi_request_metrics_start_cpu_user_time) /
+        ((stop_cpu_user_time - wsgi_process_metrics->start_cpu_user_time) /
          sample_period);
     cpu_system_time =
-        ((stop_cpu_system_time - wsgi_request_metrics_start_cpu_system_time) /
+        ((stop_cpu_system_time - wsgi_process_metrics->start_cpu_system_time) /
          sample_period);
     total_cpu_time = cpu_user_time + cpu_system_time;
 #endif
 
     request_busy_time = stop_request_busy_time -
-                        wsgi_request_metrics_start_request_busy_time;
+                        wsgi_process_metrics->start_request_busy_time;
     capacity_utilization = (request_busy_time / sample_period /
                             request_threads_maximum);
     request_count = stop_request_count -
-                    wsgi_request_metrics_start_request_count;
+                    wsgi_process_metrics->start_request_count;
     request_throughput = sample_period ? request_count / sample_period : 0;
 
     /* The locked region above drained the per-interval aggregates so
@@ -2275,11 +2203,11 @@ static PyObject *wsgi_request_metrics(void)
      * the next call's rate metrics consistent with its per-phase means
      * even if the publish phase below fails. Done after the rate
      * deltas have been computed against the prior baselines. */
-    wsgi_request_metrics_start_time = stop_time;
-    wsgi_request_metrics_start_request_busy_time = stop_request_busy_time;
-    wsgi_request_metrics_start_request_count = stop_request_count;
-    wsgi_request_metrics_start_cpu_user_time = stop_cpu_user_time;
-    wsgi_request_metrics_start_cpu_system_time = stop_cpu_system_time;
+    wsgi_process_metrics->start_time = stop_time;
+    wsgi_process_metrics->start_request_busy_time = stop_request_busy_time;
+    wsgi_process_metrics->start_request_count = stop_request_count;
+    wsgi_process_metrics->start_cpu_user_time = stop_cpu_user_time;
+    wsgi_process_metrics->start_cpu_system_time = stop_cpu_system_time;
 
     for (i = 0; i < request_threads_maximum; i++)
     {
@@ -2303,7 +2231,7 @@ static PyObject *wsgi_request_metrics(void)
         goto error;
     if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(start_time),
                              apr_time_sec(
-                                 (double)wsgi_request_metrics_start_time)) < 0)
+                                 (double)wsgi_process_metrics->start_time)) < 0)
         goto error;
     if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(stop_time),
                              apr_time_sec((double)stop_time)) < 0)
@@ -2591,7 +2519,6 @@ static PyObject *wsgi_process_metrics_dict(void)
 
 #ifdef HAVE_TIMES
     struct tms tmsbuf;
-    static double tick = 0.0;
 #endif
 
     apr_time_t current_time;
@@ -2639,25 +2566,17 @@ static PyObject *wsgi_process_metrics_dict(void)
         goto error;
 
 #ifdef HAVE_TIMES
-    if (!tick)
-    {
-#ifdef _SC_CLK_TCK
-        tick = sysconf(_SC_CLK_TCK);
-#else
-        tick = HZ;
-#endif
-    }
-
     times(&tmsbuf);
 
     if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(cpu_user_time),
-                             tmsbuf.tms_utime / tick) < 0)
+                             tmsbuf.tms_utime / wsgi_process_metrics->tick_hz) < 0)
         goto error;
     if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(cpu_system_time),
-                             tmsbuf.tms_stime / tick) < 0)
+                             tmsbuf.tms_stime / wsgi_process_metrics->tick_hz) < 0)
         goto error;
     if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(cpu_time),
-                             (tmsbuf.tms_utime + tmsbuf.tms_stime) / tick) < 0)
+                             (tmsbuf.tms_utime + tmsbuf.tms_stime) /
+                                 wsgi_process_metrics->tick_hz) < 0)
         goto error;
 #endif
 
