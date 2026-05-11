@@ -29,6 +29,21 @@
 
 /* ------------------------------------------------------------------------- */
 
+/* Per-phase aggregator: total time, log-spaced histogram, and exact
+ * min/max for one interval. Eight instances drive the per-tick
+ * aggregation in wsgi_metrics.c (server / queue / daemon / application
+ * / request phase totals plus the cross-cutting gil_wait / input_read /
+ * output_write totals). min_us == UINT64_MAX is the "no samples this
+ * interval" sentinel; encoders skip emission when the sentinel is in
+ * place. Caller controls locking. */
+typedef struct
+{
+    double total;
+    int buckets[WSGI_TELEMETRY_BUCKET_COUNT];
+    apr_uint64_t min_us;
+    apr_uint64_t max_us;
+} WSGIPhaseAggregate;
+
 extern apr_uint64_t wsgi_total_requests;
 extern int wsgi_active_requests;
 
