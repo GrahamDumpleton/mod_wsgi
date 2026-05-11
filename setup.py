@@ -402,7 +402,7 @@ if os.name != 'nt':
 # Now finally run setuptools.
 
 package_name = 'mod_wsgi'
-long_description = open('README.rst').read()
+long_description = open('README-express.rst').read()
 
 standalone = os.path.exists('pyproject.toml')
 
