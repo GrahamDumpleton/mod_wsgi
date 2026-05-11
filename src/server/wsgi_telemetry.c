@@ -650,9 +650,9 @@ static void wsgi_telemetry_emit_tick(const wsgi_telemetry_ctx_t *ctx)
         return;
 
     /* Populate identity + reporter config that the snapshot function
-     * does not fill. wsgi_slow_threshold_us is in microseconds, exposed
-     * as seconds on the wire so the UI can compare directly with the
-     * heatmap stuck-threshold dropdown. */
+     * does not fill. The slow-request threshold is in microseconds,
+     * exposed as seconds on the wire so the UI can compare directly
+     * with the heatmap stuck-threshold dropdown. */
     strncpy(sample.hostname, ctx->hostname, sizeof(sample.hostname) - 1);
     sample.hostname[sizeof(sample.hostname) - 1] = '\0';
     strncpy(sample.process_group, ctx->process_group,

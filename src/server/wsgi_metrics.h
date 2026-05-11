@@ -47,8 +47,8 @@ typedef struct
 /* Process-wide metrics state. One instance per Apache child process
  * (embedded mode) or per daemon process (daemon mode), allocated from
  * the process pool at child init by wsgi_process_metrics_init. Holds
- * the synchronisation primitive, process identity, and lifetime
- * aggregates that are shared across every recorder/snapshot path.
+ * the synchronisation primitive, process identity, lifetime aggregates,
+ * per-tick interval aggregators, and the slow-request tracking ring.
  *
  * monitor_lock is the coarse mutex covering the per-tick aggregators,
  * lifetime counters, the per-thread slot arrays, and the slow-completion
@@ -57,18 +57,67 @@ typedef struct
  * total_requests, active_requests, thread_utilization and
  * utilization_last form the request-busy-time integral and the gauge
  * pair, all read-modify-write under monitor_lock by
- * wsgi_utilization_time_locked. */
+ * wsgi_utilization_time_locked.
+ *
+ * The per-tick aggregators (sample_requests through status_5xx_count)
+ * and the WSGIPhaseAggregate phase blocks are accumulated by
+ * wsgi_record_request_times under monitor_lock and drained by either
+ * wsgi_metrics_snapshot or the wsgi_request_metrics Python accessor.
+ * request_metrics_enabled gates accumulation; flipped on at first
+ * snapshot/accessor call.
+ *
+ * The slow_completed_ring* fields back the lazy ring buffer of
+ * completed slow records that the reporter/accessor drains via
+ * wsgi_metrics_pop_slow_completed. The matching slow-request
+ * threshold and metrics-options bitmask live as config-time globals
+ * (wsgi_slow_threshold_us, wsgi_metrics_options) since they are set
+ * by directive handlers before this struct is allocated. */
 typedef struct
 {
     apr_time_t process_start_us;
     apr_thread_mutex_t *monitor_lock;
+
     apr_uint64_t total_requests;
     int active_requests;
     double thread_utilization;
     apr_time_t utilization_last;
+
+    int request_metrics_enabled;
+    apr_uint64_t sample_requests;
+
+    WSGIPhaseAggregate server_time;
+    WSGIPhaseAggregate queue_time;
+    WSGIPhaseAggregate daemon_time;
+    WSGIPhaseAggregate application_time;
+    WSGIPhaseAggregate request_time;
+    WSGIPhaseAggregate gil_wait_time;
+    WSGIPhaseAggregate input_read_time;
+    WSGIPhaseAggregate output_write_time;
+
+    apr_uint64_t gil_wait_count_total;
+    apr_uint64_t input_bytes_total;
+    apr_uint64_t input_reads_total;
+    apr_uint64_t output_bytes_total;
+    apr_uint64_t output_writes_total;
+    apr_uint64_t status_1xx_count;
+    apr_uint64_t status_2xx_count;
+    apr_uint64_t status_3xx_count;
+    apr_uint64_t status_4xx_count;
+    apr_uint64_t status_5xx_count;
+
+    wsgi_slow_request_t *slow_completed_ring;
+    int slow_completed_ring_size;
+    int slow_completed_ring_head;
+    int slow_completed_ring_count;
 } WSGIProcessMetrics;
 
 extern WSGIProcessMetrics *wsgi_process_metrics;
+
+/* Slow-request threshold (microseconds; 0 disables the feature). Set
+ * once from the WSGISlowRequests directive at config time, before
+ * wsgi_process_metrics_init runs at child init, which is why it lives
+ * as a separate global rather than as a field on WSGIProcessMetrics. */
+extern apr_time_t wsgi_slow_threshold_us;
 
 /* Allocate the WSGIProcessMetrics instance and create its monitor lock
  * from the supplied pool. Called once per child / daemon process at
@@ -120,11 +169,6 @@ extern int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out);
  * interval would silently drop everything served in the startup
  * window). Idempotent. */
 extern void wsgi_metrics_telemetry_init(void);
-
-/* Slow-request tracking. threshold_us == 0 disables the feature; set
- * from the WSGISlowRequests directive at config time. Must be written
- * before the telemetry reporter thread starts. */
-extern apr_time_t wsgi_slow_threshold_us;
 
 /* Pop one completed slow-request record from the finalize ring. Returns 1
  * if one was copied into *out, 0 if the ring was empty. Takes
