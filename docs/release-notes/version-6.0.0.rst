@@ -286,9 +286,9 @@ Features Changed
   on every call thereafter (no more empty first-call sample). The new
   function is idempotent and safe to call unconditionally at
   application import time. When external telemetry reporting is
-  enabled (``WSGITelemetry`` directive), the accessors continue to
-  return ``None`` regardless and ``start_recording_metrics()`` has no
-  observable effect from the Python API. Applications that previously
+  enabled (``WSGIMetricsService`` directive), the accessors continue
+  to return ``None`` regardless and ``start_recording_metrics()`` has
+  no observable effect from the Python API. Applications that previously
   relied on the lazy enable should add a call to
   ``mod_wsgi.start_recording_metrics()`` at module import time.
 

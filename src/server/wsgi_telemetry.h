@@ -80,11 +80,11 @@
 extern int wsgi_metrics_options;
 
 /* Returns non-zero if external telemetry reporting is enabled (turned
- * on at config time by the WSGITelemetry directive). When enabled, the
- * external reporter is the canonical metrics consumer and the Python
- * accessors mod_wsgi.request_metrics() and mod_wsgi.process_metrics()
- * return None to signal that the Python API path is not the active
- * consumer. */
+ * on at config time by the WSGIMetricsService directive). When enabled,
+ * the external reporter is the canonical metrics consumer and the
+ * Python accessors mod_wsgi.request_metrics() and
+ * mod_wsgi.process_metrics() return None to signal that the Python API
+ * path is not the active consumer. */
 extern int wsgi_telemetry_is_enabled(void);
 
 /* Field IDs. Grouped in blocks of 10 by concept. Must stay in lockstep
@@ -107,12 +107,12 @@ extern int wsgi_telemetry_is_enabled(void);
 
 /* 10-19: Sampling and reporter configuration. sample_period is the
  * measured wall-clock interval between two snapshot calls (drifts with
- * scheduling jitter); telemetry_interval is the configured WSGITelemetry
- * directive value (constant for the life of the process). They normally
- * agree to within a few ms but can diverge under load.
- * slow_requests_threshold is the configured WSGISlowRequests value in
- * seconds (0 when the directive is not configured, in which case slow-
- * request datagrams never fire). */
+ * scheduling jitter); telemetry_interval is the configured
+ * WSGIMetricsService interval value (constant for the life of the
+ * process). They normally agree to within a few ms but can diverge
+ * under load. slow_requests_threshold is the configured
+ * WSGISlowRequests value in seconds (0 when the directive is not
+ * configured, in which case slow-request datagrams never fire). */
 #define WSGI_METRICS_F_SAMPLE_PERIOD 10           /* f64 */
 #define WSGI_METRICS_F_TELEMETRY_INTERVAL 11      /* f64 */
 #define WSGI_METRICS_F_SLOW_REQUESTS_THRESHOLD 12 /* f64 */
