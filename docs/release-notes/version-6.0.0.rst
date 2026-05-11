@@ -272,6 +272,26 @@ Features Changed
   importing it now emits a ``FutureWarning`` and the module will be
   removed in a future release.
 
+* Per-request metrics accounting consumed by the Python API
+  (``mod_wsgi.request_metrics()`` and ``mod_wsgi.process_metrics()``)
+  now requires an explicit opt-in via the new
+  ``mod_wsgi.start_recording_metrics()`` function. Previously the
+  first call to ``request_metrics()`` enabled accounting as a side
+  effect and returned an empty "seeding" sample, while
+  ``process_metrics()`` did not enable it at all — an asymmetry that
+  meant an application polling only ``process_metrics()`` would never
+  see the per-tick aggregator data come on. With the explicit opt-in,
+  both accessors gate identically: they return ``None`` until
+  ``start_recording_metrics()`` is called, and return populated dicts
+  on every call thereafter (no more empty first-call sample). The new
+  function is idempotent and safe to call unconditionally at
+  application import time. When external telemetry reporting is
+  enabled (``WSGITelemetry`` directive), the accessors continue to
+  return ``None`` regardless and ``start_recording_metrics()`` has no
+  observable effect from the Python API. Applications that previously
+  relied on the lazy enable should add a call to
+  ``mod_wsgi.start_recording_metrics()`` at module import time.
+
 Features Removed
 ----------------
 

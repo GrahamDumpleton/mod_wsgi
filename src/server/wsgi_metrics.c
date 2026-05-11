@@ -117,6 +117,21 @@ static double wsgi_utilization_time_locked(int adjustment,
 apr_time_t wsgi_slow_threshold_us = 0;
 extern double wsgi_telemetry_interval;
 
+/* Per-reader baselines for the wsgi_request_metrics() Python accessor.
+ * Seeded by wsgi_start_recording_metrics() (or by the legacy first-call
+ * fallback in wsgi_request_metrics if start_recording_metrics was never
+ * called); each subsequent wsgi_request_metrics() call computes its
+ * sample interval as "now minus these baselines" and then advances them
+ * to the new now. Distinct from the telemetry reporter's
+ * telemetry_start_* baselines: the reporter and Python accessor are
+ * mutually exclusive consumers (Stage D gate), but each maintains its
+ * own baseline state for clarity. */
+static double wsgi_request_metrics_start_time = 0.0;
+static double wsgi_request_metrics_start_cpu_user_time = 0.0;
+static double wsgi_request_metrics_start_cpu_system_time = 0.0;
+static double wsgi_request_metrics_start_request_busy_time = 0.0;
+static apr_uint64_t wsgi_request_metrics_start_request_count = 0;
+
 /* Forward declarations — implementations live after wsgi_metrics_snapshot. */
 
 static void wsgi_slow_ring_ensure_locked(void);
@@ -866,6 +881,62 @@ void wsgi_metrics_telemetry_init(void)
     if (!telemetry_request_threads_maximum)
         telemetry_request_threads_maximum = telemetry_query_threads_maximum();
 }
+
+/* Python-API entry point: mod_wsgi.start_recording_metrics(). Enables
+ * per-request metrics accounting for the wsgi_request_metrics() and
+ * wsgi_process_metrics() Python accessors, and seeds the per-reader
+ * baselines so the first wsgi_request_metrics() call returns data
+ * covering the interval since this function ran (rather than an empty
+ * "first call seeds" sample).
+ *
+ * Idempotent. A no-op when external telemetry reporting is enabled
+ * (the reporter has already turned recording on for itself, and the
+ * Python accessors will return None regardless under the Stage D
+ * gate). Safe to call unconditionally at app init. */
+static PyObject *wsgi_start_recording_metrics(void)
+{
+    apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
+
+    if (wsgi_request_metrics_start_time != 0.0)
+    {
+        apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
+        Py_RETURN_NONE;
+    }
+
+    wsgi_request_metrics_start_time = (double)apr_time_now();
+    wsgi_request_metrics_start_request_busy_time =
+        wsgi_utilization_time_locked(0,
+                                     &wsgi_request_metrics_start_request_count);
+
+    wsgi_process_metrics->request_metrics_enabled = 1;
+
+    apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
+
+#ifdef HAVE_TIMES
+    {
+        struct tms tmsbuf;
+        long ticks;
+#ifdef _SC_CLK_TCK
+        ticks = sysconf(_SC_CLK_TCK);
+#else
+        ticks = HZ;
+#endif
+        times(&tmsbuf);
+        wsgi_request_metrics_start_cpu_user_time =
+            (double)tmsbuf.tms_utime / (double)ticks;
+        wsgi_request_metrics_start_cpu_system_time =
+            (double)tmsbuf.tms_stime / (double)ticks;
+    }
+#endif
+
+    Py_RETURN_NONE;
+}
+
+PyMethodDef wsgi_start_recording_metrics_method[] = {
+    {"start_recording_metrics", (PyCFunction)wsgi_start_recording_metrics,
+     METH_NOARGS, 0},
+    {NULL},
+};
 
 int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 {
@@ -1835,18 +1906,21 @@ static PyObject *wsgi_request_metrics(void)
     if (wsgi_telemetry_is_enabled())
         Py_RETURN_NONE;
 
+    /* Per-request recording must be opted in via
+     * mod_wsgi.start_recording_metrics() before this accessor returns
+     * data. The opt-in seeds the per-reader baselines used below; an
+     * uninitialised wsgi_request_metrics_start_time means the caller
+     * has not yet opted in, so signal that with None rather than
+     * synthesising an empty "first call" sample. */
+    if (wsgi_request_metrics_start_time == 0.0)
+        Py_RETURN_NONE;
+
     apr_time_t stop_time;
     double stop_request_busy_time = 0.0;
     apr_uint64_t stop_request_count = 0;
 
     double request_busy_time = 0.0;
     double capacity_utilization = 0.0;
-
-    static double start_time = 0.0;
-    static double start_cpu_system_time = 0.0;
-    static double start_cpu_user_time = 0.0;
-    static double start_request_busy_time = 0.0;
-    static apr_uint64_t start_request_count = 0;
 
     double sample_period = 0.0;
     apr_uint64_t request_count = 0;
@@ -2016,50 +2090,9 @@ static PyObject *wsgi_request_metrics(void)
     stop_request_busy_time = wsgi_utilization_time_locked(0,
                                                           &stop_request_count);
 
-    /* Ensure slot arrays exist even if no request has been served yet. */
+    /* Ensure slow-completion ring exists even if no request has been
+     * served yet. */
     wsgi_slow_ring_ensure_locked();
-
-    if (!start_time)
-    {
-        wsgi_process_metrics->sample_requests = 0;
-        wsgi_phase_aggregate_reset(&wsgi_process_metrics->server_time);
-        wsgi_phase_aggregate_reset(&wsgi_process_metrics->queue_time);
-        wsgi_phase_aggregate_reset(&wsgi_process_metrics->daemon_time);
-        wsgi_phase_aggregate_reset(&wsgi_process_metrics->application_time);
-        wsgi_phase_aggregate_reset(&wsgi_process_metrics->request_time);
-        wsgi_phase_aggregate_reset(&wsgi_process_metrics->gil_wait_time);
-        wsgi_phase_aggregate_reset(&wsgi_process_metrics->input_read_time);
-        wsgi_phase_aggregate_reset(&wsgi_process_metrics->output_write_time);
-        wsgi_process_metrics->gil_wait_count_total = 0;
-
-        wsgi_process_metrics->input_bytes_total = 0;
-        wsgi_process_metrics->input_reads_total = 0;
-        wsgi_process_metrics->output_bytes_total = 0;
-        wsgi_process_metrics->output_writes_total = 0;
-
-        wsgi_process_metrics->status_1xx_count = 0;
-        wsgi_process_metrics->status_2xx_count = 0;
-        wsgi_process_metrics->status_3xx_count = 0;
-        wsgi_process_metrics->status_4xx_count = 0;
-        wsgi_process_metrics->status_5xx_count = 0;
-
-        wsgi_process_metrics->request_metrics_enabled = 1;
-
-        apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
-
-        start_time = stop_time;
-        start_request_busy_time = stop_request_busy_time;
-        start_request_count = stop_request_count;
-#ifdef HAVE_TIMES
-        start_cpu_user_time = stop_cpu_user_time;
-        start_cpu_system_time = stop_cpu_system_time;
-#else
-        start_cpu_user_time = 0.0;
-        start_cpu_system_time = 0.0;
-#endif
-
-        return result;
-    }
 
     interval_requests = wsgi_process_metrics->sample_requests;
     server_time_total = wsgi_process_metrics->server_time.total;
@@ -2217,31 +2250,36 @@ static PyObject *wsgi_request_metrics(void)
      * the per-slot active-thread count, before any Python construction
      * begins so the publish path is purely "encode + dict-set". */
     sample_period = (apr_time_sec((double)stop_time) -
-                     apr_time_sec((double)start_time));
+                     apr_time_sec((double)wsgi_request_metrics_start_time));
+
+#ifdef HAVE_TIMES
+    cpu_user_time =
+        ((stop_cpu_user_time - wsgi_request_metrics_start_cpu_user_time) /
+         sample_period);
+    cpu_system_time =
+        ((stop_cpu_system_time - wsgi_request_metrics_start_cpu_system_time) /
+         sample_period);
+    total_cpu_time = cpu_user_time + cpu_system_time;
+#endif
+
+    request_busy_time = stop_request_busy_time -
+                        wsgi_request_metrics_start_request_busy_time;
+    capacity_utilization = (request_busy_time / sample_period /
+                            request_threads_maximum);
+    request_count = stop_request_count -
+                    wsgi_request_metrics_start_request_count;
+    request_throughput = sample_period ? request_count / sample_period : 0;
 
     /* The locked region above drained the per-interval aggregates so
      * this interval is consumed; advancing the baselines here keeps
      * the next call's rate metrics consistent with its per-phase means
-     * even if the publish phase below fails. */
-    start_time = stop_time;
-    start_request_busy_time = stop_request_busy_time;
-    start_request_count = stop_request_count;
-    start_cpu_user_time = stop_cpu_user_time;
-    start_cpu_system_time = stop_cpu_system_time;
-
-#ifdef HAVE_TIMES
-    cpu_user_time = ((stop_cpu_user_time - start_cpu_user_time) /
-                     sample_period);
-    cpu_system_time = ((stop_cpu_system_time - start_cpu_system_time) /
-                       sample_period);
-    total_cpu_time = cpu_user_time + cpu_system_time;
-#endif
-
-    request_busy_time = stop_request_busy_time - start_request_busy_time;
-    capacity_utilization = (request_busy_time / sample_period /
-                            request_threads_maximum);
-    request_count = stop_request_count - start_request_count;
-    request_throughput = sample_period ? request_count / sample_period : 0;
+     * even if the publish phase below fails. Done after the rate
+     * deltas have been computed against the prior baselines. */
+    wsgi_request_metrics_start_time = stop_time;
+    wsgi_request_metrics_start_request_busy_time = stop_request_busy_time;
+    wsgi_request_metrics_start_request_count = stop_request_count;
+    wsgi_request_metrics_start_cpu_user_time = stop_cpu_user_time;
+    wsgi_request_metrics_start_cpu_system_time = stop_cpu_system_time;
 
     for (i = 0; i < request_threads_maximum; i++)
     {
@@ -2264,7 +2302,8 @@ static PyObject *wsgi_request_metrics(void)
     if (wsgi_dict_set_long(result, WSGI_INTERNED_STRING(pid), getpid()) < 0)
         goto error;
     if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(start_time),
-                             apr_time_sec((double)start_time)) < 0)
+                             apr_time_sec(
+                                 (double)wsgi_request_metrics_start_time)) < 0)
         goto error;
     if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(stop_time),
                              apr_time_sec((double)stop_time)) < 0)
@@ -2534,6 +2573,15 @@ static PyObject *wsgi_process_metrics_dict(void)
      * when enabled; suppress the Python API path so consumers can
      * detect the configured mode by checking for None. */
     if (wsgi_telemetry_is_enabled())
+        Py_RETURN_NONE;
+
+    /* Per-request recording must be opted in via
+     * mod_wsgi.start_recording_metrics() before this accessor returns
+     * data. Both Python accessors share the same opt-in so an
+     * application can branch on a single None check rather than
+     * tracking which one happens to enable recording as a side
+     * effect. */
+    if (!wsgi_process_metrics->request_metrics_enabled)
         Py_RETURN_NONE;
 
     apr_uint64_t request_count = 0;

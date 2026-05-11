@@ -137,6 +137,11 @@ static int wsgi_module_install_common(PyObject *module)
                                                NULL)) < 0)
         return -1;
 
+    if (wsgi_module_add_object(module, "start_recording_metrics",
+                               PyCFunction_New(&wsgi_start_recording_metrics_method[0],
+                                               NULL)) < 0)
+        return -1;
+
     if (wsgi_module_add_object(module, "subscribe_events",
                                PyCFunction_New(&wsgi_subscribe_events_method[0],
                                                NULL)) < 0)

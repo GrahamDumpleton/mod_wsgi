@@ -181,16 +181,31 @@ Per-request state
 Metrics
 -------
 
+``start_recording_metrics()``
+   Enable per-request metrics accounting and seed the per-reader
+   baselines so subsequent calls to ``request_metrics()`` and
+   ``process_metrics()`` return data. Idempotent; safe to call
+   unconditionally at application import time. When external
+   telemetry reporting is enabled (the ``WSGITelemetry`` directive),
+   the external reporter is the canonical metrics consumer and this
+   call has no observable effect from the Python API: the two
+   accessors below still return ``None`` to signal the configured
+   mode. Without an explicit call to this function, both accessors
+   return ``None`` even when telemetry is off.
+
 ``request_metrics()``
-   Return a dict of timing and resource counters for the current
-   in-flight request. Useful for emitting per-request observability
-   data from the application.
+   Return a dict of timing and resource counters for the sample
+   interval since the last call. Useful for emitting per-request
+   observability data from the application. Returns ``None`` if
+   ``start_recording_metrics()`` has not been called or if external
+   telemetry reporting is enabled.
 
 ``process_metrics()``
    Return a dict of process-level aggregates: served-request
    count, request busy time, current and peak resident memory,
    CPU user and system time, current active-request count, and
-   similar counters covering the lifetime of the process.
+   similar counters covering the lifetime of the process. Returns
+   ``None`` under the same conditions as ``request_metrics()``.
 
 ``server_metrics()``
    Return a dict reflecting the Apache scoreboard view of the

@@ -89,8 +89,11 @@ assert_body_contains "$URL/process-metrics" "'threads'" \
     "process metrics contains threads"
 
 # -- Request metrics --
-# First call initialises the collection period (returns empty-ish dict).
-# Second call returns actual metrics from the interval.
+# The fixture in tests/wsgi/metrics.py calls
+# mod_wsgi.start_recording_metrics() at module import, so request_metrics()
+# returns data on the first call. The warm-up call here just resets the
+# per-reader baseline so the subsequent assertions see a fresh interval
+# covering the three /basic requests below.
 
 curl "${CURL_COMMON[@]}" -s "$URL/request-metrics" > /dev/null
 

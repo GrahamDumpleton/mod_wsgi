@@ -139,6 +139,8 @@ extern PyMethodDef wsgi_request_metrics_method[];
 
 extern PyMethodDef wsgi_process_metrics_method[];
 
+extern PyMethodDef wsgi_start_recording_metrics_method[];
+
 /*
  * Populate the metrics-owned fields of `module`'s WSGIModuleState
  * (the wsgi_id_* interned key strings and the scoreboard

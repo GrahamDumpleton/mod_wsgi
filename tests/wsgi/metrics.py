@@ -11,8 +11,6 @@ Endpoints:
 
   /test/wsgi/metrics/request-metrics
     Returns the result of mod_wsgi.request_metrics() as text.
-    Must be called at least twice — the first call initialises
-    the collection period and returns an empty dict.
 
   /test/wsgi/metrics/process-metrics
     Returns the result of mod_wsgi.process_metrics() as text.
@@ -33,6 +31,11 @@ Endpoints:
 import mod_wsgi
 import os
 import threading
+
+# Opt in to per-request metrics recording at module import time so the
+# request_metrics() / process_metrics() endpoints below return data
+# rather than None on their first call.
+mod_wsgi.start_recording_metrics()
 
 # Track events received during process lifetime.
 _events_log = []
