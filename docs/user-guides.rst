@@ -46,21 +46,21 @@ Concepts and advanced topics
 .. toctree::
    :maxdepth: 1
 
+   user-guides/detecting-mod-wsgi
+   user-guides/mod-wsgi-python-module
    user-guides/processes-and-threading
    user-guides/embedded-and-daemon-mode
    user-guides/request-pipeline
    user-guides/reloading-source-code
    user-guides/virtual-environments
-   user-guides/access-control-mechanisms
+   user-guides/upgrading-an-application
    user-guides/file-wrapper-extension
    user-guides/subscribing-to-events
    user-guides/registering-cleanup-code
    user-guides/internal-metrics-api
-   user-guides/mod-wsgi-python-module
    user-guides/running-behind-a-reverse-proxy
    user-guides/hosting-websocket-applications
    user-guides/enabling-https
+   user-guides/access-control-mechanisms
    user-guides/security-hardening
-   user-guides/upgrading-an-application
    user-guides/issues-with-pickle-module
-   user-guides/detecting-mod-wsgi
