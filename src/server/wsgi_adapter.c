@@ -771,16 +771,15 @@ static PyObject *Adapter_environ(AdapterObject *self)
         if (elts[i].key)
         {
             /*
-             * Hide internal microsecond-string carriers from the
-             * WSGI environ. The canonical mod_wsgi timing keys
-             * are inserted below as Python floats in seconds.
+             * Hide internal-only mod_wsgi keys from the WSGI
+             * environ. By convention, keys whose second name
+             * component starts with x- are wire-side carriers
+             * only and are not exposed to applications; the
+             * canonical public keys are inserted below.
              */
 
-            size_t key_len = strlen(elts[i].key);
-
-            if (key_len > 12 &&
-                memcmp(elts[i].key, "mod_wsgi.", 9) == 0 &&
-                memcmp(elts[i].key + key_len - 3, "_us", 3) == 0)
+            if (memcmp(elts[i].key, "mod_wsgi.x-",
+                       sizeof("mod_wsgi.x-") - 1) == 0)
             {
                 continue;
             }
@@ -1331,7 +1330,7 @@ int Adapter_run(AdapterObject *self, PyObject *object)
      * conflate framework-load time with application time. */
     wsgi_record_application_start(self->start_time);
 
-    apr_table_setn(self->r->subprocess_env, "mod_wsgi.application_start_us",
+    apr_table_setn(self->r->subprocess_env, "mod_wsgi.x-application_start_us",
                    apr_psprintf(self->r->pool, "%" APR_TIME_T_FMT,
                                 self->start_time));
 
@@ -1340,26 +1339,12 @@ int Adapter_run(AdapterObject *self, PyObject *object)
     if (!vars)
         goto error;
 
-    value = PyLong_FromLongLong(wsgi_process_metrics->total_requests);
-    if (!value)
-        goto error;
-    if (PyDict_SetItemString(vars, "mod_wsgi.total_requests", value) < 0)
-        goto error;
-    Py_CLEAR(value);
-
     thread_handle = wsgi_thread_info(1, 1);
 
     value = PyLong_FromLong(thread_handle->thread_id);
     if (!value)
         goto error;
     if (PyDict_SetItemString(vars, "mod_wsgi.thread_id", value) < 0)
-        goto error;
-    Py_CLEAR(value);
-
-    value = PyLong_FromLongLong(thread_handle->request_count);
-    if (!value)
-        goto error;
-    if (PyDict_SetItemString(vars, "mod_wsgi.thread_requests", value) < 0)
         goto error;
     Py_CLEAR(value);
 

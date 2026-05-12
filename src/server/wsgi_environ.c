@@ -1087,7 +1087,7 @@ void wsgi_build_environment(request_rec *r)
     apr_table_setn(r->subprocess_env, "mod_wsgi.handler_script",
                    config->handler_script);
 
-    apr_table_setn(r->subprocess_env, "mod_wsgi.script_reloading",
+    apr_table_setn(r->subprocess_env, "mod_wsgi.x-script_reloading",
                    apr_psprintf(r->pool, "%d", config->script_reloading));
 
 #if defined(MOD_WSGI_WITH_DAEMONS)
@@ -1097,12 +1097,12 @@ void wsgi_build_environment(request_rec *r)
                    apr_psprintf(r->pool, "%d", c->local_addr->port));
 #endif
 
-    apr_table_setn(r->subprocess_env, "mod_wsgi.enable_sendfile",
+    apr_table_setn(r->subprocess_env, "mod_wsgi.x-enable_sendfile",
                    apr_psprintf(r->pool, "%d", config->enable_sendfile));
-    apr_table_setn(r->subprocess_env, "mod_wsgi.ignore_activity",
+    apr_table_setn(r->subprocess_env, "mod_wsgi.x-ignore_activity",
                    apr_psprintf(r->pool, "%d", config->ignore_activity));
 
-    apr_table_setn(r->subprocess_env, "mod_wsgi.request_start_us",
+    apr_table_setn(r->subprocess_env, "mod_wsgi.x-request_start_us",
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT, r->request_time));
 
     apr_table_setn(r->subprocess_env, "mod_wsgi.server_pid",

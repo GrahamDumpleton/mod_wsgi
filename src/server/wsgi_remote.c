@@ -343,9 +343,9 @@ static apr_status_t wsgi_send_request(request_rec *r,
     apr_size_t total = 0;
     apr_size_t count = 0;
 
-    apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_connects",
+    apr_table_setn(r->subprocess_env, "mod_wsgi.x-daemon_connects",
                    apr_psprintf(r->pool, "%d", config->daemon_connects));
-    apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_restarts",
+    apr_table_setn(r->subprocess_env, "mod_wsgi.x-daemon_restarts",
                    apr_psprintf(r->pool, "%d", config->daemon_restarts));
 
     /* Send subprocess environment from request object. */
@@ -1404,11 +1404,11 @@ int wsgi_execute_remote(request_rec *r)
     hash = ap_md5(r->pool, (const unsigned char *)key);
     memset(key, '\0', strlen(key));
 
-    apr_table_setn(r->subprocess_env, "mod_wsgi.magic", hash);
+    apr_table_setn(r->subprocess_env, "mod_wsgi.x-magic", hash);
 
     /* Create connection to the daemon process. */
 
-    apr_table_setn(r->subprocess_env, "mod_wsgi.queue_start_us",
+    apr_table_setn(r->subprocess_env, "mod_wsgi.x-queue_start_us",
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT, apr_time_now()));
 
     daemon = (WSGIDaemonSocket *)apr_pcalloc(r->pool,

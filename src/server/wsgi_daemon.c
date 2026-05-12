@@ -4308,7 +4308,7 @@ int wsgi_hook_daemon_handler(conn_rec *c)
     filename = apr_table_get(r->subprocess_env, "SCRIPT_FILENAME");
     script = apr_table_get(r->subprocess_env, "mod_wsgi.handler_script");
 
-    magic = apr_table_get(r->subprocess_env, "mod_wsgi.magic");
+    magic = apr_table_get(r->subprocess_env, "mod_wsgi.x-magic");
 
     if (!magic)
     {
@@ -4336,8 +4336,6 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
         return HTTP_INTERNAL_SERVER_ERROR;
     }
-
-    apr_table_unset(r->subprocess_env, "mod_wsgi.magic");
 
     /*
      * If we are executing in a chroot environment, we need to
@@ -4507,16 +4505,16 @@ int wsgi_hook_daemon_handler(conn_rec *c)
                                            "mod_wsgi.handler_script");
 
     config->script_reloading = atoi(apr_table_get(r->subprocess_env,
-                                                  "mod_wsgi.script_reloading"));
+                                                  "mod_wsgi.x-script_reloading"));
 
-    item = apr_table_get(r->subprocess_env, "mod_wsgi.enable_sendfile");
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.x-enable_sendfile");
 
     if (item && !strcasecmp(item, "1"))
         config->enable_sendfile = 1;
     else
         config->enable_sendfile = 0;
 
-    item = apr_table_get(r->subprocess_env, "mod_wsgi.ignore_activity");
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.x-ignore_activity");
 
     if (item && !strcasecmp(item, "1"))
         config->ignore_activity = 1;
@@ -4524,16 +4522,16 @@ int wsgi_hook_daemon_handler(conn_rec *c)
         config->ignore_activity = 0;
 
     config->daemon_connects = atoi(apr_table_get(r->subprocess_env,
-                                                 "mod_wsgi.daemon_connects"));
+                                                 "mod_wsgi.x-daemon_connects"));
     config->daemon_restarts = atoi(apr_table_get(r->subprocess_env,
-                                                 "mod_wsgi.daemon_restarts"));
+                                                 "mod_wsgi.x-daemon_restarts"));
 
     item = apr_table_get(r->subprocess_env, "mod_wsgi.server_pid");
 
     if (item)
         config->server_pid = (pid_t)atol(item);
 
-    item = apr_table_get(r->subprocess_env, "mod_wsgi.request_start_us");
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.x-request_start_us");
 
     if (item)
     {
@@ -4546,7 +4544,7 @@ int wsgi_hook_daemon_handler(conn_rec *c)
             config->request_start = 0.0;
     }
 
-    item = apr_table_get(r->subprocess_env, "mod_wsgi.queue_start_us");
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.x-queue_start_us");
 
     if (item)
     {
@@ -4559,7 +4557,7 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     config->daemon_start = daemon_start;
 
-    apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_start_us",
+    apr_table_setn(r->subprocess_env, "mod_wsgi.x-daemon_start_us",
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT,
                                 config->daemon_start));
 

@@ -419,13 +419,6 @@ static PyObject *Auth_environ(AuthObject *self, const char *group)
         goto error;
     Py_CLEAR(object);
 
-    object = PyLong_FromLong(self->config->script_reloading);
-    if (!object)
-        goto error;
-    if (PyDict_SetItemString(vars, "mod_wsgi.script_reloading", object) < 0)
-        goto error;
-    Py_CLEAR(object);
-
     /*
      * Setup log object for WSGI errors. Don't decrement
      * reference to log object as keep reference to it.

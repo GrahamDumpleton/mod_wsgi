@@ -290,10 +290,6 @@ module attributes and adding per-request information.
 ``mod_wsgi.application_group``
    Same value as the module-level ``application_group``.
 
-``mod_wsgi.script_reloading``
-   ``"1"`` if WSGI script reloading is enabled for the application
-   group, ``"0"`` otherwise.
-
 ``mod_wsgi.request_id``
    The Apache request log ID — the same identifier substituted by
    ``%L`` in ``LogFormat`` and ``ErrorLogFormat``. Useful for
@@ -307,14 +303,6 @@ module attributes and adding per-request information.
 
 ``mod_wsgi.thread_id``
    Numeric ID of the worker thread handling this request.
-
-``mod_wsgi.thread_requests``
-   Number of requests this thread has served, including the
-   current one.
-
-``mod_wsgi.total_requests``
-   Total number of requests this process has served, including
-   the current one.
 
 ``mod_wsgi.server_pid``
    Process ID of the Apache child worker that accepted the
