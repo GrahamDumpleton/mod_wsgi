@@ -90,6 +90,16 @@ typedef struct
     apr_time_t application_finish_us;
 
     /*
+     * Process ID of the Apache child worker that accepted the
+     * request. Captured at slot claim from WSGIRequestConfig so
+     * slow-record snapshots can identify the originating Apache
+     * child in daemon mode, where the slot lives in the daemon
+     * process.
+     */
+
+    pid_t server_pid;
+
+    /*
      * In-flight request count (= active_requests including this one)
      * at slot claim. Snapshotted into the slow record at completion
      * alongside the live active_requests value to give the

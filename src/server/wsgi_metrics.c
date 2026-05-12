@@ -648,6 +648,8 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
         slot->application_start_us = 0;
         slot->application_finish_us = 0;
 
+        slot->server_pid = config ? config->server_pid : 0;
+
         /*
          * wsgi_utilization_time_locked(1, ...) above already
          * incremented active_requests, so this snapshot reflects
