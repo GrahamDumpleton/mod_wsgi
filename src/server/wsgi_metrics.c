@@ -29,7 +29,7 @@
 #include "wsgi_thread.h"
 #include "wsgi_telemetry.h"
 
-#include <math.h> /* ceil() — slow-ring sizing math */
+#include <math.h> /* ceil(): slow-ring sizing math */
 
 /* ------------------------------------------------------------------------- */
 
@@ -44,9 +44,12 @@ void wsgi_process_metrics_init(apr_pool_t *pool)
 
     apr_thread_mutex_create(&m->monitor_lock, APR_THREAD_MUTEX_UNNESTED, pool);
 
-    /* Phase aggregators need the UINT64_MAX sentinel on min_us so the
+    /*
+     * Phase aggregators need the UINT64_MAX sentinel on min_us so the
      * first sample's min comparison succeeds; pcalloc zeros leave them
-     * at 0 which would freeze min at 0 forever. */
+     * at 0 which would freeze min at 0 forever.
+     */
+
     wsgi_phase_aggregate_reset(&m->server_time);
     wsgi_phase_aggregate_reset(&m->queue_time);
     wsgi_phase_aggregate_reset(&m->daemon_time);
@@ -70,15 +73,14 @@ void wsgi_process_metrics_init(apr_pool_t *pool)
 }
 
 /*
- * Thread utilisation. On start and end of requests,
- * and when utilisation is requested, we acrue an
- * ongoing utilisation time value so can monitor how
- * busy we are handling requests.
- */
-
-/* Caller MUST hold the monitor lock. Touches thread_utilization,
+ * Thread utilisation. Accrues an ongoing utilisation-time value at
+ * request start, request end, and when a reader asks for it, so the
+ * busy-handling-requests integral stays current.
+ *
+ * Caller MUST hold the monitor lock. Touches thread_utilization,
  * utilization_last, active_requests and total_requests on
- * wsgi_process_metrics; all covered by that same lock. */
+ * wsgi_process_metrics; all covered by that same lock.
+ */
 
 static double wsgi_utilization_time_locked(int adjustment,
                                            apr_uint64_t *request_count)
@@ -113,14 +115,16 @@ static double wsgi_utilization_time_locked(int adjustment,
     return utilization;
 }
 
-/* Completed-ring sizing. Floor matches the historical static size so
- * a tiny embedded MPM (a few threads at the default reporter
- * interval) gets the same headroom as before. Cap prevents
- * pathological allocations when WSGISlowRequests is set very low
- * (e.g. 0.01 s for debugging). Safety factor covers inter-tick
- * jitter and bursts where many threads complete near-simultaneously
- * — the formula otherwise assumes uniform distribution which real
- * workloads don't follow. */
+/*
+ * Completed-ring sizing. Floor gives a tiny embedded MPM (a few threads
+ * at the default reporter interval) reasonable headroom. Cap prevents
+ * pathological allocations when WSGISlowRequests is set very low (e.g.
+ * 0.01 s for debugging). Safety factor covers inter-tick jitter and
+ * bursts where many threads complete near-simultaneously: the formula
+ * otherwise assumes uniform distribution which real workloads don't
+ * follow.
+ */
+
 #define WSGI_SLOW_RING_FLOOR 32
 #define WSGI_SLOW_RING_CAP 4096
 #define WSGI_SLOW_RING_SAFETY 5
@@ -128,7 +132,9 @@ static double wsgi_utilization_time_locked(int adjustment,
 apr_time_t wsgi_slow_threshold_us = 0;
 extern double wsgi_telemetry_interval;
 
-/* Forward declarations — implementations live after wsgi_metrics_snapshot. */
+/*
+ * Forward declarations; implementations live after wsgi_metrics_snapshot.
+ */
 
 static void wsgi_slow_ring_ensure_locked(void);
 static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r);
@@ -139,11 +145,13 @@ static void wsgi_slow_fill_phase_durations(wsgi_slow_request_t *rec,
 
 void wsgi_gil_wait_reset(void)
 {
-    /* Called at the top of wsgi_execute_script to clear any leftover
+    /*
+     * Called at the top of wsgi_execute_script to clear any leftover
      * staged value from a prior request handled on this thread. The
      * slot is also cleared on slot release (wsgi_end_request), so this
-     * is belt-and-braces — but cheap, and protects against future code
-     * paths that might leave staged contributions un-drained. */
+     * is belt-and-braces but cheap.
+     */
+
     WSGIThreadInfo *ti = wsgi_thread_info(0, 1);
     if (ti)
     {
@@ -154,17 +162,20 @@ void wsgi_gil_wait_reset(void)
 
 void wsgi_gil_wait_record(apr_uint64_t wait_us)
 {
-    /* Hot path — runs on every Py_END_ALLOW_THREADS-equivalent in the
+    /*
+     * Hot path: runs on every Py_END_ALLOW_THREADS-equivalent in the
      * request handler. APR threadkey lookup plus one or two uint64
      * adds, no locking. Per-slot writes race with the reporter thread's
      * active-record reads but tearing on a uint64 is acceptable for an
      * indicator metric.
      *
-     * Slot may not yet be claimed — the daemon-phase sites (initial
+     * Slot may not yet be claimed; the daemon-phase sites (initial
      * interp acquire, module-lock, "200 Continue" brigade) fire before
      * wsgi_start_request runs. In that window the staging accumulator
      * on WSGIThreadInfo holds the running total; wsgi_start_request
-     * drains it into the slot at claim time. */
+     * drains it into the slot at claim time.
+     */
+
     WSGIThreadInfo *ti = wsgi_thread_info(0, 1);
     if (!ti || ti->thread_id < 1)
         return;
@@ -182,11 +193,14 @@ void wsgi_gil_wait_record(apr_uint64_t wait_us)
 
 void wsgi_gil_wait_current(apr_uint64_t *wait_us, apr_uint64_t *count)
 {
-    /* Read the calling thread's running per-request GIL-wait totals.
-     * Mirrors wsgi_gil_wait_record's slot-vs-staging branch — the active
+    /*
+     * Read the calling thread's running per-request GIL-wait totals.
+     * Mirrors wsgi_gil_wait_record's slot-vs-staging branch: the active
      * slot holds the running total once claimed; before that, the
      * per-thread staging accumulator does. Caller passes NULL for any
-     * field they don't want. */
+     * field they don't want.
+     */
+
     apr_uint64_t local_us = 0;
     apr_uint64_t local_count = 0;
 
@@ -213,18 +227,19 @@ void wsgi_gil_wait_current(apr_uint64_t *wait_us, apr_uint64_t *count)
 
 void wsgi_record_time_in_buckets(int *buckets, double duration)
 {
-    /* HDR-style index: 16 octaves (1 ms .. 65536 ms) × 4 linear sub-
-     * buckets per octave, plus a single overflow bucket at index 64.
-     * Total 65 entries per phase.
+    /*
+     * HDR-style index: 16 octaves (1 ms .. 65536 ms) by 4 linear
+     * sub-buckets per octave, plus a single overflow bucket at index
+     * 64. Total 65 entries per phase.
      *
      * frexp(ms) returns mantissa in [0.5, 1.0) such that
      *   ms = mantissa * 2^exp
      * so exp - 1 is the octave index for ms in [1, 65536). The four
      * sub-buckets are a linear split of [2*mantissa - 1, 1) across
-     * [0, 4). Bucket boundaries are [lo, hi) on each sub-bucket — a
-     * value equal to a boundary lands in the higher bucket. (The prior
-     * (lo, hi] convention differed only at exact boundary values, which
-     * are essentially never produced by floating-point timings.) */
+     * [0, 4). Bucket boundaries are [lo, hi) on each sub-bucket: a
+     * value equal to a boundary lands in the higher bucket.
+     */
+
     double ms = duration * 1000.0;
     int exp;
     double mantissa;
@@ -253,9 +268,12 @@ void wsgi_record_time_in_buckets(int *buckets, double duration)
     buckets[octave * 4 + sub] += 1;
 }
 
-/* Reset a phase aggregator to its empty-interval state: zero total,
+/*
+ * Reset a phase aggregator to its empty-interval state: zero total,
  * zero buckets, UINT64_MAX min sentinel, zero max. Caller controls
- * locking. */
+ * locking.
+ */
+
 static void wsgi_phase_aggregate_reset(WSGIPhaseAggregate *p)
 {
     p->total = 0.0;
@@ -264,9 +282,12 @@ static void wsgi_phase_aggregate_reset(WSGIPhaseAggregate *p)
     p->max_us = 0;
 }
 
-/* Record one sample into a phase aggregator: fold the seconds-domain
+/*
+ * Record one sample into a phase aggregator: fold the seconds-domain
  * total, update the integer-microseconds min/max accumulators, and
- * bucket the seconds-domain duration. Caller controls locking. */
+ * bucket the seconds-domain duration. Caller controls locking.
+ */
+
 static void wsgi_phase_aggregate_record(WSGIPhaseAggregate *p,
                                         double seconds, apr_uint64_t us)
 {
@@ -326,39 +347,51 @@ void wsgi_record_request_times(apr_time_t request_start,
 
     request_time = server_time + queue_time + daemon_time + application_time;
 
-    /* Per-phase microseconds for the min/max accumulators. The seconds
-     * round-trip is exact for any realistic request duration. */
+    /*
+     * Per-phase microseconds for the min/max accumulators. The seconds
+     * round-trip is exact for any realistic request duration.
+     */
+
     server_us = (apr_uint64_t)(server_time * 1000000.0);
     queue_us = (apr_uint64_t)(queue_time * 1000000.0);
     daemon_us = (apr_uint64_t)(daemon_time * 1000000.0);
     application_us = (apr_uint64_t)(application_time * 1000000.0);
     request_us = (apr_uint64_t)(request_time * 1000000.0);
 
-    /* I/O timings arrive from the adapter as apr_time_t in microseconds.
+    /*
+     * I/O timings arrive from the adapter as apr_time_t in microseconds.
      * Clamp negative deltas (the adapter's own clamp belt-and-braces) and
-     * keep both the integer-us and seconds forms — the former drives the
+     * keep both the integer-us and seconds forms: the former drives the
      * exact min/max accumulators, the latter the per-tick mean and
-     * histogram bucketing. */
+     * histogram bucketing.
+     */
+
     input_read_us_u = input_read_us > 0 ? (apr_uint64_t)input_read_us : 0;
     output_write_us_u =
         output_write_us > 0 ? (apr_uint64_t)output_write_us : 0;
     input_read_time = (double)input_read_us_u / 1.0e6;
     output_write_time = (double)output_write_us_u / 1.0e6;
 
-    /* Identify this thread's slot so I/O totals can be stashed where
+    /*
+     * Identify this thread's slot so I/O totals can be stashed where
      * wsgi_end_request will pick them up for a slow-record snapshot.
-     * Looked up before taking the lock — wsgi_thread_info() touches
-     * only the current thread's APR threadkey storage. */
+     * Looked up before taking the lock; wsgi_thread_info() touches
+     * only the current thread's APR threadkey storage.
+     */
+
     thread_info = wsgi_thread_info(0, 1);
 
     apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
     wsgi_process_metrics->sample_requests += 1;
 
-    /* Per-phase totals + min/max + histogram. Queue and daemon phases
+    /*
+     * Per-phase totals + min/max + histogram. Queue and daemon phases
      * only contribute in daemon mode; recorded below inside the
      * MOD_WSGI_WITH_DAEMONS block. gil_wait_time is recorded in the
-     * slot-found block so it picks up the per-request GIL accumulator. */
+     * slot-found block so it picks up the per-request GIL accumulator.
+     */
+
     wsgi_phase_aggregate_record(&wsgi_process_metrics->server_time, server_time, server_us);
     wsgi_phase_aggregate_record(&wsgi_process_metrics->application_time, application_time,
                                 application_us);
@@ -377,10 +410,13 @@ void wsgi_record_request_times(apr_time_t request_start,
     if (output_writes > 0)
         wsgi_process_metrics->output_writes_total += (apr_uint64_t)output_writes;
 
-    /* Classify the response status into a per-class counter.
+    /*
+     * Classify the response status into a per-class counter.
      * status == 0 means the WSGI app raised before calling
-     * start_response — fold it into 5xx so the error rate reflects the
-     * user-visible outcome (mod_wsgi serves a 500 in that case). */
+     * start_response: fold it into 5xx so the error rate reflects the
+     * user-visible outcome (mod_wsgi serves a 500 in that case).
+     */
+
     if (status == 0)
         wsgi_process_metrics->status_5xx_count += 1;
     else if (status >= 100 && status < 200)
@@ -409,15 +445,21 @@ void wsgi_record_request_times(apr_time_t request_start,
         slot->io_output_write_us = output_write_us > 0 ? output_write_us : 0;
         slot->last_status = status;
 
-        /* application_start was stashed earlier by
+        /*
+         * application_start was stashed earlier by
          * wsgi_record_application_start; record application_finish here
          * so the slow-record snapshot at wsgi_end_request can compute
-         * the application phase duration without re-deriving it. */
+         * the application phase duration without re-deriving it.
+         */
+
         slot->application_finish_us = application_finish;
 
-        /* Fold the per-request GIL-wait total into the interval
+        /*
+         * Fold the per-request GIL-wait total into the interval
          * accumulator. Read inside the lock alongside the slot writes
-         * above; the slot stays alive until wsgi_end_request clears it. */
+         * above; the slot stays alive until wsgi_end_request clears it.
+         */
+
         gil_wait_us = slot->gil_wait_us;
         gil_wait_time = (double)gil_wait_us / 1.0e6;
         wsgi_phase_aggregate_record(&wsgi_process_metrics->gil_wait_time, gil_wait_time,
@@ -443,8 +485,11 @@ void wsgi_record_application_start(apr_time_t application_start)
     if (wsgi_process_metrics->request_metrics_enabled == 0)
         return;
 
-    /* Looked up before taking the lock — wsgi_thread_info() touches
-     * only the current thread's APR threadkey storage. */
+    /*
+     * Looked up before taking the lock; wsgi_thread_info() touches
+     * only the current thread's APR threadkey storage.
+     */
+
     thread_info = wsgi_thread_info(0, 1);
 
     if (!thread_info || thread_info->thread_id < 1)
@@ -467,12 +512,14 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
 
     thread_info = wsgi_thread_info(1, 1);
 
-    /* Best-effort. A failure here must not tear down the request — the
+    /*
+     * Best-effort. A failure here must not tear down the request: the
      * downstream wsgi_request_data accessor handles a NULL request_data
      * by raising RuntimeError to the caller. Each failure path chains a
      * site-specific RuntimeError onto the underlying (likely MemoryError)
      * exception before logging so the log identifies the failing
-     * operation as well as the allocation primitive. */
+     * operation as well as the allocation primitive.
+     */
 
     Py_XDECREF(thread_info->request_data);
     thread_info->request_data = PyDict_New();
@@ -531,10 +578,12 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
             PyErr_Clear();
     }
 
-    /* Capture per-thread CPU baselines before taking the lock — the
+    /*
+     * Capture per-thread CPU baselines before taking the lock: the
      * underlying thread_info()/getrusage() syscall only reads this
-     * worker's own state and doesn't need synchronisation, and we want
-     * to keep the locked region short. */
+     * worker's own state and doesn't need synchronisation, and the
+     * locked region is kept short.
+     */
 
     WSGIThreadCPUUsage cpu_usage;
     int have_cpu = 0;
@@ -542,24 +591,28 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
     if (thread_info->thread_id >= 1)
         have_cpu = wsgi_thread_cpu_usage(&cpu_usage);
 
-    /* Per-request phase-timing baselines come from the WSGIRequestConfig
+    /*
+     * Per-request phase-timing baselines come from the WSGIRequestConfig
      * cached on r at handler entry. request_start is set by mod_wsgi.c
      * from r->request_time; queue_start and daemon_start are non-zero
      * only in daemon mode (queue_start crosses the daemon socket from
      * the Apache child, daemon_start is captured by the daemon thread
      * just before invoking handler-level setup). Reading config outside
-     * the lock is safe — it lives in r->pool which is alive until
-     * wsgi_end_request clears the slot. */
+     * the lock is safe; it lives in r->pool which is alive until
+     * wsgi_end_request clears the slot.
+     */
 
     config = (WSGIRequestConfig *)ap_get_module_config(r->request_config,
                                                        &wsgi_module);
 
-    /* Bump utilization, claim this thread's active-request slot, all
+    /*
+     * Bump utilization, claim this thread's active-request slot, all
      * under one lock acquire. Holding the request_rec pointer (not a
      * copy) lets the telemetry reporter thread read URL / identity
      * fields on demand and keeps the hot path cheap. r->pool stays
      * alive until after wsgi_end_request clears the slot, so reads
-     * under the monitor lock are always against a live request_rec. */
+     * under the monitor lock are always against a live request_rec.
+     */
 
     apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
@@ -595,17 +648,23 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
         slot->application_start_us = 0;
         slot->application_finish_us = 0;
 
-        /* wsgi_utilization_time_locked(1, ...) above already
+        /*
+         * wsgi_utilization_time_locked(1, ...) above already
          * incremented active_requests, so this snapshot reflects
-         * the in-flight count *including* this request. */
+         * the in-flight count *including* this request.
+         */
+
         slot->active_at_start =
             (uint64_t)wsgi_process_metrics->active_requests;
 
-        /* Drain any GIL-wait time accumulated during the daemon-phase
+        /*
+         * Drain any GIL-wait time accumulated during the daemon-phase
          * sites that fired before this slot was claimed (initial
          * interp acquire, module-lock, "200 Continue" brigade). After
          * this point the WSGI_END_ALLOW_THREADS macros write directly
-         * into the slot. */
+         * into the slot.
+         */
+
         slot->gil_wait_us = thread_info->staged_gil_wait_us;
         slot->gil_wait_count = thread_info->staged_gil_wait_count;
         thread_info->staged_gil_wait_us = 0;
@@ -628,8 +687,10 @@ void wsgi_end_request(void)
 
     thread_info = wsgi_thread_info(0, 1);
 
-    /* Capture CPU baseline before the lock — getrusage / thread_info
-     * only see the current worker's state. */
+    /*
+     * Capture CPU baseline before the lock; getrusage / thread_info
+     * only see the current worker's state.
+     */
 
     if (thread_info && thread_info->thread_id >= 1)
         have_cpu = wsgi_thread_cpu_usage(&cpu_usage);
@@ -646,11 +707,13 @@ void wsgi_end_request(void)
             dict = PyModule_GetDict(module);
             requests = PyDict_GetItemString(dict, "active_requests");
 
-            /* Either side may be NULL if start_request never reached
+            /*
+             * Either side may be NULL if start_request never reached
              * the registration step (request_id decode failure, missing
              * active_requests dict, etc). A KeyError here just means
              * registration was skipped or already failed; clear it so
-             * it doesn't leak into the next Python C API call. */
+             * it doesn't leak into the next Python C API call.
+             */
 
             if (requests && thread_info->request_id)
             {
@@ -674,13 +737,15 @@ void wsgi_end_request(void)
             Py_CLEAR(thread_info->request_data);
     }
 
-    /* Fold the slot's per-request metrics into the interval accumulator,
-     * release the active slot, and decrement utilization — all under one
+    /*
+     * Fold the slot's per-request metrics into the interval accumulator,
+     * release the active slot, and decrement utilization, all under one
      * lock acquire. If the request exceeded the slow threshold, snapshot
      * a completion record into the finalize ring while r->pool is still
      * alive (Apache destroys it only after wsgi_end_request returns).
      * Clearing the slot under the same lock ensures the reporter never
-     * sees a slot with a dangling r. */
+     * sees a slot with a dangling r.
+     */
 
     apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
@@ -703,10 +768,13 @@ void wsgi_end_request(void)
             if (elapsed > stats->max_duration_us)
                 stats->max_duration_us = elapsed;
 
-            /* CPU deltas computed once and reused: per-slot stats
+            /*
+             * CPU deltas computed once and reused: per-slot stats
              * accumulator gets the sum, slow-record snapshot below
              * gets user/system separately so the UI can show the
-             * breakdown in drill-down. */
+             * breakdown in drill-down.
+             */
+
             double cpu_user_delta = 0.0;
             double cpu_system_delta = 0.0;
             if (have_cpu && slot->cpu_valid)
@@ -743,9 +811,13 @@ void wsgi_end_request(void)
                 rec.cpu_system_us = (uint64_t)(cpu_system_delta * 1.0e6);
                 rec.status = (uint16_t)slot->last_status;
                 rec.active_at_start = slot->active_at_start;
-                /* active_requests still includes this request at this
+
+                /*
+                 * active_requests still includes this request at this
                  * point; the matching decrement happens below in
-                 * wsgi_utilization_time_locked(-1, ...). */
+                 * wsgi_utilization_time_locked(-1, ...).
+                 */
+
                 rec.active_at_completion =
                     (uint64_t)wsgi_process_metrics->active_requests;
                 rec.gil_wait_us = slot->gil_wait_us;
@@ -780,12 +852,13 @@ void wsgi_end_request(void)
 /* ------------------------------------------------------------------------- */
 
 /*
- * C-native interval snapshot for the telemetry reporter thread. Reads the
- * same aggregation globals as wsgi_request_metrics() but builds no Python
- * objects, so it does not require the GIL. Shares the per-reader baselines
- * (start_*) on WSGIProcessMetrics with the Python accessor; the two
- * readers are mutually exclusive (Stage D gate) so the shared baselines
- * are only ever advanced by one of them.
+ * C-native interval snapshot for the telemetry reporter thread. Reads
+ * the same aggregation globals as wsgi_request_metrics() but builds no
+ * Python objects, so it does not require the GIL. Shares the per-reader
+ * baselines (start_*) on WSGIProcessMetrics with the Python accessor;
+ * the two readers are mutually exclusive at runtime (when external
+ * reporting is enabled the Python accessors return None) so the shared
+ * baselines are only ever advanced by one of them.
  */
 
 static int wsgi_query_request_threads_maximum(void)
@@ -817,17 +890,20 @@ static int wsgi_query_request_threads_maximum(void)
 
 void wsgi_metrics_telemetry_init(void)
 {
-    /* Seed the per-reader baselines on WSGIProcessMetrics and enable
+    /*
+     * Seed the per-reader baselines on WSGIProcessMetrics and enable
      * per-request accounting from this point. Called from
      * wsgi_telemetry_start_reporter in the daemon main thread before
-     * any worker thread has had a chance to serve a request — so
-     * wsgi_record_request_times sees enabled=1 on its very first call
-     * and request data from t=0 onwards is captured.
+     * any worker thread has had a chance to serve a request, so
+     * wsgi_record_request_times sees enabled=1 on its first call and
+     * request data from t=0 onwards is captured.
      *
      * Idempotent: a second call is a no-op. The baseline set is shared
-     * with the wsgi_request_metrics() Python accessor (Stage D gate
-     * makes the two readers mutually exclusive), so this initialiser
-     * and wsgi_start_recording_metrics seed the same fields. */
+     * with the wsgi_request_metrics() Python accessor (the two readers
+     * are mutually exclusive at runtime), so this initialiser and
+     * wsgi_start_recording_metrics seed the same fields.
+     */
+
     apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
     if (wsgi_process_metrics->start_time != 0.0)
@@ -857,17 +933,19 @@ void wsgi_metrics_telemetry_init(void)
 #endif
 }
 
-/* Python-API entry point: mod_wsgi.start_recording_metrics(). Enables
+/*
+ * Python-API entry point: mod_wsgi.start_recording_metrics(). Enables
  * per-request metrics accounting for the wsgi_request_metrics() and
  * wsgi_process_metrics() Python accessors, and seeds the per-reader
  * baselines so the first wsgi_request_metrics() call returns data
- * covering the interval since this function ran (rather than an empty
- * "first call seeds" sample).
+ * covering the interval since this function ran.
  *
  * Idempotent. A no-op when external telemetry reporting is enabled
  * (the reporter has already turned recording on for itself, and the
- * Python accessors will return None regardless under the Stage D
- * gate). Safe to call unconditionally at app init. */
+ * Python accessors return None regardless when external reporting
+ * holds the recording slot). Safe to call unconditionally at app init.
+ */
+
 static PyObject *wsgi_start_recording_metrics(void)
 {
     apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
@@ -945,13 +1023,18 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     stop_request_busy_time = wsgi_utilization_time_locked(0,
                                                           &stop_request_count);
 
-    /* Ensure slot arrays exist even before the first request so a tick
+    /*
+     * Ensure slot arrays exist even before the first request so a tick
      * that fires on an idle worker can still emit a well-formed
-     * (all-zero) slot payload. Idempotent. */
+     * (all-zero) slot payload. Idempotent.
+     */
 
     wsgi_slow_ring_ensure_locked();
 
-    /* First call seeds counters and returns a not-yet-seeded sample. */
+    /*
+     * First call seeds counters and returns a not-yet-seeded sample.
+     */
+
     if (!wsgi_process_metrics->start_time)
     {
         wsgi_process_metrics->sample_requests = 0;
@@ -1046,11 +1129,13 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
         out->output_write_time_buckets[i] = wsgi_process_metrics->output_write_time.buckets[i];
     }
 
-    /* Per-slot capacity drain. Fold any in-flight busy-tail so a long
+    /*
+     * Per-slot capacity drain. Fold any in-flight busy-tail so a long
      * request contributes to every tick it spans, not just the tick it
      * completes in. CPU-time tails can't be folded here because
      * getrusage(RUSAGE_THREAD) / thread_info() only sees the current
-     * thread; worker threads publish their CPU delta at request-end. */
+     * thread; worker threads publish their CPU delta at request-end.
+     */
 
     emitted_slots = wsgi_process_metrics->request_threads_maximum;
     if (emitted_slots > WSGI_TELEMETRY_MAX_SLOTS)
@@ -1212,11 +1297,13 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 
 /* ------------------------------------------------------------------------- */
 
-/* Slow-request helpers. Lazy-allocate the completion ring on first
+/*
+ * Slow-request helpers. Lazy-allocate the completion ring on first
  * request so there is no cost when the feature is off. Copy strings
  * out of a live request_rec under the monitor lock, truncating each
  * field with an "..." suffix so the UI can show where the cut was
- * made. */
+ * made.
+ */
 
 static void wsgi_slow_ring_ensure_locked(void)
 {
@@ -1247,13 +1334,14 @@ static void wsgi_slow_ring_ensure_locked(void)
     if (max <= 0)
         max = 1;
 
-    /* Size the slow-completion ring from N threads × max
-     * completions-per-tick × safety. Each thread can complete at
-     * most ceil(T / S) slow requests in a tick, so total per-tick
-     * worst case is max * ceil(T / S); the safety factor absorbs
-     * inter-tick jitter and burst clustering. Floor + cap keep tiny
-     * deployments at the historical 32 and prevent pathological
-     * sizing when WSGISlowRequests is set very low. */
+    /*
+     * Size the slow-completion ring from N threads x max
+     * completions-per-tick x safety. Each thread can complete at most
+     * ceil(T / S) slow requests in a tick, so total per-tick worst case
+     * is max * ceil(T / S); the safety factor absorbs inter-tick jitter
+     * and burst clustering. Floor + cap keep tiny deployments at 32 and
+     * prevent pathological sizing when WSGISlowRequests is set very low.
+     */
 
     if (wsgi_slow_threshold_us > 0)
     {
@@ -1279,14 +1367,17 @@ static void wsgi_slow_ring_ensure_locked(void)
     wsgi_process_metrics->slow_completed_ring_size = ring;
 }
 
-/* Fills the four phase-duration fields on rec from the slot's stashed
+/*
+ * Fills the four phase-duration fields on rec from the slot's stashed
  * timestamps. Mirrors the breakdown that wsgi_record_request_times
  * applies to the aggregate stream. now_us is used in place of the
  * unset application_finish for active records still inside the WSGI
  * callable; for completed records (where application_finish_us is
  * non-zero) it is unused. queue_start_us is non-zero only in daemon
- * mode — embedded mode collapses queue_time and daemon_time into 0
- * and folds everything before application_start into server_time. */
+ * mode; embedded mode collapses queue_time and daemon_time into 0 and
+ * folds everything before application_start into server_time.
+ */
+
 static void wsgi_slow_fill_phase_durations(wsgi_slow_request_t *rec,
                                            const WSGIActiveSlot *slot,
                                            apr_time_t now_us)
@@ -1315,10 +1406,13 @@ static void wsgi_slow_fill_phase_durations(wsgi_slow_request_t *rec,
         }
         else
         {
-            /* Pre-app phase is still in the daemon-side setup. Report
+            /*
+             * Pre-app phase is still in the daemon-side setup. Report
              * the elapsed-since-daemon-start as a partial daemon_time
              * so the user can see where time is going; application is
-             * zero by definition. */
+             * zero by definition.
+             */
+
             rec->daemon_time_us = (uint64_t)(now_us -
                                              slot->daemon_start_us);
             rec->application_time_us = 0;
@@ -1326,10 +1420,13 @@ static void wsgi_slow_fill_phase_durations(wsgi_slow_request_t *rec,
     }
     else
     {
-        /* Embedded mode: no queue or daemon hand-off. Server covers
+        /*
+         * Embedded mode: no queue or daemon hand-off. Server covers
          * everything up to application_start; if the WSGI callable has
          * not yet been invoked, server is the partial elapsed-since-
-         * request-start. */
+         * request-start.
+         */
+
         if (app_start)
         {
             rec->server_time_us = (uint64_t)(app_start -
@@ -1388,8 +1485,10 @@ static void wsgi_slow_copy_str(char *dst, size_t cap, const char *src)
     }
 }
 
-/* Pull URL / identity out of a request_rec into a snapshot record. Does
- * no allocation and never touches r->pool; safe to call under lock. */
+/*
+ * Pull URL / identity out of a request_rec into a snapshot record. Does
+ * no allocation and never touches r->pool; safe to call under lock.
+ */
 
 static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
 {
@@ -1404,20 +1503,25 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
     wsgi_slow_copy_str(rec->hostname, sizeof(rec->hostname),
                        r->hostname ? r->hostname : "");
 
-    /* r->useragent_ip reflects mod_wsgi's existing trusted-proxy /
+    /*
+     * r->useragent_ip reflects mod_wsgi's existing trusted-proxy /
      * X-Forwarded-For resolution (see wsgi_environ.c) when configured,
      * so this is the *real* client IP rather than the immediate-hop
      * proxy. Apache populates it natively in embedded mode and
      * wsgi_daemon.c assigns it from the inbound connection in daemon
-     * mode. */
+     * mode.
+     */
+
     wsgi_slow_copy_str(rec->peer_ip, sizeof(rec->peer_ip),
                        r->useragent_ip ? r->useragent_ip : "");
 
-    /* In daemon mode r->method is NULL — the daemon-side request_rec is
+    /*
+     * In daemon mode r->method is NULL: the daemon-side request_rec is
      * synthesised from the subprocess_env stream and wsgi_read_request
      * never fills r->method. REQUEST_METHOD in subprocess_env is the
      * canonical source (ap_add_cgi_vars sets it on the parent) and works
-     * in both daemon and embedded modes. */
+     * in both daemon and embedded modes.
+     */
 
     const char *method = NULL;
 
@@ -1425,10 +1529,12 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
     {
         method = apr_table_get(r->subprocess_env, "REQUEST_METHOD");
 
-        /* HTTPS in subprocess_env is the authoritative scheme decision
+        /*
+         * HTTPS in subprocess_env is the authoritative scheme decision
          * after trusted-proxy handling + mod_ssl detection. mod_wsgi
          * strips it from the Python WSGI environ dict later, but the
-         * apr_table value survives for the lifetime of the request. */
+         * apr_table value survives for the lifetime of the request.
+         */
 
         scheme_env = apr_table_get(r->subprocess_env, "HTTPS");
         if (scheme_env && (!strcasecmp(scheme_env, "On") ||
@@ -1443,11 +1549,14 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
         if (!path_info)
             path_info = apr_table_get(r->subprocess_env, "PATH_INFO");
 
-        /* SERVER_PROTOCOL is the canonical "HTTP/1.1" / "HTTP/2.0"
+        /*
+         * SERVER_PROTOCOL is the canonical "HTTP/1.1" / "HTTP/2.0"
          * string and crosses the daemon socket via subprocess_env, so
          * it works in both modes. r->protocol is the embedded-mode
          * fallback (in daemon mode r->protocol on the synthesised
-         * request_rec is unreliable). */
+         * request_rec is unreliable).
+         */
+
         protocol = apr_table_get(r->subprocess_env, "SERVER_PROTOCOL");
     }
 
@@ -1464,9 +1573,11 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
     wsgi_slow_copy_str(rec->script_name, sizeof(rec->script_name),
                        script_name ? script_name : "");
 
-    /* Fall back to r->uri (always query-stripped) when the env keys are
+    /*
+     * Fall back to r->uri (always query-stripped) when the env keys are
      * absent; never read r->unparsed_uri or r->args so query strings
-     * can't leak into telemetry. */
+     * can't leak into telemetry.
+     */
 
     wsgi_slow_copy_str(rec->path_info, sizeof(rec->path_info),
                        path_info ? path_info : (r->uri ? r->uri : ""));
@@ -1474,13 +1585,16 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
     wsgi_slow_copy_str(rec->protocol, sizeof(rec->protocol),
                        protocol ? protocol : "");
 
-    /* User-Agent is opt-in via WSGIMetricsOptions +CaptureUserAgent
+    /*
+     * User-Agent is opt-in via WSGIMetricsOptions +CaptureUserAgent
      * because UA strings can be PII-adjacent (fingerprinting) and bots
      * sometimes ship multi-kilobyte values. HTTP_USER_AGENT is the
-     * canonical CGI-style env var and works in both modes — in daemon
+     * canonical CGI-style env var and works in both modes; in daemon
      * mode the synthesised request_rec only rebuilds Host / Content-
      * Length / Transfer-Encoding into headers_in, so the original UA
-     * header is reachable only via subprocess_env. */
+     * header is reachable only via subprocess_env.
+     */
+
     if (wsgi_metrics_options & WSGI_METRICS_OPT_CAPTURE_USER_AGENT)
     {
         const char *ua = NULL;
@@ -1493,7 +1607,9 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
     }
 }
 
-/* Caller must hold the monitor lock. */
+/*
+ * Caller must hold the monitor lock.
+ */
 
 static void wsgi_slow_push_completed_locked(const wsgi_slow_request_t *rec)
 {
@@ -1510,9 +1626,11 @@ static void wsgi_slow_push_completed_locked(const wsgi_slow_request_t *rec)
     }
     else
     {
-        /* Ring full — drop oldest so recent slow completions aren't lost.
+        /*
+         * Ring full: drop oldest so recent slow completions aren't lost.
          * With dynamic sizing this should be rare in practice; if it
-         * fires consistently the safety factor needs bumping. */
+         * fires consistently the safety factor needs bumping.
+         */
 
         idx = wsgi_process_metrics->slow_completed_ring_head;
         wsgi_process_metrics->slow_completed_ring_head = (wsgi_process_metrics->slow_completed_ring_head + 1) %
@@ -1598,9 +1716,13 @@ int wsgi_metrics_snapshot_slow_active(wsgi_slow_request_t *out, int out_cap,
             rec->input_read_us = (uint64_t)slot->io_input_read_us;
             rec->output_write_us = (uint64_t)slot->io_output_write_us;
             rec->active_at_start = slot->active_at_start;
-            /* active_at_completion is unset for in-flight records by
+
+            /*
+             * active_at_completion is unset for in-flight records by
              * definition (they haven't completed); leave at 0 from the
-             * memset above. */
+             * memset above.
+             */
+
             rec->gil_wait_us = slot->gil_wait_us;
             rec->gil_wait_count = slot->gil_wait_count;
             wsgi_slow_fill_phase_durations(rec, slot, now_us);
@@ -1740,11 +1862,13 @@ int wsgi_metrics_init_state(PyObject *module)
 
 /* ------------------------------------------------------------------------- */
 
-/* Each helper sets a typed value on `dict` under `key` and returns 0 on
+/*
+ * Each helper sets a typed value on `dict` under `key` and returns 0 on
  * success, or -1 with a Python exception set on failure. The caller
  * pattern is `if (wsgi_dict_set_*(...) < 0) goto error;` paired with an
  * `error:` label that Py_XDECREFs partially-built containers and
- * returns NULL. */
+ * returns NULL.
+ */
 
 static int wsgi_dict_set_steal(PyObject *dict, PyObject *key, PyObject *value)
 {
@@ -1792,8 +1916,11 @@ static int wsgi_dict_set_none(PyObject *dict, PyObject *key)
 static int wsgi_dict_set_latin1(PyObject *dict, PyObject *key,
                                 const char *s)
 {
-    /* NULL s is treated as an empty string to match scoreboard call
-     * sites where Apache may hand back NULL for an empty field. */
+    /*
+     * NULL s is treated as an empty string to match scoreboard call
+     * sites where Apache may hand back NULL for an empty field.
+     */
+
     PyObject *value = PyUnicode_DecodeLatin1(s ? s : "",
                                              s ? strlen(s) : 0, NULL);
     return wsgi_dict_set_steal(dict, key, value);
@@ -1838,9 +1965,12 @@ static int wsgi_dict_set_minmax_or_none(PyObject *dict, PyObject *min_key,
                                         apr_uint64_t min_us,
                                         apr_uint64_t max_us)
 {
-    /* min_us == UINT64_MAX means the phase recorded no requests this
-     * interval — publish None for both keys so consumers can tell the
-     * "no data" case from a recorded zero. */
+    /*
+     * min_us == UINT64_MAX means the phase recorded no requests this
+     * interval; publish None for both keys so consumers can tell the
+     * "no data" case from a recorded zero.
+     */
+
     if (min_us == UINT64_MAX)
     {
         if (wsgi_dict_set_none(dict, min_key) < 0)
@@ -1863,18 +1993,23 @@ static PyObject *wsgi_request_metrics(void)
 
     PyObject *result = NULL;
 
-    /* External telemetry reporter is the canonical metrics consumer
+    /*
+     * External telemetry reporter is the canonical metrics consumer
      * when enabled; suppress the Python API path so consumers can
-     * detect the configured mode by checking for None. */
+     * detect the configured mode by checking for None.
+     */
+
     if (wsgi_telemetry_is_enabled())
         Py_RETURN_NONE;
 
-    /* Per-request recording must be opted in via
+    /*
+     * Per-request recording must be opted in via
      * mod_wsgi.start_recording_metrics() before this accessor returns
      * data. The opt-in seeds the shared per-reader baselines used
      * below; an uninitialised start_time means the caller has not yet
-     * opted in, so signal that with None rather than synthesising an
-     * empty "first call" sample. */
+     * opted in, so signal that with None.
+     */
+
     if (wsgi_process_metrics->start_time == 0.0)
         Py_RETURN_NONE;
 
@@ -2009,17 +2144,22 @@ static PyObject *wsgi_request_metrics(void)
     stop_cpu_system_time = tmsbuf.tms_stime / wsgi_process_metrics->tick_hz;
 #endif
 
-    /* One locked region covers the utilization read AND the accumulator
-     * drain so the emitted sample is internally consistent. Python object
-     * construction happens afterwards, using the local snapshots. */
+    /*
+     * One locked region covers the utilization read AND the accumulator
+     * drain so the emitted sample is internally consistent. Python
+     * object construction happens afterwards, using the local snapshots.
+     */
 
     apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
 
     stop_request_busy_time = wsgi_utilization_time_locked(0,
                                                           &stop_request_count);
 
-    /* Ensure slow-completion ring exists even if no request has been
-     * served yet. */
+    /*
+     * Ensure slow-completion ring exists even if no request has been
+     * served yet.
+     */
+
     wsgi_slow_ring_ensure_locked();
 
     interval_requests = wsgi_process_metrics->sample_requests;
@@ -2078,10 +2218,13 @@ static PyObject *wsgi_request_metrics(void)
     memcpy(output_write_time_buckets_snap, wsgi_process_metrics->output_write_time.buckets,
            sizeof(output_write_time_buckets_snap));
 
-    /* Per-slot capacity drain. Fold in-flight busy-tail so a long request
-     * contributes to every interval it spans. CPU tails can't be folded
-     * here (cross-thread CPU time isn't available); request-end publishes
-     * the final CPU delta. */
+    /*
+     * Per-slot capacity drain. Fold in-flight busy-tail so a long
+     * request contributes to every interval it spans. CPU tails can't
+     * be folded here (cross-thread CPU time isn't available);
+     * request-end publishes the final CPU delta.
+     */
+
     for (i = 0; i < request_threads_maximum; i++)
     {
         slot_completed_snap[i] = 0;
@@ -2152,20 +2295,26 @@ static PyObject *wsgi_request_metrics(void)
     wsgi_phase_aggregate_reset(&wsgi_process_metrics->output_write_time);
     wsgi_process_metrics->gil_wait_count_total = 0;
 
-    /* Drain the I/O totals. Snapshots were taken above into
+    /*
+     * Drain the I/O totals. Snapshots were taken above into
      * input_bytes_snap / input_reads_snap / output_bytes_snap /
      * output_writes_snap; zero the globals so the telemetry reporter
      * starts a fresh interval, matching the drain-clash semantics used
-     * for the phase totals. */
+     * for the phase totals.
+     */
+
     wsgi_process_metrics->input_bytes_total = 0;
     wsgi_process_metrics->input_reads_total = 0;
     wsgi_process_metrics->output_bytes_total = 0;
     wsgi_process_metrics->output_writes_total = 0;
 
-    /* Drain the response-class counters. Snapshots were already taken
+    /*
+     * Drain the response-class counters. Snapshots were already taken
      * above into status_Nxx_snap; zero the globals so the telemetry
      * reporter starts a fresh interval, matching the drain-clash
-     * semantics used for the I/O totals. */
+     * semantics used for the I/O totals.
+     */
+
     wsgi_process_metrics->status_1xx_count = 0;
     wsgi_process_metrics->status_2xx_count = 0;
     wsgi_process_metrics->status_3xx_count = 0;
@@ -2174,9 +2323,12 @@ static PyObject *wsgi_request_metrics(void)
 
     apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);
 
-    /* Compute derived values used as inputs to several publishes, plus
+    /*
+     * Compute derived values used as inputs to several publishes, plus
      * the per-slot active-thread count, before any Python construction
-     * begins so the publish path is purely "encode + dict-set". */
+     * begins so the publish path is purely "encode + dict-set".
+     */
+
     sample_period = (apr_time_sec((double)stop_time) -
                      apr_time_sec((double)wsgi_process_metrics->start_time));
 
@@ -2198,11 +2350,14 @@ static PyObject *wsgi_request_metrics(void)
                     wsgi_process_metrics->start_request_count;
     request_throughput = sample_period ? request_count / sample_period : 0;
 
-    /* The locked region above drained the per-interval aggregates so
+    /*
+     * The locked region above drained the per-interval aggregates so
      * this interval is consumed; advancing the baselines here keeps
      * the next call's rate metrics consistent with its per-phase means
      * even if the publish phase below fails. Done after the rate
-     * deltas have been computed against the prior baselines. */
+     * deltas have been computed against the prior baselines.
+     */
+
     wsgi_process_metrics->start_time = stop_time;
     wsgi_process_metrics->start_request_busy_time = stop_request_busy_time;
     wsgi_process_metrics->start_request_count = stop_request_count;
@@ -2284,11 +2439,14 @@ static PyObject *wsgi_request_metrics(void)
                              request_throughput) < 0)
         goto error;
 
-    /* Per-interval HTTP response class totals. status==0 (no
+    /*
+     * Per-interval HTTP response class totals. status==0 (no
      * start_response call) is folded into status_5xx; out-of-range
      * values are silently dropped, so status_1xx + status_2xx +
      * status_3xx + status_4xx + status_5xx == request_count for the
-     * same interval. */
+     * same interval.
+     */
+
     if (wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(status_1xx),
                                 status_1xx_snap) < 0 ||
         wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(status_2xx),
@@ -2301,9 +2459,12 @@ static PyObject *wsgi_request_metrics(void)
                                 status_5xx_snap) < 0)
         goto error;
 
-    /* Per-interval I/O byte and op totals across all completed requests
-     * in the interval. Mirrors the status counters above — drained from
-     * the same locked region. */
+    /*
+     * Per-interval I/O byte and op totals across all completed requests
+     * in the interval. Mirrors the status counters above; drained from
+     * the same locked region.
+     */
+
     if (wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(input_bytes),
                                 input_bytes_snap) < 0 ||
         wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(input_reads),
@@ -2397,11 +2558,15 @@ static PyObject *wsgi_request_metrics(void)
                              request_time_avg) < 0)
         goto error;
 
-    /* Cross-cutting overlap means. Same per-tick mean shape as the phase
-     * means above (total time across completions divided by request
-     * count); not addends in the request_time invariant. gil_wait_count
-     * is the interval count of recorded GIL re-acquire events — useful
-     * for normalising gil_wait_time to a mean wait per acquire. */
+    /*
+     * Cross-cutting overlap means. Same per-tick mean shape as the
+     * phase means above (total time across completions divided by
+     * request count); not addends in the request_time invariant.
+     * gil_wait_count is the interval count of recorded GIL re-acquire
+     * events, useful for normalising gil_wait_time to a mean wait per
+     * acquire.
+     */
+
     if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(gil_wait_time),
                              gil_wait_time_avg) < 0 ||
         wsgi_dict_set_ulonglong(result, WSGI_INTERNED_STRING(gil_wait_count),
@@ -2412,11 +2577,14 @@ static PyObject *wsgi_request_metrics(void)
                              output_write_time_avg) < 0)
         goto error;
 
-    /* Per-phase exact min/max for the interval, in microseconds. None
+    /*
+     * Per-phase exact min/max for the interval, in microseconds. None
      * for both keys if the phase did not record any requests this tick
      * (the min accumulator still holds its UINT64_MAX sentinel).
      * queue_time and daemon_time are also None for non-daemon
-     * configurations, matching the corresponding mean entries above. */
+     * configurations, matching the corresponding mean entries above.
+     */
+
     if (wsgi_dict_set_minmax_or_none(
             result, WSGI_INTERNED_STRING(server_time_min_us),
             WSGI_INTERNED_STRING(server_time_max_us),
@@ -2497,18 +2665,23 @@ static PyObject *wsgi_process_metrics_dict(void)
     PyObject *thread_list = NULL;
     WSGIThreadInfo **thread_info = NULL;
 
-    /* External telemetry reporter is the canonical metrics consumer
+    /*
+     * External telemetry reporter is the canonical metrics consumer
      * when enabled; suppress the Python API path so consumers can
-     * detect the configured mode by checking for None. */
+     * detect the configured mode by checking for None.
+     */
+
     if (wsgi_telemetry_is_enabled())
         Py_RETURN_NONE;
 
-    /* Per-request recording must be opted in via
+    /*
+     * Per-request recording must be opted in via
      * mod_wsgi.start_recording_metrics() before this accessor returns
      * data. Both Python accessors share the same opt-in so an
      * application can branch on a single None check rather than
-     * tracking which one happens to enable recording as a side
-     * effect. */
+     * tracking which one happens to enable recording as a side effect.
+     */
+
     if (!wsgi_process_metrics->request_metrics_enabled)
         Py_RETURN_NONE;
 
@@ -2978,8 +3151,10 @@ long wsgi_event_subscribers(void)
     }
     else
     {
-        /* Callers treat the return as a boolean. Clear the import
-         * error so it doesn't leak into the next Python C API call. */
+        /*
+         * Callers treat the return as a boolean. Clear the import
+         * error so it doesn't leak into the next Python C API call.
+         */
 
         PyErr_Clear();
         return 0;
@@ -2993,7 +3168,8 @@ void wsgi_call_callbacks(const char *name, PyObject *callbacks,
     Py_ssize_t n;
     Py_ssize_t i;
 
-    /* Snapshot the callback list before dispatch so a callback that
+    /*
+     * Snapshot the callback list before dispatch so a callback that
      * subscribes or unsubscribes mid-event cannot perturb the
      * iteration. Without the snapshot, a callback that removes an
      * earlier entry would shift the tail down and the loop's index
@@ -3001,7 +3177,8 @@ void wsgi_call_callbacks(const char *name, PyObject *callbacks,
      * appends would have the new entry invoked for the current event,
      * which most pub/sub contracts disallow. PyList_GetSlice produces
      * a new list with fresh strong refs, so the source list can be
-     * freely mutated during dispatch. */
+     * freely mutated during dispatch.
+     */
 
     snapshot = PyList_GetSlice(callbacks, 0, PyList_Size(callbacks));
     if (!snapshot)
@@ -3034,11 +3211,14 @@ void wsgi_call_callbacks(const char *name, PyObject *callbacks,
             continue;
         }
 
-        /* The event dict is passed as the kwargs argument, so subscribers
-         * receive the event name positionally and the event payload as
-         * keyword-only parameters. Subscribers should declare keyword-only
-         * parameters for the keys they care about and use **kwargs to
-         * absorb the rest, e.g. def cb(name, *, status_code, **kwargs). */
+        /*
+         * The event dict is passed as the kwargs argument, so
+         * subscribers receive the event name positionally and the
+         * event payload as keyword-only parameters. Subscribers should
+         * declare keyword-only parameters for the keys they care about
+         * and use **kwargs to absorb the rest, e.g.
+         * def cb(name, *, status_code, **kwargs).
+         */
 
         res = PyObject_Call(callback, args, event);
 
@@ -3046,10 +3226,12 @@ void wsgi_call_callbacks(const char *name, PyObject *callbacks,
             wsgi_log_python_event_callback_error(name);
         else if (PyDict_Check(res))
         {
-            /* A subscriber that returned a dict is asking us to merge
+            /*
+             * A subscriber that returned a dict is asking us to merge
              * its keys into the shared event before the next callback
              * runs. Surface and clear any failure so it doesn't leak
-             * into the next iteration's PyObject_Call. */
+             * into the next iteration's PyObject_Call.
+             */
 
             if (PyDict_Update(event, res) < 0)
                 wsgi_log_python_event_callback_error(name);
