@@ -112,7 +112,18 @@ invoked.
    ``{"application_object": wrapper}``), subsequent subscribers
    and ultimately the WSGI adapter use the replacement. This is
    the supported hook point for adding application-level
-   middleware at runtime.
+   middleware at runtime: see `Wrapping the application with WSGI
+   middleware`_ below for a worked example and the rationale for
+   replacing via the return-value merge rather than reassigning
+   the callback parameter.
+
+``callable_object``
+   The configured name of the application callable, as a string
+   (the value resolved from the ``WSGICallableObject`` directive,
+   defaulting to ``"application"``). This is the name mod_wsgi
+   looked up to obtain ``application_object`` from the loaded
+   WSGI script; it remains the original configured name even if
+   a subscriber replaces ``application_object`` with a wrapper.
 
 ``server_pid``
    Process ID of the Apache child worker that accepted the
@@ -420,6 +431,47 @@ principle skew a difference like
 window is small enough that this is not a real concern; the
 pre-computed ``application_time`` is the same subtraction taken
 under the same clock and is provided for convenience.
+
+Wrapping the application with WSGI middleware
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``request_started`` is the supported hook for inserting WSGI
+middleware around the application callable at runtime, without
+modifying the deployed WSGI script. Return a dict from the
+subscriber with ``application_object`` set to the wrapping
+callable; mod_wsgi shallow-merges the returned dict into the
+event payload before subsequent subscribers run, and ultimately
+invokes whichever ``application_object`` is in the event dict at
+the end of the dispatch::
+
+    import mod_wsgi
+
+    def make_wrapper(app):
+        def wrapper(environ, start_response):
+            # per-request work before invoking the application
+            return app(environ, start_response)
+        return wrapper
+
+    @mod_wsgi.subscribe_events
+    def install_middleware(name, *, application_object, **event):
+        if name != "request_started":
+            return
+        return {"application_object": make_wrapper(application_object)}
+
+Why return a dict rather than mutate the event dict in place?
+The ``**event`` parameter binds the underlying dict into the
+callback, so ``event["application_object"] = wrapper`` would in
+fact propagate. But any keys extracted as keyword-only parameters
+(such as ``application_object`` in the signature above) are bound
+to *local variables*, and reassigning the local name has no
+effect on the dict mod_wsgi will consult after the callback
+returns. Returning a fresh dict is the unambiguous mechanism that
+works regardless of how the callback chose to receive the field,
+and is also clearer about intent than a mutation tucked inside
+the body. Subsequent subscribers see the wrapped callable as
+their ``application_object``, so multiple middleware layers
+compose by stacking subscribers: each wraps whatever the previous
+one produced, in registration order.
 
 Counting response classes inside the process
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -111,8 +111,9 @@ only ``process_stopping``.
    Fires immediately before the WSGI application callable is
    invoked. Payload keys include ``request_id``, ``thread_id``,
    ``server_pid`` (Apache child worker PID),
-   ``request_start`` (microseconds since epoch),
-   ``application_object``, ``application_start``,
+   ``request_start`` (seconds since epoch),
+   ``application_object``, ``callable_object`` (the configured
+   callable name as a string), ``application_start``,
    ``request_environ`` (the WSGI environment), and
    ``request_data``. Daemon mode adds ``queue_start``,
    ``daemon_start``, ``daemon_connects`` and ``daemon_restarts``.

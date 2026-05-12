@@ -1428,6 +1428,15 @@ int Adapter_run(AdapterObject *self, PyObject *object)
         if (PyDict_SetItemString(event, "application_object", object) < 0)
             goto error;
 
+        value = PyUnicode_DecodeLatin1(self->config->callable_object,
+                                       strlen(self->config->callable_object),
+                                       NULL);
+        if (!value)
+            goto error;
+        if (PyDict_SetItemString(event, "callable_object", value) < 0)
+            goto error;
+        Py_CLEAR(value);
+
         if (PyDict_SetItemString(event, "request_environ", vars) < 0)
             goto error;
 
