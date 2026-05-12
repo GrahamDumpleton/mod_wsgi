@@ -25,13 +25,13 @@
  * binary TLV datagram to a local socket. The encoder emits the format
  * documented in wsgi_telemetry.h.
  *
- * Transport is UNIX SOCK_DGRAM, fire-and-forget. If the ingester is down
- * or restarting, the kernel discards the datagram and the reporter
- * continues without blocking. Remote (IPv4 UDP) targets are not
- * supported — telemetry is intended for a co-located ingester so that
- * IP-fragmentation, MTU sizing and packet loss across a real network
- * are all non-concerns; the per-tick datagram is allowed to grow well
- * past the Ethernet MTU as a result.
+ * Transport is UNIX SOCK_DGRAM, fire-and-forget. If the ingester is
+ * down or restarting, the kernel discards the datagram and the
+ * reporter continues without blocking. Remote (IPv4 UDP) targets are
+ * not supported; telemetry is intended for a co-located ingester so
+ * that IP-fragmentation, MTU sizing and packet loss across a real
+ * network are all non-concerns. The per-tick datagram is allowed to
+ * grow well past the Ethernet MTU as a result.
  */
 
 #include "wsgi_python.h"
@@ -52,9 +52,13 @@
 /* ------------------------------------------------------------------------- */
 
 static const char *wsgi_telemetry_target = NULL;
-/* Non-static so wsgi_metrics.c can read it when sizing the slow-
+
+/*
+ * Non-static so wsgi_metrics.c can read it when sizing the slow-
  * completion ring (worst-case completions per tick depends on the
- * reporter interval). */
+ * reporter interval).
+ */
+
 double wsgi_telemetry_interval = 1.0;
 static int wsgi_telemetry_enabled = 0;
 static int wsgi_telemetry_started = 0;
@@ -71,7 +75,7 @@ static volatile int wsgi_telemetry_shutdown = 0;
  * Reporter context. Populated by the reporter thread before it begins
  * the periodic loop, and read by both the reporter thread and the
  * daemon main thread (which emits lifecycle datagrams sharing the same
- * socket and identity). The context outlives the reporter thread —
+ * socket and identity). The context outlives the reporter thread:
  * pause_reporter joins the thread but leaves these fields populated so
  * emit_final_tick / STOPPED can still send before close.
  */
@@ -106,6 +110,7 @@ static volatile apr_uint32_t wsgi_telemetry_seq = 0;
  * this guard we would either lose STOPPED whenever drain exceeds
  * shutdown_timeout, or risk emitting it twice.
  */
+
 static volatile apr_uint32_t wsgi_telemetry_stopped_emitted = 0;
 
 /* ------------------------------------------------------------------------- */
@@ -144,15 +149,18 @@ static int wsgi_telemetry_open(const char *target,
     if (fd < 0)
         return -1;
 
-    /* On macOS / BSD, AF_UNIX SOCK_DGRAM defaults to a 2 KB max datagram
-     * size from net.local.dgram.maxdgram. Periodic telemetry samples can
-     * exceed this once histograms and per-phase min/max are populated, so
-     * set SO_SNDBUF explicitly to override the per-socket cap. Linux is
-     * unaffected (default is far higher), but the call is harmless there
-     * — the kernel clamps to its own max if our request is too large.
-     * Errors are non-fatal: if setsockopt fails the socket still works
-     * for smaller datagrams; the periodic stream will just drop the
-     * occasional oversize record. */
+    /*
+     * On macOS / BSD, AF_UNIX SOCK_DGRAM defaults to a 2 KB max
+     * datagram size from net.local.dgram.maxdgram. Periodic telemetry
+     * samples can exceed this once histograms and per-phase min/max
+     * are populated, so set SO_SNDBUF explicitly to override the
+     * per-socket cap. Linux is unaffected (default is far higher), but
+     * the call is harmless there: the kernel clamps to its own max if
+     * our request is too large. Errors are non-fatal: if setsockopt
+     * fails the socket still works for smaller datagrams; the periodic
+     * stream will just drop the occasional oversize record.
+     */
+
     {
         int bufsize = 65536;
         (void)setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
@@ -181,9 +189,11 @@ static void wsgi_telemetry_send(const wsgi_telemetry_ctx_t *ctx,
     if (sendto(ctx->fd, buf, n, 0,
                (struct sockaddr *)&ctx->addr, ctx->addrlen) < 0)
     {
-        /* Datagram sockets: ENOENT / ECONNREFUSED when ingester isn't
+        /*
+         * Datagram sockets: ENOENT / ECONNREFUSED when ingester isn't
          * up. Silently drop; the ingester picks up on the next tick
-         * once listening. Don't flood the error log. */
+         * once listening. Don't flood the error log.
+         */
     }
 }
 
@@ -261,10 +271,13 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
         wsgi_metrics_put_f64(&p, WSGI_METRICS_F_DAEMON_TIME, s->daemon_time);
     }
 
-    /* Per-phase exact min/max for the interval. Skip the field entirely
-     * on ticks where the phase saw no requests; the decoder treats
-     * absence as "no data this tick". Min and max are paired — if min
-     * was set, max was set too. */
+    /*
+     * Per-phase exact min/max for the interval. Skip the field
+     * entirely on ticks where the phase saw no requests; the decoder
+     * treats absence as "no data this tick". Min and max are paired:
+     * if min was set, max was set too.
+     */
+
     if (s->server_time_min_us != UINT64_MAX)
     {
         wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SERVER_TIME_MIN_US,
@@ -356,11 +369,14 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_OUTPUT_WRITES_TOTAL,
                          s->output_writes_total);
 
-    /* Per-interval HTTP response class totals. Always emitted (even
+    /*
+     * Per-interval HTTP response class totals. Always emitted (even
      * when zero) so consumers can distinguish "zero of this class"
      * from "older encoder that didn't have the field". Sum equals
      * request_count for the same interval, modulo the status==0 fold
-     * into 5xx. */
+     * into 5xx.
+     */
+
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_STATUS_1XX_TOTAL,
                          s->status_1xx_total);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_STATUS_2XX_TOTAL,
@@ -420,12 +436,15 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_CPU_SYSTEM_US,
                          s->cpu_system_us);
 
-    /* Per-phase request timing. Always emitted (including zeros) so
-     * consumers can render the breakdown without having to fall back to
-     * "field absent ⇒ phase unknown" reasoning. queue_time and
+    /*
+     * Per-phase request timing. Always emitted (including zeros) so
+     * consumers can render the breakdown without having to fall back
+     * to "field absent means phase unknown" reasoning. queue_time and
      * daemon_time are zero in embedded mode where there is no daemon
      * hand-off; application_time is zero on active records that have
-     * not yet entered the WSGI callable, partial otherwise. */
+     * not yet entered the WSGI callable, partial otherwise.
+     */
+
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_SERVER_TIME_US,
                          s->server_time_us);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_QUEUE_TIME_US,
@@ -435,39 +454,51 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_APPLICATION_TIME_US,
                          s->application_time_us);
 
-    /* GIL-wait pressure indicator for this single request. Always
+    /*
+     * GIL-wait pressure indicator for this single request. Always
      * emitted (including zeros) so the slow-record detail panel can
      * surface the value uniformly. For active records this is the
-     * running sum; for completed records it is the final total. */
+     * running sum; for completed records it is the final total.
+     */
+
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_GIL_WAIT_US,
                          s->gil_wait_us);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_GIL_WAIT_COUNT,
                          s->gil_wait_count);
 
-    /* I/O time overlap indicators for this single request. Always
+    /*
+     * I/O time overlap indicators for this single request. Always
      * emitted (including zeros) so the slow-record detail panel can
      * surface them uniformly. For active records these are zero
      * (the slot's io_input_read_us / io_output_write_us are only
-     * stamped at end-of-request); for completed records they are
-     * the final totals. */
+     * stamped at end-of-request); for completed records they are the
+     * final totals.
+     */
+
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_INPUT_READ_US,
                          s->input_read_us);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_OUTPUT_WRITE_US,
                          s->output_write_us);
 
-    /* Concurrency context. active_at_completion is zero for active
+    /*
+     * Concurrency context. active_at_completion is zero for active
      * records (the request has not finished yet); always emitted so
      * consumers see the "0 = not yet known" sentinel rather than a
-     * missing field. */
+     * missing field.
+     */
+
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_ACTIVE_AT_START,
                          s->active_at_start);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_ACTIVE_AT_COMPLETION,
                          s->active_at_completion);
 
-    /* Final HTTP response status. Zero for active records (the WSGI
+    /*
+     * Final HTTP response status. Zero for active records (the WSGI
      * app may not have called start_response yet); always emitted so
      * consumers see the "0 = not yet known" sentinel rather than a
-     * missing field. */
+     * missing field.
+     */
+
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_STATUS, s->status);
 
     if (s->log_id[0])
@@ -511,9 +542,9 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
 /*
  * Lifecycle encoders. STARTED carries identity at process birth so the
  * consumer doesn't have to wait for the first periodic tick to register
- * the process exists. STOPPING is the chart-marker — fired at decision
- * time, before drain. STOPPED is the end-of-record summary — fired
- * after drain completes and the reporter has been quiesced.
+ * the process exists. STOPPING is the chart-marker, fired at decision
+ * time before drain. STOPPED is the end-of-record summary, fired after
+ * drain completes and the reporter has been quiesced.
  */
 
 static size_t wsgi_telemetry_encode_started(const wsgi_telemetry_ctx_t *ctx,
@@ -639,7 +670,7 @@ static size_t wsgi_telemetry_encode_stopped(const wsgi_telemetry_ctx_t *ctx,
  * any still-active slow records, emitting one KIND_SLOW_REQUEST
  * datagram per record. Called from the reporter thread on every tick
  * and from emit_final_tick on the daemon main thread when shutting
- * down — accumulators are drained-and-reset, so calling this once more
+ * down: accumulators are drained-and-reset, so calling this once more
  * at shutdown captures the partial window since the reporter's last
  * tick that would otherwise be lost.
  */
@@ -654,10 +685,13 @@ static void wsgi_telemetry_emit_tick(const wsgi_telemetry_ctx_t *ctx)
     if (!wsgi_metrics_snapshot(&sample))
         return;
 
-    /* Populate identity + reporter config that the snapshot function
+    /*
+     * Populate identity + reporter config that the snapshot function
      * does not fill. The slow-request threshold is in microseconds,
      * exposed as seconds on the wire so the UI can compare directly
-     * with the heatmap stuck-threshold dropdown. */
+     * with the heatmap stuck-threshold dropdown.
+     */
+
     strncpy(sample.hostname, ctx->hostname, sizeof(sample.hostname) - 1);
     sample.hostname[sizeof(sample.hostname) - 1] = '\0';
     strncpy(sample.process_group, ctx->process_group,
@@ -686,11 +720,13 @@ static void wsgi_telemetry_emit_tick(const wsgi_telemetry_ctx_t *ctx)
     n = wsgi_telemetry_encode(&sample, ctx->pid, seq, buf, sizeof(buf));
     wsgi_telemetry_send(ctx, buf, n);
 
-    /* Slow-request tracking — one datagram per record. Completed
+    /*
+     * Slow-request tracking: one datagram per record. Completed
      * records drain first so their final duration arrives before any
      * heartbeat that would otherwise make the UI age the entry out as
      * "lost". Active-scan uses a consistent now_us so all elapsed
-     * values in this tick share a reference. */
+     * values in this tick share a reference.
+     */
 
     if (wsgi_slow_threshold_us > 0)
     {
@@ -732,10 +768,12 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
     uint32_t seq;
     apr_interval_time_t sleep_us;
 
-    /* Populate the reporter context. fd is held here so the daemon
+    /*
+     * Populate the reporter context. fd is held here so the daemon
      * main thread can use it for lifecycle datagrams on the same
      * socket; process_start_us is the STARTED header timestamp and
-     * the basis for STOPPED's uptime field. */
+     * the basis for STOPPED's uptime field.
+     */
 
     wsgi_telemetry_ctx.fd = -1;
     wsgi_telemetry_ctx.pid = (uint32_t)getpid();
@@ -770,19 +808,25 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
     }
 #endif
 
-    /* Build / runtime identity. Populated once; static for the life of
-     * the process. Empty values are tolerated — the encoder skips
+    /*
+     * Build / runtime identity. Populated once; static for the life
+     * of the process. Empty values are tolerated: the encoder skips
      * fields with a leading nul so an ingester never sees an empty
-     * string where it expects a real version. */
+     * string where it expects a real version.
+     */
+
     strncpy(wsgi_telemetry_ctx.mod_wsgi_version, MOD_WSGI_VERSION_STRING,
             sizeof(wsgi_telemetry_ctx.mod_wsgi_version) - 1);
     wsgi_telemetry_ctx.mod_wsgi_version[sizeof(wsgi_telemetry_ctx.mod_wsgi_version) - 1] = '\0';
 
     {
-        /* Py_GetVersion() returns "3.14.0 (main, Jan 15 2026, ...)";
+        /*
+         * Py_GetVersion() returns "3.14.0 (main, Jan 15 2026, ...)";
          * trim to the leading version token so the banner stays
          * compact. Same approach as wsgi_interp.c uses for the
-         * SERVER_SOFTWARE construction. */
+         * SERVER_SOFTWARE construction.
+         */
+
         const char *pv = Py_GetVersion();
         size_t i = 0;
         if (pv)
@@ -797,13 +841,16 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
     }
 
     {
-        /* Capture sys.getswitchinterval() once. The contract is that
+        /*
+         * Capture sys.getswitchinterval() once. The contract is that
          * the interval is set at process start (via WSGISwitchInterval
          * or the switch-interval option on WSGIDaemonProcess) and not
          * mutated from Python after; the value reported here is the
          * one in effect for every subsequent tick under that contract.
          * If the contract is broken the contention coefficient
-         * computed downstream is undefined. */
+         * computed downstream is undefined.
+         */
+
         PyGILState_STATE gstate = PyGILState_Ensure();
         PyObject *sys = PyImport_ImportModule("sys");
         wsgi_telemetry_ctx.switch_interval = 0.0;
@@ -824,11 +871,14 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
         PyGILState_Release(gstate);
     }
 
-    /* AP_SERVER_BASEVERSION is the compile-time Apache version
+    /*
+     * AP_SERVER_BASEVERSION is the compile-time Apache version
      * ("Apache/2.4.62") and isn't subject to the ServerTokens
-     * directive — which we want here: telemetry needs the actual
-     * binary version regardless of whether the admin has redacted
-     * the public banner. */
+     * directive, which is what is wanted here: telemetry needs the
+     * actual binary version regardless of whether the admin has
+     * redacted the public banner.
+     */
+
     strncpy(wsgi_telemetry_ctx.apache_version, AP_SERVER_BASEVERSION,
             sizeof(wsgi_telemetry_ctx.apache_version) - 1);
     wsgi_telemetry_ctx.apache_version[sizeof(wsgi_telemetry_ctx.apache_version) - 1] = '\0';
@@ -849,9 +899,12 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
 
     wsgi_telemetry_ctx_ready = 1;
 
-    /* Emit STARTED before the periodic loop begins so the consumer
+    /*
+     * Emit STARTED before the periodic loop begins so the consumer
      * registers the process without having to wait for the first
-     * periodic tick. */
+     * periodic tick.
+     */
+
     seq = wsgi_telemetry_next_seq();
     n = wsgi_telemetry_encode_started(&wsgi_telemetry_ctx, seq,
                                       buf, sizeof(buf));
@@ -874,10 +927,13 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
         wsgi_telemetry_emit_tick(&wsgi_telemetry_ctx);
     }
 
-    /* Don't close fd here — pause_reporter / stop_reporter manages
+    /*
+     * Don't close fd here; pause_reporter / stop_reporter manages
      * that. Leaving it open lets the daemon main thread call
      * emit_final_tick to flush the partial window and emit STOPPED
-     * via the same socket. */
+     * via the same socket.
+     */
+
     return NULL;
 }
 
@@ -1016,9 +1072,12 @@ const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
     if (!args || !*args)
         return "WSGIMetricsOptions: at least one flag required";
 
-    /* Start the incremental accumulator from the current global so
+    /*
+     * Start the incremental accumulator from the current global so
      * `+Foo` / `-Foo` directives stack. Absolute form fully replaces
-     * and ignores the starting value. */
+     * and ignores the starting value.
+     */
+
     incremental_options = wsgi_metrics_options;
 
     while (*args)
@@ -1102,12 +1161,15 @@ void wsgi_telemetry_start_reporter(apr_pool_t *pool)
 
     wsgi_telemetry_started = 1;
 
-    /* Seed the snapshot baselines and turn on per-request accounting
+    /*
+     * Seed the snapshot baselines and turn on per-request accounting
      * before the reporter thread (and any worker thread) starts. The
-     * reporter's first periodic tick fires one telemetry interval after
-     * spawn — without this seed, every request served in that startup
-     * window would be silently dropped at the request_metrics_enabled
-     * gate in wsgi_record_request_times. */
+     * reporter's first periodic tick fires one telemetry interval
+     * after spawn; without this seed, every request served in that
+     * startup window would be silently dropped at the
+     * request_metrics_enabled gate in wsgi_record_request_times.
+     */
+
     wsgi_metrics_telemetry_init();
 
     rv = apr_thread_create(&wsgi_telemetry_thread, NULL,
@@ -1136,10 +1198,13 @@ void wsgi_telemetry_stop_reporter(void)
     }
     wsgi_telemetry_started = 0;
 
-    /* Close the socket here for callers that don't go through the
+    /*
+     * Close the socket here for callers that don't go through the
      * graceful pause / final-tick / STOPPED path. emit_final_tick
-     * closes it itself and clears ctx_ready, so this branch is a no-op
-     * on that path. */
+     * closes it itself and clears ctx_ready, so this branch is a
+     * no-op on that path.
+     */
+
     if (wsgi_telemetry_ctx_ready && wsgi_telemetry_ctx.fd >= 0)
     {
         close(wsgi_telemetry_ctx.fd);
@@ -1176,12 +1241,12 @@ void wsgi_telemetry_pause_reporter(void)
 /* ------------------------------------------------------------------------- */
 
 /*
- * Emit the STOPPING chart-marker datagram. Called from the daemon main
- * thread (or the embedded-mode child cleanup) at the moment shutdown
- * is decided, before drain begins. Reads active_requests under the
- * monitor lock so the at-decision count is consistent with whoever
- * else may be reading it. Safe to call concurrently with the reporter
- * thread — both share the socket and seq is atomic.
+ * Emit the STOPPING chart-marker datagram. Called from the daemon
+ * main thread (or the embedded-mode child cleanup) at the moment
+ * shutdown is decided, before drain begins. Reads active_requests
+ * under the monitor lock so the at-decision count is consistent with
+ * whoever else may be reading it. Safe to call concurrently with the
+ * reporter thread; both share the socket and seq is atomic.
  */
 
 void wsgi_telemetry_emit_process_stopping(const char *reason)
@@ -1276,9 +1341,12 @@ void wsgi_telemetry_emit_final_tick(const char *reason)
     /* Flush the partial window the reporter didn't get to. */
     wsgi_telemetry_emit_tick(&wsgi_telemetry_ctx);
 
-    /* Graceful drain succeeded iff no requests are still in-flight at
-     * this point — drain has completed and pause_reporter has joined
-     * the reporter, so this is the authoritative reading. */
+    /*
+     * Graceful drain succeeded iff no requests are still in-flight at
+     * this point: drain has completed and pause_reporter has joined
+     * the reporter, so this is the authoritative reading.
+     */
+
     apr_thread_mutex_lock(wsgi_process_metrics->monitor_lock);
     active = (uint64_t)wsgi_process_metrics->active_requests;
     apr_thread_mutex_unlock(wsgi_process_metrics->monitor_lock);

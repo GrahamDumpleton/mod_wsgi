@@ -69,63 +69,84 @@
 #define WSGI_METRICS_T_BYTES 0x04
 #define WSGI_METRICS_T_I32_ARRAY 0x05
 
-/* WSGIMetricsOptions flag bits. Bitmask shared by all directive
+/*
+ * WSGIMetricsOptions flag bits. Bitmask shared by all directive
  * invocations in the global server config; the parser handles +/- /
  * absolute / None / All forms (mixing forms in one directive is an
- * error). Default is zero — every flag opts in. Each flag here also
- * needs a matching name entry in the parser's lookup table. */
+ * error). Default is zero (every flag opts in). Each flag here also
+ * needs a matching name entry in the parser's lookup table.
+ */
+
 #define WSGI_METRICS_OPT_CAPTURE_USER_AGENT 0x01
 #define WSGI_METRICS_OPT_ALL (WSGI_METRICS_OPT_CAPTURE_USER_AGENT)
 
 extern int wsgi_metrics_options;
 
-/* Returns non-zero if external telemetry reporting is enabled (turned
- * on at config time by the WSGIMetricsService directive). When enabled,
- * the external reporter is the canonical metrics consumer and the
- * Python accessors mod_wsgi.request_metrics() and
- * mod_wsgi.process_metrics() return None to signal that the Python API
- * path is not the active consumer. */
+/*
+ * Returns non-zero if external telemetry reporting is enabled (turned
+ * on at config time by the WSGIMetricsService directive). When
+ * enabled, the external reporter is the canonical metrics consumer
+ * and the Python accessors mod_wsgi.request_metrics() and
+ * mod_wsgi.process_metrics() return None to signal that the Python
+ * API path is not the active consumer.
+ */
+
 extern int wsgi_telemetry_is_enabled(void);
 
-/* Field IDs. Grouped in blocks of 10 by concept. Must stay in lockstep
- * with the Python decoder table in telemetry/src/mod_wsgi_telemetry/wire.py.
- * IDs are kept stable while the wire format is in development; once a
- * release is cut, IDs become append-only and renumbering is no longer
- * permitted. */
+/*
+ * Field IDs. Grouped in blocks of 10 by concept. Must stay in
+ * lockstep with the Python decoder table in
+ * telemetry/src/mod_wsgi_telemetry/wire.py. IDs are kept stable while
+ * the wire format is in development; once a release is cut, IDs
+ * become append-only and renumbering is no longer permitted.
+ */
 
-/* 1-9: Identity. Build/runtime versions come first so a consumer that
- * wants to print a "who is this" banner can reach them without scanning
- * the whole TLV record. All seven fields are static for the life of a
- * process and only need to be emitted on the first sample after start. */
-#define WSGI_METRICS_F_MOD_WSGI_VERSION 1   /* bytes — e.g. "6.0.0" */
-#define WSGI_METRICS_F_PYTHON_VERSION 2     /* bytes — e.g. "3.14.0" */
-#define WSGI_METRICS_F_APACHE_VERSION 3     /* bytes — e.g. "Apache/2.4.62" */
-#define WSGI_METRICS_F_MPM_NAME 4           /* bytes — e.g. "event", "prefork" */
+/*
+ * 1-9: Identity. Build/runtime versions come first so a consumer that
+ * wants to print a "who is this" banner can reach them without
+ * scanning the whole TLV record. All seven fields are static for the
+ * life of a process and only need to be emitted on the first sample
+ * after start.
+ */
+
+#define WSGI_METRICS_F_MOD_WSGI_VERSION 1   /* bytes: e.g. "6.0.0" */
+#define WSGI_METRICS_F_PYTHON_VERSION 2     /* bytes: e.g. "3.14.0" */
+#define WSGI_METRICS_F_APACHE_VERSION 3     /* bytes: e.g. "Apache/2.4.62" */
+#define WSGI_METRICS_F_MPM_NAME 4           /* bytes: e.g. "event", "prefork" */
 #define WSGI_METRICS_F_HOSTNAME 5           /* bytes */
 #define WSGI_METRICS_F_PROCESS_GROUP 6      /* bytes */
-#define WSGI_METRICS_F_PROCESS_PARENT_PID 7 /* u64 — Apache parent pid */
+#define WSGI_METRICS_F_PROCESS_PARENT_PID 7 /* u64: Apache parent pid */
 
-/* 10-19: Sampling and reporter configuration. sample_period is the
- * measured wall-clock interval between two snapshot calls (drifts with
- * scheduling jitter); telemetry_interval is the configured
+/*
+ * 10-19: Sampling and reporter configuration. sample_period is the
+ * measured wall-clock interval between two snapshot calls (drifts
+ * with scheduling jitter); telemetry_interval is the configured
  * WSGIMetricsService interval value (constant for the life of the
  * process). They normally agree to within a few ms but can diverge
  * under load. slow_requests_threshold is the configured
  * WSGISlowRequests value in seconds (0 when the directive is not
- * configured, in which case slow-request datagrams never fire). */
+ * configured, in which case slow-request datagrams never fire).
+ */
+
 #define WSGI_METRICS_F_SAMPLE_PERIOD 10           /* f64 */
 #define WSGI_METRICS_F_TELEMETRY_INTERVAL 11      /* f64 */
 #define WSGI_METRICS_F_SLOW_REQUESTS_THRESHOLD 12 /* f64 */
-#define WSGI_METRICS_F_SWITCH_INTERVAL 13         /* f64 — sys.getswitchinterval() */
+#define WSGI_METRICS_F_SWITCH_INTERVAL 13         /* f64: sys.getswitchinterval() */
 
-/* 20-29: Request rates and capacity for the interval. */
+/*
+ * 20-29: Request rates and capacity for the interval.
+ */
+
 #define WSGI_METRICS_F_REQUEST_COUNT 20        /* u64 */
 #define WSGI_METRICS_F_REQUEST_THROUGHPUT 21   /* f64 */
 #define WSGI_METRICS_F_CAPACITY_UTILIZATION 22 /* f64 */
 
-/* 30-39: CPU. *_utilization are interval rates from wsgi_request_metrics;
- * *_time are cumulative seconds reserved for wsgi_process_metrics (not
- * yet emitted on the wire). */
+/*
+ * 30-39: CPU. *_utilization are interval rates from
+ * wsgi_request_metrics; *_time are cumulative seconds reserved for
+ * wsgi_process_metrics (not yet emitted on the wire).
+ */
+
 #define WSGI_METRICS_F_CPU_USER_UTILIZATION 30   /* f64 */
 #define WSGI_METRICS_F_CPU_SYSTEM_UTILIZATION 31 /* f64 */
 #define WSGI_METRICS_F_CPU_UTILIZATION 32        /* f64 */
@@ -133,22 +154,31 @@ extern int wsgi_telemetry_is_enabled(void);
 #define WSGI_METRICS_F_CPU_SYSTEM_TIME 36        /* f64 */
 #define WSGI_METRICS_F_CPU_TIME 37               /* f64 */
 
-/* 40-49: Memory. */
+/*
+ * 40-49: Memory.
+ */
+
 #define WSGI_METRICS_F_MEMORY_RSS 40     /* u64 */
 #define WSGI_METRICS_F_MEMORY_MAX_RSS 41 /* u64 */
 
-/* 50-59: Worker-thread counts. */
+/*
+ * 50-59: Worker-thread counts.
+ */
+
 #define WSGI_METRICS_F_REQUEST_THREADS_MAXIMUM 50 /* u64 */
 #define WSGI_METRICS_F_REQUEST_THREADS_STARTED 51 /* u64 */
 #define WSGI_METRICS_F_REQUEST_THREADS_ACTIVE 52  /* u64 */
 
-/* 60-69: Per-phase mean times for the interval (seconds).
+/*
+ * 60-69: Per-phase mean times for the interval (seconds).
  * request_time is the per-request total (server + queue + daemon +
- * application) — what the caller actually experienced.
- * gil_wait_time, input_read_time and output_write_time are
- * cross-cutting overlap indicators measured during application_time
- * and are *not* addends in the request_time invariant. See the UI
- * help text for partial-coverage and adapter-handoff caveats. */
+ * application): what the caller actually experienced. gil_wait_time,
+ * input_read_time and output_write_time are cross-cutting overlap
+ * indicators measured during application_time and are *not* addends
+ * in the request_time invariant. See the UI help text for
+ * partial-coverage and adapter-handoff caveats.
+ */
+
 #define WSGI_METRICS_F_SERVER_TIME 60       /* f64 */
 #define WSGI_METRICS_F_QUEUE_TIME 61        /* f64 */
 #define WSGI_METRICS_F_DAEMON_TIME 62       /* f64 */
@@ -158,13 +188,16 @@ extern int wsgi_telemetry_is_enabled(void);
 #define WSGI_METRICS_F_INPUT_READ_TIME 66   /* f64 */
 #define WSGI_METRICS_F_OUTPUT_WRITE_TIME 67 /* f64 */
 
-/* 70-79: Per-phase exact min times for the interval (microseconds).
+/*
+ * 70-79: Per-phase exact min times for the interval (microseconds).
  * Only emitted on ticks where at least one request completed; the
  * encoder skips the field when the per-tick min sentinel
  * (UINT64_MAX) is still in place.
  *
  * Aggregate cleanly across processes and across time windows by
- * (min of mins) — exact, no histogram approximation. */
+ * (min of mins): exact, no histogram approximation.
+ */
+
 #define WSGI_METRICS_F_SERVER_TIME_MIN_US 70       /* u64 */
 #define WSGI_METRICS_F_QUEUE_TIME_MIN_US 71        /* u64 */
 #define WSGI_METRICS_F_DAEMON_TIME_MIN_US 72       /* u64 */
@@ -174,10 +207,13 @@ extern int wsgi_telemetry_is_enabled(void);
 #define WSGI_METRICS_F_INPUT_READ_TIME_MIN_US 76   /* u64 */
 #define WSGI_METRICS_F_OUTPUT_WRITE_TIME_MIN_US 77 /* u64 */
 
-/* 80-89: Per-phase exact max times for the interval (microseconds).
- * Same emission rule and aggregation semantics as the min block —
+/*
+ * 80-89: Per-phase exact max times for the interval (microseconds).
+ * Same emission rule and aggregation semantics as the min block;
  * (max of maxes) is exact. Pairs with the histograms below to give a
- * true worst-case alongside the bucket-bounded percentiles. */
+ * true worst-case alongside the bucket-bounded percentiles.
+ */
+
 #define WSGI_METRICS_F_SERVER_TIME_MAX_US 80       /* u64 */
 #define WSGI_METRICS_F_QUEUE_TIME_MAX_US 81        /* u64 */
 #define WSGI_METRICS_F_DAEMON_TIME_MAX_US 82       /* u64 */
@@ -187,11 +223,14 @@ extern int wsgi_telemetry_is_enabled(void);
 #define WSGI_METRICS_F_INPUT_READ_TIME_MAX_US 86   /* u64 */
 #define WSGI_METRICS_F_OUTPUT_WRITE_TIME_MAX_US 87 /* u64 */
 
-/* 90-99: Per-phase histograms. HDR-style: 16 octaves from 1 ms to
+/*
+ * 90-99: Per-phase histograms. HDR-style: 16 octaves from 1 ms to
  * 65.5 s, each octave linearly split into 4 sub-buckets, plus one
  * overflow bucket for >65536 ms = 65 entries per phase. Max relative
- * error inside any sub-bucket is ≤25%. See wsgi_record_time_in_buckets
- * for the mantissa-based O(1) index. */
+ * error inside any sub-bucket is <= 25%. See
+ * wsgi_record_time_in_buckets for the mantissa-based O(1) index.
+ */
+
 #define WSGI_METRICS_F_SERVER_TIME_BUCKETS 90       /* i32 array */
 #define WSGI_METRICS_F_QUEUE_TIME_BUCKETS 91        /* i32 array */
 #define WSGI_METRICS_F_DAEMON_TIME_BUCKETS 92       /* i32 array */
@@ -201,81 +240,96 @@ extern int wsgi_telemetry_is_enabled(void);
 #define WSGI_METRICS_F_INPUT_READ_TIME_BUCKETS 96   /* i32 array */
 #define WSGI_METRICS_F_OUTPUT_WRITE_TIME_BUCKETS 97 /* i32 array */
 
-/* 100-109: Per-interval request I/O totals. Drained from the same
- * accumulator that wsgi_record_request_times() updates at end-of-
- * request, so the counts cover requests that completed during this
- * tick (in-flight requests do not contribute until they finish). */
+/*
+ * 100-109: Per-interval request I/O totals. Drained from the same
+ * accumulator that wsgi_record_request_times() updates at
+ * end-of-request, so the counts cover requests that completed during
+ * this tick (in-flight requests do not contribute until they finish).
+ */
+
 #define WSGI_METRICS_F_INPUT_BYTES_TOTAL 100   /* u64 */
 #define WSGI_METRICS_F_INPUT_READS_TOTAL 101   /* u64 */
 #define WSGI_METRICS_F_OUTPUT_BYTES_TOTAL 102  /* u64 */
 #define WSGI_METRICS_F_OUTPUT_WRITES_TOTAL 103 /* u64 */
 
-/* 110-119: Per-slot capacity signals. One entry per worker thread;
+/*
+ * 110-119: Per-slot capacity signals. One entry per worker thread;
  * array length matches the emitting process's live
- * request_threads_maximum. */
+ * request_threads_maximum.
+ */
+
 #define WSGI_METRICS_F_SLOT_REQUEST_COUNT 110      /* i32 array */
 #define WSGI_METRICS_F_SLOT_BUSY_TIME_US 111       /* i32 array */
 #define WSGI_METRICS_F_SLOT_CPU_TIME_US 112        /* i32 array */
 #define WSGI_METRICS_F_SLOT_CURRENT_ELAPSED_MS 113 /* i32 array */
 #define WSGI_METRICS_F_SLOT_MAX_DURATION_MS 114    /* i32 array */
 
-/* 120-129: Per-interval HTTP response status class totals. Drained
+/*
+ * 120-129: Per-interval HTTP response status class totals. Drained
  * from the same accumulators that wsgi_record_request_times() updates
  * at end-of-request, sharing drain-and-reset semantics with the
  * 100-109 I/O totals block. The five class counters partition every
  * request that reached end-of-request, with the convention that a
  * request whose WSGI app raised before calling start_response (status
- * value of 0) is folded into the 5xx counter — that matches the user-
- * visible outcome (mod_wsgi serves a 500). 1xx is included as a
- * tripwire: PEP 3333 forbids 1xx responses from a WSGI app, so a non-
- * zero count flags a protocol violation. Out-of-range values
+ * value of 0) is folded into the 5xx counter (that matches the
+ * user-visible outcome: mod_wsgi serves a 500). 1xx is included as a
+ * tripwire: PEP 3333 forbids 1xx responses from a WSGI app, so a
+ * non-zero count flags a protocol violation. Out-of-range values
  * (1..99 or 600+) are silently dropped by the recorder.
  *
  * Invariant: status_1xx_total + status_2xx_total + status_3xx_total +
  * status_4xx_total + status_5xx_total == request_count for the same
  * interval. Encoder always emits all five fields (even when zero) so
  * consumers can distinguish "zero of this class" from "older encoder
- * that didn't have the field". */
+ * that didn't have the field".
+ */
+
 #define WSGI_METRICS_F_STATUS_1XX_TOTAL 120 /* u64 */
 #define WSGI_METRICS_F_STATUS_2XX_TOTAL 121 /* u64 */
 #define WSGI_METRICS_F_STATUS_3XX_TOTAL 122 /* u64 */
 #define WSGI_METRICS_F_STATUS_4XX_TOTAL 123 /* u64 */
 #define WSGI_METRICS_F_STATUS_5XX_TOTAL 124 /* u64 */
 
-/* 130-139: Lifecycle event payload. Only present in
+/*
+ * 130-139: Lifecycle event payload. Only present in
  * WSGI_METRICS_KIND_PROCESS_STARTED, WSGI_METRICS_KIND_PROCESS_STOPPING
  * and WSGI_METRICS_KIND_PROCESS_STOPPED datagrams. Identity (hostname,
  * process_group) is repeated on each lifecycle datagram so it stands
- * alone — a STARTED can land before any periodic tick and a STOPPED
- * after the periodic stream has gone quiet, so neither can rely on the
- * KIND_PROCESS stream for context. The static identity strings
- * (versions, MPM, parent_pid) are only emitted on STARTED — STOPPING
- * and STOPPED expect the consumer to have keyed them by pid. */
-#define WSGI_METRICS_F_SHUTDOWN_REASON 130             /* bytes — one of the documented reason strings */
-#define WSGI_METRICS_F_PROCESS_UPTIME 131              /* f64 — seconds from STARTED to STOPPED */
-#define WSGI_METRICS_F_LIFETIME_REQUEST_COUNT 132      /* u64 — total requests served by this process */
-#define WSGI_METRICS_F_ACTIVE_REQUESTS_AT_DECISION 133 /* u64 — in-flight count at STOPPING moment */
-#define WSGI_METRICS_F_ACTIVE_REQUESTS_AT_EXIT 134     /* u64 — in-flight count at STOPPED moment; non-zero ⇒ cut off */
+ * alone: a STARTED can land before any periodic tick and a STOPPED
+ * after the periodic stream has gone quiet, so neither can rely on
+ * the KIND_PROCESS stream for context. The static identity strings
+ * (versions, MPM, parent_pid) are only emitted on STARTED; STOPPING
+ * and STOPPED expect the consumer to have keyed them by pid.
+ */
+
+#define WSGI_METRICS_F_SHUTDOWN_REASON 130             /* bytes: one of the documented reason strings */
+#define WSGI_METRICS_F_PROCESS_UPTIME 131              /* f64: seconds from STARTED to STOPPED */
+#define WSGI_METRICS_F_LIFETIME_REQUEST_COUNT 132      /* u64: total requests served by this process */
+#define WSGI_METRICS_F_ACTIVE_REQUESTS_AT_DECISION 133 /* u64: in-flight count at STOPPING moment */
+#define WSGI_METRICS_F_ACTIVE_REQUESTS_AT_EXIT 134     /* u64: in-flight count at STOPPED moment; non-zero means cut off */
 #define WSGI_METRICS_F_GRACEFUL_DRAIN 135              /* u64: 0=reaper aborted, 1=drain completed cleanly */
 
-/* 160-199: Reserved for future intermediate categories. Field IDs are
- * uint16 and the address space is effectively unbounded; this gap
- * exists so new conceptual blocks can be inserted at multiples of 10
- * before the slow-request region without disturbing already-allocated
- * IDs above. */
+/*
+ * 160-199: Reserved for future intermediate categories. Field IDs
+ * are uint16 and the address space is effectively unbounded; this
+ * gap exists so new conceptual blocks can be inserted at multiples
+ * of 10 before the slow-request region without disturbing
+ * already-allocated IDs above.
+ */
 
-/* 200-299: Slow-request fields. Only present in
+/*
+ * 200-299: Slow-request fields. Only present in
  * WSGI_METRICS_KIND_SLOW_REQUEST datagrams. Identity (hostname,
- * process_group) is looked up per pid via the accompanying KIND_REQUEST
- * and KIND_PROCESS_STARTED streams, so it is not repeated here. The
- * 200-block reserves 100 IDs for the slow-record category so future
- * additions land cleanly within this range.
+ * process_group) is looked up per pid via the accompanying
+ * KIND_REQUEST and KIND_PROCESS_STARTED streams, so it is not
+ * repeated here. The 200-block reserves 100 IDs for the slow-record
+ * category so future additions land cleanly within this range.
  *
  * Block layout:
  *   200-209: record metadata (record state, start, duration, thread,
- *            log id) — describing the slow-record entity itself.
+ *            log id), describing the slow-record entity itself.
  *   210-219: HTTP request identity (method, URL components, protocol
- *            version, peer IP, user agent) — describing the request.
+ *            version, peer IP, user agent), describing the request.
  *   220-229: per-phase timing breakdown (server / queue / daemon /
  *            application time, microseconds).
  *   230-239: per-request I/O counters.
@@ -288,11 +342,14 @@ extern int wsgi_telemetry_is_enabled(void);
  *            tracestate, sampled flag, parent span id).
  *   290-299: reserved.
  *
- * Active records carry zero for fields not yet observable: HTTP status
- * (start_response may not have run), CPU times (getrusage(RUSAGE_THREAD)
- * only reads the calling thread, while the active-record snapshot runs
- * from the reporter thread), I/O totals (the adapter may yet read or
- * write more), and any boundary-at-completion field. */
+ * Active records carry zero for fields not yet observable: HTTP
+ * status (start_response may not have run), CPU times
+ * (getrusage(RUSAGE_THREAD) only reads the calling thread, while the
+ * active-record snapshot runs from the reporter thread), I/O totals
+ * (the adapter may yet read or write more), and any
+ * boundary-at-completion field.
+ */
+
 #define WSGI_METRICS_F_SLOW_RECORD_STATE 200   /* u64: 0=active, 1=completed */
 #define WSGI_METRICS_F_SLOW_START_STAMP_US 201 /* u64 */
 #define WSGI_METRICS_F_SLOW_DURATION_US 202    /* u64 */
@@ -304,31 +361,31 @@ extern int wsgi_telemetry_is_enabled(void);
 #define WSGI_METRICS_F_SLOW_HOSTNAME 212    /* bytes */
 #define WSGI_METRICS_F_SLOW_SCRIPT_NAME 213 /* bytes */
 #define WSGI_METRICS_F_SLOW_PATH_INFO 214   /* bytes */
-#define WSGI_METRICS_F_SLOW_PROTOCOL 215    /* bytes — e.g. "HTTP/1.1", "HTTP/2.0" */
-#define WSGI_METRICS_F_SLOW_PEER_IP 216     /* bytes — post-trusted-proxy resolution */
-#define WSGI_METRICS_F_SLOW_USER_AGENT 217  /* bytes — only when WSGIMetricsOptions +CaptureUserAgent */
+#define WSGI_METRICS_F_SLOW_PROTOCOL 215    /* bytes: e.g. "HTTP/1.1", "HTTP/2.0" */
+#define WSGI_METRICS_F_SLOW_PEER_IP 216     /* bytes: post-trusted-proxy resolution */
+#define WSGI_METRICS_F_SLOW_USER_AGENT 217  /* bytes: only when WSGIMetricsOptions +CaptureUserAgent */
 
 #define WSGI_METRICS_F_SLOW_SERVER_TIME_US 220      /* u64 */
-#define WSGI_METRICS_F_SLOW_QUEUE_TIME_US 221       /* u64 — 0 in embedded mode */
-#define WSGI_METRICS_F_SLOW_DAEMON_TIME_US 222      /* u64 — 0 in embedded mode */
-#define WSGI_METRICS_F_SLOW_APPLICATION_TIME_US 223 /* u64 — partial for active records */
-#define WSGI_METRICS_F_SLOW_GIL_WAIT_US 224         /* u64 — running total at snapshot for active records */
-#define WSGI_METRICS_F_SLOW_GIL_WAIT_COUNT 225      /* u64 — number of GIL waits observed */
+#define WSGI_METRICS_F_SLOW_QUEUE_TIME_US 221       /* u64: 0 in embedded mode */
+#define WSGI_METRICS_F_SLOW_DAEMON_TIME_US 222      /* u64: 0 in embedded mode */
+#define WSGI_METRICS_F_SLOW_APPLICATION_TIME_US 223 /* u64: partial for active records */
+#define WSGI_METRICS_F_SLOW_GIL_WAIT_US 224         /* u64: running total at snapshot for active records */
+#define WSGI_METRICS_F_SLOW_GIL_WAIT_COUNT 225      /* u64: number of GIL waits observed */
 
 #define WSGI_METRICS_F_SLOW_INPUT_BYTES 230     /* u64 */
 #define WSGI_METRICS_F_SLOW_INPUT_READS 231     /* u64 */
 #define WSGI_METRICS_F_SLOW_OUTPUT_BYTES 232    /* u64 */
 #define WSGI_METRICS_F_SLOW_OUTPUT_WRITES 233   /* u64 */
-#define WSGI_METRICS_F_SLOW_INPUT_READ_US 234   /* u64 — per-request total */
-#define WSGI_METRICS_F_SLOW_OUTPUT_WRITE_US 235 /* u64 — per-request total */
+#define WSGI_METRICS_F_SLOW_INPUT_READ_US 234   /* u64: per-request total */
+#define WSGI_METRICS_F_SLOW_OUTPUT_WRITE_US 235 /* u64: per-request total */
 
 #define WSGI_METRICS_F_SLOW_STATUS 240 /* u64: 0=not yet known */
 
 #define WSGI_METRICS_F_SLOW_CPU_USER_US 250   /* u64 */
 #define WSGI_METRICS_F_SLOW_CPU_SYSTEM_US 251 /* u64 */
 
-#define WSGI_METRICS_F_SLOW_ACTIVE_AT_START 260      /* u64 — active_requests including this one */
-#define WSGI_METRICS_F_SLOW_ACTIVE_AT_COMPLETION 261 /* u64 — 0 for active records */
+#define WSGI_METRICS_F_SLOW_ACTIVE_AT_START 260      /* u64: active_requests including this one */
+#define WSGI_METRICS_F_SLOW_ACTIVE_AT_COMPLETION 261 /* u64: 0 for active records */
 
 /* ------------------------------------------------------------------------- */
 
@@ -338,16 +395,22 @@ extern int wsgi_telemetry_is_enabled(void);
  * can be filled under the monitor lock without taking the GIL.
  */
 
-/* Per-phase histogram bucket count. HDR-style layout: 16 octaves
- * (1 ms → 65.5 s) × 4 linear sub-buckets per octave + 1 overflow
+/*
+ * Per-phase histogram bucket count. HDR-style layout: 16 octaves
+ * (1 ms to 65.5 s) by 4 linear sub-buckets per octave + 1 overflow
  * bucket for >65536 ms. See wsgi_record_time_in_buckets and the
- * BUCKET_UPPER_MS table on the UI side for the exact boundaries. */
+ * BUCKET_UPPER_MS table on the UI side for the exact boundaries.
+ */
+
 #define WSGI_TELEMETRY_BUCKET_COUNT 65
 
-/* Upper bound on per-slot array sizing. The encoder only emits
+/*
+ * Upper bound on per-slot array sizing. The encoder only emits
  * slot_count entries per tick, so oversizing the struct costs stack
  * memory but no wire bytes. 128 is generous for any realistic
- * WSGIDaemonProcess threads setting. */
+ * WSGIDaemonProcess threads setting.
+ */
+
 #define WSGI_TELEMETRY_MAX_SLOTS 128
 
 typedef struct
@@ -355,22 +418,29 @@ typedef struct
     char hostname[128];
     char process_group[64];
 
-    /* Build / runtime identity. Populated once at reporter thread
+    /*
+     * Build / runtime identity. Populated once at reporter thread
      * start and copied into the sample every tick; static for the
      * life of the process. Emitted as bytes fields 1-4. Empty strings
      * are skipped by the encoder so older ingesters tolerate a
-     * mod_wsgi that couldn't resolve, say, the MPM name. */
+     * mod_wsgi that couldn't resolve, say, the MPM name.
+     */
+
     char mod_wsgi_version[32];
     char python_version[64];
     char apache_version[64];
     char mpm_name[32];
 
     double sample_period;
-    /* Active sys.getswitchinterval() value in seconds, sampled once at
-     * reporter thread start. Static under the documented contract that
-     * the interval is set at process start (via WSGISwitchInterval or
-     * the switch-interval option on WSGIDaemonProcess) and not changed
-     * from Python after. */
+
+    /*
+     * Active sys.getswitchinterval() value in seconds, sampled once
+     * at reporter thread start. Static under the documented contract
+     * that the interval is set at process start (via
+     * WSGISwitchInterval or the switch-interval option on
+     * WSGIDaemonProcess) and not changed from Python after.
+     */
+
     double switch_interval;
     uint64_t request_count;
     double request_throughput;
@@ -392,21 +462,28 @@ typedef struct
     double daemon_time;
     double application_time;
     double request_time;
-    /* Cross-cutting overlap indicators measured during application
+
+    /*
+     * Cross-cutting overlap indicators measured during application
      * time. Mean per-request totals. Not addends in
      * server + queue + daemon + application = request. See UI help
      * text for the partial-coverage caveat on gil_wait_time and the
      * adapter-handoff vs client-receive distinction on
-     * output_write_time. */
+     * output_write_time.
+     */
+
     double gil_wait_time;
     double input_read_time;
     double output_write_time;
 
-    /* Per-phase exact min/max for the interval, in microseconds. The
+    /*
+     * Per-phase exact min/max for the interval, in microseconds. The
      * encoder skips the corresponding wire field when min still holds
-     * its UINT64_MAX sentinel — i.e. no requests completed during the
-     * tick. Min-of-mins / max-of-maxes are exact under any cross-
-     * process or cross-window aggregation. */
+     * its UINT64_MAX sentinel (i.e. no requests completed during the
+     * tick). Min-of-mins / max-of-maxes are exact under any
+     * cross-process or cross-window aggregation.
+     */
+
     uint64_t server_time_min_us;
     uint64_t queue_time_min_us;
     uint64_t daemon_time_min_us;
@@ -433,34 +510,47 @@ typedef struct
     int32_t input_read_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
     int32_t output_write_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
 
-    /* Per-interval request I/O totals. Sum across requests that
+    /*
+     * Per-interval request I/O totals. Sum across requests that
      * completed in this interval; in-flight requests contribute on
-     * the tick they finish. */
+     * the tick they finish.
+     */
+
     uint64_t input_bytes_total;
     uint64_t input_reads_total;
     uint64_t output_bytes_total;
     uint64_t output_writes_total;
 
-    /* Per-interval HTTP response class totals. Same drain-and-reset
+    /*
+     * Per-interval HTTP response class totals. Same drain-and-reset
      * semantics as the I/O totals above. status==0 (no start_response
      * call) is folded into status_5xx_total. Sum equals request_count
-     * for the interval. */
+     * for the interval.
+     */
+
     uint64_t status_1xx_total;
     uint64_t status_2xx_total;
     uint64_t status_3xx_total;
     uint64_t status_4xx_total;
     uint64_t status_5xx_total;
 
-    /* Reporter / slow-request configuration. Constant over the life
+    /*
+     * Reporter / slow-request configuration. Constant over the life
      * of the process; populated once per snapshot so the UI sees the
      * same values as the C side. slow_requests_threshold is 0 when
-     * the WSGISlowRequests directive is not configured. */
+     * the WSGISlowRequests directive is not configured.
+     */
+
     double telemetry_interval;
     double slow_requests_threshold;
 
-    /* Per-slot capacity signals. slot_count is the live length of each
-     * array — normally the WSGI process's request_threads_maximum, or
-     * WSGI_TELEMETRY_MAX_SLOTS if that is exceeded. */
+    /*
+     * Per-slot capacity signals. slot_count is the live length of
+     * each array, normally the WSGI process's
+     * request_threads_maximum, or WSGI_TELEMETRY_MAX_SLOTS if that is
+     * exceeded.
+     */
+
     uint32_t slot_count;
     int32_t slot_request_count[WSGI_TELEMETRY_MAX_SLOTS];
     int32_t slot_busy_time_us[WSGI_TELEMETRY_MAX_SLOTS];
@@ -499,26 +589,33 @@ typedef struct
     uint32_t thread_id;
     uint8_t state; /* 0=active, 1=completed */
 
-    /* Per-request I/O counters. Final at completion; partial snapshot
-     * for an active record (adapter may read/write more before end). */
+    /*
+     * Per-request I/O counters. Final at completion; partial snapshot
+     * for an active record (adapter may read/write more before end).
+     */
+
     uint64_t input_bytes;
     uint64_t input_reads;
     uint64_t output_bytes;
     uint64_t output_writes;
 
-    /* Per-request CPU time (microseconds). Final at completion;
-     * zero for active records — getrusage on this thread can only be
-     * called from the request's own worker, not from the reporter
-     * snapshot path that produces active records. */
+    /*
+     * Per-request CPU time (microseconds). Final at completion; zero
+     * for active records: getrusage on this thread can only be called
+     * from the request's own worker, not from the reporter snapshot
+     * path that produces active records.
+     */
+
     uint64_t cpu_user_us;
     uint64_t cpu_system_us;
 
-    /* Per-phase request timing (microseconds). server is Apache request
-     * arrival → handed off to daemon (or → application_start in
-     * embedded mode); queue is daemon connect accepted → worker thread
-     * picked up the request; daemon is worker pickup → WSGI callable
-     * invoked; application is WSGI callable invocation through last
-     * yielded chunk.
+    /*
+     * Per-phase request timing (microseconds). server covers Apache
+     * request arrival to daemon hand-off (or to application_start in
+     * embedded mode); queue covers daemon connect-accepted to worker
+     * thread pickup; daemon covers worker pickup to WSGI callable
+     * invocation; application covers WSGI callable invocation through
+     * last yielded chunk.
      *
      * For completed records all four are final. For active records:
      * server, queue and daemon are final once the corresponding phase
@@ -527,32 +624,43 @@ typedef struct
      * callable runs); application_time_us is zero until the callable
      * starts and reports (now - application_start) as a partial total
      * once it has. queue_time_us and daemon_time_us are zero in
-     * embedded mode where there is no daemon hand-off. */
+     * embedded mode where there is no daemon hand-off.
+     */
+
     uint64_t server_time_us;
     uint64_t queue_time_us;
     uint64_t daemon_time_us;
     uint64_t application_time_us;
 
-    /* Concurrency context — number of in-flight requests in this
+    /*
+     * Concurrency context: number of in-flight requests in this
      * process (= active_requests including this one) at slot claim
-     * and at completion. active_at_completion is zero for
-     * active records, by definition (the request hasn't completed
-     * yet). Used together with the per-process request_threads_maximum
+     * and at completion. active_at_completion is zero for active
+     * records, by definition (the request hasn't completed yet).
+     * Used together with the per-process request_threads_maximum
      * from the periodic stream to render an "n / max" saturation
-     * indicator on the slow-record detail panel. */
+     * indicator on the slow-record detail panel.
+     */
+
     uint64_t active_at_start;
     uint64_t active_at_completion;
 
-    /* Cross-cutting overlap totals for this single request. Final at
+    /*
+     * Cross-cutting overlap totals for this single request. Final at
      * completion; running totals at active-record snapshot time. See
-     * UI help text for partial-coverage and adapter-handoff caveats. */
+     * UI help text for partial-coverage and adapter-handoff caveats.
+     */
+
     uint64_t gil_wait_us;
     uint64_t gil_wait_count;
     uint64_t input_read_us;
     uint64_t output_write_us;
 
-    /* Final HTTP response status (e.g. 200, 404, 500). Zero for active
-     * records — start_response may not have been called yet. */
+    /*
+     * Final HTTP response status (e.g. 200, 404, 500). Zero for
+     * active records: start_response may not have been called yet.
+     */
+
     uint16_t status;
 
     char log_id[WSGI_SLOW_LOG_ID_MAX];
