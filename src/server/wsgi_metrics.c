@@ -1472,7 +1472,7 @@ static void wsgi_slow_copy_str(char *dst, size_t cap, const char *src)
             dst[cap - 2] = '.';
             dst[cap - 1] = '\0';
         }
-        else
+        else if (cap >= 1)
         {
             memcpy(dst, src, cap - 1);
             dst[cap - 1] = '\0';
@@ -1480,8 +1480,9 @@ static void wsgi_slow_copy_str(char *dst, size_t cap, const char *src)
     }
     else
     {
-        memcpy(dst, src, n);
-        dst[n] = '\0';
+        size_t copy_len = (n < cap) ? n : cap - 1;
+        memcpy(dst, src, copy_len);
+        dst[copy_len] = '\0';
     }
 }
 
