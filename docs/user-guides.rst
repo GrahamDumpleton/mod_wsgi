@@ -53,7 +53,9 @@ Concepts and advanced topics
    user-guides/virtual-environments
    user-guides/access-control-mechanisms
    user-guides/file-wrapper-extension
+   user-guides/subscribing-to-events
    user-guides/registering-cleanup-code
+   user-guides/internal-metrics-api
    user-guides/mod-wsgi-python-module
    user-guides/running-behind-a-reverse-proxy
    user-guides/hosting-websocket-applications
