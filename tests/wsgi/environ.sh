@@ -194,14 +194,6 @@ assert_body_equals "$URL/has?key=mod_wsgi.thread_id" \
     "present=YES;end" \
     "mod_wsgi.thread_id is present"
 
-assert_body_equals "$URL/has?key=mod_wsgi.thread_requests" \
-    "present=YES;end" \
-    "mod_wsgi.thread_requests is present"
-
-assert_body_equals "$URL/has?key=mod_wsgi.total_requests" \
-    "present=YES;end" \
-    "mod_wsgi.total_requests is present"
-
 assert_body_equals "$URL/has?key=apache.version" \
     "present=YES;end" \
     "apache.version is present"

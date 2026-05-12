@@ -310,6 +310,14 @@ Features Changed
   longer needed; the value is already in seconds and is a ``float``,
   not a ``str``).
 
+* The ``request_threads_buckets`` key in the dict returned by
+  ``mod_wsgi.request_metrics()`` has been renamed to
+  ``request_threads_completed`` to remove the misleading ``_buckets``
+  suffix: every other ``_buckets`` key in the dict is a duration
+  histogram, whereas this one is a per-slot completed-request count.
+  ``request_threads_buckets`` is retained as a deprecated alias
+  carrying the same value and will be removed in a future release.
+
 Features Removed
 ----------------
 

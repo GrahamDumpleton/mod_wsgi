@@ -143,10 +143,11 @@ typedef struct
     PyObject *wsgi_id_application_time_buckets;
     PyObject *wsgi_id_request_time_buckets;
     PyObject *wsgi_id_request_threads_buckets;
-    PyObject *wsgi_id_slot_busy_time_us;
-    PyObject *wsgi_id_slot_cpu_time_us;
-    PyObject *wsgi_id_slot_current_elapsed_ms;
-    PyObject *wsgi_id_slot_max_duration_ms;
+    PyObject *wsgi_id_request_threads_completed;
+    PyObject *wsgi_id_request_threads_busy_time;
+    PyObject *wsgi_id_request_threads_cpu_time;
+    PyObject *wsgi_id_request_threads_current_elapsed;
+    PyObject *wsgi_id_request_threads_max_duration;
 
     PyObject *wsgi_id_gil_wait_time;
     PyObject *wsgi_id_gil_wait_time_min_us;

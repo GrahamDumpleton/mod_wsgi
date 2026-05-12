@@ -133,42 +133,45 @@ Capacity
    process has no spare capacity; a value near 0.0 means the
    workers were mostly idle.
 
-``request_threads_buckets``
+``request_threads_completed``
    List of length ``request_threads_maximum``. Entry *i* is the
    number of requests worker slot *i + 1* completed during the
    window. Useful for detecting uneven distribution of work
-   across worker threads.
+   across worker threads. The deprecated alias
+   ``request_threads_buckets`` carries the same value and will be
+   removed in a future release.
 
-``slot_busy_time_us``
-   List of length ``request_threads_maximum``, microseconds.
+``request_threads_busy_time``
+   List of length ``request_threads_maximum``, float seconds.
    Entry *i* is the total time worker slot *i + 1* spent inside
    a request during the window, including any in-flight tail at
    drain time.
 
-``slot_cpu_time_us``
-   List of length ``request_threads_maximum``, microseconds.
+``request_threads_cpu_time``
+   List of length ``request_threads_maximum``, float seconds.
    Sum of per-request CPU deltas for requests that completed
    in this slot during the window. Each completing request
    contributes its full start-to-end CPU delta, regardless of
    how many earlier windows the request spanned: a long
    request appears as a CPU spike in the single window in
    which it completes, not spread across the windows it
-   occupied. This is asymmetric with ``slot_busy_time_us``,
+   occupied. This is asymmetric with ``request_threads_busy_time``,
    which folds in the in-flight wall-time tail at each
    window; the asymmetry is structural, because a worker
    thread's CPU usage is only readable from inside that
    thread, so the snapshot reader cannot sample a peer
    thread's in-flight CPU.
 
-``slot_current_elapsed_ms``
-   List of length ``request_threads_maximum``, milliseconds.
+``request_threads_current_elapsed``
+   List of length ``request_threads_maximum``, float seconds.
    Entry *i* is the elapsed wall time of any request still in
-   flight in slot *i + 1* at the drain instant, or 0 if the slot
-   was idle. Useful for spotting stuck requests on a live process.
+   flight in slot *i + 1* at the drain instant, or 0.0 if the
+   slot was idle. Useful for spotting stuck requests on a live
+   process.
 
-``slot_max_duration_ms``
-   List of length ``request_threads_maximum``, milliseconds. The
-   longest request duration each slot completed during the
+``request_threads_max_duration``
+   List of length ``request_threads_maximum``, float seconds.
+   The longest request duration each slot completed during the
    window.
 
 Phase timing means

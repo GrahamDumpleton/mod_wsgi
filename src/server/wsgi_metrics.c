@@ -1819,10 +1819,11 @@ int wsgi_metrics_init_state(PyObject *module)
     WSGI_CREATE_INTERNED_STRING_ID(application_time_buckets);
     WSGI_CREATE_INTERNED_STRING_ID(request_time_buckets);
     WSGI_CREATE_INTERNED_STRING_ID(request_threads_buckets);
-    WSGI_CREATE_INTERNED_STRING_ID(slot_busy_time_us);
-    WSGI_CREATE_INTERNED_STRING_ID(slot_cpu_time_us);
-    WSGI_CREATE_INTERNED_STRING_ID(slot_current_elapsed_ms);
-    WSGI_CREATE_INTERNED_STRING_ID(slot_max_duration_ms);
+    WSGI_CREATE_INTERNED_STRING_ID(request_threads_completed);
+    WSGI_CREATE_INTERNED_STRING_ID(request_threads_busy_time);
+    WSGI_CREATE_INTERNED_STRING_ID(request_threads_cpu_time);
+    WSGI_CREATE_INTERNED_STRING_ID(request_threads_current_elapsed);
+    WSGI_CREATE_INTERNED_STRING_ID(request_threads_max_duration);
 
     WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time);
     WSGI_CREATE_INTERNED_STRING_ID(gil_wait_time_min_us);
@@ -1964,6 +1965,28 @@ static int wsgi_dict_set_long_list(PyObject *dict, PyObject *key,
     return wsgi_dict_set_steal(dict, key, lst);
 }
 
+static int wsgi_dict_set_double_list(PyObject *dict, PyObject *key,
+                                     const double *vals, Py_ssize_t n)
+{
+    PyObject *lst;
+    Py_ssize_t i;
+
+    lst = PyList_New(n);
+    if (!lst)
+        return -1;
+    for (i = 0; i < n; i++)
+    {
+        PyObject *o = PyFloat_FromDouble(vals[i]);
+        if (!o)
+        {
+            Py_DECREF(lst);
+            return -1;
+        }
+        PyList_SET_ITEM(lst, i, o);
+    }
+    return wsgi_dict_set_steal(dict, key, lst);
+}
+
 static int wsgi_dict_set_minmax_or_none(PyObject *dict, PyObject *min_key,
                                         PyObject *max_key,
                                         apr_uint64_t min_us,
@@ -2036,10 +2059,10 @@ static PyObject *wsgi_request_metrics(void)
 
     int request_threads_maximum = wsgi_process_metrics->request_threads_maximum;
     static int *slot_completed_snap = NULL;
-    static int *slot_busy_us_snap = NULL;
-    static int *slot_cpu_us_snap = NULL;
-    static int *slot_current_ms_snap = NULL;
-    static int *slot_max_ms_snap = NULL;
+    static double *slot_busy_time_snap = NULL;
+    static double *slot_cpu_time_snap = NULL;
+    static double *slot_current_elapsed_snap = NULL;
+    static double *slot_max_duration_snap = NULL;
 
     apr_uint64_t interval_requests = 0;
     double server_time_total = 0;
@@ -2122,18 +2145,18 @@ static PyObject *wsgi_request_metrics(void)
         slot_completed_snap = (int *)apr_pcalloc(
             wsgi_server_config->pool,
             request_threads_maximum * sizeof(slot_completed_snap[0]));
-        slot_busy_us_snap = (int *)apr_pcalloc(
+        slot_busy_time_snap = (double *)apr_pcalloc(
             wsgi_server_config->pool,
-            request_threads_maximum * sizeof(slot_busy_us_snap[0]));
-        slot_cpu_us_snap = (int *)apr_pcalloc(
+            request_threads_maximum * sizeof(slot_busy_time_snap[0]));
+        slot_cpu_time_snap = (double *)apr_pcalloc(
             wsgi_server_config->pool,
-            request_threads_maximum * sizeof(slot_cpu_us_snap[0]));
-        slot_current_ms_snap = (int *)apr_pcalloc(
+            request_threads_maximum * sizeof(slot_cpu_time_snap[0]));
+        slot_current_elapsed_snap = (double *)apr_pcalloc(
             wsgi_server_config->pool,
-            request_threads_maximum * sizeof(slot_current_ms_snap[0]));
-        slot_max_ms_snap = (int *)apr_pcalloc(
+            request_threads_maximum * sizeof(slot_current_elapsed_snap[0]));
+        slot_max_duration_snap = (double *)apr_pcalloc(
             wsgi_server_config->pool,
-            request_threads_maximum * sizeof(slot_max_ms_snap[0]));
+            request_threads_maximum * sizeof(slot_max_duration_snap[0]));
     }
 
     result = PyDict_New();
@@ -2232,10 +2255,10 @@ static PyObject *wsgi_request_metrics(void)
     for (i = 0; i < request_threads_maximum; i++)
     {
         slot_completed_snap[i] = 0;
-        slot_busy_us_snap[i] = 0;
-        slot_cpu_us_snap[i] = 0;
-        slot_current_ms_snap[i] = 0;
-        slot_max_ms_snap[i] = 0;
+        slot_busy_time_snap[i] = 0.0;
+        slot_cpu_time_snap[i] = 0.0;
+        slot_current_elapsed_snap[i] = 0.0;
+        slot_max_duration_snap[i] = 0.0;
     }
 
     if (wsgi_process_metrics->thread_details)
@@ -2275,11 +2298,13 @@ static PyObject *wsgi_request_metrics(void)
             }
 
             slot_completed_snap[idx] = (int)stats->completed;
-            slot_busy_us_snap[idx] =
-                (int)(stats->busy_time_us + busy_tail);
-            slot_cpu_us_snap[idx] = (int)stats->cpu_time_us;
-            slot_current_ms_snap[idx] = (int)(current_elapsed / 1000);
-            slot_max_ms_snap[idx] = (int)(stats->max_duration_us / 1000);
+            slot_busy_time_snap[idx] =
+                (double)(stats->busy_time_us + busy_tail) / 1000000.0;
+            slot_cpu_time_snap[idx] = (double)stats->cpu_time_us / 1000000.0;
+            slot_current_elapsed_snap[idx] =
+                (double)current_elapsed / 1000000.0;
+            slot_max_duration_snap[idx] =
+                (double)stats->max_duration_us / 1000000.0;
 
             stats->busy_time_us = 0;
             stats->cpu_time_us = 0;
@@ -2370,7 +2395,7 @@ static PyObject *wsgi_request_metrics(void)
 
     for (i = 0; i < request_threads_maximum; i++)
     {
-        if (slot_completed_snap[i] || slot_current_ms_snap[i])
+        if (slot_completed_snap[i] || slot_current_elapsed_snap[i] > 0.0)
             request_threads_active++;
     }
 
@@ -2514,25 +2539,29 @@ static PyObject *wsgi_request_metrics(void)
         goto error;
 
     if (wsgi_dict_set_long_list(result,
-                                WSGI_INTERNED_STRING(request_threads_buckets),
+                                WSGI_INTERNED_STRING(request_threads_completed),
                                 slot_completed_snap,
                                 request_threads_maximum) < 0 ||
         wsgi_dict_set_long_list(result,
-                                WSGI_INTERNED_STRING(slot_busy_time_us),
-                                slot_busy_us_snap,
+                                WSGI_INTERNED_STRING(request_threads_buckets),
+                                slot_completed_snap,
                                 request_threads_maximum) < 0 ||
-        wsgi_dict_set_long_list(result,
-                                WSGI_INTERNED_STRING(slot_cpu_time_us),
-                                slot_cpu_us_snap,
-                                request_threads_maximum) < 0 ||
-        wsgi_dict_set_long_list(result,
-                                WSGI_INTERNED_STRING(slot_current_elapsed_ms),
-                                slot_current_ms_snap,
-                                request_threads_maximum) < 0 ||
-        wsgi_dict_set_long_list(result,
-                                WSGI_INTERNED_STRING(slot_max_duration_ms),
-                                slot_max_ms_snap,
-                                request_threads_maximum) < 0)
+        wsgi_dict_set_double_list(result,
+                                  WSGI_INTERNED_STRING(request_threads_busy_time),
+                                  slot_busy_time_snap,
+                                  request_threads_maximum) < 0 ||
+        wsgi_dict_set_double_list(result,
+                                  WSGI_INTERNED_STRING(request_threads_cpu_time),
+                                  slot_cpu_time_snap,
+                                  request_threads_maximum) < 0 ||
+        wsgi_dict_set_double_list(result,
+                                  WSGI_INTERNED_STRING(request_threads_current_elapsed),
+                                  slot_current_elapsed_snap,
+                                  request_threads_maximum) < 0 ||
+        wsgi_dict_set_double_list(result,
+                                  WSGI_INTERNED_STRING(request_threads_max_duration),
+                                  slot_max_duration_snap,
+                                  request_threads_maximum) < 0)
         goto error;
 
     if (wsgi_dict_set_double(result, WSGI_INTERNED_STRING(server_time),
