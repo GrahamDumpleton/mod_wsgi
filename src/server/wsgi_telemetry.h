@@ -415,6 +415,15 @@ extern int wsgi_telemetry_is_enabled(void);
 
 typedef struct
 {
+    /*
+     * Per-process identity strings. hostname comes from gethostname();
+     * process_group is the WSGIDaemonProcess group name (empty in
+     * embedded mode). Filled on every tick from the reporter context
+     * rather than from the snapshot, since they live on
+     * wsgi_telemetry_ctx_t and are static for the life of the
+     * process.
+     */
+
     char hostname[128];
     char process_group[64];
 
@@ -431,6 +440,13 @@ typedef struct
     char apache_version[64];
     char mpm_name[32];
 
+    /*
+     * Measured wall-clock interval (seconds) between this snapshot
+     * and the previous one. Drifts with scheduling jitter; normally
+     * matches the configured WSGIMetricsService interval to within a
+     * few ms.
+     */
+
     double sample_period;
 
     /*
@@ -442,20 +458,53 @@ typedef struct
      */
 
     double switch_interval;
+
+    /*
+     * Per-tick request rate and capacity. request_count is the number
+     * of requests that completed in this interval; request_throughput
+     * divides by sample_period; capacity_utilization is per-process
+     * busy-thread-seconds over (sample_period * request_threads_maximum).
+     */
+
     uint64_t request_count;
     double request_throughput;
     double capacity_utilization;
+
+    /*
+     * Per-tick CPU rates (fraction of one core). user/system are the
+     * components; cpu_utilization is their sum.
+     */
 
     double cpu_user_utilization;
     double cpu_system_utilization;
     double cpu_utilization;
 
+    /*
+     * Process memory at snapshot time, in bytes. memory_rss is the
+     * current resident set; memory_max_rss is the lifetime peak.
+     */
+
     uint64_t memory_rss;
     uint64_t memory_max_rss;
+
+    /*
+     * Worker-thread counts at snapshot time. _maximum is the
+     * configured cap (MaxRequestWorkers / WSGIDaemonProcess threads=);
+     * _started is how many of those have been seen in the directory;
+     * _active is how many produced any per-tick activity in this
+     * interval.
+     */
 
     uint32_t request_threads_maximum;
     uint32_t request_threads_started;
     uint32_t request_threads_active;
+
+    /*
+     * Per-phase mean times for the interval (seconds). request_time
+     * is server + queue + daemon + application; queue_time and
+     * daemon_time are zero in embedded mode where there is no daemon
+     * hand-off (see has_daemon_timing).
+     */
 
     double server_time;
     double queue_time;
@@ -500,6 +549,14 @@ typedef struct
     uint64_t gil_wait_time_max_us;
     uint64_t input_read_time_max_us;
     uint64_t output_write_time_max_us;
+
+    /*
+     * Per-phase log-spaced histograms for the interval. Bucket layout
+     * is described at WSGI_TELEMETRY_BUCKET_COUNT above; each entry
+     * is the count of requests whose phase duration fell in that
+     * bucket. queue_time and daemon_time buckets are unused in
+     * embedded mode.
+     */
 
     int32_t server_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
     int32_t queue_time_buckets[WSGI_TELEMETRY_BUCKET_COUNT];
@@ -584,10 +641,20 @@ typedef struct
 
 typedef struct
 {
-    uint64_t start_stamp_us; /* wall-clock when request started */
-    uint64_t duration_us;    /* elapsed (active) or final (completed) */
+    /*
+     * Record metadata. start_stamp_us is the wall-clock instant the
+     * request began; duration_us is the elapsed time at snapshot
+     * (still ticking for active records, frozen for completed ones).
+     * thread_id is the per-process worker slot that served (or is
+     * serving) the request; state is 0 for active records emitted
+     * from the per-tick scan, 1 for completed records dequeued from
+     * the finalise ring.
+     */
+
+    uint64_t start_stamp_us;
+    uint64_t duration_us;
     uint32_t thread_id;
-    uint8_t state; /* 0=active, 1=completed */
+    uint8_t state;
 
     /*
      * Per-request I/O counters. Final at completion; partial snapshot
@@ -662,6 +729,16 @@ typedef struct
      */
 
     uint16_t status;
+
+    /*
+     * Request identity strings, copied out of the live request_rec by
+     * wsgi_slow_snapshot_fields() (under the monitor lock, so the
+     * scan path never holds a dangling r). Each field is truncated
+     * to its corresponding WSGI_SLOW_*_MAX bound with a "..." suffix
+     * marking the cut. user_agent is populated only when
+     * WSGIMetricsOptions +CaptureUserAgent is set; the others are
+     * always populated when r is live.
+     */
 
     char log_id[WSGI_SLOW_LOG_ID_MAX];
     char method[WSGI_SLOW_METHOD_MAX];

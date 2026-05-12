@@ -54,6 +54,7 @@
  * request_thread promotion takes the same lock around the
  * request_threads counter increment.
  */
+
 WSGIThreadInfo *wsgi_thread_info(int create, int request)
 {
     WSGIProcessMetrics *m = wsgi_process_metrics;
