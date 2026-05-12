@@ -203,13 +203,13 @@ FIELDS = {
     # 130-139: lifecycle event payload. Only present in
     # KIND_PROCESS_STARTED, KIND_PROCESS_STOPPING and
     # KIND_PROCESS_STOPPED datagrams. Identity (hostname,
-    # process_group) is repeated on each lifecycle datagram so it
-    # stands alone — a STARTED can land before any periodic tick and
-    # a STOPPED after the periodic stream has gone quiet, so neither
-    # can rely on the KIND_PROCESS stream for context. The static
-    # identity strings (versions, MPM, parent_pid) are only emitted on
-    # STARTED — STOPPING and STOPPED expect the consumer to have keyed
-    # them by pid.
+    # process_group, parent_pid) is repeated on each lifecycle
+    # datagram and on every periodic KIND_PROCESS tick so a consumer
+    # that joins mid-stream can rehydrate the full identity without
+    # waiting for a restart cycle. The static identity strings
+    # (versions, MPM) are also emitted on every periodic tick;
+    # STOPPING and STOPPED still expect the consumer to have keyed
+    # them by pid because those frames omit the version strings.
     130: "shutdown_reason",
     131: "process_uptime",
     132: "lifetime_request_count",
@@ -248,6 +248,7 @@ FIELDS = {
     202: "slow_duration_us",
     203: "slow_thread_id",
     204: "slow_log_id",
+    205: "slow_server_pid",            # Apache child worker pid that accepted the request
 
     210: "slow_method",
     211: "slow_scheme",

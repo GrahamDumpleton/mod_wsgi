@@ -359,7 +359,6 @@
   .slow-table .col-expand  { width: 22px; }
   .slow-table .col-elapsed { width: 80px; }
   .slow-table .col-state   { width: 90px; }
-  .slow-table .col-pid     { width: 110px; }
   .slow-table .col-method  { width: 70px; }
   .slow-table .col-status  { width: 60px; }
   .slow-table .col-url     { width: auto; }
@@ -1059,7 +1058,6 @@
             <col class="col-expand">
             <col class="col-elapsed">
             <col class="col-state">
-            <col class="col-pid">
             <col class="col-method">
             <col class="col-status">
             <col class="col-url">
@@ -1069,7 +1067,6 @@
             <th aria-label="expand"></th>
             <th>Elapsed</th>
             <th>State</th>
-            <th>PID / thread</th>
             <th>Method</th>
             <th>Status</th>
             <th>URL</th>
@@ -2054,18 +2051,39 @@ function renderSlowExpandPanel(e) {
     outputWriteRow = `<div class="label">Output write time</div>` +
       `<div>${fmtCpuUs(outputWriteUs)}${fmtIOPct(outputWriteUs)}</div>`;
   }
-  // Process identity: group · pid (parent) · thread, looked up from
-  // ProcessState by pid. Group renders as "(embedded)" when no daemon
-  // group applies; the parent-pid suffix is omitted when unknown so
-  // very early page-load slow records (before any STARTED has
-  // landed) still render cleanly.
+  // Process identity rendered as a stack of role-labelled rows so the
+  // request flow is visible at a glance: httpd (Apache parent) ->
+  // proxy (Apache child that accepted the request) -> daemon (the
+  // mod_wsgi daemon process that ran the WSGI callable). In embedded
+  // mode the same Apache child both accepts and runs, so the proxy
+  // and daemon rows collapse into a single "embedded" row. Mode is
+  // detected from server_pid: when present and distinct from the
+  // emitter pid this is daemon mode; when equal or absent (older
+  // emitter, or genuine embedded run) we render the single-row form.
   const proc = state.processes.get(e.pid);
   const groupText = (proc && proc.process_group)
     ? escapeHtml(proc.process_group) : "(embedded)";
+  const hostname = (proc && proc.hostname) ? escapeHtml(proc.hostname) : "";
   const ppid = (proc && proc.process_parent_pid) || 0;
-  const pidPart = `pid ${e.pid}` + (ppid ? ` (parent ${ppid})` : "");
+  const serverPid = e.server_pid || 0;
+  const isDaemonMode = serverPid > 0 && serverPid !== e.pid;
   const threadPart = e.thread_id ? ` &middot; thread ${e.thread_id}` : "";
-  const processLine = `${groupText} &middot; ${pidPart}${threadPart}`;
+  // HTTPD row identifies the Apache parent process as "pid · host"
+  // so the same ppid value on different hosts is distinguishable.
+  // Either half drops out when its value is unknown; the row still
+  // renders with a dash when neither is known (the slow record
+  // arrived before any STARTED event landed for the emitter).
+  let httpdValue;
+  if (ppid && hostname) httpdValue = `${ppid} &middot; ${hostname}`;
+  else if (ppid) httpdValue = `${ppid}`;
+  else if (hostname) httpdValue = hostname;
+  else httpdValue = "&mdash;";
+  const httpdRow = `<div class="label">HTTPD</div><div>${httpdValue}</div>`;
+  const processRoleRows = isDaemonMode
+    ? `<div class="label">proxy</div><div>${serverPid}</div>` +
+      `<div class="label">daemon</div><div>${e.pid}${threadPart}</div>`
+    : `<div class="label">embedded</div><div>${e.pid}${threadPart}</div>`;
+  const groupRow = `<div class="label">Group</div><div>${groupText}</div>`;
   // Concurrency context: in-flight count at slot claim (always
   // captured) and at completion (zero for active records, by
   // definition). Shown as "n / max" when max is known from the
@@ -2113,8 +2131,9 @@ function renderSlowExpandPanel(e) {
       `<div class="url-full">${escapeHtml(userAgent)}</div>`
     : "";
   return `<div class="slow-details">
-    <div class="label">Process</div>
-    <div>${processLine}</div>
+    ${groupRow}
+    ${httpdRow}
+    ${processRoleRows}
     <div class="label">URL</div>
     <div class="url-full">${escapeHtml(url)}</div>
     ${clientRow}
@@ -2179,7 +2198,7 @@ function renderSlowRequests() {
 
   if (display.length === 0) {
     tbody.innerHTML =
-      `<tr><td colspan="8" class="slow-empty">no slow requests</td></tr>`;
+      `<tr><td colspan="7" class="slow-empty">no slow requests</td></tr>`;
     return;
   }
 
@@ -2238,7 +2257,6 @@ function renderSlowRequests() {
       <td><button type="button" class="expand-toggle${isOpen ? ' expanded' : ''}" aria-expanded="${isOpen}" aria-label="${isOpen ? 'Collapse details' : 'Expand details'}">${chev}</button></td>
       <td>${fmtElapsedMs(e.duration_us)}</td>
       <td>${stateLabel}</td>
-      <td>${e.pid} / ${e.thread_id || "—"}</td>
       <td>${method}</td>
       <td>${statusCell}</td>
       <td title="${urlEsc}">${badge}<span class="url">${urlEsc}</span></td>
@@ -2246,7 +2264,7 @@ function renderSlowRequests() {
     </tr>`);
     if (isOpen) {
       html.push(`<tr class="details" data-key="${escapeHtml(expandKey)}">
-        <td colspan="8">${renderSlowExpandPanel(e)}</td>
+        <td colspan="7">${renderSlowExpandPanel(e)}</td>
       </tr>`);
     }
   }

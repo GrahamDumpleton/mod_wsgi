@@ -201,6 +201,7 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
     fields = {
         "hostname": socket.gethostname(),
         "process_group": "simulated",
+        "process_parent_pid": os.getpid(),
         "sample_period": float(interval),
         "request_count": count,
         "request_throughput": throughput,
@@ -346,6 +347,10 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
         "slow_start_stamp_us": start_stamp_us,
         "slow_duration_us": duration_us,
         "slow_thread_id": thread_id,
+        # Synthesise an Apache-child pid distinct from the emitter
+        # pid so the slow-request drill-down exercises its daemon-mode
+        # rendering (proxy != daemon). Stable per emitter.
+        "slow_server_pid": max(1, pid - 1),
         "slow_log_id": log_id,
         "slow_method": method,
         "slow_scheme": "http",

@@ -233,6 +233,8 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_PROCESS_GROUP, s->process_group,
                                (uint16_t)strlen(s->process_group));
 
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_PROCESS_PARENT_PID, s->parent_pid);
+
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SAMPLE_PERIOD, s->sample_period);
     wsgi_metrics_put_f64(&p, WSGI_METRICS_F_TELEMETRY_INTERVAL,
                          s->telemetry_interval);
@@ -423,6 +425,7 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
                          s->start_stamp_us);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_DURATION_US, s->duration_us);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_THREAD_ID, s->thread_id);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_SERVER_PID, s->server_pid);
 
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_INPUT_BYTES, s->input_bytes);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_INPUT_READS, s->input_reads);
@@ -708,6 +711,7 @@ static void wsgi_telemetry_emit_tick(const wsgi_telemetry_ctx_t *ctx)
     sample.apache_version[sizeof(sample.apache_version) - 1] = '\0';
     strncpy(sample.mpm_name, ctx->mpm_name, sizeof(sample.mpm_name) - 1);
     sample.mpm_name[sizeof(sample.mpm_name) - 1] = '\0';
+    sample.parent_pid = ctx->parent_pid;
     sample.telemetry_interval = wsgi_telemetry_interval;
     sample.slow_requests_threshold =
         (double)wsgi_slow_threshold_us / 1.0e6;

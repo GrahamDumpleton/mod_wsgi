@@ -803,6 +803,7 @@ void wsgi_end_request(void)
                 rec.start_stamp_us = (uint64_t)slot->start_us;
                 rec.duration_us = (uint64_t)elapsed;
                 rec.thread_id = (uint32_t)thread_info->thread_id;
+                rec.server_pid = (uint32_t)slot->server_pid;
                 rec.input_bytes = (uint64_t)slot->io_input_bytes;
                 rec.input_reads = (uint64_t)slot->io_input_reads;
                 rec.output_bytes = (uint64_t)slot->io_output_bytes;
@@ -1711,6 +1712,7 @@ int wsgi_metrics_snapshot_slow_active(wsgi_slow_request_t *out, int out_cap,
             rec->start_stamp_us = (uint64_t)slot->start_us;
             rec->duration_us = (uint64_t)elapsed;
             rec->thread_id = (uint32_t)ti->thread_id;
+            rec->server_pid = (uint32_t)slot->server_pid;
             rec->input_bytes = (uint64_t)slot->io_input_bytes;
             rec->input_reads = (uint64_t)slot->io_input_reads;
             rec->output_bytes = (uint64_t)slot->io_output_bytes;

@@ -102,6 +102,11 @@ class SlowEntry:
     """
     pid: int
     thread_id: int
+    # Apache child worker pid that accepted the request. In embedded
+    # mode this is the same process as pid (Apache child runs the
+    # WSGI app directly). In daemon mode pid is the daemon process
+    # and server_pid is the Apache child that proxied the request.
+    server_pid: int
     log_id: str
     method: str
     scheme: str
@@ -170,6 +175,7 @@ class SlowEntry:
         return {
             "pid": self.pid,
             "thread_id": self.thread_id,
+            "server_pid": self.server_pid,
             "log_id": self.log_id,
             "method": self.method,
             "scheme": self.scheme,
@@ -348,6 +354,10 @@ class Ingester:
         _latch_str("apache_version", "apache_version")
         _latch_str("mpm_name", "mpm_name")
 
+        ppid = sample.fields.get("process_parent_pid")
+        if isinstance(ppid, int) and ppid > 0:
+            state.process_parent_pid = ppid
+
         sp = sample.fields.get("sample_period")
         if isinstance(sp, (int, float)) and sp > 0:
             state.sample_period = float(sp)
@@ -441,6 +451,7 @@ class Ingester:
         entry = SlowEntry(
             pid=sample.pid,
             thread_id=thread_id,
+            server_pid=int(f.get("slow_server_pid") or 0),
             log_id=log_id,
             method=_s("slow_method"),
             scheme=_s("slow_scheme"),

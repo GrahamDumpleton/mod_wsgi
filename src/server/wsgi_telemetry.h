@@ -355,6 +355,7 @@ extern int wsgi_telemetry_is_enabled(void);
 #define WSGI_METRICS_F_SLOW_DURATION_US 202    /* u64 */
 #define WSGI_METRICS_F_SLOW_THREAD_ID 203      /* u64 */
 #define WSGI_METRICS_F_SLOW_LOG_ID 204         /* bytes */
+#define WSGI_METRICS_F_SLOW_SERVER_PID 205     /* u64: Apache child worker pid that accepted the request */
 
 #define WSGI_METRICS_F_SLOW_METHOD 210      /* bytes */
 #define WSGI_METRICS_F_SLOW_SCHEME 211      /* bytes */
@@ -426,6 +427,16 @@ typedef struct
 
     char hostname[128];
     char process_group[64];
+
+    /*
+     * Apache parent (master) httpd process PID. Static for the life
+     * of the process; emitted on every periodic tick so a consumer
+     * that joins mid-stream (missed the STARTED frame) can still
+     * recover the Apache instance identity without waiting for a
+     * restart cycle.
+     */
+
+    uint32_t parent_pid;
 
     /*
      * Build / runtime identity. Populated once at reporter thread
@@ -646,14 +657,19 @@ typedef struct
      * request began; duration_us is the elapsed time at snapshot
      * (still ticking for active records, frozen for completed ones).
      * thread_id is the per-process worker slot that served (or is
-     * serving) the request; state is 0 for active records emitted
-     * from the per-tick scan, 1 for completed records dequeued from
-     * the finalise ring.
+     * serving) the request. server_pid is the Apache child worker
+     * process that accepted the request: in embedded mode this is
+     * the same process as the emitter pid in the fixed header, in
+     * daemon mode it is the originating Apache child (sibling of the
+     * emitter daemon). state is 0 for active records emitted from
+     * the per-tick scan, 1 for completed records dequeued from the
+     * finalise ring.
      */
 
     uint64_t start_stamp_us;
     uint64_t duration_us;
     uint32_t thread_id;
+    uint32_t server_pid;
     uint8_t state;
 
     /*
