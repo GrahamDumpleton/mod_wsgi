@@ -292,6 +292,24 @@ Features Changed
   relied on the lazy enable should add a call to
   ``mod_wsgi.start_recording_metrics()`` at module import time.
 
+* The request-timing keys in the WSGI ``environ`` dictionary have been
+  reworked to align with the corresponding fields on the
+  ``request_started`` and ``request_finished`` event payloads.
+  ``mod_wsgi.script_start`` has been renamed to
+  ``mod_wsgi.application_start`` (the previous name was misleading;
+  the value was always sampled per-request at adapter entry, not at
+  script load). All four request-timing keys
+  (``mod_wsgi.request_start``, ``mod_wsgi.queue_start``,
+  ``mod_wsgi.daemon_start`` and ``mod_wsgi.application_start``) are
+  now Python ``float`` values in seconds since the epoch, replacing
+  the previous decimal string of microseconds. ``mod_wsgi.queue_start``
+  and ``mod_wsgi.daemon_start`` are also now always present, set to
+  ``0.0`` in embedded mode. This is a breaking change for any code
+  reading these keys out of the WSGI ``environ`` (in particular,
+  ``float(environ["mod_wsgi.request_start"]) / 1000000`` is no
+  longer needed; the value is already in seconds and is a ``float``,
+  not a ``str``).
+
 Features Removed
 ----------------
 

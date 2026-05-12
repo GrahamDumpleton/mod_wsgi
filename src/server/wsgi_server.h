@@ -183,6 +183,8 @@ typedef struct
     int daemon_connects;
     int daemon_restarts;
 
+    pid_t server_pid;
+
     apr_time_t request_start;
     apr_time_t queue_start;
     apr_time_t daemon_start;

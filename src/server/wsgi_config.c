@@ -2347,6 +2347,8 @@ WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p, request_rec *r)
     config->daemon_connects = 0;
     config->daemon_restarts = 0;
 
+    config->server_pid = 0;
+
     config->request_start = 0;
     config->queue_start = 0;
     config->daemon_start = 0;

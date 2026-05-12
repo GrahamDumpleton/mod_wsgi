@@ -114,12 +114,15 @@ invoked.
    the supported hook point for adding application-level
    middleware at runtime.
 
+``server_pid``
+   Process ID of the Apache child worker that accepted the
+   request, as an ``int``. In embedded mode this is the process
+   the WSGI application is running in; in daemon mode it is the
+   originating Apache child, distinct from the daemon process
+   serving the request.
+
 ``request_start``
    Time Apache received the request, in seconds since the epoch.
-
-``application_start``
-   Time the worker thread is about to call the application
-   callable, in seconds since the epoch.
 
 ``queue_start``
    Time Apache wrote the request onto the daemon socket, in
@@ -129,6 +132,10 @@ invoked.
 ``daemon_start``
    Time the daemon process picked the request up, in seconds
    since the epoch. ``0`` in embedded mode.
+
+``application_start``
+   Time the worker thread is about to call the application
+   callable, in seconds since the epoch.
 
 ``daemon_connects``
    Number of times the Apache child has had to establish a
@@ -168,7 +175,7 @@ Fires after the response has been fully written to the client.
 ``request_id``, ``thread_id``, ``request_data``
    Standard fields described above.
 
-``request_start``, ``application_start``, ``queue_start``, ``daemon_start``
+``server_pid``, ``request_start``, ``queue_start``, ``daemon_start``, ``application_start``
    As for ``request_started``.
 
 ``application_finish``

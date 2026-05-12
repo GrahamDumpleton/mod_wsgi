@@ -770,6 +770,21 @@ static PyObject *Adapter_environ(AdapterObject *self)
     {
         if (elts[i].key)
         {
+            /*
+             * Hide internal microsecond-string carriers from the
+             * WSGI environ. The canonical mod_wsgi timing keys
+             * are inserted below as Python floats in seconds.
+             */
+
+            size_t key_len = strlen(elts[i].key);
+
+            if (key_len > 12 &&
+                memcmp(elts[i].key, "mod_wsgi.", 9) == 0 &&
+                memcmp(elts[i].key + key_len - 3, "_us", 3) == 0)
+            {
+                continue;
+            }
+
             if (elts[i].val)
             {
                 if (!strcmp(elts[i].key, "DOCUMENT_ROOT") ||
@@ -947,6 +962,44 @@ static PyObject *Adapter_environ(AdapterObject *self)
     if (!object)
         goto error;
     if (PyDict_SetItemString(vars, "mod_wsgi.version", object) < 0)
+        goto error;
+    Py_CLEAR(object);
+
+    /*
+     * Publish request timing instants in seconds since the
+     * epoch, matching the corresponding fields on the
+     * request_started and request_finished event payloads.
+     * queue_start and daemon_start are 0.0 in embedded mode.
+     */
+
+    object = PyFloat_FromDouble(apr_time_sec(
+        (double)self->config->request_start));
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_wsgi.request_start", object) < 0)
+        goto error;
+    Py_CLEAR(object);
+
+    object = PyFloat_FromDouble(apr_time_sec(
+        (double)self->config->queue_start));
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_wsgi.queue_start", object) < 0)
+        goto error;
+    Py_CLEAR(object);
+
+    object = PyFloat_FromDouble(apr_time_sec(
+        (double)self->config->daemon_start));
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_wsgi.daemon_start", object) < 0)
+        goto error;
+    Py_CLEAR(object);
+
+    object = PyFloat_FromDouble(apr_time_sec((double)self->start_time));
+    if (!object)
+        goto error;
+    if (PyDict_SetItemString(vars, "mod_wsgi.application_start", object) < 0)
         goto error;
     Py_CLEAR(object);
 
@@ -1278,7 +1331,7 @@ int Adapter_run(AdapterObject *self, PyObject *object)
      * conflate framework-load time with application time. */
     wsgi_record_application_start(self->start_time);
 
-    apr_table_setn(self->r->subprocess_env, "mod_wsgi.script_start",
+    apr_table_setn(self->r->subprocess_env, "mod_wsgi.application_start_us",
                    apr_psprintf(self->r->pool, "%" APR_TIME_T_FMT,
                                 self->start_time));
 
@@ -1353,6 +1406,13 @@ int Adapter_run(AdapterObject *self, PyObject *object)
         if (!value)
             goto error;
         if (PyDict_SetItemString(event, "daemon_restarts", value) < 0)
+            goto error;
+        Py_CLEAR(value);
+
+        value = PyLong_FromLong((long)self->config->server_pid);
+        if (!value)
+            goto error;
+        if (PyDict_SetItemString(event, "server_pid", value) < 0)
             goto error;
         Py_CLEAR(value);
 
@@ -1717,6 +1777,16 @@ int Adapter_run(AdapterObject *self, PyObject *object)
             if (value)
             {
                 if (PyDict_SetItemString(event, "thread_id", value) < 0)
+                    goto event_error;
+                Py_CLEAR(value);
+            }
+            else
+                goto event_error;
+
+            value = PyLong_FromLong((long)self->config->server_pid);
+            if (value)
+            {
+                if (PyDict_SetItemString(event, "server_pid", value) < 0)
                     goto event_error;
                 Py_CLEAR(value);
             }

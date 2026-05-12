@@ -1102,8 +1102,11 @@ void wsgi_build_environment(request_rec *r)
     apr_table_setn(r->subprocess_env, "mod_wsgi.ignore_activity",
                    apr_psprintf(r->pool, "%d", config->ignore_activity));
 
-    apr_table_setn(r->subprocess_env, "mod_wsgi.request_start",
+    apr_table_setn(r->subprocess_env, "mod_wsgi.request_start_us",
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT, r->request_time));
+
+    apr_table_setn(r->subprocess_env, "mod_wsgi.server_pid",
+                   apr_psprintf(r->pool, "%" APR_PID_T_FMT, getpid()));
 
     if (!r->log_id)
     {

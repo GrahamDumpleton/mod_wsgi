@@ -750,6 +750,7 @@ static int wsgi_hook_handler(request_rec *r)
     /* Build the sub process environment. */
 
     config->request_start = r->request_time;
+    config->server_pid = getpid();
 
     wsgi_build_environment(r);
 

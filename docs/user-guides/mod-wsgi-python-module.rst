@@ -110,6 +110,7 @@ only ``process_stopping``.
 ``request_started``
    Fires immediately before the WSGI application callable is
    invoked. Payload keys include ``request_id``, ``thread_id``,
+   ``server_pid`` (Apache child worker PID),
    ``request_start`` (microseconds since epoch),
    ``application_object``, ``application_start``,
    ``request_environ`` (the WSGI environment), and
@@ -315,21 +316,33 @@ module attributes and adding per-request information.
    Total number of requests this process has served, including
    the current one.
 
-``mod_wsgi.script_start``
-   Timestamp (microseconds since epoch) when the WSGI script was
-   loaded for this application group.
+``mod_wsgi.server_pid``
+   Process ID of the Apache child worker that accepted the
+   request, as a decimal string. In embedded mode this is the
+   process the WSGI application is running in; in daemon mode it
+   is the originating Apache child, distinct from the daemon
+   process serving the request (the daemon's own PID is
+   available via ``os.getpid()``).
+
+The four request-timing keys below are Python ``float`` values
+in seconds since the epoch. They carry the same instants as the
+identically-named fields on the ``request_started`` and
+``request_finished`` event payloads.
 
 ``mod_wsgi.request_start``
-   Timestamp (microseconds since epoch) when Apache received the
-   request.
+   Time Apache received the request.
 
 ``mod_wsgi.queue_start``
-   Daemon mode only: timestamp when Apache wrote the request onto
-   the daemon socket.
+   Time Apache wrote the request onto the daemon socket. ``0.0``
+   in embedded mode (no queue phase).
 
 ``mod_wsgi.daemon_start``
-   Daemon mode only: timestamp when the daemon process accepted
-   the request and began handling it.
+   Time the daemon process accepted the request and began
+   handling it. ``0.0`` in embedded mode.
+
+``mod_wsgi.application_start``
+   Time the worker thread was about to invoke the WSGI
+   application callable for this request.
 
 WSGI script ``__name__``
 ------------------------

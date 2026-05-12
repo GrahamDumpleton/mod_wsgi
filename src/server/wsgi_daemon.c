@@ -4528,7 +4528,12 @@ int wsgi_hook_daemon_handler(conn_rec *c)
     config->daemon_restarts = atoi(apr_table_get(r->subprocess_env,
                                                  "mod_wsgi.daemon_restarts"));
 
-    item = apr_table_get(r->subprocess_env, "mod_wsgi.request_start");
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.server_pid");
+
+    if (item)
+        config->server_pid = (pid_t)atol(item);
+
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.request_start_us");
 
     if (item)
     {
@@ -4541,7 +4546,7 @@ int wsgi_hook_daemon_handler(conn_rec *c)
             config->request_start = 0.0;
     }
 
-    item = apr_table_get(r->subprocess_env, "mod_wsgi.queue_start");
+    item = apr_table_get(r->subprocess_env, "mod_wsgi.queue_start_us");
 
     if (item)
     {
@@ -4554,7 +4559,7 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     config->daemon_start = daemon_start;
 
-    apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_start",
+    apr_table_setn(r->subprocess_env, "mod_wsgi.daemon_start_us",
                    apr_psprintf(r->pool, "%" APR_TIME_T_FMT,
                                 config->daemon_start));
 
