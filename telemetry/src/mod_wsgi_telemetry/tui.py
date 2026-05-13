@@ -1,14 +1,14 @@
 """Terminal monitor for mod_wsgi telemetry.
 
-Connects to a running ``mod-wsgi-telemetry`` server's WebSocket and renders
-the live state as a top-style terminal UI. Multiple views switchable by
-keystroke; the persistent header stays visible across views.
+Connects to a running ``mod_wsgi-telemetry serve`` ingester's WebSocket and
+renders the live state as a top-style terminal UI. Multiple views switchable
+by keystroke; the persistent header stays visible across views.
 
 Usage:
-    mod-wsgi-telemetry-top                         # connect to localhost
-    mod-wsgi-telemetry-top --url ws://host:8877/ws
-    mod-wsgi-telemetry-top --view slow             # start on slow-requests view
-    mod-wsgi-telemetry-top --once                  # render one frame and exit
+    mod_wsgi-telemetry top                         # connect to localhost
+    mod_wsgi-telemetry top --url ws://host:8877/ws
+    mod_wsgi-telemetry top --view slow             # start on slow-requests view
+    mod_wsgi-telemetry top --once                  # render one frame and exit
 """
 
 from __future__ import annotations
@@ -572,7 +572,7 @@ def render_header(win, state: State, ui: UIState, h: dict) -> int:
         sample_period = ps.sample_period
 
     # Line 0 — title bar + connection state.
-    title = f" mod_wsgi-telemetry-top  {hostname or '-'} · {pgroup} "
+    title = f" mod_wsgi-telemetry top  {hostname or '-'} · {pgroup} "
     status = "[paused]" if ui.paused else ("[live]" if state.connected else "[disconnected]")
     extras = f" tick={sample_period:.1f}s  refresh={ui.refresh:g}s  win={_win_label(ui.window)}  {status} "
     pad = " " * max(0, width - len(title) - len(extras))
@@ -1123,7 +1123,7 @@ def render_help(win) -> None:
     for r in range(box_h):
         safe_addstr(win, y0 + r, x0, " " * box_w, curses.color_pair(CP_TAB))
     safe_addstr(win, y0, x0, " " * box_w, curses.color_pair(CP_HEADER) | curses.A_BOLD)
-    safe_addstr(win, y0, x0 + 2, " mod_wsgi-telemetry-top — help ",
+    safe_addstr(win, y0, x0 + 2, " mod_wsgi-telemetry top — help ",
                 curses.color_pair(CP_HEADER) | curses.A_BOLD)
     for i, line in enumerate(HELP_LINES):
         safe_addstr(win, y0 + 2 + i, x0 + 2, line, curses.color_pair(CP_TAB))
@@ -1402,7 +1402,7 @@ def render_once_text(state: State, ui: UIState) -> str:
     lines = []
     pgroup = ui.group_filter or ",".join(_process_groups(state)) or "(any)"
     hostname = next(iter(state.processes.values())).hostname if state.processes else "-"
-    lines.append(f"mod_wsgi-telemetry-top  host={hostname}  group={pgroup}")
+    lines.append(f"mod_wsgi-telemetry top  host={hostname}  group={pgroup}")
     lines.append(f"  rps:  now {h['rps_now']:.1f}   1m {h['rps_1m']:.1f}   "
                  f"10m {h['rps_10m']:.1f}   "
                  f"in {fmt_bytes(h['in_bps'])}/s  out {fmt_bytes(h['out_bps'])}/s")

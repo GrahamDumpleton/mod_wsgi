@@ -10,7 +10,7 @@ ported to Go once the wire format and UI are proven.
 # Terminal 1 — start the ingester + UI
 cd telemetry
 uv sync
-uv run mod-wsgi-telemetry
+uv run mod_wsgi-telemetry serve
 # → Listens on unix:/tmp/mod_wsgi-telemetry.sock
 # → UI on http://127.0.0.1:8877
 
@@ -43,27 +43,27 @@ cd telemetry
 uv sync
 
 # Terminal 1 — ingester + UI
-uv run mod-wsgi-telemetry
+uv run mod_wsgi-telemetry serve
 
 # Terminal 2 — synthetic samples
-uv run mod-wsgi-telemetry-simulate \
+uv run mod_wsgi-telemetry simulate \
     --target unix:/tmp/mod_wsgi-telemetry.sock \
     --processes 4
 ```
 
 ## Terminal monitor (`top`-style)
 
-`mod-wsgi-telemetry-top` is a curses-based live monitor for the same
+`mod_wsgi-telemetry top` is a curses-based live monitor for the same
 data the browser UI shows. It connects to a running ingester over the
 existing WebSocket, so it runs alongside (not instead of) the browser
 UI — open as many TUI clients as you like.
 
 ```
 # Terminal 1 — ingester + UI as before
-uv run mod-wsgi-telemetry
+uv run mod_wsgi-telemetry serve
 
 # Terminal 2 — terminal monitor
-uv run mod-wsgi-telemetry-top
+uv run mod_wsgi-telemetry top
 # → connects to ws://127.0.0.1:8877/ws by default
 ```
 
@@ -90,10 +90,10 @@ help overlay, `q` quit.
 Useful options:
 
 ```
-mod-wsgi-telemetry-top --url ws://host:8877/ws    # connect to a different host
-mod-wsgi-telemetry-top --view slow                # start on the slow-requests view
-mod-wsgi-telemetry-top --group app1               # filter to one process group
-mod-wsgi-telemetry-top --once                     # one-shot status to stdout, no curses
+mod_wsgi-telemetry top --url ws://host:8877/ws    # connect to a different host
+mod_wsgi-telemetry top --view slow                # start on the slow-requests view
+mod_wsgi-telemetry top --group app1               # filter to one process group
+mod_wsgi-telemetry top --once                     # one-shot status to stdout, no curses
 ```
 
 `--once` writes a plain-text snapshot of the header + process table
@@ -121,10 +121,10 @@ to ship telemetry across hosts.
 
 | Command | Purpose |
 |---|---|
-| `mod-wsgi-telemetry` | HTTP + WebSocket server, spawns the datagram receiver. `--listen unix:/path` (UNIX SOCK_DGRAM only). UI on `--http-host` / `--http-port` (default 127.0.0.1:8877). |
-| `mod-wsgi-telemetry-top` | Curses terminal monitor. Connects to a running server's WebSocket and renders the same data as the browser UI in five keystroke-switchable views. `--once` for a scriptable plain-text snapshot. |
-| `mod-wsgi-telemetry-dump` | CLI alternative that binds the socket itself and prints decoded samples. Don't run alongside the server — they'd fight for the socket. Useful when iterating on the wire format. |
-| `mod-wsgi-telemetry-simulate` | Emits synthetic samples so the UI can be exercised without a running mod_wsgi. |
+| `mod_wsgi-telemetry serve` | HTTP + WebSocket server, spawns the datagram receiver. `--listen unix:/path` (UNIX SOCK_DGRAM only). UI on `--http-host` / `--http-port` (default 127.0.0.1:8877). |
+| `mod_wsgi-telemetry top` | Curses terminal monitor. Connects to a running server's WebSocket and renders the same data as the browser UI in five keystroke-switchable views. `--once` for a scriptable plain-text snapshot. |
+| `mod_wsgi-telemetry dump` | CLI alternative that binds the socket itself and prints decoded samples. Don't run alongside the server — they'd fight for the socket. Useful when iterating on the wire format. |
+| `mod_wsgi-telemetry simulate` | Emits synthetic samples so the UI can be exercised without a running mod_wsgi. |
 
 ## Ports and sockets
 
@@ -140,14 +140,14 @@ UI down with it. If you run multiple ingesters, or you already have
 something on 8877, override with `--http-port`:
 
 ```
-uv run mod-wsgi-telemetry --http-port 9080
+uv run mod_wsgi-telemetry serve --http-port 9080
 ```
 
 Likewise if two deployments want separate telemetry streams, give each
 its own socket path:
 
 ```
-uv run mod-wsgi-telemetry --listen unix:/tmp/mod_wsgi-telemetry-staging.sock
+uv run mod_wsgi-telemetry serve --listen unix:/tmp/mod_wsgi-telemetry-staging.sock
 ```
 
 and point `mod_wsgi-express --metrics-service` at the matching path.

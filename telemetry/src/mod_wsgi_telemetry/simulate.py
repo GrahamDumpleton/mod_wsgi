@@ -5,7 +5,7 @@ Produces plausibly-shaped request_metrics samples for N fake processes,
 one per interval. Values oscillate over time so charts show movement.
 
 Usage:
-    mod-wsgi-telemetry-simulate \\
+    mod_wsgi-telemetry simulate \\
         --target unix:/tmp/mod_wsgi-telemetry.sock \\
         --processes 4 --interval 1.0
 """

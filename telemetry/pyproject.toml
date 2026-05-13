@@ -1,5 +1,5 @@
 [project]
-name = "mod-wsgi-telemetry"
+name = "mod_wsgi-telemetry"
 version = "0.1.0"
 description = "Ingestion service and live UI for mod_wsgi telemetry samples."
 requires-python = ">=3.10"
@@ -8,10 +8,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mod-wsgi-telemetry = "mod_wsgi_telemetry.server:main"
-mod-wsgi-telemetry-dump = "mod_wsgi_telemetry.dump:main"
-mod-wsgi-telemetry-simulate = "mod_wsgi_telemetry.simulate:main"
-mod-wsgi-telemetry-top = "mod_wsgi_telemetry.tui:main"
+mod_wsgi-telemetry = "mod_wsgi_telemetry.cli:main"
 
 [dependency-groups]
 dev = [

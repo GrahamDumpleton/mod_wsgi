@@ -4,7 +4,7 @@ Binds the listening socket itself (so don't run this at the same time as
 the ingester), receives datagrams, decodes, prints.
 
 Usage:
-    mod-wsgi-telemetry-dump --listen unix:/tmp/mod_wsgi-telemetry.sock
+    mod_wsgi-telemetry dump --listen unix:/tmp/mod_wsgi-telemetry.sock
 """
 
 from __future__ import annotations
