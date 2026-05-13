@@ -371,7 +371,7 @@ extern PyMethodDef wsgi_subscribe_shutdown_method[];
  */
 
 extern void wsgi_gil_wait_reset(void);
-extern void wsgi_gil_wait_record(apr_uint64_t wait_us);
+extern void wsgi_gil_wait_record(apr_time_t wait_us);
 extern void wsgi_gil_wait_current(apr_uint64_t *wait_us,
                                   apr_uint64_t *count);
 
@@ -379,10 +379,10 @@ extern void wsgi_gil_wait_current(apr_uint64_t *wait_us,
     {                            \
         PyThreadState *_wsgi_save = PyEval_SaveThread();
 
-#define WSGI_END_ALLOW_THREADS                                       \
-    apr_time_t _wsgi_t1 = apr_time_now();                            \
-    PyEval_RestoreThread(_wsgi_save);                                \
-    wsgi_gil_wait_record((apr_uint64_t)(apr_time_now() - _wsgi_t1)); \
+#define WSGI_END_ALLOW_THREADS                       \
+    apr_time_t _wsgi_t1 = apr_time_now();            \
+    PyEval_RestoreThread(_wsgi_save);                \
+    wsgi_gil_wait_record(apr_time_now() - _wsgi_t1); \
     }
 
 #endif

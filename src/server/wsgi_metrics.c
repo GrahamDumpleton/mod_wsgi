@@ -38,6 +38,11 @@ WSGIProcessMetrics *wsgi_process_metrics = NULL;
 static void wsgi_phase_aggregate_reset(WSGIPhaseAggregate *p);
 static int wsgi_query_request_threads_maximum(void);
 
+static inline apr_uint64_t wsgi_clamp_us_delta(apr_time_t a, apr_time_t b)
+{
+    return a > b ? (apr_uint64_t)(a - b) : 0;
+}
+
 void wsgi_process_metrics_init(apr_pool_t *pool)
 {
     WSGIProcessMetrics *m = apr_pcalloc(pool, sizeof(*m));
@@ -160,7 +165,7 @@ void wsgi_gil_wait_reset(void)
     }
 }
 
-void wsgi_gil_wait_record(apr_uint64_t wait_us)
+void wsgi_gil_wait_record(apr_time_t wait_us)
 {
     /*
      * Hot path: runs on every Py_END_ALLOW_THREADS-equivalent in the
@@ -174,20 +179,29 @@ void wsgi_gil_wait_record(apr_uint64_t wait_us)
      * wsgi_start_request runs. In that window the staging accumulator
      * on WSGIThreadInfo holds the running total; wsgi_start_request
      * drains it into the slot at claim time.
+     *
+     * Callers pass a signed delta from two apr_time_now() reads. Clamp
+     * negatives so a clock that steps backwards never folds a near-2^64
+     * value into the accumulator.
      */
 
-    WSGIThreadInfo *ti = wsgi_thread_info(0, 1);
+    WSGIThreadInfo *ti;
+
+    if (wait_us < 0)
+        wait_us = 0;
+
+    ti = wsgi_thread_info(0, 1);
     if (!ti || ti->thread_id < 1)
         return;
 
     if (ti->slot.in_use)
     {
-        ti->slot.gil_wait_us += wait_us;
+        ti->slot.gil_wait_us += (apr_uint64_t)wait_us;
         ti->slot.gil_wait_count += 1;
         return;
     }
 
-    ti->staged_gil_wait_us += wait_us;
+    ti->staged_gil_wait_us += (apr_uint64_t)wait_us;
     ti->staged_gil_wait_count += 1;
 }
 
@@ -331,32 +345,25 @@ void wsgi_record_request_times(apr_time_t request_start,
 
     if (queue_start)
     {
-        server_time = apr_time_sec((double)(queue_start - request_start));
-        queue_time = apr_time_sec((double)(daemon_start - queue_start));
-        daemon_time = apr_time_sec((double)(application_start - daemon_start));
+        server_us = wsgi_clamp_us_delta(queue_start, request_start);
+        queue_us = wsgi_clamp_us_delta(daemon_start, queue_start);
+        daemon_us = wsgi_clamp_us_delta(application_start, daemon_start);
     }
     else
     {
-        server_time = apr_time_sec((double)(application_start - request_start));
-        daemon_time = 0;
-        queue_time = 0;
+        server_us = wsgi_clamp_us_delta(application_start, request_start);
+        queue_us = 0;
+        daemon_us = 0;
     }
 
-    application_time = (apr_time_sec((double)(application_finish -
-                                              application_start)));
+    application_us = wsgi_clamp_us_delta(application_finish, application_start);
+    request_us = server_us + queue_us + daemon_us + application_us;
 
-    request_time = server_time + queue_time + daemon_time + application_time;
-
-    /*
-     * Per-phase microseconds for the min/max accumulators. The seconds
-     * round-trip is exact for any realistic request duration.
-     */
-
-    server_us = (apr_uint64_t)(server_time * 1000000.0);
-    queue_us = (apr_uint64_t)(queue_time * 1000000.0);
-    daemon_us = (apr_uint64_t)(daemon_time * 1000000.0);
-    application_us = (apr_uint64_t)(application_time * 1000000.0);
-    request_us = (apr_uint64_t)(request_time * 1000000.0);
+    server_time = (double)server_us / 1.0e6;
+    queue_time = (double)queue_us / 1.0e6;
+    daemon_time = (double)daemon_us / 1.0e6;
+    application_time = (double)application_us / 1.0e6;
+    request_time = (double)request_us / 1.0e6;
 
     /*
      * I/O timings arrive from the adapter as apr_time_t in microseconds.
@@ -1239,16 +1246,20 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
     {
         double stop_user = tmsbuf.tms_utime / wsgi_process_metrics->tick_hz;
         double stop_system = tmsbuf.tms_stime / wsgi_process_metrics->tick_hz;
-        double user_rate =
-            (stop_user - wsgi_process_metrics->start_cpu_user_time) /
-            sample_period;
-        double system_rate =
-            (stop_system - wsgi_process_metrics->start_cpu_system_time) /
-            sample_period;
+        double user_delta = stop_user -
+                            wsgi_process_metrics->start_cpu_user_time;
+        double system_delta = stop_system -
+                              wsgi_process_metrics->start_cpu_system_time;
 
-        out->cpu_user_utilization = user_rate;
-        out->cpu_system_utilization = system_rate;
-        out->cpu_utilization = user_rate + system_rate;
+        if (user_delta < 0.0)
+            user_delta = 0.0;
+        if (system_delta < 0.0)
+            system_delta = 0.0;
+
+        out->cpu_user_utilization = user_delta / sample_period;
+        out->cpu_system_utilization = system_delta / sample_period;
+        out->cpu_utilization = out->cpu_user_utilization +
+                               out->cpu_system_utilization;
 
         wsgi_process_metrics->start_cpu_user_time = stop_user;
         wsgi_process_metrics->start_cpu_system_time = stop_system;
@@ -1395,17 +1406,17 @@ static void wsgi_slow_fill_phase_durations(wsgi_slow_request_t *rec,
 
     if (slot->queue_start_us)
     {
-        rec->server_time_us = (uint64_t)(slot->queue_start_us -
-                                         slot->request_start_us);
-        rec->queue_time_us = (uint64_t)(slot->daemon_start_us -
-                                        slot->queue_start_us);
+        rec->server_time_us = wsgi_clamp_us_delta(slot->queue_start_us,
+                                                  slot->request_start_us);
+        rec->queue_time_us = wsgi_clamp_us_delta(slot->daemon_start_us,
+                                                 slot->queue_start_us);
         if (app_start)
         {
-            rec->daemon_time_us = (uint64_t)(app_start -
-                                             slot->daemon_start_us);
+            rec->daemon_time_us = wsgi_clamp_us_delta(app_start,
+                                                      slot->daemon_start_us);
             rec->application_time_us = app_finish
-                                           ? (uint64_t)(app_finish - app_start)
-                                           : 0;
+                ? wsgi_clamp_us_delta(app_finish, app_start)
+                : 0;
         }
         else
         {
@@ -1416,8 +1427,8 @@ static void wsgi_slow_fill_phase_durations(wsgi_slow_request_t *rec,
              * zero by definition.
              */
 
-            rec->daemon_time_us = (uint64_t)(now_us -
-                                             slot->daemon_start_us);
+            rec->daemon_time_us = wsgi_clamp_us_delta(now_us,
+                                                      slot->daemon_start_us);
             rec->application_time_us = 0;
         }
     }
@@ -1432,17 +1443,17 @@ static void wsgi_slow_fill_phase_durations(wsgi_slow_request_t *rec,
 
         if (app_start)
         {
-            rec->server_time_us = (uint64_t)(app_start -
-                                             slot->request_start_us);
+            rec->server_time_us = wsgi_clamp_us_delta(app_start,
+                                                      slot->request_start_us);
             rec->application_time_us = app_finish
-                                           ? (uint64_t)(app_finish - app_start)
-                                           : 0;
+                ? wsgi_clamp_us_delta(app_finish, app_start)
+                : 0;
         }
         else
         {
             rec->server_time_us = slot->request_start_us
-                                      ? (uint64_t)(now_us - slot->request_start_us)
-                                      : 0;
+                ? wsgi_clamp_us_delta(now_us, slot->request_start_us)
+                : 0;
             rec->application_time_us = 0;
         }
         rec->queue_time_us = 0;
@@ -2363,15 +2374,25 @@ static PyObject *wsgi_request_metrics(void)
 
     sample_period = (apr_time_sec((double)stop_time) -
                      apr_time_sec((double)wsgi_process_metrics->start_time));
+    if (sample_period <= 0.0)
+        sample_period = 1.0e-6;
 
 #ifdef HAVE_TIMES
-    cpu_user_time =
-        ((stop_cpu_user_time - wsgi_process_metrics->start_cpu_user_time) /
-         sample_period);
-    cpu_system_time =
-        ((stop_cpu_system_time - wsgi_process_metrics->start_cpu_system_time) /
-         sample_period);
-    total_cpu_time = cpu_user_time + cpu_system_time;
+    {
+        double user_delta = stop_cpu_user_time -
+                            wsgi_process_metrics->start_cpu_user_time;
+        double system_delta = stop_cpu_system_time -
+                              wsgi_process_metrics->start_cpu_system_time;
+
+        if (user_delta < 0.0)
+            user_delta = 0.0;
+        if (system_delta < 0.0)
+            system_delta = 0.0;
+
+        cpu_user_time = user_delta / sample_period;
+        cpu_system_time = system_delta / sample_period;
+        total_cpu_time = cpu_user_time + cpu_system_time;
+    }
 #endif
 
     request_busy_time = stop_request_busy_time -

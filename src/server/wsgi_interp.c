@@ -2679,13 +2679,13 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
          * the lifecycle datagram, not the per-request indicator. */
         _gil_t1 = apr_time_now();
         PyEval_AcquireThread(tstate);
-        wsgi_gil_wait_record((apr_uint64_t)(apr_time_now() - _gil_t1));
+        wsgi_gil_wait_record(apr_time_now() - _gil_t1);
     }
     else
     {
         apr_time_t _gil_t1 = apr_time_now();
         PyGILState_Ensure();
-        wsgi_gil_wait_record((apr_uint64_t)(apr_time_now() - _gil_t1));
+        wsgi_gil_wait_record(apr_time_now() - _gil_t1);
 
         /*
          * For the main interpreter we deliberately route through
