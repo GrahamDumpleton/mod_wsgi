@@ -423,6 +423,11 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     offending request handler thread so you can work out where the
     request is blocking.
 
+    The stack-trace dump is skipped when :doc:`WSGIFreeThreading` is
+    active for the process. Walking interpreter thread frames relies
+    on the GIL to keep those frames stable while they are being read,
+    and that guarantee is gone when free-threading is active.
+
     See also ``deadlock-timeout`` for handling cases where a Python C
     extension wedges the GIL — the injection mechanism cannot recover
     those, but ``deadlock-timeout`` will detect the wedge and restart

@@ -2694,6 +2694,17 @@ static void wsgi_log_stack_traces(void)
     PyObject *threads = NULL;
 
     /*
+     * Walking interpreter thread frames via _PyThread_CurrentFrames
+     * and PyFrame_GetBack relies on the GIL to keep frame chains
+     * stable while this thread reads them. With free-threading
+     * active other threads can be mutating those chains in parallel,
+     * so silently skip the dump.
+     */
+
+    if (wsgi_free_threading_active)
+        return;
+
+    /*
      * This is called on shutdown after the request-timeout
      * escalation flag was raised. The escalation site captured
      * the offending application group into
