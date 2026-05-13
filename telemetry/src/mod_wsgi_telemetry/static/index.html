@@ -1150,7 +1150,7 @@ const STALE_PROCESS_SEC = 10;
 const state = {
   processes: new Map(),      // pid -> { color, samples: [{t, fields}] }
   // Slow-request entries keyed by JSON-stringified [pid, log_id] tuple
-  // (or [pid, thread_id, start_stamp_us] when log_id is empty — matches
+  // (or [pid, thread_id, start_stamp] when log_id is empty: matches
   // the ingester's key convention). Each value is { entry, last_seen_ms }
   // where entry is the same shape the server sends.
   slowRequests: new Map(),
@@ -1375,8 +1375,8 @@ function addSample(s) {
   for (const k of PROCESS_IDENTITY_FIELDS) {
     if (s.fields[k]) p[k] = s.fields[k];
   }
-  p.samples.push({ t: s.stamp_us / 1e6, fields: s.fields, seq: s.seq });
-  const cutoff = (s.stamp_us / 1e6) - SAMPLE_RETENTION_SEC;
+  p.samples.push({ t: s.stamp, fields: s.fields, seq: s.seq });
+  const cutoff = (s.stamp) - SAMPLE_RETENTION_SEC;
   while (p.samples.length && p.samples[0].t < cutoff) p.samples.shift();
 }
 
@@ -1576,10 +1576,10 @@ function renderProcs() {
 
 function slowKeyFor(entry) {
   // Match the ingester's keying: prefer (pid, log_id) when log_id is
-  // non-empty, otherwise fall back to (pid, thread_id, start_stamp_us).
+  // non-empty, otherwise fall back to (pid, thread_id, start_stamp).
   return entry.log_id
     ? JSON.stringify([entry.pid, entry.log_id])
-    : JSON.stringify([entry.pid, entry.thread_id, entry.start_stamp_us]);
+    : JSON.stringify([entry.pid, entry.thread_id, entry.start_stamp]);
 }
 
 function upsertSlow(entry) {
@@ -1602,12 +1602,12 @@ function addLifecycleEvent(ev) {
     const p = ensureProcess(ev.pid);
     p.process_parent_pid = ev.process_parent_pid;
   }
-  const cutoffUs = (Date.now() - SAMPLE_RETENTION_SEC * 1000) * 1000;
-  // Common case: only the most recent event is fresh — fast path
+  const cutoff = Date.now() / 1000 - SAMPLE_RETENTION_SEC;
+  // Common case: only the most recent event is fresh: fast path
   // trims from the head. Bound the buffer at 500 events as well so a
   // dense restart-loop doesn't grow it unbounded.
   while (state.lifecycleEvents.length > 0 &&
-         state.lifecycleEvents[0].stamp_us < cutoffUs) {
+         state.lifecycleEvents[0].stamp < cutoff) {
     state.lifecycleEvents.shift();
   }
   if (state.lifecycleEvents.length > 500)
@@ -1749,9 +1749,12 @@ function isSlowDisplayFresh(rec) {
   return (Date.now() - rec.last_seen_ms) <= ttl;
 }
 
-function fmtElapsedMs(us) {
-  const ms = us / 1000;
-  if (ms >= 1000) return (ms / 1000).toFixed(2) + " s";
+function fmtElapsed(s) {
+  // Display labels stay as "ms" / "s" even though the input is now a
+  // float in seconds (matching the wire-protocol convention).
+  if (typeof s !== "number" || !isFinite(s) || s < 0) return "—";
+  const ms = s * 1000;
+  if (ms >= 1000) return s.toFixed(2) + " s";
   return ms.toFixed(0) + " ms";
 }
 
@@ -1801,13 +1804,13 @@ const IO_SMELL_BYTES_PER_CALL = 64;
 const CPU_HEAVY_PCT = 80;
 const CPU_MULTI_PCT = 100;
 
-// Format an absolute CPU duration (microseconds) for display.
-// Mirrors fmtElapsedMs but with smaller units and a millisecond
+// Format an absolute CPU duration (float seconds) for display.
+// Mirrors fmtElapsed but with smaller units and a millisecond
 // floor so 0 reads as "0 ms" rather than the seconds form.
-function fmtCpuUs(us) {
-  if (typeof us !== "number" || !isFinite(us) || us < 0) return "—";
-  const ms = us / 1000;
-  if (ms >= 1000) return (ms / 1000).toFixed(2) + " s";
+function fmtCpuTime(s) {
+  if (typeof s !== "number" || !isFinite(s) || s < 0) return "—";
+  const ms = s * 1000;
+  if (ms >= 1000) return s.toFixed(2) + " s";
   if (ms >= 10)   return ms.toFixed(0) + " ms";
   return ms.toFixed(2) + " ms";
 }
@@ -1820,10 +1823,10 @@ function fmtCpuUs(us) {
 // snapshot before any boundary has been crossed) so the panel
 // degrades gracefully rather than rendering an empty bar.
 function renderPhaseBar(e) {
-  const server = e.server_time_us || 0;
-  const queue = e.queue_time_us || 0;
-  const daemon = e.daemon_time_us || 0;
-  const app = e.application_time_us || 0;
+  const server = e.server_time || 0;
+  const queue = e.queue_time || 0;
+  const daemon = e.daemon_time || 0;
+  const app = e.application_time || 0;
   const total = server + queue + daemon + app;
   if (total === 0) return "";
   const pct = (v) => ((v / total) * 100).toFixed(2);
@@ -1842,7 +1845,7 @@ function renderPhaseBar(e) {
     : "";
   const legendRow = (cls, label, v) =>
     `<span><span class="swatch ${cls}"></span>${label}</span>` +
-    `<span class="num">${fmtCpuUs(v)}</span>`;
+    `<span class="num">${fmtCpuTime(v)}</span>`;
   return `<div class="phase-bar">${
     seg("server", server)}${seg("queue", queue)}${
     seg("daemon", daemon)}${seg("application", app)}</div>
@@ -1975,19 +1978,19 @@ function renderSlowExpandPanel(e) {
   // CPU. Active records carry zero on the wire (getrusage on a
   // worker thread can only be done from that worker, and the
   // active snapshot runs from the reporter); say so explicitly.
-  const cpuUserUs = e.cpu_user_us || 0;
-  const cpuSystemUs = e.cpu_system_us || 0;
-  const cpuTotalUs = cpuUserUs + cpuSystemUs;
-  const durationUs = e.duration_us || 0;
+  const cpuUserTime = e.cpu_user_time || 0;
+  const cpuSystemTime = e.cpu_system_time || 0;
+  const cpuTotal = cpuUserTime + cpuSystemTime;
+  const duration = e.duration || 0;
   let cpuLine, cpuBreakdownLine;
   if (e.state === 0) {
     cpuLine = `\u2014 <span class="label">(reported at completion)</span>`;
     cpuBreakdownLine = "";
-  } else if (durationUs <= 0 || cpuTotalUs === 0) {
-    cpuLine = `${fmtCpuUs(cpuTotalUs)} <span class="label">(no CPU consumed)</span>`;
+  } else if (duration <= 0 || cpuTotal === 0) {
+    cpuLine = `${fmtCpuTime(cpuTotal)} <span class="label">(no CPU consumed)</span>`;
     cpuBreakdownLine = "";
   } else {
-    const pct = (cpuTotalUs / durationUs) * 100;
+    const pct = (cpuTotal / duration) * 100;
     let cpuCls = "";
     if (pct >= CPU_MULTI_PCT) cpuCls = " cpu-multi";
     else if (pct >= CPU_HEAVY_PCT) cpuCls = " io-amber";
@@ -1995,12 +1998,12 @@ function renderSlowExpandPanel(e) {
     const multiNote = pct >= CPU_MULTI_PCT
       ? " <span class=\"label\">(multi-core / GIL released)</span>"
       : "";
-    cpuLine = `${fmtCpuUs(cpuTotalUs)} ` +
+    cpuLine = `${fmtCpuTime(cpuTotal)} ` +
               `<span class="${cpuCls.trim()}">(${pctText}% of wall)</span>` +
               multiNote;
     cpuBreakdownLine = `<div class="label">CPU split</div>` +
-      `<div>user ${fmtCpuUs(cpuUserUs)} \u00b7 ` +
-      `system ${fmtCpuUs(cpuSystemUs)}</div>`;
+      `<div>user ${fmtCpuTime(cpuUserTime)} \u00b7 ` +
+      `system ${fmtCpuTime(cpuSystemTime)}</div>`;
   }
   const phaseBar = renderPhaseBar(e);
   const phaseRow = phaseBar
@@ -2013,21 +2016,21 @@ function renderSlowExpandPanel(e) {
   // extensions, so it's a partial pressure indicator. Always rendered
   // when a value is present; the count distinguishes "one big stall"
   // from "death by a thousand re-acquires".
-  const gilWaitUs = e.gil_wait_us || 0;
+  const gilWaitTime = e.gil_wait_time || 0;
   const gilWaitCount = e.gil_wait_count || 0;
   let gilRow = "";
-  if (gilWaitUs > 0 || gilWaitCount > 0) {
-    const pctOfDuration = (durationUs > 0)
-      ? ((gilWaitUs / durationUs) * 100).toFixed(0) : "—";
+  if (gilWaitTime > 0 || gilWaitCount > 0) {
+    const pctOfDuration = (duration > 0)
+      ? ((gilWaitTime / duration) * 100).toFixed(0) : "—";
     const pctText = pctOfDuration === "—"
       ? "" : ` <span class="label">(${pctOfDuration}% of duration)</span>`;
     const eventsText = gilWaitCount === 1 ? "event" : "events";
     gilRow = `<div class="label">GIL wait</div>` +
-      `<div>${fmtCpuUs(gilWaitUs)} · ${gilWaitCount} ${eventsText}` +
+      `<div>${fmtCpuTime(gilWaitTime)} · ${gilWaitCount} ${eventsText}` +
       `${pctText}</div>`;
   }
   // I/O time overlap. Both fields are zero on active (in-flight)
-  // records — the slot's io_input_read_us / io_output_write_us are
+  // records: the slot's input_read_time / output_write_time are
   // only stamped at end-of-request — so the rows naturally appear
   // only on completed records. Shown with the share of duration
   // they cover so an LLM/operator can see at a glance whether time
@@ -2036,20 +2039,20 @@ function renderSlowExpandPanel(e) {
   // and not the wire-level send to the client; the help text spells
   // that caveat out and the row label is unqualified to keep the
   // panel scannable.
-  const inputReadUs = e.input_read_us || 0;
-  const outputWriteUs = e.output_write_us || 0;
-  const fmtIOPct = us => (durationUs > 0)
-    ? ` <span class="label">(${((us / durationUs) * 100).toFixed(0)}% of duration)</span>`
+  const inputReadTime = e.input_read_time || 0;
+  const outputWriteTime = e.output_write_time || 0;
+  const fmtIOPct = s => (duration > 0)
+    ? ` <span class="label">(${((s / duration) * 100).toFixed(0)}% of duration)</span>`
     : "";
   let inputReadRow = "";
-  if (inputReadUs > 0) {
+  if (inputReadTime > 0) {
     inputReadRow = `<div class="label">Input read time</div>` +
-      `<div>${fmtCpuUs(inputReadUs)}${fmtIOPct(inputReadUs)}</div>`;
+      `<div>${fmtCpuTime(inputReadTime)}${fmtIOPct(inputReadTime)}</div>`;
   }
   let outputWriteRow = "";
-  if (outputWriteUs > 0) {
+  if (outputWriteTime > 0) {
     outputWriteRow = `<div class="label">Output write time</div>` +
-      `<div>${fmtCpuUs(outputWriteUs)}${fmtIOPct(outputWriteUs)}</div>`;
+      `<div>${fmtCpuTime(outputWriteTime)}${fmtIOPct(outputWriteTime)}</div>`;
   }
   // Process identity rendered as a stack of role-labelled rows so the
   // request flow is visible at a glance: httpd (Apache parent) ->
@@ -2176,7 +2179,7 @@ function renderSlowRequests() {
   }
 
   // Slowest first.
-  rows.sort((a, b) => b.duration_us - a.duration_us);
+  rows.sort((a, b) => b.duration - a.duration);
 
   // Per-URL grouping. When perUrlCap > 0, keep the top N slowest per
   // (method, scheme, host, script_name, path_info) and record the total
@@ -2255,7 +2258,7 @@ function renderSlowRequests() {
     if (isOpen) summaryClasses.push("expanded");
     html.push(`<tr class="${summaryClasses.join(' ')}" data-key="${escapeHtml(expandKey)}">
       <td><button type="button" class="expand-toggle${isOpen ? ' expanded' : ''}" aria-expanded="${isOpen}" aria-label="${isOpen ? 'Collapse details' : 'Expand details'}">${chev}</button></td>
-      <td>${fmtElapsedMs(e.duration_us)}</td>
+      <td>${fmtElapsed(e.duration)}</td>
       <td>${stateLabel}</td>
       <td>${method}</td>
       <td>${statusCell}</td>
@@ -2308,33 +2311,32 @@ function capacityColor(frac) {
   return "#e57373";
 }
 
-// Find the slow-request "runs" for a set of per-slot elapsed-ms arrays.
-// A run is a maximal consecutive span within one slot where elapsedMs
-// stays >= stuckThreshMs AND is monotonically non-decreasing — the
-// latter is what distinguishes "same request continuing" from "old
-// request finished, new one already stuck on the next tick". When
-// elapsedMs drops (even while still above threshold) the current run
-// ends and a new one begins, so distinct stuck requests stay counted
-// separately. If perSlotMaxMs is supplied, the cell immediately after
-// a run is also included when its slot_max_duration_ms is at least the
-// run's last elapsed — that's the tick the slow request completed in,
-// so painting it keeps the run's start/end visually symmetric instead
-// of clipping the finish edge. Returns a flat array of
-// {slot, firstIdx, lastIdx} describing the runs. Both the
-// heatmap-draw path and computeProcessStats call this so they never
-// disagree on count.
-function findSlowRuns(perSlotElapsedMs, stuckThreshMs, perSlotMaxMs) {
+// Find the slow-request "runs" for a set of per-slot elapsed arrays.
+// All durations are float seconds. A run is a maximal consecutive span
+// within one slot where elapsed stays >= stuckThresh AND is monotonically
+// non-decreasing: the latter is what distinguishes "same request
+// continuing" from "old request finished, new one already stuck on the
+// next tick". When elapsed drops (even while still above threshold) the
+// current run ends and a new one begins, so distinct stuck requests stay
+// counted separately. If perSlotMax is supplied, the cell immediately
+// after a run is also included when its request_threads_max_duration is
+// at least the run's last elapsed: that's the tick the slow request
+// completed in, so painting it keeps the run's start/end visually
+// symmetric instead of clipping the finish edge. Returns a flat array of
+// {slot, firstIdx, lastIdx} describing the runs. Both the heatmap-draw
+// path and computeProcessStats call this so they never disagree on count.
+function findSlowRuns(perSlotElapsed, stuckThresh, perSlotMax) {
   const runs = [];
-  for (const [slot, arr] of perSlotElapsedMs) {
-    const maxArr = perSlotMaxMs ? perSlotMaxMs.get(slot) : null;
+  for (const [slot, arr] of perSlotElapsed) {
+    const maxArr = perSlotMax ? perSlotMax.get(slot) : null;
     const claimed = new Set();
     let i = 0;
     while (i < arr.length) {
-      if (arr[i] < stuckThreshMs) { i++; continue; }
+      if (arr[i] < stuckThresh) { i++; continue; }
       let j = i;
       let prevE = -1;
       while (j < arr.length
-             && arr[j] >= stuckThreshMs
+             && arr[j] >= stuckThresh
              && arr[j] >= prevE) {
         prevE = arr[j];
         j++;
@@ -2351,19 +2353,19 @@ function findSlowRuns(perSlotElapsedMs, stuckThreshMs, perSlotMaxMs) {
 
     // Second pass: catch requests that started and ended between
     // ticks so no sampled `current_elapsed` ever crossed the
-    // threshold, but `slot_max_duration_ms` for the post-completion
-    // tick says a slow request finished in that interval. Without
-    // this, a 1.8 s request can be invisible at threshold = 1 s
-    // while showing at threshold = 0.5 s — exactly because the
-    // 0.5 s threshold catches the inter-tick `elapsed` and 1 s
-    // doesn't. Marked with viaMaxMs so the painter knows to derive
-    // bounds from the max-duration value (the cell's own elapsed
-    // belongs to a different / next request).
+    // threshold, but `request_threads_max_duration` for the
+    // post-completion tick says a slow request finished in that
+    // interval. Without this, a 1.8 s request can be invisible at
+    // threshold = 1 s while showing at threshold = 0.5 s: exactly
+    // because the 0.5 s threshold catches the inter-tick `elapsed`
+    // and 1 s doesn't. Marked with viaMax so the painter knows to
+    // derive bounds from the max-duration value (the cell's own
+    // elapsed belongs to a different / next request).
     if (maxArr) {
       for (let k = 0; k < maxArr.length; k++) {
         if (claimed.has(k)) continue;
-        if ((maxArr[k] || 0) >= stuckThreshMs) {
-          runs.push({ slot, firstIdx: k, lastIdx: k, viaMaxMs: true });
+        if ((maxArr[k] || 0) >= stuckThresh) {
+          runs.push({ slot, firstIdx: k, lastIdx: k, viaMax: true });
         }
       }
     }
@@ -2373,18 +2375,18 @@ function findSlowRuns(perSlotElapsedMs, stuckThreshMs, perSlotMaxMs) {
 
 // Read the user-selected stuck threshold from the Capacity tab's
 // dropdown, falling back to 1 s if the control isn't present yet (very
-// early in page load, or in test harnesses).
-function getCapacityStuckThreshMs() {
+// early in page load, or in test harnesses). Returns float seconds.
+function getCapacityStuckThresh() {
   const el = document.getElementById("capacity_stuck_thresh");
-  if (!el) return 1000;
+  if (!el) return 1.0;
   const n = parseInt(el.value, 10);
-  return n > 0 ? n : 1000;
+  return n > 0 ? n / 1000 : 1.0;
 }
 
 // Slack (seconds) added to each side of the run's time window when
 // looking for a matching slow-request entry. Reporter ticks aren't
 // sample-aligned with request boundaries, so an entry's
-// start_stamp_us / end can fall a fraction of a second outside the
+// start_stamp / end can fall a fraction of a second outside the
 // estimated run bounds without being a different request. 1 s is
 // usually enough for a reporter ticking at the default interval;
 // bumping higher risks pulling in unrelated requests on a slot
@@ -2421,9 +2423,9 @@ function findSlowEntryForRun(pid, slot, runStartT, runEndT) {
     const e = rec.entry;
     if (e.pid !== pid) continue;
     if (e.thread_id !== wantThread) continue;
-    const startT = (e.start_stamp_us || 0) / 1e6;
+    const startT = e.start_stamp || 0;
     const endT = e.state === 1
-      ? startT + (e.duration_us || 0) / 1e6
+      ? startT + (e.duration || 0)
       : nowSec;
     // Overlap of [startT, endT] with the slack-inflated run window.
     const overlap = Math.min(endT, hi) - Math.max(startT, lo);
@@ -2436,7 +2438,7 @@ function findSlowEntryForRun(pid, slot, runStartT, runEndT) {
   return best;
 }
 
-function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
+function drawCapacityHeatmap(canvas, p, stuckThresh, nowOverride) {
   const ctx = canvas.getContext("2d");
   const now = nowOverride !== undefined ? nowOverride : Date.now() / 1000;
   const tmin = now - CAPACITY_WINDOW_SEC;
@@ -2459,7 +2461,7 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
   const lastSample = samples[samples.length - 1];
   const slotCount = Math.max(
     1,
-    (lastSample.fields.slot_busy_time_us || lastSample.fields.slot_request_count || []).length
+    (lastSample.fields.request_threads_busy_time || lastSample.fields.request_threads_completed || []).length
   );
 
   // Layout. Each slot gets a row; width mirrors the parent canvas.
@@ -2487,12 +2489,11 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
   for (let i = 0; i < samples.length; i++) {
     const s = samples[i];
     const period = s.fields.sample_period || 1.0;
-    const periodUs = period * 1_000_000;
-    const busy = s.fields.slot_busy_time_us || [];
-    const cpu = s.fields.slot_cpu_time_us || [];
-    const count = s.fields.slot_request_count || [];
-    const current = s.fields.slot_current_elapsed_ms || [];
-    const maxMs = s.fields.slot_max_duration_ms || [];
+    const busy = s.fields.request_threads_busy_time || [];
+    const cpu = s.fields.request_threads_cpu_time || [];
+    const count = s.fields.request_threads_completed || [];
+    const current = s.fields.request_threads_current_elapsed || [];
+    const maxDur = s.fields.request_threads_max_duration || [];
 
     // Cell spans from the previous sample's time (or one period back) to
     // this sample's time so ticks never leave gaps on the heatmap.
@@ -2502,8 +2503,8 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
     const w = Math.max(1, x1 - x0);
 
     for (let slot = 0; slot < slotCount; slot++) {
-      const busyUs = busy[slot] || 0;
-      const frac = periodUs > 0 ? busyUs / periodUs : 0;
+      const busyTime = busy[slot] || 0;
+      const frac = period > 0 ? busyTime / period : 0;
       const y = padTop + slot * rowPx;
       ctx.fillStyle = capacityColor(frac);
       ctx.fillRect(x0, y, w, rowPx - 1);
@@ -2515,10 +2516,10 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
         slot,
         tickT: s.t,
         frac,
-        cpuFrac: periodUs > 0 ? (cpu[slot] || 0) / periodUs : 0,
+        cpuFrac: period > 0 ? (cpu[slot] || 0) / period : 0,
         count: count[slot] || 0,
-        elapsedMs: current[slot] || 0,
-        maxMs: maxMs[slot] || 0,
+        elapsed: current[slot] || 0,
+        maxDuration: maxDur[slot] || 0,
       });
     }
   }
@@ -2543,10 +2544,10 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
   const perSlotElapsed = new Map();
   const perSlotMax = new Map();
   for (const [slot, arr] of bySlot) {
-    perSlotElapsed.set(slot, arr.map(c => c.elapsedMs));
-    perSlotMax.set(slot, arr.map(c => c.maxMs));
+    perSlotElapsed.set(slot, arr.map(c => c.elapsed));
+    perSlotMax.set(slot, arr.map(c => c.maxDuration));
   }
-  const runs = findSlowRuns(perSlotElapsed, stuckThreshMs, perSlotMax);
+  const runs = findSlowRuns(perSlotElapsed, stuckThresh, perSlotMax);
   // Hit regions for slow-run hover/click. One per run, with a precise
   // x range that may be narrower than the cells the run spans (so two
   // back-to-back slow requests in adjacent ticks don't merge
@@ -2562,14 +2563,14 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
 
     // Pick precise actual-start / actual-end times for the run.
     //
-    // 1. If a slow-request entry exists in storage, its start_stamp_us
+    // 1. If a slow-request entry exists in storage, its start_stamp
     //    is the authoritative start; (start + duration) is the end
     //    when completed, otherwise (active) the run continues to the
     //    rightmost cell edge.
     //
     // 2. Otherwise estimate from the slot arrays:
-    //      start ≈ firstCellTime − slot_current_elapsed_ms[first]/1000
-    //      end   ≈ firstCellTime + slot_max_duration_ms[completionCell]/1000
+    //      start ≈ firstCellTime − request_threads_current_elapsed[first]/1000
+    //      end   ≈ firstCellTime + request_threads_max_duration[completionCell]/1000
     //              when the run's last cell looks like a completion tick
     //              (max ≥ prev elapsed); otherwise end = lastCellTime.
     //    Bounded by the sample period (~1 s typically) so usable for
@@ -2580,28 +2581,28 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
     // (so long requests still find their entry — see below) and
     // the painter when no matching entry exists.
     let estStartT, estEndT, estEndKnown;
-    if (run.viaMaxMs) {
-      // Single-cell run materialised by the max_ms second pass.
+    if (run.viaMax) {
+      // Single-cell run materialised by the max_duration second pass.
       // The cell's own `elapsed` belongs to a different request
       // (typically the next one in the slot), so we anchor off
-      // max_ms: the request finished within this tick's interval
-      // (≈ first.tickT) and lasted max_ms.
-      const maxMs = first.maxMs || 0;
+      // max_duration: the request finished within this tick's interval
+      // (~= first.tickT) and lasted max_duration.
+      const maxDur = first.maxDuration || 0;
       estEndT = first.tickT;
-      estStartT = estEndT - (maxMs / 1000);
+      estStartT = estEndT - maxDur;
       estEndKnown = true;
     }
     else {
-      const firstElapsedMs = first.elapsedMs || 0;
-      estStartT = first.tickT - (firstElapsedMs / 1000);
+      const firstElapsed = first.elapsed || 0;
+      estStartT = first.tickT - firstElapsed;
       // Detect a completion cell at the trailing edge by checking
-      // whether slot_max_duration_ms grew. Same heuristic that
+      // whether request_threads_max_duration grew. Same heuristic that
       // findSlowRuns uses to decide whether to extend lastIdx.
-      const lastMaxMs = last.maxMs || 0;
-      const prevElapsedMs = run.lastIdx > run.firstIdx
-        ? slotCells[run.lastIdx - 1].elapsedMs : 0;
-      if (lastMaxMs >= prevElapsedMs && lastMaxMs > 0) {
-        estEndT = estStartT + (lastMaxMs / 1000);
+      const lastMaxDur = last.maxDuration || 0;
+      const prevElapsed = run.lastIdx > run.firstIdx
+        ? slotCells[run.lastIdx - 1].elapsed : 0;
+      if (lastMaxDur >= prevElapsed && lastMaxDur > 0) {
+        estEndT = estStartT + lastMaxDur;
         if (estEndT < last.tickT) estEndT = last.tickT;
         estEndKnown = true;
       } else {
@@ -2614,18 +2615,18 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
     // estimated bounds. Using cell-time bounds (first.tickT,
     // last.tickT) instead would clamp the match window to the
     // detected cell range, so a long request detected from a
-    // single late cell — or from the viaMaxMs second pass —
-    // would have a real entry in storage but the matcher would
-    // refuse it because start_stamp_us falls outside the window.
+    // single late cell, or from the viaMax second pass, would
+    // have a real entry in storage but the matcher would refuse
+    // it because start_stamp falls outside the window.
     const entry = findSlowEntryForRun(p.pid, run.slot, estStartT, estEndT);
 
     // If the matcher found a real record, use its precise bounds;
     // otherwise fall back to the estimate.
     let actualStartT, actualEndT, endIsKnown;
     if (entry) {
-      actualStartT = (entry.start_stamp_us || 0) / 1e6;
+      actualStartT = entry.start_stamp || 0;
       if (entry.state === 1) {
-        actualEndT = actualStartT + (entry.duration_us || 0) / 1e6;
+        actualEndT = actualStartT + (entry.duration || 0);
         endIsKnown = true;
       } else {
         // Active request — end the fill at the latest sample's
@@ -2708,10 +2709,10 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
       slot: run.slot,
       runStartT: actualStartT,
       runEndT: actualEndT,
-      durationMs: Math.max(0, (actualEndT - actualStartT) * 1000),
+      duration: Math.max(0, actualEndT - actualStartT),
       entry,
-      elapsedMs: (last.runLast || last).elapsedMs || 0,
-      maxMs: last.maxMs || 0,
+      elapsed: (last.runLast || last).elapsed || 0,
+      maxDuration: last.maxDuration || 0,
     });
   }
   const slowRunCount = runs.length;
@@ -2747,26 +2748,26 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
   let windowDuration = 0;
   // Raw totals so slot-cpu/slot-busy can be computed as a weighted
   // ratio across the window rather than a mean-of-per-tick-ratios that
-  // would over-weight low-busy ticks.
-  let slotBusyUsTotal = 0, slotCpuUsTotal = 0;
+  // would over-weight low-busy ticks. Per-slot times are float
+  // seconds; period is float seconds.
+  let slotBusyTotal = 0, slotCpuTotal = 0;
   let nThreadsMax = 0;
   for (const s of samples) {
     const period = s.fields.sample_period || 1.0;
-    const periodUs = period * 1_000_000;
-    const sb = s.fields.slot_busy_time_us || [];
-    const sc = s.fields.slot_cpu_time_us || [];
+    const sb = s.fields.request_threads_busy_time || [];
+    const sc = s.fields.request_threads_cpu_time || [];
     const n = sb.length || 1;
     const sbSum = sb.reduce((a, v) => a + v, 0);
     const scSum = sc.reduce((a, v) => a + v, 0);
-    const bFrac = sbSum / n / (periodUs || 1);
-    const cSlotFrac = scSum / n / (periodUs || 1);
+    const bFrac = sbSum / n / (period || 1);
+    const cSlotFrac = scSum / n / (period || 1);
     const cProcFrac = typeof s.fields.cpu_utilization === "number"
       ? s.fields.cpu_utilization : 0;
     busySum += bFrac;
     cpuProcSum += cProcFrac;
     cpuSlotSum += cSlotFrac;
-    slotBusyUsTotal += sbSum;
-    slotCpuUsTotal += scSum;
+    slotBusyTotal += sbSum;
+    slotCpuTotal += scSum;
     const tMax = s.fields.request_threads_maximum;
     if (typeof tMax === "number" && tMax > nThreadsMax) nThreadsMax = tMax;
     if (bFrac > busyPeak) busyPeak = bFrac;
@@ -2864,8 +2865,8 @@ function drawCapacityHeatmap(canvas, p, stuckThreshMs, nowOverride) {
     // busy but threads aren't running (I/O wait or GIL blocking).
     // Used to colour the CPU/GIL-bound tooltip — a weak hint, not a
     // hard classifier, because I/O-with-GIL-release looks the same.
-    slotCpuBusyRatio: slotBusyUsTotal > 0
-      ? slotCpuUsTotal / slotBusyUsTotal
+    slotCpuBusyRatio: slotBusyTotal > 0
+      ? slotCpuTotal / slotBusyTotal
       : 0,
     hasGilWait: gilWaitTimeSamples > 0,
     gilWaitMsMean: gilWaitTimeSamples > 0
@@ -2927,8 +2928,7 @@ function renderCapacity() {
   // so a freshly-arrived sample can clamp out below-threshold
   // options before the heatmap renders against the old selection.
   rebuildStuckThresholdDropdown();
-  const stuckThreshMs = parseInt(
-    document.getElementById("capacity_stuck_thresh").value, 10) || 1000;
+  const stuckThresh = getCapacityStuckThresh();
   const nowTs = state.capacityPaused
     ? state.capacityPausedAt
     : Date.now() / 1000;
@@ -2945,7 +2945,7 @@ function renderCapacity() {
     if (!last) return false;
     if (nowTs - last.t > CAPACITY_WINDOW_SEC) return false;
     // Only show processes that have at least one slot-capacity sample.
-    return p.samples.some(s => Array.isArray(s.fields.slot_busy_time_us));
+    return p.samples.some(s => Array.isArray(s.fields.request_threads_busy_time));
   });
 
   if (pids.length === 0) {
@@ -2974,7 +2974,7 @@ function renderCapacity() {
     }
     const p = state.processes.get(pid);
     const canvas = document.getElementById("cap_cv_" + pid);
-    const stats = drawCapacityHeatmap(canvas, p, stuckThreshMs, nowTs);
+    const stats = drawCapacityHeatmap(canvas, p, stuckThresh, nowTs);
 
     const meta = document.getElementById("cap_meta_" + pid);
     const flag = document.getElementById("cap_flag_" + pid);
@@ -3039,7 +3039,7 @@ function computeProcessStats(p, windowSec) {
   let srvSum = 0, queSum = 0, daeSum = 0, appSum = 0, phaseSamples = 0;
   let busySum = 0, busySamples = 0, busyPeak = 0;
   let cpuSlotSum = 0;
-  let slotBusyUsTotal = 0, slotCpuUsTotal = 0;
+  let slotBusyTotal = 0, slotCpuTotal = 0;
   let queueTimePeakS = 0, daemonTimePeakS = 0;
   let queueSamples = 0, daemonSamples = 0;
   let gilWaitSumS = 0, gilWaitSamples = 0, gilWaitPeakS = 0;
@@ -3071,7 +3071,7 @@ function computeProcessStats(p, windowSec) {
     if (s.t < windowCut) continue;
     hasAny = true;
     const f = s.fields;
-    const elapsed = f.slot_current_elapsed_ms || [];
+    const elapsed = f.request_threads_current_elapsed || [];
     for (let slot = 0; slot < elapsed.length; slot++) {
       if (!perSlotPairs.has(slot)) perSlotPairs.set(slot, []);
       perSlotPairs.get(slot).push({ t: s.t, e: elapsed[slot] || 0 });
@@ -3128,19 +3128,18 @@ function computeProcessStats(p, windowSec) {
         outputWritePeakS = f.output_write_time;
     }
     const period = f.sample_period || 1.0;
-    const periodUs = period * 1_000_000;
-    const sb = f.slot_busy_time_us || [];
-    const sc = f.slot_cpu_time_us || [];
+    const sb = f.request_threads_busy_time || [];
+    const sc = f.request_threads_cpu_time || [];
     if (sb.length > 0) {
       const n = sb.length;
       const sbSumLocal = sb.reduce((a, v) => a + v, 0);
       const scSumLocal = sc.reduce((a, v) => a + v, 0);
-      const bFrac = sbSumLocal / n / (periodUs || 1);
-      const cSlotFrac = scSumLocal / n / (periodUs || 1);
+      const bFrac = sbSumLocal / n / (period || 1);
+      const cSlotFrac = scSumLocal / n / (period || 1);
       busySum += bFrac;
       cpuSlotSum += cSlotFrac;
-      slotBusyUsTotal += sbSumLocal;
-      slotCpuUsTotal += scSumLocal;
+      slotBusyTotal += sbSumLocal;
+      slotCpuTotal += scSumLocal;
       busySamples++;
       if (bFrac > busyPeak) busyPeak = bFrac;
     }
@@ -3192,8 +3191,8 @@ function computeProcessStats(p, windowSec) {
     busyMean: busySamples > 0 ? busySum / busySamples : 0,
     busyPeak,
     cpuSlotMean: busySamples > 0 ? cpuSlotSum / busySamples : 0,
-    slotCpuBusyRatio: slotBusyUsTotal > 0
-      ? slotCpuUsTotal / slotBusyUsTotal : 0,
+    slotCpuBusyRatio: slotBusyTotal > 0
+      ? slotCpuTotal / slotBusyTotal : 0,
     hasQueueTime: queueSamples > 0,
     queueMsMean: queueSamples > 0
       ? (queSum / Math.max(phaseSamples, 1)) * 1000 : 0,
@@ -3255,7 +3254,7 @@ function computeProcessStats(p, windowSec) {
         pairs.sort((a, b) => a.t - b.t);
         sorted.set(slot, pairs.map(x => x.e));
       }
-      return findSlowRuns(sorted, getCapacityStuckThreshMs()).length;
+      return findSlowRuns(sorted, getCapacityStuckThresh()).length;
     })(),
   };
 }
@@ -3437,7 +3436,7 @@ function classifyCapacity(stats) {
 
   // Lean wording. Direct GIL evidence wins when present — it
   // converts the ambiguous "GIL or I/O" reading into a confirmed
-  // GIL diagnosis. Otherwise fall back to slot_cpu/slot_busy as a
+  // GIL diagnosis. Otherwise fall back to the per-slot cpu / busy as a
   // weak proxy.
   if (out.cpuGilBound) {
     if (gilDirectTrigger)
@@ -3552,7 +3551,7 @@ function refreshCapacityTooltip() {
     const e = hovered.entry;
     const lines = [];
     lines.push(`<div class="range">pid ${hovered.pid} &middot; slot ${hovered.slot + 1} &middot; slow request</div>`);
-    lines.push(`<div><span class="label">duration</span>${fmtElapsedMs(hovered.durationMs * 1000)}${e && e.state === 0 ? " (active)" : ""}</div>`);
+    lines.push(`<div><span class="label">duration</span>${fmtElapsed(hovered.duration)}${e && e.state === 0 ? " (active)" : ""}</div>`);
     if (e) {
       const url = slowUrlFor(e);
       const urlShort = url.length > 60 ? url.slice(0, 57) + "\u2026" : url;
@@ -3562,11 +3561,11 @@ function refreshCapacityTooltip() {
       // CPU% hint — concise, no breakdown. Active records carry
       // zero CPU on the wire today; show "(at completion)" so the
       // reader knows the value isn't suppressed in error.
-      const cpuTotalUs = (e.cpu_user_us || 0) + (e.cpu_system_us || 0);
+      const cpuTotal = (e.cpu_user_time || 0) + (e.cpu_system_time || 0);
       if (e.state === 0) {
         lines.push(`<div><span class="label">cpu</span>(at completion)</div>`);
-      } else if ((e.duration_us || 0) > 0 && cpuTotalUs > 0) {
-        const pct = Math.round((cpuTotalUs / e.duration_us) * 100);
+      } else if ((e.duration || 0) > 0 && cpuTotal > 0) {
+        const pct = Math.round((cpuTotal / e.duration) * 100);
         lines.push(`<div><span class="label">cpu</span>${pct}%</div>`);
       } else {
         lines.push(`<div><span class="label">cpu</span>0%</div>`);
@@ -3584,8 +3583,8 @@ function refreshCapacityTooltip() {
       `<div><span class="label">busy</span>${(c.frac * 100).toFixed(0)}%</div>` +
       `<div><span class="label">cpu</span>${(c.cpuFrac * 100).toFixed(0)}%</div>` +
       `<div><span class="label">count</span>${c.count}</div>` +
-      `<div><span class="label">elapsed</span>${c.elapsedMs ? c.elapsedMs + " ms" : "—"}</div>` +
-      `<div><span class="label">max</span>${c.maxMs} ms</div>`;
+      `<div><span class="label">elapsed</span>${c.elapsed ? fmtElapsed(c.elapsed) : "—"}</div>` +
+      `<div><span class="label">max</span>${fmtElapsed(c.maxDuration)}</div>`;
   }
   tip.style.display = "block";
   const rect = tip.getBoundingClientRect();
@@ -3717,15 +3716,15 @@ function aggregateBucketsFor(pids, fieldName, windowSec) {
 }
 
 // Exact min/max for the same window as the histogram, in microseconds
-// — sourced from the per-tick min/max accumulators on the C side
-// (fields *_time_min_us and *_time_max_us) rather than derived from
-// the bucket grid. Min/max merge cleanly across processes and across
-// time windows. Returns nulls when no process recorded any requests
-// in the window.
-function aggregateMinMaxUs(bucketField, windowSec) {
+// : sourced from the per-tick min/max accumulators on the C side
+// (fields *_time_min and *_time_max) rather than derived from the
+// bucket grid. Min/max merge cleanly across processes and across
+// time windows. Returns float seconds, or nulls when no process
+// recorded any requests in the window.
+function aggregateMinMax(bucketField, windowSec) {
   const prefix = bucketField.replace(/_buckets$/, "");
-  const minName = prefix + "_min_us";
-  const maxName = prefix + "_max_us";
+  const minName = prefix + "_min";
+  const maxName = prefix + "_max";
   const cutoff = windowSec ? (Date.now() / 1000 - windowSec) : 0;
   let minV = null, maxV = null;
   for (const [pid, p] of state.processes) {
@@ -3738,15 +3737,15 @@ function aggregateMinMaxUs(bucketField, windowSec) {
       if (typeof u === "number" && (maxV === null || u > maxV)) maxV = u;
     }
   }
-  return { minUs: minV, maxUs: maxV };
+  return { min: minV, max: maxV };
 }
 
-// Same as aggregateMinMaxUs but scoped to an explicit pid list, used
+// Same as aggregateMinMax but scoped to an explicit pid list, used
 // by the snapshot exporter alongside aggregateBucketsFor.
 function aggregateBucketsForMinMax(pids, bucketField, windowSec) {
   const prefix = bucketField.replace(/_buckets$/, "");
-  const minName = prefix + "_min_us";
-  const maxName = prefix + "_max_us";
+  const minName = prefix + "_min";
+  const maxName = prefix + "_max";
   const cutoff = windowSec ? (Date.now() / 1000 - windowSec) : 0;
   let minV = null, maxV = null;
   for (const pid of pids) {
@@ -3760,7 +3759,7 @@ function aggregateBucketsForMinMax(pids, bucketField, windowSec) {
       if (typeof u === "number" && (maxV === null || u > maxV)) maxV = u;
     }
   }
-  return { minUs: minV, maxUs: maxV };
+  return { min: minV, max: maxV };
 }
 
 // Interpolated percentile: locate the bucket containing the target
@@ -4234,7 +4233,7 @@ function visibleLifecycleMarkers(tmin, tmax) {
   const out = [];
   for (const ev of state.lifecycleEvents) {
     if (ev.kind !== "process_stopping") continue;
-    const t = ev.stamp_us / 1e6;
+    const t = ev.stamp;
     if (t < tmin || t > tmax) continue;
     if (groupSel !== "*") {
       const g = ev.process_group || "(embedded)";
@@ -4320,7 +4319,7 @@ function attachChartHover(canvas) {
     if (!best) { tip.style.display = "none"; return; }
     const ev = best.ev;
     const reason = ev.shutdown_reason || "(unknown)";
-    const wallStr = new Date(ev.stamp_us / 1000).toLocaleTimeString();
+    const wallStr = new Date(ev.stamp * 1000).toLocaleTimeString();
     const lines = [];
     lines.push(`<div class="range">restart marker &middot; ${escapeHtml(best.cat)}</div>`);
     lines.push(`<div><span class="label">time</span>${escapeHtml(wallStr)}</div>`);
@@ -4373,7 +4372,7 @@ const GANTT_RIGHT_PAD = 8;     // CSS px; bar-area right padding
 function buildPidTimelines(events) {
   const map = new Map();
   for (const ev of events) {
-    const t = ev.stamp_us / 1e6;
+    const t = ev.stamp;
     let rec = map.get(ev.pid);
     if (!rec) {
       rec = {
@@ -4457,8 +4456,8 @@ function isAtBottom(el, threshold = 6) {
   return el.scrollHeight - (el.scrollTop + el.clientHeight) <= threshold;
 }
 
-function fmtTimeOfDay(stampUs) {
-  const d = new Date(stampUs / 1000);
+function fmtTimeOfDay(stamp) {
+  const d = new Date(stamp * 1000);
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
   const ss = String(d.getSeconds()).padStart(2, "0");
@@ -4931,7 +4930,7 @@ function renderEventLog() {
   // so the operator can always see when a process appeared.
   const rows = [];
   for (const ev of state.lifecycleEvents) {
-    const t = ev.stamp_us / 1e6;
+    const t = ev.stamp;
     if (t < tmin || t > tmax) continue;
     if (!passesGroupFilter(ev.process_group, groupSel)) continue;
     if (ev.kind !== "process_started") {
@@ -5002,8 +5001,8 @@ function renderEventLog() {
       inflight = String(ev.active_requests_at_decision || 0);
     }
     const flashCls = (highlightPid === ev.pid) ? " flash" : "";
-    return `<tr class="row${flashCls}" data-pid="${ev.pid}" data-stamp="${ev.stamp_us}">` +
-      `<td>${escapeHtml(fmtTimeOfDay(ev.stamp_us))}</td>` +
+    return `<tr class="row${flashCls}" data-pid="${ev.pid}" data-stamp="${ev.stamp}">` +
+      `<td>${escapeHtml(fmtTimeOfDay(ev.stamp))}</td>` +
       `<td><span class="kind-pill ${kindCls}">${kindLabel}</span></td>` +
       `<td>${ev.pid}</td>` +
       `<td>${ppidCell}</td>` +
@@ -5113,12 +5112,12 @@ function redraw() {
   const hist = aggregateBuckets(distField, distWindowSec);
   const dist = drawHistogram(document.getElementById("c_dist"), hist);
   if (dist.total > 0) {
-    const mm = aggregateMinMaxUs(distField, distWindowSec);
-    const minPart = mm.minUs !== null
-      ? ` <span class="label">min</span>${fmtMs(mm.minUs / 1000)}`
+    const mm = aggregateMinMax(distField, distWindowSec);
+    const minPart = mm.min !== null
+      ? ` <span class="label">min</span>${fmtMs(mm.min * 1000)}`
       : "";
-    const maxPart = mm.maxUs !== null
-      ? ` <span class="label">max</span>${fmtMs(mm.maxUs / 1000)}`
+    const maxPart = mm.max !== null
+      ? ` <span class="label">max</span>${fmtMs(mm.max * 1000)}`
       : "";
     // Tint the p50/p95/p99 LABEL spans with the same colours used for
     // the dashed marker lines on the canvas, so the readout doubles
@@ -5637,7 +5636,7 @@ carries the detail.
   fraction of the process's worker threads busy serving requests,
   window-averaged. 1.0 = every thread busy every tick.
 - **busy** — same quantity as \`cap\` computed from per-slot
-  \`slot_busy_time_us\`. Used where per-thread resolution is
+  \`request_threads_busy_time\`. Used where per-thread resolution is
   needed; agrees with \`cap\` by construction.
 - **cpu** — \`cpu_utilization\`: process-wide CPU seconds
   (user + system) divided by wall-clock, expressed as fraction of
@@ -6556,7 +6555,7 @@ function aggregateLifecycle(groupSel) {
   // Window actually covered by the ring after filtering — useful for
   // the section header ("last 547 s") since the ring may not be full.
   const now = Date.now() / 1000;
-  const oldest = events[0].stamp_us / 1e6;
+  const oldest = events[0].stamp;
   const coverSec = Math.max(0, Math.round(now - oldest));
 
   const byPid = new Map();
@@ -6626,7 +6625,7 @@ function aggregateLifecycle(groupSel) {
   for (const evs of byPid.values()) {
     let pending = null;
     for (const ev of evs) {
-      const t = ev.stamp_us / 1e6;
+      const t = ev.stamp;
       if (ev.kind === "process_stopping") {
         if (pending !== null) orphanStopping++;
         pending = t;
@@ -6966,7 +6965,7 @@ function buildCurrentStatsMarkdown() {
     + totals.stateCounts.cpuGilBound + " CPU/GIL-bound, "
     + totals.stateCounts.normal + " normal");
   lines.push("- slow-request runs (≥ "
-    + getCapacityStuckThreshMs() + " ms, window " + LINE_WINDOW_SEC
+    + getCapacityStuckThresh() + " ms, window " + LINE_WINDOW_SEC
     + " s): " + totals.slowRunsTotal);
   lines.push(statusBreakdownLine(totals));
   if (totals.hasIO) {
@@ -7115,7 +7114,7 @@ function buildCurrentStatsMarkdown() {
       + " (peak " + (ps.cpuPeak * 100).toFixed(0) + "%)"
       + ", threads: " + ps.nThreads);
     lines.push("  - slow-request runs in window: " + ps.slowRunCount
-      + " (threshold " + getCapacityStuckThreshMs() + " ms)");
+      + " (threshold " + getCapacityStuckThresh() + " ms)");
     const slotRatio = ps.busyMean > 0 ? ps.cpuSlotMean / ps.busyMean : 0;
     const weightedTxt = ps.slotCpuBusyRatio.toFixed(2);
     const perTickTxt = slotRatio.toFixed(2);
@@ -7222,9 +7221,9 @@ function buildCurrentStatsMarkdown() {
       ", p95=" + fmtMs(pcts[2]) +
       ", p99=" + fmtMs(pcts[3]);
     const mm = aggregateBucketsForMinMax(visible, spec.field, LINE_WINDOW_SEC);
-    const minMaxPart = (mm.minUs !== null && mm.maxUs !== null)
-      ? " (exact min=" + fmtMs(mm.minUs / 1000)
-        + ", max=" + fmtMs(mm.maxUs / 1000) + ")"
+    const minMaxPart = (mm.min !== null && mm.max !== null)
+      ? " (exact min=" + fmtMs(mm.min * 1000)
+        + ", max=" + fmtMs(mm.max * 1000) + ")"
       : "";
     const body = [
       "### " + spec.label,
@@ -7303,7 +7302,7 @@ function buildCurrentStatsMarkdown() {
   // can be read on its own, without the UI or screenshots alongside.
   // Thresholds match classifyCapacity() and the saturation scoring
   // in the Overview code.
-  const stuckMs = getCapacityStuckThreshMs();
+  const stuckMs = getCapacityStuckThresh();
   lines.push("## Notes");
   lines.push("");
   lines.push("Self-contained digest of the labels, thresholds, and "
@@ -7581,7 +7580,7 @@ function openSlowDetailModal(hit) {
     slot: hit.slot,
     runStartT: hit.runStartT,
     runEndT: hit.runEndT,
-    durationMs: hit.durationMs,
+    duration: hit.duration,
     slowKey: hit.entry ? slowKeyFor(hit.entry) : null,
     heuristic: !hit.entry,
   };
@@ -7613,24 +7612,24 @@ function renderSlowDetailModal() {
     const rec = state.slowRequests.get(hit.slowKey);
     if (rec) e = rec.entry;
   }
-  const liveDurationMs = e
-    ? (e.duration_us || 0) / 1000
-    : hit.durationMs;
+  const liveDuration = e
+    ? (e.duration || 0)
+    : hit.duration;
   const stateLabel = e
     ? (e.state === 1
        ? `<span class="pill completed">completed</span>`
        : `<span class="pill active">active</span>`)
     : `<span class="pill">heuristic</span>`;
   titleEl.innerHTML = stateLabel +
-    `pid ${hit.pid} &middot; slot ${hit.slot + 1} &middot; ${fmtElapsedMs(liveDurationMs * 1000)}`;
-  const startStampUs = e ? (e.start_stamp_us || 0) : hit.runStartT * 1e6;
-  const endStampUs = e
-    ? (e.state === 0 ? null : startStampUs + (e.duration_us || 0))
-    : hit.runEndT * 1e6;
+    `pid ${hit.pid} &middot; slot ${hit.slot + 1} &middot; ${fmtElapsed(liveDuration)}`;
+  const startStamp = e ? (e.start_stamp || 0) : hit.runStartT;
+  const endStamp = e
+    ? (e.state === 0 ? null : startStamp + (e.duration || 0))
+    : hit.runEndT;
   const meta =
     `<div class="meta-row">` +
-    `started ${fmtUnixSec(startStampUs / 1e6)}` +
-    ` &middot; ended ${endStampUs === null ? "(active)" : fmtUnixSec(endStampUs / 1e6)}` +
+    `started ${fmtUnixSec(startStamp)}` +
+    ` &middot; ended ${endStamp === null ? "(active)" : fmtUnixSec(endStamp)}` +
     `</div>`;
   if (e) {
     bodyEl.innerHTML = meta + renderSlowExpandPanel(e);

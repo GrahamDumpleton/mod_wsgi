@@ -39,7 +39,7 @@ PHASES = ["server", "queue", "daemon", "application", "request"]
 HDR_OCTAVES = 16
 HDR_SUBS = 4
 HDR_TOTAL = HDR_OCTAVES * HDR_SUBS + 1
-HDR_BASE_MS = 1.0
+HDR_BASE_SECONDS = 0.001  # bucket 0 lower bound: 1 ms expressed as seconds
 
 DEFAULT_URL = "ws://127.0.0.1:8877/ws"
 SAMPLE_RETENTION = 600          # max samples per pid we keep client-side
@@ -100,15 +100,15 @@ class SlowEntry:
     hostname: str
     script_name: str
     path_info: str
-    start_stamp_us: int
-    duration_us: int
+    start_stamp: float
+    duration: float
     state: int
     input_bytes: int
     input_reads: int
     output_bytes: int
     output_writes: int
-    cpu_user_us: int
-    cpu_system_us: int
+    cpu_user_time: float
+    cpu_system_time: float
     status: int = 0
     last_seen: float = 0.0
 
@@ -123,15 +123,15 @@ class SlowEntry:
             hostname=d["hostname"],
             script_name=d["script_name"],
             path_info=d["path_info"],
-            start_stamp_us=int(d["start_stamp_us"]),
-            duration_us=int(d["duration_us"]),
+            start_stamp=float(d["start_stamp"]),
+            duration=float(d["duration"]),
             state=int(d["state"]),
             input_bytes=int(d.get("input_bytes", 0)),
             input_reads=int(d.get("input_reads", 0)),
             output_bytes=int(d.get("output_bytes", 0)),
             output_writes=int(d.get("output_writes", 0)),
-            cpu_user_us=int(d.get("cpu_user_us", 0)),
-            cpu_system_us=int(d.get("cpu_system_us", 0)),
+            cpu_user_time=float(d.get("cpu_user_time", 0.0)),
+            cpu_system_time=float(d.get("cpu_system_time", 0.0)),
             status=int(d.get("status", 0)),
             last_seen=time.monotonic(),
         )
@@ -241,11 +241,11 @@ def _samples_in_window(ps: ProcState, seconds: float) -> list[dict]:
     """Newest-first samples within the given wall-clock window."""
     if not ps.samples:
         return []
-    newest = ps.samples[-1].get("stamp_us", 0)
-    cutoff = newest - int(seconds * 1_000_000)
+    newest = ps.samples[-1].get("stamp", 0.0)
+    cutoff = newest - seconds
     out = []
     for s in reversed(ps.samples):
-        if s.get("stamp_us", 0) < cutoff:
+        if s.get("stamp", 0.0) < cutoff:
             break
         out.append(s)
     return out
@@ -258,12 +258,12 @@ def _last_field(ps: ProcState, name: str, default=0):
 
 
 def _hdr_bucket_bounds(idx: int) -> tuple[float, float]:
-    """Lower/upper bound (ms) of bucket `idx`."""
+    """Lower/upper bound (seconds) of bucket `idx`."""
     if idx >= HDR_OCTAVES * HDR_SUBS:
-        return (HDR_BASE_MS * (1 << HDR_OCTAVES), float("inf"))
+        return (HDR_BASE_SECONDS * (1 << HDR_OCTAVES), float("inf"))
     octave = idx // HDR_SUBS
     sub = idx % HDR_SUBS
-    octave_lo = HDR_BASE_MS * (1 << octave)
+    octave_lo = HDR_BASE_SECONDS * (1 << octave)
     sub_width = octave_lo / HDR_SUBS
     return (octave_lo + sub * sub_width, octave_lo + (sub + 1) * sub_width)
 
@@ -307,22 +307,22 @@ def _aggregate_buckets(
 
 def _phase_min_max(
     state: State, phase: str, seconds: float, group_filter: str | None
-) -> tuple[int | None, int | None]:
-    """Min-of-mins, max-of-maxes (microseconds) for `phase` in window."""
-    min_name = f"{phase}_time_min_us"
-    max_name = f"{phase}_time_max_us"
-    lo: int | None = None
-    hi: int | None = None
+) -> tuple[float | None, float | None]:
+    """Min-of-mins, max-of-maxes (seconds) for `phase` in window."""
+    min_name = f"{phase}_time_min"
+    max_name = f"{phase}_time_max"
+    lo: float | None = None
+    hi: float | None = None
     for ps in state.processes.values():
         if group_filter and ps.process_group != group_filter:
             continue
         for s in _samples_in_window(ps, seconds):
             f = s.get("fields", {})
             v = f.get(min_name)
-            if isinstance(v, int) and v > 0:
+            if isinstance(v, (int, float)) and v > 0:
                 lo = v if lo is None else min(lo, v)
             v = f.get(max_name)
-            if isinstance(v, int) and v > 0:
+            if isinstance(v, (int, float)) and v > 0:
                 hi = v if hi is None else max(hi, v)
     return lo, hi
 
@@ -348,24 +348,15 @@ def fmt_bytes(n: float) -> str:
     return f"{n:.1f}PB"
 
 
-def fmt_us(us: float | int | None) -> str:
-    if us is None:
+def fmt_seconds(s: float | int | None) -> str:
+    """Render a duration in seconds as a human-readable string."""
+    if s is None:
         return "-"
-    if us < 1000:
-        return f"{us:.0f}µs"
-    if us < 1_000_000:
-        return f"{us/1000:.1f}ms"
-    return f"{us/1_000_000:.2f}s"
-
-
-def fmt_ms(ms: float | None) -> str:
-    if ms is None:
-        return "-"
-    if ms < 1:
-        return f"{ms*1000:.0f}µs"
-    if ms < 1000:
-        return f"{ms:.1f}ms"
-    return f"{ms/1000:.2f}s"
+    if s < 0.001:
+        return f"{s*1_000_000:.0f}µs"
+    if s < 1.0:
+        return f"{s*1000:.1f}ms"
+    return f"{s:.2f}s"
 
 
 def sparkline(values: list[float], width: int) -> str:
@@ -513,7 +504,7 @@ def _aggregate_header(state: State, ui: UIState) -> dict:
     active_slow = sum(1 for e in state.slow.values() if e.state == 0)
     recent_slow = sum(
         1 for e in state.slow.values()
-        if (now - e.start_stamp_us / 1_000_000) <= 60
+        if (now - e.start_stamp) <= 60
     )
     total_slow = len(state.slow)
 
@@ -529,9 +520,9 @@ def _aggregate_header(state: State, ui: UIState) -> dict:
         "rss_max": rss_max,
         "busy": busy,
         "threads_total": threads_total,
-        "queue_mean_ms": (queue_mean / queue_count * 1000) if queue_count else None,
-        "p50_ms": p50, "p95_ms": p95, "p99_ms": p99,
-        "min_us": lo, "max_us": hi,
+        "queue_mean": (queue_mean / queue_count) if queue_count else None,
+        "p50": p50, "p95": p95, "p99": p99,
+        "min": lo, "max": hi,
         "active_slow": active_slow,
         "recent_slow": recent_slow,
         "total_slow": total_slow,
@@ -553,9 +544,9 @@ def _avg_rps(state: State, ui: UIState, seconds: float) -> float:
         win = _samples_in_window(ps, seconds)
         if len(win) < 2:
             continue
-        oldest = win[-1].get("stamp_us", 0)
-        newest = win[0].get("stamp_us", 0)
-        span = (newest - oldest) / 1_000_000
+        oldest = win[-1].get("stamp", 0.0)
+        newest = win[0].get("stamp", 0.0)
+        span = newest - oldest
         if span <= 0:
             continue
         rc = sum(int(s.get("fields", {}).get("request_count") or 0) for s in win)
@@ -603,8 +594,8 @@ def render_header(win, state: State, ui: UIState, h: dict) -> int:
     filled = int(round(frac * bar_w))
     bar = BAR_FULL * filled + BAR_EMPTY * (bar_w - filled)
     cap_attr = _cap_color(frac)
-    qstr = (f"queue {fmt_ms(h['queue_mean_ms'])}"
-            if h["queue_mean_ms"] is not None else "queue -")
+    qstr = (f"queue {fmt_seconds(h['queue_mean'])}"
+            if h["queue_mean"] is not None else "queue -")
     safe_addstr(win, 2, 0, " Capacity:   ")
     safe_addstr(win, 2, 13, bar, cap_attr)
     safe_addstr(win, 2, 13 + bar_w + 1,
@@ -647,8 +638,8 @@ def render_header(win, state: State, ui: UIState, h: dict) -> int:
     safe_addstr(win, 4, x, s5, s5_attr)
 
     # Line 5 — latency percentiles.
-    p50 = fmt_ms(h["p50_ms"]); p95 = fmt_ms(h["p95_ms"]); p99 = fmt_ms(h["p99_ms"])
-    mn = fmt_us(h["min_us"]); mx = fmt_us(h["max_us"])
+    p50 = fmt_seconds(h["p50"]); p95 = fmt_seconds(h["p95"]); p99 = fmt_seconds(h["p99"])
+    mn = fmt_seconds(h["min"]); mx = fmt_seconds(h["max"])
     safe_addstr(win, 5, 0,
         f" Latency:    p50 {p50:>8}  p95 {p95:>8}  p99 {p99:>8}   "
         f"min {mn:>8}  max {mx:>8}")
@@ -737,7 +728,7 @@ def render_overview(win, state: State, ui: UIState, h: dict, y0: int) -> None:
     parts = []
     for phase in PHASES:
         v = _aggregate_phase_mean(state, phase, ui.group_filter)
-        parts.append(f"{phase}={fmt_ms(v*1000) if v is not None else '-':>8}")
+        parts.append(f"{phase}={fmt_seconds(v) if v is not None else '-':>8}")
     safe_addstr(win, y, 1, "  ".join(parts))
 
 
@@ -749,7 +740,7 @@ def _build_series(state: State, ui: UIState, seconds: int):
         if ui.group_filter and ps.process_group != ui.group_filter:
             continue
         for s in _samples_in_window(ps, seconds):
-            t = s.get("stamp_us", 0) // 1_000_000
+            t = int(s.get("stamp", 0.0))
             f = s.get("fields", {})
             b = buckets.setdefault(t, {"rps": 0.0, "cap_b": 0, "cap_t": 0,
                                        "cpu": 0.0, "rss": 0})
@@ -845,7 +836,7 @@ def render_processes(win, state: State, ui: UIState, y0: int) -> None:
                 f"{r['rps']:>7.1f}  "
                 f"{r['cpu']:>6.2f}  "
                 f"{fmt_bytes(r['rss']):>9}  "
-                f"{fmt_ms(r['p95']):>9}  "
+                f"{fmt_seconds(r['p95']):>9}  "
                 f"{r['slow']:>5}")
         attr = 0
         if r["max"] and r["active"] / r["max"] >= 0.9:
@@ -875,27 +866,29 @@ def render_workers(win, state: State, ui: UIState, y0: int) -> None:
         if not ps.samples:
             continue
         last = ps.samples[-1].get("fields", {})
-        elapsed = last.get("slot_current_elapsed_ms")
-        slow_thresh_s = last.get("slow_requests_threshold")
-        slow_thresh_ms = (slow_thresh_s * 1000.0) if isinstance(slow_thresh_s, (int, float)) and slow_thresh_s > 0 else None
+        elapsed = last.get("request_threads_current_elapsed")
+        slow_thresh = last.get("slow_requests_threshold")
+        slow_thresh = (slow_thresh
+                       if isinstance(slow_thresh, (int, float)) and slow_thresh > 0
+                       else None)
         if not isinstance(elapsed, list):
             continue
         cells = []
         longest_idx = -1
-        longest_ms = 0
+        longest = 0.0
         for i, e in enumerate(elapsed):
             if e <= 0:
                 cells.append(".")
-            elif slow_thresh_ms is not None and e >= slow_thresh_ms:
+            elif slow_thresh is not None and e >= slow_thresh:
                 cells.append("!")
-            elif e >= 5000:
+            elif e >= 5.0:
                 cells.append("#")
-            elif e >= 1000:
+            elif e >= 1.0:
                 cells.append("#")
             else:
                 cells.append("*")
-            if e > longest_ms:
-                longest_ms = e
+            if e > longest:
+                longest = e
                 longest_idx = i
 
         label = f"  pid {pid:<6} {ps.process_group[:14]:<14}"
@@ -922,13 +915,13 @@ def render_workers(win, state: State, ui: UIState, y0: int) -> None:
         y += 1
         if y >= height - 1:
             break
-        if longest_idx >= 0 and longest_ms > 0:
+        if longest_idx >= 0 and longest > 0:
             note = (f"           longest slot: #{longest_idx} "
-                    f"running {fmt_ms(longest_ms)}")
+                    f"running {fmt_seconds(longest)}")
             # Look for an active slow request matching this pid.
             active = [e for e in state.slow.values()
                       if e.pid == pid and e.state == 0]
-            active.sort(key=lambda e: -e.duration_us)
+            active.sort(key=lambda e: -e.duration)
             if active:
                 e = active[0]
                 note += f"   {e.method} {e.url()[:60]}"
@@ -955,8 +948,9 @@ def render_latency(win, state: State, ui: UIState, y0: int) -> None:
         f"samples: {total}    "
         f"([ ] phase, < > window)", curses.A_BOLD)
     safe_addstr(win, y0 + 1, 1,
-        f"  p50 {fmt_ms(p50):>8}  p95 {fmt_ms(p95):>8}  p99 {fmt_ms(p99):>8}  "
-        f"min {fmt_us(lo):>8}  max {fmt_us(hi):>8}")
+        f"  p50 {fmt_seconds(p50):>8}  p95 {fmt_seconds(p95):>8}  "
+        f"p99 {fmt_seconds(p99):>8}  "
+        f"min {fmt_seconds(lo):>8}  max {fmt_seconds(hi):>8}")
 
     # Histogram. 65 buckets: render one column per bucket where it fits;
     # otherwise pair them up so the chart still spans the whole window.
@@ -1016,18 +1010,19 @@ def render_latency(win, state: State, ui: UIState, y0: int) -> None:
     if label_y < height:
         # Print a label every 4 buckets (= every octave start).
         for octave in range(0, HDR_OCTAVES, 2):
-            lo_ms = HDR_BASE_MS * (1 << octave)
+            lo = HDR_BASE_SECONDS * (1 << octave)
             x = chart_left + octave * HDR_SUBS * cols_per_bucket
             if x >= width:
                 break
-            safe_addstr(win, label_y, x, _short_ms(lo_ms),
+            safe_addstr(win, label_y, x, _short_seconds(lo),
                         curses.color_pair(CP_DIM))
 
 
-def _short_ms(ms: float) -> str:
-    if ms < 1000:
-        return f"{ms:.0f}ms"
-    return f"{ms/1000:.0f}s"
+def _short_seconds(s: float) -> str:
+    """Compact axis-tick label for a bucket boundary."""
+    if s < 1.0:
+        return f"{s*1000:.0f}ms"
+    return f"{s:.0f}s"
 
 
 # --- Slow requests view ------------------------------------------------------
@@ -1036,7 +1031,7 @@ def _short_ms(ms: float) -> str:
 def render_slow(win, state: State, ui: UIState, y0: int) -> None:
     height, width = win.getmaxyx()
     rows = []
-    now_us = time.time() * 1_000_000
+    now = time.time()
     for key, e in state.slow.items():
         if ui.slow_state_filter != -1 and e.state != ui.slow_state_filter:
             continue
@@ -1047,10 +1042,10 @@ def render_slow(win, state: State, ui: UIState, y0: int) -> None:
         if ui.slow_search and ui.slow_search.lower() not in e.url().lower():
             continue
         if e.state == 0:
-            elapsed_us = max(e.duration_us, int(now_us - e.start_stamp_us))
+            elapsed = max(e.duration, now - e.start_stamp)
         else:
-            elapsed_us = e.duration_us
-        rows.append((elapsed_us, key, e))
+            elapsed = e.duration
+        rows.append((elapsed, key, e))
 
     sort_key = ui.slow_sort
     if sort_key == "elapsed":
@@ -1075,16 +1070,16 @@ def render_slow(win, state: State, ui: UIState, y0: int) -> None:
              f"{'METHOD':<7}  {'STATUS':>6}  {'LOG ID':<24}  URL"
     safe_addstr(win, y0 + 1, 0, header, curses.A_REVERSE)
     y = y0 + 2
-    for elapsed_us, key, e in rows:
+    for elapsed, key, e in rows:
         if y >= height - 1:
             break
         st = "active" if e.state == 0 else "done"
         attr = curses.color_pair(CP_CRIT) | curses.A_BOLD if e.state == 0 \
             else curses.color_pair(CP_DIM)
-        # status==0 means start_response wasn't called yet — show a
-        # dash so it's visibly distinct from a real status code.
+        # status==0 means start_response wasn't called yet: show a dash
+        # so it's visibly distinct from a real status code.
         status_str = "-" if not e.status else str(e.status)
-        line = (f"  {st:<6}  {fmt_us(elapsed_us):>9}  {e.pid:>7}  "
+        line = (f"  {st:<6}  {fmt_seconds(elapsed):>9}  {e.pid:>7}  "
                 f"{e.method:<7}  {status_str:>6}  "
                 f"{(e.log_id or '-')[:24]:<24}  {e.url()}")
         safe_addstr(win, y, 0, line, attr)
@@ -1094,8 +1089,8 @@ def render_slow(win, state: State, ui: UIState, y0: int) -> None:
         # Show a brief I/O footer for the top entry.
         if rows:
             _, _, top = rows[0]
-            footer = (f"  top: cpu user={fmt_us(top.cpu_user_us)} "
-                      f"sys={fmt_us(top.cpu_system_us)}   "
+            footer = (f"  top: cpu user={fmt_seconds(top.cpu_user_time)} "
+                      f"sys={fmt_seconds(top.cpu_system_time)}   "
                       f"i/o in={fmt_bytes(top.input_bytes)}/{top.input_reads}r "
                       f"out={fmt_bytes(top.output_bytes)}/{top.output_writes}w")
             safe_addstr(win, height - 2, 0, footer, curses.color_pair(CP_DIM))
@@ -1415,7 +1410,7 @@ def render_once_text(state: State, ui: UIState) -> str:
     cap_busy = h["busy"]
     frac = (cap_busy / cap_total) if cap_total else 0.0
     lines.append(f"  cap:  {cap_busy}/{cap_total} threads ({frac*100:.1f}%)   "
-                 f"queue {fmt_ms(h['queue_mean_ms']) if h['queue_mean_ms'] is not None else '-'}")
+                 f"queue {fmt_seconds(h['queue_mean']) if h['queue_mean'] is not None else '-'}")
     lines.append(f"  cpu:  user {h['cpu_user']:.2f}  sys {h['cpu_sys']:.2f}   "
                  f"rss {fmt_bytes(h['rss_total'])} (max {fmt_bytes(h['rss_max'])})")
     # status==0 (no start_response, exception path) is folded into 5xx
@@ -1432,9 +1427,9 @@ def render_once_text(state: State, ui: UIState) -> str:
     s_parts.append(f"4xx {pct(h['status_4xx']):.1f}%")
     s_parts.append(f"5xx {pct(h['status_5xx']):.1f}%")
     lines.append("  stat: " + "  ".join(s_parts))
-    lines.append(f"  lat:  p50 {fmt_ms(h['p50_ms'])}  p95 {fmt_ms(h['p95_ms'])}  "
-                 f"p99 {fmt_ms(h['p99_ms'])}   "
-                 f"min {fmt_us(h['min_us'])}  max {fmt_us(h['max_us'])}")
+    lines.append(f"  lat:  p50 {fmt_seconds(h['p50'])}  "
+                 f"p95 {fmt_seconds(h['p95'])}  p99 {fmt_seconds(h['p99'])}   "
+                 f"min {fmt_seconds(h['min'])}  max {fmt_seconds(h['max'])}")
     lines.append(f"  slow: {h['active_slow']} active / {h['recent_slow']} 1m / "
                  f"{h['total_slow']} total")
     lines.append("")

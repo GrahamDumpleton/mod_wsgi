@@ -91,7 +91,7 @@ class SlowEntry:
     """One slow request as currently known to the ingester.
 
     Active heartbeats replace earlier active records for the same key; a
-    completed record marks the entry final (its duration_us is the end-of-
+    completed record marks the entry final (its duration is the end-of-
     request total). last_seen is the wall-monotonic arrival time, used for
     TTL age-out so requests from processes that died mid-flight don't
     linger as "active" forever.
@@ -113,9 +113,9 @@ class SlowEntry:
     hostname: str
     script_name: str
     path_info: str
-    start_stamp_us: int
-    duration_us: int
-    state: int                 # 0 = active, 1 = completed
+    start_stamp: float          # seconds since epoch
+    duration: float             # seconds
+    state: int                  # 0 = active, 1 = completed
     # Network identity. peer_ip is post-trusted-proxy resolution, so
     # reflects the real client when X-Forwarded-For handling is
     # configured. protocol is "HTTP/1.1" / "HTTP/2.0". user_agent
@@ -128,38 +128,38 @@ class SlowEntry:
     input_reads: int = 0
     output_bytes: int = 0
     output_writes: int = 0
-    cpu_user_us: int = 0
-    cpu_system_us: int = 0
-    # Per-phase timing breakdown (microseconds). server is Apache
-    # request arrival → handed off to daemon (or → application_start
-    # in embedded mode); queue is daemon connect → worker pickup;
-    # daemon is worker pickup → WSGI callable invoked; application
+    cpu_user_time: float = 0.0
+    cpu_system_time: float = 0.0
+    # Per-phase timing breakdown (seconds). server is Apache
+    # request arrival to handed off to daemon (or to application_start
+    # in embedded mode); queue is daemon connect to worker pickup;
+    # daemon is worker pickup to WSGI callable invoked; application
     # is the WSGI callable elapsed. queue and daemon are 0 in
     # embedded mode. application is partial for active records still
     # inside the callable; pre-application active records report 0
     # for application and a partial daemon (or server) so the user
     # can see where time is going.
-    server_time_us: int = 0
-    queue_time_us: int = 0
-    daemon_time_us: int = 0
-    application_time_us: int = 0
+    server_time: float = 0.0
+    queue_time: float = 0.0
+    daemon_time: float = 0.0
+    application_time: float = 0.0
     # GIL-wait pressure indicator. Sum of waits at every instrumented
     # re-acquire site reached during this request, plus the initial
     # sub-interp GIL acquire. Cross-cutting overlap, not a phase
     # addend. Cannot see waits inside the application's own C
     # extensions, so it surfaces as a partial pressure indicator.
-    gil_wait_us: int = 0
+    gil_wait_time: float = 0.0
     gil_wait_count: int = 0
-    # I/O time overlap indicators for this request. input_read_us is
-    # the total time spent inside wsgi.input.read*; output_write_us is
-    # the total time spent in the adapter's output path
+    # I/O time overlap indicators for this request. input_read_time is
+    # the total time spent inside wsgi.input.read*; output_write_time
+    # is the total time spent in the adapter's output path
     # (start_response / write / yield-to-Apache). Cross-cutting
-    # overlap, not a phase addend. output_write_us is "adapter
-    # handoff" time, not client-receive time — Apache may buffer and
+    # overlap, not a phase addend. output_write_time is "adapter
+    # handoff" time, not client-receive time: Apache may buffer and
     # async-flush past mod_wsgi's view. See the wire.py field
     # comment for the full caveat.
-    input_read_us: int = 0
-    output_write_us: int = 0
+    input_read_time: float = 0.0
+    output_write_time: float = 0.0
     # Concurrency context — wsgi_active_requests including this one
     # at slot claim and at completion. active_at_completion is 0 for
     # active records by definition (the request hasn't finished).
@@ -185,23 +185,23 @@ class SlowEntry:
             "peer_ip": self.peer_ip,
             "protocol": self.protocol,
             "user_agent": self.user_agent,
-            "start_stamp_us": self.start_stamp_us,
-            "duration_us": self.duration_us,
+            "start_stamp": self.start_stamp,
+            "duration": self.duration,
             "state": self.state,
             "input_bytes": self.input_bytes,
             "input_reads": self.input_reads,
             "output_bytes": self.output_bytes,
             "output_writes": self.output_writes,
-            "cpu_user_us": self.cpu_user_us,
-            "cpu_system_us": self.cpu_system_us,
-            "server_time_us": self.server_time_us,
-            "queue_time_us": self.queue_time_us,
-            "daemon_time_us": self.daemon_time_us,
-            "application_time_us": self.application_time_us,
-            "gil_wait_us": self.gil_wait_us,
+            "cpu_user_time": self.cpu_user_time,
+            "cpu_system_time": self.cpu_system_time,
+            "server_time": self.server_time,
+            "queue_time": self.queue_time,
+            "daemon_time": self.daemon_time,
+            "application_time": self.application_time,
+            "gil_wait_time": self.gil_wait_time,
             "gil_wait_count": self.gil_wait_count,
-            "input_read_us": self.input_read_us,
-            "output_write_us": self.output_write_us,
+            "input_read_time": self.input_read_time,
+            "output_write_time": self.output_write_time,
             "active_at_start": self.active_at_start,
             "active_at_completion": self.active_at_completion,
             "status": self.status,
@@ -220,7 +220,7 @@ class LifecycleEvent:
     """
     kind: str               # "process_started" | "process_stopping" | "process_stopped"
     pid: int
-    stamp_us: int
+    stamp: float            # seconds since epoch
     hostname: str = ""
     process_group: str = ""
     process_parent_pid: int = 0     # STARTED only
@@ -235,7 +235,7 @@ class LifecycleEvent:
         return {
             "kind": self.kind,
             "pid": self.pid,
-            "stamp_us": self.stamp_us,
+            "stamp": self.stamp,
             "hostname": self.hostname,
             "process_group": self.process_group,
             "process_parent_pid": self.process_parent_pid,
@@ -386,7 +386,7 @@ class Ingester:
         ev = LifecycleEvent(
             kind=sample.kind_name,
             pid=sample.pid,
-            stamp_us=sample.stamp_us,
+            stamp=sample.stamp,
             hostname=_s("hostname"),
             process_group=_s("process_group"),
             process_parent_pid=int(f.get("process_parent_pid") or 0),
@@ -439,14 +439,14 @@ class Ingester:
 
         log_id = _s("slow_log_id")
         thread_id = int(f.get("slow_thread_id") or 0)
-        start_stamp_us = int(f.get("slow_start_stamp_us") or 0)
+        start_stamp = float(f.get("slow_start_stamp") or 0.0)
 
         # Prefer Apache's per-request log_id as correlation key; fall back
         # to a (pid, thread, start) tuple when mod_unique_id isn't loaded.
         if log_id:
             key: tuple = (sample.pid, log_id)
         else:
-            key = (sample.pid, thread_id, start_stamp_us)
+            key = (sample.pid, thread_id, start_stamp)
 
         entry = SlowEntry(
             pid=sample.pid,
@@ -461,23 +461,23 @@ class Ingester:
             peer_ip=_s("slow_peer_ip"),
             protocol=_s("slow_protocol"),
             user_agent=_s("slow_user_agent"),
-            start_stamp_us=start_stamp_us,
-            duration_us=int(f.get("slow_duration_us") or 0),
+            start_stamp=start_stamp,
+            duration=float(f.get("slow_duration") or 0.0),
             state=int(f.get("slow_record_state") or 0),
             input_bytes=int(f.get("slow_input_bytes") or 0),
             input_reads=int(f.get("slow_input_reads") or 0),
             output_bytes=int(f.get("slow_output_bytes") or 0),
             output_writes=int(f.get("slow_output_writes") or 0),
-            cpu_user_us=int(f.get("slow_cpu_user_us") or 0),
-            cpu_system_us=int(f.get("slow_cpu_system_us") or 0),
-            server_time_us=int(f.get("slow_server_time_us") or 0),
-            queue_time_us=int(f.get("slow_queue_time_us") or 0),
-            daemon_time_us=int(f.get("slow_daemon_time_us") or 0),
-            application_time_us=int(f.get("slow_application_time_us") or 0),
-            gil_wait_us=int(f.get("slow_gil_wait_us") or 0),
+            cpu_user_time=float(f.get("slow_cpu_user_time") or 0.0),
+            cpu_system_time=float(f.get("slow_cpu_system_time") or 0.0),
+            server_time=float(f.get("slow_server_time") or 0.0),
+            queue_time=float(f.get("slow_queue_time") or 0.0),
+            daemon_time=float(f.get("slow_daemon_time") or 0.0),
+            application_time=float(f.get("slow_application_time") or 0.0),
+            gil_wait_time=float(f.get("slow_gil_wait_time") or 0.0),
             gil_wait_count=int(f.get("slow_gil_wait_count") or 0),
-            input_read_us=int(f.get("slow_input_read_us") or 0),
-            output_write_us=int(f.get("slow_output_write_us") or 0),
+            input_read_time=float(f.get("slow_input_read_time") or 0.0),
+            output_write_time=float(f.get("slow_output_write_time") or 0.0),
             active_at_start=int(f.get("slow_active_at_start") or 0),
             active_at_completion=int(f.get("slow_active_at_completion") or 0),
             status=int(f.get("slow_status") or 0),
@@ -489,7 +489,7 @@ class Ingester:
             "type": "slow_request",
             "key": list(key),
             "entry": entry.to_dict(),
-            "stamp_us": sample.stamp_us,
+            "stamp": sample.stamp,
         })
 
     def _broadcast(self, sample: Sample) -> None:
@@ -630,7 +630,7 @@ class Ingester:
             "kind": sample.kind_name,
             "pid": sample.pid,
             "seq": sample.seq,
-            "stamp_us": sample.stamp_us,
+            "stamp": sample.stamp,
             "fields": {
                 k: (v.decode("utf-8", errors="replace") if isinstance(v, bytes) else v)
                 for k, v in sample.fields.items()

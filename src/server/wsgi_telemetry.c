@@ -205,11 +205,11 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
 {
     uint8_t *p = buf;
     uint8_t *end = buf + buflen;
-    uint64_t stamp_us = (uint64_t)apr_time_now(); /* apr_time_t is usec */
+    double stamp = (double)apr_time_now() / (double)APR_USEC_PER_SEC;
 
     (void)end; /* encoder sizes are deterministic; see WSGI_METRICS_MAX_DATAGRAM */
 
-    wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_REQUEST, pid, seq, stamp_us);
+    wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_REQUEST, pid, seq, stamp);
 
     if (s->mod_wsgi_version[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_MOD_WSGI_VERSION,
@@ -282,61 +282,61 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
 
     if (s->server_time_min_us != UINT64_MAX)
     {
-        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SERVER_TIME_MIN_US,
-                             s->server_time_min_us);
-        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SERVER_TIME_MAX_US,
-                             s->server_time_max_us);
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SERVER_TIME_MIN,
+                             (double)s->server_time_min_us / (double)APR_USEC_PER_SEC);
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SERVER_TIME_MAX,
+                             (double)s->server_time_max_us / (double)APR_USEC_PER_SEC);
     }
     if (s->application_time_min_us != UINT64_MAX)
     {
-        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_APPLICATION_TIME_MIN_US,
-                             s->application_time_min_us);
-        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_APPLICATION_TIME_MAX_US,
-                             s->application_time_max_us);
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_APPLICATION_TIME_MIN,
+                             (double)s->application_time_min_us / (double)APR_USEC_PER_SEC);
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_APPLICATION_TIME_MAX,
+                             (double)s->application_time_max_us / (double)APR_USEC_PER_SEC);
     }
     if (s->request_time_min_us != UINT64_MAX)
     {
-        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_REQUEST_TIME_MIN_US,
-                             s->request_time_min_us);
-        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_REQUEST_TIME_MAX_US,
-                             s->request_time_max_us);
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_REQUEST_TIME_MIN,
+                             (double)s->request_time_min_us / (double)APR_USEC_PER_SEC);
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_REQUEST_TIME_MAX,
+                             (double)s->request_time_max_us / (double)APR_USEC_PER_SEC);
     }
     if (s->gil_wait_time_min_us != UINT64_MAX)
     {
-        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GIL_WAIT_TIME_MIN_US,
-                             s->gil_wait_time_min_us);
-        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GIL_WAIT_TIME_MAX_US,
-                             s->gil_wait_time_max_us);
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_GIL_WAIT_TIME_MIN,
+                             (double)s->gil_wait_time_min_us / (double)APR_USEC_PER_SEC);
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_GIL_WAIT_TIME_MAX,
+                             (double)s->gil_wait_time_max_us / (double)APR_USEC_PER_SEC);
     }
     if (s->input_read_time_min_us != UINT64_MAX)
     {
-        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_INPUT_READ_TIME_MIN_US,
-                             s->input_read_time_min_us);
-        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_INPUT_READ_TIME_MAX_US,
-                             s->input_read_time_max_us);
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_INPUT_READ_TIME_MIN,
+                             (double)s->input_read_time_min_us / (double)APR_USEC_PER_SEC);
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_INPUT_READ_TIME_MAX,
+                             (double)s->input_read_time_max_us / (double)APR_USEC_PER_SEC);
     }
     if (s->output_write_time_min_us != UINT64_MAX)
     {
-        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_OUTPUT_WRITE_TIME_MIN_US,
-                             s->output_write_time_min_us);
-        wsgi_metrics_put_u64(&p, WSGI_METRICS_F_OUTPUT_WRITE_TIME_MAX_US,
-                             s->output_write_time_max_us);
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_OUTPUT_WRITE_TIME_MIN,
+                             (double)s->output_write_time_min_us / (double)APR_USEC_PER_SEC);
+        wsgi_metrics_put_f64(&p, WSGI_METRICS_F_OUTPUT_WRITE_TIME_MAX,
+                             (double)s->output_write_time_max_us / (double)APR_USEC_PER_SEC);
     }
     if (s->has_daemon_timing)
     {
         if (s->queue_time_min_us != UINT64_MAX)
         {
-            wsgi_metrics_put_u64(&p, WSGI_METRICS_F_QUEUE_TIME_MIN_US,
-                                 s->queue_time_min_us);
-            wsgi_metrics_put_u64(&p, WSGI_METRICS_F_QUEUE_TIME_MAX_US,
-                                 s->queue_time_max_us);
+            wsgi_metrics_put_f64(&p, WSGI_METRICS_F_QUEUE_TIME_MIN,
+                                 (double)s->queue_time_min_us / (double)APR_USEC_PER_SEC);
+            wsgi_metrics_put_f64(&p, WSGI_METRICS_F_QUEUE_TIME_MAX,
+                                 (double)s->queue_time_max_us / (double)APR_USEC_PER_SEC);
         }
         if (s->daemon_time_min_us != UINT64_MAX)
         {
-            wsgi_metrics_put_u64(&p, WSGI_METRICS_F_DAEMON_TIME_MIN_US,
-                                 s->daemon_time_min_us);
-            wsgi_metrics_put_u64(&p, WSGI_METRICS_F_DAEMON_TIME_MAX_US,
-                                 s->daemon_time_max_us);
+            wsgi_metrics_put_f64(&p, WSGI_METRICS_F_DAEMON_TIME_MIN,
+                                 (double)s->daemon_time_min_us / (double)APR_USEC_PER_SEC);
+            wsgi_metrics_put_f64(&p, WSGI_METRICS_F_DAEMON_TIME_MAX,
+                                 (double)s->daemon_time_max_us / (double)APR_USEC_PER_SEC);
         }
     }
 
@@ -393,16 +393,20 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
     if (s->slot_count > 0)
     {
         uint16_t n = (uint16_t)s->slot_count;
-        wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SLOT_REQUEST_COUNT,
+        wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_REQUEST_THREADS_COMPLETED,
                                    s->slot_request_count, n);
-        wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SLOT_BUSY_TIME_US,
-                                   s->slot_busy_time_us, n);
-        wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SLOT_CPU_TIME_US,
-                                   s->slot_cpu_time_us, n);
-        wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SLOT_CURRENT_ELAPSED_MS,
-                                   s->slot_current_elapsed_ms, n);
-        wsgi_metrics_put_i32_array(&p, WSGI_METRICS_F_SLOT_MAX_DURATION_MS,
-                                   s->slot_max_duration_ms, n);
+        wsgi_metrics_put_f64_array_from_i32_us(
+            &p, WSGI_METRICS_F_REQUEST_THREADS_BUSY_TIME,
+            s->slot_busy_time_us, n);
+        wsgi_metrics_put_f64_array_from_i32_us(
+            &p, WSGI_METRICS_F_REQUEST_THREADS_CPU_TIME,
+            s->slot_cpu_time_us, n);
+        wsgi_metrics_put_f64_array_from_i32_ms(
+            &p, WSGI_METRICS_F_REQUEST_THREADS_CURRENT_ELAPSED,
+            s->slot_current_elapsed_ms, n);
+        wsgi_metrics_put_f64_array_from_i32_ms(
+            &p, WSGI_METRICS_F_REQUEST_THREADS_MAX_DURATION,
+            s->slot_max_duration_ms, n);
     }
 
     return (size_t)(p - buf);
@@ -410,7 +414,7 @@ static size_t wsgi_telemetry_encode(const wsgi_telemetry_sample_t *s,
 
 static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
                                          uint32_t pid, uint32_t seq,
-                                         uint64_t stamp_us,
+                                         double stamp,
                                          uint8_t *buf, size_t buflen)
 {
     uint8_t *p = buf;
@@ -418,12 +422,13 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
     (void)buflen; /* deterministic; WSGI_METRICS_MAX_DATAGRAM sizes it */
 
     wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_SLOW_REQUEST, pid, seq,
-                            stamp_us);
+                            stamp);
 
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_RECORD_STATE, s->state);
-    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_START_STAMP_US,
-                         s->start_stamp_us);
-    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_DURATION_US, s->duration_us);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_START_STAMP,
+                         (double)s->start_stamp_us / (double)APR_USEC_PER_SEC);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_DURATION,
+                         (double)s->duration_us / (double)APR_USEC_PER_SEC);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_THREAD_ID, s->thread_id);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_SERVER_PID, s->server_pid);
 
@@ -434,10 +439,10 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_OUTPUT_WRITES,
                          s->output_writes);
 
-    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_CPU_USER_US,
-                         s->cpu_user_us);
-    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_CPU_SYSTEM_US,
-                         s->cpu_system_us);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_CPU_USER_TIME,
+                         (double)s->cpu_user_us / (double)APR_USEC_PER_SEC);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_CPU_SYSTEM_TIME,
+                         (double)s->cpu_system_us / (double)APR_USEC_PER_SEC);
 
     /*
      * Per-phase request timing. Always emitted (including zeros) so
@@ -448,14 +453,14 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
      * not yet entered the WSGI callable, partial otherwise.
      */
 
-    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_SERVER_TIME_US,
-                         s->server_time_us);
-    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_QUEUE_TIME_US,
-                         s->queue_time_us);
-    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_DAEMON_TIME_US,
-                         s->daemon_time_us);
-    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_APPLICATION_TIME_US,
-                         s->application_time_us);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_SERVER_TIME,
+                         (double)s->server_time_us / (double)APR_USEC_PER_SEC);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_QUEUE_TIME,
+                         (double)s->queue_time_us / (double)APR_USEC_PER_SEC);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_DAEMON_TIME,
+                         (double)s->daemon_time_us / (double)APR_USEC_PER_SEC);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_APPLICATION_TIME,
+                         (double)s->application_time_us / (double)APR_USEC_PER_SEC);
 
     /*
      * GIL-wait pressure indicator for this single request. Always
@@ -464,8 +469,8 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
      * running sum; for completed records it is the final total.
      */
 
-    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_GIL_WAIT_US,
-                         s->gil_wait_us);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_GIL_WAIT_TIME,
+                         (double)s->gil_wait_us / (double)APR_USEC_PER_SEC);
     wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_GIL_WAIT_COUNT,
                          s->gil_wait_count);
 
@@ -478,10 +483,10 @@ static size_t wsgi_telemetry_encode_slow(const wsgi_slow_request_t *s,
      * final totals.
      */
 
-    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_INPUT_READ_US,
-                         s->input_read_us);
-    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_SLOW_OUTPUT_WRITE_US,
-                         s->output_write_us);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_INPUT_READ_TIME,
+                         (double)s->input_read_us / (double)APR_USEC_PER_SEC);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_SLOW_OUTPUT_WRITE_TIME,
+                         (double)s->output_write_us / (double)APR_USEC_PER_SEC);
 
     /*
      * Concurrency context. active_at_completion is zero for active
@@ -559,7 +564,9 @@ static size_t wsgi_telemetry_encode_started(const wsgi_telemetry_ctx_t *ctx,
     (void)buflen;
 
     wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_PROCESS_STARTED, ctx->pid,
-                            seq, (uint64_t)ctx->process_start_us);
+                            seq,
+                            (double)ctx->process_start_us /
+                            (double)APR_USEC_PER_SEC);
 
     if (ctx->mod_wsgi_version[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_MOD_WSGI_VERSION,
@@ -601,12 +608,12 @@ static size_t wsgi_telemetry_encode_stopping(const wsgi_telemetry_ctx_t *ctx,
                                              size_t buflen)
 {
     uint8_t *p = buf;
-    uint64_t now_us = (uint64_t)apr_time_now();
+    double now = (double)apr_time_now() / (double)APR_USEC_PER_SEC;
 
     (void)buflen;
 
     wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_PROCESS_STOPPING, ctx->pid,
-                            seq, now_us);
+                            seq, now);
 
     if (ctx->hostname[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_HOSTNAME, ctx->hostname,
@@ -634,14 +641,16 @@ static size_t wsgi_telemetry_encode_stopped(const wsgi_telemetry_ctx_t *ctx,
                                             size_t buflen)
 {
     uint8_t *p = buf;
-    uint64_t now_us = (uint64_t)apr_time_now();
-    double uptime = (double)(now_us - (uint64_t)ctx->process_start_us) / (double)APR_USEC_PER_SEC;
+    apr_time_t now_us = apr_time_now();
+    double now = (double)now_us / (double)APR_USEC_PER_SEC;
+    double uptime = (double)(now_us - (apr_time_t)ctx->process_start_us) /
+                    (double)APR_USEC_PER_SEC;
     uint64_t graceful_drain = graceful ? 1 : 0;
 
     (void)buflen;
 
     wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_PROCESS_STOPPED, ctx->pid,
-                            seq, now_us);
+                            seq, now);
 
     if (ctx->hostname[0])
         wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_HOSTNAME, ctx->hostname,
@@ -738,25 +747,26 @@ static void wsgi_telemetry_emit_tick(const wsgi_telemetry_ctx_t *ctx)
         wsgi_slow_request_t actives[16];
         int n_active;
         int i;
-        uint64_t tick_stamp_us = (uint64_t)apr_time_now();
+        apr_time_t tick_stamp_us = apr_time_now();
+        double tick_stamp = (double)tick_stamp_us / (double)APR_USEC_PER_SEC;
 
         while (wsgi_metrics_pop_slow_completed(&rec))
         {
             seq = wsgi_telemetry_next_seq();
-            n = wsgi_telemetry_encode_slow(&rec, ctx->pid, seq, tick_stamp_us,
+            n = wsgi_telemetry_encode_slow(&rec, ctx->pid, seq, tick_stamp,
                                            buf, sizeof(buf));
             wsgi_telemetry_send(ctx, buf, n);
         }
 
         n_active = wsgi_metrics_snapshot_slow_active(
             actives, (int)(sizeof(actives) / sizeof(actives[0])),
-            (apr_time_t)tick_stamp_us, wsgi_slow_threshold_us);
+            tick_stamp_us, wsgi_slow_threshold_us);
 
         for (i = 0; i < n_active; i++)
         {
             seq = wsgi_telemetry_next_seq();
             n = wsgi_telemetry_encode_slow(&actives[i], ctx->pid, seq,
-                                           tick_stamp_us, buf, sizeof(buf));
+                                           tick_stamp, buf, sizeof(buf));
             wsgi_telemetry_send(ctx, buf, n);
         }
     }

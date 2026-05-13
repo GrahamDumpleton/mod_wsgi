@@ -52,13 +52,13 @@ def cycle_band_counts(
 
     Returns a 5-element list [c0, c1, c2, c3, c4plus].
     """
-    s_ms = switch_interval_s * 1000.0
-    edges_ms = [
-        (0.0, 0.8 * s_ms),
-        (0.8 * s_ms, 1.8 * s_ms),
-        (1.8 * s_ms, 2.8 * s_ms),
-        (2.8 * s_ms, 3.8 * s_ms),
-        (3.8 * s_ms, math.inf),
+    s = switch_interval_s
+    edges = [
+        (0.0, 0.8 * s),
+        (0.8 * s, 1.8 * s),
+        (1.8 * s, 2.8 * s),
+        (2.8 * s, 3.8 * s),
+        (3.8 * s, math.inf),
     ]
     bands = [0] * 5
     for i, (count, (lo, hi)) in enumerate(zip(buckets, bucket_bounds)):
@@ -70,7 +70,7 @@ def cycle_band_counts(
             mid = lo
         else:
             mid = 0.5 * (lo + hi)
-        for k, (blo, bhi) in enumerate(edges_ms):
+        for k, (blo, bhi) in enumerate(edges):
             if blo <= mid < bhi:
                 bands[k] += count
                 break

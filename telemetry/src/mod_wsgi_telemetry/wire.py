@@ -4,6 +4,11 @@ This file is the Python-side mirror of src/server/wsgi_telemetry.h on the
 mod_wsgi C side. Field IDs and type tags must stay in sync. Once the C
 header is committed, this table should be regenerated from it.
 
+All time-valued payload fields are IEEE 754 double-precision floats in
+seconds. Wall-clock instants are seconds since the Unix epoch; durations
+are seconds. The fixed-header stamp follows the same convention. Counts
+are integer types.
+
 Wire layout:
 
   fixed header (24 bytes, little-endian):
@@ -14,12 +19,13 @@ Wire layout:
     flags     uint16
     pid       uint32
     seq       uint32   monotonic per process, drop detection
-    stamp_us  uint64   microseconds since epoch
+    stamp     float64  seconds since epoch
 
   then repeated TLV records until the end of the datagram:
     id        uint16
-    type      uint8    one of T_U64, T_F64, T_I64, T_BYTES, T_I32_ARRAY
-    [len      uint16]  only for BYTES / I32_ARRAY
+    type      uint8    one of T_U64, T_F64, T_I64, T_BYTES, T_I32_ARRAY,
+                       T_F64_ARRAY
+    [len      uint16]  only for BYTES / I32_ARRAY / F64_ARRAY
     value     per type
 """
 
@@ -56,6 +62,7 @@ T_F64 = 0x02
 T_I64 = 0x03
 T_BYTES = 0x04
 T_I32_ARRAY = 0x05
+T_F64_ARRAY = 0x06
 
 # Field ID table. Mirrors wsgi_telemetry.h. Grouped in blocks of 10 by
 # concept; see the header for the authoritative groupings. IDs are kept
@@ -128,32 +135,32 @@ FIELDS = {
     66: "input_read_time",
     67: "output_write_time",
 
-    # 70-79: per-phase exact min times for the interval (microseconds).
+    # 70-79: per-phase exact min times for the interval (float seconds).
     # Only present on ticks where at least one request completed; the
     # encoder skips the field on idle ticks. Aggregate cleanly across
-    # processes and across windows by min-of-mins — exact, no histogram
+    # processes and across windows by min-of-mins: exact, no histogram
     # approximation.
-    70: "server_time_min_us",
-    71: "queue_time_min_us",
-    72: "daemon_time_min_us",
-    73: "application_time_min_us",
-    74: "request_time_min_us",
-    75: "gil_wait_time_min_us",
-    76: "input_read_time_min_us",
-    77: "output_write_time_min_us",
+    70: "server_time_min",
+    71: "queue_time_min",
+    72: "daemon_time_min",
+    73: "application_time_min",
+    74: "request_time_min",
+    75: "gil_wait_time_min",
+    76: "input_read_time_min",
+    77: "output_write_time_min",
 
-    # 80-89: per-phase exact max times for the interval (microseconds).
-    # Same emission rule and aggregation semantics as the min block —
+    # 80-89: per-phase exact max times for the interval (float seconds).
+    # Same emission rule and aggregation semantics as the min block:
     # max-of-maxes is exact. Pairs with the histograms below to give a
     # true worst-case alongside bucket-bounded percentiles.
-    80: "server_time_max_us",
-    81: "queue_time_max_us",
-    82: "daemon_time_max_us",
-    83: "application_time_max_us",
-    84: "request_time_max_us",
-    85: "gil_wait_time_max_us",
-    86: "input_read_time_max_us",
-    87: "output_write_time_max_us",
+    80: "server_time_max",
+    81: "queue_time_max",
+    82: "daemon_time_max",
+    83: "application_time_max",
+    84: "request_time_max",
+    85: "gil_wait_time_max",
+    86: "input_read_time_max",
+    87: "output_write_time_max",
 
     # 90-99: per-phase histograms. HDR-style: 16 octaves from 1 ms to
     # 65.5 s, each octave linearly split into 4 sub-buckets, plus one
@@ -177,14 +184,17 @@ FIELDS = {
     102: "output_bytes_total",
     103: "output_writes_total",
 
-    # 110-119: per-slot capacity signals. One entry per worker thread,
-    # carried as i32 arrays whose length matches the emitting process's
-    # live request_threads_maximum.
-    110: "slot_request_count",
-    111: "slot_busy_time_us",
-    112: "slot_cpu_time_us",
-    113: "slot_current_elapsed_ms",
-    114: "slot_max_duration_ms",
+    # 110-119: per-worker-slot capacity signals. One entry per worker
+    # thread; array length matches the emitting process's live
+    # request_threads_maximum. Field names parallel the same-shape keys
+    # in the mod_wsgi.request_metrics() Python dict. The four
+    # time-valued lists are f64 arrays in seconds; the completed-count
+    # list stays an i32 array of counts.
+    110: "request_threads_completed",
+    111: "request_threads_busy_time",
+    112: "request_threads_cpu_time",
+    113: "request_threads_current_elapsed",
+    114: "request_threads_max_duration",
 
     # 120-129: per-interval HTTP response class totals. Drained from
     # the same accumulator that wsgi_record_request_times() updates at
@@ -234,7 +244,7 @@ FIELDS = {
     #   210-219: HTTP request identity (method, URL components, protocol,
     #            peer IP, user agent)
     #   220-229: per-phase timing breakdown (server / queue / daemon /
-    #            application time, microseconds)
+    #            application time, seconds)
     #   230-239: per-request I/O counters
     #   240-249: response outcome (HTTP status; future error.type)
     #   250-259: per-request CPU and resource use
@@ -244,8 +254,8 @@ FIELDS = {
     #
     # Active records carry zero for fields not yet observable.
     200: "slow_record_state",     # 0 = active, 1 = completed
-    201: "slow_start_stamp_us",
-    202: "slow_duration_us",
+    201: "slow_start_stamp",      # f64 seconds since epoch
+    202: "slow_duration",         # f64 seconds
     203: "slow_thread_id",
     204: "slow_log_id",
     205: "slow_server_pid",            # Apache child worker pid that accepted the request
@@ -259,24 +269,24 @@ FIELDS = {
     216: "slow_peer_ip",                # post-trusted-proxy resolution
     217: "slow_user_agent",             # only when WSGIMetricsOptions +CaptureUserAgent
 
-    220: "slow_server_time_us",
-    221: "slow_queue_time_us",         # 0 in embedded mode
-    222: "slow_daemon_time_us",        # 0 in embedded mode
-    223: "slow_application_time_us",   # partial for active records still in flight
-    224: "slow_gil_wait_us",            # GIL-wait pressure indicator; running total for active records
-    225: "slow_gil_wait_count",         # number of re-acquire events observed
+    220: "slow_server_time",
+    221: "slow_queue_time",            # 0 in embedded mode
+    222: "slow_daemon_time",           # 0 in embedded mode
+    223: "slow_application_time",      # partial for active records still in flight
+    224: "slow_gil_wait_time",         # GIL-wait pressure indicator; running total for active records
+    225: "slow_gil_wait_count",        # number of re-acquire events observed
 
     230: "slow_input_bytes",
     231: "slow_input_reads",
     232: "slow_output_bytes",
     233: "slow_output_writes",
-    234: "slow_input_read_us",     # per-request total time inside wsgi.input.read*
-    235: "slow_output_write_us",   # per-request total time inside adapter output path
+    234: "slow_input_read_time",   # per-request total time inside wsgi.input.read*
+    235: "slow_output_write_time", # per-request total time inside adapter output path
 
     240: "slow_status",           # 0 = not yet known, else final WSGI status
 
-    250: "slow_cpu_user_us",
-    251: "slow_cpu_system_us",
+    250: "slow_cpu_user_time",
+    251: "slow_cpu_system_time",
 
     260: "slow_active_at_start",        # in-flight count including this request
     261: "slow_active_at_completion",   # 0 for active records
@@ -286,7 +296,7 @@ FIELDS = {
 FIELD_IDS = {name: fid for fid, name in FIELDS.items()}
 
 
-_HDR = struct.Struct("<4sBBHIIQ")
+_HDR = struct.Struct("<4sBBHIId")
 _TLV_HDR = struct.Struct("<HB")
 _U16 = struct.Struct("<H")
 _U64 = struct.Struct("<Q")
@@ -300,7 +310,7 @@ class Sample:
     kind: int
     pid: int
     seq: int
-    stamp_us: int
+    stamp: float
     fields: dict[str, Any]
 
     @property
@@ -352,6 +362,11 @@ def decode(buf: bytes | memoryview) -> Sample:
             off += 2
             value = list(struct.unpack_from(f"<{n}i", buf, off))
             off += n * 4
+        elif ftype == T_F64_ARRAY:
+            (n,) = _U16.unpack_from(buf, off)
+            off += 2
+            value = list(struct.unpack_from(f"<{n}d", buf, off))
+            off += n * 8
         else:
             raise DecodeError(
                 f"unknown type tag 0x{ftype:02x} at offset {off - 1}"
@@ -365,7 +380,7 @@ def decode(buf: bytes | memoryview) -> Sample:
         kind=kind,
         pid=pid,
         seq=seq,
-        stamp_us=stamp,
+        stamp=stamp,
         fields=fields,
     )
 
@@ -380,7 +395,7 @@ def encode(sample: Sample) -> bytes:
             0,
             sample.pid,
             sample.seq,
-            sample.stamp_us,
+            sample.stamp,
         )
     )
     for name, value in sample.fields.items():
@@ -405,11 +420,18 @@ def encode(sample: Sample) -> bytes:
         elif isinstance(value, str):
             data = value.encode("utf-8")
             out += _TLV_HDR.pack(fid, T_BYTES) + _U16.pack(len(data)) + data
-        elif isinstance(value, (list, tuple)) and all(
-            isinstance(x, int) for x in value
-        ):
-            out += _TLV_HDR.pack(fid, T_I32_ARRAY) + _U16.pack(len(value))
-            out += struct.pack(f"<{len(value)}i", *value)
+        elif isinstance(value, (list, tuple)):
+            if all(isinstance(x, int) and not isinstance(x, bool) for x in value):
+                out += _TLV_HDR.pack(fid, T_I32_ARRAY) + _U16.pack(len(value))
+                out += struct.pack(f"<{len(value)}i", *value)
+            elif all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                     for x in value):
+                out += _TLV_HDR.pack(fid, T_F64_ARRAY) + _U16.pack(len(value))
+                out += struct.pack(f"<{len(value)}d", *[float(x) for x in value])
+            else:
+                raise TypeError(
+                    f"cannot encode field {name!r}: mixed list element types"
+                )
         else:
             raise TypeError(f"cannot encode field {name!r}: {type(value).__name__}")
 

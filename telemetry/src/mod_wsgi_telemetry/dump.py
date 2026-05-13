@@ -54,13 +54,13 @@ def main(argv: list[str] | None = None) -> int:
                     "kind": sample.kind_name,
                     "pid": sample.pid,
                     "seq": sample.seq,
-                    "stamp_us": sample.stamp_us,
+                    "stamp": sample.stamp,
                     "fields": {k: _fmt_value(v) for k, v in sample.fields.items()},
                 }
                 print(json.dumps(payload))
             else:
                 ts = datetime.fromtimestamp(
-                    sample.stamp_us / 1_000_000, tz=timezone.utc
+                    sample.stamp, tz=timezone.utc
                 ).isoformat(timespec="milliseconds")
                 print(
                     f"\n[{ts}] pid={sample.pid} seq={sample.seq} "

@@ -123,25 +123,21 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
             buckets[idx] += 1
         return buckets
 
-    def minmax_us(seconds_mean: float) -> tuple[int, int]:
-        """Plausible per-tick min/max bracketing the mean (microseconds)."""
+    def minmax_seconds(seconds_mean: float) -> tuple[float, float] | tuple[None, None]:
+        """Plausible per-tick min/max bracketing the mean (float seconds)."""
         if count == 0:
-            # No requests this tick — encoder skips the field; mirror that
-            # by emitting the sentinel UINT64_MAX as the min, which the
-            # decoder treats as "no data". UINT64_MAX is too big for the
-            # i64 encode path; encode as None instead so the field is
-            # simply absent on the wire.
+            # No requests this tick: encoder skips the field. Return
+            # (None, None) so the field is simply absent on the wire.
             return None, None
-        mn = max(1, int(seconds_mean * 1_000_000 * random.uniform(0.30, 0.55)))
-        mx = max(mn + 1, int(seconds_mean * 1_000_000 *
-                             random.uniform(3.0, 8.0)))
+        mn = max(1e-6, seconds_mean * random.uniform(0.30, 0.55))
+        mx = max(mn + 1e-6, seconds_mean * random.uniform(3.0, 8.0))
         return mn, mx
 
-    s_min, s_max = minmax_us(srv_time)
-    a_min, a_max = minmax_us(app_time)
-    r_min, r_max = minmax_us(request_time)
-    q_min, q_max = minmax_us(queue_time)
-    d_min, d_max = minmax_us(daemon_time)
+    s_min, s_max = minmax_seconds(srv_time)
+    a_min, a_max = minmax_seconds(app_time)
+    r_min, r_max = minmax_seconds(request_time)
+    q_min, q_max = minmax_seconds(queue_time)
+    d_min, d_max = minmax_seconds(daemon_time)
 
     # Per-slot capacity arrays. Each slot's base busy-fraction is a
     # blend of the process-wide capacity and per-slot jitter, so slots
@@ -153,47 +149,48 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
 
     # Randomly start or release a stuck slot so the UI shows activity.
     stuck_slot = slot_state.get("stuck_slot")
-    stuck_since_ms = slot_state.get("stuck_since_ms", 0)
+    stuck_since = slot_state.get("stuck_since", 0.0)
     if stuck_slot is None:
         if cap > 0.4 and random.random() < 0.05:
             stuck_slot = random.randrange(_SLOT_COUNT)
-            stuck_since_ms = 0
+            stuck_since = 0.0
     else:
-        stuck_since_ms += int(interval * 1000)
-        if stuck_since_ms > 15000 or random.random() < 0.08:
+        stuck_since += interval
+        if stuck_since > 15.0 or random.random() < 0.08:
             stuck_slot = None
-            stuck_since_ms = 0
+            stuck_since = 0.0
     slot_state["stuck_slot"] = stuck_slot
-    slot_state["stuck_since_ms"] = stuck_since_ms
+    slot_state["stuck_since"] = stuck_since
 
-    sample_period_us = int(interval * 1_000_000)
-    slot_request_count = [0] * _SLOT_COUNT
-    slot_busy_time_us = [0] * _SLOT_COUNT
-    slot_cpu_time_us = [0] * _SLOT_COUNT
-    slot_current_elapsed_ms = [0] * _SLOT_COUNT
-    slot_max_duration_ms = [0] * _SLOT_COUNT
+    request_threads_completed = [0] * _SLOT_COUNT
+    request_threads_busy_time = [0.0] * _SLOT_COUNT
+    request_threads_cpu_time = [0.0] * _SLOT_COUNT
+    request_threads_current_elapsed = [0.0] * _SLOT_COUNT
+    request_threads_max_duration = [0.0] * _SLOT_COUNT
 
     for s in range(_SLOT_COUNT):
         if s == stuck_slot:
-            # Pinned on a long request — busy near 100%, no completions,
+            # Pinned on a long request: busy near 100%, no completions,
             # current_elapsed climbing.
-            slot_busy_time_us[s] = int(sample_period_us * random.uniform(0.92, 1.0))
-            slot_cpu_time_us[s] = int(slot_busy_time_us[s] * random.uniform(0.05, 0.25))
-            slot_current_elapsed_ms[s] = stuck_since_ms
-            slot_max_duration_ms[s] = stuck_since_ms
-            slot_request_count[s] = 0
+            request_threads_busy_time[s] = interval * random.uniform(0.92, 1.0)
+            request_threads_cpu_time[s] = (
+                request_threads_busy_time[s] * random.uniform(0.05, 0.25))
+            request_threads_current_elapsed[s] = stuck_since
+            request_threads_max_duration[s] = stuck_since
+            request_threads_completed[s] = 0
         else:
             slot_cap = max(0.0, min(1.0, cap + random.uniform(-0.25, 0.25)))
-            slot_busy_time_us[s] = int(sample_period_us * slot_cap)
+            request_threads_busy_time[s] = interval * slot_cap
             cpu_frac = random.uniform(0.3, 0.8)
-            slot_cpu_time_us[s] = int(slot_busy_time_us[s] * cpu_frac)
-            slot_request_count[s] = max(
+            request_threads_cpu_time[s] = (
+                request_threads_busy_time[s] * cpu_frac)
+            request_threads_completed[s] = max(
                 0, int(slot_cap * count / max(1, _SLOT_COUNT - (1 if stuck_slot is not None else 0))
                        + random.uniform(-2, 2)))
-            # Heavy-tailed max-duration per tick.
-            if slot_request_count[s] > 0:
-                slot_max_duration_ms[s] = int(
-                    max(5, random.lognormvariate(3.5, 0.8))
+            # Heavy-tailed max-duration per tick (in seconds).
+            if request_threads_completed[s] > 0:
+                request_threads_max_duration[s] = (
+                    max(0.005, random.lognormvariate(3.5, 0.8) / 1000.0)
                 )
 
     rss = 120 * 1024 * 1024 + int(10 * 1024 * 1024 * math.sin(phase / 3))
@@ -213,7 +210,7 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
         "memory_max_rss": rss + 8 * 1024 * 1024,
         "request_threads_maximum": _SLOT_COUNT,
         "request_threads_active": max(1, min(_SLOT_COUNT,
-                                             sum(1 for v in slot_busy_time_us
+                                             sum(1 for v in request_threads_busy_time
                                                  if v > 0))),
         "server_time": srv_time,
         "queue_time": queue_time,
@@ -227,11 +224,11 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
         "queue_time_buckets":     bucketise(count, concentration=8),
         "daemon_time_buckets":    bucketise(count, concentration=8),
         "request_time_buckets":   bucketise(count, concentration=22),
-        "slot_request_count": slot_request_count,
-        "slot_busy_time_us": slot_busy_time_us,
-        "slot_cpu_time_us": slot_cpu_time_us,
-        "slot_current_elapsed_ms": slot_current_elapsed_ms,
-        "slot_max_duration_ms": slot_max_duration_ms,
+        "request_threads_completed": request_threads_completed,
+        "request_threads_busy_time": request_threads_busy_time,
+        "request_threads_cpu_time": request_threads_cpu_time,
+        "request_threads_current_elapsed": request_threads_current_elapsed,
+        "request_threads_max_duration": request_threads_max_duration,
         # Per-request avg ~256 B in / ~1 KB out, with a small tail of
         # streaming responses that bump output_writes well above the
         # request count so the UI's "bytes/write" smell threshold is
@@ -254,20 +251,20 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
         "slow_requests_threshold": 1.0,
     }
 
-    # Per-phase exact min/max (microseconds). Skip the field on idle
+    # Per-phase exact min/max (float seconds). Skip the field on idle
     # ticks to mirror the C encoder's "field absent when no requests
     # this tick" behaviour.
     for key, val in (
-        ("server_time_min_us",      s_min),
-        ("server_time_max_us",      s_max),
-        ("queue_time_min_us",       q_min),
-        ("queue_time_max_us",       q_max),
-        ("daemon_time_min_us",      d_min),
-        ("daemon_time_max_us",      d_max),
-        ("application_time_min_us", a_min),
-        ("application_time_max_us", a_max),
-        ("request_time_min_us",     r_min),
-        ("request_time_max_us",     r_max),
+        ("server_time_min",      s_min),
+        ("server_time_max",      s_max),
+        ("queue_time_min",       q_min),
+        ("queue_time_max",       q_max),
+        ("daemon_time_min",      d_min),
+        ("daemon_time_max",      d_max),
+        ("application_time_min", a_min),
+        ("application_time_max", a_max),
+        ("request_time_min",     r_min),
+        ("request_time_max",     r_max),
     ):
         if val is not None:
             fields[key] = val
@@ -277,14 +274,14 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
         kind=KIND_REQUEST,
         pid=pid,
         seq=seq,
-        stamp_us=int(time.time() * 1_000_000),
+        stamp=time.time(),
         fields=fields,
     )
 
 
 def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
                      log_id: str, method: str, path: str,
-                     start_stamp_us: int, duration_us: int) -> Sample:
+                     start_stamp: float, duration: float) -> Sample:
     """Build one synthetic slow_request record."""
     # Synthesise plausible per-request I/O so the slow-request expand
     # panel shows non-zero counters in the simulator. POSTs get a body
@@ -308,19 +305,19 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
     # the mixed band so the colouring isn't all one shade.
     if state == 1:
         if streaming:
-            cpu_total_us = int(duration_us * random.uniform(0.05, 0.20))
+            cpu_total = duration * random.uniform(0.05, 0.20)
         elif "checkout" in path:
-            cpu_total_us = int(duration_us * random.uniform(1.10, 1.40))
+            cpu_total = duration * random.uniform(1.10, 1.40)
         elif "thumbnail" in path:
-            cpu_total_us = int(duration_us * random.uniform(0.85, 0.98))
+            cpu_total = duration * random.uniform(0.85, 0.98)
         else:
-            cpu_total_us = int(duration_us * random.uniform(0.30, 0.60))
-        cpu_user_us = int(cpu_total_us * random.uniform(0.85, 0.95))
-        cpu_system_us = cpu_total_us - cpu_user_us
+            cpu_total = duration * random.uniform(0.30, 0.60)
+        cpu_user_time = cpu_total * random.uniform(0.85, 0.95)
+        cpu_system_time = cpu_total - cpu_user_time
     else:
         # Active records carry zero CPU on the wire today (see C side).
-        cpu_user_us = 0
-        cpu_system_us = 0
+        cpu_user_time = 0.0
+        cpu_system_time = 0.0
     # Active records carry status 0 (start_response not yet called).
     # Completed records mostly land at 200; sprinkle in a few 500s so
     # the slow table's status column exercises its 5xx colouring.
@@ -332,20 +329,15 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
     # exercisable on demo data. server / queue / daemon are small
     # fixed-ish overheads; application is the residual. Active records
     # report an in-flight application_time partial.
-    server_us = random.randint(500, 3_000)
-    queue_us = random.randint(500, 5_000)
-    daemon_us = random.randint(500, 3_000)
-    overhead_us = server_us + queue_us + daemon_us
-    if state == 1:
-        application_us = max(0, duration_us - overhead_us)
-    else:
-        # Active record: application is partial, treat the elapsed time
-        # minus pre-app overhead as the partial application_time.
-        application_us = max(0, duration_us - overhead_us)
+    server_time = random.uniform(0.0005, 0.003)
+    queue_time = random.uniform(0.0005, 0.005)
+    daemon_time = random.uniform(0.0005, 0.003)
+    overhead = server_time + queue_time + daemon_time
+    application_time = max(0.0, duration - overhead)
     fields = {
         "slow_record_state": state,             # 0=active, 1=completed
-        "slow_start_stamp_us": start_stamp_us,
-        "slow_duration_us": duration_us,
+        "slow_start_stamp": start_stamp,
+        "slow_duration": duration,
         "slow_thread_id": thread_id,
         # Synthesise an Apache-child pid distinct from the emitter
         # pid so the slow-request drill-down exercises its daemon-mode
@@ -361,12 +353,12 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
         "slow_input_reads": in_reads,
         "slow_output_bytes": out_bytes,
         "slow_output_writes": out_writes,
-        "slow_cpu_user_us": cpu_user_us,
-        "slow_cpu_system_us": cpu_system_us,
-        "slow_server_time_us": server_us,
-        "slow_queue_time_us": queue_us,
-        "slow_daemon_time_us": daemon_us,
-        "slow_application_time_us": application_us,
+        "slow_cpu_user_time": cpu_user_time,
+        "slow_cpu_system_time": cpu_system_time,
+        "slow_server_time": server_time,
+        "slow_queue_time": queue_time,
+        "slow_daemon_time": daemon_time,
+        "slow_application_time": application_time,
         # Synthesise plausible concurrency: pretend a 15-thread worker
         # with 2-12 in flight at slot claim, drifting up or down a
         # little by completion. Exercises the saturation indicator.
@@ -402,7 +394,7 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
         kind=KIND_SLOW_REQUEST,
         pid=pid,
         seq=seq,
-        stamp_us=int(time.time() * 1_000_000),
+        stamp=time.time(),
         fields=fields,
     )
 
@@ -429,7 +421,7 @@ def make_started_sample(pid: int, seq: int, parent_pid: int) -> Sample:
         kind=KIND_PROCESS_STARTED,
         pid=pid,
         seq=seq,
-        stamp_us=int(time.time() * 1_000_000),
+        stamp=time.time(),
         fields={
             "mod_wsgi_version": "6.0.0",
             "python_version": "3.14.0",
@@ -449,7 +441,7 @@ def make_stopping_sample(pid: int, seq: int, reason: str,
         kind=KIND_PROCESS_STOPPING,
         pid=pid,
         seq=seq,
-        stamp_us=int(time.time() * 1_000_000),
+        stamp=time.time(),
         fields={
             "hostname": socket.gethostname(),
             "process_group": "demo",
@@ -467,7 +459,7 @@ def make_stopped_sample(pid: int, seq: int, reason: str,
         kind=KIND_PROCESS_STOPPED,
         pid=pid,
         seq=seq,
-        stamp_us=int(time.time() * 1_000_000),
+        stamp=time.time(),
         fields={
             "hostname": socket.gethostname(),
             "process_group": "demo",
@@ -599,10 +591,10 @@ def main(argv: list[str] | None = None) -> int:
                         "method": method,
                         "path": path,
                         "thread_id": random.randint(1, 5),
-                        "start_us": int(time.time() * 1_000_000),
+                        "start": time.time(),
                     }
 
-                now_us = int(time.time() * 1_000_000)
+                now = time.time()
                 # Heartbeat every active.
                 for log_id, rec in list(in_flight[i].items()):
                     seqs[i] += 1
@@ -610,8 +602,8 @@ def main(argv: list[str] | None = None) -> int:
                         pids[i], seqs[i], state=0,
                         thread_id=rec["thread_id"], log_id=log_id,
                         method=rec["method"], path=rec["path"],
-                        start_stamp_us=rec["start_us"],
-                        duration_us=max(0, now_us - rec["start_us"]),
+                        start_stamp=rec["start"],
+                        duration=max(0.0, now - rec["start"]),
                     )
                     try:
                         sock.sendto(encode(sample), addr)
@@ -624,15 +616,15 @@ def main(argv: list[str] | None = None) -> int:
                 if in_flight[i] and random.random() < 0.25:
                     log_id = random.choice(list(in_flight[i]))
                     rec = in_flight[i].pop(log_id)
-                    duration = max(0, now_us - rec["start_us"])
-                    if duration >= 500_000:   # only "complete" if >= 0.5s
+                    duration = max(0.0, now - rec["start"])
+                    if duration >= 0.5:   # only "complete" if >= 0.5s
                         seqs[i] += 1
                         sample = make_slow_sample(
                             pids[i], seqs[i], state=1,
                             thread_id=rec["thread_id"], log_id=log_id,
                             method=rec["method"], path=rec["path"],
-                            start_stamp_us=rec["start_us"],
-                            duration_us=duration,
+                            start_stamp=rec["start"],
+                            duration=duration,
                         )
                         try:
                             sock.sendto(encode(sample), addr)
