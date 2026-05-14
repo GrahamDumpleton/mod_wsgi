@@ -108,6 +108,15 @@ class ProcessState:
     last_seq: int = 0
     drops: int = 0
     last_seen: float = 0.0
+    # Per-interpreter GC tier-1 counters: most recent KIND_GC_SNAPSHOT
+    # per interpreter_name. Empty string keys the main / sole
+    # interpreter, which is also the single-interpreter common case
+    # where the daemon omits the interpreter_name field on the wire.
+    gc_snapshots: dict = field(default_factory=dict)
+    # Rolling buffer of recent KIND_GC_EVENT records (each is a
+    # pause event). Capped so a long-lived process does not grow
+    # without bound; the UI shows the recent window.
+    gc_events: deque = field(default_factory=lambda: deque(maxlen=512))
 
 
 @dataclass
@@ -360,6 +369,16 @@ class Ingester:
             self._gc_stale()
             return
 
+        # GC telemetry rides on its own kinds (one KIND_GC_SNAPSHOT
+        # per interpreter per tick plus one KIND_GC_EVENT per
+        # cyclic-GC pause). Routed out of the periodic-sample path
+        # so the rolling aggregator does not see a partial payload
+        # on every tick and zero out fields like memory_rss.
+        if sample.kind_name in ("gc_snapshot", "gc_event"):
+            self._handle_gc(sample)
+            self._gc_stale()
+            return
+
         state = self.processes.get(sample.pid)
         if state is None:
             state = ProcessState(pid=sample.pid)
@@ -457,6 +476,51 @@ class Ingester:
             "type": "lifecycle",
             "event": ev.to_dict(),
         })
+
+    def _handle_gc(self, sample: Sample) -> None:
+        """Stash a KIND_GC_SNAPSHOT or KIND_GC_EVENT for one pid.
+
+        Snapshots latch the most recent tier-1 counters per
+        interpreter; events append to a rolling buffer of recent
+        pause records. Both are emitted to subscribers as-is so the
+        UI can render the GC tab without an additional poll path.
+
+        Routed out of the periodic-sample window so the rolling
+        per-process aggregator (memory_rss, request_threads,
+        per-phase times) is not zeroed on every GC tick when a
+        snapshot datagram arrives without those fields.
+        """
+        state = self.processes.get(sample.pid)
+        if state is None:
+            state = ProcessState(pid=sample.pid)
+            self.processes[sample.pid] = state
+        state.last_seen = time.monotonic()
+
+        interp_name = sample.fields.get("interpreter_name")
+        if isinstance(interp_name, bytes):
+            interp_name = interp_name.decode("utf-8", errors="replace")
+        else:
+            interp_name = ""
+
+        if sample.kind_name == "gc_snapshot":
+            state.gc_snapshots[interp_name] = {
+                "stamp": sample.stamp,
+                "fields": dict(sample.fields),
+            }
+        else:
+            state.gc_events.append({
+                "stamp": sample.stamp,
+                "interpreter": interp_name,
+                "fields": dict(sample.fields),
+            })
+
+        # No broadcast in phase 1: the browser-side reducer routes
+        # type=sample messages through addSample, which folds them
+        # into the per-process rolling window. Broadcasting GC
+        # samples that way would clobber memory_rss / per-phase
+        # times on the client just as it did on the server before
+        # the early-return above. The GC tab is wired in a follow-
+        # up change with its own dedicated message type.
 
     def _handle_slow(self, sample: Sample) -> None:
         f = sample.fields

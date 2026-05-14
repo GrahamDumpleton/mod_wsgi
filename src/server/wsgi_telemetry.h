@@ -67,6 +67,8 @@
 #define WSGI_METRICS_KIND_PROCESS_STARTED 5
 #define WSGI_METRICS_KIND_PROCESS_STOPPING 6
 #define WSGI_METRICS_KIND_PROCESS_STOPPED 7
+#define WSGI_METRICS_KIND_GC_SNAPSHOT 8
+#define WSGI_METRICS_KIND_GC_EVENT 9
 
 #define WSGI_METRICS_T_U64 0x01
 #define WSGI_METRICS_T_F64 0x02
@@ -108,11 +110,15 @@ extern int wsgi_telemetry_is_enabled(void);
  */
 
 /*
- * 1-9: Identity. Build/runtime versions come first so a consumer that
- * wants to print a "who is this" banner can reach them without
- * scanning the whole TLV record. All seven fields are static for the
- * life of a process and only need to be emitted on the first sample
- * after start.
+ * 1-9: Identity. Build/runtime versions come first so a consumer
+ * that wants to print a "who is this" banner can reach them
+ * without scanning the whole TLV record. The first seven fields
+ * are static for the life of a process and only need to be
+ * emitted on the first sample after start. interpreter_name is
+ * the per-emission application-group label (empty for the main
+ * interpreter); it identifies which sub-interpreter a datagram
+ * describes when a process hosts more than one, and is omitted
+ * in the single-interpreter common case.
  */
 
 #define WSGI_METRICS_F_MOD_WSGI_VERSION 1   /* bytes: e.g. "6.0.0" */
@@ -122,6 +128,7 @@ extern int wsgi_telemetry_is_enabled(void);
 #define WSGI_METRICS_F_HOSTNAME 5           /* bytes */
 #define WSGI_METRICS_F_PROCESS_GROUP 6      /* bytes */
 #define WSGI_METRICS_F_PROCESS_PARENT_PID 7 /* u64: Apache parent pid */
+#define WSGI_METRICS_F_INTERPRETER_NAME 8   /* bytes */
 
 /*
  * 10-19: Sampling and reporter configuration. sample_period is the
@@ -393,6 +400,55 @@ extern int wsgi_telemetry_is_enabled(void);
 
 #define WSGI_METRICS_F_SLOW_ACTIVE_AT_START 260      /* u64: active_requests including this one */
 #define WSGI_METRICS_F_SLOW_ACTIVE_AT_COMPLETION 261 /* u64: 0 for active records */
+
+/*
+ * 300-349: Per-interpreter GC telemetry. Block 300-319 carries
+ * cheap tier-1 counters scraped from each interpreter on every
+ * tick by the sampler thread while attached. 320-329 carries the
+ * tier-2 pause-event record (one datagram per cyclic GC pass).
+ *
+ * Layout under 300-319 follows the gc module's own grouping:
+ * counters from get_count, thresholds from get_threshold, three
+ * cumulative quantities per generation from get_stats
+ * (collections, collected, uncollectable), and two singletons
+ * (isenabled, get_freeze_count). The per-generation arrays are
+ * emitted as u64 triples since the underlying values are
+ * unbounded over a long-running process.
+ *
+ * Per-interpreter cardinality forces the tier-1 fields into a
+ * separate WSGI_METRICS_KIND_GC_SNAPSHOT datagram emitted once
+ * per interpreter per tick, rather than appended to the process-
+ * wide KIND_REQUEST. Tier-2 events ride their own
+ * WSGI_METRICS_KIND_GC_EVENT datagram. Both kinds carry the
+ * interpreter identifier in WSGI_METRICS_F_INTERPRETER_NAME from
+ * the identity block, repeated on every emission so a consumer
+ * can demultiplex without correlating against a separate stream.
+ */
+
+#define WSGI_METRICS_F_GC_COUNT0 300            /* u64 */
+#define WSGI_METRICS_F_GC_COUNT1 301            /* u64 */
+#define WSGI_METRICS_F_GC_COUNT2 302            /* u64 */
+#define WSGI_METRICS_F_GC_THRESHOLD0 303        /* u64 */
+#define WSGI_METRICS_F_GC_THRESHOLD1 304        /* u64 */
+#define WSGI_METRICS_F_GC_THRESHOLD2 305        /* u64 */
+#define WSGI_METRICS_F_GC_COLLECTIONS0 306      /* u64: cumulative */
+#define WSGI_METRICS_F_GC_COLLECTIONS1 307      /* u64: cumulative */
+#define WSGI_METRICS_F_GC_COLLECTIONS2 308      /* u64: cumulative */
+#define WSGI_METRICS_F_GC_COLLECTED0 309        /* u64: cumulative */
+#define WSGI_METRICS_F_GC_COLLECTED1 310        /* u64: cumulative */
+#define WSGI_METRICS_F_GC_COLLECTED2 311        /* u64: cumulative */
+#define WSGI_METRICS_F_GC_UNCOLLECTABLE0 312    /* u64: cumulative */
+#define WSGI_METRICS_F_GC_UNCOLLECTABLE1 313    /* u64: cumulative */
+#define WSGI_METRICS_F_GC_UNCOLLECTABLE2 314    /* u64: cumulative */
+#define WSGI_METRICS_F_GC_IS_ENABLED 315        /* u64: 0 / 1 */
+#define WSGI_METRICS_F_GC_FREEZE_COUNT 316      /* u64 */
+#define WSGI_METRICS_F_GC_DROPPED_EVENTS 317    /* u64: cumulative ring overflow */
+
+#define WSGI_METRICS_F_GC_EVENT_START_STAMP 320 /* f64: seconds since unix epoch */
+#define WSGI_METRICS_F_GC_EVENT_DURATION 321    /* f64: seconds */
+#define WSGI_METRICS_F_GC_EVENT_GENERATION 322  /* u64: 0 / 1 / 2 */
+#define WSGI_METRICS_F_GC_EVENT_COLLECTED 323   /* u64 */
+#define WSGI_METRICS_F_GC_EVENT_UNCOLLECTABLE 324 /* u64 */
 
 /* ------------------------------------------------------------------------- */
 

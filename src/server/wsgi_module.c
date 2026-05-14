@@ -27,6 +27,7 @@
 #include "wsgi_logger.h"
 #include "wsgi_stream.h"
 #include "wsgi_metrics.h"
+#include "wsgi_gc.h"
 #include "wsgi_interp.h"
 #include "wsgi_daemon.h"
 #include "wsgi_restrict.h"
@@ -340,6 +341,9 @@ static int wsgi_module_exec(PyObject *module)
         return -1;
 
     if (wsgi_metrics_init_state(module) < 0)
+        return -1;
+
+    if (wsgi_gc_init_state(module) < 0)
         return -1;
 
     return 0;

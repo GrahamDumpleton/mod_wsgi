@@ -27,6 +27,15 @@
 /* ------------------------------------------------------------------------- */
 
 /*
+ * Forward declaration of the opaque per-interpreter GC telemetry
+ * state. Defined in wsgi_gc.c; reachable through WSGIModuleState->gc.
+ */
+
+typedef struct WSGIGcState WSGIGcState;
+
+/* ------------------------------------------------------------------------- */
+
+/*
  * Per-interpreter state for the embedded 'mod_wsgi' Python module.
  * Each Python sub-interpreter created by mod_wsgi has its own
  * instance of this struct, addressable via PyModule_GetState() on
@@ -71,6 +80,18 @@ typedef struct
      */
 
     PyObject *RequestTimeout;
+
+    /*
+     * Per-interpreter GC telemetry state. Populated by
+     * wsgi_gc_init_state from the module exec slot when
+     * WSGITelemetryService is configured; remains NULL when
+     * telemetry is disabled. The telemetry sampler thread reads
+     * this through PyModule_GetState while attached to the target
+     * interpreter to drain queued GC pause events and to scrape
+     * the cheap tier-1 GC counters every tick.
+     */
+
+    WSGIGcState *gc;
 
     /*
      * Interned key strings used as dict keys when building the

@@ -48,6 +48,16 @@ extern apr_thread_mutex_t *wsgi_interp_lock;
 extern apr_thread_mutex_t *wsgi_module_lock;
 extern apr_thread_mutex_t *wsgi_shutdown_lock;
 
+/*
+ * Apache-side table of all interpreters keyed by application
+ * group name. Allocated from the Apache child pool by
+ * wsgi_python_child_init. Readers must hold wsgi_interp_lock
+ * for the duration of any table walk so that lazy-create from
+ * wsgi_acquire_interpreter cannot mutate the table mid-iteration.
+ */
+
+extern apr_hash_t *wsgi_interpreters;
+
 extern char *wsgi_module_name(apr_pool_t *pool, const char *filename);
 
 /*

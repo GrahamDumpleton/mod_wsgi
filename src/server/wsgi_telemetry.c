@@ -42,6 +42,9 @@
 #include "wsgi_metrics.h"
 #include "wsgi_telemetry.h"
 #include "wsgi_version.h"
+#include "wsgi_module.h"
+#include "wsgi_interp.h"
+#include "wsgi_gc.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -687,6 +690,273 @@ static size_t wsgi_telemetry_encode_stopped(const wsgi_telemetry_ctx_t *ctx,
  * tick that would otherwise be lost.
  */
 
+/*
+ * Encode a per-interpreter tier-1 GC snapshot. One datagram per
+ * interpreter per tick. Carries the cheap counters and the
+ * cumulative dropped-events counter for the ring. The
+ * interpreter_name string is the application-group label
+ * (empty for the main interpreter).
+ */
+
+static size_t wsgi_telemetry_encode_gc_snapshot(const wsgi_gc_counters_t *c,
+                                                uint64_t dropped,
+                                                const char *interp_name,
+                                                uint32_t pid, uint32_t seq,
+                                                uint8_t *buf, size_t buflen)
+{
+    uint8_t *p = buf;
+    uint8_t *end = buf + buflen;
+    double stamp = (double)apr_time_now() / (double)APR_USEC_PER_SEC;
+
+    (void)end;
+
+    wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_GC_SNAPSHOT, pid, seq,
+                            stamp);
+
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_COUNT0, c->count[0]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_COUNT1, c->count[1]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_COUNT2, c->count[2]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_THRESHOLD0, c->threshold[0]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_THRESHOLD1, c->threshold[1]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_THRESHOLD2, c->threshold[2]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_COLLECTIONS0,
+                         c->collections[0]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_COLLECTIONS1,
+                         c->collections[1]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_COLLECTIONS2,
+                         c->collections[2]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_COLLECTED0, c->collected[0]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_COLLECTED1, c->collected[1]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_COLLECTED2, c->collected[2]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_UNCOLLECTABLE0,
+                         c->uncollectable[0]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_UNCOLLECTABLE1,
+                         c->uncollectable[1]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_UNCOLLECTABLE2,
+                         c->uncollectable[2]);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_IS_ENABLED, c->is_enabled);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_FREEZE_COUNT, c->freeze_count);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_DROPPED_EVENTS, dropped);
+
+    if (interp_name && *interp_name)
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_INTERPRETER_NAME,
+                               interp_name, strlen(interp_name));
+
+    return (size_t)(p - buf);
+}
+
+/*
+ * Encode one tier-2 GC pause event. One datagram per event so
+ * the heap-walk pause downstream (when configured) does not gate
+ * the main per-tick stream.
+ */
+
+static size_t wsgi_telemetry_encode_gc_event(const wsgi_gc_event_t *ev,
+                                             const char *interp_name,
+                                             uint32_t pid, uint32_t seq,
+                                             uint8_t *buf, size_t buflen)
+{
+    uint8_t *p = buf;
+    uint8_t *end = buf + buflen;
+    double stamp = (double)apr_time_now() / (double)APR_USEC_PER_SEC;
+    double start_stamp =
+        (double)ev->start_us / (double)APR_USEC_PER_SEC;
+    double duration =
+        (double)ev->duration_us / (double)APR_USEC_PER_SEC;
+
+    (void)end;
+
+    wsgi_metrics_put_header(&p, WSGI_METRICS_KIND_GC_EVENT, pid, seq, stamp);
+
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_GC_EVENT_START_STAMP,
+                         start_stamp);
+    wsgi_metrics_put_f64(&p, WSGI_METRICS_F_GC_EVENT_DURATION, duration);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_EVENT_GENERATION,
+                         (uint64_t)ev->generation);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_EVENT_COLLECTED,
+                         ev->collected);
+    wsgi_metrics_put_u64(&p, WSGI_METRICS_F_GC_EVENT_UNCOLLECTABLE,
+                         ev->uncollectable);
+
+    if (interp_name && *interp_name)
+        wsgi_metrics_put_bytes(&p, WSGI_METRICS_F_INTERPRETER_NAME,
+                               interp_name, strlen(interp_name));
+
+    return (size_t)(p - buf);
+}
+
+/*
+ * Maximum number of interpreters covered by a single tick. Sized
+ * to comfortably handle multi-application-group setups; excess
+ * interpreters beyond this bound are silently skipped for the
+ * tick rather than blowing the sampler stack.
+ */
+
+#define WSGI_TELEMETRY_GC_MAX_INTERPS 32
+
+/*
+ * Maximum length of an interpreter-name string captured during
+ * the per-tick snapshot. Sized generously for the rare multi-
+ * application-group case; names longer than this are truncated
+ * for the tick rather than allocated.
+ */
+
+#define WSGI_TELEMETRY_GC_NAME_MAX 128
+
+/*
+ * Maximum tier-2 events drained from one interpreter per tick.
+ * Higher than the steady-state expectation (collections per
+ * tick is normally <10) but still bounded so a pathological
+ * GC storm cannot make a single tick monopolise the wire.
+ */
+
+#define WSGI_TELEMETRY_GC_MAX_EVENTS_PER_TICK 64
+
+/*
+ * Per-tick GC emission. Snapshots the current interpreter list,
+ * then for each entry attaches to that interpreter, reads tier-1
+ * counters, drains tier-2 events from the ring, encodes and
+ * emits a KIND_GC_SNAPSHOT datagram plus one KIND_GC_EVENT
+ * datagram per drained event.
+ *
+ * The interpreter table is iterated outside any Python attach;
+ * each per-interpreter attach is the existing
+ * wsgi_acquire_interpreter / wsgi_release_interpreter pair, so
+ * the sampler thread acquires only one interpreter's GIL at a
+ * time and never holds wsgi_interp_lock across a Python attach.
+ *
+ * Whether to include the interpreter_name field is decided per
+ * tick: included when more than one interpreter exists in this
+ * process, omitted otherwise to keep the single-interpreter
+ * common-case datagram identical regardless of the field-ID
+ * registry having grown.
+ */
+
+static void wsgi_telemetry_emit_gc_tick(const wsgi_telemetry_ctx_t *ctx)
+{
+    char names[WSGI_TELEMETRY_GC_MAX_INTERPS][WSGI_TELEMETRY_GC_NAME_MAX];
+    int n_interps = 0;
+    int include_name = 0;
+    int i = 0;
+
+    if (!wsgi_interpreters)
+        return;
+
+    /*
+     * Snapshot the live interpreter names under the table lock.
+     * Copying out a defensive name string lets the iteration below
+     * proceed without holding the table lock across each Python
+     * attach. Names are re-resolved through wsgi_acquire_interpreter
+     * on each iteration, so an interpreter removed between snapshot
+     * and attach is handled by the helper returning NULL.
+     */
+
+    apr_thread_mutex_lock(wsgi_interp_lock);
+    {
+        apr_hash_index_t *hi;
+        for (hi = apr_hash_first(NULL, wsgi_interpreters);
+             hi && n_interps < WSGI_TELEMETRY_GC_MAX_INTERPS;
+             hi = apr_hash_next(hi))
+        {
+            const void *key = NULL;
+            apr_ssize_t klen = 0;
+            void *value = NULL;
+            apr_hash_this(hi, &key, &klen, &value);
+            if (key && klen > 0)
+            {
+                size_t copy = (size_t)klen;
+                if (copy >= sizeof(names[n_interps]))
+                    copy = sizeof(names[n_interps]) - 1;
+                memcpy(names[n_interps], key, copy);
+                names[n_interps][copy] = '\0';
+            }
+            else
+            {
+                names[n_interps][0] = '\0';
+            }
+            n_interps++;
+        }
+    }
+    apr_thread_mutex_unlock(wsgi_interp_lock);
+
+    if (n_interps == 0)
+        return;
+
+    include_name = (n_interps > 1);
+
+    for (i = 0; i < n_interps; i++)
+    {
+        wsgi_gc_counters_t counters;
+        wsgi_gc_event_t events[WSGI_TELEMETRY_GC_MAX_EVENTS_PER_TICK];
+        int n_events = 0;
+        uint64_t dropped = 0;
+        InterpreterObject *attached = NULL;
+        PyObject *module = NULL;
+        WSGIModuleState *mstate = NULL;
+        WSGIGcState *gc_state = NULL;
+        const char *name_for_wire = include_name ? names[i] : "";
+
+        attached = wsgi_acquire_interpreter(names[i]);
+        if (!attached)
+            continue;
+
+        module = PyImport_ImportModule("mod_wsgi");
+        if (module)
+        {
+            mstate = (WSGIModuleState *)PyModule_GetState(module);
+            if (mstate)
+                gc_state = mstate->gc;
+        }
+        else
+        {
+            PyErr_Clear();
+        }
+
+        if (gc_state)
+        {
+            wsgi_gc_read_counters(module, &counters);
+            n_events = wsgi_gc_drain_events(
+                gc_state, events,
+                WSGI_TELEMETRY_GC_MAX_EVENTS_PER_TICK, &dropped);
+        }
+        else
+        {
+            memset(&counters, 0, sizeof(counters));
+        }
+
+        Py_XDECREF(module);
+
+        wsgi_release_interpreter(attached);
+
+        if (!gc_state)
+            continue;
+
+        {
+            uint8_t buf[WSGI_METRICS_MAX_DATAGRAM];
+            uint32_t seq = wsgi_telemetry_next_seq();
+            size_t n = wsgi_telemetry_encode_gc_snapshot(
+                &counters, dropped, name_for_wire, ctx->pid, seq, buf,
+                sizeof(buf));
+            wsgi_telemetry_send(ctx, buf, n);
+        }
+
+        {
+            int ev_i;
+            for (ev_i = 0; ev_i < n_events; ev_i++)
+            {
+                uint8_t buf[WSGI_METRICS_MAX_DATAGRAM];
+                uint32_t seq = wsgi_telemetry_next_seq();
+                size_t n = wsgi_telemetry_encode_gc_event(
+                    &events[ev_i], name_for_wire, ctx->pid, seq, buf,
+                    sizeof(buf));
+                wsgi_telemetry_send(ctx, buf, n);
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------------------------- */
+
 static void wsgi_telemetry_emit_tick(const wsgi_telemetry_ctx_t *ctx)
 {
     wsgi_telemetry_sample_t sample;
@@ -770,6 +1040,18 @@ static void wsgi_telemetry_emit_tick(const wsgi_telemetry_ctx_t *ctx)
             wsgi_telemetry_send(ctx, buf, n);
         }
     }
+
+    /*
+     * GC tier-1 snapshot and tier-2 events run after the
+     * process-wide tick and slow-request emissions. The pass
+     * acquires each interpreter's GIL in turn; both the existing
+     * KIND_REQUEST and the new KIND_GC_SNAPSHOT / KIND_GC_EVENT
+     * datagrams have been sent to the wire before any of the
+     * GC scrapes touch Python, so a slow attach on one
+     * interpreter cannot delay non-GC fields for the tick.
+     */
+
+    wsgi_telemetry_emit_gc_tick(ctx);
 }
 
 /* ------------------------------------------------------------------------- */

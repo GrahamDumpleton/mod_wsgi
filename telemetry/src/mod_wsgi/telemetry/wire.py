@@ -45,6 +45,8 @@ KIND_SLOW_REQUEST = 4
 KIND_PROCESS_STARTED = 5
 KIND_PROCESS_STOPPING = 6
 KIND_PROCESS_STOPPED = 7
+KIND_GC_SNAPSHOT = 8
+KIND_GC_EVENT = 9
 
 KIND_NAMES = {
     KIND_PROCESS: "process_metrics",
@@ -54,6 +56,8 @@ KIND_NAMES = {
     KIND_PROCESS_STARTED: "process_started",
     KIND_PROCESS_STOPPING: "process_stopping",
     KIND_PROCESS_STOPPED: "process_stopped",
+    KIND_GC_SNAPSHOT: "gc_snapshot",
+    KIND_GC_EVENT: "gc_event",
 }
 
 # Type tags
@@ -80,6 +84,11 @@ FIELDS = {
     5: "hostname",
     6: "process_group",
     7: "process_parent_pid",
+    # interpreter_name is the per-emission application-group label
+    # (empty for the main interpreter); identifies which sub-
+    # interpreter a datagram describes when a process hosts more
+    # than one. Omitted in the single-interpreter common case.
+    8: "interpreter_name",
 
     # 10-19: sampling and reporter configuration. sample_period is the
     # measured wall-clock interval between snapshot calls (drifts with
@@ -290,6 +299,39 @@ FIELDS = {
 
     260: "slow_active_at_start",        # in-flight count including this request
     261: "slow_active_at_completion",   # 0 for active records
+
+    # 300-317: per-interpreter GC tier-1 counters, present only on
+    # KIND_GC_SNAPSHOT datagrams (one per interpreter per tick when
+    # WSGITelemetryService is configured). Layout follows the gc
+    # module's grouping: get_count, get_threshold, get_stats per
+    # generation, isenabled, get_freeze_count. dropped_events is
+    # the cumulative count of tier-2 records lost to ring overflow.
+    300: "gc_count0",
+    301: "gc_count1",
+    302: "gc_count2",
+    303: "gc_threshold0",
+    304: "gc_threshold1",
+    305: "gc_threshold2",
+    306: "gc_collections0",
+    307: "gc_collections1",
+    308: "gc_collections2",
+    309: "gc_collected0",
+    310: "gc_collected1",
+    311: "gc_collected2",
+    312: "gc_uncollectable0",
+    313: "gc_uncollectable1",
+    314: "gc_uncollectable2",
+    315: "gc_is_enabled",
+    316: "gc_freeze_count",
+    317: "gc_dropped_events",
+
+    # 320-324: per-event GC pause record, present only on
+    # KIND_GC_EVENT datagrams (one per cyclic GC pass).
+    320: "gc_event_start_stamp",       # f64 seconds since epoch
+    321: "gc_event_duration",          # f64 seconds
+    322: "gc_event_generation",        # 0 / 1 / 2
+    323: "gc_event_collected",
+    324: "gc_event_uncollectable",
 }
 
 # Reverse map for encoders / tests.

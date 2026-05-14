@@ -75,7 +75,7 @@ static InterpreterObject *wsgi_main_interpreter = NULL;
  * publication, and by wsgi_python_child_cleanup to drive teardown.
  */
 
-static apr_hash_t *wsgi_interpreters = NULL;
+apr_hash_t *wsgi_interpreters = NULL;
 
 /*
  * Helper to set an environment variable in the os.environ dict.
