@@ -12,7 +12,7 @@ cd telemetry
 uv sync
 uv run mod_wsgi-telemetry serve
 # → Listens on unix:/tmp/mod_wsgi-telemetry.sock
-# → UI on http://127.0.0.1:8877
+# → UI on http://127.0.0.1:8888
 
 # Terminal 2 — run mod_wsgi-express with telemetry reporter enabled
 #   (from the mod_wsgi project root)
@@ -25,7 +25,7 @@ mod_wsgi-express start-server tests/hello.wsgi \
 # Terminal 3 — drive some traffic
 while true; do curl -s http://localhost:8080/ > /dev/null; done
 
-# Browser → http://127.0.0.1:8877
+# Browser → http://127.0.0.1:8888
 ```
 
 Each mod_wsgi daemon process runs a background thread that sends a
@@ -64,7 +64,7 @@ uv run mod_wsgi-telemetry serve
 
 # Terminal 2 — terminal monitor
 uv run mod_wsgi-telemetry top
-# → connects to ws://127.0.0.1:8877/ws by default
+# → connects to ws://127.0.0.1:8888/ws by default
 ```
 
 Layout: an eight-line header stays visible across all views —
@@ -90,7 +90,7 @@ help overlay, `q` quit.
 Useful options:
 
 ```
-mod_wsgi-telemetry top --url ws://host:8877/ws    # connect to a different host
+mod_wsgi-telemetry top --url ws://host:8888/ws    # connect to a different host
 mod_wsgi-telemetry top --view slow                # start on the slow-requests view
 mod_wsgi-telemetry top --group app1               # filter to one process group
 mod_wsgi-telemetry top --once                     # one-shot status to stdout, no curses
@@ -121,7 +121,7 @@ to ship telemetry across hosts.
 
 | Command | Purpose |
 |---|---|
-| `mod_wsgi-telemetry serve` | HTTP + WebSocket server, spawns the datagram receiver. `--listen unix:/path` (UNIX SOCK_DGRAM only). UI on `--http-host` / `--http-port` (default 127.0.0.1:8877). |
+| `mod_wsgi-telemetry serve` | HTTP + WebSocket server, spawns the datagram receiver. `--listen unix:/path` (UNIX SOCK_DGRAM only). UI on `--http-host` / `--http-port` (default 127.0.0.1:8888). |
 | `mod_wsgi-telemetry top` | Curses terminal monitor. Connects to a running server's WebSocket and renders the same data as the browser UI in five keystroke-switchable views. `--once` for a scriptable plain-text snapshot. |
 | `mod_wsgi-telemetry dump` | CLI alternative that binds the socket itself and prints decoded samples. Don't run alongside the server — they'd fight for the socket. Useful when iterating on the wire format. |
 | `mod_wsgi-telemetry simulate` | Emits synthetic samples so the UI can be exercised without a running mod_wsgi. |
@@ -131,13 +131,13 @@ to ship telemetry across hosts.
 By default the ingester uses:
 
 - `unix:/tmp/mod_wsgi-telemetry.sock` for incoming telemetry datagrams.
-- `127.0.0.1:8877` for the HTTP UI and WebSocket.
+- `127.0.0.1:8888` for the HTTP UI and WebSocket.
 
 The UI port was deliberately picked to avoid the default
 `scripts/run-benchmark.sh` port (8765) — the benchmark cleanup
 historically force-killed anything bound to its port and would take the
 UI down with it. If you run multiple ingesters, or you already have
-something on 8877, override with `--http-port`:
+something on 8888, override with `--http-port`:
 
 ```
 uv run mod_wsgi-telemetry serve --http-port 9080

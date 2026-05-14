@@ -6,7 +6,7 @@ by keystroke; the persistent header stays visible across views.
 
 Usage:
     mod_wsgi-telemetry top                         # connect to localhost
-    mod_wsgi-telemetry top --url ws://host:8877/ws
+    mod_wsgi-telemetry top --url ws://host:8888/ws
     mod_wsgi-telemetry top --view slow             # start on slow-requests view
     mod_wsgi-telemetry top --once                  # render one frame and exit
 """
@@ -41,7 +41,7 @@ HDR_SUBS = 4
 HDR_TOTAL = HDR_OCTAVES * HDR_SUBS + 1
 HDR_BASE_SECONDS = 0.001  # bucket 0 lower bound: 1 ms expressed as seconds
 
-DEFAULT_URL = "ws://127.0.0.1:8877/ws"
+DEFAULT_URL = "ws://127.0.0.1:8888/ws"
 SAMPLE_RETENTION = 600          # max samples per pid we keep client-side
 REFRESH_RATES = [0.5, 1.0, 2.0, 5.0]
 WINDOW_CHOICES = [10, 60, 600]  # rolling window in seconds for overview/latency

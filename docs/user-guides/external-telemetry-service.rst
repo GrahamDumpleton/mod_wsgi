@@ -220,7 +220,7 @@ file is left behind from a previous run it will be removed and
 recreated.
 
 By default the ingester also serves an HTTP + WebSocket interface
-on ``127.0.0.1:8877`` for the browser UI and the terminal monitor.
+on ``127.0.0.1:8888`` for the browser UI and the terminal monitor.
 Override the bind address with ``--http-host`` and the port with
 ``--http-port``::
 
@@ -251,7 +251,7 @@ section.
 The browser UI
 --------------
 
-Open ``http://127.0.0.1:8877`` in a browser on the same host as
+Open ``http://127.0.0.1:8888`` in a browser on the same host as
 the ingester. The page is a single-page application served from
 the ingester; it opens a WebSocket back to the same port and
 shows a persistent top bar (totals, process-group filter, marker
@@ -298,7 +298,7 @@ is a separate subcommand of the same binary::
     mod_wsgi-telemetry top
 
 It connects to a running ingester's WebSocket by default at
-``ws://127.0.0.1:8877/ws``. Override with ``--url`` to connect to
+``ws://127.0.0.1:8888/ws``. Override with ``--url`` to connect to
 an ingester on a different host or port (combine with the SSH
 tunnel pattern below to monitor a remote host without exposing the
 UI externally).
@@ -351,9 +351,9 @@ SSH tunnel
 The simplest option for an operator with shell access to the host
 is an SSH local port forward. From the operator's workstation::
 
-    ssh -L 8877:127.0.0.1:8877 user@host.example.com
+    ssh -L 8888:127.0.0.1:8888 user@host.example.com
 
-The browser then connects to ``http://localhost:8877`` on the
+The browser then connects to ``http://localhost:8888`` on the
 local workstation. The forward stays up for the lifetime of the
 SSH session and tears down cleanly when the session ends. The
 ingester does not need any reconfiguration and there is no
@@ -362,7 +362,7 @@ network exposure on the remote host.
 For the terminal monitor running on the operator's workstation,
 point ``--url`` at the forwarded port::
 
-    mod_wsgi-telemetry top --url ws://localhost:8877/ws
+    mod_wsgi-telemetry top --url ws://localhost:8888/ws
 
 Apache reverse proxy with basic authentication
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -374,8 +374,8 @@ is a practical option. The configuration is a standard
 ``mod_proxy`` mount paired with an ``AuthType Basic`` block::
 
     <Location /telemetry/>
-        ProxyPass        http://127.0.0.1:8877/ upgrade=websocket
-        ProxyPassReverse http://127.0.0.1:8877/
+        ProxyPass        http://127.0.0.1:8888/ upgrade=websocket
+        ProxyPassReverse http://127.0.0.1:8888/
 
         AuthType Basic
         AuthName "mod_wsgi telemetry"
@@ -402,7 +402,7 @@ configuration::
 
     mod_wsgi-express start-server wsgi.py \
         --telemetry-service unix:/tmp/mod_wsgi-telemetry.sock \
-        --proxy-mount-point /telemetry/ http://127.0.0.1:8877/ \
+        --proxy-mount-point /telemetry/ http://127.0.0.1:8888/ \
         --include-file /etc/apache2/telemetry-auth.conf
 
 The ``--include-file`` points at a small fragment with the

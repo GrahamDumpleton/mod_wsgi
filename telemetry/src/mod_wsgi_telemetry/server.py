@@ -172,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--listen", default="unix:/tmp/mod_wsgi-telemetry.sock",
                     help="unix:/path/to/sock  (default: %(default)s)")
     ap.add_argument("--http-host", default="127.0.0.1")
-    ap.add_argument("--http-port", type=int, default=8877)
+    ap.add_argument("--http-port", type=int, default=8888)
     ap.add_argument("--root-path", default="",
                     help="URL prefix when fronted by a reverse proxy that "
                          "strips it (e.g. /ui). Used to build links and the "
