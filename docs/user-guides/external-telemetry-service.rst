@@ -335,7 +335,7 @@ Open ``http://127.0.0.1:8888`` in a browser on the same host as
 the ingester. The page is a single-page application served from
 the ingester; it opens a WebSocket back to the same port and
 shows a persistent top bar (totals, process-group filter, marker
-toggles, connection state) above four tabs:
+toggles, connection state) above five tabs:
 
 ``Overview``
     Live sparkline charts for throughput, capacity utilisation,
@@ -356,6 +356,25 @@ toggles, connection state) above four tabs:
     STARTED-to-STOPPED lifetime, with a tick mark at STOPPING for
     drain start) and an event log of lifecycle events that links
     back into the timeline.
+
+``GC``
+    Per-process Python garbage-collection behaviour, plotted per
+    interpreter when more than one sub-interpreter is hosted in
+    the daemon or embedded child. Four panels: generation
+    pressure (gen0 / gen1 progress towards their collection
+    thresholds, plus the gen2 sawtooth between full sweeps),
+    collections per second per generation, an event timeline
+    showing every cyclic-GC pause as a dot coloured by
+    generation, and an HDR histogram of pause durations over the
+    selected window. Tab-local Process and Interpreter selectors
+    narrow the view to a single process or sub-interpreter, a
+    Window selector (``1m`` / ``2m`` / ``5m``) scopes the time
+    axis, and a Pause control freezes the live display while
+    samples continue to arrive in the background. A status row
+    above the charts shows the configuration values from the
+    most recent snapshot: whether the cyclic collector is
+    enabled, the per-generation thresholds, the current and
+    cumulative collection counts, and the frozen-object count.
 
 ``Slow requests``
     Live slow-request table with sorting, state filter (active /
