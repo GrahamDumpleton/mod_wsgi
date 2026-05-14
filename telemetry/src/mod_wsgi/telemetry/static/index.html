@@ -31,6 +31,12 @@
     font-size: 16px;
     font-weight: 500;
   }
+  header h1 .app-version {
+    margin-left: 6px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 400;
+  }
   header .stats {
     color: var(--muted);
     font-size: 12px;
@@ -869,7 +875,7 @@
 </head>
 <body>
 <header>
-  <h1>mod_wsgi telemetry</h1>
+  <h1>mod_wsgi telemetry<span class="app-version" id="app_version"></span></h1>
   <div class="stats" id="stats">0 samples</div>
   <label class="filters" title="Show only processes from the selected process group. '(embedded)' selects WSGI applications running inside Apache MPM children.">
     Process group:
@@ -3898,7 +3904,7 @@ function fitGeometricDecay(points) {
 // leaving c1 holding only spillover. The contamination signature is
 // c1 < c2, which violates the geometric monotonicity assumption.
 // Returns null when neither path supports a meaningful fit. See
-// telemetry/src/mod_wsgi_telemetry/contention.py for the canonical
+// telemetry/src/mod_wsgi/telemetry/contention.py for the canonical
 // reference implementation; this mirrors it for the web UI.
 function gilContentionCoefficient(buckets, switchIntervalSec) {
   const bands = gilCycleBandCounts(buckets, switchIntervalSec);
@@ -5217,6 +5223,10 @@ function connect() {
       redraw();
     }
   };
+}
+
+if (window.TELEMETRY_VERSION) {
+  document.getElementById("app_version").textContent = window.TELEMETRY_VERSION;
 }
 
 connect();

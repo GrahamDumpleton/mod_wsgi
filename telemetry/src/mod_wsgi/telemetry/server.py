@@ -18,6 +18,7 @@ import logging
 import os
 import signal
 import sys
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 
 from aiohttp import WSMsgType, web
@@ -27,6 +28,16 @@ from .ingest import Ingester
 log = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _resolve_version() -> str:
+    # The PyPi-published mod_wsgi-telemetry distribution carries the version;
+    # an uninstalled checkout (running straight out of the source tree) will
+    # raise PackageNotFoundError, in which case the UI just omits the suffix.
+    try:
+        return _pkg_version("mod_wsgi-telemetry")
+    except PackageNotFoundError:
+        return ""
 
 
 def _parse_octal_mode(s: str) -> int:
@@ -46,7 +57,11 @@ async def index(request: web.Request) -> web.Response:
     if not base:
         base = _normalize_root_path(
             request.headers.get("X-Forwarded-Prefix", ""))
-    inject = f"<script>window.TELEMETRY_BASE = {json.dumps(base)};</script>\n"
+    pkg_version = request.app["version"]
+    inject = (
+        f"<script>window.TELEMETRY_BASE = {json.dumps(base)};"
+        f"window.TELEMETRY_VERSION = {json.dumps(pkg_version)};</script>\n"
+    )
     html = request.app["index_html_raw"].replace(
         "</head>", inject + "</head>", 1)
     return web.Response(text=html, content_type="text/html")
@@ -147,6 +162,7 @@ async def build_app(listen_spec: str, root_path: str = "",
     app["ingester"] = ingester
     app["websockets"] = set()
     app["root_path"] = root_path
+    app["version"] = _resolve_version()
     app["index_html_raw"] = (STATIC_DIR / "index.html").read_text(
         encoding="utf-8")
     app.router.add_get("/", index)

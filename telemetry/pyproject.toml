@@ -1,6 +1,6 @@
 [project]
 name = "mod_wsgi-telemetry"
-version = "1.0.0dev1"
+dynamic = ["version"]
 description = "Ingestion service and live UI for mod_wsgi telemetry samples."
 readme = "README-telemetry.rst"
 requires-python = ">=3.10"
@@ -51,6 +51,9 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/mod_wsgi/telemetry/__init__.py"
 
 [tool.hatch.build.targets.sdist]
 exclude = [

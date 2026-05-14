@@ -324,7 +324,6 @@ wheels = [
 
 [[package]]
 name = "mod-wsgi-telemetry"
-version = "1.0.0.dev1"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
