@@ -16,6 +16,7 @@ clients to pick up.
 from __future__ import annotations
 
 import asyncio
+import grp
 import logging
 import os
 import socket
@@ -39,14 +40,37 @@ def parse_listen(spec: str) -> tuple[int, str]:
     )
 
 
-def open_socket(spec: str) -> socket.socket:
+def open_socket(spec: str, *, mode: int = 0o660,
+                group: str | int | None = None) -> socket.socket:
+    """Open and bind the listening socket with explicit permissions.
+
+    Senders only need write permission on the socket file, so the
+    default 0660 mode plus a shared group (set via ``group``) is the
+    standard pattern: the ingester user owns the socket, the shared
+    group covers every WSGI-process identity that needs to connect,
+    and nobody else can sendto() the socket.
+
+    During bind() the umask is temporarily tightened to 0077 so the
+    socket file is briefly 0600 before the explicit chmod widens it
+    to ``mode``; this closes the small window during which an
+    inherited umask might leave the file world-writable.
+    """
     family, addr = parse_listen(spec)
     sock = socket.socket(family, socket.SOCK_DGRAM)
 
     if os.path.exists(addr):
         os.unlink(addr)
-    sock.bind(addr)
-    os.chmod(addr, 0o666)
+
+    saved_umask = os.umask(0o077)
+    try:
+        sock.bind(addr)
+    finally:
+        os.umask(saved_umask)
+
+    if group is not None:
+        gid = group if isinstance(group, int) else grp.getgrnam(group).gr_gid
+        os.chown(addr, -1, gid)
+    os.chmod(addr, mode)
 
     sock.setblocking(False)
     try:
@@ -277,8 +301,12 @@ class Ingester:
     # (10 minutes) even on a process group that restarts aggressively.
     LIFECYCLE_RING_SIZE = 500
 
-    def __init__(self, listen_spec: str, *, max_subscribers: int = 64) -> None:
+    def __init__(self, listen_spec: str, *, max_subscribers: int = 64,
+                 socket_mode: int = 0o660,
+                 socket_group: str | int | None = None) -> None:
         self.listen_spec = listen_spec
+        self.socket_mode = socket_mode
+        self.socket_group = socket_group
         self.sock: socket.socket | None = None
         self.processes: dict[int, ProcessState] = {}
         self.slow_requests: dict[tuple, SlowEntry] = {}
@@ -291,7 +319,9 @@ class Ingester:
         self.total_received = 0
 
     async def run(self) -> None:
-        self.sock = open_socket(self.listen_spec)
+        self.sock = open_socket(self.listen_spec,
+                                mode=self.socket_mode,
+                                group=self.socket_group)
         loop = asyncio.get_running_loop()
         log.info("listening on %s", self.listen_spec)
         try:

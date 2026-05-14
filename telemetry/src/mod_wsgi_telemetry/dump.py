@@ -29,15 +29,34 @@ def _fmt_value(v):
     return v
 
 
+def _parse_octal_mode(s: str) -> int:
+    try:
+        return int(s, 8)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"socket-mode must be octal (e.g. 0660 or 660), got {s!r}")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--listen", default="unix:/tmp/mod_wsgi-telemetry.sock")
+    ap.add_argument("--socket-mode", type=_parse_octal_mode, default=0o660,
+                    metavar="MODE",
+                    help="Octal permission mode for the UNIX socket "
+                         "(default: 0660).")
+    ap.add_argument("--socket-group", default=None, metavar="GROUP",
+                    help="Group name or numeric GID to chown the UNIX "
+                         "socket to.")
     ap.add_argument("--format", choices=["text", "json"], default="text")
     ap.add_argument("--count", type=int, default=0,
                     help="stop after N samples (0 = forever)")
     args = ap.parse_args(argv)
 
-    sock = open_socket(args.listen)
+    socket_group: str | int | None = args.socket_group
+    if isinstance(socket_group, str) and socket_group.isdigit():
+        socket_group = int(socket_group)
+
+    sock = open_socket(args.listen, mode=args.socket_mode, group=socket_group)
     sock.setblocking(True)
     seen = 0
     try:

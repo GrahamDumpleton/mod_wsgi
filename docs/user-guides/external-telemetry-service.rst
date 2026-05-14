@@ -150,13 +150,10 @@ the ingester aggregates them and groups by ``WSGIDaemonProcess``
 name in the UI.
 
 The socket path is the contract between Apache and the ingester:
-the same path must appear on both sides. The mod_wsgi process must
-be able to ``connect()`` to the socket; the ingester creates it
-with the permissions of the user it runs as, so either run the
-ingester as the same user as the mod_wsgi processes that need to
-connect (the ``user=`` value on ``WSGIDaemonProcess`` in daemon
-mode, or the Apache child user in embedded mode) or set the
-socket's mode wide enough for both.
+the same path must appear on both sides. The mod_wsgi processes
+must be able to ``connect()`` to the socket, which is a separate
+concern from the path itself, covered under `Socket permissions`_
+below.
 
 Enabling the reporter with mod_wsgi-express
 -------------------------------------------
@@ -244,9 +241,86 @@ would look like::
     [Install]
     WantedBy=multi-user.target
 
-Running it as the same user as the mod_wsgi processes avoids the
-socket-permissions issue mentioned in the manual-configuration
-section.
+See `Socket permissions`_ below for how the unit should declare the
+running user and the shared group that gates access to the listen
+socket.
+
+Socket permissions
+------------------
+
+The reporter sends datagrams to the UNIX socket using
+``sendto(2)``, which requires write permission on the socket file.
+The ingester creates the file at bind time, owns it as the user
+the ingester process is running as, and sets it to mode ``0660``:
+owner and group can write, nobody else.
+
+In the simple case where the ingester runs as the same user as
+every mod_wsgi process that reports, the default is enough. This
+covers the embedded-mode case where everything is the Apache user
+(typically ``www-data`` or ``apache``) and there is no separate
+``WSGIDaemonProcess user=`` override.
+
+The recommended deployment pattern, though, runs each WSGI
+application as its own user via ``WSGIDaemonProcess user=...``,
+which means the senders are not all the same user, and probably
+none of them are the ingester user. The standard Unix solution is
+a shared group: create one group whose members are every identity
+that needs to connect, and chown the socket to that group at bind
+time. The ingester's ``--socket-group`` option does the chown::
+
+    groupadd mod-wsgi-telemetry
+    usermod -aG mod-wsgi-telemetry www-data
+    usermod -aG mod-wsgi-telemetry app-user-1
+    usermod -aG mod-wsgi-telemetry app-user-2
+
+    mod_wsgi-telemetry serve \
+        --listen unix:/tmp/mod_wsgi-telemetry.sock \
+        --socket-group mod-wsgi-telemetry
+
+After bind, the socket is owned by the ingester user with group
+``mod-wsgi-telemetry`` and mode ``0660``, so any process running
+as one of the listed users (and only those) can ``sendto()`` the
+socket. The Apache and ``WSGIDaemonProcess`` users need to be
+existing members of the group when Apache starts; group membership
+is checked at fork time, so adding a user to the group after
+Apache started has no effect until Apache is restarted.
+
+``--socket-group`` accepts either a group name or a numeric GID.
+The default mode (``--socket-mode 0660``) lets group members both
+read and write the socket file; this is the conventional setting.
+Mode ``0620`` is the tighter alternative: senders only need write,
+so revoking group read shrinks the privilege footprint at no
+operational cost.
+
+The bind() call itself uses a tight umask (``0077``) so the socket
+file is briefly ``0600`` before the explicit chmod widens it,
+closing the small window during which an inherited umask might
+leave a freshly-created socket world-writable.
+
+An equivalent systemd unit::
+
+    [Unit]
+    Description=mod_wsgi telemetry ingester
+    After=network.target
+
+    [Service]
+    Type=simple
+    User=mod-wsgi-telemetry
+    Group=mod-wsgi-telemetry
+    ExecStart=/opt/mod_wsgi-telemetry/bin/mod_wsgi-telemetry serve \
+        --listen unix:/tmp/mod_wsgi-telemetry.sock \
+        --socket-group mod-wsgi-telemetry
+    Restart=on-failure
+
+    [Install]
+    WantedBy=multi-user.target
+
+Running the ingester as a dedicated user (``mod-wsgi-telemetry``
+above, created with ``useradd --system --no-create-home``) rather
+than reusing ``www-data`` keeps the ingester out of the Apache
+user's privilege scope and makes the access-list explicit: every
+identity that can send telemetry is listed in ``getent group
+mod-wsgi-telemetry``.
 
 The browser UI
 --------------

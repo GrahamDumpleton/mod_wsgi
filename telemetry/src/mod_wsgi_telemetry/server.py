@@ -29,6 +29,14 @@ log = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+def _parse_octal_mode(s: str) -> int:
+    try:
+        return int(s, 8)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"socket-mode must be octal (e.g. 0660 or 660), got {s!r}")
+
+
 async def index(request: web.Request) -> web.Response:
     # Explicit --root-path wins; otherwise honour X-Forwarded-Prefix from
     # the request, which mod_wsgi-express sets automatically for any
@@ -130,8 +138,11 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
-async def build_app(listen_spec: str, root_path: str = "") -> web.Application:
-    ingester = Ingester(listen_spec)
+async def build_app(listen_spec: str, root_path: str = "",
+                    socket_mode: int = 0o660,
+                    socket_group: str | int | None = None) -> web.Application:
+    ingester = Ingester(listen_spec, socket_mode=socket_mode,
+                        socket_group=socket_group)
     app = web.Application()
     app["ingester"] = ingester
     app["websockets"] = set()
@@ -171,6 +182,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--listen", default="unix:/tmp/mod_wsgi-telemetry.sock",
                     help="unix:/path/to/sock  (default: %(default)s)")
+    ap.add_argument("--socket-mode", type=_parse_octal_mode, default=0o660,
+                    metavar="MODE",
+                    help="Octal permission mode applied to the UNIX socket "
+                         "after bind (default: 0660). Senders need write "
+                         "permission; 0620 is the tighter alternative.")
+    ap.add_argument("--socket-group", default=None, metavar="GROUP",
+                    help="Group name or numeric GID to chown the UNIX socket "
+                         "to. With the default 0660 mode, every WSGI process "
+                         "identity that needs to connect must be a member of "
+                         "this group. Unset by default; the socket then keeps "
+                         "the ingester user's primary group.")
     ap.add_argument("--http-host", default="127.0.0.1")
     ap.add_argument("--http-port", type=int, default=8888)
     ap.add_argument("--root-path", default="",
@@ -190,8 +212,14 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
+    socket_group: str | int | None = args.socket_group
+    if isinstance(socket_group, str) and socket_group.isdigit():
+        socket_group = int(socket_group)
+
     async def run() -> None:
-        app = await build_app(args.listen, root_path)
+        app = await build_app(args.listen, root_path,
+                              socket_mode=args.socket_mode,
+                              socket_group=socket_group)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, args.http_host, args.http_port)
