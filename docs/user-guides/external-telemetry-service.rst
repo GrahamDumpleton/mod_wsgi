@@ -100,10 +100,10 @@ defined on the server starts a reporter from the same
    Enable the reporter and point it at the ingester. ``TARGET`` is
    the UNIX socket path in the form ``unix:/path/to/socket``. The
    optional ``interval=`` parameter sets the sampling interval in
-   seconds (default ``1.0``). The reporter starts in every mod_wsgi
-   process (each daemon-mode worker and each embedded-mode Apache
-   MPM child) when the directive is set; without it the reporter
-   thread is not created. See
+   seconds (default ``1.0``, minimum ``0.5``). The reporter starts
+   in every mod_wsgi process (each daemon-mode worker and each
+   embedded-mode Apache MPM child) when the directive is set;
+   without it the reporter thread is not created. See
    :doc:`../configuration-directives/WSGITelemetryService` for the
    full directive reference.
 

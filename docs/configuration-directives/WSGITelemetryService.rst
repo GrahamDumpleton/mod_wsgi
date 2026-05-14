@@ -56,9 +56,12 @@ Arguments
 
 ``interval=SECONDS``
    Optional. Sampling interval in seconds for the reporter loop.
-   Defaults to ``1.0``. Sub-second intervals are permitted;
-   smaller intervals produce more datagrams and finer resolution
-   at a higher per-tick cost. Must be greater than zero.
+   Defaults to ``1.0``. Sub-second intervals down to ``0.5`` are
+   permitted; smaller intervals produce more datagrams and finer
+   resolution at a higher per-tick cost. Values below ``0.5`` are
+   rejected at configuration-parse time, since a faster cadence
+   has the reporter consuming meaningful CPU on its own bookkeeping
+   without producing visibly better signal for diagnostic use.
 
 Validation
 ----------
@@ -67,7 +70,8 @@ Validation
   configuration-parse time.
 * A target without the ``unix:`` prefix, including a remote
   ``udp:host:port`` form, is rejected with a clear error.
-* An ``interval=`` value of zero or negative is rejected.
+* An ``interval=`` value below ``0.5`` (including zero or negative)
+  is rejected.
 * A second argument other than ``interval=N`` is rejected.
 
 Interaction with other surfaces

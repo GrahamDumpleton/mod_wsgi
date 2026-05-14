@@ -986,8 +986,9 @@ const char *wsgi_set_telemetry_service(cmd_parms *cmd, void *mconfig,
         if (strncmp(arg2, "interval=", 9) == 0)
         {
             v = atof(arg2 + 9);
-            if (v <= 0.0)
-                return "WSGITelemetryService interval must be positive";
+            if (v < 0.5)
+                return "WSGITelemetryService interval must be at least "
+                       "0.5 seconds";
             wsgi_telemetry_interval = v;
         }
         else
