@@ -4,9 +4,41 @@ version = "1.0.0dev1"
 description = "Ingestion service and live UI for mod_wsgi telemetry samples."
 readme = "README-telemetry.rst"
 requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Graham Dumpleton", email = "Graham.Dumpleton@gmail.com" },
+]
+maintainers = [
+    { name = "Graham Dumpleton", email = "Graham.Dumpleton@gmail.com" },
+]
+keywords = ["mod_wsgi", "wsgi", "apache", "telemetry", "monitoring"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX",
+    "Operating System :: POSIX :: BSD",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP :: WSGI",
+    "Topic :: Internet :: WWW/HTTP :: WSGI :: Server",
+    "Topic :: System :: Monitoring",
+]
 dependencies = [
     "aiohttp>=3.9",
 ]
+
+[project.urls]
+Homepage = "https://www.modwsgi.org/"
+Documentation = "https://modwsgi.readthedocs.io/en/latest/user-guides/external-telemetry-service.html"
+Source = "https://github.com/GrahamDumpleton/mod_wsgi"
+Issues = "https://github.com/GrahamDumpleton/mod_wsgi/issues"
 
 [project.scripts]
 mod_wsgi-telemetry = "mod_wsgi_telemetry.cli:main"
@@ -19,6 +51,11 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "uv.lock",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mod_wsgi_telemetry"]
