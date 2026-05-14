@@ -1,4 +1,4 @@
-name: Build and test mod_wsgi
+name: Build, test and release mod_wsgi
 
 on:
   workflow_dispatch:
@@ -77,3 +77,109 @@ jobs:
         run: pip uninstall --yes mod_wsgi-standalone
       - name: "Verify configure/make/make install"
         run: ./configure && make && sudo make install
+
+  release:
+    name: "Publish GitHub release"
+    runs-on: "ubuntu-24.04"
+    needs:
+    - tests
+    if: startsWith(github.ref, 'refs/tags/mod_wsgi-')
+    permissions:
+      contents: write
+    steps:
+      - name: "Resolve version and prerelease status"
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#mod_wsgi-}"
+          BASE_VERSION="$(echo "$VERSION" | sed -E 's/(dev|rc)[0-9]+$//')"
+          if [[ "$VERSION" == *dev* || "$VERSION" == *rc* ]]; then
+              PRERELEASE="true"
+          else
+              PRERELEASE="false"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: "Download built packages"
+        uses: "actions/download-artifact@v8"
+        with:
+          # Merge every matrix entry's dist artifacts into one
+          # directory. The package builds sdist tarballs only (no
+          # wheels; the C code is compiled at user install time),
+          # and those sdists are byte-identical across matrix
+          # entries, so merge-multiple just overwrites duplicates.
+          pattern: "dist *"
+          path: dist
+          merge-multiple: true
+
+      - name: "Generate SHA256SUMS"
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: "Write release notes body"
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          BASE_VERSION="${{ steps.meta.outputs.base_version }}"
+          DOCS_URL="https://modwsgi.readthedocs.io/en/latest/release-notes/version-${BASE_VERSION}.html"
+          if [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]]; then
+              cat > body.md <<EOF
+          Development snapshot. Not published to PyPi.
+
+          Release notes for the upcoming ${BASE_VERSION} final (work in
+          progress): ${DOCS_URL}
+
+          To test against your Apache and Python install, build from the
+          attached source distribution:
+
+              tar xf mod_wsgi-${VERSION}.tar.gz
+              cd mod_wsgi-${VERSION}
+              pip install .
+
+          \`SHA256SUMS\` is attached for verification of the source
+          archives.
+          EOF
+          else
+              cat > body.md <<EOF
+          Full release notes: ${DOCS_URL}
+
+          Install from PyPi (recommended):
+
+              pip install mod_wsgi==${VERSION}
+
+          For a bundled private Apache build (Linux):
+
+              pip install mod_wsgi-standalone==${VERSION}
+
+          PyPi uploads follow each GitHub release; if \`pip\` reports the
+          version is unavailable, the matching PyPi upload may not have
+          happened yet.
+
+          The companion external telemetry pipeline is distributed
+          separately on PyPi as \`mod_wsgi-telemetry\` and versioned
+          independently of mod_wsgi.
+
+          Source archives attached together with \`SHA256SUMS\` for
+          verification.
+          EOF
+          fi
+          cat body.md
+
+      - name: "Create GitHub release"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          FLAGS=()
+          if [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]]; then
+              FLAGS+=("--prerelease")
+          fi
+          gh release create "${{ steps.meta.outputs.tag }}" \
+              --title "mod_wsgi ${{ steps.meta.outputs.version }}" \
+              --notes-file body.md \
+              "${FLAGS[@]}" \
+              dist/*
