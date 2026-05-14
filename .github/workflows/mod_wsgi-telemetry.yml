@@ -1,4 +1,4 @@
-name: Build, test and release mod_wsgi-telemetry
+name: mod_wsgi-telemetry (build/test/release)
 
 on:
   workflow_dispatch:
