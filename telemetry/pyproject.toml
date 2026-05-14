@@ -41,7 +41,7 @@ Source = "https://github.com/GrahamDumpleton/mod_wsgi"
 Issues = "https://github.com/GrahamDumpleton/mod_wsgi/issues"
 
 [project.scripts]
-mod_wsgi-telemetry = "mod_wsgi_telemetry.cli:main"
+mod_wsgi-telemetry = "mod_wsgi.telemetry.cli:main"
 
 [dependency-groups]
 dev = [
@@ -58,4 +58,4 @@ exclude = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/mod_wsgi_telemetry"]
+packages = ["src/mod_wsgi"]

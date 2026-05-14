@@ -12,10 +12,10 @@ from importlib import import_module
 
 
 _SUBCOMMANDS = {
-    "serve":    ("mod_wsgi_telemetry.server",   "Run the ingestor and web UI (default)."),
-    "top":      ("mod_wsgi_telemetry.tui",      "Curses terminal monitor."),
-    "dump":     ("mod_wsgi_telemetry.dump",     "Bind the listen socket and print decoded samples."),
-    "simulate": ("mod_wsgi_telemetry.simulate", "Emit synthetic samples for UI development."),
+    "serve":    ("mod_wsgi.telemetry.server",   "Run the ingestor and web UI (default)."),
+    "top":      ("mod_wsgi.telemetry.tui",      "Curses terminal monitor."),
+    "dump":     ("mod_wsgi.telemetry.dump",     "Bind the listen socket and print decoded samples."),
+    "simulate": ("mod_wsgi.telemetry.simulate", "Emit synthetic samples for UI development."),
 }
 
 

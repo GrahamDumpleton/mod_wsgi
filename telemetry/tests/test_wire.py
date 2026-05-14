@@ -1,4 +1,4 @@
-from mod_wsgi_telemetry.wire import (
+from mod_wsgi.telemetry.wire import (
     KIND_REQUEST,
     KIND_SLOW_REQUEST,
     Sample,

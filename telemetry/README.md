@@ -97,7 +97,7 @@ ingester aggregation and WebSocket push surface are open work.
 ## Wire format
 
 The decoder and field-ID table live in
-[src/mod_wsgi_telemetry/wire.py](src/mod_wsgi_telemetry/wire.py).
+[src/mod_wsgi/telemetry/wire.py](src/mod_wsgi/telemetry/wire.py).
 This file mirrors `src/server/wsgi_telemetry.h` on the mod_wsgi C
 side; the field IDs must stay in lockstep. Until the C header is
 fully stable, both sides are maintained by hand. A codegen script
@@ -123,7 +123,7 @@ alongside the shape of the distribution.
 ## Layout
 
 ```
-src/mod_wsgi_telemetry/
+src/mod_wsgi/telemetry/
     cli.py         Top-level subcommand dispatcher
     wire.py        TLV decoder + field table (mirrors wsgi_telemetry.h)
     ingest.py      Async datagram receiver + rolling per-PID window
