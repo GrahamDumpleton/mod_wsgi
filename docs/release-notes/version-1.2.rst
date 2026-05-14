@@ -4,10 +4,6 @@
 Version 1.2
 ===========
 
-Version 1.2 of mod_wsgi can be obtained from:
-
-  http://modwsgi.googlecode.com/files/mod_wsgi-1.2.tar.gz
-
 Bug Fixes
 ---------
 

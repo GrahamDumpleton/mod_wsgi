@@ -4,10 +4,6 @@
 Version 4.2.4
 =============
 
-Version 4.2.4 of mod_wsgi can be obtained from:
-
-  https://github.com/GrahamDumpleton/mod_wsgi/archive/4.2.4.tar.gz
-
 Known Issues
 ------------
 

@@ -4,10 +4,6 @@
 Version 3.4
 ===========
 
-Version 3.4 of mod_wsgi can be obtained from:
-
-  http://modwsgi.googlecode.com/files/mod_wsgi-3.4.tar.gz
-
 Security Issues
 ---------------
 

@@ -4,10 +4,6 @@
 Version 3.2
 ===========
 
-Version 3.2 of mod_wsgi can be obtained from:
-
-  http://modwsgi.googlecode.com/files/mod_wsgi-3.2.tar.gz
-
 Bug Fixes
 ---------
 

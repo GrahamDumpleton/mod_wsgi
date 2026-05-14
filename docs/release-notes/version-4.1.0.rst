@@ -8,10 +8,6 @@ With version 4.1.0 of mod_wsgi, a switch to a X.Y.Z version numbering
 scheme from the existing X.Y scheme is being made. This is to enable a
 much quicker release cycle with more incremental changes.
 
-Version 4.1.0 of mod_wsgi can be obtained from:
-
-  https://github.com/GrahamDumpleton/mod_wsgi/archive/4.1.0.tar.gz
-
 Note that mod_wsgi 4.1.0 was originally derived from mod_wsgi 3.1. It has
 though all changes from later releases in the 3.X branch. Thus also see:
 

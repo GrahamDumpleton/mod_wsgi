@@ -4,10 +4,6 @@
 Version 2.7
 ===========
 
-Version 2.7 of mod_wsgi can be obtained from:
-
-  http://modwsgi.googlecode.com/files/mod_wsgi-2.7.tar.gz
-
 Note that this release does not support Python 3.0. Python 3.0 will only be
 supported in mod_wsgi 3.0.
 

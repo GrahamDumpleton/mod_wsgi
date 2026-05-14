@@ -4,10 +4,6 @@
 Version 3.5
 ===========
 
-Version 3.5 of mod_wsgi can be obtained from:
-
-  https://github.com/GrahamDumpleton/mod_wsgi/archive/3.5.tar.gz
-
 Security Issues
 ---------------
 

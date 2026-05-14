@@ -2,10 +2,6 @@
 Version 6.0.0
 =============
 
-Version 6.0.0 of mod_wsgi can be obtained from:
-
-  https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/6.0.0
-
 For this release a signficant review of the code base was undertaken to clean
 up legacy code and remove support for older versions of Python and Apache httpd.
 In the process a large number of fixes were made to the code base to fix up

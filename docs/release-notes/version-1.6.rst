@@ -4,10 +4,6 @@
 Version 1.6
 ===========
 
-Version 1.6 of mod_wsgi can be obtained from:
-
-  http://modwsgi.googlecode.com/files/mod_wsgi-1.6.tar.gz
-
 **Note that this is a quick followup to version 1.5 of mod_wsgi to rectify
 significant problem introduced by that release. You should therefore also
 refer to:**

@@ -4,10 +4,6 @@
 Version 2.5
 ===========
 
-Version 2.5 of mod_wsgi can be obtained from:
-
-  http://modwsgi.googlecode.com/files/mod_wsgi-2.5.tar.gz
-
 For Windows binaries see:
 
   https://code.google.com/archive/p/modwsgi/wikis/InstallationOnWindows
