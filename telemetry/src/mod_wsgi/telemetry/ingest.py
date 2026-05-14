@@ -29,6 +29,13 @@ from .wire import Sample, decode
 
 log = logging.getLogger(__name__)
 
+# How long to retain GC event records per process. Sized to match the
+# longest UI window (5 minutes) so the event timeline can always cover
+# the selected window regardless of event rate. Trimmed by event
+# timestamp rather than entry count so memory use scales with rate
+# rather than being capped to a fixed (possibly too small) entry count.
+GC_EVENT_RETENTION_SEC = 300.0
+
 
 def parse_listen(spec: str) -> tuple[int, str]:
     """Return (family, bind_path) for a UNIX SOCK_DGRAM target."""
@@ -108,15 +115,19 @@ class ProcessState:
     last_seq: int = 0
     drops: int = 0
     last_seen: float = 0.0
-    # Per-interpreter GC tier-1 counters: most recent KIND_GC_SNAPSHOT
-    # per interpreter_name. Empty string keys the main / sole
-    # interpreter, which is also the single-interpreter common case
-    # where the daemon omits the interpreter_name field on the wire.
+    # Per-interpreter rolling buffer of recent KIND_GC_SNAPSHOT
+    # samples, keyed by interpreter_name (empty string for the
+    # main / sole interpreter, also the single-interpreter common
+    # case where the daemon omits the interpreter_name field on
+    # the wire). Each entry in the deque is {stamp, fields} so
+    # client-side rendering can compute rates and plot time-series
+    # without a follow-up poll.
     gc_snapshots: dict = field(default_factory=dict)
     # Rolling buffer of recent KIND_GC_EVENT records (each is a
-    # pause event). Capped so a long-lived process does not grow
-    # without bound; the UI shows the recent window.
-    gc_events: deque = field(default_factory=lambda: deque(maxlen=512))
+    # pause event). Trimmed by event timestamp on each append so the
+    # retained span always covers the longest UI window regardless of
+    # event rate. See GC_EVENT_RETENTION_SEC.
+    gc_events: deque = field(default_factory=deque)
 
 
 @dataclass
@@ -503,24 +514,39 @@ class Ingester:
             interp_name = ""
 
         if sample.kind_name == "gc_snapshot":
-            state.gc_snapshots[interp_name] = {
+            ring = state.gc_snapshots.get(interp_name)
+            if ring is None:
+                ring = deque(maxlen=600)
+                state.gc_snapshots[interp_name] = ring
+            entry = {
                 "stamp": sample.stamp,
                 "fields": dict(sample.fields),
             }
+            ring.append(entry)
+            self._enqueue_all({
+                "type": "gc_snapshot",
+                "pid": sample.pid,
+                "interpreter": interp_name,
+                "stamp": sample.stamp,
+                "fields": entry["fields"],
+            })
         else:
-            state.gc_events.append({
+            entry = {
                 "stamp": sample.stamp,
                 "interpreter": interp_name,
                 "fields": dict(sample.fields),
+            }
+            state.gc_events.append(entry)
+            cutoff = sample.stamp - GC_EVENT_RETENTION_SEC
+            while state.gc_events and state.gc_events[0]["stamp"] < cutoff:
+                state.gc_events.popleft()
+            self._enqueue_all({
+                "type": "gc_event",
+                "pid": sample.pid,
+                "interpreter": interp_name,
+                "stamp": sample.stamp,
+                "fields": entry["fields"],
             })
-
-        # No broadcast in phase 1: the browser-side reducer routes
-        # type=sample messages through addSample, which folds them
-        # into the per-process rolling window. Broadcasting GC
-        # samples that way would clobber memory_rss / per-phase
-        # times on the client just as it did on the server before
-        # the early-return above. The GC tab is wired in a follow-
-        # up change with its own dedicated message type.
 
     def _handle_slow(self, sample: Sample) -> None:
         f = sample.fields
@@ -705,6 +731,21 @@ class Ingester:
                     "last_seq": st.last_seq,
                     "drops": st.drops,
                     "samples": [self._sample_to_dict(s) for s in st.samples],
+                    "gc_snapshots": {
+                        interp: [
+                            {"stamp": e["stamp"], "fields": e["fields"]}
+                            for e in ring
+                        ]
+                        for interp, ring in st.gc_snapshots.items()
+                    },
+                    "gc_events": [
+                        {
+                            "stamp": e["stamp"],
+                            "interpreter": e["interpreter"],
+                            "fields": e["fields"],
+                        }
+                        for e in st.gc_events
+                    ],
                 }
                 for st in self.processes.values()
             ],

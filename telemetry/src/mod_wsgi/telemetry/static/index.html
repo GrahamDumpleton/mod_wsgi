@@ -785,6 +785,51 @@
     color: var(--muted);
     margin-bottom: 8px;
   }
+  .gc-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .gc-toolbar label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .gc-empty {
+    color: var(--muted);
+    font-size: 12px;
+    padding: 24px;
+    text-align: center;
+  }
+  .gc-empty code {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  .gc-status {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .gc-status .label {
+    color: var(--muted);
+    opacity: 0.7;
+    margin-right: 4px;
+  }
+  .gc-status .value {
+    color: var(--text);
+  }
+  .gc-status .value.warn {
+    color: #e0a000;
+  }
   .gantt-toolbar .legend {
     display: inline-flex;
     align-items: center;
@@ -928,6 +973,7 @@
       <button type="button" class="tab active" data-panel="overview">Overview</button>
       <button type="button" class="tab" data-panel="capacity">Capacity</button>
       <button type="button" class="tab" data-panel="processes">Processes</button>
+      <button type="button" class="tab" data-panel="gc">GC</button>
       <button type="button" class="tab" data-panel="slow">Slow requests</button>
     </div>
     <div class="tab-panel" id="panel_overview">
@@ -1133,6 +1179,55 @@
         </div>
       </div>
     </div>
+    <div class="tab-panel hidden" id="panel_gc">
+      <div class="gc-toolbar">
+        <label>Process:
+          <select id="gc_pid_filter" class="window-picker">
+            <option value="*" selected>All</option>
+          </select>
+        </label>
+        <label id="gc_interp_label" hidden>Interpreter:
+          <select id="gc_interp_filter" class="window-picker">
+            <option value="*" selected>All</option>
+          </select>
+        </label>
+        <label>Window:
+          <select id="gc_window" class="window-picker">
+            <option value="60" selected>1m</option>
+            <option value="120">2m</option>
+            <option value="300">5m</option>
+          </select>
+        </label>
+        <span style="margin-left:auto">
+          <button type="button" id="gc_pause" class="pause-btn"
+                  title="Freeze the time axis at the current instant so dots and lines stop scrolling left while you read them. Live samples continue to arrive in the background.">Pause</button>
+        </span>
+      </div>
+      <div class="gc-status" id="gc_status"></div>
+      <div class="charts">
+        <div class="chart">
+          <div class="header-row"><h3>Generation pressure</h3></div>
+          <div class="header-row"><div class="unit">top: gen2 raw count[2] (gen1 collections since last full sweep); bottom: gen0/gen1 count / threshold (1.0 = collection imminent)</div><div class="live" id="live_gc_pressure"></div></div>
+          <canvas id="c_gc_pressure"></canvas>
+        </div>
+        <div class="chart">
+          <div class="header-row"><h3>Collections per second</h3></div>
+          <div class="header-row"><div class="unit">rate of gc.get_stats() collections per generation</div><div class="live" id="live_gc_rate"></div></div>
+          <canvas id="c_gc_rate"></canvas>
+        </div>
+        <div class="chart">
+          <div class="header-row"><h3>GC event timeline</h3></div>
+          <div class="header-row"><div class="unit">top: gen2 pauses (own ms scale, rare); bottom: gen0/gen1 pauses (own ms scale, frequent); y = duration ms, colour = generation</div><div class="live" id="live_gc_events"></div></div>
+          <canvas id="c_gc_events"></canvas>
+        </div>
+        <div class="chart">
+          <div class="header-row"><h3>Pause distribution</h3></div>
+          <div class="header-row"><div class="unit">HDR buckets, selected window</div><div class="live" id="live_gc_dist"></div></div>
+          <canvas id="c_gc_dist"></canvas>
+        </div>
+      </div>
+      <div id="gc_empty" class="gc-empty">No GC samples received yet. Confirm <code>WSGITelemetryService</code> is configured and the daemon has served at least one tick.</div>
+    </div>
   </section>
 </main>
 <div class="tooltip" id="tooltip"></div>
@@ -1181,6 +1276,14 @@ const state = {
   // the background; resume reverts to the live window.
   capacityPaused: false,
   capacityPausedAt: 0,
+  // GC tab pause. While paused the time window is frozen at
+  // gcPausedAt (unix seconds) so dots in the event timeline stop
+  // scrolling left and lines stop moving while the operator
+  // reads. Incoming gc_snapshot and gc_event messages continue
+  // to accumulate on the per-process state in the background;
+  // resume reverts to the live trailing window.
+  gcPaused: false,
+  gcPausedAt: 0,
   // Slow-request expand state. slowExpanded holds the slowKeyFor()
   // strings for rows whose details panel is open; survives
   // re-renders so the panel doesn't collapse on every tick.
@@ -1369,11 +1472,47 @@ const PROCESS_IDENTITY_FIELDS = [
 function ensureProcess(pid) {
   let p = state.processes.get(pid);
   if (!p) {
-    p = { color: colorFor(pid), samples: [] };
+    p = {
+      color: colorFor(pid),
+      samples: [],
+      // Per-interpreter rolling buffer of GC tier-1 snapshots,
+      // keyed by interpreter_name. Empty string for the main /
+      // sole interpreter, also the single-interpreter common
+      // case. Each entry is { t, fields } so the chart layer
+      // can compute rates without a follow-up request.
+      gcSnapshots: new Map(),
+      // Rolling buffer of GC tier-2 pause events: each is
+      // { t, interpreter, fields }. Bounded so a long-lived
+      // process does not grow unboundedly; matches the
+      // server-side deque size.
+      gcEvents: [],
+    };
     for (const k of PROCESS_IDENTITY_FIELDS) p[k] = "";
     state.processes.set(pid, p);
   }
   return p;
+}
+
+const GC_SAMPLE_RETENTION_SEC = 300;
+
+function addGcSnapshot(pid, interpreter, stamp, fields) {
+  const p = ensureProcess(pid);
+  const interp = interpreter || "";
+  let ring = p.gcSnapshots.get(interp);
+  if (!ring) {
+    ring = [];
+    p.gcSnapshots.set(interp, ring);
+  }
+  ring.push({ t: stamp, fields });
+  const cutoff = stamp - GC_SAMPLE_RETENTION_SEC;
+  while (ring.length && ring[0].t < cutoff) ring.shift();
+}
+
+function addGcEvent(pid, interpreter, stamp, fields) {
+  const p = ensureProcess(pid);
+  p.gcEvents.push({ t: stamp, interpreter: interpreter || "", fields });
+  const cutoff = stamp - GC_SAMPLE_RETENTION_SEC;
+  while (p.gcEvents.length && p.gcEvents[0].t < cutoff) p.gcEvents.shift();
 }
 
 function addSample(s) {
@@ -3615,6 +3754,7 @@ function setActiveTab(name) {
   document.getElementById("panel_capacity").classList.toggle("hidden", name !== "capacity");
   document.getElementById("panel_slow").classList.toggle("hidden", name !== "slow");
   document.getElementById("panel_processes").classList.toggle("hidden", name !== "processes");
+  document.getElementById("panel_gc").classList.toggle("hidden", name !== "gc");
   redraw();
 }
 
@@ -5168,7 +5308,506 @@ function redraw() {
     refreshGanttTooltip();
   }
 
+  if (state.activeTab === "gc") {
+    renderGc();
+  }
+
   refreshTooltip();
+}
+
+// ---------------------------------------------------------------------------
+// GC tab.
+//
+// Per-process and per-interpreter dimension. The sidebar process selector
+// is intentionally not reused here — GC behaviour is interpreter-scoped,
+// and overlaying interpreter lines on the same axis as process lines only
+// reads cleanly when there's exactly one interpreter per process (which is
+// the common case but not the only one). Two tab-local selectors keep the
+// rest of the dashboard's process selection model untouched.
+// ---------------------------------------------------------------------------
+
+// One colour per generation, used everywhere in this tab.
+const GC_GEN_COLORS = ["#4fc3f7", "#ffb74d", "#e57373"];
+
+// Wall-clock "now" for GC chart layout. When the tab is paused
+// this returns the frozen instant captured at pause time; live
+// state continues to update behind it.
+function gcNowSec() {
+  return state.gcPaused ? state.gcPausedAt : (Date.now() / 1000);
+}
+
+function gcVisibleSeries() {
+  // Returns the (pid, interpreter) pairs that should be plotted given the
+  // tab-local Process and Interpreter selectors. Each entry is
+  // { key, color, label, snapshots, events } with key = "pid|interp" so
+  // chart series can be addressed uniquely.
+  const pidFilter = (document.getElementById("gc_pid_filter") || {}).value || "*";
+  const interpFilter = (document.getElementById("gc_interp_filter") || {}).value || "*";
+  const out = [];
+  for (const [pid, p] of state.processes) {
+    if (isHidden(p)) continue;
+    if (pidFilter !== "*" && String(pid) !== pidFilter) continue;
+    for (const [interp, ring] of p.gcSnapshots) {
+      if (interpFilter !== "*" && interp !== interpFilter) continue;
+      const label = interp ? `pid ${pid} · ${interp}` : `pid ${pid}`;
+      out.push({
+        key: pid + "|" + interp,
+        color: p.color,
+        label,
+        pid,
+        interpreter: interp,
+        snapshots: ring,
+        events: p.gcEvents.filter(e =>
+          interpFilter === "*" || (e.interpreter || "") === interp),
+      });
+    }
+  }
+  return out;
+}
+
+function gcRebuildSelectors() {
+  // Process selector: union of all pids that have GC data.
+  const pids = [];
+  const interpSet = new Set();
+  for (const [pid, p] of state.processes) {
+    if (p.gcSnapshots.size === 0 && p.gcEvents.length === 0) continue;
+    pids.push(pid);
+    for (const interp of p.gcSnapshots.keys()) interpSet.add(interp);
+    for (const e of p.gcEvents) interpSet.add(e.interpreter || "");
+  }
+  pids.sort((a, b) => a - b);
+
+  const pidSel = document.getElementById("gc_pid_filter");
+  const interpSel = document.getElementById("gc_interp_filter");
+  if (!pidSel || !interpSel) return;
+
+  const prevPid = pidSel.value;
+  const prevInterp = interpSel.value;
+
+  pidSel.innerHTML = '<option value="*">All</option>' + pids.map(
+    pid => `<option value="${pid}">pid ${pid}</option>`
+  ).join("");
+  if ([...pidSel.options].some(o => o.value === prevPid)) pidSel.value = prevPid;
+
+  // Interpreter selector is only shown when more than one interpreter
+  // has ever been seen across the visible processes; otherwise the
+  // empty-string main interpreter is the only choice and the chip is
+  // redundant.
+  const interpLabel = document.getElementById("gc_interp_label");
+  const interps = [...interpSet].sort();
+  const showInterp = interps.length > 1;
+  if (interpLabel) interpLabel.hidden = !showInterp;
+  interpSel.innerHTML = '<option value="*">All</option>' + interps.map(
+    i => `<option value="${i}">${i === "" ? "(main)" : i}</option>`
+  ).join("");
+  if ([...interpSel.options].some(o => o.value === prevInterp)) interpSel.value = prevInterp;
+}
+
+function gcDrawLines(canvas, series, extract, opts = {}) {
+  // series is the gcVisibleSeries() output. extract(fields, prevFields,
+  // dtSec) returns the y-value for one snapshot in the ring; prevFields
+  // and dtSec are provided so the caller can compute per-interval rates.
+  // For each (series, generation) pair, a separate line is drawn (so a
+  // single chart can show three lines per series for the three gens).
+  //
+  // opts.region = {top, bottom} as fractions [0,1] of the canvas
+  // height confines drawing to a horizontal strip; opts.skipClear lets
+  // a caller stack multiple regions on the same canvas without
+  // re-resizing (which would clear it).
+  const ctx = canvas.getContext("2d");
+  let w, h;
+  if (opts.skipClear) {
+    w = canvas.width;
+    h = canvas.height;
+  } else {
+    w = canvas.width = canvas.clientWidth * devicePixelRatio;
+    h = canvas.height = canvas.clientHeight * devicePixelRatio;
+    ctx.clearRect(0, 0, w, h);
+  }
+  const region = opts.region || { top: 0, bottom: 1 };
+  const yTop = region.top * h;
+  const yBot = region.bottom * h;
+  const regionH = Math.max(1, yBot - yTop);
+
+  const now = gcNowSec();
+  const windowSec = opts.windowSec || LINE_WINDOW_SEC;
+  const tmin = now - windowSec;
+  const tmax = now;
+  const gens = opts.gens !== undefined ? opts.gens : [0, 1, 2];
+
+  let vmax = opts.ymin || 0;
+  const lines = [];
+  for (const s of series) {
+    const ring = s.snapshots.filter(p => p.t >= tmin);
+    if (ring.length === 0) continue;
+    for (const gen of gens) {
+      const pts = [];
+      for (let i = 0; i < ring.length; i++) {
+        const prev = i > 0 ? ring[i - 1] : null;
+        const dt = prev ? Math.max(1e-3, ring[i].t - prev.t) : 0;
+        const v = extract(ring[i].fields, prev ? prev.fields : null, dt, gen);
+        if (v === undefined || v === null || Number.isNaN(v)) continue;
+        if (v > vmax) vmax = v;
+        pts.push([ring[i].t, v]);
+      }
+      if (pts.length === 0) continue;
+      lines.push({
+        color: GC_GEN_COLORS[gen] || s.color,
+        pts,
+        label: s.label + " gen" + gen,
+      });
+    }
+  }
+  if (vmax === 0) vmax = opts.fallbackMax || 1;
+  vmax *= 1.1;
+
+  ctx.strokeStyle = "#333";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, yBot - 1);
+  ctx.lineTo(w, yBot - 1);
+  ctx.stroke();
+
+  const prec = opts.precision !== undefined ? opts.precision : autoPrecision(vmax);
+  const formatY = opts.formatY || (v => v.toFixed(prec));
+  ctx.fillStyle = "#666";
+  ctx.font = (10 * devicePixelRatio) + "px -apple-system, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(formatY(vmax), 4, yTop + 4);
+  ctx.textBaseline = "bottom";
+  ctx.fillText(formatY(0), 4, yBot - 4);
+
+  const xOf = t => ((t - tmin) / (tmax - tmin)) * w;
+  const yOf = v => yBot - (v / vmax) * regionH;
+
+  ctx.lineWidth = 1.5 * devicePixelRatio;
+  for (const l of lines) {
+    ctx.strokeStyle = l.color;
+    ctx.beginPath();
+    l.pts.forEach(([t, v], i) => {
+      const x = xOf(t), y = yOf(v);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+}
+
+function gcDrawEventTimeline(canvas, series, windowSec, opts = {}) {
+  // opts.gens filters which generations contribute dots; opts.region
+  // and opts.skipClear behave the same as gcDrawLines so the caller
+  // can split the canvas vertically (e.g. gen2 on top, gen0/gen1 on
+  // bottom) without each strip clearing the other's pixels.
+  const ctx = canvas.getContext("2d");
+  let w, h;
+  if (opts.skipClear) {
+    w = canvas.width;
+    h = canvas.height;
+  } else {
+    w = canvas.width = canvas.clientWidth * devicePixelRatio;
+    h = canvas.height = canvas.clientHeight * devicePixelRatio;
+    ctx.clearRect(0, 0, w, h);
+  }
+  const region = opts.region || { top: 0, bottom: 1 };
+  const yTop = region.top * h;
+  const yBot = region.bottom * h;
+  const regionH = Math.max(1, yBot - yTop);
+
+  const now = gcNowSec();
+  const tmin = now - (windowSec || LINE_WINDOW_SEC);
+  const tmax = now;
+  const gensFilter = opts.gens;
+
+  const dots = [];
+  let vmax = 0;
+  for (const s of series) {
+    for (const e of s.events) {
+      if (e.t < tmin || e.t > tmax) continue;
+      const gen = e.fields.gc_event_generation || 0;
+      if (gensFilter && !gensFilter.includes(gen)) continue;
+      const durMs = ((e.fields.gc_event_duration || 0) * 1000);
+      if (durMs > vmax) vmax = durMs;
+      dots.push({ t: e.t, dur: durMs, gen, color: GC_GEN_COLORS[gen] || "#888" });
+    }
+  }
+  if (vmax === 0) vmax = 1;
+  vmax *= 1.1;
+
+  // Draw in ascending generation order so rarer, higher-generation
+  // dots land on top of the much denser gen0 cloud and stay visible
+  // instead of being half-occluded by later gen0 dots at the same x.
+  dots.sort((a, b) => a.gen - b.gen);
+
+  ctx.strokeStyle = "#333";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, yBot - 1);
+  ctx.lineTo(w, yBot - 1);
+  ctx.stroke();
+
+  ctx.fillStyle = "#666";
+  ctx.font = (10 * devicePixelRatio) + "px -apple-system, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(vmax.toFixed(autoPrecision(vmax)) + " ms", 4, yTop + 4);
+  ctx.textBaseline = "bottom";
+  ctx.fillText("0 ms", 4, yBot - 4);
+
+  const xOf = t => ((t - tmin) / (tmax - tmin)) * w;
+  const yOf = v => yBot - (v / vmax) * regionH;
+  const r = 2.5 * devicePixelRatio;
+  for (const d of dots) {
+    ctx.fillStyle = d.color;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.arc(xOf(d.t), yOf(d.dur), r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1.0;
+}
+
+function gcDrawPauseDistribution(canvas, series, windowSec) {
+  // Reuse the existing HDR bucket scheme so the chart reads the same as
+  // the Overview Time distribution panel: 16 octaves × 4 sub-buckets + 1
+  // overflow. Pause durations land in the same buckets as request
+  // durations would, making them comparable in operator mental models.
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width = canvas.clientWidth * devicePixelRatio;
+  const h = canvas.height = canvas.clientHeight * devicePixelRatio;
+  ctx.clearRect(0, 0, w, h);
+
+  const now = gcNowSec();
+  const tmin = now - (windowSec || LINE_WINDOW_SEC);
+
+  const counts = new Array(BUCKET_UPPER_MS.length).fill(0);
+  let total = 0;
+  let durations = [];
+  for (const s of series) {
+    for (const e of s.events) {
+      if (e.t < tmin) continue;
+      const durMs = (e.fields.gc_event_duration || 0) * 1000;
+      let idx = 0;
+      while (idx < BUCKET_UPPER_MS.length - 1 && durMs >= BUCKET_UPPER_MS[idx]) idx++;
+      counts[idx]++;
+      total++;
+      durations.push(durMs);
+    }
+  }
+
+  // Skeleton bars even when empty so the panel doesn't render blank.
+  let cmax = 1;
+  for (const c of counts) if (c > cmax) cmax = c;
+  const barW = w / counts.length;
+  for (let i = 0; i < counts.length; i++) {
+    const c = counts[i];
+    if (c === 0) continue;
+    const bh = (c / cmax) * (h - 20);
+    ctx.fillStyle = "#4fc3f7";
+    ctx.fillRect(i * barW + 0.5, h - bh - 1, Math.max(1, barW - 1), bh);
+  }
+
+  ctx.strokeStyle = "#333";
+  ctx.beginPath();
+  ctx.moveTo(0, h - 1);
+  ctx.lineTo(w, h - 1);
+  ctx.stroke();
+
+  if (total > 0) {
+    durations.sort((a, b) => a - b);
+    const pick = q => durations[Math.min(durations.length - 1, Math.floor(q * durations.length))];
+    return { total, p50: pick(0.5), p95: pick(0.95), p99: pick(0.99), max: durations[durations.length - 1] };
+  }
+  return { total: 0, p50: 0, p95: 0, p99: 0, max: 0 };
+}
+
+// Populate the small status row above the GC charts with the
+// configuration values reported by Python on the most recent
+// snapshot: is_enabled, thresholds, freeze_count, and the
+// cumulative collection totals. The cumulative totals live here
+// rather than on the rate chart so the chart's live readout can
+// show actual /sec rates without conflating the two quantities.
+//
+// Aggregation across multiple visible series: thresholds and the
+// enabled flag are reported as the value from the first series
+// with a leading note when they vary across the rest; cumulative
+// totals sum across all series. freeze_count sums too.
+function renderGcStatus(series) {
+  const el = document.getElementById("gc_status");
+  if (!el) return;
+  if (series.length === 0) {
+    el.innerHTML = "";
+    return;
+  }
+
+  let enabled = null;
+  let enabledVaries = false;
+  let thr = [null, null, null];
+  let thrVaries = false;
+  let counts = [0, 0, 0];
+  let cum = [0, 0, 0];
+  let freeze = 0;
+
+  for (const s of series) {
+    const last = s.snapshots[s.snapshots.length - 1];
+    if (!last) continue;
+    const f = last.fields;
+    const en = (+f.gc_is_enabled) ? 1 : 0;
+    if (enabled === null) enabled = en;
+    else if (en !== enabled) enabledVaries = true;
+    for (let g = 0; g < 3; g++) {
+      const tv = +f["gc_threshold" + g] || 0;
+      if (thr[g] === null) thr[g] = tv;
+      else if (tv !== thr[g]) thrVaries = true;
+      counts[g] += +f["gc_count" + g] || 0;
+      cum[g] += +f["gc_collections" + g] || 0;
+    }
+    freeze += +f.gc_freeze_count || 0;
+  }
+
+  const enabledText = enabled === null
+    ? "<span class=\"value\">unknown</span>"
+    : enabled
+      ? "<span class=\"value\">enabled</span>"
+      : "<span class=\"value warn\">disabled</span>";
+  const thrText = thr.some(v => v === null)
+    ? "—"
+    : `${thr[0]}/${thr[1]}/${thr[2]}` + (thrVaries ? " (varies)" : "");
+  const countsText = `${counts[0]}/${counts[1]}/${counts[2]}`;
+  const cumText = `${cum[0]}/${cum[1]}/${cum[2]}`;
+  const variesNote = enabledVaries
+    ? " <span class=\"value warn\">(some processes disabled)</span>"
+    : "";
+
+  el.innerHTML =
+    `<span><span class="label">GC</span>${enabledText}${variesNote}</span>` +
+    `<span><span class="label">thresholds</span><span class="value">${thrText}</span></span>` +
+    `<span><span class="label">counts</span><span class="value">${countsText}</span></span>` +
+    `<span><span class="label">cumulative</span><span class="value">${cumText}</span></span>` +
+    `<span><span class="label">frozen</span><span class="value">${freeze}</span></span>`;
+}
+
+function renderGc() {
+  gcRebuildSelectors();
+  const series = gcVisibleSeries();
+  const empty = document.getElementById("gc_empty");
+  if (empty) empty.hidden = series.length > 0;
+
+  const windowSec = parseInt(
+    (document.getElementById("gc_window") || {}).value, 10) || LINE_WINDOW_SEC;
+
+  renderGcStatus(series);
+
+  // Generation pressure: split vertically so the rare-but-large gen2
+  // sawtooth (top, raw count[2] = gen1 collections since the last full
+  // sweep) doesn't squash the gen0/gen1 strip (bottom, normalized to
+  // threshold so 1.0 = collection imminent). Layout matches the GC
+  // event timeline below: gen2 on top, gen0/gen1 on bottom. Gen2 uses
+  // a long-lived-pending heuristic for its trigger, so count/threshold
+  // isn't a meaningful normalization for it; raw count[2] is plotted
+  // on its own y-axis instead.
+  const pressureCanvas = document.getElementById("c_gc_pressure");
+  gcDrawLines(pressureCanvas, series,
+    (fields, _prev, _dt, _gen) => {
+      const cnt = fields.gc_count2;
+      return cnt === undefined ? null : cnt;
+    }, {
+      fallbackMax: 1, precision: 0, windowSec, gens: [2],
+      region: { top: 0.0, bottom: 0.30 },
+    });
+  gcDrawLines(pressureCanvas, series,
+    (fields, _prev, _dt, gen) => {
+      const thr = fields["gc_threshold" + gen];
+      const cnt = fields["gc_count" + gen];
+      if (!thr || cnt === undefined) return null;
+      return cnt / thr;
+    }, {
+      fallbackMax: 1.0, precision: 2, windowSec, gens: [0, 1],
+      region: { top: 0.34, bottom: 1.0 }, skipClear: true,
+    });
+  setLive("live_gc_pressure",
+    `<span class="label" style="color:${GC_GEN_COLORS[0]}">gen0</span> ` +
+    `<span class="label" style="color:${GC_GEN_COLORS[1]}">gen1</span> ` +
+    `<span class="label" style="color:${GC_GEN_COLORS[2]}">gen2</span>`);
+
+  // Collections per second: rate of cumulative gc_collections* over the
+  // delta between successive snapshots.
+  gcDrawLines(document.getElementById("c_gc_rate"), series,
+    (fields, prev, dt, gen) => {
+      if (!prev || dt <= 0) return null;
+      const cur = fields["gc_collections" + gen] || 0;
+      const old = prev["gc_collections" + gen] || 0;
+      const d = cur - old;
+      if (d < 0) return null;
+      return d / dt;
+    }, { precision: 2, windowSec });
+  // Live readout is the per-second rate computed from the cumulative
+  // counter delta across the visible window. Earliest in-window
+  // snapshot is the baseline, latest is the current; ratio gives a
+  // smoothed rate that matches the per-tick line plot above.
+  const winFloor = gcNowSec() - windowSec;
+  let rateNum = [0, 0, 0];
+  let rateDen = 0;
+  for (const s of series) {
+    const inWin = s.snapshots.filter(p => p.t >= winFloor);
+    if (inWin.length < 2) continue;
+    const first = inWin[0];
+    const last = inWin[inWin.length - 1];
+    const dt = last.t - first.t;
+    if (dt <= 0) continue;
+    for (let g = 0; g < 3; g++) {
+      const d = (last.fields["gc_collections" + g] || 0) -
+                (first.fields["gc_collections" + g] || 0);
+      if (d >= 0) rateNum[g] += d;
+    }
+    rateDen = Math.max(rateDen, dt);
+  }
+  const rate = rateDen > 0
+    ? rateNum.map(n => n / rateDen)
+    : [0, 0, 0];
+  const fmtRate = v => v >= 1 ? v.toFixed(1) : v.toFixed(2);
+  setLive("live_gc_rate",
+    `<span class="label" style="color:${GC_GEN_COLORS[0]}">gen0</span>${fmtRate(rate[0])}/s ` +
+    `<span class="label" style="color:${GC_GEN_COLORS[1]}">gen1</span>${fmtRate(rate[1])}/s ` +
+    `<span class="label" style="color:${GC_GEN_COLORS[2]}">gen2</span>${fmtRate(rate[2])}/s`);
+
+  // Event timeline: split vertically so the rare-but-long gen2 pauses
+  // (top strip) don't stretch the y-axis and squash the much shorter
+  // gen0/gen1 dots (bottom strip). Each strip gets its own ms scale.
+  const eventsCanvas = document.getElementById("c_gc_events");
+  gcDrawEventTimeline(eventsCanvas, series, windowSec, {
+    gens: [2], region: { top: 0.0, bottom: 0.30 },
+  });
+  gcDrawEventTimeline(eventsCanvas, series, windowSec, {
+    gens: [0, 1], region: { top: 0.34, bottom: 1.0 }, skipClear: true,
+  });
+  let eventCount = 0;
+  let totalPauseMs = 0;
+  const nowSec = gcNowSec();
+  for (const s of series) {
+    for (const e of s.events) {
+      if (e.t < nowSec - windowSec) continue;
+      eventCount++;
+      totalPauseMs += (e.fields.gc_event_duration || 0) * 1000;
+    }
+  }
+  const gcTimePct = (totalPauseMs / 1000 / windowSec * 100);
+  setLive("live_gc_events",
+    `<span class="label">events</span>${eventCount} ` +
+    `<span class="label">gc time</span>${gcTimePct.toFixed(2)}%`);
+
+  const distStats = gcDrawPauseDistribution(
+    document.getElementById("c_gc_dist"), series, windowSec);
+  if (distStats.total > 0) {
+    setLive("live_gc_dist",
+      `<span class="label">n</span>${distStats.total} ` +
+      `<span class="label">p50</span>${fmtMs(distStats.p50)} ` +
+      `<span class="label">p95</span>${fmtMs(distStats.p95)} ` +
+      `<span class="label">p99</span>${fmtMs(distStats.p99)} ` +
+      `<span class="label">max</span>${fmtMs(distStats.max)}`);
+  } else {
+    setLive("live_gc_dist", "");
+  }
 }
 
 function setConn(ok, label) {
@@ -5195,6 +5834,18 @@ function connect() {
       for (const p of msg.processes) {
         seedProcessFromSnapshot(p);
         for (const s of p.samples) addSample(s);
+        if (p.gc_snapshots) {
+          for (const [interp, ring] of Object.entries(p.gc_snapshots)) {
+            for (const e of ring) {
+              addGcSnapshot(p.pid, interp, e.stamp, e.fields);
+            }
+          }
+        }
+        if (p.gc_events) {
+          for (const e of p.gc_events) {
+            addGcEvent(p.pid, e.interpreter, e.stamp, e.fields);
+          }
+        }
       }
       if (msg.slow_requests) {
         for (const r of msg.slow_requests) upsertSlow(r.entry);
@@ -5205,6 +5856,10 @@ function connect() {
     } else if (msg.type === "sample") {
       state.totalReceived += 1;
       addSample(msg);
+    } else if (msg.type === "gc_snapshot") {
+      addGcSnapshot(msg.pid, msg.interpreter, msg.stamp, msg.fields);
+    } else if (msg.type === "gc_event") {
+      addGcEvent(msg.pid, msg.interpreter, msg.stamp, msg.fields);
     } else if (msg.type === "lifecycle") {
       addLifecycleEvent(msg.event);
     } else if (msg.type === "slow_request") {
@@ -5240,6 +5895,9 @@ document.getElementById("throughput_field").addEventListener("change", redraw);
 document.getElementById("slow_state_filter").addEventListener("change", redraw);
 document.getElementById("slow_per_url").addEventListener("change", redraw);
 document.getElementById("capacity_stuck_thresh").addEventListener("change", redraw);
+document.getElementById("gc_pid_filter").addEventListener("change", redraw);
+document.getElementById("gc_interp_filter").addEventListener("change", redraw);
+document.getElementById("gc_window").addEventListener("change", redraw);
 
 // Marker-filter checkboxes. Initialise from localStorage, then wire
 // the change handlers to redraw + persist. Hover handlers are
@@ -5309,6 +5967,18 @@ for (const id of ["c_rps", "c_cap", "c_cpu", "c_resp", "c_mem", "c_phase"]) {
       state.capacityPausedAt = Date.now() / 1000;
     btn.classList.toggle("paused", state.capacityPaused);
     btn.textContent = state.capacityPaused ? "Resume" : "Pause";
+    redraw();
+  });
+})();
+
+(function () {
+  const btn = document.getElementById("gc_pause");
+  btn.addEventListener("click", () => {
+    state.gcPaused = !state.gcPaused;
+    if (state.gcPaused)
+      state.gcPausedAt = Date.now() / 1000;
+    btn.classList.toggle("paused", state.gcPaused);
+    btn.textContent = state.gcPaused ? "Resume" : "Pause";
     redraw();
   });
 })();
