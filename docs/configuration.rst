@@ -88,6 +88,16 @@ Reverse proxy
    configuration-directives/WSGITrustedProxies
    configuration-directives/WSGITrustedProxyHeaders
 
+Telemetry
+---------
+
+.. toctree::
+   :maxdepth: 1
+
+   configuration-directives/WSGITelemetryService
+   configuration-directives/WSGITelemetryOptions
+   configuration-directives/WSGISlowRequests
+
 Sandboxing and safety
 ---------------------
 
@@ -141,8 +151,11 @@ Alphabetical index
 * :doc:`configuration-directives/WSGIScriptAliasMatch`
 * :doc:`configuration-directives/WSGIScriptReloading`
 * :doc:`configuration-directives/WSGIServerMetrics`
+* :doc:`configuration-directives/WSGISlowRequests`
 * :doc:`configuration-directives/WSGISocketPrefix`
 * :doc:`configuration-directives/WSGISocketRotation`
 * :doc:`configuration-directives/WSGISwitchInterval`
+* :doc:`configuration-directives/WSGITelemetryOptions`
+* :doc:`configuration-directives/WSGITelemetryService`
 * :doc:`configuration-directives/WSGITrustedProxies`
 * :doc:`configuration-directives/WSGITrustedProxyHeaders`

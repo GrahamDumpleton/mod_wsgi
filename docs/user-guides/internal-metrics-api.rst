@@ -27,7 +27,8 @@ The four functions are:
 
 ``request_metrics()`` and ``process_metrics()`` return data only
 after ``start_recording_metrics()`` has been called, and only when
-no external reporter is configured to consume the same data;
+no external reporter is configured to consume the same data (see
+:doc:`external-telemetry-service` for the external alternative);
 ``server_metrics()`` has its own configuration gate. Each accessor
 returns ``None`` rather than raising when it is not active, so
 caller code can branch on a single check.
@@ -844,3 +845,10 @@ See also
 * :doc:`../configuration-directives/WSGIDaemonProcess`: the
   ``server-metrics=`` option enables the scoreboard for a daemon
   process group.
+* :doc:`external-telemetry-service`: the external-push counterpart
+  to this in-process pull API, with its own browser UI and
+  terminal monitor.
+* :doc:`../configuration-directives/WSGITelemetryService`:
+  Apache directive that enables the external telemetry reporter
+  for the whole instance; presence of this directive is what
+  causes the accessors documented above to return ``None``.

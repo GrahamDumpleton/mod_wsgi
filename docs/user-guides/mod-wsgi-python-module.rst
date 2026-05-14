@@ -188,7 +188,8 @@ Metrics
    baselines so subsequent calls to ``request_metrics()`` and
    ``process_metrics()`` return data. Idempotent; safe to call
    unconditionally at application import time. When external
-   telemetry reporting is enabled (the ``WSGITelemetryService``
+   telemetry reporting is enabled (the
+   :doc:`../configuration-directives/WSGITelemetryService`
    directive), the external reporter is the canonical metrics
    consumer and this call has no observable effect from the Python
    API: the two accessors below still return ``None`` to signal the

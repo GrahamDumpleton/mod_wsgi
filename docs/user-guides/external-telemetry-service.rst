@@ -100,10 +100,12 @@ defined on the server starts a reporter from the same
    Enable the reporter and point it at the ingester. ``TARGET`` is
    the UNIX socket path in the form ``unix:/path/to/socket``. The
    optional ``interval=`` parameter sets the sampling interval in
-   seconds (default ``1.0``, minimum ``0.1``). The reporter starts
-   in every mod_wsgi process (each daemon-mode worker and each
-   embedded-mode Apache MPM child) when the directive is set;
-   without it the reporter thread is not created.
+   seconds (default ``1.0``). The reporter starts in every mod_wsgi
+   process (each daemon-mode worker and each embedded-mode Apache
+   MPM child) when the directive is set; without it the reporter
+   thread is not created. See
+   :doc:`../configuration-directives/WSGITelemetryService` for the
+   full directive reference.
 
 ``WSGITelemetryOptions [+|-]Flag [+|-]Flag ... | None | All``
    Capture toggles for fields that are off by default for privacy
@@ -111,13 +113,17 @@ defined on the server starts a reporter from the same
    ``CaptureUserAgent``, which adds the request's ``User-Agent``
    string to slow-request records. The ``+Flag`` / ``-Flag``
    incremental form composes across multiple lines; absolute
-   ``None`` and ``All`` set the state directly.
+   ``None`` and ``All`` set the state directly. See
+   :doc:`../configuration-directives/WSGITelemetryOptions` for the
+   full directive reference.
 
 ``WSGISlowRequests SECONDS``
    Enable slow-request reporting and set the threshold above which
    a still-running request is included in the stream. Only
    meaningful alongside ``WSGITelemetryService``; without an
-   ingester to receive them the records have no destination.
+   ingester to receive them the records have no destination. See
+   :doc:`../configuration-directives/WSGISlowRequests` for the
+   full directive reference.
 
 A typical configuration for a single application::
 
@@ -167,7 +173,7 @@ generated ``httpd.conf``. The equivalent command-line options are:
 
 ``--telemetry-interval SECONDS``
     Sampling interval (default ``1.0``). Sub-second intervals are
-    permitted down to ``0.1``.
+    permitted; the value must be greater than zero.
 
 ``--telemetry-options ARGS``
     Capture toggles. The value is passed verbatim to a
@@ -527,3 +533,8 @@ Where to go next
 * :doc:`mod-wsgi-express-quickstart` for the ``mod_wsgi-express``
   options that surround ``--telemetry-service`` in a real
   invocation.
+* Directive references:
+  :doc:`../configuration-directives/WSGITelemetryService`,
+  :doc:`../configuration-directives/WSGITelemetryOptions`, and
+  :doc:`../configuration-directives/WSGISlowRequests` for the
+  per-directive syntax and validation rules.

@@ -116,6 +116,30 @@ New Features
   and can be set per daemon group. ``mod_wsgi-express`` exposes
   ``--switch-interval`` which applies the value to both modes.
 
+* Added an external telemetry pipeline. The new
+  ``WSGITelemetryService`` directive turns on a reporter thread in
+  each mod_wsgi process (daemon-mode worker and embedded-mode
+  Apache child) that emits per-interval binary datagrams over a
+  local UNIX socket to a separately-distributed ingester. The
+  companion ``mod_wsgi-telemetry`` package on PyPi provides the
+  ingester, a browser UI, and a curses terminal monitor.
+  ``WSGITelemetryOptions`` toggles optional captures (currently
+  ``CaptureUserAgent``) and ``WSGISlowRequests`` enables
+  per-request slow-record reporting alongside the periodic
+  samples. ``mod_wsgi-express`` exposes matching
+  ``--telemetry-service``, ``--telemetry-interval``,
+  ``--telemetry-options`` and ``--slow-requests`` options. See
+  :doc:`../user-guides/external-telemetry-service` for the full
+  setup, including socket-permission handling for the recommended
+  multi-user deployment.
+
+  This is a brand-new feature and is still being iterated on. The
+  directive set, option names, wire format and ingester CLI may
+  change in a future release. The PyPi ``mod_wsgi-telemetry``
+  package is versioned independently of mod_wsgi; pair an ingester
+  release with the matching mod_wsgi release until the pipeline
+  stabilises.
+
 Features Changed
 ----------------
 
