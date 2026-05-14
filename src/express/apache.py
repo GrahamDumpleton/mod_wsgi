@@ -305,8 +305,8 @@ ExtendedStatus On
 
 WSGIServerMetrics %(server_metrics_flag)s
 
-<IfDefine MOD_WSGI_METRICS_SERVICE>
-WSGIMetricsService %(metrics_service)s interval=%(metrics_interval)s
+<IfDefine MOD_WSGI_TELEMETRY_SERVICE>
+WSGITelemetryService %(telemetry_service)s interval=%(telemetry_interval)s
 </IfDefine>
 
 <IfDefine MOD_WSGI_SLOW_REQUESTS>
@@ -317,8 +317,8 @@ WSGISlowRequests %(slow_requests)s
 WSGISwitchInterval %(switch_interval)s
 </IfDefine>
 
-<IfDefine MOD_WSGI_METRICS_OPTIONS>
-%(metrics_options)s
+<IfDefine MOD_WSGI_TELEMETRY_OPTIONS>
+%(telemetry_options)s
 </IfDefine>
 
 <IfDefine MOD_WSGI_SERVER_STATUS>

@@ -76,21 +76,21 @@
 #define WSGI_METRICS_T_F64_ARRAY 0x06
 
 /*
- * WSGIMetricsOptions flag bits. Bitmask shared by all directive
+ * WSGITelemetryOptions flag bits. Bitmask shared by all directive
  * invocations in the global server config; the parser handles +/- /
  * absolute / None / All forms (mixing forms in one directive is an
  * error). Default is zero (every flag opts in). Each flag here also
  * needs a matching name entry in the parser's lookup table.
  */
 
-#define WSGI_METRICS_OPT_CAPTURE_USER_AGENT 0x01
-#define WSGI_METRICS_OPT_ALL (WSGI_METRICS_OPT_CAPTURE_USER_AGENT)
+#define WSGI_TELEMETRY_OPT_CAPTURE_USER_AGENT 0x01
+#define WSGI_TELEMETRY_OPT_ALL (WSGI_TELEMETRY_OPT_CAPTURE_USER_AGENT)
 
-extern int wsgi_metrics_options;
+extern int wsgi_telemetry_options;
 
 /*
  * Returns non-zero if external telemetry reporting is enabled (turned
- * on at config time by the WSGIMetricsService directive). When
+ * on at config time by the WSGITelemetryService directive). When
  * enabled, the external reporter is the canonical metrics consumer
  * and the Python accessors mod_wsgi.request_metrics() and
  * mod_wsgi.process_metrics() return None to signal that the Python
@@ -127,7 +127,7 @@ extern int wsgi_telemetry_is_enabled(void);
  * 10-19: Sampling and reporter configuration. sample_period is the
  * measured wall-clock interval between two snapshot calls (drifts
  * with scheduling jitter); telemetry_interval is the configured
- * WSGIMetricsService interval value (constant for the life of the
+ * WSGITelemetryService interval value (constant for the life of the
  * process). They normally agree to within a few ms but can diverge
  * under load. slow_requests_threshold is the configured
  * WSGISlowRequests value in seconds (0 when the directive is not
@@ -370,7 +370,7 @@ extern int wsgi_telemetry_is_enabled(void);
 #define WSGI_METRICS_F_SLOW_PATH_INFO 214   /* bytes */
 #define WSGI_METRICS_F_SLOW_PROTOCOL 215    /* bytes: e.g. "HTTP/1.1", "HTTP/2.0" */
 #define WSGI_METRICS_F_SLOW_PEER_IP 216     /* bytes: post-trusted-proxy resolution */
-#define WSGI_METRICS_F_SLOW_USER_AGENT 217  /* bytes: only when WSGIMetricsOptions +CaptureUserAgent */
+#define WSGI_METRICS_F_SLOW_USER_AGENT 217  /* bytes: only when WSGITelemetryOptions +CaptureUserAgent */
 
 #define WSGI_METRICS_F_SLOW_SERVER_TIME 220      /* f64 */
 #define WSGI_METRICS_F_SLOW_QUEUE_TIME 221       /* f64: 0 in embedded mode */
@@ -460,7 +460,7 @@ typedef struct
     /*
      * Measured wall-clock interval (seconds) between this snapshot
      * and the previous one. Drifts with scheduling jitter; normally
-     * matches the configured WSGIMetricsService interval to within a
+     * matches the configured WSGITelemetryService interval to within a
      * few ms.
      */
 
@@ -758,7 +758,7 @@ typedef struct
      * scan path never holds a dangling r). Each field is truncated
      * to its corresponding WSGI_SLOW_*_MAX bound with a "..." suffix
      * marking the cut. user_agent is populated only when
-     * WSGIMetricsOptions +CaptureUserAgent is set; the others are
+     * WSGITelemetryOptions +CaptureUserAgent is set; the others are
      * always populated when r is live.
      */
 

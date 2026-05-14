@@ -19,8 +19,8 @@ uv run mod_wsgi-telemetry serve
 mod_wsgi-express start-server tests/hello.wsgi \
     --port 8080 \
     --processes 2 --threads 3 \
-    --metrics-service unix:/tmp/mod_wsgi-telemetry.sock \
-    --metrics-interval 1.0
+    --telemetry-service unix:/tmp/mod_wsgi-telemetry.sock \
+    --telemetry-interval 1.0
 
 # Terminal 3 — drive some traffic
 while true; do curl -s http://localhost:8080/ > /dev/null; done
@@ -111,7 +111,7 @@ allowed to grow well past the Ethernet MTU (peak ~4.4 KB at 128
 worker slots; the C-side stack buffer is sized at 8 KB).
 
 Earlier `udp:host:port` targets are no longer accepted on either side
-— `WSGIMetricsService udp:...` and `--metrics-service udp:...` will be
+— `WSGITelemetryService udp:...` and `--telemetry-service udp:...` will be
 rejected at config-parse time with a clear error, and the ingester's
 `--listen` only accepts `unix:/path`. Use a tunnelled file-system
 mount (e.g. shared NFS path) or a sidecar relay if you genuinely need
@@ -150,20 +150,20 @@ its own socket path:
 uv run mod_wsgi-telemetry serve --listen unix:/tmp/mod_wsgi-telemetry-staging.sock
 ```
 
-and point `mod_wsgi-express --metrics-service` at the matching path.
+and point `mod_wsgi-express --telemetry-service` at the matching path.
 
 ## mod_wsgi-express options
 
 | Option | Description |
 |---|---|
-| `--metrics-service TARGET` | Enable the telemetry reporter. `unix:/path` for a local datagram socket. Remote `udp:host:port` targets are not supported. Off by default. |
-| `--metrics-interval SECONDS` | Sampling interval (default `1.0`). Floor of 0.1s enforced in C. |
+| `--telemetry-service TARGET` | Enable the telemetry reporter. `unix:/path` for a local datagram socket. Remote `udp:host:port` targets are not supported. Off by default. |
+| `--telemetry-interval SECONDS` | Sampling interval (default `1.0`). Floor of 0.1s enforced in C. |
 
-Under the hood these translate to the `WSGIMetricsService` Apache
+Under the hood these translate to the `WSGITelemetryService` Apache
 directive in the generated `httpd.conf`. Equivalent manual form:
 
 ```apache
-WSGIMetricsService unix:/tmp/mod_wsgi-telemetry.sock interval=1.0
+WSGITelemetryService unix:/tmp/mod_wsgi-telemetry.sock interval=1.0
 ```
 
 Only activated in daemon-mode processes today. Embedded-mode support is
@@ -230,7 +230,7 @@ tests/
 - **UI shows `disconnected`.** The WebSocket couldn't reach the server.
   Check the ingester is still running and `--http-port` matches.
 - **UI connected but no data.** mod_wsgi may not be reaching the
-  socket — check that `--metrics-service` on the mod_wsgi side and
+  socket — check that `--telemetry-service` on the mod_wsgi side and
   `--listen` on the ingester point at the same `unix:` path, and that
   the Apache user has permission to open the socket path. The
   ingester log prints `listening on ...` at startup.

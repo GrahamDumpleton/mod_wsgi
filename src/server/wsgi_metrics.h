@@ -163,7 +163,7 @@ typedef struct
      * Lazy ring buffer of completed slow records, drained by the
      * reporter or accessor via wsgi_metrics_pop_slow_completed. The
      * matching slow-request threshold and metrics-options bitmask live
-     * as config-time globals (wsgi_slow_threshold_us, wsgi_metrics_options)
+     * as config-time globals (wsgi_slow_threshold_us, wsgi_telemetry_options)
      * since they are set by directive handlers before this struct is
      * allocated.
      */
@@ -311,7 +311,7 @@ extern void wsgi_telemetry_emit_process_stopped(const char *reason,
  * stashed on WSGIThreadInfo. start_recording_metrics is the explicit
  * opt-in that arms request_metrics / process_metrics: both return None
  * until it has been called, and unconditionally when the external
- * WSGIMetricsService reporter has the recording slot.
+ * WSGITelemetryService reporter has the recording slot.
  *
  * wsgi_metrics_init_state populates the metrics-owned fields of the
  * module's WSGIModuleState (the wsgi_id_* interned key strings and the

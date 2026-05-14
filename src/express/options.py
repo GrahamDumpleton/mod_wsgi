@@ -533,23 +533,23 @@ add_option('all', '--server-metrics', action='store_true',
         'metrics will be available within the WSGI application. '
         'Defaults to being disabled.')
 
-add_option('all', '--metrics-service', metavar='TARGET',
+add_option('all', '--telemetry-service', metavar='TARGET',
         default=None, help='Target metrics service to push telemetry to. '
-        'Enables WSGIMetricsService in the generated config. Use '
+        'Enables WSGITelemetryService in the generated config. Use '
         '"unix:/path/to/socket" for a local datagram socket (same-host '
         'ingester). Remote "udp:host:port" targets are not supported. '
         'Off by default.')
 
-add_option('all', '--metrics-interval', type='float', default=1.0,
+add_option('all', '--telemetry-interval', type='float', default=1.0,
         metavar='SECONDS', help='Metrics reporter sampling interval '
-        'in seconds. Only applies when --metrics-service is set. '
+        'in seconds. Only applies when --telemetry-service is set. '
         'Defaults to %default.')
 
 add_option('all', '--slow-requests', type='float', default=None,
         metavar='SECONDS', help='Enable slow-request reporting and set '
         'the threshold in seconds above which a still-running request '
         'is reported. Generates WSGISlowRequests in the config. Only '
-        'meaningful alongside --metrics-service. Off by default.')
+        'meaningful alongside --telemetry-service. Off by default.')
 
 add_option('all', '--switch-interval', type='float', default=None,
         metavar='SECONDS', help='Override the Python GIL switch interval '
@@ -558,13 +558,13 @@ add_option('all', '--switch-interval', type='float', default=None,
         'switch-interval option on WSGIDaemonProcess. Defaults to '
         'Python\'s built-in 0.005 (5 ms) when unset.')
 
-add_option('all', '--metrics-options', action='append', default=[],
+add_option('all', '--telemetry-options', action='append', default=[],
         metavar='ARGS', help='Apache-Options-style metrics-capture '
-        'toggle, passed verbatim to a WSGIMetricsOptions directive in '
+        'toggle, passed verbatim to a WSGITelemetryOptions directive in '
         'the generated config. Each occurrence of this flag emits a '
         'separate directive, so the +/- / absolute / None / All forms '
         'compose just as they do when written by hand. Example: '
-        '--metrics-options "+CaptureUserAgent". Repeatable.')
+        '--telemetry-options "+CaptureUserAgent". Repeatable.')
 
 add_option('all', '--server-status', action='store_true',
         default=False, help='Flag indicating whether web server status '

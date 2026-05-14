@@ -294,7 +294,7 @@ def test_roundtrip_slow_request_client_identity():
     # peer_ip survives both IPv4 and IPv6 string forms; protocol is
     # the literal SERVER_PROTOCOL string; user_agent is the verbatim
     # request header (only emitted by the C side when
-    # WSGIMetricsOptions +CaptureUserAgent, but the wire format
+    # WSGITelemetryOptions +CaptureUserAgent, but the wire format
     # itself is symmetric and round-trips regardless).
     fields = {
         "slow_record_state": 1,

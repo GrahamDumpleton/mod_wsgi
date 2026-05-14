@@ -19,7 +19,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Telemetry reporter. When enabled via WSGIMetricsService, each mod_wsgi
+ * Telemetry reporter. When enabled via WSGITelemetryService, each mod_wsgi
  * process spawns a single background thread that periodically takes a
  * C-native metrics snapshot (wsgi_metrics_snapshot) and ships it as a
  * binary TLV datagram to a local socket. The encoder emits the format
@@ -954,14 +954,14 @@ static void *APR_THREAD_FUNC wsgi_telemetry_thread_main(apr_thread_t *t,
 /* ------------------------------------------------------------------------- */
 
 /*
- * Directive handler: WSGIMetricsService <target> [interval=N]
+ * Directive handler: WSGITelemetryService <target> [interval=N]
  * Target must be "unix:/path"; remote IPv4 UDP targets are not
  * supported (the reporter assumes a co-located ingester so that
  * MTU / IP-fragmentation / packet-loss across a real network are
  * non-concerns).
  */
 
-const char *wsgi_set_metrics_service(cmd_parms *cmd, void *mconfig,
+const char *wsgi_set_telemetry_service(cmd_parms *cmd, void *mconfig,
                                      const char *arg1, const char *arg2)
 {
     const char *error = NULL;
@@ -971,10 +971,10 @@ const char *wsgi_set_metrics_service(cmd_parms *cmd, void *mconfig,
         return error;
 
     if (!arg1 || !*arg1)
-        return "WSGIMetricsService target required";
+        return "WSGITelemetryService target required";
 
     if (strncmp(arg1, "unix:", 5) != 0)
-        return "WSGIMetricsService target must be 'unix:/path' "
+        return "WSGITelemetryService target must be 'unix:/path' "
                "(remote 'udp:host:port' targets are no longer supported)";
 
     wsgi_telemetry_target = apr_pstrdup(cmd->pool, arg1);
@@ -987,12 +987,12 @@ const char *wsgi_set_metrics_service(cmd_parms *cmd, void *mconfig,
         {
             v = atof(arg2 + 9);
             if (v <= 0.0)
-                return "WSGIMetricsService interval must be positive";
+                return "WSGITelemetryService interval must be positive";
             wsgi_telemetry_interval = v;
         }
         else
         {
-            return "WSGIMetricsService second argument must be "
+            return "WSGITelemetryService second argument must be "
                    "'interval=N'";
         }
     }
@@ -1006,7 +1006,7 @@ const char *wsgi_set_metrics_service(cmd_parms *cmd, void *mconfig,
  * Presence enables per-request "slow request" reporting in addition to
  * the periodic KIND_REQUEST sampling. Argument is the duration threshold
  * above which an in-flight request becomes eligible for reporting. Only
- * meaningful when WSGIMetricsService is also configured; without a
+ * meaningful when WSGITelemetryService is also configured; without a
  * metrics service there is nowhere to send records.
  */
 
@@ -1034,7 +1034,7 @@ const char *wsgi_set_slow_requests(cmd_parms *cmd, void *mconfig,
 }
 
 /*
- * Directive handler: WSGIMetricsOptions [+|-]Flag [+|-]Flag ... | None | All
+ * Directive handler: WSGITelemetryOptions [+|-]Flag [+|-]Flag ... | None | All
  *
  * Apache-Options-style toggle for metrics capture. Flags can be
  * given absolutely (replaces the current set) or with +/- prefixes
@@ -1048,14 +1048,14 @@ const char *wsgi_set_slow_requests(cmd_parms *cmd, void *mconfig,
  * Agent request header is included in slow-request records.
  */
 
-int wsgi_metrics_options = 0;
+int wsgi_telemetry_options = 0;
 
 static const struct
 {
     const char *name;
     int flag;
 } wsgi_metrics_option_names[] = {
-    {"CaptureUserAgent", WSGI_METRICS_OPT_CAPTURE_USER_AGENT},
+    {"CaptureUserAgent", WSGI_TELEMETRY_OPT_CAPTURE_USER_AGENT},
     {NULL, 0}};
 
 static int wsgi_metrics_option_lookup(const char *name)
@@ -1069,7 +1069,7 @@ static int wsgi_metrics_option_lookup(const char *name)
     return 0;
 }
 
-const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
+const char *wsgi_set_telemetry_options(cmd_parms *cmd, void *mconfig,
                                      const char *args)
 {
     const char *error = NULL;
@@ -1084,7 +1084,7 @@ const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
         return error;
 
     if (!args || !*args)
-        return "WSGIMetricsOptions: at least one flag required";
+        return "WSGITelemetryOptions: at least one flag required";
 
     /*
      * Start the incremental accumulator from the current global so
@@ -1092,7 +1092,7 @@ const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
      * and ignores the starting value.
      */
 
-    incremental_options = wsgi_metrics_options;
+    incremental_options = wsgi_telemetry_options;
 
     while (*args)
     {
@@ -1109,7 +1109,7 @@ const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
             seen_incremental = 1;
             name = token + 1;
             if (!*name)
-                return "WSGIMetricsOptions: bare '+' / '-' is not a flag";
+                return "WSGITelemetryOptions: bare '+' / '-' is not a flag";
         }
         else
         {
@@ -1118,13 +1118,13 @@ const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
         }
 
         if (seen_incremental && seen_absolute)
-            return "WSGIMetricsOptions: cannot mix +/- form with "
+            return "WSGITelemetryOptions: cannot mix +/- form with "
                    "absolute names in a single directive";
 
         if (strcasecmp(name, "None") == 0)
         {
             if (token[0] == '+' || token[0] == '-')
-                return "WSGIMetricsOptions: 'None' may not have a "
+                return "WSGITelemetryOptions: 'None' may not have a "
                        "+/- prefix";
             absolute_options = 0;
             continue;
@@ -1132,16 +1132,16 @@ const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
         if (strcasecmp(name, "All") == 0)
         {
             if (token[0] == '+' || token[0] == '-')
-                return "WSGIMetricsOptions: 'All' may not have a "
+                return "WSGITelemetryOptions: 'All' may not have a "
                        "+/- prefix";
-            absolute_options = WSGI_METRICS_OPT_ALL;
+            absolute_options = WSGI_TELEMETRY_OPT_ALL;
             continue;
         }
 
         int flag = wsgi_metrics_option_lookup(name);
         if (!flag)
             return apr_psprintf(cmd->temp_pool,
-                                "WSGIMetricsOptions: unknown flag '%s'", name);
+                                "WSGITelemetryOptions: unknown flag '%s'", name);
 
         if (seen_incremental)
         {
@@ -1157,9 +1157,9 @@ const char *wsgi_set_metrics_options(cmd_parms *cmd, void *mconfig,
     }
 
     if (seen_incremental)
-        wsgi_metrics_options = incremental_options;
+        wsgi_telemetry_options = incremental_options;
     else
-        wsgi_metrics_options = absolute_options;
+        wsgi_telemetry_options = absolute_options;
 
     return NULL;
 }

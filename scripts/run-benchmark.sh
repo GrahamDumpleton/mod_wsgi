@@ -131,20 +131,20 @@
 #                             benchmark script that exposes the
 #                             /metrics/reset and /metrics/report paths
 #                             (e.g. tests/benchmark.wsgi).
-#       --metrics-service T   Pass --metrics-service T to mod_wsgi-express
+#       --telemetry-service T   Pass --telemetry-service T to mod_wsgi-express
 #                             to enable the metrics reporter. T is
 #                             'unix:/path/to/sock'. Start the ingester
 #                             separately from the telemetry/ directory:
 #                               uv run mod-wsgi-telemetry \\
 #                                   --listen T
-#       --metrics-interval S
+#       --telemetry-interval S
 #                             Metrics sampling interval in seconds.
-#                             Only applies with --metrics-service.
+#                             Only applies with --telemetry-service.
 #                             Default: 1.0
 #       --slow-requests SEC   Enable slow-request reporting and set the
 #                             threshold in seconds above which a still-
 #                             running request is reported. Requires
-#                             --metrics-service.
+#                             --telemetry-service.
 #       --switch-interval SEC Override the Python GIL switch interval
 #                             (sys.setswitchinterval). Applied at process
 #                             start in both embedded and daemon mode.
@@ -152,15 +152,15 @@
 #                             when unset. Useful for measuring how the
 #                             GIL contention coefficient and per-phase
 #                             histogram bumps shift with the interval.
-#       --metrics-options ARGS
-#                             Pass one WSGIMetricsOptions directive
+#       --telemetry-options ARGS
+#                             Pass one WSGITelemetryOptions directive
 #                             through to mod_wsgi-express verbatim.
 #                             Repeatable; each occurrence emits a
 #                             separate directive in the generated
 #                             config, so +/- / absolute / None / All
 #                             forms compose just as they do when
 #                             written by hand. Example:
-#                               --metrics-options "+CaptureUserAgent"
+#                               --telemetry-options "+CaptureUserAgent"
 #       --bombardier-timeout SEC
 #                             Per-request timeout passed to bombardier
 #                             as --timeout. Default 10s. Bombardier's
@@ -204,11 +204,11 @@ BODY_CHUNKS=1
 RATE_4XX=0
 RATE_5XX=0
 METRICS=0
-METRICS_SERVICE=
-METRICS_INTERVAL=1.0
+TELEMETRY_SERVICE=
+TELEMETRY_INTERVAL=1.0
 SLOW_REQUESTS=
 SWITCH_INTERVAL=
-METRICS_OPTIONS=()
+TELEMETRY_OPTIONS=()
 BOMBARDIER_TIMEOUT=10s
 LOG_LEVEL=warn
 
@@ -245,11 +245,11 @@ while [ $# -gt 0 ]; do
         --4xx-rate)       RATE_4XX="$2"; shift 2 ;;
         --5xx-rate)       RATE_5XX="$2"; shift 2 ;;
         --metrics)        METRICS=1; shift ;;
-        --metrics-service)    METRICS_SERVICE="$2"; shift 2 ;;
-        --metrics-interval)   METRICS_INTERVAL="$2"; shift 2 ;;
+        --telemetry-service)    TELEMETRY_SERVICE="$2"; shift 2 ;;
+        --telemetry-interval)   TELEMETRY_INTERVAL="$2"; shift 2 ;;
         --slow-requests)      SLOW_REQUESTS="$2"; shift 2 ;;
         --switch-interval)    SWITCH_INTERVAL="$2"; shift 2 ;;
-        --metrics-options)    METRICS_OPTIONS+=("$2"); shift 2 ;;
+        --telemetry-options)    TELEMETRY_OPTIONS+=("$2"); shift 2 ;;
         --bombardier-timeout) BOMBARDIER_TIMEOUT="$2"; shift 2 ;;
         --log-level)      LOG_LEVEL="$2"; shift 2 ;;
         -h|--help)        usage ;;
@@ -370,23 +370,23 @@ else
     fi
 fi
 
-if [ -n "$METRICS_SERVICE" ]; then
-    setup_args+=(--metrics-service "$METRICS_SERVICE")
-    setup_args+=(--metrics-interval "$METRICS_INTERVAL")
+if [ -n "$TELEMETRY_SERVICE" ]; then
+    setup_args+=(--telemetry-service "$TELEMETRY_SERVICE")
+    setup_args+=(--telemetry-interval "$TELEMETRY_INTERVAL")
     if [ -n "$SLOW_REQUESTS" ]; then
         setup_args+=(--slow-requests "$SLOW_REQUESTS")
     fi
 elif [ -n "$SLOW_REQUESTS" ]; then
-    echo "ERROR: --slow-requests requires --metrics-service" >&2
+    echo "ERROR: --slow-requests requires --telemetry-service" >&2
     exit 1
 fi
 
-# --metrics-options is repeatable on both sides — each element of the
+# --telemetry-options is repeatable on both sides — each element of the
 # array becomes one mod_wsgi-express invocation, which in turn emits
-# one WSGIMetricsOptions line in the generated config so the +/- /
+# one WSGITelemetryOptions line in the generated config so the +/- /
 # absolute / None / All forms compose verbatim.
-for opt in "${METRICS_OPTIONS[@]}"; do
-    setup_args+=(--metrics-options "$opt")
+for opt in "${TELEMETRY_OPTIONS[@]}"; do
+    setup_args+=(--telemetry-options "$opt")
 done
 
 if [ -n "$SWITCH_INTERVAL" ]; then
@@ -436,18 +436,18 @@ else
 fi
 
 if [ "$METRICS" = "1" ]; then
-    metrics_state="enabled"
+    telemetry_state="enabled"
 else
-    metrics_state="disabled"
+    telemetry_state="disabled"
 fi
 
-if [ -n "$METRICS_SERVICE" ]; then
-    metrics_state="$METRICS_SERVICE (interval ${METRICS_INTERVAL}s)"
+if [ -n "$TELEMETRY_SERVICE" ]; then
+    telemetry_state="$TELEMETRY_SERVICE (interval ${TELEMETRY_INTERVAL}s)"
     if [ -n "$SLOW_REQUESTS" ]; then
-        metrics_state="$metrics_state, slow>=${SLOW_REQUESTS}s"
+        telemetry_state="$telemetry_state, slow>=${SLOW_REQUESTS}s"
     fi
 else
-    metrics_state="disabled"
+    telemetry_state="disabled"
 fi
 
 echo "Configuration:"
@@ -482,7 +482,7 @@ elif [ "$DISTRIBUTION" = "mixture" ]; then
 else
     echo "  distribution   : fixed"
 fi
-echo "  metrics        : $metrics_state"
+echo "  telemetry      : $telemetry_state"
 echo ""
 
 export BENCHMARK_DELAY="$DELAY"

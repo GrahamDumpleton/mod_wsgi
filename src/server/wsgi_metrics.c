@@ -1600,7 +1600,7 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
                        protocol ? protocol : "");
 
     /*
-     * User-Agent is opt-in via WSGIMetricsOptions +CaptureUserAgent
+     * User-Agent is opt-in via WSGITelemetryOptions +CaptureUserAgent
      * because UA strings can be PII-adjacent (fingerprinting) and bots
      * sometimes ship multi-kilobyte values. HTTP_USER_AGENT is the
      * canonical CGI-style env var and works in both modes; in daemon
@@ -1609,7 +1609,7 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
      * header is reachable only via subprocess_env.
      */
 
-    if (wsgi_metrics_options & WSGI_METRICS_OPT_CAPTURE_USER_AGENT)
+    if (wsgi_telemetry_options & WSGI_TELEMETRY_OPT_CAPTURE_USER_AGENT)
     {
         const char *ua = NULL;
         if (r->subprocess_env)

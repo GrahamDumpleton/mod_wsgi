@@ -120,7 +120,7 @@ class SlowEntry:
     # reflects the real client when X-Forwarded-For handling is
     # configured. protocol is "HTTP/1.1" / "HTTP/2.0". user_agent
     # is empty unless the operator opted in via
-    # WSGIMetricsOptions +CaptureUserAgent.
+    # WSGITelemetryOptions +CaptureUserAgent.
     peer_ip: str = ""
     protocol: str = ""
     user_agent: str = ""

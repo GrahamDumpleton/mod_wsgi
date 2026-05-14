@@ -375,7 +375,7 @@ def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
             "2001:db8::5",
         ]),
         "slow_protocol": random.choice(["HTTP/1.1", "HTTP/2.0"]),
-        # User-Agent is opt-in via WSGIMetricsOptions; the simulator
+        # User-Agent is opt-in via WSGITelemetryOptions; the simulator
         # always emits one so the demo UI exercises the column. Real
         # mod_wsgi installs see this only when the operator configures
         # +CaptureUserAgent.

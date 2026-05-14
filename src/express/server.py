@@ -367,22 +367,22 @@ def setup_server(command, args, options):
     else:
         options['server_metrics_flag'] = 'Off'
 
-    if options['metrics_service']:
-        target = options['metrics_service']
+    if options['telemetry_service']:
+        target = options['telemetry_service']
         if not target.startswith('unix:'):
             raise ConfigurationError(
-                "--metrics-service must be 'unix:/path' "
+                "--telemetry-service must be 'unix:/path' "
                 "(remote 'udp:host:port' targets are no longer supported)")
     else:
-        options['metrics_service'] = ''
+        options['telemetry_service'] = ''
 
     if options['slow_requests'] is not None:
         if options['slow_requests'] < 0:
             raise ConfigurationError(
                 "--slow-requests threshold must be non-negative")
-        if not options['metrics_service']:
+        if not options['telemetry_service']:
             raise ConfigurationError(
-                "--slow-requests requires --metrics-service")
+                "--slow-requests requires --telemetry-service")
     else:
         options['slow_requests'] = ''
 
@@ -775,18 +775,18 @@ def setup_server(command, args, options):
     if options['server_status']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_SERVER_METRICS')
         options['httpd_arguments_list'].append('-DMOD_WSGI_SERVER_STATUS')
-    if options['metrics_service']:
-        options['httpd_arguments_list'].append('-DMOD_WSGI_METRICS_SERVICE')
+    if options['telemetry_service']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_TELEMETRY_SERVICE')
     if options['slow_requests'] != '':
         options['httpd_arguments_list'].append('-DMOD_WSGI_SLOW_REQUESTS')
     if options['switch_interval'] != '':
         options['httpd_arguments_list'].append('-DMOD_WSGI_SWITCH_INTERVAL')
-    if options['metrics_options']:
-        options['httpd_arguments_list'].append('-DMOD_WSGI_METRICS_OPTIONS')
-        options['metrics_options'] = '\n'.join(
-            'WSGIMetricsOptions %s' % v for v in options['metrics_options'])
+    if options['telemetry_options']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_TELEMETRY_OPTIONS')
+        options['telemetry_options'] = '\n'.join(
+            'WSGITelemetryOptions %s' % v for v in options['telemetry_options'])
     else:
-        options['metrics_options'] = ''
+        options['telemetry_options'] = ''
     if options['directory_index']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_DIRECTORY_INDEX')
     if options['directory_listing']:
