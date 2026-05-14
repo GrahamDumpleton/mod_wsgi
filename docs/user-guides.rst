@@ -58,6 +58,7 @@ Concepts and advanced topics
    user-guides/subscribing-to-events
    user-guides/registering-cleanup-code
    user-guides/internal-metrics-api
+   user-guides/external-telemetry-service
    user-guides/running-behind-a-reverse-proxy
    user-guides/hosting-websocket-applications
    user-guides/enabling-https

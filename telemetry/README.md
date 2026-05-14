@@ -166,9 +166,6 @@ directive in the generated `httpd.conf`. Equivalent manual form:
 WSGITelemetryService unix:/tmp/mod_wsgi-telemetry.sock interval=1.0
 ```
 
-Only activated in daemon-mode processes today. Embedded-mode support is
-a future extension.
-
 ## Wire format
 
 The decoder and field-ID table live in
