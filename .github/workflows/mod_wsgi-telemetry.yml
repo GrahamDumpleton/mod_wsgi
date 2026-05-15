@@ -123,13 +123,40 @@ jobs:
         run: |
           VERSION="${{ steps.meta.outputs.version }}"
           DOCS_URL="https://modwsgi.readthedocs.io/en/latest/user-guides/external-telemetry-service.html"
-          if [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]]; then
+          if [[ "$VERSION" == *dev* ]]; then
               cat > body.md <<EOF
-          Development snapshot of mod_wsgi-telemetry. Not published to PyPi.
+          Development snapshot of mod_wsgi-telemetry. Not normally
+          published to PyPi (occasionally uploaded to exercise the
+          release pipeline).
 
           User guide: ${DOCS_URL}
 
           To test, install the attached wheel:
+
+              pip install mod_wsgi_telemetry-${VERSION}-py3-none-any.whl
+
+          Or build from the attached source distribution:
+
+              tar xf mod_wsgi_telemetry-${VERSION}.tar.gz
+              cd mod_wsgi_telemetry-${VERSION}
+              pip install .
+
+          \`SHA256SUMS\` is attached for verification of the source and
+          wheel archives.
+          EOF
+          elif [[ "$VERSION" == *rc* ]]; then
+              cat > body.md <<EOF
+          Release candidate for mod_wsgi-telemetry.
+
+          User guide: ${DOCS_URL}
+
+          May be installable from PyPi:
+
+              pip install mod_wsgi-telemetry==${VERSION}
+
+          If \`pip\` reports the version is unavailable, this candidate
+          either has not been uploaded yet or is not being published to
+          PyPi. Install the attached wheel instead:
 
               pip install mod_wsgi_telemetry-${VERSION}-py3-none-any.whl
 

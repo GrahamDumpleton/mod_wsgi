@@ -139,15 +139,36 @@ jobs:
           VERSION="${{ steps.meta.outputs.version }}"
           BASE_VERSION="${{ steps.meta.outputs.base_version }}"
           DOCS_URL="https://modwsgi.readthedocs.io/en/latest/release-notes/version-${BASE_VERSION}.html"
-          if [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]]; then
+          if [[ "$VERSION" == *dev* ]]; then
               cat > body.md <<EOF
-          Development snapshot. Not published to PyPi.
+          Development snapshot. Not normally published to PyPi
+          (occasionally uploaded to exercise the release pipeline).
 
           Release notes for the upcoming ${BASE_VERSION} final (work in
           progress): ${DOCS_URL}
 
           To test against your Apache and Python install, build from the
           attached source distribution:
+
+              tar xf mod_wsgi-${VERSION}.tar.gz
+              cd mod_wsgi-${VERSION}
+              pip install .
+
+          \`SHA256SUMS\` is attached for verification of the source
+          archives.
+          EOF
+          elif [[ "$VERSION" == *rc* ]]; then
+              cat > body.md <<EOF
+          Release candidate. Release notes for the upcoming
+          ${BASE_VERSION} final (work in progress): ${DOCS_URL}
+
+          May be installable from PyPi:
+
+              pip install mod_wsgi==${VERSION}
+
+          If \`pip\` reports the version is unavailable, this candidate
+          either has not been uploaded yet or is not being published to
+          PyPi. Build from the attached source distribution instead:
 
               tar xf mod_wsgi-${VERSION}.tar.gz
               cd mod_wsgi-${VERSION}
