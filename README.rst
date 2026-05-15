@@ -29,7 +29,8 @@ and are built with Sphinx.
 Releases
 --------
 
-mod_wsgi is published on the Python Package Index in three forms:
+This source code repository publishes three distinct packages to the
+Python Package Index:
 
 * `mod_wsgi`_ on PyPI builds the mod_wsgi Apache module against an
   existing Apache and Python installation on your host, and
