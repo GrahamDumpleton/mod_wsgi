@@ -38,6 +38,9 @@ Where to start
 * Already running Apache and want to add WSGI support? See
   :doc:`installation` and the
   :doc:`user-guides/quick-configuration-guide`.
+* Want a live monitoring UI alongside your mod_wsgi install? See
+  :doc:`user-guides/external-telemetry-service`, which uses the
+  separately distributed ``mod_wsgi-telemetry`` ingester on PyPI.
 * Looking up a specific ``WSGIxxx`` directive? See :doc:`configuration`.
 * Saw a ``WSGI####`` error code in your logs? See
   :doc:`error-reference`.
