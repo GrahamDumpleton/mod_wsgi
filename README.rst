@@ -29,7 +29,7 @@ and are built with Sphinx.
 Releases
 --------
 
-mod_wsgi is published on the Python Package Index in two forms:
+mod_wsgi is published on the Python Package Index in three forms:
 
 * `mod_wsgi`_ on PyPI builds the mod_wsgi Apache module against an
   existing Apache and Python installation on your host, and
@@ -40,6 +40,14 @@ mod_wsgi is published on the Python Package Index in two forms:
 * `mod_wsgi-standalone`_ on PyPI additionally installs a private
   build of Apache into your Python environment, for use on
   UNIX-like systems where no system Apache is available.
+
+* `mod_wsgi-telemetry`_ on PyPI is the out-of-process telemetry
+  ingester and live UI that consume datagrams emitted when the
+  ``WSGITelemetryService`` directive is enabled. It is distributed
+  separately so that installations using the operating-system
+  ``mod_wsgi`` package, or any other manually-configured Apache,
+  can adopt the telemetry pipeline without switching to the PyPI
+  ``mod_wsgi`` or ``mod_wsgi-express`` packages.
 
 Reporting bugs
 --------------
@@ -89,6 +97,11 @@ The repository contains:
 * ``src/express`` and the rest of ``src`` for the Python-side
   package that includes ``mod_wsgi-express`` and the diagnostics
   WSGI applications.
+* ``telemetry`` for the separately-distributed
+  ``mod_wsgi-telemetry`` package, which provides the out-of-process
+  telemetry ingester, browser-based live UI and ``top``-style
+  curses monitor that consume datagrams emitted when the
+  ``WSGITelemetryService`` directive is enabled.
 * ``docs`` for the Sphinx documentation published to
   https://www.modwsgi.org.
 * ``tests`` for the test suite and sample WSGI applications used by
@@ -118,3 +131,4 @@ the ``LICENSE`` file in this repository for the full text.
 .. _PEP 3333: https://peps.python.org/pep-3333/
 .. _mod_wsgi: https://pypi.org/project/mod_wsgi/
 .. _mod_wsgi-standalone: https://pypi.org/project/mod_wsgi-standalone/
+.. _mod_wsgi-telemetry: https://pypi.org/project/mod_wsgi-telemetry/
