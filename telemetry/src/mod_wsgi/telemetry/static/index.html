@@ -1206,8 +1206,8 @@
       <div class="gc-status" id="gc_status"></div>
       <div class="charts">
         <div class="chart">
-          <div class="header-row"><h3>Generation pressure</h3></div>
-          <div class="header-row"><div class="unit">top: gen2 raw count[2] (gen1 collections since last full sweep); bottom: gen0/gen1 count / threshold (1.0 = collection imminent)</div><div class="live" id="live_gc_pressure"></div></div>
+          <div class="header-row"><h3>GC overhead</h3></div>
+          <div class="header-row"><div class="unit">per-interval fraction of wall-clock spent in GC pauses (sum of pause durations / interval length); invariant across CPython GC algorithms</div><div class="live" id="live_gc_pressure"></div></div>
           <canvas id="c_gc_pressure"></canvas>
         </div>
         <div class="chart">
@@ -5494,6 +5494,96 @@ function gcDrawLines(canvas, series, extract, opts = {}) {
   }
 }
 
+function gcDrawOverhead(canvas, series, opts = {}) {
+  // Per (pid, interpreter) series: one line whose y-value at each
+  // snapshot is the fraction of wall-clock time spent inside GC
+  // pauses over the interval ending at that snapshot, expressed as
+  // a percentage. Interval is [prev_snapshot.t, this_snapshot.t];
+  // events are binned by gc_event_start_stamp (the collection's
+  // actual start time) and fall back to the datagram stamp when
+  // that field is absent.
+  //
+  // Same calculation in every CPython GC regime (pre-3.13
+  // generational, 3.14.0-3.14.4 incremental, 3.14.5 reverted,
+  // free-threaded), so a chart that aggregates across mixed-build
+  // process groups stays honest. No gc.get_count() / threshold
+  // arithmetic is involved.
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width = canvas.clientWidth * devicePixelRatio;
+  const h = canvas.height = canvas.clientHeight * devicePixelRatio;
+  ctx.clearRect(0, 0, w, h);
+
+  const now = gcNowSec();
+  const windowSec = opts.windowSec || LINE_WINDOW_SEC;
+  const tmin = now - windowSec;
+  const tmax = now;
+
+  let vmax = 0;
+  const lines = [];
+  for (const s of series) {
+    const ring = s.snapshots.filter(p => p.t >= tmin);
+    if (ring.length < 2) continue;
+    const evs = s.events
+      .map(e => ({
+        t: e.fields.gc_event_start_stamp || e.t,
+        d: e.fields.gc_event_duration || 0,
+      }))
+      .sort((a, b) => a.t - b.t);
+    let ei = 0;
+    const pts = [];
+    for (let i = 1; i < ring.length; i++) {
+      const t0 = ring[i - 1].t;
+      const t1 = ring[i].t;
+      const dt = t1 - t0;
+      if (dt <= 0) continue;
+      while (ei < evs.length && evs[ei].t < t0) ei++;
+      let sum = 0;
+      let j = ei;
+      while (j < evs.length && evs[j].t < t1) {
+        sum += evs[j].d;
+        j++;
+      }
+      const pct = (sum / dt) * 100;
+      if (pct > vmax) vmax = pct;
+      pts.push([t1, pct]);
+    }
+    if (pts.length === 0) continue;
+    lines.push({ color: s.color, pts, label: s.label });
+  }
+  if (vmax === 0) vmax = opts.fallbackMax || 1;
+  vmax *= 1.1;
+
+  ctx.strokeStyle = "#333";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, h - 1);
+  ctx.lineTo(w, h - 1);
+  ctx.stroke();
+
+  ctx.fillStyle = "#666";
+  ctx.font = (10 * devicePixelRatio) + "px -apple-system, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(vmax.toFixed(2) + "%", 4, 4);
+  ctx.textBaseline = "bottom";
+  ctx.fillText("0%", 4, h - 4);
+
+  const xOf = t => ((t - tmin) / (tmax - tmin)) * w;
+  const yOf = v => h - (v / vmax) * h;
+
+  ctx.lineWidth = 1.5 * devicePixelRatio;
+  for (const l of lines) {
+    ctx.strokeStyle = l.color;
+    ctx.beginPath();
+    l.pts.forEach(([t, v], i) => {
+      const x = xOf(t), y = yOf(v);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+}
+
 function gcDrawEventTimeline(canvas, series, windowSec, opts = {}) {
   // opts.gens filters which generations contribute dots; opts.region
   // and opts.skipClear behave the same as gcDrawLines so the caller
@@ -5698,37 +5788,32 @@ function renderGc() {
 
   renderGcStatus(series);
 
-  // Generation pressure: split vertically so the rare-but-large gen2
-  // sawtooth (top, raw count[2] = gen1 collections since the last full
-  // sweep) doesn't squash the gen0/gen1 strip (bottom, normalized to
-  // threshold so 1.0 = collection imminent). Layout matches the GC
-  // event timeline below: gen2 on top, gen0/gen1 on bottom. Gen2 uses
-  // a long-lived-pending heuristic for its trigger, so count/threshold
-  // isn't a meaningful normalization for it; raw count[2] is plotted
-  // on its own y-axis instead.
+  // GC overhead: per (pid, interpreter) series, fraction of wall-clock
+  // spent in GC pauses over each snapshot interval, as a percentage.
+  // Built from the per-event durations in the gc_event stream, so the
+  // calculation is identical across CPython GC algorithms (pre-3.13
+  // generational, 3.14.0-3.14.4 incremental, 3.14.5 reverted, free-
+  // threaded). No reliance on gc.get_count() / threshold semantics,
+  // which diverge between those algorithms.
   const pressureCanvas = document.getElementById("c_gc_pressure");
-  gcDrawLines(pressureCanvas, series,
-    (fields, _prev, _dt, _gen) => {
-      const cnt = fields.gc_count2;
-      return cnt === undefined ? null : cnt;
-    }, {
-      fallbackMax: 1, precision: 0, windowSec, gens: [2],
-      region: { top: 0.0, bottom: 0.30 },
-    });
-  gcDrawLines(pressureCanvas, series,
-    (fields, _prev, _dt, gen) => {
-      const thr = fields["gc_threshold" + gen];
-      const cnt = fields["gc_count" + gen];
-      if (!thr || cnt === undefined) return null;
-      return cnt / thr;
-    }, {
-      fallbackMax: 1.0, precision: 2, windowSec, gens: [0, 1],
-      region: { top: 0.34, bottom: 1.0 }, skipClear: true,
-    });
-  setLive("live_gc_pressure",
-    `<span class="label" style="color:${GC_GEN_COLORS[0]}">gen0</span> ` +
-    `<span class="label" style="color:${GC_GEN_COLORS[1]}">gen1</span> ` +
-    `<span class="label" style="color:${GC_GEN_COLORS[2]}">gen2</span>`);
+  gcDrawOverhead(pressureCanvas, series, { windowSec });
+  // Live readout: per-series window-average overhead %, coloured to
+  // match each line on the chart.
+  const overheadWinFloor = gcNowSec() - windowSec;
+  const overheadLabels = [];
+  for (const s of series) {
+    let sum = 0;
+    for (const e of s.events) {
+      const t = e.fields.gc_event_start_stamp || e.t;
+      if (t < overheadWinFloor) continue;
+      sum += e.fields.gc_event_duration || 0;
+    }
+    const pct = (sum / windowSec) * 100;
+    overheadLabels.push(
+      `<span class="label" style="color:${s.color}">${s.label}</span>` +
+      `${pct.toFixed(2)}%`);
+  }
+  setLive("live_gc_pressure", overheadLabels.join(" "));
 
   // Collections per second: rate of cumulative gc_collections* over the
   // delta between successive snapshots.
