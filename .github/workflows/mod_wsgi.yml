@@ -17,15 +17,11 @@ jobs:
   build:
     name: "Build mod_wsgi packages"
     runs-on: "ubuntu-24.04"
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15-dev"]
     steps:
       - uses: "actions/checkout@v6"
       - uses: "actions/setup-python@v6"
         with:
-          python-version: "${{ matrix.python-version }}"
+          python-version: "3.12"
       - name: "Verify version matches tag"
         if: startsWith(github.ref, 'refs/tags/mod_wsgi-')
         run: |
@@ -48,7 +44,7 @@ jobs:
       - name: "Store built packages"
         uses: "actions/upload-artifact@v7"
         with:
-          name: dist ${{ matrix.python-version }}
+          name: dist
           path: dist/*
 
   tests:
@@ -68,7 +64,7 @@ jobs:
       - name: "Download built packages"
         uses: "actions/download-artifact@v8"
         with:
-            name: dist ${{ matrix.python-version }}
+            name: dist
             path: dist
       - name: "Update package details"
         run: sudo apt --fix-missing update
@@ -119,29 +115,14 @@ jobs:
       - name: "Download built packages"
         uses: "actions/download-artifact@v8"
         with:
-          # Merge every matrix entry's dist artifacts into one
-          # directory. The package builds sdist tarballs only (no
-          # wheels; the C code is compiled at user install time),
-          # and those sdists are byte-identical across matrix
-          # entries, so merge-multiple just overwrites duplicates.
-          pattern: "dist *"
+          name: dist
           path: dist
-          merge-multiple: true
 
       - name: "Generate SHA256SUMS"
         run: |
           cd dist
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
-
-      - name: "Store final release artifacts"
-        uses: "actions/upload-artifact@v7"
-        with:
-          # Snapshot the exact files that go on the GitHub release so
-          # the publish-to-PyPi jobs can pull from the same canonical
-          # set, rather than re-picking one matrix entry's dist.
-          name: release-dist
-          path: dist/*
 
       - name: "Write release notes body"
         run: |
@@ -237,12 +218,10 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - name: "Download final release artifacts"
+      - name: "Download built packages"
         uses: "actions/download-artifact@v8"
         with:
-          # Use the exact same artifact set attached to the GitHub
-          # release, so PyPi and the release page cannot disagree.
-          name: release-dist
+          name: dist
           path: dist
       - name: "Stage mod_wsgi sdist only"
         run: |
@@ -264,10 +243,10 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - name: "Download final release artifacts"
+      - name: "Download built packages"
         uses: "actions/download-artifact@v8"
         with:
-          name: release-dist
+          name: dist
           path: dist
       - name: "Stage mod_wsgi-standalone sdist only"
         run: |
