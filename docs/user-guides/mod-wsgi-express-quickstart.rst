@@ -13,7 +13,7 @@ This page picks up from :doc:`../getting-started`, which already
 covers the first-run "Hello world" with ``mod_wsgi-express
 start-server``. Here the focus is on the operational shape:
 common options, running on privileged ports, dealing with
-non-standard Apache layouts, the Django integration, and using
+non-standard Apache layouts, Django and Flask integration, and using
 ``mod_wsgi-express`` under a process supervisor or in a
 container.
 
@@ -613,6 +613,26 @@ equivalent of ``setup-server`` is ``--setup-only``::
 
 The generated ``apachectl`` is then used in the same way as for
 the standalone ``setup-server`` flow.
+
+Flask integration
+-----------------
+
+Flask applications work with ``mod_wsgi-express`` the same way
+any other WSGI application does, with one convention difference:
+the WSGI callable on a Flask application is conventionally named
+``app`` rather than ``application``. ``mod_wsgi-express`` defaults
+to looking up ``application`` on the loaded module, so a Flask
+application needs the ``--callable-object`` option to point at
+the right attribute::
+
+    mod_wsgi-express start-server app.py --callable-object app
+
+This is the ``mod_wsgi-express`` equivalent of setting
+``WSGICallableObject app`` in a hand-written Apache configuration.
+Either rename the Flask object to ``application`` in the source
+file, or pass ``--callable-object app`` (or
+``WSGICallableObject app`` in manual configuration) to keep the
+Flask-conventional name.
 
 Process supervisors and containers
 ----------------------------------
