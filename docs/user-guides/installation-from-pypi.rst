@@ -164,12 +164,22 @@ PyPI bundles a private Apache install of its own::
 
     pip install mod_wsgi-standalone
 
+The bundled Apache is supplied by a companion ``mod_wsgi-httpd``
+package which builds and installs the httpd server inside the
+Python environment. You should never need to install
+``mod_wsgi-httpd`` yourself: ``mod_wsgi-standalone`` declares it as
+a dependency and ``pip`` will pull in a compatible version
+automatically.
+
 This is a niche option, intended for environments where adding
-Apache as a system package is not practical. Only
-``mod_wsgi-express`` is usable from a ``mod_wsgi-standalone``
-install — the bundled Apache cannot be used to host non-mod_wsgi
-workloads. ``mod_wsgi-standalone`` follows the same release version
-numbering as the regular ``mod_wsgi`` package on PyPI.
+Apache as a system package is not practical. It can also be useful
+when building Docker images from a base image that does not include
+Apache, since installing ``mod_wsgi-standalone`` avoids having to
+add a system Apache to the image. Only ``mod_wsgi-express`` is
+usable from a ``mod_wsgi-standalone`` install: the bundled Apache
+cannot be used to host non-mod_wsgi workloads. ``mod_wsgi-standalone``
+follows the same release version numbering as the regular
+``mod_wsgi`` package on PyPI.
 
 Where to go next
 ----------------
