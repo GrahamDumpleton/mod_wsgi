@@ -40,8 +40,8 @@ Diagnosing problems
    user-guides/debugging-techniques
    user-guides/frequently-asked-questions
 
-Concepts and advanced topics
-----------------------------
+Beyond the basics
+-----------------
 
 .. toctree::
    :maxdepth: 1
