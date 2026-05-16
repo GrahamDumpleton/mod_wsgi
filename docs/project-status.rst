@@ -21,8 +21,6 @@ ongoing themes include:
 * Opt-in support for Python's evolving concurrency models: the
   per-interpreter GIL (PEP 684) and free-threaded Python (PEP 703).
 * Reliability improvements, such as the v6 request-timeout machinery.
-* Bringing this documentation up to date and giving it a clearer
-  structure.
 * Worked examples of using AI tooling to help tune Apache and mod_wsgi
   configuration for a particular workload.
 
@@ -74,12 +72,3 @@ archive of past discussions but is no longer active and should not be
 used for new questions.
 
 See also :doc:`finding-help` and :doc:`reporting-bugs`.
-
-Documentation
--------------
-
-The documentation is in the middle of a structural refresh. Some older
-pages still reflect earlier conventions or older Python and mod_wsgi
-versions; these are being updated incrementally. The
-:doc:`release-notes` are kept current with each release and are the
-most reliable record of recent behavioural changes.
