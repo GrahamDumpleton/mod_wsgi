@@ -23,9 +23,8 @@ Two ways to use mod_wsgi
 * As **mod_wsgi-express**, a pip-installable Python package that wraps
   Apache and mod_wsgi behind a single command and generates the Apache
   configuration for you. This is the recommended path for Docker
-  containers and for running mod_wsgi during development. Documentation
-  for mod_wsgi-express currently lives at
-  https://pypi.python.org/pypi/mod_wsgi.
+  containers and for running mod_wsgi during development. See
+  :doc:`user-guides/mod-wsgi-express-quickstart`.
 
 Both approaches are suitable for production use.
 
