@@ -50,6 +50,7 @@ Beyond the basics
    user-guides/mod-wsgi-python-module
    user-guides/processes-and-threading
    user-guides/embedded-and-daemon-mode
+   user-guides/gil-modes-and-free-threading
    user-guides/request-pipeline
    user-guides/reloading-source-code
    user-guides/virtual-environments

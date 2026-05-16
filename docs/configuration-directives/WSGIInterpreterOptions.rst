@@ -20,6 +20,10 @@ Example::
       WSGIPythonPath /opt/app1/lib
   </WSGIInterpreterOptions>
 
+For the GIL-mode side of this container's behaviour, including
+worked examples mixing modes across processes, see
+:doc:`../user-guides/gil-modes-and-free-threading`.
+
 Selectors
 ---------
 

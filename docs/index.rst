@@ -40,11 +40,15 @@ Where to start
 * Want a live monitoring UI alongside your mod_wsgi install? See
   :doc:`user-guides/external-telemetry-service`, which uses the
   separately distributed ``mod_wsgi-telemetry`` ingester on PyPI.
+* Curious about per-interpreter GIL or free-threaded Python (PEP 684,
+  PEP 703)? See :doc:`user-guides/gil-modes-and-free-threading`.
 * Looking up a specific ``WSGIxxx`` directive? See :doc:`configuration`.
 * Saw a ``WSGI####`` error code in your logs? See
   :doc:`error-reference`.
 * Stuck or have a question? See :doc:`troubleshooting` and
   :doc:`finding-help`.
+* Want to learn more about other things mod_wsgi offers or can do?
+  See the :doc:`user-guides`.
 
 .. _WSGI: https://peps.python.org/pep-3333/
 

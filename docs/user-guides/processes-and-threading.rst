@@ -233,15 +233,14 @@ across processes.
 
 Recent Python releases have introduced two mechanisms that affect this
 picture: per-interpreter GIL state under PEP 684 (Python 3.12), where
-each Python sub interpreter gets its own GIL rather than sharing one;
-and optional free-threading under PEP 703 (Python 3.13), where the
-GIL can be disabled entirely. Neither is currently usable from
-mod_wsgi — the existing sub interpreter integration assumes the
-shared-GIL model — but support is being investigated. For the
-foreseeable future, GIL contention within a process should still be
-managed by running multiple processes (whether Apache child processes
-or mod_wsgi daemon processes) rather than relying on either of those
-new mechanisms.
+each Python sub interpreter can be given its own GIL rather than
+sharing one; and optional free-threading under PEP 703 (Python 3.13),
+where the GIL can be disabled entirely for a process. mod_wsgi
+supports both as opt-in modes; see :doc:`gil-modes-and-free-threading` for
+the model, scoping rules, and worked configuration examples.
+Shared-GIL with multiple processes (Apache child processes or
+mod_wsgi daemon processes) remains the right default for most
+deployments.
 
 For the typical 'worker' configuration where multiple processes and
 multiple threads are used, the WSGI environment key/value pairs indicating

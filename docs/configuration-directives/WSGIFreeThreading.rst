@@ -15,6 +15,10 @@ initialisation time; it cannot be scoped to a single sub interpreter.
 mod_wsgi forces the GIL on by default even on a free-threaded Python
 build. Free-threading is opt-in per process via this directive.
 
+For background on the three GIL modes mod_wsgi supports and worked
+examples mixing them across processes, see
+:doc:`../user-guides/gil-modes-and-free-threading`.
+
 To enable free-threading for every process where mod_wsgi initialises
 Python (the embedded interpreter and every daemon process group), set
 the directive at server config scope::

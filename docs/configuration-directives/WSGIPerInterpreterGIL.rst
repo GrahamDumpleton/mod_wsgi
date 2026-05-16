@@ -12,6 +12,10 @@ their own GIL, as introduced by PEP 684 in Python 3.12. When set to
 ``On``, each sub interpreter runs with its own independent GIL rather
 than sharing the process-wide GIL with every other interpreter.
 
+For background on the three GIL modes mod_wsgi supports and worked
+examples mixing them across processes, see
+:doc:`../user-guides/gil-modes-and-free-threading`.
+
 To enable per-interpreter GIL process-wide, set the directive at server
 config scope::
 
