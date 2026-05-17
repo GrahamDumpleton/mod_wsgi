@@ -474,34 +474,46 @@ Auditing checklist:
 Using these directives under mod_wsgi-express
 =============================================
 
-``mod_wsgi-express`` does not have first-class command
-line options for ``WSGIFreeThreading``,
-``WSGIPerInterpreterGIL`` or
-``WSGIInterpreterOptions``. The supported path is
+``mod_wsgi-express`` has a first-class
+``--free-threading`` flag for ``WSGIFreeThreading``.
+For ``WSGIPerInterpreterGIL`` and
+``WSGIInterpreterOptions`` the supported path is
 ``--include-file``, which appends a file of Apache
 directives at the end of the generated configuration.
 ``--include-file`` is repeatable, so several
-fragments can be combined.
+fragments can be combined, and it remains the way to
+apply ``WSGIFreeThreading`` when it needs to be
+scoped to a specific process group rather than the
+whole instance.
 
 Free-threading
 --------------
 
-A one-line include file::
-
-    # /tmp/freethreading.conf
-    WSGIFreeThreading On
-
-invoked as::
+The simplest form uses the dedicated flag::
 
     mod_wsgi-express start-server wsgi.py \
         --processes 1 --threads 30 \
-        --include-file /tmp/freethreading.conf
+        --free-threading
 
 ``mod_wsgi-express`` always creates one daemon process
-group, so a top-level ``WSGIFreeThreading On`` applies
-to both that daemon group and the embedded interpreter
-the Apache child uses for any auth or dispatch
-scripts.
+group, so ``--free-threading`` emits a top-level
+``WSGIFreeThreading On`` that applies to both that
+daemon group and the embedded interpreter the Apache
+child uses for any auth or dispatch scripts.
+
+If the running Python interpreter is not a
+free-threaded build (``Py_GIL_DISABLED`` not set),
+``mod_wsgi-express`` fails at configuration time with
+a message naming the requirement, rather than
+silently generating a directive that the resulting
+Apache process will warn about and ignore.
+
+For finer-grained scoping (free-threading for one
+named daemon group only, or for the embedded
+interpreter only) use an include file with an
+explicit ``<WSGIInterpreterOptions>`` container; see
+`Scoped configuration via WSGIInterpreterOptions`_
+below.
 
 Per-interpreter GIL
 -------------------

@@ -317,6 +317,10 @@ WSGISlowRequests %(slow_requests)s
 WSGISwitchInterval %(switch_interval)s
 </IfDefine>
 
+<IfDefine MOD_WSGI_FREE_THREADING>
+WSGIFreeThreading On
+</IfDefine>
+
 <IfDefine MOD_WSGI_TELEMETRY_OPTIONS>
 %(telemetry_options)s
 </IfDefine>

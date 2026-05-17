@@ -5,6 +5,7 @@ import math
 import os
 import posixpath
 import sys
+import sysconfig
 import tempfile
 
 from . import apxs_config
@@ -396,6 +397,13 @@ def setup_server(command, args, options):
         options['switch_interval'] = ''
         options['daemon_switch_interval_option'] = ''
 
+    if options['free_threading']:
+        if not sysconfig.get_config_var('Py_GIL_DISABLED'):
+            raise ConfigurationError(
+                "--free-threading requires a Python build with "
+                "free-threading support (PEP 703). Rebuild Python "
+                "with --disable-gil to use it.")
+
     if options['handler_scripts']:
         handler_scripts = []
         for extension, script in options['handler_scripts']:
@@ -781,6 +789,8 @@ def setup_server(command, args, options):
         options['httpd_arguments_list'].append('-DMOD_WSGI_SLOW_REQUESTS')
     if options['switch_interval'] != '':
         options['httpd_arguments_list'].append('-DMOD_WSGI_SWITCH_INTERVAL')
+    if options['free_threading']:
+        options['httpd_arguments_list'].append('-DMOD_WSGI_FREE_THREADING')
     if options['telemetry_options']:
         options['httpd_arguments_list'].append('-DMOD_WSGI_TELEMETRY_OPTIONS')
         options['telemetry_options'] = '\n'.join(

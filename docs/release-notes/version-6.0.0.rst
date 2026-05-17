@@ -60,7 +60,10 @@ New Features
   are imported anyway under mod_wsgi's explicit
   ``_PyConfig_GIL_DISABLE`` but CPython logs a per-extension
   warning to flag that they have not been audited for the no-GIL
-  runtime.
+  runtime. ``mod_wsgi-express`` exposes ``--free-threading``
+  which emits the top-level ``WSGIFreeThreading On`` directive
+  and fails at configuration time if the running Python is not a
+  free-threaded build.
 
 * ``request-timeout`` recovery overhauled, with a new ``interrupt-timeout``
   option for opt-in injection-based recovery, a new natural-log scaling

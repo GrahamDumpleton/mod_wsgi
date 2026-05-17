@@ -391,6 +391,44 @@ script source file. See the
 :doc:`../configuration-directives/WSGIPerInterpreterGIL`
 directive page for a worked example.
 
+Free-threaded Python
+--------------------
+
+A single option opts the express instance into
+running Python with the GIL disabled (PEP 703).
+See :doc:`gil-modes-and-free-threading` for the
+broader context, including when free-threading is
+the right choice and how it compares to
+per-interpreter GIL.
+
+``--free-threading``
+    Emit a top-level
+    :doc:`../configuration-directives/WSGIFreeThreading`
+    ``On`` in the generated configuration so the
+    Python interpreter runs without the GIL (PEP 703).
+    Applies to both the single daemon process group
+    Express creates and the embedded interpreter the
+    Apache child uses for any auth or dispatch
+    scripts.
+
+    Requires a Python build configured with
+    ``--disable-gil`` (typically distributed as
+    ``python3.13t``, ``python3.14t``, and so on). If
+    the running Python is not such a build,
+    ``mod_wsgi-express`` exits at configuration time
+    with an explanatory error rather than emitting a
+    directive that the Apache process would warn
+    about and ignore.
+
+    For finer-grained scoping (free-threading for one
+    process only, or for the embedded interpreter
+    only), use ``--include-file`` with an explicit
+    ``<WSGIInterpreterOptions process-group=...>``
+    container; see
+    :doc:`gil-modes-and-free-threading` for the full
+    set of recipes and a comparison with the
+    per-interpreter GIL alternative.
+
 Environment plumbing
 --------------------
 

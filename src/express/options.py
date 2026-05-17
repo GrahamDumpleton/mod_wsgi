@@ -558,6 +558,13 @@ add_option('all', '--switch-interval', type='float', default=None,
         'switch-interval option on WSGIDaemonProcess. Defaults to '
         'Python\'s built-in 0.005 (5 ms) when unset.')
 
+add_option('all', '--free-threading', action='store_true', default=False,
+        help='Emit WSGIFreeThreading On in the generated configuration to '
+        'run the Python interpreter without the GIL. Requires a Python '
+        'build with free-threading support (PEP 703, --disable-gil); '
+        'mod_wsgi-express will exit with an error if the running Python '
+        'does not support it.')
+
 add_option('all', '--telemetry-options', action='append', default=[],
         metavar='ARGS', help='Apache-Options-style metrics-capture '
         'toggle, passed verbatim to a WSGITelemetryOptions directive in '
