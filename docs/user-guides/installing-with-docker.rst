@@ -132,6 +132,69 @@ Then::
 
 should return ``Hello world!``.
 
+Alternative: install mod_wsgi-standalone
+----------------------------------------
+
+The Dockerfile above relies on the base image's package manager
+to install Apache and its development headers before
+``pip install mod_wsgi`` can compile the module against them.
+For base images that ship Python but where adding a system
+Apache is undesirable (or where the distro Apache is too old or
+unavailable), the ``mod_wsgi-standalone`` package on PyPI
+bundles a private Apache install of its own. mod_wsgi-express
+then runs against that bundled Apache instead of one supplied by
+the OS.
+
+The same Dockerfile shape, with no system Apache::
+
+    FROM python:3.12-slim
+
+    RUN apt-get update \
+     && apt-get install -y --no-install-recommends \
+            build-essential libexpat1-dev \
+     && rm -rf /var/lib/apt/lists/*
+
+    RUN pip install --no-cache-dir mod_wsgi-standalone
+
+    RUN useradd --create-home --shell /usr/sbin/nologin app
+    USER app
+    WORKDIR /home/app
+
+    COPY --chown=app:app hello.py /home/app/hello.py
+
+    EXPOSE 8000
+
+    CMD ["mod_wsgi-express", "start-server", "/home/app/hello.py", \
+         "--port=8000", \
+         "--log-to-terminal"]
+
+``mod_wsgi-standalone`` pulls in the companion ``mod_wsgi-httpd``
+package, which downloads and compiles Apache, APR, APR-util and
+PCRE from source inside the Python environment. The system
+packages installed here are the build toolchain
+(``build-essential``) and ``libexpat1-dev`` (needed by APR-util);
+``apache2`` and ``apache2-dev`` are no longer needed.
+
+Trade-off versus the system-Apache example: building
+``mod_wsgi-httpd`` from source takes several minutes the first
+time, so ``docker build`` is noticeably slower than the
+system-package variant. The resulting image is self-contained
+(no reliance on the distro's Apache version), at the cost of
+that one-time build. For repeated builds the ``mod_wsgi-httpd``
+layer caches like any other, so only the first build pays the
+full compilation cost.
+
+Only ``mod_wsgi-express`` is usable from a
+``mod_wsgi-standalone`` install; the bundled Apache cannot host
+non-mod_wsgi workloads. For all other purposes the resulting
+container behaves identically to the system-Apache variant
+above, including the PID 1 reaping and signal handling described
+earlier.
+
+See :doc:`installation-from-pypi` for the broader context on
+``mod_wsgi-standalone`` and when to reach for it outside the
+container case.
+
 Exposing a privileged port
 --------------------------
 
