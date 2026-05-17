@@ -2917,13 +2917,13 @@ static PyObject *wsgi_server_metrics(void)
 
     if (!wsgi_daemon_pool)
     {
-        if (!wsgi_server_config->server_metrics)
+        if (wsgi_server_config->server_metrics != 1)
             Py_RETURN_NONE;
     }
 #if defined(MOD_WSGI_WITH_DAEMONS)
     else
     {
-        if (!wsgi_daemon_process->group->server_metrics)
+        if (wsgi_daemon_process->group->server_metrics != 1)
             Py_RETURN_NONE;
     }
 #endif
