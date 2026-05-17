@@ -496,3 +496,21 @@ Bugs Fixed
   while the wedged worker was in a sub-interpreter. The escalation site
   now records which application group triggered the timeout and the
   dump scopes itself to that interpreter.
+
+* Fixed the effective default of ``WSGIMapHEADToGET`` when the directive
+  is not set anywhere in the Apache configuration. The documented
+  default is ``Auto``, but the server-config initialiser left the
+  underlying field at ``0`` (``Off``) rather than the ``-1`` "not set"
+  sentinel that the per-request merge code expects, so the hardcoded
+  ``Auto`` fallback was unreachable and the effective default was
+  ``Off``. The same initialiser also prevented a base-server
+  ``WSGIMapHEADToGET`` setting from being inherited by a virtual host
+  that did not set the directive itself, because the base-to-vhost
+  merge treated every fresh vhost server config as having an explicit
+  ``Off``. The field is now initialised to the ``-1`` sentinel so the
+  documented ``Auto`` default applies when the directive is omitted
+  and a base-server setting propagates into vhosts that do not
+  override it. Only manually-written Apache configurations are
+  affected; ``mod_wsgi-express`` always emits ``WSGIMapHEADToGET``
+  explicitly (defaulting to ``Auto`` via ``--map-head-to-get``) so
+  generated configurations were never exposed to the latent default.

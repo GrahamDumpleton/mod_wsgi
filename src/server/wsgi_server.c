@@ -128,7 +128,7 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->script_reloading = -1;
     object->error_override = -1;
     object->chunked_request = -1;
-    object->map_head_to_get = 0;
+    object->map_head_to_get = -1;
     object->ignore_activity = -1;
 
     object->trusted_proxy_headers = NULL;
