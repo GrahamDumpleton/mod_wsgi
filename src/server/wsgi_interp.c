@@ -1687,8 +1687,6 @@ failure:
 static void wsgi_destroy_interpreter(InterpreterObject *self)
 {
     PyThreadState *tstate = NULL;
-    PyObject *module = NULL;
-    PyObject *exitfunc = NULL;
 
     PyThreadState *tstate_enter = NULL;
 
@@ -1768,87 +1766,6 @@ static void wsgi_destroy_interpreter(InterpreterObject *self)
                               wsgi_format_process_context(
                                   wsgi_server->process->pool));
     }
-
-#if 0
-    /*
-     * Disabled: Py_EndInterpreter on Python 3.7+ runs the
-     * threading._shutdown atexit hook itself during sub-interpreter
-     * teardown, so the destroy thread no longer needs to be
-     * pre-registered in threading._active for that hook to find a
-     * Thread handle. Left in #if 0 so the original rationale and
-     * call shape are recoverable if a regression turns up.
-     */
-
-    module = PyImport_ImportModule("threading");
-
-    if (!module)
-        PyErr_Clear();
-
-    if (module)
-    {
-        PyObject *dict = NULL;
-        PyObject *func = NULL;
-
-        dict = PyModule_GetDict(module);
-        func = PyDict_GetItemString(dict, "current_thread");
-        if (func)
-        {
-            PyObject *res = NULL;
-            Py_INCREF(func);
-            res = PyObject_CallObject(func, (PyObject *)NULL);
-            if (!res)
-            {
-                PyErr_Clear();
-            }
-            Py_XDECREF(res);
-            Py_DECREF(func);
-        }
-    }
-
-    Py_XDECREF(module);
-#endif
-
-#if 0
-    /*
-     * Disabled: Py_EndInterpreter on Python 3.7+ calls
-     * _PyAtExit_Call on the sub-interpreter itself, so driving
-     * atexit._run_exitfuncs here just runs every callback twice
-     * (atexit does not deregister as it calls). Left in #if 0 so
-     * the original call shape is recoverable.
-     */
-
-    module = NULL;
-
-    if (is_sub)
-    {
-        module = PyImport_ImportModule("atexit");
-
-        if (module)
-        {
-            PyObject *dict = NULL;
-
-            dict = PyModule_GetDict(module);
-            exitfunc = PyDict_GetItemString(dict, "_run_exitfuncs");
-        }
-        else
-            PyErr_Clear();
-    }
-
-    if (exitfunc)
-    {
-        PyObject *res = NULL;
-        Py_INCREF(exitfunc);
-        res = PyObject_CallObject(exitfunc, (PyObject *)NULL);
-
-        if (res == NULL)
-            wsgi_log_python_interp_atexit_error(self->name);
-
-        Py_XDECREF(res);
-        Py_DECREF(exitfunc);
-    }
-
-    Py_XDECREF(module);
-#endif
 
     if (is_sub)
     {
