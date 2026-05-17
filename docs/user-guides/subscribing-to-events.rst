@@ -287,7 +287,17 @@ thread sitting in an unconditional loop with no shutdown
 signal will hang the process at that point.
 
 ``shutdown_reason``
-   String describing what triggered the shutdown. One of:
+   String describing what triggered the shutdown. The reasons
+   listed below apply only to daemon-mode processes, where
+   mod_wsgi owns the signal handlers and the lifecycle limits
+   and so can identify the trigger. In embedded mode, Apache
+   controls the child process lifecycle directly and mod_wsgi
+   has no visibility into the cause, so ``shutdown_reason`` is
+   always the empty string ``""``. The event itself still fires
+   once per embedded-mode process, when Apache shuts the child
+   down.
+
+   In daemon mode the value is one of:
 
    ``"shutdown_signal"``
       SIGTERM (Apache stop or restart).
