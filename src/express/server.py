@@ -11,7 +11,10 @@ import tempfile
 from . import apxs_config
 from .platform import find_program, MOD_WSGI_SO, PYTHON_DYLIB
 from .apache import generate_apache_config
-from .scripts import generate_wsgi_handler_script, generate_control_scripts
+from .scripts import (
+    generate_wsgi_handler_script, generate_control_scripts,
+    generate_telemetry_service_script,
+)
 
 def _mpm_module_defines(modules_directory, preferred=None):
     if os.name == 'nt':
@@ -367,6 +370,41 @@ def setup_server(command, args, options):
         options['server_metrics_flag'] = 'On'
     else:
         options['server_metrics_flag'] = 'Off'
+
+    if options['enable_telemetry']:
+        if options['telemetry_service']:
+            raise ConfigurationError(
+                "--enable-telemetry and --telemetry-service are "
+                "mutually exclusive: --enable-telemetry generates an "
+                "ingester service and points the WSGI processes at "
+                "it, so an explicit telemetry target would conflict.")
+
+        try:
+            import mod_wsgi.telemetry.server  # noqa: F401
+        except ImportError:
+            raise ConfigurationError(
+                "--enable-telemetry requires the mod_wsgi-telemetry "
+                "package: install it with "
+                "'pip install mod_wsgi-telemetry'.")
+
+        for name, _ in options['service_scripts'] or []:
+            if name == 'telemetry':
+                raise ConfigurationError(
+                    "--enable-telemetry generates a service named "
+                    "'telemetry'; rename the conflicting "
+                    "--service-script entry or drop "
+                    "--enable-telemetry.")
+
+        socket_path = posixpath.join(options['server_root'],
+                                     'telemetry.sock')
+        options['telemetry_socket'] = socket_path
+        options['telemetry_service'] = 'unix:%s' % socket_path
+
+        script_path = posixpath.join(options['server_root'],
+                                     'telemetry-service.py')
+        options['service_scripts'] = list(
+            options['service_scripts'] or [])
+        options['service_scripts'].append(('telemetry', script_path))
 
     if options['telemetry_service']:
         target = options['telemetry_service']
@@ -865,6 +903,9 @@ def setup_server(command, args, options):
             ' '.join(options['httpd_arguments_list']))
 
     generate_wsgi_handler_script(options)
+
+    if options['enable_telemetry']:
+        generate_telemetry_service_script(options)
 
     print('Server URL         :', options['url'])
 

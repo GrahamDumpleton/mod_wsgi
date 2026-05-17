@@ -127,7 +127,15 @@ New Features
   per-request slow-record reporting alongside the periodic
   samples. ``mod_wsgi-express`` exposes matching
   ``--telemetry-service``, ``--telemetry-interval``,
-  ``--telemetry-options`` and ``--slow-requests`` options. See
+  ``--telemetry-options`` and ``--slow-requests`` options, plus
+  the all-in-one ``--enable-telemetry`` shortcut which generates
+  a service-script daemon that runs the ingester (and its web UI
+  on ``127.0.0.1:<--telemetry-ui-port>``, default ``8888``)
+  alongside the WSGI application and wires the matching
+  ``WSGITelemetryService`` directive automatically. Service-script
+  daemons (``WSGIDaemonProcess threads=0``) skip the telemetry
+  reporter entirely, so an ingester-hosting service script does
+  not feed back into itself. See
   :doc:`../user-guides/external-telemetry-service` for the full
   setup, including socket-permission handling for the recommended
   multi-user deployment.

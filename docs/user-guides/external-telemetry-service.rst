@@ -196,6 +196,59 @@ The equivalent of the manual configuration above::
         --telemetry-options "+CaptureUserAgent" \
         --slow-requests 2.0
 
+All-in-one shortcut: --enable-telemetry
+---------------------------------------
+
+For the common single-host case where the ingester runs alongside
+the WSGI application managed by the same ``mod_wsgi-express``
+instance, ``--enable-telemetry`` bundles the moving parts
+together:
+
+* Picks a UNIX socket path inside the server root
+  (``<server-root>/telemetry.sock``).
+* Generates a service-script (``<server-root>/telemetry-service.py``)
+  that invokes ``mod_wsgi.telemetry.server.main(...)`` with that
+  socket path.
+* Adds a ``WSGIDaemonProcess service:telemetry threads=0`` +
+  ``WSGIImportScript`` pair so Apache supervises the ingester
+  alongside the WSGI workers.
+* Adds the matching ``WSGITelemetryService`` directive so the WSGI
+  processes report into that socket.
+* Exposes the web UI on ``127.0.0.1`` at the port given by
+  ``--telemetry-ui-port`` (default ``8888``).
+
+Equivalent to the manual example above::
+
+    mod_wsgi-express start-server wsgi.py \
+        --processes 2 --threads 15 \
+        --enable-telemetry \
+        --telemetry-interval 1.0 \
+        --telemetry-options "+CaptureUserAgent" \
+        --slow-requests 2.0
+
+The web UI is reachable at ``http://127.0.0.1:8888/`` once the
+server has started; two express instances on the same host need
+distinct ``--telemetry-ui-port`` values to avoid a bind collision.
+
+``--enable-telemetry`` is mutually exclusive with
+``--telemetry-service`` (the auto-generated socket would conflict
+with an explicit target) and with a user-supplied
+``--service-script telemetry ...`` (name clash). Both are
+rejected at configuration time. The shortcut also requires the
+``mod_wsgi-telemetry`` package to be importable; if it is not,
+``mod_wsgi-express`` exits with a message naming the dependency.
+
+The service-script daemon runs with ``threads=0``, which mod_wsgi
+treats as "service only": no per-request metrics are accumulated
+in that process and no telemetry reporter thread is started, so
+the ingester does not report telemetry about itself to itself.
+
+``Running the ingester`` below covers the manual flow for
+deployments where the ingester is *not* supervised by
+``mod_wsgi-express`` (separate host, separate user, separate
+release cadence). When the all-in-one shortcut fits, the manual
+ingester install is not needed.
+
 Running the ingester
 --------------------
 

@@ -540,10 +540,25 @@ add_option('all', '--telemetry-service', metavar='TARGET',
         'ingester). Remote "udp:host:port" targets are not supported. '
         'Off by default.')
 
+add_option('unix', '--enable-telemetry', action='store_true', default=False,
+        help='Bundle a telemetry ingester and web UI alongside the WSGI '
+        'application. Generates a service-script daemon that runs the '
+        'mod_wsgi-telemetry ingester on a UNIX socket inside the server '
+        'root and emits WSGITelemetryService pointing at that socket so '
+        'the WSGI processes report to it. Requires the mod_wsgi-telemetry '
+        'package to be installed. Mutually exclusive with '
+        '--telemetry-service.')
+
+add_option('unix', '--telemetry-ui-port', type='int', default=8888,
+        metavar='NUMBER', help='HTTP port the telemetry web UI binds to '
+        'on 127.0.0.1 when --enable-telemetry is set. Defaults to '
+        '%default. Two express instances on the same host need distinct '
+        'ports to avoid a bind collision.')
+
 add_option('all', '--telemetry-interval', type='float', default=1.0,
         metavar='SECONDS', help='Metrics reporter sampling interval '
-        'in seconds. Only applies when --telemetry-service is set. '
-        'Defaults to %default.')
+        'in seconds. Only applies when --telemetry-service or '
+        '--enable-telemetry is set. Defaults to %default.')
 
 add_option('all', '--slow-requests', type='float', default=None,
         metavar='SECONDS', help='Enable slow-request reporting and set '

@@ -2991,9 +2991,15 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
         }
     }
 
-    /* Start telemetry reporter if configured. */
+    /*
+     * Start telemetry reporter if configured. Skip for service-script
+     * daemons (threads=0): they handle no requests, so there is
+     * nothing to accumulate, and an ingester-hosting service script
+     * would otherwise report telemetry datagrams to itself.
+     */
 
-    wsgi_telemetry_start_reporter(p);
+    if (daemon->group->threads != 0)
+        wsgi_telemetry_start_reporter(p);
 
     /* Initialise worker stack. */
 

@@ -505,6 +505,66 @@ wasteful (double compression and decompression at
 the proxy), so enable this flag only when the
 express instance is the front-line server.
 
+Telemetry
+---------
+
+mod_wsgi can stream per-process telemetry to a local
+ingester for live monitoring. Express has two ways
+to wire this up: the manual form (point the WSGI
+processes at an ingester running somewhere else) and
+the all-in-one shortcut (express runs the ingester
+alongside the WSGI application). See
+:doc:`external-telemetry-service` for the protocol,
+sample format and ingester architecture.
+
+``--enable-telemetry``
+    Bundle the ingester and its web UI into the
+    express instance. Express generates a service
+    script under the server root that runs the
+    ingester (via the ``mod_wsgi-telemetry`` package)
+    in a ``WSGIDaemonProcess threads=0`` service
+    daemon, emits the matching ``WSGITelemetryService``
+    directive so the WSGI processes report into the
+    auto-derived socket, and exposes the web UI on
+    ``127.0.0.1`` at the port given by
+    ``--telemetry-ui-port``.
+
+    Requires the ``mod_wsgi-telemetry`` package to be
+    installed. Mutually exclusive with
+    ``--telemetry-service`` and with a user-supplied
+    ``--service-script telemetry ...``.
+
+``--telemetry-ui-port NUMBER``
+    HTTP port the telemetry web UI binds to on
+    ``127.0.0.1`` when ``--enable-telemetry`` is
+    set. Defaults to ``8888``. Distinct values are
+    needed when running more than one telemetry-
+    enabled express instance on the same host.
+
+``--telemetry-service TARGET``
+    Manual form: point the WSGI processes at an
+    ingester that is *not* supervised by this
+    express instance. ``TARGET`` is a
+    ``unix:/path/to/socket`` value; remote UDP
+    targets are not supported. Mutually exclusive
+    with ``--enable-telemetry``.
+
+``--telemetry-interval SECONDS``
+    Reporter sampling interval. Defaults to
+    ``1.0``. Applies to both forms.
+
+``--slow-requests SECONDS``
+    Threshold above which a still-running request
+    is reported. Requires either
+    ``--telemetry-service`` or
+    ``--enable-telemetry`` to also be set.
+
+``--telemetry-options ARGS``
+    Capture toggles passed verbatim to a
+    ``WSGITelemetryOptions`` directive in the
+    generated configuration. Repeatable. See the
+    directive page for the full set of toggles.
+
 Running on a privileged port
 ----------------------------
 
