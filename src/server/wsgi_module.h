@@ -63,6 +63,7 @@ typedef struct
     PyTypeObject *SignalIntercept_Type;
     PyTypeObject *ShutdownInterpreter_Type;
     PyTypeObject *Log_Type;
+    PyTypeObject *LogHandler_Type;
     PyTypeObject *Stream_Type;
     PyTypeObject *Dispatch_Type;
     PyTypeObject *Auth_Type;

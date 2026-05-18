@@ -742,10 +742,282 @@ static PyType_Spec Log_spec = {
 
 /* ------------------------------------------------------------------------- */
 
+/*
+ * Map a Python logging level (record.levelno) onto an Apache
+ * APLOG_* level for emission. Non-standard Python levels (custom
+ * levels, NOTSET, anything between the standards) round down to
+ * the next-lower APLOG_* level.
+ */
+
+static int wsgi_log_handler_apache_level(long python_level)
+{
+    if (python_level >= 50)
+        return APLOG_CRIT; /* CRITICAL */
+    if (python_level >= 40)
+        return APLOG_ERR; /* ERROR    */
+    if (python_level >= 30)
+        return APLOG_WARNING; /* WARNING  */
+    if (python_level >= 20)
+        return APLOG_INFO; /* INFO     */
+    return APLOG_DEBUG;    /* DEBUG, NOTSET, custom */
+}
+
+/*
+ * Return the request_rec the calling thread is currently
+ * handling, or NULL if the thread is not bound to a request
+ * (module init, background thread, shutdown). Reads the
+ * per-thread log_buffer stashed by the adapter at request
+ * dispatch time; if the buffer is unset or has been expired, no
+ * request is in flight.
+ */
+
+static request_rec *wsgi_log_handler_current_request(void)
+{
+    WSGIThreadInfo *thread_info;
+    LogObject *log_buffer;
+
+    thread_info = wsgi_thread_info(0, 0);
+    if (!thread_info || !thread_info->log_buffer)
+        return NULL;
+
+    log_buffer = (LogObject *)thread_info->log_buffer;
+    if (log_buffer->expired)
+        return NULL;
+
+    return log_buffer->r;
+}
+
+/*
+ * mod_wsgi.LogHandler is a Python logging.Handler subclass
+ * implemented in C that routes records through Apache's error
+ * log while preserving the Python log level. The Python levels
+ * CRITICAL / ERROR / WARNING / INFO / DEBUG map to Apache
+ * APLOG_CRIT / APLOG_ERR / APLOG_WARNING / APLOG_INFO /
+ * APLOG_DEBUG; non-standard Python levels round down to the
+ * next-lower APLOG_* level. Per record the handler consults the
+ * calling thread's WSGIThreadInfo to pick between ap_log_rerror
+ * (request-handling thread) and ap_log_error (module-init /
+ * background thread / shutdown), so the request decoration story
+ * matches the wsgi.errors stream.
+ *
+ * Records are filtered against the Apache per-server log level
+ * for the wsgi module, so operators control application output
+ * via the same `LogLevel wsgi:LEVEL` knob that gates mod_wsgi's
+ * own diagnostic messages. The Apache-side level acts as a
+ * ceiling on top of whatever Python-side filter the application
+ * has configured: records the application chose not to emit at
+ * all stay invisible regardless of the LogLevel ceiling.
+ *
+ * The type is created in wsgi_logger_init alongside the Log
+ * type and stored in WSGIModuleState as LogHandler_Type. It is
+ * exposed to Python as mod_wsgi.LogHandler.
+ *
+ * emit(record): apply the level map, fast-path against the
+ * Apache per-server level for the wsgi module so format() is
+ * skipped when Apache would discard the record, format via the
+ * inherited Handler API, then emit one Apache log record per
+ * newline-delimited segment of the formatted text. Pass through
+ * record.pathname / record.lineno so Apache's %F format
+ * directive reports the application call site, not the
+ * emit-site in this file. Delegate to self.handleError(record)
+ * on a formatting exception, matching the logging.Handler base
+ * contract.
+ */
+
+static PyObject *wsgi_log_handler_emit(PyObject *self, PyObject *record)
+{
+    PyObject *levelno_obj = NULL;
+    long python_level;
+    int apache_level;
+    request_rec *r;
+    server_rec *s;
+    int level_ok;
+    PyObject *msg = NULL;
+    Py_ssize_t msg_len;
+    const char *msg_str;
+    const char *p_segment;
+    const char *end;
+    PyObject *pathname_obj = NULL;
+    PyObject *lineno_obj = NULL;
+    const char *log_file = __FILE__;
+    int log_line = __LINE__;
+
+    levelno_obj = PyObject_GetAttrString(record, "levelno");
+    if (!levelno_obj)
+        return NULL;
+
+    python_level = PyLong_AsLong(levelno_obj);
+    Py_DECREF(levelno_obj);
+    if (python_level == -1 && PyErr_Occurred())
+        return NULL;
+
+    apache_level = wsgi_log_handler_apache_level(python_level);
+
+    r = wsgi_log_handler_current_request();
+    s = r ? r->server : wsgi_server;
+
+    /*
+     * Fast-path: skip the format() call entirely when Apache's
+     * per-server level for the wsgi module would discard the
+     * record. The format call can be expensive (interpolation,
+     * traceback rendering) so it is worth checking first.
+     * APLOG_MODULE_INDEX is the wsgi_module index resolved from
+     * this file's APLOG_USE_MODULE declaration.
+     */
+
+    if (r)
+        level_ok = APLOG_R_MODULE_IS_LEVEL(r, APLOG_MODULE_INDEX,
+                                           apache_level);
+    else
+        level_ok = APLOG_MODULE_IS_LEVEL(s, APLOG_MODULE_INDEX, apache_level);
+
+    if (!level_ok)
+        Py_RETURN_NONE;
+
+    msg = PyObject_CallMethod(self, "format", "O", record);
+    if (!msg)
+    {
+        PyObject *res;
+
+        /*
+         * Match logging.Handler's contract: a formatting failure
+         * is funnelled through self.handleError, which itself
+         * either prints to stderr or is silently swallowed
+         * depending on logging.raiseExceptions. Either way emit
+         * returns None, not an exception.
+         */
+
+        res = PyObject_CallMethod(self, "handleError", "O", record);
+        Py_XDECREF(res);
+        PyErr_Clear();
+        Py_RETURN_NONE;
+    }
+
+    msg_str = PyUnicode_AsUTF8AndSize(msg, &msg_len);
+    if (!msg_str)
+    {
+        Py_DECREF(msg);
+        return NULL;
+    }
+
+    /*
+     * Read the application's source location off the LogRecord
+     * so Apache's %F log format reports where the logger call
+     * was made, not the mod_wsgi emit-site. Logger.findCaller
+     * populates these attributes by walking the stack for the
+     * first frame outside the logging module. Defensive against
+     * a custom LogRecord that lacks them or that supplies the
+     * wrong type: fall back to wsgi_logger.c's own location.
+     *
+     * pathname_obj is kept alive across the emit loop because
+     * PyUnicode_AsUTF8 returns a pointer into the str object's
+     * internal storage; the pointer is invalidated when the str
+     * is freed.
+     */
+
+    pathname_obj = PyObject_GetAttrString(record, "pathname");
+    if (pathname_obj && PyUnicode_Check(pathname_obj))
+    {
+        const char *as_utf8 = PyUnicode_AsUTF8(pathname_obj);
+        if (as_utf8)
+            log_file = as_utf8;
+        else
+            PyErr_Clear();
+    }
+    else
+    {
+        PyErr_Clear();
+    }
+
+    lineno_obj = PyObject_GetAttrString(record, "lineno");
+    if (lineno_obj && PyLong_Check(lineno_obj))
+    {
+        long ll = PyLong_AsLong(lineno_obj);
+        if (ll != -1 || !PyErr_Occurred())
+            log_line = (int)ll;
+        else
+            PyErr_Clear();
+    }
+    else
+    {
+        PyErr_Clear();
+    }
+    Py_XDECREF(lineno_obj);
+
+    /*
+     * Walk newline-delimited segments and emit each as its own
+     * Apache log record. This matches the wsgi.errors stream's
+     * line-based emission so multi-line tracebacks render the
+     * same way regardless of which path they took. Each segment
+     * also gets its own 8 KiB Apache log buffer budget.
+     */
+
+    p_segment = msg_str;
+    end = msg_str + msg_len;
+    while (p_segment < end)
+    {
+        const char *line_end;
+        Py_ssize_t line_len;
+
+        line_end = memchr(p_segment, '\n', end - p_segment);
+        line_len = line_end ? (line_end - p_segment) : (end - p_segment);
+
+        if (r)
+        {
+            wsgi_log_rerror_locked_ex(log_file, log_line, APLOG_MODULE_INDEX,
+                                      apache_level, 0, r,
+                                      "%.*s", (int)line_len, p_segment);
+        }
+        else
+        {
+            wsgi_log_error_locked_ex(log_file, log_line, APLOG_MODULE_INDEX,
+                                     apache_level, 0, s,
+                                     "%.*s", (int)line_len, p_segment);
+        }
+
+        p_segment = line_end ? (line_end + 1) : end;
+    }
+
+    Py_XDECREF(pathname_obj);
+    Py_DECREF(msg);
+    Py_RETURN_NONE;
+}
+
+static PyMethodDef wsgi_log_handler_methods[] = {
+    {"emit", wsgi_log_handler_emit, METH_O,
+     "Emit a log record via the Apache error log."},
+    {NULL, NULL, 0, NULL}};
+
+/*
+ * PyType_Spec for the LogHandler heap type. basicsize=0 means
+ * the instance layout is inherited from the base class
+ * (logging.Handler), which is the only state the type carries.
+ * Py_TPFLAGS_BASETYPE leaves the door open for Python code to
+ * subclass mod_wsgi.LogHandler if there's ever a reason to.
+ */
+
+static PyType_Slot wsgi_log_handler_slots[] = {
+    {Py_tp_methods, wsgi_log_handler_methods},
+    {0, NULL},
+};
+
+static PyType_Spec wsgi_log_handler_spec = {
+    .name = "mod_wsgi.LogHandler",
+    .basicsize = 0,
+    .itemsize = 0,
+    .flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .slots = wsgi_log_handler_slots,
+};
+
+/* ------------------------------------------------------------------------- */
+
 int wsgi_logger_init(PyObject *module)
 {
     WSGIModuleState *state = NULL;
     PyObject *type = NULL;
+    PyObject *logging_module = NULL;
+    PyObject *handler_class = NULL;
+    PyObject *bases = NULL;
 
     state = (WSGIModuleState *)PyModule_GetState(module);
     if (!state)
@@ -756,6 +1028,42 @@ int wsgi_logger_init(PyObject *module)
         return -1;
 
     state->Log_Type = (PyTypeObject *)type;
+
+    /*
+     * Create the LogHandler heap type as a subclass of
+     * logging.Handler. PyType_FromModuleAndSpec accepts a bases
+     * tuple as its third argument; passing logging.Handler there
+     * lets us inherit setFormatter, setLevel, addFilter,
+     * handleError, and the __init__ that accepts a level. The
+     * only method this type overrides is emit().
+     */
+
+    logging_module = PyImport_ImportModule("logging");
+    if (!logging_module)
+        return -1;
+
+    handler_class = PyObject_GetAttrString(logging_module, "Handler");
+    Py_DECREF(logging_module);
+    if (!handler_class)
+        return -1;
+
+    bases = PyTuple_Pack(1, handler_class);
+    Py_DECREF(handler_class);
+    if (!bases)
+        return -1;
+
+    type = PyType_FromModuleAndSpec(module, &wsgi_log_handler_spec, bases);
+    Py_DECREF(bases);
+    if (!type)
+        return -1;
+
+    if (PyModule_AddObjectRef(module, "LogHandler", type) < 0)
+    {
+        Py_DECREF(type);
+        return -1;
+    }
+
+    state->LogHandler_Type = (PyTypeObject *)type;
 
     return 0;
 }

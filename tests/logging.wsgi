@@ -1,6 +1,8 @@
 import logging
 import warnings
 
+import mod_wsgi
+
 # Apache already decorates every error-log entry with a timestamp,
 # log level, pid/tid, and (for in-request emissions) the remote and
 # script tags. The Python logging format here omits the timestamp
@@ -37,6 +39,28 @@ quiet_logger.setLevel(logging.WARNING)
 orphan_logger = logging.getLogger('wsgi-app.orphan')
 orphan_logger.propagate = False
 
+# A logger routed through mod_wsgi.LogHandler. This C-implemented
+# logging.Handler subclass maps each Python record level to the
+# matching Apache APLOG_* level and calls Apache's ap_log_*error
+# directly, so each record lands at [wsgi:debug], [wsgi:info],
+# [wsgi:warn], [wsgi:error] or [wsgi:crit] in the Apache error
+# log rather than all at [wsgi:error] like the default
+# StreamHandler-routed records above. Apache's LogLevel wsgi:LEVEL
+# directive consequently filters these emissions; the application
+# can also filter on the Python side via setLevel as a floor.
+#
+# propagate=False stops records from also bubbling up to the root
+# logger, where basicConfig installed a StreamHandler that would
+# re-emit them at [wsgi:error] regardless of the Python level.
+# record.pathname and record.lineno are passed through to Apache,
+# so an operator with %F in ErrorLogFormat sees the logger.* call
+# site in this file rather than wsgi_logger.c.
+
+handler_logger = logging.getLogger('wsgi-app.via-handler')
+handler_logger.setLevel(logging.DEBUG)
+handler_logger.propagate = False
+handler_logger.addHandler(mod_wsgi.LogHandler())
+
 # Route Python's warnings.warn() output through the logging
 # system. After captureWarnings(True) any warnings.warn(...)
 # lands on the py.warnings logger at WARNING level (and therefore
@@ -72,6 +96,12 @@ orphan_logger.warning('module-scope orphan_logger.warning (bare)')
 orphan_logger.error('module-scope orphan_logger.error (bare)')
 orphan_logger.critical('module-scope orphan_logger.critical (bare)')
 
+handler_logger.debug('module-scope handler_logger.debug')
+handler_logger.info('module-scope handler_logger.info')
+handler_logger.warning('module-scope handler_logger.warning')
+handler_logger.error('module-scope handler_logger.error')
+handler_logger.critical('module-scope handler_logger.critical')
+
 warnings.warn('module-scope UserWarning via warnings.warn', UserWarning)
 warnings.warn('module-scope DeprecationWarning via warnings.warn',
         DeprecationWarning)
@@ -94,6 +124,17 @@ def application(environ, start_response):
     orphan_logger.warning('request orphan_logger.warning (bare)')
     orphan_logger.error('request orphan_logger.error (bare)')
     orphan_logger.critical('request orphan_logger.critical (bare)')
+
+    handler_logger.debug('request handler_logger.debug')
+    handler_logger.info('request handler_logger.info')
+    handler_logger.warning('request handler_logger.warning')
+    handler_logger.error('request handler_logger.error')
+    handler_logger.critical('request handler_logger.critical')
+
+    try:
+        raise RuntimeError('illustrative failure via LogHandler')
+    except RuntimeError:
+        handler_logger.exception('request handler_logger.exception')
 
     warnings.warn('request UserWarning via warnings.warn', UserWarning)
     warnings.warn('request DeprecationWarning via warnings.warn',

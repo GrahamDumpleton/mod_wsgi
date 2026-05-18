@@ -89,13 +89,16 @@ extern PyObject *newLogObject(request_rec *r, int level, const char *name,
                               int proxy);
 
 /*
- * Create the heap-allocated Log PyTypeObject for `module`'s
- * interpreter and store it in WSGIModuleState. Called from the
- * embedded mod_wsgi module's exec slot. Returns 0 on success,
- * -1 on failure with Python exception set.
+ * Create the heap-allocated Log PyTypeObject (and the LogHandler
+ * subtype of logging.Handler) for `module`'s interpreter and
+ * store both in WSGIModuleState. Called from the embedded
+ * mod_wsgi module's exec slot. Returns 0 on success, -1 on
+ * failure with Python exception set.
  */
 
 extern int wsgi_logger_init(PyObject *module);
+
+/* ------------------------------------------------------------------------- */
 
 /*
  * wsgi_log_python_error logs a Python exception to the Apache error log:
