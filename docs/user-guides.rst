@@ -60,6 +60,7 @@ Beyond the basics
    user-guides/registering-cleanup-code
    user-guides/internal-metrics-api
    user-guides/external-telemetry-service
+   user-guides/logging-from-applications
    user-guides/running-behind-a-reverse-proxy
    user-guides/hosting-websocket-applications
    user-guides/enabling-https
