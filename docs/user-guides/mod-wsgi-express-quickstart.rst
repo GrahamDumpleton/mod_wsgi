@@ -461,6 +461,19 @@ per request.
     transient filesystem and the egg cache should
     persist across restarts.
 
+``--python-warnings SPEC``
+    Add an entry to the Python warnings filter, using
+    the standard ``-W`` syntax
+    (``action:message:category:module:lineno``).
+    Repeatable; each occurrence is emitted as a
+    separate
+    :doc:`../configuration-directives/WSGIPythonWarnings`
+    directive in the generated configuration. The
+    most common form is just an action:
+    ``--python-warnings error`` converts every
+    warning into an exception, useful for catching
+    deprecation regressions in CI.
+
 ``--locale NAME``
     Locale for the WSGI process, equivalent to
     setting ``LC_ALL``. If unset and the inherited

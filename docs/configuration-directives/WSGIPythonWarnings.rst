@@ -30,6 +30,12 @@ Or to silence ``DeprecationWarning`` from a specific module::
 
 The directive may be specified multiple times. Each occurrence
 appends a further entry to the warnings filter. Filters are applied
-in the order they appear in the configuration. See the Python
-documentation on the warnings module and the ``-W`` option for
-details on filter precedence and matching.
+in the order they appear in the configuration.
+
+When configuring via ``mod_wsgi-express``, the ``--python-warnings``
+option emits one ``WSGIPythonWarnings`` directive per occurrence in
+the generated configuration. It may be repeated to install multiple
+filter entries, mirroring the directive's append semantics.
+
+See the Python documentation on the warnings module and the ``-W``
+option for details on filter precedence and matching.
