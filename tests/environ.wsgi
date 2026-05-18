@@ -1,28 +1,15 @@
-from __future__ import print_function
-
 import os
 import sys
 import locale
 
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from io import StringIO
+from io import StringIO
 
 import mod_wsgi
 import apache
 
-def application(environ, start_response):
-    print('request message #1', file=environ['wsgi.errors'])
-    print('global message #1')
-    print('queued message #1', end='')
-    print('request message #2', file=environ['wsgi.errors'])
-    print('global message #2')
-    print('queued message #2', end='')
-    print('request message #3', file=environ['wsgi.errors'])
-    print('queued message #3', '+', sep="", end='')
-    print('queued message #4', end='')
+mod_wsgi.start_recording_metrics()
 
+def application(environ, start_response):
     headers = []
     headers.append(('Content-Type', 'text/plain; charset="UTF-8"'))
     write = start_response('200 OK', headers)
@@ -114,12 +101,7 @@ def application(environ, start_response):
         print('%s: %s' % (key, repr(os.environ[key])), file=output)
     print(file=output)
 
-    result = output.getvalue()
-
-    if not isinstance(result, bytes):
-        result = result.encode('UTF-8')
-
-    yield result
+    yield output.getvalue().encode('UTF-8')
 
     block_size = 8192
 
