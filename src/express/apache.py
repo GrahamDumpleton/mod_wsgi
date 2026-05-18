@@ -816,6 +816,10 @@ APACHE_SETENV_CONFIG = """
 SetEnv '%(name)s' '%(value)s'
 """
 
+APACHE_PYTHON_WARNINGS_CONFIG = """
+WSGIPythonWarnings '%(spec)s'
+"""
+
 APACHE_PASSENV_CONFIG = """
 PassEnv '%(name)s'
 """
@@ -980,6 +984,11 @@ def generate_apache_config(options):
         if options['setenv_variables']:
             for name, value in options['setenv_variables']:
                 print(APACHE_SETENV_CONFIG % dict(name=name, value=value),
+                        file=fp)
+
+        if options['python_warnings']:
+            for spec in options['python_warnings']:
+                print(APACHE_PYTHON_WARNINGS_CONFIG % dict(spec=spec),
                         file=fp)
 
         if options['passenv_variables']:

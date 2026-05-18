@@ -751,6 +751,17 @@ add_option('all', '--python-eggs', metavar='DIRECTORY-PATH',
         'unpacking of Python eggs. Defaults to a sub directory of '
         'the server root directory.')
 
+add_option('all', '--python-warnings', action='append', default=[],
+        metavar='SPEC', help='Add an entry to the Python warnings filter '
+        'using the standard -W syntax (action:message:category:module:lineno). '
+        'May be specified multiple times; each entry is emitted as a '
+        'separate WSGIPythonWarnings directive in the generated '
+        'configuration. The most common form is just an action: '
+        'default, error, always, module, once, or ignore. For example '
+        '--python-warnings error converts every warning into an '
+        'exception, which is useful for catching deprecation regressions '
+        'in CI.')
+
 add_option('unix', '--shell-executable', default=SHELL,
         metavar='FILE-PATH', help='Override the path to the shell '
         'used in the \'apachectl\' script. The \'bash\' shell will '
