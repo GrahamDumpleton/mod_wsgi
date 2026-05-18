@@ -62,18 +62,29 @@ Two consequences follow from the per-thread routing:
 Output written to any of these streams is buffered by line and
 emitted as Apache log records via ``ap_log_error`` (at module scope
 or from background threads) or ``ap_log_rerror`` (during a request,
-when called from the request's handler thread). The log level on the Apache
+when called from the request's handler thread). For application
+output routed through these streams the log level on the Apache
 side is fixed at ``error``: every line lands as ``[wsgi:error]``,
 regardless of what the application code intended.
 
 The consequence is that Apache's ``LogLevel`` directive does *not*
-filter application output. ``LogLevel wsgi:warn`` only gates
-mod_wsgi's own diagnostic messages (process lifecycle, request
-escalation events, internal errors). Application output reaches the
-log regardless of what the LogLevel is set to. Filtering of
-application output happens entirely on the Python side, via
+filter stream-routed application output. ``LogLevel wsgi:warn``
+only gates mod_wsgi's own diagnostic messages (process lifecycle,
+request escalation events, internal errors); output emitted from
+the application via ``print()``, ``sys.stdout`` / ``sys.stderr``,
+or ``environ['wsgi.errors']`` reaches the log regardless. Filtering
+of that output happens entirely on the Python side, via
 ``logging.Logger.setLevel``, handler-level filters, or the
 ``warnings`` filter chain.
+
+For applications that want Apache's ``LogLevel`` to act as a real
+filter on Python output, mod_wsgi ships ``mod_wsgi.LogHandler``: a
+``logging.Handler`` subclass that bypasses the stream alias and
+calls Apache's logging API directly with the matching ``APLOG_*``
+level. Records emitted via the handler land at ``[wsgi:debug]``,
+``[wsgi:info]``, ``[wsgi:warn]``, ``[wsgi:error]`` or ``[wsgi:crit]``
+in the Apache log, so ``LogLevel wsgi:LEVEL`` filters them
+operator-side. See `Routing via mod_wsgi.LogHandler`_ below.
 
 Module-scope versus request-scope decoration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -269,10 +280,12 @@ A typical request-scope log line then looks like:
 with ``INFO myapp`` carrying the Python-side metadata and the
 ``[wsgi:error]`` tag carrying the Apache-side classification.
 
-Per-logger filtering is the only filter lever
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Python-side filtering with the default handler
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Because Apache's ``LogLevel`` does not gate Python output, a noisy
+With the default ``StreamHandler`` that ``basicConfig`` installs,
+Apache's ``LogLevel`` does not gate Python output (every record
+lands at ``[wsgi:error]`` after the stream alias). A noisy
 application logger has to be quietened on the Python side:
 
 .. code-block:: python
@@ -281,7 +294,89 @@ application logger has to be quietened on the Python side:
 
 This suppresses ``DEBUG`` and ``INFO`` from the named logger before
 the record reaches the handler chain, while the root logger
-continues to emit all five levels for everything else.
+continues to emit all five levels for everything else. Python-side
+filtering remains useful when routing through
+``mod_wsgi.LogHandler`` (as a per-application floor below the
+Apache-side ceiling, see `Routing via mod_wsgi.LogHandler`_), but
+it is the only filter mechanism available to the default handler
+path.
+
+Routing via mod_wsgi.LogHandler
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``mod_wsgi.LogHandler`` is a ``logging.Handler`` subclass shipped
+with mod_wsgi that routes records through Apache's logging API
+directly, preserving the Python log level. Where the default
+``StreamHandler`` writes to ``sys.stderr`` (and so lands at
+``[wsgi:error]`` after the stream alias), ``LogHandler`` calls
+``ap_log_*error`` with the matching ``APLOG_*`` level so each
+record lands at the corresponding Apache level tag:
+
+==================== ====================
+Python level         Apache level tag
+==================== ====================
+``CRITICAL``         ``[wsgi:crit]``
+``ERROR``            ``[wsgi:error]``
+``WARNING``          ``[wsgi:warn]``
+``INFO``             ``[wsgi:info]``
+``DEBUG``            ``[wsgi:debug]``
+==================== ====================
+
+Non-standard Python levels (custom levels, ``NOTSET``) round down
+to the next-lower Apache level.
+
+Configure once at module-import time:
+
+.. code-block:: python
+
+    import logging
+    import mod_wsgi
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        handlers=[mod_wsgi.LogHandler()],
+        format='%(name)s %(message)s',
+    )
+
+The format string drops ``%(levelname)s`` because Apache now
+classifies every record at the matching level, so the level is
+already visible in the ``[wsgi:LEVEL]`` tag that prefixes the
+line.
+
+Apache's ``LogLevel`` directive filters these records the same way
+it filters mod_wsgi's own diagnostic messages: ``LogLevel
+wsgi:warn`` drops application ``DEBUG`` and ``INFO`` records
+before the formatter even runs. The operator-side level acts as a
+*ceiling*: records the application emitted at lower levels still
+get written, and records above the ceiling are dropped at the
+Apache boundary. Python-side ``setLevel`` and filters remain the
+*floor*, deciding what gets produced at all in the first place.
+
+Per record the handler consults the calling thread's state to
+pick between ``ap_log_rerror`` (request-handling thread) and
+``ap_log_error`` (module-init, background thread, shutdown), so
+the request-decoration story matches the stream-routed path:
+module-scope and background-thread records land without
+``[remote ...]`` / ``[script ...]`` decoration; request-scope
+records pick it up.
+
+``record.pathname`` and ``record.lineno`` are passed through to
+Apache as the source location, so an operator with ``%F`` in
+``ErrorLogFormat`` sees the application's ``logger.*`` call site
+rather than the emit-site inside mod_wsgi.
+
+When mixing ``mod_wsgi.LogHandler`` with the default
+``basicConfig``-installed ``StreamHandler`` (for instance to route
+some loggers via Apache and others via the default path), set
+``propagate = False`` on the LogHandler-attached loggers so their
+records do not also bubble up to root and surface twice (once at
+the proper Apache level via ``LogHandler``, once at
+``[wsgi:error]`` via the inherited ``StreamHandler``).
+
+``mod_wsgi.LogHandler`` and ``logging.captureWarnings(True)`` are
+independent. Configuring both is the natural setup when
+application output *and* ``warnings.warn(...)`` output should
+share the same Apache-level-aware path.
 
 The logger.exception() path
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -477,17 +572,22 @@ A starting point that combines the recommendations above:
 .. code-block:: python
 
     import logging
+    import mod_wsgi
 
-    # Apache supplies the timestamp on every error-log record, so
-    # the Python format carries only the level, logger name, and
-    # message body.
+    # Route logging records through Apache's error log at the
+    # matching Apache level, so LogLevel wsgi:LEVEL becomes a real
+    # filter on application output. Apache supplies the timestamp
+    # and the [wsgi:LEVEL] tag; the Python format carries only the
+    # logger name and the message body.
     logging.basicConfig(
         level=logging.DEBUG,
-        format='%(levelname)s %(name)s %(message)s',
+        handlers=[mod_wsgi.LogHandler()],
+        format='%(name)s %(message)s',
     )
 
-    # Route warnings.warn() output through the logging system so it
-    # picks up the same format and handlers as application logging.
+    # Route warnings.warn() output through the same logging chain
+    # so library warnings pick up the same format and Apache-level
+    # treatment as application logging.
     logging.captureWarnings(True)
 
     logger = logging.getLogger(__name__)

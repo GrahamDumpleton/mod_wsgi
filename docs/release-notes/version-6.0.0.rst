@@ -147,6 +147,37 @@ New Features
   release with the matching mod_wsgi release until the pipeline
   stabilises.
 
+* Added ``mod_wsgi.LogHandler``, a ``logging.Handler`` subclass
+  shipped with mod_wsgi that routes Python ``logging`` records
+  through Apache's error log while preserving the Python log
+  level. Application output via the default ``StreamHandler`` path
+  (``print()``, ``logging.basicConfig()`` without a custom handler,
+  ``warnings.warn()``) continues to land at ``[wsgi:error]``
+  regardless of the Python level, because ``sys.stdout`` /
+  ``sys.stderr`` writes are emitted to Apache at a fixed error
+  classification. Records emitted via ``mod_wsgi.LogHandler``
+  instead land at the matching Apache level tag (Python
+  ``CRITICAL`` / ``ERROR`` / ``WARNING`` / ``INFO`` / ``DEBUG`` map
+  to ``[wsgi:crit]`` / ``[wsgi:error]`` / ``[wsgi:warn]`` /
+  ``[wsgi:info]`` / ``[wsgi:debug]`` respectively), so the
+  operator-side ``LogLevel wsgi:LEVEL`` directive filters
+  application output as a ceiling on top of whatever Python-side
+  filtering the application configured. Per-thread routing matches
+  the existing ``wsgi.errors`` behaviour: records emitted while a
+  thread is handling a request use ``ap_log_rerror`` and pick up
+  the ``[remote ...]`` / ``[script ...]`` decoration; records from
+  module-import or background threads use ``ap_log_error`` and
+  land without that decoration. ``record.pathname`` and
+  ``record.lineno`` are passed through to Apache so an operator
+  with ``%F`` in ``ErrorLogFormat`` sees the application's
+  ``logger.*`` call site rather than the emit-site inside
+  mod_wsgi. Opt in by attaching a ``mod_wsgi.LogHandler`` instance
+  to the logger chain; the default routing path is unchanged for
+  applications that do not. See
+  :doc:`../user-guides/logging-from-applications` for the full
+  configuration recipe and the operator-ceiling versus
+  application-floor model.
+
 Features Changed
 ----------------
 
