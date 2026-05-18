@@ -5286,3 +5286,130 @@ WSGI0205 — Per-interpreter switch interval skipped because free-threading is a
    container that resolves into a free-threaded process, or move
    ``WSGIFreeThreading`` away from this process. The directive has
    no meaning when there is no GIL.
+
+.. _WSGI0206:
+
+WSGI0206 — Unable to initialise signal event pipe in daemon process
+-------------------------------------------------------------------
+
+:Severity: ALERT
+:Source: ``src/server/wsgi_daemon.c``
+
+:Logged message:
+   ``Unable to initialise signal event pipe in daemon process
+   '<group>'. Daemon process will exit and be restarted after a
+   delay.``
+
+:Cause:
+   ``apr_file_pipe_create()`` failed when the daemon was setting up
+   the dedicated pipe used to deliver SIGHUP / SIGUSR2 bytes from
+   the signal handler to the signal dispatcher thread. Almost
+   always a file-descriptor or memory exhaustion. Same shape as
+   :ref:`WSGI0027`.
+
+:Outcome:
+   The daemon process exits after a 20-second anti-fork-bomb delay.
+   Apache respawns it.
+
+:Operator action:
+   Check ``ulimit -n`` for the Apache user, system-wide file
+   descriptor limits, and free memory on the host. See
+   :ref:`WSGI0027` for the parallel shutdown-pipe variant.
+
+.. _WSGI0207:
+
+WSGI0207 — Unable to create signal dispatcher thread in daemon process
+----------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_daemon.c``
+
+:Logged message:
+   ``Unable to create signal dispatcher thread in daemon process
+   '<group>'; SIGHUP and SIGUSR2 signals will not be delivered to
+   mod_wsgi.subscribe_signals subscribers.``
+
+:Cause:
+   ``apr_thread_create()`` failed when the daemon was spawning the
+   thread that drains the signal event pipe and dispatches
+   ``process_signal`` events to registered Python subscribers.
+   Usually thread-resource pressure on the daemon's user.
+
+:Outcome:
+   The daemon process continues running and handles requests
+   normally, but SIGHUP and SIGUSR2 signals sent to the daemon
+   will accumulate in the signal event pipe with no consumer and
+   are eventually dropped when the kernel pipe buffer fills.
+   Subscribers registered via ``mod_wsgi.subscribe_signals``
+   never fire.
+
+:Operator action:
+   Investigate thread limits (``ulimit -u``,
+   ``/proc/sys/kernel/threads-max``) for the daemon user. Restart
+   the affected daemon group if signal-driven actions (such as
+   ``SIGHUP``-triggered config reload) are operationally critical.
+
+.. _WSGI0208:
+
+WSGI0208 — Read failed on signal event pipe in daemon process
+-------------------------------------------------------------
+
+:Severity: ALERT
+:Source: ``src/server/wsgi_daemon.c``
+
+:Logged message:
+   ``Read failed on signal event pipe in daemon process '<group>';
+   signal dispatcher exiting.``
+
+:Cause:
+   The signal dispatcher thread's read from the signal event pipe
+   returned a non-EOF error before the daemon was shutting down.
+   This indicates the pipe is in an unexpected state and the
+   dispatcher can no longer deliver ``process_signal`` events.
+   Same shape as :ref:`WSGI0023` but for the signal event pipe
+   instead of the shutdown signal pipe.
+
+:Outcome:
+   The signal dispatcher thread exits cleanly. The daemon process
+   continues running and handles requests normally, but subsequent
+   ``SIGHUP`` and ``SIGUSR2`` signals are no longer delivered to
+   ``mod_wsgi.subscribe_signals`` subscribers in this process.
+
+:Operator action:
+   None required if this fires once during a normal restart. If it
+   fires unprompted, investigate file-descriptor leaks or other
+   pipe-related problems. Restart the affected daemon group to
+   restore signal delivery.
+
+.. _WSGI0209:
+
+WSGI0209 — Unable to publish 'process_signal' event for interpreter
+-------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/wsgi_interp.c``
+
+:Logged message:
+   ``Unable to publish 'process_signal' event for
+   <interpreter-context>.``
+
+:Cause:
+   The signal dispatcher thread acquired the named sub-interpreter
+   and attempted to construct the ``process_signal`` event payload
+   (``signame``, ``signum`` keys), but a Python allocation failed
+   along the way (``PyDict_New``, ``PyUnicode_FromString``,
+   ``PyLong_FromLong``, or ``PyDict_SetItemString``). Usually a
+   memory pressure condition.
+
+:Outcome:
+   The event for the affected interpreter is dropped; subscribers
+   registered in that interpreter do not see the signal firing for
+   this delivery. The dispatcher proceeds to the next interpreter
+   in the table; other interpreters' subscribers receive the
+   event normally.
+
+:Operator action:
+   Investigate memory pressure on the host. If recurrent,
+   subscribers should be defensive about missed signals (idempotent
+   reload, polling-based fallback) since signals are not
+   refcounted and a dropped delivery is not redelivered.

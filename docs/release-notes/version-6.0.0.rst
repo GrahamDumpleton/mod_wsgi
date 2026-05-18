@@ -178,6 +178,35 @@ New Features
   configuration recipe and the operator-ceiling versus
   application-floor model.
 
+* Added ``mod_wsgi.subscribe_signals``, an in-process signal
+  delivery mechanism for daemon-mode WSGI applications.
+  Subscribers receive the new ``process_signal`` event when the
+  daemon receives ``SIGHUP`` or ``SIGUSR2``, with payload keys
+  ``signame`` (canonical string, e.g. ``"SIGHUP"``) and
+  ``signum`` (numeric value on the current platform). Intended
+  use cases are operator-driven configuration reload on
+  ``SIGHUP`` and ad-hoc diagnostic actions on ``SIGUSR2``, such
+  as dumping Python stack traces of every active thread to the
+  Apache error log. Delivery happens on a dedicated dispatcher
+  thread inside the daemon, separate from the daemon shutdown
+  signal pipe, so a long-running subscriber callback does not
+  delay shutdown response or block worker threads handling
+  requests. Subscribers run with each sub-interpreter's GIL held
+  in turn, matching the per-interpreter dispatch model already
+  used by ``subscribe_events`` and ``subscribe_shutdown``. In
+  embedded mode the API exists but is inert: a call logs an
+  ``APLOG_INFO`` warning together with a Python stack trace
+  identifying the registration site, discards the callback, and
+  returns it unchanged so decorator use does not silently
+  nullify the user's function symbol. Service-script daemons
+  (``WSGIDaemonProcess threads=0``) are also unsupported, since
+  the dispatcher infrastructure is created in the daemon main
+  loop that service scripts skip; service scripts can use
+  Python's ``signal.signal()`` directly because
+  ``WSGIRestrictSignal`` is treated as off in that mode. See
+  :doc:`../user-guides/subscribing-to-events` for the full API
+  reference.
+
 Features Changed
 ----------------
 

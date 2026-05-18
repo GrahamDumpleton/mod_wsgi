@@ -1,8 +1,10 @@
 # Developer probe for mod_wsgi's event publication API. Hit this
 # script under curl to fire the per-request events (request_started,
 # response_started, request_finished, request_exception). Stop or
-# restart Apache to fire process_stopping. Each handler prints its
-# event name, payload, and a slice of related mod_wsgi runtime
+# restart Apache to fire process_stopping. In daemon mode, send
+# SIGHUP or SIGUSR2 to the daemon PID (`kill -HUP <pid>` /
+# `kill -USR2 <pid>`) to fire process_signal. Each handler prints
+# its event name, payload, and a slice of related mod_wsgi runtime
 # state to stderr so the publication order, payload shapes, and
 # the active_requests / process_metrics() snapshots become
 # observable in the Apache error log.
@@ -63,6 +65,10 @@ def wrapper(application):
 #   request_exception format the (type, value, tb) exception_info
 #                     tuple from the payload.
 #   process_stopping  dump active_requests at shutdown.
+#   process_signal    log the canonical signame and the platform
+#                     signum so a side-by-side comparison with
+#                     signal_handler below shows both subscription
+#                     paths firing for the same delivery.
 
 def event_handler(name, **kwargs):
     print(f'event_handler fired: name={name!r}'
@@ -89,6 +95,10 @@ def event_handler(name, **kwargs):
         traceback.print_exception(*exception_info)
     elif name == 'process_stopping':
         print(f'active_requests at process_stopping: {mod_wsgi.active_requests!r}')
+    elif name == 'process_signal':
+        print(f'event_handler saw process_signal:'
+              f' signame={kwargs.get("signame")!r}'
+              f' signum={kwargs.get("signum")!r}')
 
 # event_callbacks is the per-interpreter list mod_wsgi walks when
 # publishing. The prints below show, in order: the empty list
@@ -165,6 +175,39 @@ print(f'event_callbacks after subscribe_shutdown'
       f' {mod_wsgi.event_callbacks!r}')
 print(f'shutdown_callbacks after subscribe_shutdown:'
       f' {mod_wsgi.shutdown_callbacks!r}')
+
+# subscribe_signals is the narrow-form subscription for the
+# process_signal event mod_wsgi publishes when the daemon process
+# receives SIGHUP or SIGUSR2. Like subscribe_shutdown, this
+# populates a separate per-interpreter callback list
+# (signal_callbacks) and runs in addition to the process_signal
+# branch of event_handler above, so a single delivery produces
+# entries from both the catch-all and the narrow subscriber for
+# direct comparison in the log.
+#
+# In embedded mode the call is intentionally tolerated: it logs an
+# APLOG_INFO warning plus a Python stack trace identifying this
+# call site, discards the callback, and returns it unchanged so
+# the decorator-form binding below is still callable. The
+# signal_callbacks list also stays empty in embedded mode (the
+# warning is the discovery channel, not a stub registration). In
+# service-script daemons (threads=0) the call is accepted and the
+# list is populated, but the dispatcher infrastructure is never
+# started so the callback never fires.
+
+@mod_wsgi.subscribe_signals
+def signal_handler(name, **kwargs):
+    print(f'signal_handler fired: name={name!r}'
+          f' signame={kwargs.get("signame")!r}'
+          f' signum={kwargs.get("signum")!r}'
+          f' pid={os.getpid()}'
+          f' application_group={mod_wsgi.application_group!r}')
+
+print(f'event_callbacks after subscribe_signals'
+      f' (unchanged, signal is a separate list):'
+      f' {mod_wsgi.event_callbacks!r}')
+print(f'signal_callbacks after subscribe_signals:'
+      f' {mod_wsgi.signal_callbacks!r}')
 
 # atexit fires during Python's interpreter finalisation, after the
 # non-daemon-thread join, so it runs strictly after

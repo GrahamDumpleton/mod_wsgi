@@ -119,6 +119,19 @@ extern int wsgi_interpreter_exists(const char *name);
 
 extern void wsgi_publish_process_stopping(char *reason);
 
+/*
+ * Publish a "process_signal" event into every existing sub-interpreter
+ * in this process. Snapshots the interpreter name table under
+ * wsgi_interp_lock so the walk is safe against concurrent creation by
+ * worker threads, then for each name acquires the interpreter (which
+ * takes the GIL for that interpreter), constructs an event dict with
+ * signame (canonical str like "SIGHUP") and signum (int) payload keys,
+ * and dispatches via wsgi_publish_event. Intended to be called only
+ * from the signal dispatcher thread in daemon mode.
+ */
+
+extern void wsgi_publish_process_signal(int signum, const char *signame);
+
 extern apr_status_t wsgi_python_child_init(apr_pool_t *p);
 
 /* ------------------------------------------------------------------------- */

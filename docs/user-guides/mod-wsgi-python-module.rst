@@ -98,14 +98,43 @@ Event subscription
        def cleanup(*args, **kwargs):
            ...
 
-   See :doc:`registering-cleanup-code`.
+   Inert in service-script daemons (``WSGIDaemonProcess
+   threads=0``); use ``signal.signal()`` directly in those
+   processes. See :doc:`registering-cleanup-code` and the
+   service-script notes in :doc:`subscribing-to-events`.
+
+``subscribe_signals(callback)``
+   Register ``callback`` to receive the ``process_signal`` event
+   when the daemon process is sent ``SIGHUP`` or ``SIGUSR2``.
+   The callback shape matches ``subscribe_events`` and the payload
+   carries ``signame`` (canonical string like ``"SIGHUP"``) and
+   ``signum`` (numeric value for convenience). The function returns
+   the callback so it can be used as a decorator::
+
+       @mod_wsgi.subscribe_signals
+       def on_signal(name, *, signame, **event):
+           if signame == 'SIGHUP':
+               reload_config()
+           elif signame == 'SIGUSR2':
+               dump_diagnostics()
+
+   Only effective in request-handling daemon-mode processes. In
+   embedded mode the call is permitted (and still returns the
+   callback so decorator syntax does not silently nullify the
+   user's function symbol) but the callback is discarded; a
+   warning and a Python stack trace identifying the registration
+   site are emitted to the Apache error log. Service-script
+   daemons (``WSGIDaemonProcess threads=0``) are also unsupported
+   here; use ``signal.signal()`` directly in those processes. See
+   :doc:`subscribing-to-events` for details.
 
 Events
 ------
 
 mod_wsgi publishes the following events. ``subscribe_events``
 callbacks see all of them; ``subscribe_shutdown`` callbacks see
-only ``process_stopping``.
+only ``process_stopping``; ``subscribe_signals`` callbacks see
+only ``process_signal``.
 
 ``request_started``
    Fires immediately before the WSGI application callable is
@@ -139,6 +168,16 @@ only ``process_stopping``.
    application callable. Payload keys are ``request_id``,
    ``exception_info`` (a ``(type, value, traceback)`` tuple as
    produced by ``sys.exc_info``), and ``request_data``.
+
+``process_signal``
+   Fires in a daemon process when ``SIGHUP`` or ``SIGUSR2`` is
+   delivered to the daemon. Payload keys are ``signame`` (a
+   string, ``"SIGHUP"`` or ``"SIGUSR2"``) and ``signum`` (the
+   numeric value of the signal on the current platform).
+   Subscribers should branch on ``signame`` because numeric
+   signal values vary across platforms. Embedded mode never
+   publishes this event; see :doc:`subscribing-to-events` for
+   details.
 
 ``process_stopping``
    Fires once per process when mod_wsgi is shutting it down.

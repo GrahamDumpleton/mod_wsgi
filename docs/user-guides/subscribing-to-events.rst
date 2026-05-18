@@ -63,6 +63,42 @@ Subscribing
    single-event handler through ``subscribe_events`` and
    filtering by ``name`` inside the body.
 
+   This subscription is inert in service-script daemons
+   (``WSGIDaemonProcess threads=0``); see `Service-script
+   daemons`_ below for the alternative.
+
+``mod_wsgi.subscribe_signals(callback)``
+   Shortcut for subscribing only to ``process_signal``, the
+   event mod_wsgi publishes when a daemon process receives
+   ``SIGHUP`` or ``SIGUSR2``. The callback shape is the same as
+   for ``subscribe_events`` and the function returns the
+   callback so it can be used as a decorator::
+
+       @mod_wsgi.subscribe_signals
+       def on_signal(name, *, signame, signum, **event):
+           if signame == 'SIGHUP':
+               reload_config()
+           elif signame == 'SIGUSR2':
+               dump_diagnostics()
+
+   ``signame`` is the canonical key to branch on; ``signum`` is
+   provided for callers that prefer to compare against
+   ``signal.SIGHUP`` / ``signal.SIGUSR2`` but is platform
+   dependent and should not be hardcoded.
+
+   This subscription is only effective in daemon mode. In
+   embedded mode (any MPM) the call is still permitted and the
+   function still returns the callback so decorator syntax does
+   not silently nullify the user's function symbol, but the
+   callback is not retained and will never be invoked; an
+   ``APLOG_INFO`` warning together with a Python stack trace
+   identifying the registration site is written to the Apache
+   error log so the limitation is discoverable. See
+   `Signal delivery is daemon-mode only`_ below for the
+   rationale. Service-script daemons (``WSGIDaemonProcess
+   threads=0``) are also unsupported here for a different
+   reason; see `Service-script daemons`_ below.
+
 Subscriptions are per-interpreter: a callback registered inside
 one sub-interpreter only fires for events published in that
 sub-interpreter. In a single-interpreter application this
@@ -73,7 +109,8 @@ Event reference
 
 The following events are published. ``subscribe_events``
 callbacks see all of them; ``subscribe_shutdown`` callbacks see
-only ``process_stopping``.
+only ``process_stopping``; ``subscribe_signals`` callbacks see
+only ``process_signal``.
 
 Several payload keys appear on every request-scoped event and are
 worth introducing once:
@@ -272,6 +309,50 @@ response.
    to an error-tracking service, or otherwise record the
    failure.
 
+process_signal
+~~~~~~~~~~~~~~
+
+Fires in a daemon process when ``SIGHUP`` or ``SIGUSR2`` is
+delivered to the daemon. The intended use is to let WSGI
+application code react to an operator-driven poke without
+requiring a process restart: classic examples are reloading a
+configuration file on ``SIGHUP``, or triggering a diagnostic
+dump on ``SIGUSR2``.
+
+``signame``
+   Canonical string identifying the signal, either ``"SIGHUP"``
+   or ``"SIGUSR2"``. Callbacks should branch on this.
+
+``signum``
+   Numeric value of the signal as seen on the running platform,
+   e.g. ``signal.SIGHUP`` resolves to 1 on Linux/x86_64 but to
+   different values on other platforms. Provided so callers can
+   compare against the ``signal`` module's constants if
+   preferred, but ``signame`` is the portable key.
+
+The event is published into every sub-interpreter of the daemon
+process. Each interpreter's subscribers see one firing per
+delivered signal.
+
+The event is dispatched on a dedicated signal dispatcher thread
+that lives inside the daemon process and exists independently
+of request handling. A callback that runs for a long time
+delays dispatch of subsequent ``process_signal`` events but
+does not block request handling, and does not block daemon
+shutdown beyond the ``shutdown-timeout=`` reaper.
+
+Subscribers must remain alert to the same hazard as any other
+event subscriber: a callback that never returns wedges the
+dispatcher. Because Unix signals are not reference-counted, the
+kernel's pipe buffer absorbs a handful of additional deliveries
+and then silently drops further occurrences until the
+dispatcher catches up. Idempotent, fast callbacks are the
+expected style.
+
+This event is not published in service-script daemons
+(``WSGIDaemonProcess threads=0``); see `Service-script
+daemons`_ below.
+
 process_stopping
 ~~~~~~~~~~~~~~~~
 
@@ -285,6 +366,10 @@ non-daemon worker threads to exit: Python's finalisation
 blocks waiting for non-daemon threads to terminate, and a
 thread sitting in an unconditional loop with no shutdown
 signal will hang the process at that point.
+
+This event is not published in service-script daemons
+(``WSGIDaemonProcess threads=0``); see `Service-script
+daemons`_ below.
 
 ``shutdown_reason``
    String describing what triggered the shutdown. The reasons
@@ -366,6 +451,86 @@ at all. Every long-lived background thread in that environment
 must be non-daemon, so every such thread must have a shutdown
 signal wired through ``subscribe_shutdown`` (or
 ``subscribe_events`` on ``process_stopping``) to be stoppable.
+
+Signal delivery is daemon-mode only
+-----------------------------------
+
+The ``process_signal`` event and the ``subscribe_signals``
+shortcut are only effective in daemon-mode processes.
+
+In daemon mode, mod_wsgi installs ``SIGHUP`` and ``SIGUSR2``
+handlers in the daemon child after fork and routes received
+signals through a dedicated pipe to a dispatcher thread that
+calls Python subscribers. The mechanism is independent of the
+shutdown signal handling, so a long subscriber callback does
+not delay the daemon's response to shutdown signals nor block
+request handling on worker threads.
+
+In embedded mode (worker, event or prefork MPM) there is no
+dispatcher thread and no daemon process that owns the signal
+handlers; ``SIGHUP``, ``SIGUSR1``, ``SIGWINCH`` and similar
+signals are claimed by Apache for parent and child process
+management and cannot be safely repurposed. Calls to
+``mod_wsgi.subscribe_signals`` from embedded mode are
+intentionally tolerated, so portable application code can
+register a single subscriber and have it work where supported
+without conditional code, but the registration is recorded as
+a log warning (with a Python stack trace identifying the call
+site) and the callback is never invoked. Application code that
+depends on signal-driven reload should rely on daemon mode for
+that capability.
+
+Service-script daemons
+----------------------
+
+Daemon process groups configured with ``threads=0`` (the
+service-script form of :doc:`../configuration-directives/WSGIDaemonProcess`)
+run a single Python script on the daemon's main thread for the
+lifetime of the process. They do not handle WSGI requests and
+they intentionally do not start mod_wsgi's per-request
+infrastructure. As a side effect, two of the subscription APIs
+on this page are inert in service-script daemons:
+
+* ``mod_wsgi.subscribe_signals`` accepts the registration and
+  returns the callback unchanged, but no dispatcher thread is
+  ever started in the process, so the ``process_signal`` event
+  is never published. The callback is never invoked.
+* ``mod_wsgi.subscribe_shutdown`` (and a ``process_stopping``
+  branch wired through ``subscribe_events``) accepts the
+  registration but the ``process_stopping`` event is never
+  published in service-script daemons either; the publish point
+  lives in the per-request daemon main loop that service scripts
+  skip.
+
+The supported pattern in a service script is to use Python's
+own ``signal`` module directly. ``WSGIRestrictSignal`` is
+treated as off for service-script interpreters regardless of
+the configured value, so ``signal.signal()`` is not intercepted
+and Python signal handlers registered from the script fire
+normally on the main thread.
+
+mod_wsgi pre-registers ``signal.signal(SIGTERM, ...)`` with a
+handler that raises ``SystemExit``, so a service script that
+wraps its main loop in ``try: ... except SystemExit: ...`` has
+a working shutdown hook out of the box::
+
+    import asyncio
+
+    async def serve():
+        ...
+
+    try:
+        asyncio.run(serve())
+    except SystemExit:
+        cleanup()
+
+Additional signals such as ``SIGHUP`` and ``SIGUSR2`` can be
+handled by registering further callbacks via ``signal.signal()``
+in the script. Because the script runs on Python's main thread,
+the dispatch limitation that ``WSGIRestrictSignal Off`` warns
+about for daemon-mode WSGI applications (see
+:doc:`../configuration-directives/WSGIRestrictSignal`) does not
+apply here.
 
 Per-request scratchpad
 ----------------------
@@ -508,6 +673,78 @@ Note that for production-grade metrics, the per-interval
 accumulators exposed by :doc:`internal-metrics-api` are usually
 the better source: they already include per-class counters and
 are drained atomically by a single reporter call.
+
+Reloading configuration on SIGHUP
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A common operator workflow is to reload a configuration file on
+``SIGHUP`` without bouncing the daemon. ``subscribe_signals``
+provides the hook::
+
+    import mod_wsgi
+    import threading
+
+    _config = None
+    _config_lock = threading.Lock()
+
+    def load_config():
+        with open('/etc/myapp/config.yaml') as fp:
+            return parse(fp.read())
+
+    _config = load_config()
+
+    @mod_wsgi.subscribe_signals
+    def on_signal(name, *, signame, **event):
+        global _config
+        if signame == 'SIGHUP':
+            try:
+                new_config = load_config()
+            except Exception:
+                # Reload failure leaves the previous config in
+                # place; log the failure rather than crashing
+                # the daemon over a bad file.
+                import traceback
+                traceback.print_exc()
+                return
+            with _config_lock:
+                _config = new_config
+
+The reload runs on mod_wsgi's signal dispatcher thread, not on
+a request thread. Application code that needs the current
+configuration should read ``_config`` under ``_config_lock`` so
+a request never observes a partially applied reload. A failed
+reload should not crash the daemon: catch and log, leaving the
+prior configuration in effect, since the operator can fix the
+file and send ``SIGHUP`` again.
+
+Triggering a diagnostic dump on SIGUSR2
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``SIGUSR2`` is the conventional signal for ad-hoc operational
+pokes that have no fixed Unix meaning. A pattern is to dump
+in-flight request state, thread stacks, or process metrics::
+
+    import os
+    import sys
+    import threading
+    import traceback
+
+    import mod_wsgi
+
+    @mod_wsgi.subscribe_signals
+    def dump_on_signal(name, *, signame, **event):
+        if signame != 'SIGUSR2':
+            return
+        print(f'--- diagnostic dump pid={os.getpid()} ---',
+              file=sys.stderr)
+        print(f'active_requests: {mod_wsgi.active_requests!r}',
+              file=sys.stderr)
+        for tid, frame in sys._current_frames().items():
+            print(f'\\nthread {tid}:', file=sys.stderr)
+            traceback.print_stack(frame, file=sys.stderr)
+
+See :doc:`debugging-techniques` for a more elaborate stack-trace
+dumper that mod_wsgi-express can wire into the same hook.
 
 Process-shutdown cleanup
 ~~~~~~~~~~~~~~~~~~~~~~~~

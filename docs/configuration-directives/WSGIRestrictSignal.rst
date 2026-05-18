@@ -80,7 +80,12 @@ Daemon mode
   signal pipe used for shutdown coordination, and remains there for
   the rest of the process's lifetime. WSGI requests run on secondary
   worker threads. Signal handlers registered from application code
-  are not dispatched.
+  via ``signal.signal()`` are not dispatched. The supported in-process
+  signal-handling mechanism for daemon mode is
+  ``mod_wsgi.subscribe_signals``, which exposes ``SIGHUP`` and
+  ``SIGUSR2`` to application code through a dedicated dispatcher
+  thread that runs independently of Python's signal model. See
+  :doc:`../user-guides/subscribing-to-events`.
 
 Registration thread requirement
 -------------------------------

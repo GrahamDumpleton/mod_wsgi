@@ -1095,20 +1095,25 @@ actual Python code execution was at. Your only clue is going to be where a
 call out was being made to some distinct C function in a C extension module
 for Python.
 
-One can get stack traces for Python code by using::
+A small helper that walks every active Python thread's stack and writes
+it to the Apache error log::
 
-    def _stacktraces():
-       code = []
-       for threadId, stack in sys._current_frames().items():
-           code.append("\n# ThreadID: %s" % threadId)
-           for filename, lineno, name, line in traceback.extract_stack(stack):
-               code.append('File: "%s", line %d, in %s' % (filename,
-                       lineno, name))
-               if line:
-                   code.append("  %s" % (line.strip()))
+    import os
+    import sys
+    import traceback
 
-       for line in code:
-           print(line, file=sys.stderr)
+    def dump_stack_traces():
+        code = []
+        for thread_id, stack in sys._current_frames().items():
+            code.append(f'\n# ProcessId: {os.getpid()}')
+            code.append(f'# ThreadID: {thread_id}')
+            for filename, lineno, name, line in traceback.extract_stack(stack):
+                code.append(f'File: "{filename}", line {lineno}, in {name}')
+                if line:
+                    code.append(f'  {line.strip()}')
+
+        for line in code:
+            print(line, file=sys.stderr)
 
 The caveat here obviously is that the process has to still be running. There
 is also the issue of how you trigger that function to dump stack traces for
@@ -1124,98 +1129,113 @@ This though depends on you only running your application within a single
 process because as soon as you have multiple processes you have no guarantee
 that a request will go to the process you want to debug.
 
-A better method therefore is to have a perpetually running background thread
-which monitors for a specific file in the file system. When that file is
-created or the modification time changes, then the background thread would
-dump the stack traces for the process.
+The two patterns below show the recommended triggers for daemon mode and
+embedded mode respectively. Both invoke the same ``dump_stack_traces()``
+helper defined above.
 
-Sample code which takes this approach is included below. This code could be
-placed temporarily at the end of your WSGI script file if you know you are
-going to need it because of a recurring problem::
+In daemon mode the supported trigger is to register a ``SIGUSR2``
+subscriber via ``mod_wsgi.subscribe_signals``. The signal is delivered
+to each daemon process independently, so a stack dump fires in whichever
+process the operator sent the signal to, and all processes can be dumped
+at once by sending the signal to every PID in the daemon group. See
+:doc:`subscribing-to-events` for the full subscription API. Add the
+following to your WSGI script file::
+
+    import mod_wsgi
+
+    @mod_wsgi.subscribe_signals
+    def _on_signal(name, *, signame, **event):
+        if signame == 'SIGUSR2':
+            dump_stack_traces()
+
+For service-script daemons (``WSGIDaemonProcess threads=0``)
+``mod_wsgi.subscribe_signals`` is inert (the dispatcher
+infrastructure is not started when there are no worker
+threads). Use Python's ``signal`` module directly in the
+service script instead, since signal-handler registration is
+not intercepted for service scripts::
+
+    import signal
+
+    signal.signal(signal.SIGUSR2, lambda signum, frame: dump_stack_traces())
+
+See the service-script notes in :doc:`subscribing-to-events`.
+
+Sending ``SIGUSR2`` to a daemon process will then cause stack traces for
+active Python threads to be written to the Apache error log::
+
+    kill -USR2 <daemon-pid>
+
+The daemon PIDs are visible in the Apache error log near startup
+(``LogLevel wsgi:info`` or higher) and can also be listed via ``ps`` if
+the daemon group is configured with ``display-name=`` (see
+:doc:`../configuration-directives/WSGIDaemonProcess`).
+
+In embedded mode ``mod_wsgi.subscribe_signals`` cannot deliver callbacks
+(see "Signal delivery is daemon-mode only" in
+:doc:`subscribing-to-events`), so the trigger has to come from inside the
+process. A long-lived background thread that polls the modification time
+of a sentinel file is the standard fallback: touching the file from the
+shell makes the next poll fire ``dump_stack_traces()``. Add the
+following to your WSGI script file::
 
     import os
-    import sys
     import threading
-    import traceback
 
     from queue import Queue, Empty
 
-    FILE = '/tmp/dump-stack-traces.txt'
+    SENTINEL_FILE = '/tmp/dump-stack-traces.txt'
 
     _interval = 1.0
-
-    _running = False
     _queue = Queue()
     _lock = threading.Lock()
-
-    def _stacktraces():
-        code = []
-        for thread_id, stack in sys._current_frames().items():
-            code.append(f'\n# ProcessId: {os.getpid()}')
-            code.append(f'# ThreadID: {thread_id}')
-            for filename, lineno, name, line in traceback.extract_stack(stack):
-                code.append(f'File: "{filename}", line {lineno}, in {name}')
-                if line:
-                    code.append(f'  {line.strip()}')
-
-        for line in code:
-            print(line, file=sys.stderr)
-
-    try:
-        mtime = os.path.getmtime(FILE)
-    except OSError:
-        mtime = None
+    _running = False
 
     def _monitor():
-        while True:
-            global mtime
+        try:
+            mtime = os.path.getmtime(SENTINEL_FILE)
+        except OSError:
+            mtime = None
 
+        while True:
             try:
-                current = os.path.getmtime(FILE)
+                current = os.path.getmtime(SENTINEL_FILE)
             except OSError:
                 current = None
 
             if current != mtime:
                 mtime = current
-                _stacktraces()
-
-            # Go to sleep for specified interval.
+                dump_stack_traces()
 
             try:
                 return _queue.get(timeout=_interval)
             except Empty:
                 pass
 
-    _thread = threading.Thread(target=_monitor, daemon=True)
-
-    def _start(interval=1.0):
-        global _interval
-        if interval < _interval:
-            _interval = interval
-
+    def _start():
         global _running
         with _lock:
             if not _running:
-                prefix = f'monitor (pid={os.getpid()}):'
-                print(f'{prefix} Starting stack trace monitor.',
+                print(f'monitor (pid={os.getpid()}):'
+                      f' Starting stack trace monitor.',
                       file=sys.stderr)
                 _running = True
-                _thread.start()
+                threading.Thread(target=_monitor, daemon=True).start()
 
     _start()
 
-Once your WSGI script file has been loaded, then touching the file
-'/tmp/dump-stack-traces.txt' will cause stack traces for active Python
-threads to be output to the Apache error log.
+Once your WSGI script file has been loaded, touching the file
+``/tmp/dump-stack-traces.txt`` will cause every Apache child process that
+has the script imported to write its active Python stack traces to the
+error log.
 
-Note that the sample code doesn't deal with possibility that with multiple
-processes for same application, that all processes may attempt to dump
-information at the same time. As such, you may get interleaving of output
-from multiple processes in Apache error logs at the same time.
-
-What you may want to do is modify this code to dump out to some special
-directory, distinct files containing the trace where the names of the file
-include the process ID and a date/time. That way each will be separate.
+For either trigger, if you have multiple processes serving the
+application and send the trigger to all of them at once, the dumps will
+interleave in the Apache error log. ``# ProcessId:`` lines in each dump
+identify which process the trace came from. For more separable output,
+modify ``dump_stack_traces()`` to write each dump to a distinct file
+under a chosen directory, with filenames that include the process ID and
+a date/time.
 
 An example of what one might expect to see from the above code is as
 follows::
@@ -1229,8 +1249,8 @@ follows::
     File: "/usr/lib/python3.12/threading.py", line 1052, in run
       self._target(*self._args, **self._kwargs)
     File: "/srv/www/myproject/wsgi.py", line 72, in _monitor
-      _stacktraces()
-    File: "/srv/www/myproject/wsgi.py", line 47, in _stacktraces
+      dump_stack_traces()
+    File: "/srv/www/myproject/wsgi.py", line 47, in dump_stack_traces
       for filename, lineno, name, line in traceback.extract_stack(stack):
 
     # ThreadID: 140234567890123

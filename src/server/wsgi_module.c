@@ -69,9 +69,9 @@ int wsgi_module_add_object(PyObject *module, const char *name,
  * Install the attributes that are common to every embedded
  * mod_wsgi module: version, FileWrapper type, RequestTimeout
  * exception, module-level methods, and the empty
- * event_callbacks/shutdown_callbacks lists and active_requests
- * dict. Returns 0 on success, -1 on failure with Python exception
- * set.
+ * event_callbacks/shutdown_callbacks/signal_callbacks lists and
+ * active_requests dict. Returns 0 on success, -1 on failure with
+ * Python exception set.
  */
 
 static int wsgi_module_install_common(PyObject *module)
@@ -153,6 +153,11 @@ static int wsgi_module_install_common(PyObject *module)
                                                NULL)) < 0)
         return -1;
 
+    if (wsgi_module_add_object(module, "subscribe_signals",
+                               PyCFunction_New(&wsgi_subscribe_signals_method[0],
+                                               NULL)) < 0)
+        return -1;
+
     if (wsgi_module_add_object(module, "request_data",
                                PyCFunction_New(&wsgi_request_data_method[0],
                                                NULL)) < 0)
@@ -165,6 +170,10 @@ static int wsgi_module_install_common(PyObject *module)
         return -1;
 
     if (wsgi_module_add_object(module, "shutdown_callbacks",
+                               PyList_New(0)) < 0)
+        return -1;
+
+    if (wsgi_module_add_object(module, "signal_callbacks",
                                PyList_New(0)) < 0)
         return -1;
 

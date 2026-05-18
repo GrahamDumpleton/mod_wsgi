@@ -333,11 +333,14 @@ extern PyMethodDef wsgi_request_data_method[];
 /*
  * In-process event publishing API. wsgi_publish_event invokes every
  * registered Python callback for the named event (the lists live as
- * event_callbacks / shutdown_callbacks attributes on the mod_wsgi
- * module). wsgi_event_subscribers returns the current count so callers
- * on the per-request hot path can skip event-payload construction
- * entirely when nobody is listening. The two subscribe_*_method tables
- * expose the registration entry points to Python.
+ * event_callbacks / shutdown_callbacks / signal_callbacks attributes
+ * on the mod_wsgi module; the special event names "process_stopping"
+ * and "process_signal" route to the shortcut lists in addition to
+ * event_callbacks). wsgi_event_subscribers returns the current count
+ * so callers on the per-request hot path can skip event-payload
+ * construction entirely when nobody is listening. The three
+ * subscribe_*_method tables expose the registration entry points to
+ * Python.
  */
 
 extern long wsgi_event_subscribers(void);
@@ -345,6 +348,7 @@ extern void wsgi_publish_event(const char *name, PyObject *event);
 
 extern PyMethodDef wsgi_subscribe_events_method[];
 extern PyMethodDef wsgi_subscribe_shutdown_method[];
+extern PyMethodDef wsgi_subscribe_signals_method[];
 
 /* ------------------------------------------------------------------------- */
 

@@ -2800,6 +2800,91 @@ void wsgi_publish_process_stopping(char *reason)
     }
 }
 
+void wsgi_publish_process_signal(int signum, const char *signame)
+{
+    apr_pool_t *pool = NULL;
+    apr_array_header_t *names = NULL;
+    apr_hash_index_t *hi;
+    apr_status_t rv;
+    int i;
+
+    /*
+     * Snapshot the interpreter name table under wsgi_interp_lock.
+     * Worker threads may grow the table concurrently via
+     * wsgi_acquire_interpreter, so iterating it directly is unsafe;
+     * a snapshot lets us release the lock before acquiring any
+     * sub-interpreter GIL (acquire then takes wsgi_interp_lock again
+     * internally, which would deadlock if we still held it here).
+     */
+
+    rv = apr_pool_create(&pool, NULL);
+    if (rv != APR_SUCCESS)
+        return;
+
+    apr_thread_mutex_lock(wsgi_interp_lock);
+
+    names = apr_array_make(pool, apr_hash_count(wsgi_interpreters),
+                           sizeof(const char *));
+
+    for (hi = apr_hash_first(pool, wsgi_interpreters); hi;
+         hi = apr_hash_next(hi))
+    {
+        const void *key;
+        apr_hash_this(hi, &key, NULL, NULL);
+        APR_ARRAY_PUSH(names, const char *) = apr_pstrdup(pool,
+                                                          (const char *)key);
+    }
+
+    apr_thread_mutex_unlock(wsgi_interp_lock);
+
+    for (i = 0; i < names->nelts; i++)
+    {
+        const char *name = APR_ARRAY_IDX(names, i, const char *);
+        InterpreterObject *interp = NULL;
+        PyObject *event = NULL;
+        PyObject *signame_obj = NULL;
+        PyObject *signum_obj = NULL;
+        int ok = 0;
+
+        interp = wsgi_acquire_interpreter((char *)name);
+
+        if (!interp)
+            continue;
+
+        event = PyDict_New();
+        signame_obj = PyUnicode_FromString(signame);
+        signum_obj = PyLong_FromLong(signum);
+
+        if (event && signame_obj && signum_obj &&
+            PyDict_SetItemString(event, "signame", signame_obj) == 0 &&
+            PyDict_SetItemString(event, "signum", signum_obj) == 0)
+        {
+            wsgi_publish_event("process_signal", event);
+            ok = 1;
+        }
+
+        Py_XDECREF(signum_obj);
+        Py_XDECREF(signame_obj);
+        Py_XDECREF(event);
+
+        if (!ok)
+        {
+            wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
+                                  WSGI_APLOGNO(0209) "Unable to publish "
+                                                     "'process_signal' event "
+                                                     "for %s.",
+                                  wsgi_format_interp_context(
+                                      wsgi_server->process->pool, NULL,
+                                      name));
+            PyErr_Clear();
+        }
+
+        wsgi_release_interpreter(interp);
+    }
+
+    apr_pool_destroy(pool);
+}
+
 /* ------------------------------------------------------------------------- */
 
 /*

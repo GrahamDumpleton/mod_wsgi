@@ -3183,6 +3183,112 @@ static PyObject *wsgi_subscribe_shutdown(PyObject *Py_UNUSED(self), PyObject *ar
     return callback;
 }
 
+static void wsgi_log_signal_subscribe_warning_in_embedded(void)
+{
+    /*
+     * Emit an INFO-level warning identifying the calling code,
+     * mirroring the SignalIntercept_call behaviour for signal.signal()
+     * (see wsgi_signal.c). Best-effort traceback dump via
+     * traceback.print_stack into a LogObject at APLOG_INFO. Errors
+     * along the way are cleared so we never leave a pending Python
+     * exception behind.
+     */
+
+    PyObject *m = NULL;
+
+    wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
+                          "mod_wsgi.subscribe_signals() called outside "
+                          "daemon mode; the callback will not be invoked. "
+                          "Signal callbacks are only delivered in daemon "
+                          "mode processes.");
+
+    m = PyImport_ImportModule("traceback");
+
+    if (m)
+    {
+        PyObject *d = NULL;
+        PyObject *o = NULL;
+        d = PyModule_GetDict(m);
+        o = PyDict_GetItemString(d, "print_stack");
+        if (o)
+        {
+            PyObject *log = NULL;
+            PyObject *call_args = NULL;
+            PyObject *result = NULL;
+            Py_INCREF(o);
+            log = newLogObject(NULL, APLOG_INFO, NULL, 0);
+            if (log)
+                call_args = Py_BuildValue("(OOO)", Py_None, Py_None, log);
+            if (call_args)
+                result = PyObject_CallObject(o, call_args);
+            Py_XDECREF(result);
+            Py_XDECREF(call_args);
+            Py_XDECREF(log);
+            Py_DECREF(o);
+        }
+    }
+
+    Py_XDECREF(m);
+
+    if (PyErr_Occurred())
+        PyErr_Clear();
+}
+
+static PyObject *wsgi_subscribe_signals(PyObject *Py_UNUSED(self),
+                                        PyObject *args)
+{
+    PyObject *callback = NULL;
+
+    if (!PyArg_ParseTuple(args, "O", &callback))
+        return NULL;
+
+#if defined(MOD_WSGI_WITH_DAEMONS)
+    if (wsgi_daemon_process)
+    {
+        PyObject *module = NULL;
+
+        module = PyImport_ImportModule("mod_wsgi");
+
+        if (module)
+        {
+            PyObject *dict = NULL;
+            PyObject *list = NULL;
+
+            dict = PyModule_GetDict(module);
+            list = PyDict_GetItemString(dict, "signal_callbacks");
+
+            if (!list)
+            {
+                Py_DECREF(module);
+                PyErr_SetString(PyExc_RuntimeError,
+                                "mod_wsgi signal_callbacks not initialised");
+                return NULL;
+            }
+
+            if (PyList_Append(list, callback) < 0)
+            {
+                wsgi_set_python_exception_from_cause(PyExc_RuntimeError,
+                                                     "Failed to register signal subscriber");
+                Py_DECREF(module);
+                return NULL;
+            }
+
+            Py_DECREF(module);
+        }
+        else
+            return NULL;
+    }
+    else
+        wsgi_log_signal_subscribe_warning_in_embedded();
+#else
+    wsgi_log_signal_subscribe_warning_in_embedded();
+#endif
+
+    /* Return the callback so the function can be used as a decorator. */
+    Py_INCREF(callback);
+    return callback;
+}
+
 long wsgi_event_subscribers(void)
 {
     PyObject *module = NULL;
@@ -3309,6 +3415,7 @@ void wsgi_publish_event(const char *name, PyObject *event)
 
     PyObject *event_callbacks = NULL;
     PyObject *shutdown_callbacks = NULL;
+    PyObject *signal_callbacks = NULL;
 
     module = PyImport_ImportModule("mod_wsgi");
 
@@ -3324,6 +3431,9 @@ void wsgi_publish_event(const char *name, PyObject *event)
         shutdown_callbacks = PyDict_GetItemString(dict, "shutdown_callbacks");
         Py_XINCREF(shutdown_callbacks);
 
+        signal_callbacks = PyDict_GetItemString(dict, "signal_callbacks");
+        Py_XINCREF(signal_callbacks);
+
         Py_DECREF(module);
     }
     else
@@ -3336,7 +3446,7 @@ void wsgi_publish_event(const char *name, PyObject *event)
         return;
     }
 
-    if (!event_callbacks || !shutdown_callbacks)
+    if (!event_callbacks || !shutdown_callbacks || !signal_callbacks)
     {
         wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server, WSGI_APLOGNO(0114) "Unable to find event subscribers.");
 
@@ -3344,6 +3454,7 @@ void wsgi_publish_event(const char *name, PyObject *event)
 
         Py_XDECREF(event_callbacks);
         Py_XDECREF(shutdown_callbacks);
+        Py_XDECREF(signal_callbacks);
 
         return;
     }
@@ -3352,9 +3463,12 @@ void wsgi_publish_event(const char *name, PyObject *event)
 
     if (strcmp(name, "process_stopping") == 0)
         wsgi_call_callbacks(name, shutdown_callbacks, event);
+    else if (strcmp(name, "process_signal") == 0)
+        wsgi_call_callbacks(name, signal_callbacks, event);
 
     Py_DECREF(event_callbacks);
     Py_DECREF(shutdown_callbacks);
+    Py_DECREF(signal_callbacks);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -3367,6 +3481,12 @@ PyMethodDef wsgi_subscribe_events_method[] = {
 
 PyMethodDef wsgi_subscribe_shutdown_method[] = {
     {"subscribe_shutdown", (PyCFunction)wsgi_subscribe_shutdown,
+     METH_VARARGS, 0},
+    {NULL},
+};
+
+PyMethodDef wsgi_subscribe_signals_method[] = {
+    {"subscribe_signals", (PyCFunction)wsgi_subscribe_signals,
      METH_VARARGS, 0},
     {NULL},
 };

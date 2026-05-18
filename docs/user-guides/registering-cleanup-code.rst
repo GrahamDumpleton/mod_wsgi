@@ -201,3 +201,13 @@ long to shut down. An application should therefore not be entirely
 dependent on cleanup callbacks running, and should have some means
 of detecting an abnormal shutdown when it next starts up and
 recovering from it automatically.
+
+``mod_wsgi.subscribe_shutdown()`` is also inert in service-script
+daemons (``WSGIDaemonProcess threads=0``): the publish point for
+``process_stopping`` lives in the per-request daemon main loop that
+service scripts skip, so the registered callback is never invoked.
+For service scripts, mod_wsgi pre-registers ``signal.signal(SIGTERM,
+...)`` with a handler that raises ``SystemExit``, so the supported
+pattern is to wrap the script's main loop in
+``try: ... except SystemExit: cleanup()``. See the service-script
+notes in :doc:`subscribing-to-events` for the full picture.

@@ -886,6 +886,23 @@ const char *wsgi_set_accept_mutex(cmd_parms *cmd, void *mconfig,
 static apr_file_t *wsgi_signal_pipe_in = NULL;
 static apr_file_t *wsgi_signal_pipe_out = NULL;
 
+/*
+ * Dedicated pipe carrying SIGHUP / SIGUSR2 bytes from the signal
+ * handler to the signal dispatcher thread. Independent of the
+ * shutdown pipe above so that long-running subscriber callbacks
+ * cannot delay the daemon main thread's detection of shutdown
+ * signals. Write end is set non-blocking after creation so the
+ * signal handler can never deadlock on a full pipe buffer; the
+ * trade-off is that signals arriving faster than subscribers
+ * consume them are silently dropped, which matches the
+ * not-refcounted semantics of Unix signals themselves.
+ */
+
+static apr_file_t *wsgi_signal_event_pipe_in = NULL;
+static apr_file_t *wsgi_signal_event_pipe_out = NULL;
+
+static apr_thread_t *wsgi_signal_dispatcher = NULL;
+
 static void wsgi_signal_handler(int signum)
 {
     apr_size_t nbytes = 1;
@@ -909,6 +926,22 @@ static void wsgi_signal_handler(int signum)
         apr_file_write(wsgi_signal_pipe_out, "C", &nbytes);
         apr_file_flush(wsgi_signal_pipe_out);
     }
+    else if (signum == SIGHUP)
+    {
+        if (wsgi_signal_event_pipe_out)
+        {
+            apr_file_write(wsgi_signal_event_pipe_out, "H", &nbytes);
+            apr_file_flush(wsgi_signal_event_pipe_out);
+        }
+    }
+    else if (signum == SIGUSR2)
+    {
+        if (wsgi_signal_event_pipe_out)
+        {
+            apr_file_write(wsgi_signal_event_pipe_out, "U", &nbytes);
+            apr_file_flush(wsgi_signal_event_pipe_out);
+        }
+    }
     else
     {
         wsgi_daemon_shutdown++;
@@ -916,6 +949,69 @@ static void wsgi_signal_handler(int signum)
         apr_file_write(wsgi_signal_pipe_out, "S", &nbytes);
         apr_file_flush(wsgi_signal_pipe_out);
     }
+}
+
+static void *wsgi_signal_dispatcher_thread(apr_thread_t *thd, void *data)
+{
+    WSGIDaemonProcess *daemon = data;
+
+    apr_pollfd_t poll_fd;
+    apr_int32_t poll_count = 0;
+    apr_status_t rv;
+
+    poll_fd.desc_type = APR_POLL_FILE;
+    poll_fd.reqevents = APR_POLLIN;
+    poll_fd.desc.f = wsgi_signal_event_pipe_in;
+
+    while (1)
+    {
+        char buf[1];
+        apr_size_t nbytes = 1;
+        int signum;
+        const char *signame;
+
+        rv = apr_poll(&poll_fd, 1, &poll_count, -1);
+        if (APR_STATUS_IS_EINTR(rv))
+            continue;
+        if (rv != APR_SUCCESS)
+            break;
+
+        rv = apr_file_read(wsgi_signal_event_pipe_in, buf, &nbytes);
+
+        if (APR_STATUS_IS_EOF(rv))
+            break;
+
+        if (rv != APR_SUCCESS || nbytes != 1)
+        {
+            if (!wsgi_daemon_shutdown)
+            {
+                wsgi_log_error(APLOG_ALERT, 0, wsgi_server, WSGI_APLOGNO(0208) "Read failed on signal event pipe in "
+                                                                                "daemon process '%s'; signal dispatcher "
+                                                                                "exiting.",
+                               daemon->group->name);
+            }
+            break;
+        }
+
+        switch (buf[0])
+        {
+            case 'H':
+                signum = SIGHUP;
+                signame = "SIGHUP";
+                break;
+            case 'U':
+                signum = SIGUSR2;
+                signame = "SIGUSR2";
+                break;
+            default:
+                /* Unknown tag byte; defensive skip. */
+                continue;
+        }
+
+        wsgi_publish_process_signal(signum, signame);
+    }
+
+    return NULL;
 }
 
 static void wsgi_exit_daemon_process(int status)
@@ -2992,6 +3088,25 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     }
 
     /*
+     * Spawn the signal dispatcher thread that drains the signal
+     * event pipe and publishes process_signal events to registered
+     * Python subscribers. Created unconditionally since subscribers
+     * can register at any point during the daemon's lifetime.
+     */
+
+    rv = apr_thread_create(&wsgi_signal_dispatcher, thread_attr,
+                           wsgi_signal_dispatcher_thread, daemon, p);
+
+    if (rv != APR_SUCCESS)
+    {
+        wsgi_log_error(APLOG_ERR, rv, wsgi_server, WSGI_APLOGNO(0207) "Unable to create signal dispatcher thread in "
+                                                                       "daemon process '%s'; SIGHUP and SIGUSR2 signals "
+                                                                       "will not be delivered to mod_wsgi.subscribe_signals "
+                                                                       "subscribers.",
+                       daemon->group->name);
+    }
+
+    /*
      * Start telemetry reporter if configured. Skip for service-script
      * daemons (threads=0): they handle no requests, so there is
      * nothing to accumulate, and an ingester-hosting service script
@@ -3252,6 +3367,40 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
                                                                               "enforced.",
                            daemon->group->name);
         }
+    }
+
+    /*
+     * Stop the signal dispatcher before publishing process_stopping
+     * so the dispatcher is not still inside a sub-interpreter GIL
+     * acquire when the shutdown publish walks the same interpreter
+     * table. Ignoring SIGHUP/SIGUSR2 first means no new bytes can
+     * appear in the pipe; closing the write end then makes the
+     * dispatcher's pending read return EOF and exit cleanly. The
+     * join is best-effort: if a subscriber callback is wedged the
+     * shutdown-timeout reaper still bounds the total wait via
+     * exit().
+     */
+
+    apr_signal(SIGHUP, SIG_IGN);
+    apr_signal(SIGUSR2, SIG_IGN);
+
+    if (wsgi_signal_event_pipe_out)
+    {
+        apr_file_close(wsgi_signal_event_pipe_out);
+        wsgi_signal_event_pipe_out = NULL;
+    }
+
+    if (wsgi_signal_dispatcher)
+    {
+        rv = apr_thread_join(&thread_rv, wsgi_signal_dispatcher);
+        if (rv != APR_SUCCESS)
+        {
+            wsgi_log_error(APLOG_WARNING, rv, wsgi_server,
+                           "Unable to join with signal dispatcher thread "
+                           "in daemon process '%s' during shutdown.",
+                           daemon->group->name);
+        }
+        wsgi_signal_dispatcher = NULL;
     }
 
     /*
@@ -3546,6 +3695,31 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
             wsgi_daemon_init_failure_exit();
         }
 
+        /*
+         * Dedicated pipe for the application-facing signal events
+         * (SIGHUP, SIGUSR2). Separate from the shutdown signal pipe
+         * so that the daemon main thread reading shutdown bytes is
+         * never delayed by subscriber callback work. Write end is
+         * set non-blocking so the in-signal-handler write cannot
+         * deadlock if subscribers are slow enough to fill the
+         * kernel pipe buffer.
+         */
+
+        status = apr_file_pipe_create(&wsgi_signal_event_pipe_in,
+                                      &wsgi_signal_event_pipe_out, p);
+
+        if (status != APR_SUCCESS)
+        {
+            wsgi_log_error(APLOG_ALERT, status, wsgi_server, WSGI_APLOGNO(0206) "Unable to initialise signal event pipe in "
+                                                                                "daemon process '%s'. Daemon process will "
+                                                                                "exit and be restarted after a delay.",
+                           daemon->group->name);
+
+            wsgi_daemon_init_failure_exit();
+        }
+
+        apr_file_pipe_timeout_set(wsgi_signal_event_pipe_out, 0);
+
         wsgi_daemon_shutdown = 0;
 
         wsgi_daemon_pid = getpid();
@@ -3558,6 +3732,19 @@ static int wsgi_start_process(apr_pool_t *p, WSGIDaemonProcess *daemon)
 #ifdef SIGXCPU
         apr_signal(SIGXCPU, wsgi_signal_handler);
 #endif
+
+        /*
+         * Application-facing signal handlers. SIGHUP and SIGUSR2
+         * are not used by Apache for child process management
+         * (Apache uses SIGHUP at the parent only, and translates
+         * parent shutdown to SIGTERM/SIGUSR1 for the daemon); they
+         * are routed through the signal event pipe to the
+         * dispatcher thread which calls registered Python
+         * subscribers via mod_wsgi.subscribe_signals.
+         */
+
+        apr_signal(SIGHUP, wsgi_signal_handler);
+        apr_signal(SIGUSR2, wsgi_signal_handler);
 
         /* Set limits on amount of CPU time that can be used. */
 
