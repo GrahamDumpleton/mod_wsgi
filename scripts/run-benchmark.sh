@@ -152,6 +152,12 @@
 #                             when unset. Useful for measuring how the
 #                             GIL contention coefficient and per-phase
 #                             histogram bumps shift with the interval.
+#       --free-threading      Pass --free-threading to mod_wsgi-express,
+#                             emitting WSGIFreeThreading On so the GIL
+#                             is disabled (PEP 703). Requires a Python
+#                             build with free-threading support
+#                             (--disable-gil). Applies in both embedded
+#                             and daemon mode.
 #       --telemetry-options ARGS
 #                             Pass one WSGITelemetryOptions directive
 #                             through to mod_wsgi-express verbatim.
@@ -208,6 +214,7 @@ TELEMETRY_SERVICE=
 TELEMETRY_INTERVAL=1.0
 SLOW_REQUESTS=
 SWITCH_INTERVAL=
+FREE_THREADING=0
 TELEMETRY_OPTIONS=()
 BOMBARDIER_TIMEOUT=10s
 LOG_LEVEL=warn
@@ -249,6 +256,7 @@ while [ $# -gt 0 ]; do
         --telemetry-interval)   TELEMETRY_INTERVAL="$2"; shift 2 ;;
         --slow-requests)      SLOW_REQUESTS="$2"; shift 2 ;;
         --switch-interval)    SWITCH_INTERVAL="$2"; shift 2 ;;
+        --free-threading) FREE_THREADING=1; shift ;;
         --telemetry-options)    TELEMETRY_OPTIONS+=("$2"); shift 2 ;;
         --bombardier-timeout) BOMBARDIER_TIMEOUT="$2"; shift 2 ;;
         --log-level)      LOG_LEVEL="$2"; shift 2 ;;
@@ -393,6 +401,10 @@ if [ -n "$SWITCH_INTERVAL" ]; then
     setup_args+=(--switch-interval "$SWITCH_INTERVAL")
 fi
 
+if [ "$FREE_THREADING" = "1" ]; then
+    setup_args+=(--free-threading)
+fi
+
 if [ "$MODE" = "daemon" ] && [ "$DISABLE_RELOADING" = "1" ]; then
     reloading_state="disabled"
 else
@@ -475,6 +487,11 @@ echo "  body-chunks    : $BODY_CHUNKS"
 echo "  4xx-rate       : $RATE_4XX"
 echo "  5xx-rate       : $RATE_5XX"
 echo "  switch-int     : ${SWITCH_INTERVAL:-default}"
+if [ "$FREE_THREADING" = "1" ]; then
+    echo "  free-threading : on"
+else
+    echo "  free-threading : off"
+fi
 if [ "$DISTRIBUTION" = "lognormal" ]; then
     echo "  distribution   : lognormal (io_sigma=${IO_SIGMA}, cpu_sigma=${CPU_SIGMA})"
 elif [ "$DISTRIBUTION" = "mixture" ]; then
