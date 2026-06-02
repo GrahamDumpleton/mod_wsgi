@@ -549,6 +549,8 @@ configuration, redirect / ``Location``-header rewriting issues,
 and the equivalent ``mod_wsgi-express`` options, see
 :doc:`running-behind-a-reverse-proxy`.
 
+.. _the-apache-alias-directive:
+
 The Apache Alias Directive
 --------------------------
 

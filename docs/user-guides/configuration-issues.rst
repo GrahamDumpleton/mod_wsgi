@@ -444,3 +444,53 @@ neither a graceful reload, restart, nor full Apache stop/start is
 required. ``touch``-ing the WSGI script file causes the daemon
 process group to recycle on the next request, picking up the new
 code.
+
+Avoid FallbackResource
+----------------------
+
+Do not use the ``FallbackResource`` directive to route requests to a
+WSGI application. A configuration of the form::
+
+    <Directory /var/www/files/>
+        FallbackResource /python/
+    </Directory>
+
+    WSGIScriptAlias /python /var/www/wsgi_test.py
+
+is intended to serve static files where they exist and fall back to
+the WSGI application for everything else. It does not work reliably and
+can produce a corrupted response that causes browsers to hang.
+
+``FallbackResource`` is implemented in ``mod_dir`` by performing a
+subrequest for the fallback URL and, when that subrequest resolves to a
+regular file, splicing it into the main request with
+``ap_internal_fast_redirect()``. Because a WSGI script is a regular
+file on disk, that path is taken and the main request adopts the output
+filter chain that was built for the subrequest. The WSGI application
+then runs against that borrowed filter chain rather than the one the
+main request would normally use.
+
+The practical consequence shows up when the response length is not
+known up front. If ``mod_deflate`` is compressing the response, for
+example, it removes the ``Content-Length`` the application supplied and
+Apache switches to ``Transfer-Encoding: chunked``. With the spliced
+filter chain the chunk-framing filter is not applied to the body, so
+the response is sent without the chunk size markers or the terminating
+chunk. Clients wait indefinitely for data that never arrives.
+
+This is a limitation in the way ``FallbackResource`` interacts with
+Apache's filter chain and is not something mod_wsgi can detect or
+correct, as the affected filters run outside of mod_wsgi's control. To
+mix static content with a WSGI application, use the ``Alias`` based
+recipe described in
+:ref:`the-apache-alias-directive`, or a
+``mod_rewrite`` rule that only rewrites to the WSGI application when the
+requested file does not exist::
+
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ /python/ [PT,L]
+
+Both of these go through normal request processing with a correctly
+constructed filter chain and do not exhibit the problem.
