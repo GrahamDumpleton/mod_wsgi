@@ -49,3 +49,15 @@ Bugs Fixed
   ``MOD_WSGI_WITH_DAEMONS`` into a daemon specific header that the affected
   source file did not include. The definition has been moved to a common
   header visible to all source files.
+
+* When using daemon mode with a ``VirtualHost`` selected by IP address while
+  the ``Listen`` directive used a wildcard, output written to ``wsgi.errors``
+  (and ``sys.stdout`` or ``sys.stderr``) was written to the main server
+  ``ErrorLog`` instead of the ``ErrorLog`` of that ``VirtualHost``. To match
+  the request to a server the daemon process reconstructed the local socket
+  address from the listener socket bind address, but for a wildcard listener
+  that address is ``0.0.0.0`` (or ``::``) and so never matched a
+  ``VirtualHost`` given by a specific IP address, causing the match to fall
+  back to the main server. The daemon now reconstructs the local address from
+  the actual local IP the connection was received on, which is what the
+  Apache child worker uses for the same matching.
