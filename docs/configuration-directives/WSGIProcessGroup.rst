@@ -14,8 +14,13 @@ of the same group of daemon processes.
 
 The argument to the WSGIProcessGroup can be either one of two special
 expanding variables or the actual name of a group of daemon processes setup
-using the WSGIDaemonProcess directive. The meaning of the special variables
-are:
+using the WSGIDaemonProcess directive. The most common usage is to name
+a daemon process group set up with WSGIDaemonProcess::
+
+  WSGIDaemonProcess mygroup processes=2 threads=15
+  WSGIProcessGroup mygroup
+
+The meaning of the special variables are:
 
 **%{GLOBAL}**
     The process group name will be set to the empty string.
@@ -59,7 +64,11 @@ different virtual host. Which daemon process groups can be selected may be
 further restricted if the WSGIRestrictProcess directive has been used.
 
 Note that the WSGIProcessGroup directive and corresponding features are not
-available on Windows or when running Apache 1.3.
+available on Windows.
 
-.. _SetEnv: http://httpd.apache.org/docs/2.2/mod/mod_env.html#setenv
-.. _RewriteRule: http://httpd.apache.org/docs/2.2/mod/mod_rewrite.html#rewriterule
+For the conceptual model behind daemon mode and the patterns for
+delegating WSGI applications to daemon process groups, see
+:doc:`../user-guides/embedded-and-daemon-mode`.
+
+.. _SetEnv: http://httpd.apache.org/docs/2.4/mod/mod_env.html#setenv
+.. _RewriteRule: http://httpd.apache.org/docs/2.4/mod/mod_rewrite.html#rewriterule

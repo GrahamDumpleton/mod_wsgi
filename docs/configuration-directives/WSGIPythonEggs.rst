@@ -11,6 +11,10 @@ for all sub interpreters created within embedded mode. This directive
 achieves the same affect as having set the ``PYTHON_EGG_CACHE``
 environment variable.
 
+For example::
+
+  WSGIPythonEggs /var/cache/wsgi/python-eggs
+
 Note that the directory specified must exist and be writable by the user
 that the Apache child processes run as. The directive only applies to
 mod_wsgi embedded mode. To set the Python eggs cache directory for mod_wsgi

@@ -2,14 +2,19 @@
 Reporting Bugs
 ==============
 
-If you believe you have uncovered a bug in mod_wsgi code then lodge a bug
-report on the mod_wsgi issue tracker. The issue tracker is located on
-GitHub at:
+If you believe you have found a bug in mod_wsgi, file an issue on
+the GitHub issue tracker:
 
 * https://github.com/GrahamDumpleton/mod_wsgi/issues
- 
-Before creating a ticket on the issue tracker, please do try and ensure you
-attempt to resolve issues using the mod_wsgi mailing list first as
-explained in :doc:`finding-help`. The majority of issues lodged via the
-issue tracker are not actually bugs in mod_wsgi but due to external factors
-or simply a failure to read the documentation.
+
+A substantial fraction of bug reports against mod_wsgi turn out to
+be misconfiguration, application errors, or problems in third-party
+packages rather than mod_wsgi bugs. Before filing a bug report,
+work through :doc:`troubleshooting`.
+
+For general questions, or if you want to discuss whether something
+is actually a bug before filing it, see :doc:`finding-help`.
+
+For suspected security issues, see :doc:`security-issues` for the
+private disclosure process. Do not open a public issue for a
+vulnerability.

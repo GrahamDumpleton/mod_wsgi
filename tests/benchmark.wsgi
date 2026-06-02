@@ -1,0 +1,435 @@
+# Benchmark WSGI app modelling a small REST endpoint.
+#
+# Returns a precomputed ~1 KB body and a handful of response headers,
+# so the response path through mod_wsgi exercises a realistic amount
+# of header processing and body output without doing real work inside
+# the Python callable. Paired with tests/hello.wsgi (12 byte body)
+# this lets benchmarks compare raw per-request overhead against a
+# more typical response size.
+#
+# BENCHMARK_DELAY env var (fractional seconds) adds a time.sleep()
+# per request to emulate I/O wait on a backend (database / upstream
+# service). time.sleep() releases the GIL, so threads within a
+# process serve concurrently during the wait.
+#
+# BENCHMARK_CPU env var (fractional seconds) adds a wall-clock
+# timed busy loop per request to emulate Python-level CPU work.
+# The loop holds the GIL, so threads within a process serialise
+# on CPU work. When combined with BENCHMARK_DELAY the sleep runs
+# first, then the CPU work.
+#
+# BENCHMARK_CHUNKS env var (integer >= 1, default 1) splits a
+# mixed BENCHMARK_DELAY + BENCHMARK_CPU workload into N interleaved
+# [sleep, cpu] iterations. Threads that sleep concurrently stampede
+# onto the GIL for their CPU phase; interleaving with smaller chunks
+# scrambles the acquisition timing and reduces that stampede. Only
+# has an effect when both DELAY and CPU are positive.
+#
+# BENCHMARK_DISTRIBUTION env var selects per-request time sampling:
+#
+#   "fixed" (default)   Every request uses BENCHMARK_DELAY / BENCHMARK_CPU
+#                       verbatim (historical behaviour).
+#
+#   "lognormal"         Per-request delay (and optionally CPU) is drawn
+#                       from a log-normal distribution whose *mean*
+#                       equals BENCHMARK_DELAY / BENCHMARK_CPU. Matches
+#                       the right-skewed fall-off typical of real HTTP
+#                       response time distributions.
+#
+#   "mixture"           Body + long-tail. 95% of requests draw from the
+#                       lognormal body centred on BENCHMARK_DELAY (sharp
+#                       peak, sigma = BENCHMARK_IO_SIGMA). The remaining
+#                       5% draw from a slow lognormal centred on 2 s,
+#                       capped at 5 s (thin but real long tail). Models
+#                       fast happy path + rare slow path (DB retries,
+#                       cache misses, GC pauses) — how real HTTP latency
+#                       decomposes in production. CPU side uses the
+#                       plain lognormal (no tail branch) to avoid
+#                       pathological stalls on rare CPU outliers.
+#
+# BENCHMARK_IO_SIGMA env var (float, default 0.6) is the log-normal
+# sigma parameter for the I/O delay when distribution is "lognormal".
+# Larger sigma => heavier tail. sigma ~ 0.6 gives roughly
+# P95 = 2.7 * P50, P99 = 4 * P50.
+#
+# BENCHMARK_CPU_SIGMA env var (float, default 0.0) is the log-normal
+# sigma for the CPU portion. Defaulting to zero keeps per-request CPU
+# constant so the test host is not overwhelmed by pathological tail
+# samples; set > 0 to also vary CPU.
+#
+# BENCHMARK_BODY_SIZE env var sets the response body length. Accepts
+# a single value ("65536", "64K", "1M") or a range ("1K-256K") that
+# is sampled uniformly per request. Default "1024" preserves the
+# historical 1 KB body. Suffixes K and M are 1024 and 1024*1024.
+#
+# BENCHMARK_BODY_CHUNKS env var sets how many pieces the body is
+# yielded as. Accepts a single integer or a range ("1-128"). Default
+# 1 yields the whole body in one go. A value equal to the body size
+# yields one byte at a time, exposing byte-at-a-time generator
+# anti-patterns. If the value exceeds the body size it is clamped to
+# the size (one byte per chunk). Bytes are distributed evenly across
+# chunks; any remainder goes into the leading chunks one byte each.
+#
+# BENCHMARK_WEDGE_INTERVAL env var (seconds, default 0 = disabled). When
+# set to a positive value, this process will periodically wedge a single
+# request in an infinite sleep loop so the daemon's RequestTimeout
+# injection (interrupt-timeout) unwinds it with a 504 Gateway Timeout.
+# The value is the minimum gap between the end of one wedge and the
+# start of the next, measured per process. Goal: surface periodic 504
+# records in the slow-request telemetry stream without disrupting bulk
+# traffic. At most one request is wedged at a time; concurrent requests
+# pass through normally, and the wedged thread releases the GIL between
+# iterations so sibling threads keep serving. Sibling daemon processes
+# stagger their first wedge by a per-pid offset to avoid wedging in
+# lockstep. Requires the daemon to have a non-zero interrupt-timeout,
+# otherwise the wedged request will eventually take the entire process
+# down via the request-timeout fallback.
+#
+# BENCHMARK_4XX_RATE and BENCHMARK_5XX_RATE env vars (floats in [0, 1];
+# default 0) inject error responses at the given per-request probability.
+# 5xx is rolled first, then 4xx, then a normal 2xx — so the two rates
+# are independent probabilities of *each* error class, and their sum
+# must be <= 1. 4xx returns "404 Not Found", 5xx returns
+# "500 Internal Server Error" (the most operationally common code in
+# each class). Delay / CPU / body still apply to the error path so a
+# combined --slow-requests + --5xx-rate run produces slow records that
+# are also 5xx, exercising the slow-record status field.
+#
+# Paths served (all other paths fall through to the benchmark handler):
+#
+#   /                 Benchmark response (applies delay/cpu, returns body).
+#
+#   /metrics/reset    Calls mod_wsgi.request_metrics() to seed a fresh
+#                     measurement window in this process. Returns the
+#                     PID so the collector can track which processes
+#                     have been reached.
+#
+#   /metrics/report   Calls mod_wsgi.request_metrics() again and returns
+#                     the accumulated per-process metrics as JSON. The
+#                     first call on a given process returns an empty
+#                     window, so /metrics/reset must be hit first.
+
+import json
+import math
+import os
+import random
+import threading
+import time
+
+try:
+    import mod_wsgi
+except ImportError:
+    mod_wsgi = None
+
+_DELAY = float(os.environ.get("BENCHMARK_DELAY", "0") or "0")
+_CPU = float(os.environ.get("BENCHMARK_CPU", "0") or "0")
+_CHUNKS = max(1, int(os.environ.get("BENCHMARK_CHUNKS", "1") or "1"))
+_DISTRIBUTION = (os.environ.get("BENCHMARK_DISTRIBUTION", "fixed") or "fixed").lower()
+_IO_SIGMA = max(0.0, float(os.environ.get("BENCHMARK_IO_SIGMA", "0.6") or "0.6"))
+_CPU_SIGMA = max(0.0, float(os.environ.get("BENCHMARK_CPU_SIGMA", "0.0") or "0.0"))
+
+
+def _clamp_rate(spec):
+    try:
+        v = float(spec)
+    except (TypeError, ValueError):
+        return 0.0
+    if v < 0.0:
+        return 0.0
+    if v > 1.0:
+        return 1.0
+    return v
+
+
+_RATE_5XX = _clamp_rate(os.environ.get("BENCHMARK_5XX_RATE", "0") or "0")
+_RATE_4XX = _clamp_rate(os.environ.get("BENCHMARK_4XX_RATE", "0") or "0")
+
+_WEDGE_INTERVAL = max(
+    0.0, float(os.environ.get("BENCHMARK_WEDGE_INTERVAL", "0") or "0")
+)
+# If the caller asks for sum > 1, scale 4xx down so the combined error
+# rate caps at 100% rather than silently dropping samples.
+if _RATE_5XX + _RATE_4XX > 1.0:
+    _RATE_4XX = max(0.0, 1.0 - _RATE_5XX)
+
+
+_STATUS_2XX = "200 OK"
+_STATUS_4XX = "404 Not Found"
+_STATUS_5XX = "500 Internal Server Error"
+
+
+def _parse_size(spec):
+    s = spec.strip().upper()
+    mult = 1
+    if s.endswith("K"):
+        mult, s = 1024, s[:-1]
+    elif s.endswith("M"):
+        mult, s = 1024 * 1024, s[:-1]
+    return max(0, int(float(s) * mult))
+
+
+def _parse_count(spec):
+    return max(1, int(spec.strip()))
+
+
+def _parse_range(spec, parse_one, default):
+    if not spec:
+        return (default, default)
+    spec = spec.strip()
+    if "-" in spec and not spec.startswith("-"):
+        lo, hi = spec.split("-", 1)
+        a, b = parse_one(lo), parse_one(hi)
+        return (min(a, b), max(a, b))
+    v = parse_one(spec)
+    return (v, v)
+
+
+_BODY_SIZE_LO, _BODY_SIZE_HI = _parse_range(
+    os.environ.get("BENCHMARK_BODY_SIZE", ""), _parse_size, 1024)
+_BODY_CHUNKS_LO, _BODY_CHUNKS_HI = _parse_range(
+    os.environ.get("BENCHMARK_BODY_CHUNKS", ""), _parse_count, 1)
+
+# Pre-allocated source buffer sized for the largest possible response.
+# Per-request chunks are slices of this buffer (all 'A' bytes), so we
+# avoid reallocating on every call.
+_MAX_BODY_BUFFER = b"A" * max(_BODY_SIZE_HI, 1)
+
+_PID = os.getpid()
+
+# Cached report so repeated /metrics/report hits return identical data
+# for the same window. request_metrics() resets on every call, so
+# without caching a second hit from the collector would clobber the
+# accumulated benchmark data with a tiny-window reading.
+_metrics_lock = threading.Lock()
+_metrics_cache = None
+
+# Periodic-wedge state. A single wedge slot per process: one request at
+# a time may enter the spin loop and wait for the daemon's
+# RequestTimeout injection to unwind it. _last_wedge_end is monotonic
+# seconds at which the most recent wedge unwound; the next wedge is
+# eligible BENCHMARK_WEDGE_INTERVAL seconds after that.
+#
+# To stop sibling daemon processes from wedging in lockstep (which would
+# make the entire server appear frozen during the overlap), the initial
+# _last_wedge_end is offset by a deterministic per-pid jitter so each
+# process fires its first wedge at a different time within the interval.
+_wedge_lock = threading.Lock()
+_wedge_in_progress = False
+if _WEDGE_INTERVAL > 0:
+    _wedge_offset = (_PID * 0.6180339887) % 1.0 * _WEDGE_INTERVAL
+    _last_wedge_end = time.monotonic() - (_WEDGE_INTERVAL - _wedge_offset)
+else:
+    _last_wedge_end = 0.0
+
+
+def _maybe_wedge():
+    """If wedge mode is enabled and the inter-wedge gap has elapsed,
+    enter a spin loop and stay there until the daemon injects
+    mod_wsgi.RequestTimeout, which unwinds via the finally block and
+    propagates to the WSGI adapter (producing a 504 Gateway Timeout
+    response).
+
+    The loop sleeps each iteration so the wedged thread does not hog
+    the GIL — sibling threads in the same process must keep serving
+    normal requests while one thread sits here. PyThreadState_SetAsyncExc
+    only fires on bytecode dispatch, so the injected exception lands on
+    the loop iteration after sleep returns; the small sleep adds at most
+    that interval of extra latency to the unwind.
+    """
+    global _wedge_in_progress, _last_wedge_end
+
+    if _WEDGE_INTERVAL <= 0:
+        return
+
+    now = time.monotonic()
+
+    with _wedge_lock:
+        if _wedge_in_progress:
+            return
+        if (now - _last_wedge_end) < _WEDGE_INTERVAL:
+            return
+        _wedge_in_progress = True
+
+    try:
+        while True:
+            time.sleep(0.05)
+    finally:
+        with _wedge_lock:
+            _wedge_in_progress = False
+            _last_wedge_end = time.monotonic()
+
+
+def _cpu_burn(seconds):
+    deadline = time.perf_counter() + seconds
+    count = 0
+    while time.perf_counter() < deadline:
+        count += 1
+    return count
+
+
+def _sample_lognormal(target_mean, sigma):
+    """Draw a positive sample whose expectation equals target_mean.
+
+    For X ~ LogNormal(mu, sigma), E[X] = exp(mu + sigma^2/2), so we pick
+    mu accordingly. Sigma=0 (or target_mean=0) collapses to the fixed
+    value. Extreme outliers in the right tail are clamped at 10x the
+    target to avoid pathological stalls on rare draws.
+    """
+    if target_mean <= 0 or sigma <= 0:
+        return target_mean
+    mu = math.log(target_mean) - (sigma * sigma) / 2.0
+    sample = random.lognormvariate(mu, sigma)
+    ceiling = target_mean * 10.0
+    if sample > ceiling:
+        sample = ceiling
+    return sample
+
+
+_MIXTURE_TAIL_PROB = 0.05
+_MIXTURE_TAIL_MEAN = 2.0     # seconds; peak of the rare long-tail component
+_MIXTURE_TAIL_SIGMA = 0.4    # moderate spread for the tail
+_MIXTURE_TAIL_CAP = 5.0      # hard cap on tail samples
+
+
+def _sample_mixture(target_mean, sigma):
+    """Body + rare long-tail sampler for BENCHMARK_DISTRIBUTION=mixture.
+
+    95% of requests draw from the lognormal body centred on target_mean
+    (sharp peak near the caller's configured delay). The remaining 5%
+    draw from a slower lognormal with mean 2 s / sigma 0.4, capped hard
+    at 5 s. The tail parameters are fixed (not scaled by target_mean)
+    so the tail hump stays in a realistic 1-5 s range regardless of how
+    small the body mean is set.
+    """
+    if target_mean <= 0:
+        return target_mean
+    if random.random() < _MIXTURE_TAIL_PROB:
+        mu = math.log(_MIXTURE_TAIL_MEAN) - (_MIXTURE_TAIL_SIGMA *
+                                             _MIXTURE_TAIL_SIGMA) / 2.0
+        sample = random.lognormvariate(mu, _MIXTURE_TAIL_SIGMA)
+        return min(_MIXTURE_TAIL_CAP, sample)
+    return _sample_lognormal(target_mean, sigma)
+
+
+if _DISTRIBUTION == "lognormal":
+    def _per_request_times():
+        return (_sample_lognormal(_DELAY, _IO_SIGMA),
+                _sample_lognormal(_CPU, _CPU_SIGMA))
+elif _DISTRIBUTION == "mixture":
+    def _per_request_times():
+        # CPU uses plain lognormal — a rare 5 s CPU sample would stall
+        # an entire thread and saturate the host. I/O sleeps release
+        # the GIL, so long I/O tail samples are safe.
+        return (_sample_mixture(_DELAY, _IO_SIGMA),
+                _sample_lognormal(_CPU, _CPU_SIGMA))
+else:
+    def _per_request_times():
+        return (_DELAY, _CPU)
+
+
+def _sample_body():
+    size = (_BODY_SIZE_LO if _BODY_SIZE_LO == _BODY_SIZE_HI
+            else random.randint(_BODY_SIZE_LO, _BODY_SIZE_HI))
+    chunks = (_BODY_CHUNKS_LO if _BODY_CHUNKS_LO == _BODY_CHUNKS_HI
+              else random.randint(_BODY_CHUNKS_LO, _BODY_CHUNKS_HI))
+    if size == 0:
+        return 0, 0
+    return size, min(chunks, size)
+
+
+def _build_chunks(size, chunks):
+    if size == 0:
+        return []
+    if chunks <= 1:
+        return [_MAX_BODY_BUFFER[:size]]
+    base, rem = divmod(size, chunks)
+    if rem == 0:
+        return [_MAX_BODY_BUFFER[:base]] * chunks
+    return ([_MAX_BODY_BUFFER[:base + 1]] * rem +
+            [_MAX_BODY_BUFFER[:base]] * (chunks - rem))
+
+
+_BASE_HEADERS = [
+    ("Content-Type", "text/plain"),
+    ("Cache-Control", "no-store"),
+    ("X-Frame-Options", "DENY"),
+    ("X-Content-Type-Options", "nosniff"),
+    ("X-Benchmark", "1"),
+]
+
+
+def _pick_status():
+    """Roll the per-request response class. 5xx wins first, then 4xx,
+    then 2xx fills the rest. One uniform draw — the two rates are
+    independent probabilities, not a partition of weights."""
+    if _RATE_5XX <= 0 and _RATE_4XX <= 0:
+        return _STATUS_2XX
+    r = random.random()
+    if r < _RATE_5XX:
+        return _STATUS_5XX
+    if r < _RATE_5XX + _RATE_4XX:
+        return _STATUS_4XX
+    return _STATUS_2XX
+
+
+def _bench(environ, start_response):
+    delay, cpu = _per_request_times()
+    if delay > 0 and cpu > 0 and _CHUNKS > 1:
+        d_per = delay / _CHUNKS
+        c_per = cpu / _CHUNKS
+        for _ in range(_CHUNKS):
+            time.sleep(d_per)
+            _cpu_burn(c_per)
+    elif delay > 0 and cpu > 0:
+        time.sleep(delay)
+        _cpu_burn(cpu)
+    elif delay > 0:
+        time.sleep(delay)
+    elif cpu > 0:
+        _cpu_burn(cpu)
+    size, n_chunks = _sample_body()
+    body = _build_chunks(size, n_chunks)
+    headers = [("Content-Length", str(size))] + _BASE_HEADERS
+    start_response(_pick_status(), headers)
+    return body
+
+
+def _metrics_reset(environ, start_response):
+    global _metrics_cache
+    with _metrics_lock:
+        _metrics_cache = None
+        if mod_wsgi is not None:
+            mod_wsgi.request_metrics()
+    body = str(_PID).encode("ascii")
+    start_response("200 OK", [
+        ("Content-Type", "text/plain"),
+        ("Content-Length", str(len(body))),
+    ])
+    return [body]
+
+
+def _metrics_report(environ, start_response):
+    global _metrics_cache
+    with _metrics_lock:
+        if _metrics_cache is None:
+            data = {}
+            if mod_wsgi is not None:
+                data = dict(mod_wsgi.request_metrics())
+            data["pid"] = _PID
+            _metrics_cache = data
+        body = json.dumps(_metrics_cache).encode("utf-8")
+    start_response("200 OK", [
+        ("Content-Type", "application/json"),
+        ("Content-Length", str(len(body))),
+    ])
+    return [body]
+
+
+def application(environ, start_response):
+    path = environ.get("PATH_INFO", "/")
+    if path == "/metrics/reset":
+        return _metrics_reset(environ, start_response)
+    if path == "/metrics/report":
+        return _metrics_report(environ, start_response)
+    _maybe_wedge()
+    return _bench(environ, start_response)

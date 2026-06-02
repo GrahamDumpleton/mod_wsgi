@@ -1,6 +1,6 @@
 dnl  vim: set sw=4 expandtab :
 dnl
-dnl  Copyright 2007-2024 GRAHAM DUMPLETON
+dnl  Copyright 2007-2026 GRAHAM DUMPLETON
 dnl 
 dnl  Licensed under the Apache License, Version 2.0 (the "License");
 dnl  you may not use this file except in compliance with the License.
@@ -16,20 +16,18 @@ dnl  limitations under the License.
 
 dnl Process this file with autoconf to produce a configure script.
 
-AC_INIT(src/server/mod_wsgi.c)
+AC_INIT
+AC_CONFIG_SRCDIR([src/server/mod_wsgi.c])
 
-AC_ARG_ENABLE(framework, AC_HELP_STRING([--enable-framework],
-            [enable mod_wsgi framework link]),
+AC_ARG_ENABLE(framework, AS_HELP_STRING([--enable-framework],[enable mod_wsgi framework link]),
             [ENABLE_FRAMEWORK=$enableval],
 	    [ENABLE_FRAMEWORK=false])
 
-AC_ARG_ENABLE(embedded, AC_HELP_STRING([--disable-embedded],
-            [disable mod_wsgi embedded mode]),
+AC_ARG_ENABLE(embedded, AS_HELP_STRING([--disable-embedded],[disable mod_wsgi embedded mode]),
             [ENABLE_EMBEDDED=$enableval],
 	    [ENABLE_EMBEDDED=yes])
 
-AC_ARG_WITH(apxs, AC_HELP_STRING([--with-apxs=NAME],
-            [name of the apxs executable [[apxs]]]),
+AC_ARG_WITH(apxs, AS_HELP_STRING([--with-apxs=NAME],[name of the apxs executable [[apxs]]]),
             [APXS="$with_apxs"])
 
 if test -z "${APXS}"; then
@@ -95,13 +93,16 @@ else
 fi
 AC_MSG_RESULT($HTTPD_VERSION)
 
-AC_ARG_WITH(python, AC_HELP_STRING([--with-python=NAME],
-            [name of the python executable [[python]]]),
+AC_ARG_WITH(python, AS_HELP_STRING([--with-python=NAME],[name of the python executable [[python3]]]),
             [PYTHON="$with_python"])
 
 if test -z "${PYTHON}"; then
-    AC_PATH_PROGS(PYTHON, python, [python],
+    AC_PATH_PROGS(PYTHON, [python3 python], [],
                    [$PATH:/usr/local/bin])
+fi
+
+if test -z "${PYTHON}"; then
+    AC_MSG_ERROR([Python 3 is required to build mod_wsgi. Install python3 or use --with-python=NAME to specify a Python 3 interpreter.])
 fi
 
 AC_SUBST(PYTHON)
@@ -140,9 +141,6 @@ AC_SUBST(CPPFLAGS)
 PYTHONLIBDIR=`${PYTHON} -c 'from sys import stdout; \
     import sysconfig; \
     stdout.write(sysconfig.get_config_var("LIBDIR"))'`
-PYTHONCFGDIR=`${PYTHON} -c 'from sys import stdout; \
-    import sysconfig; \
-    stdout.write(sysconfig.get_path("platstdlib") +"/config")'`
 PYTHONFRAMEWORKDIR=`${PYTHON} -c 'from sys import stdout; \
     import sysconfig; \
     stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORKDIR"))'`
@@ -153,17 +151,10 @@ PYTHONFRAMEWORK=`${PYTHON} -c 'from sys import stdout; \
     import sysconfig; \
     stdout.write(sysconfig.get_config_var("PYTHONFRAMEWORK"))'`
 
-if test "${PYTHON_LDVERSION}" != "${PYTHON_VERSION}"; then
-    PYTHONCFGDIR="${PYTHONCFGDIR}-${PYTHON_LDVERSION}"
-fi
-
 if test "${PYTHONFRAMEWORKDIR}" = "no-framework" -o \
         "${ENABLE_FRAMEWORK}" != "yes"; then
     if test "${PYTHONLIBDIR}" != "${APXS_LIBDIR}" ; then
         LDFLAGS1="-L${PYTHONLIBDIR}"
-    fi
-    if test "${PYTHONCFGDIR}" != "${APXS_LIBDIR}" ; then
-        LDFLAGS2="-L${PYTHONCFGDIR}"
     fi
 
     LDLIBS1="-lpython${PYTHON_LDVERSION}"
@@ -172,10 +163,6 @@ if test "${PYTHONFRAMEWORKDIR}" = "no-framework" -o \
     # so add a check to try and work out what we need to do.
 
     if test -f "${PYTHONLIBDIR}/libpython${PYTHON_VERSION}.a"; then
-        LDLIBS1="-lpython${PYTHON_VERSION}"
-    fi
-
-    if test -f "${PYTHONCFGDIR}/libpython${PYTHON_VERSION}.a"; then
         LDLIBS1="-lpython${PYTHON_VERSION}"
     fi
 
@@ -231,4 +218,5 @@ AC_SUBST(LIBEXECDIR)
 
 HTTPD_MAJOR_VERSION=`echo ${HTTPD_VERSION} | sed -e 's/\..*//'`
 
-AC_OUTPUT(Makefile)
+AC_CONFIG_FILES([Makefile])
+AC_OUTPUT

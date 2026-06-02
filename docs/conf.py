@@ -41,7 +41,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'mod_wsgi'
-copyright = u'2007-2024, Graham Dumpleton'
+copyright = u'2007-2026, Graham Dumpleton'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -75,7 +75,7 @@ release = '.'.join(version_info)
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
-exclude_patterns = ['_build']
+exclude_patterns = ['_build', '.venv', 'venv']
 
 # The reST default role (used for this markup: `text`) to use for all documents.
 #default_role = None
@@ -106,9 +106,7 @@ pygments_style = 'sphinx'
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 
-import sphinx_rtd_theme
 html_theme = 'sphinx_rtd_theme'
-html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the

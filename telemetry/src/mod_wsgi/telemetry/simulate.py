@@ -1,0 +1,649 @@
+"""Emit synthetic telemetry samples so the ingester and UI can be tested
+without a running mod_wsgi.
+
+Produces plausibly-shaped request_metrics samples for N fake processes,
+one per interval. Values oscillate over time so charts show movement.
+
+Usage:
+    mod_wsgi-telemetry simulate \\
+        --target unix:/tmp/mod_wsgi-telemetry.sock \\
+        --processes 4 --interval 1.0
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import os
+import random
+import socket
+import sys
+import time
+
+from .wire import (
+    KIND_PROCESS_STARTED,
+    KIND_PROCESS_STOPPED,
+    KIND_PROCESS_STOPPING,
+    KIND_REQUEST,
+    KIND_SLOW_REQUEST,
+    Sample,
+    encode,
+)
+
+
+# Handler paths the simulator cycles through so the Slow Requests tab
+# shows variety. Includes one with a URL long enough to exercise the
+# ellipsis-truncation path in the UI.
+_SLOW_PATHS = [
+    ("GET",  "/api/reports/render"),
+    ("POST", "/api/orders/checkout"),
+    ("GET",  "/admin/users/export"),
+    ("POST", "/api/image/thumbnail"),
+    ("GET",  "/api/search/" + "aaa/" * 60 + "end"),
+]
+
+
+def parse_target(spec: str) -> tuple[int, str]:
+    """Return (family, addr) for socket.sendto. UNIX SOCK_DGRAM only."""
+    if spec.startswith("unix:"):
+        return socket.AF_UNIX, spec[len("unix:"):]
+    raise ValueError(
+        f"unknown scheme in target {spec!r}: expected 'unix:/path' "
+        f"(remote 'udp:host:port' targets are no longer supported)"
+    )
+
+
+_SLOT_COUNT = 5
+
+
+def _class_split(count: int) -> dict:
+    """Partition `count` requests into per-class HTTP totals.
+
+    Mostly 2xx, a smaller share of 3xx / 4xx, a small 5xx tail so the
+    UI's error-rate panels exercise their colouring. 1xx stays at zero
+    (a WSGI app should never return 1xx — the counter is a tripwire,
+    not a baseline). Sum equals `count` exactly.
+    """
+    if count <= 0:
+        return {
+            "status_1xx_total": 0, "status_2xx_total": 0,
+            "status_3xx_total": 0, "status_4xx_total": 0,
+            "status_5xx_total": 0,
+        }
+    c5 = max(1, count // 100) if random.random() < 0.4 else 0
+    c4 = max(1, count * random.randint(2, 5) // 100)
+    c3 = max(1, count * random.randint(3, 8) // 100)
+    c2 = count - c5 - c4 - c3
+    if c2 < 0:
+        c2, c3, c4, c5 = count, 0, 0, 0
+    return {
+        "status_1xx_total": 0,
+        "status_2xx_total": c2,
+        "status_3xx_total": c3,
+        "status_4xx_total": c4,
+        "status_5xx_total": c5,
+    }
+
+
+def make_sample(pid: int, seq: int, phase: float, interval: float,
+                slot_state: dict | None = None) -> Sample:
+    """Build one synthetic request_metrics sample.
+
+    slot_state is a per-process dict carrying stateful slot info across
+    ticks: which slot (if any) is currently "stuck" on a long request,
+    and how long it's been stuck. Mutated in place.
+    """
+    base = 100 + 60 * math.sin(phase)
+    jitter = random.uniform(-10, 10)
+    throughput = max(0.0, base + jitter)
+    cap = min(1.0, throughput / 200.0)
+    cpu_user = cap * random.uniform(0.35, 0.55)
+    cpu_sys = cap * random.uniform(0.05, 0.12)
+
+    count = int(throughput * interval)
+    app_time = 0.02 + 0.05 * cap + random.uniform(-0.003, 0.003)
+    srv_time = app_time + random.uniform(0.001, 0.004)
+    queue_time = random.uniform(0.0005, 0.003)
+    daemon_time = random.uniform(0.0005, 0.002)
+    request_time = srv_time + queue_time + daemon_time + app_time
+
+    # HDR layout: 16 octaves × 4 sub-buckets + 1 overflow = 65. Bucket
+    # index for a duration ms is octave*4 + sub, where octave is
+    # floor(log2(ms)) and sub is which quarter of [2^o, 2^(o+1)) the
+    # value lands in. concentration here picks the centre bucket index
+    # to spread the gaussian around — e.g. concentration=18 centres
+    # around the [20, 24) ms sub-bucket of the 16-32 ms octave.
+    _N_BUCKETS = 65
+
+    def bucketise(total: int, concentration: int) -> list[int]:
+        buckets = [0] * _N_BUCKETS
+        for _ in range(total):
+            idx = max(0, min(_N_BUCKETS - 1,
+                             int(random.gauss(concentration, 4.0))))
+            buckets[idx] += 1
+        return buckets
+
+    def minmax_seconds(seconds_mean: float) -> tuple[float, float] | tuple[None, None]:
+        """Plausible per-tick min/max bracketing the mean (float seconds)."""
+        if count == 0:
+            # No requests this tick: encoder skips the field. Return
+            # (None, None) so the field is simply absent on the wire.
+            return None, None
+        mn = max(1e-6, seconds_mean * random.uniform(0.30, 0.55))
+        mx = max(mn + 1e-6, seconds_mean * random.uniform(3.0, 8.0))
+        return mn, mx
+
+    s_min, s_max = minmax_seconds(srv_time)
+    a_min, a_max = minmax_seconds(app_time)
+    r_min, r_max = minmax_seconds(request_time)
+    q_min, q_max = minmax_seconds(queue_time)
+    d_min, d_max = minmax_seconds(daemon_time)
+
+    # Per-slot capacity arrays. Each slot's base busy-fraction is a
+    # blend of the process-wide capacity and per-slot jitter, so slots
+    # diverge visibly on the heatmap even when the process average is
+    # steady. One slot may be "stuck" on a long request — its
+    # current_elapsed climbs across ticks and its busy-time saturates.
+    if slot_state is None:
+        slot_state = {}
+
+    # Randomly start or release a stuck slot so the UI shows activity.
+    stuck_slot = slot_state.get("stuck_slot")
+    stuck_since = slot_state.get("stuck_since", 0.0)
+    if stuck_slot is None:
+        if cap > 0.4 and random.random() < 0.05:
+            stuck_slot = random.randrange(_SLOT_COUNT)
+            stuck_since = 0.0
+    else:
+        stuck_since += interval
+        if stuck_since > 15.0 or random.random() < 0.08:
+            stuck_slot = None
+            stuck_since = 0.0
+    slot_state["stuck_slot"] = stuck_slot
+    slot_state["stuck_since"] = stuck_since
+
+    request_threads_completed = [0] * _SLOT_COUNT
+    request_threads_busy_time = [0.0] * _SLOT_COUNT
+    request_threads_cpu_time = [0.0] * _SLOT_COUNT
+    request_threads_current_elapsed = [0.0] * _SLOT_COUNT
+    request_threads_max_duration = [0.0] * _SLOT_COUNT
+
+    for s in range(_SLOT_COUNT):
+        if s == stuck_slot:
+            # Pinned on a long request: busy near 100%, no completions,
+            # current_elapsed climbing.
+            request_threads_busy_time[s] = interval * random.uniform(0.92, 1.0)
+            request_threads_cpu_time[s] = (
+                request_threads_busy_time[s] * random.uniform(0.05, 0.25))
+            request_threads_current_elapsed[s] = stuck_since
+            request_threads_max_duration[s] = stuck_since
+            request_threads_completed[s] = 0
+        else:
+            slot_cap = max(0.0, min(1.0, cap + random.uniform(-0.25, 0.25)))
+            request_threads_busy_time[s] = interval * slot_cap
+            cpu_frac = random.uniform(0.3, 0.8)
+            request_threads_cpu_time[s] = (
+                request_threads_busy_time[s] * cpu_frac)
+            request_threads_completed[s] = max(
+                0, int(slot_cap * count / max(1, _SLOT_COUNT - (1 if stuck_slot is not None else 0))
+                       + random.uniform(-2, 2)))
+            # Heavy-tailed max-duration per tick (in seconds).
+            if request_threads_completed[s] > 0:
+                request_threads_max_duration[s] = (
+                    max(0.005, random.lognormvariate(3.5, 0.8) / 1000.0)
+                )
+
+    rss = 120 * 1024 * 1024 + int(10 * 1024 * 1024 * math.sin(phase / 3))
+
+    fields = {
+        "hostname": socket.gethostname(),
+        "process_group": "simulated",
+        "process_parent_pid": os.getpid(),
+        "sample_period": float(interval),
+        "request_count": count,
+        "request_throughput": throughput,
+        "capacity_utilization": cap,
+        "cpu_user_utilization": cpu_user,
+        "cpu_system_utilization": cpu_sys,
+        "cpu_utilization": cpu_user + cpu_sys,
+        "memory_rss": rss,
+        "memory_max_rss": rss + 8 * 1024 * 1024,
+        "request_threads_maximum": _SLOT_COUNT,
+        "request_threads_active": max(1, min(_SLOT_COUNT,
+                                             sum(1 for v in request_threads_busy_time
+                                                 if v > 0))),
+        "server_time": srv_time,
+        "queue_time": queue_time,
+        "daemon_time": daemon_time,
+        "application_time": app_time,
+        "request_time": request_time,
+        # HDR concentrations: 18 ≈ [20, 24) ms, 14 ≈ [10, 12) ms,
+        # 22 ≈ [40, 48) ms — chosen to mirror the seconds_mean above.
+        "application_time_buckets": bucketise(count, concentration=18),
+        "server_time_buckets": bucketise(count, concentration=14),
+        "queue_time_buckets":     bucketise(count, concentration=8),
+        "daemon_time_buckets":    bucketise(count, concentration=8),
+        "request_time_buckets":   bucketise(count, concentration=22),
+        "request_threads_completed": request_threads_completed,
+        "request_threads_busy_time": request_threads_busy_time,
+        "request_threads_cpu_time": request_threads_cpu_time,
+        "request_threads_current_elapsed": request_threads_current_elapsed,
+        "request_threads_max_duration": request_threads_max_duration,
+        # Per-request avg ~256 B in / ~1 KB out, with a small tail of
+        # streaming responses that bump output_writes well above the
+        # request count so the UI's "bytes/write" smell threshold is
+        # exercised on demo data.
+        "input_bytes_total": count * 256,
+        "input_reads_total": count,
+        "output_bytes_total": count * 1024,
+        "output_writes_total": count + (count // 5) * 50,
+        # Per-class HTTP response totals. Mostly 2xx, a sprinkle of 3xx
+        # / 4xx, and a small 5xx tail so the UI's error-rate badges
+        # exercise their colouring on demo data. Sum equals the
+        # request_count above (1xx + 2xx + 3xx + 4xx + 5xx == count).
+        **_class_split(count),
+        # Mirror what a real reporter emits: telemetry interval is the
+        # tick we're simulating, slow_requests_threshold pretends a
+        # WSGISlowRequests of 1 s so the UI's "below server threshold"
+        # warning can be exercised by setting the heatmap stuck
+        # threshold to 0.5 s.
+        "telemetry_interval": float(interval),
+        "slow_requests_threshold": 1.0,
+    }
+
+    # Per-phase exact min/max (float seconds). Skip the field on idle
+    # ticks to mirror the C encoder's "field absent when no requests
+    # this tick" behaviour.
+    for key, val in (
+        ("server_time_min",      s_min),
+        ("server_time_max",      s_max),
+        ("queue_time_min",       q_min),
+        ("queue_time_max",       q_max),
+        ("daemon_time_min",      d_min),
+        ("daemon_time_max",      d_max),
+        ("application_time_min", a_min),
+        ("application_time_max", a_max),
+        ("request_time_min",     r_min),
+        ("request_time_max",     r_max),
+    ):
+        if val is not None:
+            fields[key] = val
+
+    return Sample(
+        version=1,
+        kind=KIND_REQUEST,
+        pid=pid,
+        seq=seq,
+        stamp=time.time(),
+        fields=fields,
+    )
+
+
+def make_slow_sample(pid: int, seq: int, state: int, thread_id: int,
+                     log_id: str, method: str, path: str,
+                     start_stamp: float, duration: float) -> Sample:
+    """Build one synthetic slow_request record."""
+    # Synthesise plausible per-request I/O so the slow-request expand
+    # panel shows non-zero counters in the simulator. POSTs get a body
+    # in; the long /api/search/* path streams a big response across
+    # many writes so the UI's smell tinting kicks in.
+    if method == "POST":
+        in_bytes = random.randint(2_000, 50_000)
+        in_reads = random.randint(1, 4)
+    else:
+        in_bytes = 0
+        in_reads = 0
+    streaming = "search" in path
+    out_bytes = random.randint(50_000_000, 150_000_000) if streaming \
+                else random.randint(2_000, 200_000)
+    out_writes = random.randint(40_000, 120_000) if streaming \
+                 else random.randint(1, 10)
+    # Synthesise plausible CPU time so the UI's CPU% indicator (and
+    # its amber / multi-core tinting) is exercisable on demo data.
+    # Streaming endpoints look I/O-bound (low CPU%); checkout looks
+    # multi-core (>100% via C-extension threading); the rest land in
+    # the mixed band so the colouring isn't all one shade.
+    if state == 1:
+        if streaming:
+            cpu_total = duration * random.uniform(0.05, 0.20)
+        elif "checkout" in path:
+            cpu_total = duration * random.uniform(1.10, 1.40)
+        elif "thumbnail" in path:
+            cpu_total = duration * random.uniform(0.85, 0.98)
+        else:
+            cpu_total = duration * random.uniform(0.30, 0.60)
+        cpu_user_time = cpu_total * random.uniform(0.85, 0.95)
+        cpu_system_time = cpu_total - cpu_user_time
+    else:
+        # Active records carry zero CPU on the wire today (see C side).
+        cpu_user_time = 0.0
+        cpu_system_time = 0.0
+    # Active records carry status 0 (start_response not yet called).
+    # Completed records mostly land at 200; sprinkle in a few 500s so
+    # the slow table's status column exercises its 5xx colouring.
+    if state == 1:
+        slow_status = 500 if random.random() < 0.05 else 200
+    else:
+        slow_status = 0
+    # Synthesise plausible per-phase timings so the UI's breakdown is
+    # exercisable on demo data. server / queue / daemon are small
+    # fixed-ish overheads; application is the residual. Active records
+    # report an in-flight application_time partial.
+    server_time = random.uniform(0.0005, 0.003)
+    queue_time = random.uniform(0.0005, 0.005)
+    daemon_time = random.uniform(0.0005, 0.003)
+    overhead = server_time + queue_time + daemon_time
+    application_time = max(0.0, duration - overhead)
+    fields = {
+        "slow_record_state": state,             # 0=active, 1=completed
+        "slow_start_stamp": start_stamp,
+        "slow_duration": duration,
+        "slow_thread_id": thread_id,
+        # Synthesise an Apache-child pid distinct from the emitter
+        # pid so the slow-request drill-down exercises its daemon-mode
+        # rendering (proxy != daemon). Stable per emitter.
+        "slow_server_pid": max(1, pid - 1),
+        "slow_log_id": log_id,
+        "slow_method": method,
+        "slow_scheme": "http",
+        "slow_hostname": socket.gethostname(),
+        "slow_script_name": "",
+        "slow_path_info": path,
+        "slow_input_bytes": in_bytes,
+        "slow_input_reads": in_reads,
+        "slow_output_bytes": out_bytes,
+        "slow_output_writes": out_writes,
+        "slow_cpu_user_time": cpu_user_time,
+        "slow_cpu_system_time": cpu_system_time,
+        "slow_server_time": server_time,
+        "slow_queue_time": queue_time,
+        "slow_daemon_time": daemon_time,
+        "slow_application_time": application_time,
+        # Synthesise plausible concurrency: pretend a 15-thread worker
+        # with 2-12 in flight at slot claim, drifting up or down a
+        # little by completion. Exercises the saturation indicator.
+        "slow_active_at_start": random.randint(2, 12),
+        "slow_active_at_completion": (
+            random.randint(2, 12) if state == 1 else 0),
+        # Synthesise a peer IP (mostly RFC1918, occasional IPv6) and
+        # a protocol so the demo UI exercises both columns. Real-world
+        # values come from r->useragent_ip and SERVER_PROTOCOL.
+        "slow_peer_ip": random.choice([
+            f"10.0.{random.randint(0,255)}.{random.randint(1,254)}",
+            f"192.168.1.{random.randint(2,254)}",
+            "203.0.113.42",
+            "2001:db8::5",
+        ]),
+        "slow_protocol": random.choice(["HTTP/1.1", "HTTP/2.0"]),
+        # User-Agent is opt-in via WSGITelemetryOptions; the simulator
+        # always emits one so the demo UI exercises the column. Real
+        # mod_wsgi installs see this only when the operator configures
+        # +CaptureUserAgent.
+        "slow_user_agent": random.choice([
+            "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/137.0",
+            "curl/8.7.1",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) "
+            "AppleWebKit/605.1.15 Safari/605.1.15",
+            "python-requests/2.32.0",
+            "GoogleBot/2.1 (+http://www.google.com/bot.html)",
+        ]),
+        "slow_status": slow_status,
+    }
+    return Sample(
+        version=1,
+        kind=KIND_SLOW_REQUEST,
+        pid=pid,
+        seq=seq,
+        stamp=time.time(),
+        fields=fields,
+    )
+
+
+# Simulator restart-reason rotation. Order matters only for visual
+# variety in the demo; the categorisation map on the UI side is what
+# actually drives marker colour. Includes one of each category so the
+# operator immediately sees three colours of marker.
+_SIM_REASONS = [
+    "restart_interval",      # planned
+    "maximum_requests",      # planned
+    "script_reload",         # planned
+    "cpu_time_limit",        # tuning
+    "request_timeout",       # tuning
+    "graceful_signal",       # tuning
+    "deadlock_timeout",      # unplanned
+    "shutdown_signal",       # unplanned
+]
+
+
+def make_started_sample(pid: int, seq: int, parent_pid: int) -> Sample:
+    return Sample(
+        version=1,
+        kind=KIND_PROCESS_STARTED,
+        pid=pid,
+        seq=seq,
+        stamp=time.time(),
+        fields={
+            "mod_wsgi_version": "6.0.0",
+            "python_version": "3.14.0",
+            "apache_version": "Apache/2.4.62",
+            "mpm_name": "event",
+            "hostname": socket.gethostname(),
+            "process_group": "demo",
+            "process_parent_pid": parent_pid,
+        },
+    )
+
+
+def make_stopping_sample(pid: int, seq: int, reason: str,
+                         active_at_decision: int) -> Sample:
+    return Sample(
+        version=1,
+        kind=KIND_PROCESS_STOPPING,
+        pid=pid,
+        seq=seq,
+        stamp=time.time(),
+        fields={
+            "hostname": socket.gethostname(),
+            "process_group": "demo",
+            "shutdown_reason": reason,
+            "active_requests_at_decision": active_at_decision,
+        },
+    )
+
+
+def make_stopped_sample(pid: int, seq: int, reason: str,
+                        uptime_s: float, lifetime_count: int,
+                        active_at_exit: int) -> Sample:
+    return Sample(
+        version=1,
+        kind=KIND_PROCESS_STOPPED,
+        pid=pid,
+        seq=seq,
+        stamp=time.time(),
+        fields={
+            "hostname": socket.gethostname(),
+            "process_group": "demo",
+            "shutdown_reason": reason,
+            "process_uptime": float(uptime_s),
+            "lifetime_request_count": lifetime_count,
+            "active_requests_at_exit": active_at_exit,
+            "graceful_drain": 1 if active_at_exit == 0 else 0,
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--target", required=True,
+                    help="unix:/path/to/sock")
+    ap.add_argument("--processes", type=int, default=4)
+    ap.add_argument("--interval", type=float, default=1.0)
+    ap.add_argument("--duration", type=float, default=0.0,
+                    help="stop after N seconds (0 = forever)")
+    args = ap.parse_args(argv)
+
+    family, addr = parse_target(args.target)
+    sock = socket.socket(family, socket.SOCK_DGRAM)
+
+    pids = [100000 + i for i in range(args.processes)]
+    seqs = [0] * args.processes
+    phases = [random.uniform(0, 2 * math.pi) for _ in range(args.processes)]
+    slot_states: list[dict] = [dict() for _ in range(args.processes)]
+    # Simulated process birth times so STOPPED can carry a plausible
+    # uptime field, and the next pid the simulator will hand out when
+    # the current one "restarts". next_pid_seed is monotonic so the
+    # consumer can tell new vs old processes apart.
+    started_at = [time.time()] * args.processes
+    next_pid_seed = 100000 + args.processes
+    parent_pid = os.getpid()
+    reason_idx = 0
+
+    # Per-process in-flight slow requests so heartbeats + completions are
+    # correlated. Keyed by a synthetic log_id so the ingester's (pid,
+    # log_id) map stays consistent across ticks.
+    in_flight: list[dict] = [dict() for _ in range(args.processes)]
+    next_log = [1] * args.processes
+
+    start = time.monotonic()
+    sent = 0
+
+    # Emit one STARTED per simulated process up-front so the UI sees the
+    # identity banner the moment the simulator connects.
+    for i in range(args.processes):
+        seqs[i] += 1
+        try:
+            sock.sendto(
+                encode(make_started_sample(pids[i], seqs[i], parent_pid)),
+                addr,
+            )
+            sent += 1
+        except OSError as e:
+            print(f"sendto failed: {e}", file=sys.stderr)
+
+    try:
+        while True:
+            if args.duration and time.monotonic() - start > args.duration:
+                break
+            for i in range(args.processes):
+                # ~1% chance per process per tick of a simulated restart
+                # so demo runs see a steady trickle of markers across
+                # all three categories. Each "restart" emits STOPPING
+                # then STOPPED, retires the pid, and STARTs a new one
+                # in its slot so the rest of the loop transparently
+                # picks up reporting the new pid.
+                if random.random() < 0.01:
+                    reason = _SIM_REASONS[reason_idx % len(_SIM_REASONS)]
+                    reason_idx += 1
+                    active_at_decision = random.randint(0, 3)
+                    seqs[i] += 1
+                    try:
+                        sock.sendto(encode(make_stopping_sample(
+                            pids[i], seqs[i], reason, active_at_decision)),
+                                    addr)
+                        sent += 1
+                    except OSError as e:
+                        print(f"sendto failed: {e}", file=sys.stderr)
+                    seqs[i] += 1
+                    uptime_s = max(0.0, time.time() - started_at[i])
+                    try:
+                        sock.sendto(encode(make_stopped_sample(
+                            pids[i], seqs[i], reason, uptime_s,
+                            random.randint(50, 5000), 0)),
+                                    addr)
+                        sent += 1
+                    except OSError as e:
+                        print(f"sendto failed: {e}", file=sys.stderr)
+                    # Retire this pid, hand out a fresh one and reset
+                    # its per-process state so the new pid looks brand
+                    # new on the UI side.
+                    pids[i] = next_pid_seed
+                    next_pid_seed += 1
+                    seqs[i] = 0
+                    started_at[i] = time.time()
+                    slot_states[i] = dict()
+                    in_flight[i] = dict()
+                    next_log[i] = 1
+                    seqs[i] += 1
+                    try:
+                        sock.sendto(encode(make_started_sample(
+                            pids[i], seqs[i], parent_pid)), addr)
+                        sent += 1
+                    except OSError as e:
+                        print(f"sendto failed: {e}", file=sys.stderr)
+
+                phases[i] += args.interval / 15.0
+                seqs[i] += 1
+                sample = make_sample(pids[i], seqs[i], phases[i], args.interval,
+                                     slot_state=slot_states[i])
+                try:
+                    sock.sendto(encode(sample), addr)
+                    sent += 1
+                except OSError as e:
+                    print(f"sendto failed: {e}", file=sys.stderr)
+
+                # --- Slow requests ------------------------------------
+                # Start a new one ~30% of the time, capped at 5 per process.
+                if len(in_flight[i]) < 5 and random.random() < 0.30:
+                    log_id = f"s{pids[i]}-{next_log[i]:06d}"
+                    next_log[i] += 1
+                    method, path = random.choice(_SLOW_PATHS)
+                    in_flight[i][log_id] = {
+                        "method": method,
+                        "path": path,
+                        "thread_id": random.randint(1, 5),
+                        "start": time.time(),
+                    }
+
+                now = time.time()
+                # Heartbeat every active.
+                for log_id, rec in list(in_flight[i].items()):
+                    seqs[i] += 1
+                    sample = make_slow_sample(
+                        pids[i], seqs[i], state=0,
+                        thread_id=rec["thread_id"], log_id=log_id,
+                        method=rec["method"], path=rec["path"],
+                        start_stamp=rec["start"],
+                        duration=max(0.0, now - rec["start"]),
+                    )
+                    try:
+                        sock.sendto(encode(sample), addr)
+                        sent += 1
+                    except OSError as e:
+                        print(f"sendto failed: {e}", file=sys.stderr)
+
+                # Complete one ~25% of the time (once it's been in-flight
+                # long enough to feel plausible).
+                if in_flight[i] and random.random() < 0.25:
+                    log_id = random.choice(list(in_flight[i]))
+                    rec = in_flight[i].pop(log_id)
+                    duration = max(0.0, now - rec["start"])
+                    if duration >= 0.5:   # only "complete" if >= 0.5s
+                        seqs[i] += 1
+                        sample = make_slow_sample(
+                            pids[i], seqs[i], state=1,
+                            thread_id=rec["thread_id"], log_id=log_id,
+                            method=rec["method"], path=rec["path"],
+                            start_stamp=rec["start"],
+                            duration=duration,
+                        )
+                        try:
+                            sock.sendto(encode(sample), addr)
+                            sent += 1
+                        except OSError as e:
+                            print(f"sendto failed: {e}", file=sys.stderr)
+                    else:
+                        # Not long enough yet; put it back.
+                        in_flight[i][log_id] = rec
+
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        sock.close()
+
+    print(f"sent {sent} samples")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

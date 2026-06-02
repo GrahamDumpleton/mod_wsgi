@@ -1,10 +1,8 @@
+:orphan:
+
 ===========
 Version 3.1
 ===========
-
-Version 3.1 of mod_wsgi can be obtained from:
-
-  http://modwsgi.googlecode.com/files/mod_wsgi-3.1.tar.gz
 
 As this version follows on quickly from mod_wsgi 3.0, ensure you read:
 

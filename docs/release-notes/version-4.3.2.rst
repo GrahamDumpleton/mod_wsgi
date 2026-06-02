@@ -1,10 +1,8 @@
+:orphan:
+
 =============
 Version 4.3.2
 =============
-
-Version 4.3.2 of mod_wsgi can be obtained from:
-
-  https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/4.3.2
 
 Known Issues
 ------------

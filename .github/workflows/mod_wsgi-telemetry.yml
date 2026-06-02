@@ -1,0 +1,226 @@
+name: mod_wsgi-telemetry (build/test/release)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - develop
+    tags:
+      - "mod_wsgi-telemetry-[0-9]+.[0-9]+.[0-9]+"
+      - "mod_wsgi-telemetry-[0-9]+.[0-9]+.[0-9]+.dev[0-9]+"
+      - "mod_wsgi-telemetry-[0-9]+.[0-9]+.[0-9]+rc[0-9]+"
+  pull_request:
+    branches:
+      - develop
+
+jobs:
+  build:
+    name: "Build mod_wsgi-telemetry package"
+    runs-on: "ubuntu-24.04"
+    steps:
+      - uses: "actions/checkout@v6"
+      - uses: "actions/setup-python@v6"
+        with:
+          python-version: "3.12"
+      - name: "Verify version matches tag"
+        if: startsWith(github.ref, 'refs/tags/mod_wsgi-telemetry-')
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          EXPECTED="${TAG#mod_wsgi-telemetry-}"
+          ACTUAL="$(grep -oE '__version__[[:space:]]*=[[:space:]]*"[^"]+"' \
+              telemetry/src/mod_wsgi/telemetry/__init__.py \
+              | sed -E 's/.*"([^"]+)".*/\1/')"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+              echo "Tag version ($EXPECTED) does not match __version__ ($ACTUAL) in telemetry/src/mod_wsgi/telemetry/__init__.py" >&2
+              exit 1
+          fi
+          echo "Version match: $ACTUAL"
+      - name: "Update pip installation"
+        run: python -m pip install --upgrade pip build
+      - name: "Build sdist and wheel"
+        working-directory: telemetry
+        run: python -m build && ls -las dist
+      - name: "Store built packages"
+        uses: "actions/upload-artifact@v7"
+        with:
+          name: dist
+          path: telemetry/dist/*
+
+  tests:
+    name: "Test mod_wsgi-telemetry package (Python ${{ matrix.python-version }})"
+    runs-on: "ubuntu-24.04"
+    needs:
+    - build
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: "actions/checkout@v6"
+      - uses: "actions/setup-python@v6"
+        with:
+          python-version: "${{ matrix.python-version }}"
+      - name: "Download built packages"
+        uses: "actions/download-artifact@v8"
+        with:
+          name: dist
+          path: dist
+      - name: "Update pip installation"
+        run: python -m pip install --upgrade pip setuptools wheel
+      - name: "Install pytest"
+        run: python -m pip install pytest
+      - name: "Install mod_wsgi-telemetry from wheel"
+        run: python -m pip install --verbose dist/mod_wsgi[-_]telemetry-[0-9]*.whl
+      - name: "Run telemetry tests against wheel install"
+        run: pytest telemetry/tests
+      - name: "Uninstall mod_wsgi-telemetry"
+        run: pip uninstall --yes mod_wsgi-telemetry
+      - name: "Install mod_wsgi-telemetry from sdist"
+        run: python -m pip install --verbose dist/mod_wsgi[-_]telemetry-[0-9]*.tar.gz
+      - name: "Run telemetry tests against sdist install"
+        run: pytest telemetry/tests
+      - name: "Uninstall mod_wsgi-telemetry"
+        run: pip uninstall --yes mod_wsgi-telemetry
+
+  release:
+    name: "Publish GitHub release"
+    runs-on: "ubuntu-24.04"
+    needs:
+    - tests
+    if: startsWith(github.ref, 'refs/tags/mod_wsgi-telemetry-')
+    permissions:
+      contents: write
+    steps:
+      - name: "Resolve version and prerelease status"
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#mod_wsgi-telemetry-}"
+          BASE_VERSION="$(echo "$VERSION" | sed -E 's/\.?(dev|rc)[0-9]+$//')"
+          if [[ "$VERSION" == *dev* || "$VERSION" == *rc* ]]; then
+              PRERELEASE="true"
+          else
+              PRERELEASE="false"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: "Download built packages"
+        uses: "actions/download-artifact@v8"
+        with:
+          name: dist
+          path: dist
+
+      - name: "Generate SHA256SUMS"
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: "Write release notes body"
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          DOCS_URL="https://modwsgi.readthedocs.io/en/latest/user-guides/external-telemetry-service.html"
+          if [[ "$VERSION" == *dev* ]]; then
+              cat > body.md <<EOF
+          Development snapshot of mod_wsgi-telemetry. Not normally
+          published to PyPi (occasionally uploaded to exercise the
+          release pipeline).
+
+          User guide: ${DOCS_URL}
+
+          To test, install the attached wheel:
+
+              pip install mod_wsgi_telemetry-${VERSION}-py3-none-any.whl
+
+          Or build from the attached source distribution:
+
+              tar xf mod_wsgi_telemetry-${VERSION}.tar.gz
+              cd mod_wsgi_telemetry-${VERSION}
+              pip install .
+
+          \`SHA256SUMS\` is attached for verification of the source and
+          wheel archives.
+          EOF
+          elif [[ "$VERSION" == *rc* ]]; then
+              cat > body.md <<EOF
+          Release candidate for mod_wsgi-telemetry.
+
+          User guide: ${DOCS_URL}
+
+          May be installable from PyPi:
+
+              pip install mod_wsgi-telemetry==${VERSION}
+
+          If \`pip\` reports the version is unavailable, this candidate
+          either has not been uploaded yet or is not being published to
+          PyPi. Install the attached wheel instead:
+
+              pip install mod_wsgi_telemetry-${VERSION}-py3-none-any.whl
+
+          Or build from the attached source distribution:
+
+              tar xf mod_wsgi_telemetry-${VERSION}.tar.gz
+              cd mod_wsgi_telemetry-${VERSION}
+              pip install .
+
+          \`SHA256SUMS\` is attached for verification of the source and
+          wheel archives.
+          EOF
+          else
+              cat > body.md <<EOF
+          User guide: ${DOCS_URL}
+
+          Install from PyPi (recommended):
+
+              pip install mod_wsgi-telemetry==${VERSION}
+
+          The mod_wsgi-telemetry package is versioned independently of
+          mod_wsgi itself.
+
+          PyPi uploads follow each GitHub release; if \`pip\` reports the
+          version is unavailable, the matching PyPi upload may not have
+          happened yet.
+
+          Source archive and wheel attached together with \`SHA256SUMS\`
+          for verification.
+          EOF
+          fi
+          cat body.md
+
+      - name: "Create GitHub release"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          FLAGS=()
+          if [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]]; then
+              FLAGS+=("--prerelease")
+          fi
+          gh release create "${{ steps.meta.outputs.tag }}" \
+              --title "mod_wsgi-telemetry ${{ steps.meta.outputs.version }}" \
+              --notes-file body.md \
+              "${FLAGS[@]}" \
+              dist/*
+
+  publish:
+    name: "Publish to PyPi"
+    runs-on: "ubuntu-24.04"
+    needs:
+    - release
+    if: startsWith(github.ref, 'refs/tags/mod_wsgi-telemetry-')
+    environment: pypi-mod-wsgi-telemetry
+    permissions:
+      id-token: write
+    steps:
+      - name: "Download built packages"
+        uses: "actions/download-artifact@v8"
+        with:
+          name: dist
+          path: dist
+      - name: "Publish to PyPi"
+        uses: "pypa/gh-action-pypi-publish@release/v1"
+        with:
+          packages-dir: dist/

@@ -1,23 +1,17 @@
-from __future__ import print_function
-
-import os
-import sys
 import fnmatch
-import subprocess
-import tarfile
+import os
+import re
 import shutil
 import stat
-import re
-
-try:
-    from urllib.request import urlretrieve
-except ImportError:
-    from urllib import urlretrieve
+import subprocess
+import sys
+import tarfile
+from sysconfig import get_config_var as get_python_config
+from sysconfig import get_path as get_python_lib
+from urllib.request import urlretrieve
 
 from setuptools import setup
 from setuptools.extension import Extension
-from sysconfig import get_config_var as get_python_config
-from sysconfig import get_path as get_python_lib
 
 # First work out what all the available source code files are that should
 # be compiled.
@@ -73,8 +67,6 @@ if WITHOUT_APXS and os.name == 'nt':
     else:
         if os.path.exists('c:\\Apache24'):
             WITH_WINDOWS_APACHE = 'c:\\Apache24'
-        elif os.path.exists('c:\\Apache22'):
-            WITH_WINDOWS_APACHE = 'c:\\Apache22'
         elif os.path.exists('c:\\Apache2'):
             WITH_WINDOWS_APACHE = 'c:\\Apache2'
         else:
@@ -262,7 +254,7 @@ else:
 """
 
 with open(os.path.join(os.path.dirname(__file__),
-        'src/server/apxs_config.py'), 'w') as fp:
+        'src/express/apxs_config.py'), 'w') as fp:
     print(APXS_CONFIG_TEMPLATE % dict(
             WITH_HTTPD_PACKAGE=WITH_HTTPD_PACKAGE,
             BINDIR=BINDIR, SBINDIR=SBINDIR, LIBEXECDIR=LIBEXECDIR,
@@ -410,7 +402,7 @@ if os.name != 'nt':
 # Now finally run setuptools.
 
 package_name = 'mod_wsgi'
-long_description = open('README.rst').read()
+long_description = open('README-express.rst').read()
 
 standalone = os.path.exists('pyproject.toml')
 
@@ -442,29 +434,28 @@ setup(name = package_name,
         'Operating System :: POSIX',
         'Operating System :: POSIX :: BSD',
         'Operating System :: POSIX :: Linux',
-        'Operating System :: POSIX :: SunOS/Solaris',
         'Programming Language :: Python',
         'Programming Language :: Python :: Implementation :: CPython',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
+        'Programming Language :: Python :: 3.14',
         'Topic :: Internet :: WWW/HTTP :: WSGI',
         'Topic :: Internet :: WWW/HTTP :: WSGI :: Server'
     ],
     keywords = 'mod_wsgi wsgi apache',
-    packages = ['mod_wsgi', 'mod_wsgi.server', 'mod_wsgi.server.management',
-        'mod_wsgi.server.management.commands', 'mod_wsgi.docs',
-        'mod_wsgi.images'],
-    package_dir = {'mod_wsgi': 'src', 'mod_wsgi.docs': 'docs/_build/html',
-        'mod_wsgi.images': 'images'},
-    package_data = {'mod_wsgi.docs': _documentation(),
-        'mod_wsgi.images': ['snake-whiskey.jpg']},
+    packages = ['mod_wsgi', 'mod_wsgi.server',
+        'mod_wsgi.server.management', 'mod_wsgi.server.management.commands',
+        'mod_wsgi.express', 'mod_wsgi.express.management',
+        'mod_wsgi.express.management.commands',
+        'mod_wsgi.diagnostics', 'mod_wsgi.images'],
+    package_dir = {'mod_wsgi': 'src', 'mod_wsgi.images': 'images'},
+    package_data = {'mod_wsgi.images': ['snake-whiskey.jpg']},
     ext_modules = [extension],
     entry_points = { 'console_scripts':
-        ['mod_wsgi-express = mod_wsgi.server:main'],},
+        ['mod_wsgi-express = mod_wsgi.express.cli:main'],},
     zip_safe = False,
-    install_requires = standalone and ['mod_wsgi-httpd==2.4.62.1'] or [],
-    python_requires='>=3.8',
+    install_requires = standalone and ['mod_wsgi-httpd==2.4.67.1'] or [],
+    python_requires='>=3.10',
 )

@@ -1,10 +1,8 @@
+:orphan:
+
 ===========
 Version 2.0
 ===========
-
-Version 2.0 of mod_wsgi can be obtained from:
-
-  http://modwsgi.googlecode.com/files/mod_wsgi-2.0.tar.gz
 
 Note that mod_wsgi 2.0 was originally derived from mod_wsgi 1.0. It has
 though all changes from later releases in the 1.X branch. Thus also see:

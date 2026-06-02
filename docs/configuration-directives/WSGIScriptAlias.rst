@@ -30,6 +30,11 @@ to::
   Options +ExecCGI
   </Location>
 
+The ``<Location>`` form above is shown only to illustrate what
+``WSGIScriptAlias`` does internally. The recommended pattern when you
+need to apply directives to the script directory is the ``<Directory>``
+form shown below.
+
 Where the target is a *file-path*, URLs with a case-sensitive
 (%-decoded) path beginning with *URL-path* will be mapped to the script
 defined by the *file-path*.
@@ -40,6 +45,22 @@ For example::
 
 A request for ``http://www.example.com/name`` in this case would cause the
 server to run the WSGI application defined in ``/web/wsgi-scripts/name``.
+
+A WSGI application can also be mounted at the root of the site by using
+``/`` as the *URL-path*::
+
+  WSGIScriptAlias / /web/wsgi-scripts/myapp.wsgi
+
+In this case all requests to the site will be dispatched to the
+specified WSGI script file.
+
+The ``.wsgi`` extension shown here is a convention only — when
+``WSGIScriptAlias`` is used, the script is identified by its full file
+path and any extension (or none) is acceptable. The ``.wsgi`` convention
+is used to avoid clashing with any pre-existing ``AddHandler`` directive
+that may already map ``.py`` files to a different handler such as
+``cgi-script``. If you know there is no such conflict, the script file
+can use ``.py`` like any other Python file.
 
 If possible you should avoid placing WSGI scripts under the `DocumentRoot`_
 in order to avoid accidentally revealing their source code if the
@@ -77,6 +98,9 @@ Options which can be supplied to the ``WSGIScriptAlias`` directive are:
     mean the application will run as the user that Apache would normally
     run as.
 
+    If the name takes the form ``%{ENV:variable}``, the process group
+    name will be taken from the named Apache environment variable.
+
 **application-group=name**
     Defines which application group a WSGI application or set of WSGI
     applications belongs to. All WSGI applications within the same
@@ -86,19 +110,39 @@ Options which can be supplied to the ``WSGIScriptAlias`` directive are:
     If the name is set to be ``%{GLOBAL}`` the application group will be
     set to the empty string. Any WSGI applications in the global
     application group will always be executed within the context of the
-    first interpreter created by Python when it is initialised, of the
-    process handling the request. Forcing a WSGI application to run within
-    the first interpreter can be necessary when a third party C extension
-    module for Python has used the simplified threading API for
-    manipulation of the Python GIL and thus will not run correctly within
-    any additional sub interpreters created by Python.
+    main Python interpreter of the process handling the request. Forcing
+    a WSGI application to run within the main interpreter can be
+    necessary when a third party C extension module for Python has used
+    the simplified threading API for manipulation of the Python GIL and
+    thus will not run correctly within any additional sub interpreters
+    created by Python.
+
+    If the name takes the form ``%{ENV:variable}``, the application
+    group name will be taken from the named Apache environment variable.
+
+When the ``%{ENV:variable}`` form is used, the named environment
+variable is looked up via the internal Apache notes and subprocess
+environment data structures, and (if not found there) via
+``getenv()`` from the Apache server process.
+
+Environment variables accessible via the ``%{ENV}`` reference can be
+set in the Apache configuration using directives such as `SetEnv`_
+and `RewriteRule`_.
 
 If both ``process-group`` and ``application-group`` options are set, the
 WSGI script file will be pre-loaded when the process it is to run in is
-started, rather than being lazily loaded on the first request.
+started, rather than being lazily loaded on the first request. This
+removes the per-process startup delay that would otherwise be paid by
+the first request to reach each process.
 
-.. _Alias: http://httpd.apache.org/docs/2.2/mod/mod_alias.html#alias
-.. _DocumentRoot: http://httpd.apache.org/docs/2.2/mod/core.html#documentroot
-.. _<Directory>: http://httpd.apache.org/docs/2.2/mod/core.html#directory
-.. _SetHandler: http://httpd.apache.org/docs/2.2/mod/core.html#sethandler
-.. _Options: http://httpd.apache.org/docs/2.2/mod/core.html#options
+For configurations that do not use ``WSGIScriptAlias``, or where you
+want to preload additional script files alongside the main one, see
+the WSGIImportScript directive.
+
+.. _Alias: http://httpd.apache.org/docs/2.4/mod/mod_alias.html#alias
+.. _DocumentRoot: http://httpd.apache.org/docs/2.4/mod/core.html#documentroot
+.. _<Directory>: http://httpd.apache.org/docs/2.4/mod/core.html#directory
+.. _SetHandler: http://httpd.apache.org/docs/2.4/mod/core.html#sethandler
+.. _Options: http://httpd.apache.org/docs/2.4/mod/core.html#options
+.. _SetEnv: http://httpd.apache.org/docs/2.4/mod/mod_env.html#setenv
+.. _RewriteRule: http://httpd.apache.org/docs/2.4/mod/mod_rewrite.html#rewriterule

@@ -1,0 +1,800 @@
+======================
+Subscribing to Events
+======================
+
+mod_wsgi publishes events at well-defined points in the request
+and process lifecycle. Applications can subscribe to these events
+to do cross-cutting work (structured logging, audit, observability,
+metrics enrichment, shutdown cleanup) without wrapping the WSGI
+application callable. This page documents the subscription API,
+every published event and its payload, and a handful of common
+usage patterns.
+
+Subscribing
+-----------
+
+``mod_wsgi.subscribe_events(callback)``
+   Register ``callback`` to receive every event mod_wsgi
+   publishes. The callback is invoked with the event name as a
+   single positional argument and the event payload as keyword
+   arguments::
+
+       import mod_wsgi
+
+       def handler(name, **event):
+           ...
+
+       mod_wsgi.subscribe_events(handler)
+
+   When only specific payload keys matter, declare them as
+   keyword-only parameters and let ``**event`` swallow the rest::
+
+       def handler(name, *, request_id, request_data, **event):
+           ...
+
+   ``subscribe_events`` returns the callback unchanged, so it can
+   also be used as a decorator::
+
+       @mod_wsgi.subscribe_events
+       def handler(name, **event):
+           ...
+
+   Multiple callbacks can be registered; they are invoked in the
+   order they were registered.
+
+   If the callback returns a dict, its keys are shallow-merged
+   into the event dict (the same dict passed as ``**event``)
+   before subsequent subscribers for the same firing run. The
+   merge is per-dispatch only: the next event published gets a
+   fresh dict.
+
+``mod_wsgi.subscribe_shutdown(callback)``
+   Shortcut for subscribing only to ``process_stopping``. The
+   callback shape is the same as for ``subscribe_events``, and
+   the function returns the callback so it can be used as a
+   decorator::
+
+       @mod_wsgi.subscribe_shutdown
+       def cleanup(name, **event):
+           ...
+
+   Use this when the subscriber only cares about the shutdown
+   signal; it makes the intent clearer than registering a
+   single-event handler through ``subscribe_events`` and
+   filtering by ``name`` inside the body.
+
+   This subscription is inert in service-script daemons
+   (``WSGIDaemonProcess threads=0``); see `Service-script
+   daemons`_ below for the alternative.
+
+``mod_wsgi.subscribe_signals(callback)``
+   Shortcut for subscribing only to ``process_signal``, the
+   event mod_wsgi publishes when a daemon process receives
+   ``SIGHUP`` or ``SIGUSR2``. The callback shape is the same as
+   for ``subscribe_events`` and the function returns the
+   callback so it can be used as a decorator::
+
+       @mod_wsgi.subscribe_signals
+       def on_signal(name, *, signame, signum, **event):
+           if signame == 'SIGHUP':
+               reload_config()
+           elif signame == 'SIGUSR2':
+               dump_diagnostics()
+
+   ``signame`` is the canonical key to branch on; ``signum`` is
+   provided for callers that prefer to compare against
+   ``signal.SIGHUP`` / ``signal.SIGUSR2`` but is platform
+   dependent and should not be hardcoded.
+
+   This subscription is only effective in daemon mode. In
+   embedded mode (any MPM) the call is still permitted and the
+   function still returns the callback so decorator syntax does
+   not silently nullify the user's function symbol, but the
+   callback is not retained and will never be invoked; an
+   ``APLOG_INFO`` warning together with a Python stack trace
+   identifying the registration site is written to the Apache
+   error log so the limitation is discoverable. See
+   `Signal delivery is daemon-mode only`_ below for the
+   rationale. Service-script daemons (``WSGIDaemonProcess
+   threads=0``) are also unsupported here for a different
+   reason; see `Service-script daemons`_ below.
+
+Subscriptions are per-interpreter: a callback registered inside
+one sub-interpreter only fires for events published in that
+sub-interpreter. In a single-interpreter application this
+distinction does not matter.
+
+Event reference
+---------------
+
+The following events are published. ``subscribe_events``
+callbacks see all of them; ``subscribe_shutdown`` callbacks see
+only ``process_stopping``; ``subscribe_signals`` callbacks see
+only ``process_signal``.
+
+Several payload keys appear on every request-scoped event and are
+worth introducing once:
+
+``request_id``
+   String identifier for the request, the same value Apache uses
+   as the request log ID. Substituted by ``%L`` in ``LogFormat``
+   and ``ErrorLogFormat`` directives, so subscribers can
+   cross-correlate event data with entries in the Apache access
+   and error logs. May be absent if Apache did not assign one.
+
+``thread_id``
+   Numeric ID of the worker thread handling the request, 1-based.
+
+``request_data``
+   Per-request scratchpad dict shared by the application and all
+   event subscribers. See `Per-request scratchpad`_ below.
+
+request_started
+~~~~~~~~~~~~~~~
+
+Fires immediately before the WSGI application callable is
+invoked.
+
+``request_id``, ``thread_id``, ``request_data``
+   Standard fields described above.
+
+``request_environ``
+   The WSGI environment dict that will be passed to the
+   application. Subscribers may inspect or mutate it; mutations
+   are visible to the application.
+
+``application_object``
+   The application callable about to be invoked. If a subscriber
+   replaces this key with a different callable (by returning
+   ``{"application_object": wrapper}``), subsequent subscribers
+   and ultimately the WSGI adapter use the replacement. This is
+   the supported hook point for adding application-level
+   middleware at runtime: see `Wrapping the application with WSGI
+   middleware`_ below for a worked example and the rationale for
+   replacing via the return-value merge rather than reassigning
+   the callback parameter.
+
+``callable_object``
+   The configured name of the application callable, as a string
+   (the value resolved from the ``WSGICallableObject`` directive,
+   defaulting to ``"application"``). This is the name mod_wsgi
+   looked up to obtain ``application_object`` from the loaded
+   WSGI script; it remains the original configured name even if
+   a subscriber replaces ``application_object`` with a wrapper.
+
+``server_pid``
+   Process ID of the Apache child worker that accepted the
+   request, as an ``int``. In embedded mode this is the process
+   the WSGI application is running in; in daemon mode it is the
+   originating Apache child, distinct from the daemon process
+   serving the request.
+
+``request_start``
+   Time Apache received the request, in seconds since the epoch.
+
+``queue_start``
+   Time Apache wrote the request onto the daemon socket, in
+   seconds since the epoch. ``0`` in embedded mode (no queue
+   phase).
+
+``daemon_start``
+   Time the daemon process picked the request up, in seconds
+   since the epoch. ``0`` in embedded mode.
+
+``application_start``
+   Time the worker thread is about to call the application
+   callable, in seconds since the epoch.
+
+``daemon_connects``
+   Number of times the Apache child has had to establish a
+   connection to the daemon process group while serving this
+   request (normally 1; greater than 1 indicates a reconnect).
+
+``daemon_restarts``
+   Number of daemon-process restarts the Apache child has
+   observed while attempting to serve this request.
+
+response_started
+~~~~~~~~~~~~~~~~
+
+Fires when the WSGI application calls ``start_response``.
+
+``request_id``, ``request_data``
+   Standard fields described above.
+
+``response_status``
+   The status line passed to ``start_response`` (e.g.
+   ``"200 OK"``).
+
+``response_headers``
+   The response headers list passed to ``start_response``.
+
+``exception_info``
+   The ``exc_info`` argument passed to ``start_response``, or
+   ``None`` if the application did not pass one. Set when the
+   application is reporting an in-progress error through the
+   WSGI exception-handling contract.
+
+request_finished
+~~~~~~~~~~~~~~~~
+
+Fires after the response has been fully written to the client.
+
+``request_id``, ``thread_id``, ``request_data``
+   Standard fields described above.
+
+``server_pid``, ``request_start``, ``queue_start``, ``daemon_start``, ``application_start``
+   As for ``request_started``.
+
+``application_finish``
+   Time the WSGI application callable returned, in seconds since
+   the epoch.
+
+``application_time``
+   ``application_finish - application_start``, in seconds.
+
+``input_reads``
+   Number of times the application read from the request body
+   stream.
+
+``input_length``
+   Total bytes the application read from the request body.
+
+``input_time``
+   Time spent reading the request body, in seconds.
+
+``output_writes``
+   Number of times the WSGI adapter wrote a chunk of the
+   response to Apache.
+
+``output_length``
+   Total response bytes written.
+
+``output_time``
+   Time spent writing the response, in seconds.
+
+``status``
+   Numeric HTTP status code the application returned. ``0`` if
+   the application never called ``start_response``.
+
+``cpu_user_time``
+   User-mode CPU time the worker thread consumed serving this
+   request, in seconds.
+
+``cpu_system_time``
+   Kernel-mode CPU time the worker thread consumed serving this
+   request, in seconds.
+
+``cpu_time``
+   ``cpu_user_time + cpu_system_time``.
+
+``gil_wait_time``
+   Time the worker thread spent waiting to re-acquire the GIL
+   at the boundaries where mod_wsgi releases it on the
+   application's behalf: acquiring the interpreter at the start
+   of the request, and re-acquiring the GIL after reading
+   request body bytes, after flushing response headers, and
+   after writing response body bytes. In seconds. GIL waits
+   inside the WSGI application itself (for example between
+   Python-level threads the application spawns) are not
+   measured.
+
+``gil_wait_count``
+   Number of GIL re-acquire events on those boundaries during
+   this request.
+
+The CPU and GIL fields are present only if the underlying timing
+sources are available on the host (they normally are on Linux and
+macOS).
+
+request_exception
+~~~~~~~~~~~~~~~~~
+
+Fires when an uncaught exception propagates out of the WSGI
+application callable, before mod_wsgi formats and writes a 500
+response.
+
+``request_id``
+   Standard field, when Apache assigned one.
+
+``request_data``
+   The per-request scratchpad, when the event fires inside a
+   request bracket. Absent if the exception happened outside the
+   normal request lifecycle (rare; only in degenerate failure
+   paths).
+
+``exception_info``
+   A ``(type, value, traceback)`` tuple as produced by
+   ``sys.exc_info``. Subscribers can format and log it, ship it
+   to an error-tracking service, or otherwise record the
+   failure.
+
+process_signal
+~~~~~~~~~~~~~~
+
+Fires in a daemon process when ``SIGHUP`` or ``SIGUSR2`` is
+delivered to the daemon. The intended use is to let WSGI
+application code react to an operator-driven poke without
+requiring a process restart: classic examples are reloading a
+configuration file on ``SIGHUP``, or triggering a diagnostic
+dump on ``SIGUSR2``.
+
+``signame``
+   Canonical string identifying the signal, either ``"SIGHUP"``
+   or ``"SIGUSR2"``. Callbacks should branch on this.
+
+``signum``
+   Numeric value of the signal as seen on the running platform,
+   e.g. ``signal.SIGHUP`` resolves to 1 on Linux/x86_64 but to
+   different values on other platforms. Provided so callers can
+   compare against the ``signal`` module's constants if
+   preferred, but ``signame`` is the portable key.
+
+The event is published into every sub-interpreter of the daemon
+process. Each interpreter's subscribers see one firing per
+delivered signal.
+
+The event is dispatched on a dedicated signal dispatcher thread
+that lives inside the daemon process and exists independently
+of request handling. A callback that runs for a long time
+delays dispatch of subsequent ``process_signal`` events but
+does not block request handling, and does not block daemon
+shutdown beyond the ``shutdown-timeout=`` reaper.
+
+Subscribers must remain alert to the same hazard as any other
+event subscriber: a callback that never returns wedges the
+dispatcher. Because Unix signals are not reference-counted, the
+kernel's pipe buffer absorbs a handful of additional deliveries
+and then silently drops further occurrences until the
+dispatcher catches up. Idempotent, fast callbacks are the
+expected style.
+
+This event is not published in service-script daemons
+(``WSGIDaemonProcess threads=0``); see `Service-script
+daemons`_ below.
+
+process_stopping
+~~~~~~~~~~~~~~~~
+
+Fires once per process when mod_wsgi is shutting it down. The
+event fires while the interpreter is still healthy, before
+Python's interpreter finalisation runs, so callbacks can do
+real work (write to disk, send a final metrics sample, contact
+an external service to deregister). Critically, this is also
+the point at which callbacks can still signal long-lived
+non-daemon worker threads to exit: Python's finalisation
+blocks waiting for non-daemon threads to terminate, and a
+thread sitting in an unconditional loop with no shutdown
+signal will hang the process at that point.
+
+This event is not published in service-script daemons
+(``WSGIDaemonProcess threads=0``); see `Service-script
+daemons`_ below.
+
+``shutdown_reason``
+   String describing what triggered the shutdown. The reasons
+   listed below apply only to daemon-mode processes, where
+   mod_wsgi owns the signal handlers and the lifecycle limits
+   and so can identify the trigger. In embedded mode, Apache
+   controls the child process lifecycle directly and mod_wsgi
+   has no visibility into the cause, so ``shutdown_reason`` is
+   always the empty string ``""``. The event itself still fires
+   once per embedded-mode process, when Apache shuts the child
+   down.
+
+   In daemon mode the value is one of:
+
+   ``"shutdown_signal"``
+      SIGTERM (Apache stop or restart).
+
+   ``"graceful_signal"``
+      SIGUSR1 graceful drain.
+
+   ``"eviction_signal"``
+      Operator-driven eviction.
+
+   ``"maximum_requests"``
+      The ``maximum-requests=`` limit on
+      :doc:`../configuration-directives/WSGIDaemonProcess` has
+      been reached.
+
+   ``"restart_interval"``
+      The ``restart-interval=`` limit has elapsed.
+
+   ``"inactivity_timeout"``
+      The ``inactivity-timeout=`` limit has elapsed with no
+      activity.
+
+   ``"request_timeout"``
+      A request exceeded the ``request-timeout=`` limit and the
+      daemon is shutting down to recover.
+
+   ``"startup_timeout"``
+      The ``startup-timeout=`` limit was exceeded before the
+      application finished starting up.
+
+   ``"deadlock_timeout"``
+      The ``deadlock-timeout=`` watchdog on
+      :doc:`../configuration-directives/WSGIDaemonProcess`
+      tripped. Subscribers should not expect to see this
+      firing in practice: dispatching ``process_stopping``
+      needs the GIL of each interpreter, which is exactly the
+      resource the deadlock holds, so the publish path blocks.
+      A reaper thread terminates the daemon process via
+      ``exit()`` after ``shutdown-timeout=`` seconds regardless,
+      so even on the rare occasions when the publish could
+      complete, the reaper has typically already exited the
+      process. The reason string is listed for completeness;
+      end-of-process cleanup that needs to run on deadlock
+      cannot rely on this event.
+
+   ``"cpu_time_limit"``
+      The ``cpu-time-limit=`` limit was exceeded.
+
+   ``"signal_pipe_error"``
+      The daemon's internal signal pipe became unusable; the
+      process is being recycled defensively.
+
+   ``"script_reload"``
+      The WSGI script changed on disk and the application group
+      is reloading.
+
+Subscribers wired through ``subscribe_shutdown`` should keep
+their callbacks short. The shutdown sequence waits for
+non-daemon threads to exit, so a callback that takes a long
+time, or that fails to signal a worker thread it owns, will
+delay process teardown or stall it indefinitely.
+
+This ordering matters especially in sub-interpreters that own
+their own GIL (PEP 684), where daemon threads are not permitted
+at all. Every long-lived background thread in that environment
+must be non-daemon, so every such thread must have a shutdown
+signal wired through ``subscribe_shutdown`` (or
+``subscribe_events`` on ``process_stopping``) to be stoppable.
+
+Signal delivery is daemon-mode only
+-----------------------------------
+
+The ``process_signal`` event and the ``subscribe_signals``
+shortcut are only effective in daemon-mode processes.
+
+In daemon mode, mod_wsgi installs ``SIGHUP`` and ``SIGUSR2``
+handlers in the daemon child after fork and routes received
+signals through a dedicated pipe to a dispatcher thread that
+calls Python subscribers. The mechanism is independent of the
+shutdown signal handling, so a long subscriber callback does
+not delay the daemon's response to shutdown signals nor block
+request handling on worker threads.
+
+In embedded mode (worker, event or prefork MPM) there is no
+dispatcher thread and no daemon process that owns the signal
+handlers; ``SIGHUP``, ``SIGUSR1``, ``SIGWINCH`` and similar
+signals are claimed by Apache for parent and child process
+management and cannot be safely repurposed. Calls to
+``mod_wsgi.subscribe_signals`` from embedded mode are
+intentionally tolerated, so portable application code can
+register a single subscriber and have it work where supported
+without conditional code, but the registration is recorded as
+a log warning (with a Python stack trace identifying the call
+site) and the callback is never invoked. Application code that
+depends on signal-driven reload should rely on daemon mode for
+that capability.
+
+Service-script daemons
+----------------------
+
+Daemon process groups configured with ``threads=0`` (the
+service-script form of :doc:`../configuration-directives/WSGIDaemonProcess`)
+run a single Python script on the daemon's main thread for the
+lifetime of the process. They do not handle WSGI requests and
+they intentionally do not start mod_wsgi's per-request
+infrastructure. As a side effect, two of the subscription APIs
+on this page are inert in service-script daemons:
+
+* ``mod_wsgi.subscribe_signals`` accepts the registration and
+  returns the callback unchanged, but no dispatcher thread is
+  ever started in the process, so the ``process_signal`` event
+  is never published. The callback is never invoked.
+* ``mod_wsgi.subscribe_shutdown`` (and a ``process_stopping``
+  branch wired through ``subscribe_events``) accepts the
+  registration but the ``process_stopping`` event is never
+  published in service-script daemons either; the publish point
+  lives in the per-request daemon main loop that service scripts
+  skip.
+
+The supported pattern in a service script is to use Python's
+own ``signal`` module directly. ``WSGIRestrictSignal`` is
+treated as off for service-script interpreters regardless of
+the configured value, so ``signal.signal()`` is not intercepted
+and Python signal handlers registered from the script fire
+normally on the main thread.
+
+mod_wsgi pre-registers ``signal.signal(SIGTERM, ...)`` with a
+handler that raises ``SystemExit``, so a service script that
+wraps its main loop in ``try: ... except SystemExit: ...`` has
+a working shutdown hook out of the box::
+
+    import asyncio
+
+    async def serve():
+        ...
+
+    try:
+        asyncio.run(serve())
+    except SystemExit:
+        cleanup()
+
+Additional signals such as ``SIGHUP`` and ``SIGUSR2`` can be
+handled by registering further callbacks via ``signal.signal()``
+in the script. Because the script runs on Python's main thread,
+the dispatch limitation that ``WSGIRestrictSignal Off`` warns
+about for daemon-mode WSGI applications (see
+:doc:`../configuration-directives/WSGIRestrictSignal`) does not
+apply here.
+
+Per-request scratchpad
+----------------------
+
+``mod_wsgi.request_data()``
+   Return the per-request scratchpad dict for the current
+   thread. The dict is created at the start of each request and
+   is the same object passed to subscribers as the
+   ``request_data`` event-payload key.
+
+The scratchpad is the supported channel for carrying state
+between events for the same request, or between a subscriber and
+the application. A subscriber that sets a value at
+``request_started`` can read it back at ``request_finished``; the
+application can read or write the same dict by calling
+``mod_wsgi.request_data()`` from inside the WSGI callable.
+
+``request_data()`` raises ``RuntimeError`` if called outside the
+context of an active request, so it is only useful from inside
+the WSGI application callable or from inside a request-scoped
+event subscriber.
+
+The active-requests dict
+------------------------
+
+``mod_wsgi.active_requests``
+   A dict, keyed by ``request_id``, of requests currently being
+   handled by the process. Each value is a dict carrying the same
+   information event subscribers see in ``request_started`` event
+   payloads.
+
+The dict is populated automatically as requests start and finish.
+Subscribers, the application, or admin-endpoint code can read it
+to inspect concurrent in-flight work, for example to dump live
+state on a debug endpoint or to detect requests stalled past a
+threshold from a watchdog.
+
+Common patterns
+---------------
+
+Structured logging per request
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Subscribe to ``request_finished`` to emit one structured log
+entry per request, separate from the Apache access log. The
+event payload already carries the timestamps and pre-computed
+durations needed to summarise the request, so no extra timing
+capture at ``request_started`` is necessary::
+
+    import json
+    import logging
+
+    import mod_wsgi
+
+    log = logging.getLogger("requests")
+
+    @mod_wsgi.subscribe_events
+    def trace(name, **event):
+        if name != "request_finished":
+            return
+        log.info(json.dumps({
+            "request_id": event.get("request_id"),
+            "status": event["status"],
+            "application_time": event["application_time"],
+            "request_time": event["application_finish"] - event["request_start"],
+            "cpu_time": event.get("cpu_time"),
+        }))
+
+The event timestamp fields are wall-clock seconds since the
+epoch, not monotonic. NTP step adjustments mid-request could in
+principle skew a difference like
+``application_finish - request_start``, but in practice the
+window is small enough that this is not a real concern; the
+pre-computed ``application_time`` is the same subtraction taken
+under the same clock and is provided for convenience.
+
+Wrapping the application with WSGI middleware
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``request_started`` is the supported hook for inserting WSGI
+middleware around the application callable at runtime, without
+modifying the deployed WSGI script. Return a dict from the
+subscriber with ``application_object`` set to the wrapping
+callable; mod_wsgi shallow-merges the returned dict into the
+event payload before subsequent subscribers run, and ultimately
+invokes whichever ``application_object`` is in the event dict at
+the end of the dispatch::
+
+    import mod_wsgi
+
+    def make_wrapper(app):
+        def wrapper(environ, start_response):
+            # per-request work before invoking the application
+            return app(environ, start_response)
+        return wrapper
+
+    @mod_wsgi.subscribe_events
+    def install_middleware(name, *, application_object, **event):
+        if name != "request_started":
+            return
+        return {"application_object": make_wrapper(application_object)}
+
+Why return a dict rather than mutate the event dict in place?
+The ``**event`` parameter binds the underlying dict into the
+callback, so ``event["application_object"] = wrapper`` would in
+fact propagate. But any keys extracted as keyword-only parameters
+(such as ``application_object`` in the signature above) are bound
+to *local variables*, and reassigning the local name has no
+effect on the dict mod_wsgi will consult after the callback
+returns. Returning a fresh dict is the unambiguous mechanism that
+works regardless of how the callback chose to receive the field,
+and is also clearer about intent than a mutation tucked inside
+the body. Subsequent subscribers see the wrapped callable as
+their ``application_object``, so multiple middleware layers
+compose by stacking subscribers: each wraps whatever the previous
+one produced, in registration order.
+
+Counting response classes inside the process
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A lightweight in-process counter can be maintained on
+``request_finished`` and exposed elsewhere::
+
+    import threading
+    import mod_wsgi
+
+    counts = {"1xx": 0, "2xx": 0, "3xx": 0, "4xx": 0, "5xx": 0}
+    lock = threading.Lock()
+
+    @mod_wsgi.subscribe_events
+    def count(name, **event):
+        if name != "request_finished":
+            return
+        status = event["status"] or 500
+        family = f"{status // 100}xx"
+        with lock:
+            counts[family] = counts.get(family, 0) + 1
+
+Note that for production-grade metrics, the per-interval
+accumulators exposed by :doc:`internal-metrics-api` are usually
+the better source: they already include per-class counters and
+are drained atomically by a single reporter call.
+
+Reloading configuration on SIGHUP
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A common operator workflow is to reload a configuration file on
+``SIGHUP`` without bouncing the daemon. ``subscribe_signals``
+provides the hook::
+
+    import mod_wsgi
+    import threading
+
+    _config = None
+    _config_lock = threading.Lock()
+
+    def load_config():
+        with open('/etc/myapp/config.yaml') as fp:
+            return parse(fp.read())
+
+    _config = load_config()
+
+    @mod_wsgi.subscribe_signals
+    def on_signal(name, *, signame, **event):
+        global _config
+        if signame == 'SIGHUP':
+            try:
+                new_config = load_config()
+            except Exception:
+                # Reload failure leaves the previous config in
+                # place; log the failure rather than crashing
+                # the daemon over a bad file.
+                import traceback
+                traceback.print_exc()
+                return
+            with _config_lock:
+                _config = new_config
+
+The reload runs on mod_wsgi's signal dispatcher thread, not on
+a request thread. Application code that needs the current
+configuration should read ``_config`` under ``_config_lock`` so
+a request never observes a partially applied reload. A failed
+reload should not crash the daemon: catch and log, leaving the
+prior configuration in effect, since the operator can fix the
+file and send ``SIGHUP`` again.
+
+Triggering a diagnostic dump on SIGUSR2
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``SIGUSR2`` is the conventional signal for ad-hoc operational
+pokes that have no fixed Unix meaning. A pattern is to dump
+in-flight request state, thread stacks, or process metrics::
+
+    import os
+    import sys
+    import threading
+    import traceback
+
+    import mod_wsgi
+
+    @mod_wsgi.subscribe_signals
+    def dump_on_signal(name, *, signame, **event):
+        if signame != 'SIGUSR2':
+            return
+        print(f'--- diagnostic dump pid={os.getpid()} ---',
+              file=sys.stderr)
+        print(f'active_requests: {mod_wsgi.active_requests!r}',
+              file=sys.stderr)
+        for tid, frame in sys._current_frames().items():
+            print(f'\\nthread {tid}:', file=sys.stderr)
+            traceback.print_stack(frame, file=sys.stderr)
+
+See :doc:`debugging-techniques` for a more elaborate stack-trace
+dumper that mod_wsgi-express can wire into the same hook.
+
+Process-shutdown cleanup
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+``subscribe_shutdown`` is the right hook for closing connection
+pools, flushing buffered telemetry, deregistering with a service
+discovery system, and similar end-of-process tasks::
+
+    import mod_wsgi
+
+    @mod_wsgi.subscribe_shutdown
+    def close_pool(name, **event):
+        connection_pool.close()
+
+If the cleanup needs a worker thread to stop, signal it from the
+callback (for example by putting a sentinel on a queue) and
+ensure the worker thread is non-daemon. The shutdown sequence
+waits for non-daemon threads to exit, which gives the worker a
+chance to finish writing whatever it was working on. See
+:doc:`internal-metrics-api` for a worked example.
+
+Why not ``atexit``
+~~~~~~~~~~~~~~~~~~
+
+``atexit`` callbacks run as part of Python's interpreter
+finalisation, *after* the runtime has joined every non-daemon
+thread. That ordering makes ``atexit`` the wrong hook for
+signalling non-daemon threads to exit: if the thread is sitting
+in a loop waiting for a sentinel, finalisation blocks waiting
+for the thread to terminate before ``atexit`` ever fires, and
+the process hangs.
+
+``process_stopping`` fires earlier, while the interpreter is
+still fully functional and before the non-daemon-thread join.
+That is the supported hook for end-of-process work that needs
+to wind down active resources, particularly when those
+resources include the application's own worker threads. Code
+ported from a plain-Python context that uses ``atexit`` for
+this purpose should switch to ``subscribe_shutdown`` when
+running under mod_wsgi.
+
+See also
+--------
+
+* :doc:`internal-metrics-api`: the four ``mod_wsgi`` metrics
+  accessors, with a worked example that uses
+  ``subscribe_shutdown`` to coordinate a background reporter
+  thread.
+* :doc:`registering-cleanup-code`: end-of-request and
+  end-of-process cleanup patterns, including the WSGI middleware
+  approach for end-of-request cleanup.
+* :doc:`mod-wsgi-python-module`: short reference summary of the
+  full ``mod_wsgi`` built-in module surface.

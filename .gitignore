@@ -1,28 +1,55 @@
-Makefile
+# Autoconf/Automake build system
 autom4te.cache
 config.log
 config.status
+configure~
+configure.ac~
+Makefile
+
+# Libtool artifacts
+libtool
 .libs
-*.o
 *.la
 *.lo
 *.loT
 *.slo
+
+# Compiled objects and shared libraries
+*.o
+*.so
+
+# Python build and packaging
 build
 dist
-apxs_config.py
 *.egg-info
-*.swp
+apxs_config.py
+
+# Python bytecode
+*.pyc
+__pycache__
+
+# Python virtual environments
+.Python
+venv
+.venv
 bin
 include
 lib
-.Python
-*.pyc
+
+# Testing
 .tox
-apxs
-libtool
-docs/_build
-newrelic.ini
+.pytest_cache
+httpd-test*
+httpd-benchmark
+
+# Documentation build output
+docs/_build/
+
+# Editor swap files
+*.swp
+
+# Third-party / vendored packages
 src/packages
-venv
-httpd-test
+
+# Bundled Apache tools
+apxs

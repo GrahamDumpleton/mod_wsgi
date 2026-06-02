@@ -2,25 +2,78 @@
 Installation
 ============
 
-The mod_wsgi package can be installed from source code or may also be
-available as a pre built binary package as part of your Linux distribution.
+mod_wsgi can be installed in several ways. The right choice depends
+on what you want to run, who manages the host, and which platform
+you are on.
 
-Do be aware though that Linux distributions can sometimes ship out of date
-versions of mod_wsgi, especially for long term support (LTS) versions of Linux.
-Those older versions are not supported in any way even though they are part of a
-so called LTS version of Linux.
+For the full requirements list (Python and Apache versions, build
+toolchain, distribution package names) see :doc:`requirements`.
 
-If you want support and want to ensure you have the most up to date and
-bug free version of mod_wsgi, you should consider building and installing
-mod_wsgi from the source code.
+Choosing an install method
+--------------------------
 
-For instructions on how to compile mod_wsgi from the source code for UNIX like
-operating systems such as Linux and MacOS X see:
+* **Want to try mod_wsgi quickly, or run it inside a Python virtual
+  environment alongside your application's other dependencies?**
+  Install from PyPI with ``pip install mod_wsgi``. This also gives
+  you the ``mod_wsgi-express`` admin command for running a private
+  Apache plus mod_wsgi instance from the command line. See
+  :doc:`user-guides/installation-from-pypi`.
 
-  * :doc:`user-guides/quick-installation-guide`
-  * :doc:`user-guides/installation-on-macosx`
+* **Running on Linux and want a system-wide install managed by your
+  distribution's package manager?** Install the distribution
+  package. See :doc:`user-guides/installation-on-linux`.
 
-For a simpler way of running a Python WSGI application using mod_wsgi, also
-checkout ``mod_wsgi-express``, details of which can currently be found at:
+* **Want a from-source build that installs into Apache the
+  traditional way?** A ``configure`` / ``make`` / ``make install``
+  flow. See :doc:`user-guides/quick-installation-guide`.
 
-   https://pypi.python.org/pypi/mod_wsgi
+Choosing a runtime shape
+------------------------
+
+How mod_wsgi runs your application is a separate choice from how
+it is installed:
+
+* :doc:`user-guides/embedded-and-daemon-mode` — embedded mode runs
+  WSGI inside Apache worker processes; daemon mode runs it in
+  separate mod_wsgi-managed processes that Apache forwards
+  requests to. Daemon mode is the usual choice.
+* :doc:`user-guides/running-behind-a-reverse-proxy` — running
+  mod_wsgi behind nginx, a load balancer, or another HTTP
+  front-end.
+* :doc:`user-guides/mod-wsgi-express-quickstart` — for PyPI
+  installs, ``mod_wsgi-express`` provides a single command-line
+  interface that wraps both modes.
+
+Platform-specific notes
+-----------------------
+
+* :doc:`user-guides/installation-on-macosx` — Apple removed the
+  build tooling needed to use the system Apache, so macOS uses an
+  Apache installed via Homebrew.
+* :doc:`user-guides/installation-on-windows` — Windows install is
+  via pip only; daemon mode and ``mod_wsgi-express start-server``
+  are not available on Windows.
+
+Notes on currency
+-----------------
+
+The version of mod_wsgi shipped by your Linux distribution may lag
+the current upstream release; long-term-support distributions in
+particular can lag upstream by some time. The age and currency of
+the packaged version varies by distribution and release. Check the
+version your distribution provides; if security currency or access
+to recent fixes matters for your deployment, weigh that against
+installing from PyPI or from source. See :doc:`project-status` for
+the project's overall version support policy.
+
+After installing
+----------------
+
+* :doc:`getting-started` — first-run walkthrough using
+  ``mod_wsgi-express``.
+* :doc:`user-guides/quick-configuration-guide` — manual Apache
+  configuration for your WSGI application.
+* :doc:`user-guides/configuration-guidelines` — richer
+  configuration examples.
+* :doc:`configuration` — Apache directive reference.
+* :doc:`troubleshooting` — what to do if something doesn't work.

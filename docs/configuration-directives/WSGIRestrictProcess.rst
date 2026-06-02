@@ -4,7 +4,6 @@ WSGIRestrictProcess
 
 :Description: Restrict which daemon process groups can be selected.
 :Syntax: ``WSGIRestrictProcess`` *group-1 group-2 ...*
-:Syntax: WSGIRestrictProcess *group-1 group-2 ...*
 :Context: server config, virtual host, directory
 
 When using the WSGIProcessGroup directive, daemon process groups defined
@@ -58,7 +57,11 @@ WSGI applications to different daemon process groups using the
   SetEnv PROCESS_GROUP bob:3
   </Files>
 
-Note that the WSGIDaemonProcess directive and corresponding features are
-not available on Windows or when running Apache 1.3.
+Note that the WSGIRestrictProcess directive and corresponding features are
+not available on Windows.
 
-.. _SetEnv: http://httpd.apache.org/docs/2.2/mod/mod_env.html#setenv
+For the broader security rationale and a worked example using this
+directive to isolate multiple application components hosted on a
+single Apache instance, see :doc:`../user-guides/security-hardening`.
+
+.. _SetEnv: http://httpd.apache.org/docs/2.4/mod/mod_env.html#setenv

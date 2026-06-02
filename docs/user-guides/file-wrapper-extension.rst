@@ -5,10 +5,10 @@ File Wrapper Extension
 The WSGI specification supports an optional feature that can be implemented
 by WSGI adapters for platform specific file handling.
 
-  * http://www.python.org/dev/peps/pep-0333/#optional-platform-specific-file-handling
+  * https://peps.python.org/pep-3333/#optional-platform-specific-file-handling
 
 What this allows is for a WSGI application to return a special object type
-which wraps a Python file like object. If that file like object statisfies
+which wraps a Python file like object. If that file like object satisfies
 certain conditions as dictated by a specific platform, then the WSGI
 adapter is allowed to return the content of that file in an optimised
 manner.
@@ -56,13 +56,13 @@ WSGI application would be written as follows::
         response_headers = [('Content-type', 'text/plain')]
         start_response(status, response_headers)
 
-        filelike = file('usr/share/dict/words', 'rb')
+        filelike = open('/usr/share/dict/words', 'rb')
         block_size = 4096
 
         if 'wsgi.file_wrapper' in environ:
-                return environ['wsgi.file_wrapper'](filelike, block_size)
+            return environ['wsgi.file_wrapper'](filelike, block_size)
         else:
-            return iter(lambda: filelike.read(block_size), '')
+            return iter(lambda: filelike.read(block_size), b'')
 
 Note that the file must always be opened in binary mode. If this isn't done
 then on platforms which do CR/LF translation automatically then the
@@ -122,7 +122,7 @@ example snippet of code which shows how to implement a fallback where the
     if 'wsgi.file_wrapper' in environ:
         return environ['wsgi.file_wrapper'](filelike, block_size)
     else:
-        return iter(lambda: filelike.read(block_size), '')
+        return iter(lambda: filelike.read(block_size), b'')
 
 is also wrong. This is because it doesn't restrict the amount of bytes
 returned to that specified by 'Content-Length'.
@@ -171,15 +171,12 @@ in a more optimal manner and because on Windows a Python file object only
 provides a Windows file handle and not a file descriptor, no optimisations
 are available on the Windows platform.
 
-The optimisations are also not able to be used if using Apache 1.3. This is
-because Apache doesn't provide access to a mechanism for optimised sending
-of file contents to a content handler under Apache 1.3.
-
-Finally, optimisations are not used where the WSGI application is running in
-daemon mode. This is currently disabled because some UNIX platforms do not
-appear to support use of the 'sendfile()' function over UNIX sockets and only
-support INET sockets. This situation may possibly have changed with recent
-versions of Linux at least but this has yet to be investigated properly.
+In daemon mode, sendfile-based optimisation is disabled by default. It can
+be opted into using the WSGIEnableSendfile directive, but support depends
+on the platform: communication between Apache and a daemon process uses a
+UNIX socket, and not every platform supports ``sendfile()`` over UNIX
+sockets. Where it is not supported, leaving the default in place is the
+safe choice.
 
 Whether or not optimisations are supported, the mod_wsgi 'wsgi.file_wrapper'
 extension generally still performs better than if a pure Python iterable
@@ -204,7 +201,7 @@ providing its own 'close()' method. An example of a middleware which
 replaces the 'close()' method in this way can be found in
 :doc:`../user-guides/registering-cleanup-code`.
 
-It is thus quite easy for a WSGI application stack to inadvertantly defeat
+It is thus quite easy for a WSGI application stack to inadvertently defeat
 completely any attempts to return file contents in an optimised way using
 the 'wsgi.file_wrapper' extension of WSGI. As such, attempts should always
 be used instead to make use of a real web server, whether that be a separate
@@ -212,6 +209,6 @@ web server, or in the case of mod_wsgi the underlying Apache web server.
 
 Where necessary, features of web servers or proxies such as
 'X-Accel-Redirect', 'X-Sendfile' or other special purpose headers could be
-used. If using mod_wsgi daemon mode and using mod_wsgi version 3.0 or later,
-the 'Location' response header can also be used.
+used. With mod_wsgi daemon mode the 'Location' response header can also be
+used to delegate the response to another handler in Apache.
 

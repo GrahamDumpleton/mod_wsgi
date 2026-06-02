@@ -6,45 +6,38 @@ WSGIPythonHome
 :Syntax: ``WSGIPythonHome`` *prefix|prefix:exec_prefix*
 :Context: server config
 
-Used to indicate to Python when it is initialised where its library files
-are installed. This should be defined where the Python executable is not in
-the ``PATH`` of the user that Apache runs as, or where a system has
-multiple versions of Python installed in different locations in the file
-system, especially different installations of the same major/minor version,
-and the installation that Apache finds in its ``PATH`` is not the desired
-one.
+Used to indicate to Python where its library files are installed. This
+is needed when the Python executable is not on the ``PATH`` of the user
+that Apache runs as, or where a system has multiple versions of Python
+installed in different locations and the version that Apache finds first
+on its ``PATH`` is not the one mod_wsgi was built against.
 
-This directive can also be used to indicate a Python virtual environment
-created using a tool such as ``virtualenv``, to be used for the whole of
-mod_wsgi.
+This directive can also be used to point at a Python virtual environment
+so that the whole of mod_wsgi runs against it. For most modern
+deployments the equivalent ``home`` option to the WSGIDaemonProcess
+directive is preferred, since daemon mode is the standard deployment
+model and that option only affects the daemon process group.
 
-When this directive is used it should be supplied the prefix for the
-directories containing the platform independent and system dependent Python
-library files. The directories should be separated by a ':'. If the same
-directory is used for both, then only the one directory path needs to be
-supplied. Where the directories are the same, this can usually be
-determined by looking at the value of the ``sys.prefix`` variable for the
-version of Python being used.
+When this directive is used it should be supplied with the prefix for
+the directories containing the platform-independent and platform-specific
+Python library files. The two directories should be separated by a
+``:``. If the same directory is used for both, only one path needs to
+be supplied. The value is normally what ``sys.prefix`` reports for the
+Python installation in question::
 
-Note that the Python installation being referred to using this directive
-must be the same major/minor version of Python that mod_wsgi was compiled
-for. If you want to use a different version of major/minor version of
-Python than currently used, you must recompile mod_wsgi against the alternate
-version of Python.
+  WSGIPythonHome /usr/local/python
 
-This directive is the same as having set the environment variable
-``PYTHONHOME`` in the environment of the user that Apache executes as. If
-this directive is used it will override any setting of ``PYTHONHOME`` in
-the environment of the user that Apache executes as.
+When ``sys.prefix`` and ``sys.exec_prefix`` differ, supply both,
+separated by a colon::
 
-This directive will have no affect if mod_python is being loaded into Apache
-at the same time as mod_wsgi as mod_python will in that case be responsible
-for initialising Python.
+  WSGIPythonHome /opt/python/lib:/opt/python/lib64
 
-This directive is not available on Windows systems. Note that mod_wsgi 1.X
-will not actually reject this directive if listed in the configuration,
-however, it also will not do anything either. This is because on Windows
-systems Python ignores the ``PYTHONHOME`` environment variable and always
-seems to use the location of the Python DLL for determining where the
-library files are located.
+The Python installation referred to by this directive must be the same
+major/minor version of Python that mod_wsgi was compiled against. To
+use a different major/minor version, mod_wsgi must be rebuilt against
+that version.
 
+This directive is the same as setting the environment variable
+``PYTHONHOME`` in the environment of the user that Apache executes as.
+If the directive is used it overrides any setting of ``PYTHONHOME`` in
+that environment.

@@ -1,10 +1,8 @@
+:orphan:
+
 ===========
 Version 2.6
 ===========
-
-Version 2.6 of mod_wsgi can be obtained from:
-
-  http://modwsgi.googlecode.com/files/mod_wsgi-2.6.tar.gz
 
 For Windows binaries see:
 

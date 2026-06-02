@@ -1,10 +1,8 @@
+:orphan:
+
 ===========
 Version 3.0
 ===========
-
-Version 3.0 of mod_wsgi can be obtained from:
-
-  http://modwsgi.googlecode.com/files/mod_wsgi-3.0.tar.gz
 
 Precompiled Windows binaries for Apache 2.2 and Python 2.6 and 3.1 are also
 available from:

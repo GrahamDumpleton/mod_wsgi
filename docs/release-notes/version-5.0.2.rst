@@ -2,10 +2,6 @@
 Version 5.0.2
 =============
 
-Version 5.0.2 of mod_wsgi can be obtained from:
-
-  https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/5.0.2
-
 Bugs Fixed
 ----------
 

@@ -2,7 +2,11 @@
 
 END=$((SECONDS+15))
 
-mod_wsgi-express setup-server tests/environ.wsgi \
+# Prefer a project-local virtualenv install of mod_wsgi-express
+# when run from a developer checkout, but fall through to a
+# PATH-installed mod_wsgi-express (as used by CI, which installs
+# via pip at the setup-python level with no .venv).
+PATH=".venv/bin:$PATH" mod_wsgi-express setup-server tests/environ.wsgi \
     --server-root httpd-test --log-level info
 
 trap "httpd-test/apachectl stop" EXIT

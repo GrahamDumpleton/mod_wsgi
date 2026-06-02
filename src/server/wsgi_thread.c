@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2024 GRAHAM DUMPLETON
+ * Copyright 2007-2026 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@
 #include "wsgi_thread.h"
 
 #include "wsgi_server.h"
+#include "wsgi_metrics.h"
 
 #if defined(__APPLE__)
 #include <mach/mach_init.h>
@@ -35,41 +36,65 @@
 
 /* ------------------------------------------------------------------------- */
 
-int wsgi_total_threads;
-int wsgi_request_threads;
-apr_threadkey_t *wsgi_thread_key;
-apr_array_header_t *wsgi_thread_details;
+/*
+ * Look up (or lazily create) the per-thread WSGIThreadInfo block.
+ *
+ * With create=0 the function returns NULL when no entry has been
+ * stashed in the threadkey for the calling thread.
+ *
+ * With create=1 the function does not return NULL: APR pools abort
+ * the process on allocation failure (apr_pcalloc / apr_array_push
+ * never come back NULL under Apache's default abort handler), so
+ * callers passing create=1 may dereference the result unconditionally.
+ *
+ * The lazy-create path takes the monitor lock around the directory
+ * allocation, the directory push, and the total_threads counter
+ * increment so two threads first-touching simultaneously cannot race
+ * the apr_array_make / apr_array_push or read a torn counter. The
+ * request_thread promotion takes the same lock around the
+ * request_threads counter increment.
+ */
 
 WSGIThreadInfo *wsgi_thread_info(int create, int request)
 {
+    WSGIProcessMetrics *m = wsgi_process_metrics;
     WSGIThreadInfo *thread_handle = NULL;
 
-    apr_threadkey_private_get((void**)&thread_handle, wsgi_thread_key);
+    apr_threadkey_private_get((void **)&thread_handle, m->thread_key);
 
-    if (!thread_handle && create) {
+    if (!thread_handle && create)
+    {
         WSGIThreadInfo **entry = NULL;
 
-        if (!wsgi_thread_details) {
-            wsgi_thread_details = apr_array_make(
-                    wsgi_server->process->pool, 3, sizeof(char*));
-        }
-
         thread_handle = (WSGIThreadInfo *)apr_pcalloc(
-                wsgi_server->process->pool, sizeof(WSGIThreadInfo));
+            wsgi_server->process->pool, sizeof(WSGIThreadInfo));
 
         thread_handle->log_buffer = NULL;
 
-        thread_handle->thread_id = wsgi_total_threads++;
+        apr_thread_mutex_lock(m->monitor_lock);
 
-        entry = (WSGIThreadInfo **)apr_array_push(wsgi_thread_details);
+        if (!m->thread_details)
+        {
+            m->thread_details = apr_array_make(
+                wsgi_server->process->pool, 3, sizeof(WSGIThreadInfo *));
+        }
+
+        thread_handle->thread_id = m->total_threads++;
+
+        entry = (WSGIThreadInfo **)apr_array_push(m->thread_details);
         *entry = thread_handle;
 
-        apr_threadkey_private_set(thread_handle, wsgi_thread_key);
+        apr_thread_mutex_unlock(m->monitor_lock);
+
+        apr_threadkey_private_set(thread_handle, m->thread_key);
     }
 
-    if (thread_handle && request && !thread_handle->request_thread) {
+    if (thread_handle && request && !thread_handle->request_thread)
+    {
+        apr_thread_mutex_lock(m->monitor_lock);
         thread_handle->request_thread = 1;
-        wsgi_request_threads++;
+        m->request_threads++;
+        apr_thread_mutex_unlock(m->monitor_lock);
     }
 
     return thread_handle;
@@ -95,7 +120,8 @@ int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage)
 
     mach_port_deallocate(mach_task_self(), thread);
 
-    if (kr == KERN_SUCCESS && (info.flags & TH_FLAGS_IDLE) == 0) {
+    if (kr == KERN_SUCCESS && (info.flags & TH_FLAGS_IDLE) == 0)
+    {
         usage->user_time = info.user_time.seconds;
         usage->user_time += info.user_time.microseconds / 1000000.0;
         usage->system_time = info.system_time.seconds;
@@ -109,7 +135,8 @@ int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage)
     usage->user_time = 0.0;
     usage->system_time = 0.0;
 
-    if (getrusage(RUSAGE_THREAD, &info) == 0) {
+    if (getrusage(RUSAGE_THREAD, &info) == 0)
+    {
         usage->user_time = info.ru_utime.tv_sec;
         usage->user_time += info.ru_utime.tv_usec / 1000000.0;
         usage->system_time = info.ru_stime.tv_sec;
@@ -118,7 +145,7 @@ int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage)
         return 1;
     }
 #elif defined(linux)
-    FILE* fp;
+    FILE *fp;
     char filename[256];
     char content[1024];
     long tid;
@@ -142,16 +169,20 @@ int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage)
 
     ticks = sysconf(_SC_CLK_TCK);
 
-    sprintf(filename, "/proc/%ld/stat", tid);
+    snprintf(filename, sizeof(filename), "/proc/%ld/stat", tid);
 
     fp = fopen(filename, "r");
 
-    if (fp) {
-        if (fread(content, 1, sizeof(content)-1, fp)) {
+    if (fp)
+    {
+        if (fread(content, 1, sizeof(content) - 1, fp))
+        {
             p = content;
 
-            while (*p && offset) {
-                if (*p++ == ' ') {
+            while (*p && offset)
+            {
+                if (*p++ == ' ')
+                {
                     offset--;
                     while (*p == ' ')
                         p++;
@@ -164,14 +195,16 @@ int wsgi_thread_cpu_usage(WSGIThreadCPUUsage *usage)
                 p++;
 
             system_time = strtoul(p, &p, 10);
+
+            fclose(fp);
+
+            usage->user_time = (double)user_time / ticks;
+            usage->system_time = (double)system_time / ticks;
+
+            return 1;
         }
 
         fclose(fp);
-
-        usage->user_time = (float)user_time / ticks;
-        usage->system_time = (float)system_time / ticks;
-
-        return 1;
     }
 #endif
 

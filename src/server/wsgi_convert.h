@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2024 GRAHAM DUMPLETON
+ * Copyright 2007-2026 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@
 /* ------------------------------------------------------------------------- */
 
 extern PyObject *wsgi_convert_string_to_bytes(PyObject *value);
-extern PyObject *wsgi_convert_status_line_to_bytes(PyObject *headers);
+extern PyObject *wsgi_convert_status_line_to_bytes(PyObject *status_line);
 extern PyObject *wsgi_convert_headers_to_bytes(PyObject *headers);
 
 /* ------------------------------------------------------------------------- */

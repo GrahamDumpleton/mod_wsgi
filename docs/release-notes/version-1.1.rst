@@ -1,10 +1,8 @@
+:orphan:
+
 ===========
 Version 1.1
 ===========
-
-Version 1.1 of mod_wsgi can be obtained from:
-
-  http://modwsgi.googlecode.com/files/mod_wsgi-1.1.tar.gz
 
 Bug Fixes
 ---------

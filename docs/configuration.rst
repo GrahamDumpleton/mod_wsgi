@@ -2,37 +2,160 @@
 Configuration
 =============
 
-.. toctree::
-   :maxdepth: 2
+This page lists the Apache configuration directives provided by
+mod_wsgi, grouped by purpose. An alphabetical index of all
+directives is at the bottom of the page.
 
-   configuration-directives/WSGIAcceptMutex
-   configuration-directives/WSGIAccessScript
-   configuration-directives/WSGIApplicationGroup
-   configuration-directives/WSGIAuthGroupScript
-   configuration-directives/WSGIAuthUserScript
+Application loading
+-------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   configuration-directives/WSGIScriptAlias
+   configuration-directives/WSGIScriptAliasMatch
+   configuration-directives/WSGIHandlerScript
+   configuration-directives/WSGIDispatchScript
    configuration-directives/WSGICallableObject
-   configuration-directives/WSGICaseSensitivity
-   configuration-directives/WSGIChunkedRequest
-   configuration-directives/WSGIDaemonProcess
-   configuration-directives/WSGIDestroyInterpreter
-   configuration-directives/WSGIErrorOverride
    configuration-directives/WSGIImportScript
-   configuration-directives/WSGILazyInitialization
-   configuration-directives/WSGIMapHEADToGET
-   configuration-directives/WSGIPassAuthorization
+   configuration-directives/WSGIScriptReloading
+   configuration-directives/WSGICaseSensitivity
+
+Process model and daemon mode
+-----------------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   configuration-directives/WSGIDaemonProcess
    configuration-directives/WSGIProcessGroup
-   configuration-directives/WSGIPythonEggs
-   configuration-directives/WSGIPythonHome
-   configuration-directives/WSGIPythonOptimize
-   configuration-directives/WSGIPythonPath
-   configuration-directives/WSGIRestrictEmbedded
+   configuration-directives/WSGIApplicationGroup
+   configuration-directives/WSGISocketPrefix
+   configuration-directives/WSGISocketRotation
+   configuration-directives/WSGIAcceptMutex
+   configuration-directives/WSGIDestroyInterpreter
    configuration-directives/WSGIRestrictProcess
+   configuration-directives/WSGIIgnoreActivity
+   configuration-directives/WSGIServerMetrics
+
+Python environment
+------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   configuration-directives/WSGIPythonHome
+   configuration-directives/WSGIPythonPath
+   configuration-directives/WSGIPythonOptimize
+   configuration-directives/WSGIPythonEggs
+   configuration-directives/WSGIPythonHashSeed
+   configuration-directives/WSGIPythonWarnings
+   configuration-directives/WSGIDontWriteBytecode
+   configuration-directives/WSGISwitchInterval
+   configuration-directives/WSGIPerInterpreterGIL
+   configuration-directives/WSGIFreeThreading
+   configuration-directives/WSGIInterpreterOptions
+
+Authentication and access control
+---------------------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   configuration-directives/WSGIAuthUserScript
+   configuration-directives/WSGIAuthGroupScript
+   configuration-directives/WSGIAccessScript
+   configuration-directives/WSGIPassAuthorization
+
+Request handling
+----------------
+
+.. toctree::
+   :maxdepth: 1
+
+   configuration-directives/WSGIChunkedRequest
+   configuration-directives/WSGIMapHEADToGET
+   configuration-directives/WSGIErrorOverride
+   configuration-directives/WSGIEnableSendfile
+   configuration-directives/WSGIPassApacheRequest
+
+Reverse proxy
+-------------
+
+.. toctree::
+   :maxdepth: 1
+
+   configuration-directives/WSGITrustedProxies
+   configuration-directives/WSGITrustedProxyHeaders
+
+Telemetry
+---------
+
+.. toctree::
+   :maxdepth: 1
+
+   configuration-directives/WSGITelemetryService
+   configuration-directives/WSGITelemetryOptions
+   configuration-directives/WSGISlowRequests
+
+Sandboxing and safety
+---------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   configuration-directives/WSGIRestrictEmbedded
    configuration-directives/WSGIRestrictSignal
    configuration-directives/WSGIRestrictStdin
    configuration-directives/WSGIRestrictStdout
-   configuration-directives/WSGIScriptAlias
-   configuration-directives/WSGIScriptAliasMatch
-   configuration-directives/WSGIScriptReloading
-   configuration-directives/WSGISocketPrefix
-   configuration-directives/WSGITrustedProxies
-   configuration-directives/WSGITrustedProxyHeaders
+
+Alphabetical index
+------------------
+
+* :doc:`configuration-directives/WSGIAcceptMutex`
+* :doc:`configuration-directives/WSGIAccessScript`
+* :doc:`configuration-directives/WSGIApplicationGroup`
+* :doc:`configuration-directives/WSGIAuthGroupScript`
+* :doc:`configuration-directives/WSGIAuthUserScript`
+* :doc:`configuration-directives/WSGICallableObject`
+* :doc:`configuration-directives/WSGICaseSensitivity`
+* :doc:`configuration-directives/WSGIChunkedRequest`
+* :doc:`configuration-directives/WSGIDaemonProcess`
+* :doc:`configuration-directives/WSGIDestroyInterpreter`
+* :doc:`configuration-directives/WSGIDispatchScript`
+* :doc:`configuration-directives/WSGIDontWriteBytecode`
+* :doc:`configuration-directives/WSGIEnableSendfile`
+* :doc:`configuration-directives/WSGIErrorOverride`
+* :doc:`configuration-directives/WSGIFreeThreading`
+* :doc:`configuration-directives/WSGIHandlerScript`
+* :doc:`configuration-directives/WSGIIgnoreActivity`
+* :doc:`configuration-directives/WSGIImportScript`
+* :doc:`configuration-directives/WSGIInterpreterOptions`
+* :doc:`configuration-directives/WSGIMapHEADToGET`
+* :doc:`configuration-directives/WSGIPassApacheRequest`
+* :doc:`configuration-directives/WSGIPassAuthorization`
+* :doc:`configuration-directives/WSGIPerInterpreterGIL`
+* :doc:`configuration-directives/WSGIProcessGroup`
+* :doc:`configuration-directives/WSGIPythonEggs`
+* :doc:`configuration-directives/WSGIPythonHashSeed`
+* :doc:`configuration-directives/WSGIPythonHome`
+* :doc:`configuration-directives/WSGIPythonOptimize`
+* :doc:`configuration-directives/WSGIPythonPath`
+* :doc:`configuration-directives/WSGIPythonWarnings`
+* :doc:`configuration-directives/WSGIRestrictEmbedded`
+* :doc:`configuration-directives/WSGIRestrictProcess`
+* :doc:`configuration-directives/WSGIRestrictSignal`
+* :doc:`configuration-directives/WSGIRestrictStdin`
+* :doc:`configuration-directives/WSGIRestrictStdout`
+* :doc:`configuration-directives/WSGIScriptAlias`
+* :doc:`configuration-directives/WSGIScriptAliasMatch`
+* :doc:`configuration-directives/WSGIScriptReloading`
+* :doc:`configuration-directives/WSGIServerMetrics`
+* :doc:`configuration-directives/WSGISlowRequests`
+* :doc:`configuration-directives/WSGISocketPrefix`
+* :doc:`configuration-directives/WSGISocketRotation`
+* :doc:`configuration-directives/WSGISwitchInterval`
+* :doc:`configuration-directives/WSGITelemetryOptions`
+* :doc:`configuration-directives/WSGITelemetryService`
+* :doc:`configuration-directives/WSGITrustedProxies`
+* :doc:`configuration-directives/WSGITrustedProxyHeaders`

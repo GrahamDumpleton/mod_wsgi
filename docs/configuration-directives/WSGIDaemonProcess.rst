@@ -85,15 +85,20 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     name will be ``(wsgi:group)`` where ``group`` is replaced with the name
     of the daemon process group.
 
+    If this option is not specified, no rename is performed and the daemon
+    process retains Apache's default ``argv[0]`` (typically the path to the
+    ``httpd`` binary), making it indistinguishable in ``ps`` output from
+    the parent and child Apache processes. Setting this option, most
+    commonly to ``%{GROUP}``, is recommended so the daemon processes are
+    clearly identifiable.
+
     Note that only as many characters of the supplied value can be displayed
     as were originally taken up by ``argv0`` of the executing process.
     Anything in excess of this will be truncated.
 
     This feature may not work as described on all platforms. Typically it
-    also requires a ``ps`` program with BSD heritage. Thus on some versions
-    of Solaris UNIX the ``/usr/bin/ps`` program doesn't work, but
-    ``/usr/ucb/ps`` does. Other programs which can display this value
-    include ``htop``.
+    also requires a ``ps`` program with BSD heritage. Other programs which
+    can display this value include ``htop``.
 
 .. _home:
 
@@ -116,8 +121,9 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Defines the UNIX user *name* or numeric user *uid* of the user that
     the daemon processes should be run as. If this option is not supplied
     the daemon processes will be run as the same user that Apache would
-    run child processes, as defined by the `User`_ directive, and it is
-    not necessary to set this to the Apache user yourself.
+    run child processes, as defined by the `User <ApacheHTTPDUser_>`_
+    directive, and it is not necessary to set this to the Apache user
+    yourself.
 
     Note that this option is ignored if Apache wasn't started as the root
     user, in which case no matter what the settings, the daemon processes
@@ -133,8 +139,9 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Defines the UNIX group *name* or numeric group *gid* of the primary
     group that the daemon processes should be run as. If this option is not
     supplied the daemon processes will be run as the same group that Apache
-    would run child processes, as defined by the `Group`_ directive, and it
-    is not necessary to set this to the Apache group yourself.
+    would run child processes, as defined by the `Group <ApacheHTTPDGroup_>`_
+    directive, and it is not necessary to set this to the Apache group
+    yourself.
 
     Note that this option is ignored if Apache wasn't started as the root
     user, in which case no matter what the settings, the daemon processes
@@ -191,8 +198,8 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 **chroot=directory**
     Run the daemon process group process within a chroot jail. Use of a
     chroot jail is now deprecated due to the difficulty in setting up a
-    chroot environment. It is recommended that you use more modern
-    containerisation technologies such as Docker or runC.
+    chroot environment. It is recommended that you use modern
+    containerisation technologies such as Docker instead.
 
 .. _script-user:
 
@@ -228,15 +235,17 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Set the location of the Python virtual environment to be used by the
     daemon processes. The directory to use is that which ``sys.prefix`` is
     set to for the Python virtual environment. The virtual environment can
-    have been created by ``virtualenv``, ``pyvenv`` or ``python -m venv``.
+    have been created by ``python -m venv``, ``uv venv``, or ``virtualenv``.
 
     Note that the Python virtual environment must have been created using
     the same base Python version as was used to compile the mod_wsgi
     module. You can't use this to force mod_wsgi to somehow use a different
     Python version than it was compiled for. If you want to use a different
     version of Python, you will need to reinstall mod_wsgi, compiling it
-    for the version you want. It is not possible for the one mod_wsgi
-    instance to run applications for both Python 2 and 3 at the same time.
+    for the version you want.
+
+    This option is the daemon-mode equivalent of the WSGIPythonHome
+    directive. See :doc:`WSGIPythonHome` for the full description.
 
 .. _python-path:
 
@@ -262,6 +271,9 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     You should not mix packages from different Python versions or
     installations.
 
+    This option is the daemon-mode equivalent of the WSGIPythonPath
+    directive. See :doc:`WSGIPythonPath` for the full description.
+
 .. _python-eggs:
 
 **python-eggs=directory**
@@ -272,13 +284,29 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Note that the directory specified must exist and be writable by the
     user that the daemon process run as.
 
+    This option is the daemon-mode equivalent of the WSGIPythonEggs
+    directive. See :doc:`WSGIPythonEggs` for the full description.
+
+.. _switch-interval:
+
+**switch-interval=seconds**
+    Override the Python GIL switch interval for the daemon process by
+    calling ``sys.setswitchinterval()`` once at process start. The
+    value is a positive number of seconds expressed as a float (the
+    same form ``sys.setswitchinterval()`` accepts), for example
+    ``switch-interval=0.002`` to set it to 2 ms.
+
+    This option is the daemon-mode equivalent of the
+    :doc:`WSGISwitchInterval` directive. See :doc:`WSGISwitchInterval`
+    for the full description.
+
 .. _restart-interval:
 
 **restart-interval=sss**
     Defines a time limit in seconds for how long a daemon process should
     run before being restarted.
 
-    This might be use to periodically force restart the WSGI application
+    This might be used to periodically force restart the WSGI application
     processes when you have issues related to Python object reference count
     cycles, or incorrect use of in memory caching, which causes constant
     memory growth.
@@ -288,7 +316,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Apache itself is restarted or shutdown.
 
     Avoid setting this too low. This is because the constant restarting and
-    reloading of your WSGI application may cause unecessary load on your
+    reloading of your WSGI application may cause unnecessary load on your
     system and affect performance.
 
     You can use the ``graceful-timeout`` option in conjunction with this
@@ -312,7 +340,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 
     Avoid setting this to a low number of requests on a site which handles
     a lot of traffic. This is because the constant restarting and reloading
-    of your WSGI application may cause unecessary load on your system and
+    of your WSGI application may cause unnecessary load on your system and
     affect performance. Only use this option if you have no other choice
     due to a memory usage issue. Stop using it as soon as any memory issue
     has been resolved.
@@ -338,48 +366,143 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Note that after any restart of the WSGI application process, the WSGI
     application will need to be reloaded. This can mean that the first
     request received by a process after the process was restarted can be
-    slower. If you WSGI application has a very high startup cost on CPU and
+    slower. If your WSGI application has a very high startup cost on CPU and
     time, it may not be a good idea to use the option.
 
     See also the ``request-timeout`` option for forcing a process restart
     when requests block for a specified period of time.
-    
-    Note that similar functionality to that of the ``request-timeout``
-    option, for forcing a restart when requests blocked, was part of what
-    was implemented by the ``inactivity-timeout`` option. The request
-    timeout was broken out into a separate feature in version 4.1.0 of
-    mod_wsgi.
 
 .. _request-timeout:
 
 **request-timeout=sss**
-    Defines the maximum number of seconds that a request is allowed to run
-    before the daemon process is restarted. This can be used to recover
-    from a scenario where a request blocks indefinitely, and where if all
-    request threads were consumed in this way, would result in the whole
-    WSGI application process being blocked.
+    Defines the per-thread upper bound on how long a request can run
+    before recovery is triggered. This is a process-level fail-safe for
+    recovering from requests that block indefinitely; it is not a
+    per-request SLA mechanism. Defaults to 0, meaning the timeout is
+    disabled.
 
-    How this option is seen to behave is different depending on whether a
-    daemon process uses only one thread, or more than one thread for
-    handling requests, as set by the ``threads`` option.
+    The actual fire point scales with the configured ``threads`` value
+    by natural log:
 
-    If there is only a single thread, and so the process can only handle
-    one request at a time, as soon as the timeout has passed, a restart of
-    the process will be initiated.
+    .. code-block:: text
 
-    If there is more than one thread, the request timeout is applied to
-    the average running time for any requests, across all threads. This
-    means that a request can run longer than the request timeout. This is
-    done to reduce the possibility of interupting other running requests,
-    and causing a user to see a failure. So where there is still capacity
-    to handle more requests, restarting of the process will be delayed
-    if possible.
+        T_fire = request-timeout * (1 + ln(threads))
 
-    Note that when a process is restarted due to a request timeout, if the
-    Apache ``LogLevel`` is set to ``info`` or higher, or ``wsgi:info`` applied
-    for ``LogLevel```, messages will be logged to the Apache error log file for
-    the request which gives the Python stack trace for any request handler
-    threads so you can work out where the request is blocking.
+    At ``threads=1`` this collapses to ``request-timeout``. At
+    ``threads=10`` it is ~3.3x; at ``threads=25`` it is ~4.2x. The
+    intent is to grant proportionally more patience as parallel
+    capacity grows (a wedge in 1-of-10 threads costs less than a
+    wedge in 1-of-1) without letting the threshold run away the way
+    a linear scaling would. Each thread is judged independently
+    against this threshold; multiple wedged threads are detected on
+    the same schedule a single wedge would be.
+
+    What happens at the fire point depends only on
+    ``interrupt-timeout``. With ``interrupt-timeout=0`` (the default),
+    mod_wsgi skips injection and transitions directly into
+    ``graceful-timeout``, then ``shutdown-timeout``. With
+    ``interrupt-timeout`` set to a non-zero value, mod_wsgi first
+    attempts to interrupt only the offending thread by injecting a
+    :py:class:`mod_wsgi.RequestTimeout` exception; if that succeeds
+    the process keeps running, and if it fails the same
+    ``graceful-timeout`` / ``shutdown-timeout`` chain takes over. See
+    ``interrupt-timeout`` for the details of injection-based recovery.
+
+    Sizing guidance: set ``request-timeout`` a few times above the p99
+    of normal request duration — enough that steady-state traffic never
+    trips it. The natural-log scaling already provides headroom for
+    higher thread counts; do not pad the value further to compensate.
+    For user-visible per-request deadlines (as distinct from a
+    fail-safe) prefer application-level timeouts, such as HTTP client
+    and database statement timeouts inside the request handler itself.
+
+    Note that when a process is restarted due to a request timeout, if
+    the Apache ``LogLevel`` is set to ``info`` or higher, or
+    ``wsgi:info`` applied for ``LogLevel``, messages will be logged to
+    the Apache error log file giving the Python stack trace for the
+    offending request handler thread so you can work out where the
+    request is blocking.
+
+    The stack-trace dump is skipped when :doc:`WSGIFreeThreading` is
+    active for the process. Walking interpreter thread frames relies
+    on the GIL to keep those frames stable while they are being read,
+    and that guarantee is gone when free-threading is active.
+
+    See also ``deadlock-timeout`` for handling cases where a Python C
+    extension wedges the GIL — the injection mechanism cannot recover
+    those, but ``deadlock-timeout`` will detect the wedge and restart
+    the process.
+
+.. _interrupt-timeout:
+
+**interrupt-timeout=sss**
+    When non-zero, attempts to interrupt only the wedged thread when
+    ``request-timeout`` fires by injecting a
+    :py:class:`mod_wsgi.RequestTimeout` exception, rather than
+    immediately escalating to a process restart. Defines the grace
+    window in seconds for the injected exception to land and the
+    request to unwind. Defaults to 0 (disabled).
+
+    This option only changes the **recovery method** taken when
+    ``request-timeout`` fires. It does not change **detection** —
+    the fire point set by ``request-timeout`` is the same regardless
+    of this setting.
+
+    The injected exception derives directly from ``BaseException``,
+    so well-written code using ``except Exception:`` will not catch it.
+    It may be caught for cleanup purposes but should be re-raised —
+    swallowing it is counter to its purpose. If the exception unwinds
+    back to the WSGI adapter within the ``interrupt-timeout`` grace
+    window, the adapter returns ``504 Gateway Timeout`` and the worker
+    thread returns to the pool to handle further requests. **The
+    process is not restarted; other threads were never disturbed.** If
+    the grace window expires with the same request still active, the
+    daemon falls through to ``graceful-timeout`` followed by
+    ``shutdown-timeout``.
+
+    Recommended floor of ~10 seconds when enabled. Values significantly
+    below that may not give the injected exception time to unwind
+    through finally blocks, context managers, and the WSGI adapter.
+
+    Best-effort: the injection takes effect only when the target thread
+    next runs Python bytecode. This has implications depending on what
+    the thread is actually doing:
+
+    * **Thread running Python code** (loops, computation, etc.): the
+      exception fires on the next bytecode tick, almost immediately.
+      This is the case the mechanism is designed for.
+
+    * **Thread blocked in a C call that has released the GIL** (the
+      common case — most socket reads, database driver calls,
+      ``time.sleep``, file I/O, etc.): the injected exception is
+      queued on the thread but does not fire until the blocking call
+      returns and Python bytecode runs again. If the external service
+      eventually responds or times out, the exception fires then. **If
+      the blocking call hangs indefinitely, the injected exception
+      will never fire.** In that case the ``interrupt-timeout`` grace
+      window will expire and the daemon process will be restarted via
+      the ``graceful-timeout`` / ``shutdown-timeout`` fallback, taking
+      the wedged request down with it. For user-visible per-request
+      deadlines on external calls, prefer explicit application-level
+      timeouts on the client itself (HTTP client read timeouts,
+      database statement timeouts, etc.) — those bound the blocking
+      call, which then lets ``interrupt-timeout`` do its job cleanly.
+
+    * **Thread blocked in a C extension that holds the GIL**: the
+      injection cannot even reach the thread, and no other Python
+      thread can run either. This is what ``deadlock-timeout`` exists
+      for.
+
+    When multiple threads wedge in quick succession each gets its own
+    injection on its own grace timer (carried per-thread, not per
+    process). The first injection grace to expire arms
+    ``graceful-timeout``; sibling injections continue to tick on their
+    own threads and may still unwind cleanly during the graceful
+    window, in which case those threads free up and the drain check
+    progresses.
+
+    The ``threads=0`` managed-process mode is unaffected — it has no
+    requests and no per-thread timers.
 
 .. _deadlock-timeout:
 
@@ -413,14 +536,24 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 **graceful-timeout=sss**
     When ``maximum-requests`` is used and the maximum has been reached,
     or ``cpu-time-limit`` is used and the CPU limit reached, or
-    ``restart-interval`` is used and the time limit reached, if
-    ``graceful-timeout`` is set, then the process will continue to run for
-    the number of second specified by this option, while still accepting
-    new requests, to see if the process reaches an idle state. If the
-    process reaches an idle state, it will then be resarted immediately. If
-    the process doesn't reach an idle state and the graceful restart
-    timeout expires, the process will be restarted, even if it means that
+    ``restart-interval`` is used and the time limit reached, or
+    ``request-timeout`` fires, if ``graceful-timeout`` is set the
+    process will continue to run for the number of seconds specified by
+    this option, while still accepting new requests, to see if the
+    process reaches an idle state. If the process reaches an idle
+    state, it will then be restarted immediately. If the process
+    doesn't reach an idle state and the graceful restart timeout
+    expires, the process will be restarted, even if it means that
     requests may be interrupted.
+
+    The "idle state" check ignores any in-flight request whose elapsed
+    time has already exceeded ``request-timeout + interrupt-timeout``.
+    Such a request will not unwind voluntarily, so waiting for it
+    before progressing to ``shutdown-timeout`` serves no purpose. This
+    is what allows graceful-timeout to complete promptly when a wedged
+    thread is the only thing still tying up the process — sibling
+    requests get the chance to finish cleanly while the wedged one
+    rides out via ``shutdown-timeout``'s forced kill.
 
 .. _eviction-timeout:
 
@@ -441,11 +574,36 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 **shutdown-timeout=sss**
     Defines the maximum number of seconds allowed to pass when waiting for
     a daemon process to shutdown. When this timeout has been reached the
-    daemon process will be forced to exited even if there are still active
-    requests or it is still running Python exit functions. The shutdown
-    timeout is applied after any graceful restart timeout or eviction
-    timeout if they have been specified. No new requests are accepted
-    during the shutdown timeout is being applied.
+    daemon process will be forced to exit even if there are still active
+    requests or it is still running Python exit functions. No new requests
+    are accepted while the shutdown timeout is being applied.
+
+    The shutdown timeout is applied after any other trigger has decided
+    that the process should exit, regardless of which trigger initiated
+    the shutdown. This includes:
+
+    * ``graceful-timeout`` expiry (from ``maximum-requests``,
+      ``restart-interval``, ``cpu-time-limit``, or the Apache graceful
+      restart signal in the absence of ``eviction-timeout``);
+    * ``eviction-timeout`` expiry (the Apache graceful restart signal
+      with ``eviction-timeout`` set);
+    * ``request-timeout`` firing (when ``interrupt-timeout`` is 0 and
+      so injection is skipped) or ``interrupt-timeout`` grace window
+      expiry — both paths run via ``graceful-timeout`` when it is set
+      and the process still has non-stale active requests, otherwise
+      they proceed straight to shutdown;
+    * ``deadlock-timeout`` firing;
+    * ``inactivity-timeout`` and ``startup-timeout`` firing;
+    * external ``SIGTERM`` / ``SIGINT`` from Apache parent or operator.
+
+    The wait given to in-flight requests on other threads to finish
+    cleanly is ``graceful-timeout``, not ``shutdown-timeout``. Once
+    shutdown is actually under way, ``shutdown-timeout`` is the hard
+    cutoff before the process is force-killed regardless of remaining
+    state. The default of 5 seconds suits most workloads — too short
+    and Python ``atexit`` handlers or framework shutdown hooks may not
+    finish cleanly; too long and recovery from a wedged process is
+    delayed.
 
     If this option is not defined, then the shutdown timeout will be set
     to 5 seconds. Note that this option does not change the shutdown
@@ -481,7 +639,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     you to specify that a request that was queued up waiting for too long
     is discarded, allowing any transient backlog to be quickly discarded
     and not simply cause the daemon process to become even more backlogged.
-    When this occurs the user will recieve a 504 Gateway Time Out response.
+    When this occurs the user will recieve a 504 Gateway Timeout response.
 
 .. _listen-backlog:
 
@@ -489,10 +647,10 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Defines the depth of the daemon process socket listener queue. By
     default the limit is 100, although this is actually a hint, as
     different operating systems can have different limits on the maximum
-    value or otherwise treat it in special ways.a
+    value or otherwise treat it in special ways.
 
     This option can be set, along with ``queue-timeout`` to try and better
-    handle back logging when the WGSI application gets overloaded.
+    handle back logging when the WSGI application gets overloaded.
 
 .. _socket-user:
 
@@ -510,7 +668,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     This option can also be used when using third party Apache modules such
     as mod_ruid, mod_ruid2, mod_suid as well as the ITK MPM for Apache.
 
-.. _cpu-time:
+.. _cpu-time-limit:
 
 **cpu-time-limit=sss**
     Define the maximum amount of CPU time a daemon process is allowed to
@@ -537,9 +695,9 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 **memory-limit=num**
     Sets the maximum amount of memory a daemon process can use. This will
     have no affect on some platforms as ``RLIMIT_AS``/``RLIMIT_DATA`` with
-    ``setrlimit()`` isn't always implemented. For example MacOS X and older
-    Linux kernel versions do not implement this feature. You will need to
-    test whether this feature works or not before depending on it.
+    ``setrlimit()`` isn't always implemented. For example macOS does not
+    implement this feature. You will need to test whether this feature
+    works or not before depending on it.
 
 .. _virtual-memory-limit:
 
@@ -625,6 +783,22 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     has filled and data is being forcibly flushed. Defaults to 0 seconds
     indicating that it will default to the value of the ``socket-timeout``
     option.
+
+.. _server-metrics:
+
+**server-metrics=on|off**
+    Controls whether code running in this daemon process group is allowed
+    to read Apache scoreboard data via the ``mod_wsgi.server_metrics()``
+    Python API. Defaults to ``off``.
+
+    This option is the daemon-mode equivalent of the
+    :doc:`WSGIServerMetrics` directive, and is independent of it: the
+    server-wide directive does not propagate to daemon process groups
+    as a default, so each daemon group that should have scoreboard
+    access must opt in explicitly via this option. See
+    :doc:`WSGIServerMetrics` for the full description of what
+    ``mod_wsgi.server_metrics()`` returns and the information-disclosure
+    considerations of opening up access to it.
 
 To delegate a particular WSGI application to run in a named set of daemon
 processes, the ``WSGIProcessGroup`` directive should be specified in
@@ -720,6 +894,7 @@ out with:
 * ``socket-timeout=60``
 * ``connect-timeout=15``
 * ``request-timeout=60``
+* ``interrupt-timeout=0``
 * ``inactivity-timeout=0``
 * ``startup-timeout=15``
 * ``deadlock-timeout=60``
@@ -732,7 +907,15 @@ out with:
 Note that the ``WSGIDaemonProcess`` directive and corresponding features are
 not available on Windows.
 
-.. _User: http://httpd.apache.org/docs/2.4/mod/mod_unixd.html#user
-.. _Group: http://httpd.apache.org/docs/2.4/mod/mod_unixd.html#group
+For the conceptual model behind daemon mode, the patterns for
+choosing process and thread counts, and the interaction with
+``WSGIProcessGroup`` and ``WSGIApplicationGroup``, see
+:doc:`../user-guides/embedded-and-daemon-mode`. For a walkthrough of where
+each of the timeout options above applies in the request flow
+and what the recovery path looks like when one fires, see
+:doc:`../user-guides/request-pipeline`.
+
+.. _ApacheHTTPDUser: http://httpd.apache.org/docs/2.4/mod/mod_unixd.html#user
+.. _ApacheHTTPDGroup: http://httpd.apache.org/docs/2.4/mod/mod_unixd.html#group
 .. _Timeout: http://httpd.apache.org/docs/2.4/mod/core.html#timeout
 .. _PrivilegesMode: https://httpd.apache.org/docs/2.4/mod/mod_privileges.html#privilegesmode

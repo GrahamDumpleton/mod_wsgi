@@ -2,10 +2,6 @@
 Version 5.0.0
 =============
 
-Version 5.0.0 of mod_wsgi can be obtained from:
-
-  https://codeload.github.com/GrahamDumpleton/mod_wsgi/tar.gz/5.0.0
-
 *Note that the major version 5.0 was introduced not because of any new major
 features but because from version 5.0 onwards compatability with Python 2.7 is
 no longer guaranteed. A minimum Python version of 3.8 will be enforced by the

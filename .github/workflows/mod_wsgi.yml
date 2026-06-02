@@ -1,0 +1,259 @@
+name: mod_wsgi (build/test/release)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - develop
+    tags:
+      - "mod_wsgi-[0-9]+.[0-9]+.[0-9]+"
+      - "mod_wsgi-[0-9]+.[0-9]+.[0-9]+.dev[0-9]+"
+      - "mod_wsgi-[0-9]+.[0-9]+.[0-9]+rc[0-9]+"
+  pull_request:
+    branches:
+      - develop
+
+jobs:
+  build:
+    name: "Build mod_wsgi packages"
+    runs-on: "ubuntu-24.04"
+    steps:
+      - uses: "actions/checkout@v6"
+      - uses: "actions/setup-python@v6"
+        with:
+          python-version: "3.12"
+      - name: "Verify version matches tag"
+        if: startsWith(github.ref, 'refs/tags/mod_wsgi-')
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          EXPECTED="${TAG#mod_wsgi-}"
+          ACTUAL="$(grep -oE '#define MOD_WSGI_VERSION_STRING "[^"]+"' \
+              src/server/wsgi_version.h \
+              | sed -E 's/.*"([^"]+)".*/\1/')"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+              echo "Tag version ($EXPECTED) does not match MOD_WSGI_VERSION_STRING ($ACTUAL) in src/server/wsgi_version.h" >&2
+              exit 1
+          fi
+          echo "Version match: $ACTUAL"
+      - name: "Update package details"
+        run: sudo apt --fix-missing update
+      - name: "Install Apache package"
+        run: sudo apt install -y apache2-dev
+      - name: "Build mod_wsgi packages"
+        run: ./package.sh && ls -las dist
+      - name: "Store built packages"
+        uses: "actions/upload-artifact@v7"
+        with:
+          name: dist
+          path: dist/*
+
+  tests:
+    name: "Test mod_wsgi package (Python ${{ matrix.python-version }})"
+    runs-on: "ubuntu-24.04"
+    needs:
+    - build
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15-dev"]
+    steps:
+      - uses: "actions/checkout@v6"
+      - uses: "actions/setup-python@v6"
+        with:
+          python-version: "${{ matrix.python-version }}"
+      - name: "Download built packages"
+        uses: "actions/download-artifact@v8"
+        with:
+            name: dist
+            path: dist
+      - name: "Update package details"
+        run: sudo apt --fix-missing update
+      - name: "Install Apache package"
+        run: sudo apt install -y apache2-dev
+      - name: "Update pip installation"
+        run: python -m pip install --upgrade pip setuptools wheel
+      - name: "Install mod_wsgi"
+        run: python -m pip install --verbose dist/mod_wsgi-[0-9].*.tar.gz
+      - name: "Run mod_wsgi-express test #1"
+        run: scripts/run-single-test.sh
+      - name: "Uninstall mod_wsgi"
+        run: pip uninstall --yes mod_wsgi
+      - name: "Install mod_wsgi-standalone"
+        run: python -m pip install --verbose dist/mod_wsgi[-_]standalone-[0-9].*.tar.gz
+      - name: "Run mod_wsgi-express test #2"
+        run: scripts/run-single-test.sh
+      - name: "Uninstall mod_wsgi-standalone"
+        run: pip uninstall --yes mod_wsgi-standalone
+      - name: "Verify configure/make/make install"
+        run: ./configure && make && sudo make install
+
+  release:
+    name: "Publish GitHub release"
+    runs-on: "ubuntu-24.04"
+    needs:
+    - tests
+    if: startsWith(github.ref, 'refs/tags/mod_wsgi-')
+    permissions:
+      contents: write
+    steps:
+      - name: "Resolve version and prerelease status"
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#mod_wsgi-}"
+          BASE_VERSION="$(echo "$VERSION" | sed -E 's/\.?(dev|rc)[0-9]+$//')"
+          if [[ "$VERSION" == *dev* || "$VERSION" == *rc* ]]; then
+              PRERELEASE="true"
+          else
+              PRERELEASE="false"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: "Download built packages"
+        uses: "actions/download-artifact@v8"
+        with:
+          name: dist
+          path: dist
+
+      - name: "Generate SHA256SUMS"
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: "Write release notes body"
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          BASE_VERSION="${{ steps.meta.outputs.base_version }}"
+          DOCS_URL="https://modwsgi.readthedocs.io/en/latest/release-notes/version-${BASE_VERSION}.html"
+          if [[ "$VERSION" == *dev* ]]; then
+              cat > body.md <<EOF
+          Development snapshot. Not normally published to PyPi
+          (occasionally uploaded to exercise the release pipeline).
+
+          Release notes for the upcoming ${BASE_VERSION} final (work in
+          progress): ${DOCS_URL}
+
+          To test against your Apache and Python install, build from the
+          attached source distribution:
+
+              tar xf mod_wsgi-${VERSION}.tar.gz
+              cd mod_wsgi-${VERSION}
+              pip install .
+
+          \`SHA256SUMS\` is attached for verification of the source
+          archives.
+          EOF
+          elif [[ "$VERSION" == *rc* ]]; then
+              cat > body.md <<EOF
+          Release candidate. Release notes for the upcoming
+          ${BASE_VERSION} final (work in progress): ${DOCS_URL}
+
+          May be installable from PyPi:
+
+              pip install mod_wsgi==${VERSION}
+
+          If \`pip\` reports the version is unavailable, this candidate
+          either has not been uploaded yet or is not being published to
+          PyPi. Build from the attached source distribution instead:
+
+              tar xf mod_wsgi-${VERSION}.tar.gz
+              cd mod_wsgi-${VERSION}
+              pip install .
+
+          \`SHA256SUMS\` is attached for verification of the source
+          archives.
+          EOF
+          else
+              cat > body.md <<EOF
+          Full release notes: ${DOCS_URL}
+
+          Install from PyPi (recommended):
+
+              pip install mod_wsgi==${VERSION}
+
+          For a bundled private Apache build (Linux):
+
+              pip install mod_wsgi-standalone==${VERSION}
+
+          PyPi uploads follow each GitHub release; if \`pip\` reports the
+          version is unavailable, the matching PyPi upload may not have
+          happened yet.
+
+          The companion external telemetry pipeline is distributed
+          separately on PyPi as \`mod_wsgi-telemetry\` and versioned
+          independently of mod_wsgi.
+
+          Source archives attached together with \`SHA256SUMS\` for
+          verification.
+          EOF
+          fi
+          cat body.md
+
+      - name: "Create GitHub release"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          FLAGS=()
+          if [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]]; then
+              FLAGS+=("--prerelease")
+          fi
+          gh release create "${{ steps.meta.outputs.tag }}" \
+              --title "mod_wsgi ${{ steps.meta.outputs.version }}" \
+              --notes-file body.md \
+              "${FLAGS[@]}" \
+              dist/*
+
+  publish-mod-wsgi:
+    name: "Publish mod_wsgi to PyPi"
+    runs-on: "ubuntu-24.04"
+    needs:
+    - release
+    if: startsWith(github.ref, 'refs/tags/mod_wsgi-')
+    environment: pypi-mod-wsgi
+    permissions:
+      id-token: write
+    steps:
+      - name: "Download built packages"
+        uses: "actions/download-artifact@v8"
+        with:
+          name: dist
+          path: dist
+      - name: "Stage mod_wsgi sdist only"
+        run: |
+          mkdir -p stage
+          cp dist/mod_wsgi-[0-9]*.tar.gz stage/
+          ls -las stage
+      - name: "Publish mod_wsgi to PyPi"
+        uses: "pypa/gh-action-pypi-publish@release/v1"
+        with:
+          packages-dir: stage/
+
+  publish-mod-wsgi-standalone:
+    name: "Publish mod_wsgi-standalone to PyPi"
+    runs-on: "ubuntu-24.04"
+    needs:
+    - release
+    if: startsWith(github.ref, 'refs/tags/mod_wsgi-')
+    environment: pypi-mod-wsgi-standalone
+    permissions:
+      id-token: write
+    steps:
+      - name: "Download built packages"
+        uses: "actions/download-artifact@v8"
+        with:
+          name: dist
+          path: dist
+      - name: "Stage mod_wsgi-standalone sdist only"
+        run: |
+          mkdir -p stage
+          cp dist/mod_wsgi_standalone-*.tar.gz stage/
+          ls -las stage
+      - name: "Publish mod_wsgi-standalone to PyPi"
+        uses: "pypa/gh-action-pypi-publish@release/v1"
+        with:
+          packages-dir: stage/

@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2024 GRAHAM DUMPLETON
+ * Copyright 2007-2026 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,18 +32,12 @@ extern pid_t wsgi_worker_pid;
 extern pid_t wsgi_daemon_pid;
 extern const char *wsgi_daemon_group;
 
-extern apr_time_t wsgi_restart_time;
-
-/* New Relic monitoring agent. */
-
-extern const char *wsgi_newrelic_config_file;
-extern const char *wsgi_newrelic_environment;
-
 /* Python interpreter state. */
 
 extern PyThreadState *wsgi_main_tstate;
 
-typedef struct {
+typedef struct
+{
     const char *location;
     const char *application;
     ap_regex_t *regexp;
@@ -53,7 +47,8 @@ typedef struct {
     int pass_authorization;
 } WSGIAliasEntry;
 
-typedef struct {
+typedef struct
+{
     const char *handler_script;
     const char *process_group;
     const char *application_group;
@@ -61,7 +56,26 @@ typedef struct {
     const char *pass_authorization;
 } WSGIScriptFile;
 
-typedef struct {
+typedef struct
+{
+    const char *process_group;
+    const char *application_group;
+    int per_interpreter_gil;
+    int free_threading;
+    double switch_interval;
+    int restrict_stdin;
+    int restrict_stdout;
+    int restrict_signal;
+    const char *python_path;
+} WSGIInterpreterOptionsBlock;
+
+extern module AP_MODULE_DECLARE_DATA wsgi_module;
+
+extern int wsgi_multiprocess;
+extern int wsgi_multithread;
+
+typedef struct
+{
     apr_pool_t *pool;
 
     apr_array_header_t *alias_list;
@@ -75,7 +89,6 @@ typedef struct {
     apr_array_header_t *python_warnings;
 
     int python_optimize;
-    int py3k_warning_flag;
     int dont_write_bytecode;
 
     const char *lang;
@@ -87,11 +100,18 @@ typedef struct {
 
     const char *python_hash_seed;
 
+    double switch_interval;
+
     int destroy_interpreter;
     int restrict_embedded;
     int restrict_stdin;
     int restrict_stdout;
     int restrict_signal;
+
+    int per_interpreter_gil;
+    int free_threading;
+
+    apr_array_header_t *interpreter_option_blocks;
 
     int case_sensitivity;
 
@@ -119,17 +139,102 @@ typedef struct {
     apr_hash_t *handler_scripts;
 
     int server_metrics;
-
-    const char *newrelic_config_file;
-    const char *newrelic_environment;
 } WSGIServerConfig;
-  
+
 extern WSGIServerConfig *wsgi_server_config;
 
 extern WSGIScriptFile *newWSGIScriptFile(apr_pool_t *p);
 extern WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p);
 
+typedef struct
+{
+    apr_pool_t *pool;
+
+    apr_table_t *restrict_process;
+
+    const char *process_group;
+    const char *application_group;
+    const char *callable_object;
+
+    WSGIScriptFile *dispatch_script;
+
+    int pass_apache_request;
+    int pass_authorization;
+    int script_reloading;
+    int error_override;
+    int chunked_request;
+    int map_head_to_get;
+    int ignore_activity;
+
+    apr_array_header_t *trusted_proxy_headers;
+    apr_array_header_t *trusted_proxies;
+
+    int enable_sendfile;
+
+    WSGIScriptFile *access_script;
+    WSGIScriptFile *auth_user_script;
+    WSGIScriptFile *auth_group_script;
+    int user_authoritative;
+    int group_authoritative;
+
+    apr_hash_t *handler_scripts;
+    const char *handler_script;
+
+    int daemon_connects;
+    int daemon_restarts;
+
+    pid_t server_pid;
+
+    apr_time_t request_start;
+    apr_time_t queue_start;
+    apr_time_t daemon_start;
+} WSGIRequestConfig;
+
+typedef struct
+{
+    apr_pool_t *pool;
+
+    apr_table_t *restrict_process;
+
+    const char *process_group;
+    const char *application_group;
+    const char *callable_object;
+
+    WSGIScriptFile *dispatch_script;
+
+    int pass_apache_request;
+    int pass_authorization;
+    int script_reloading;
+    int error_override;
+    int chunked_request;
+    int map_head_to_get;
+    int ignore_activity;
+
+    apr_array_header_t *trusted_proxy_headers;
+    apr_array_header_t *trusted_proxies;
+
+    int enable_sendfile;
+
+    WSGIScriptFile *access_script;
+    WSGIScriptFile *auth_user_script;
+    WSGIScriptFile *auth_group_script;
+    int user_authoritative;
+    int group_authoritative;
+
+    apr_hash_t *handler_scripts;
+} WSGIDirectoryConfig;
+
 extern apr_pool_t *wsgi_daemon_pool;
+
+extern WSGIRequestConfig *wsgi_create_req_config(apr_pool_t *p,
+                                                 request_rec *r);
+
+extern const char *wsgi_process_group(request_rec *r, const char *s);
+extern const char *wsgi_server_group(request_rec *r, const char *s);
+extern const char *wsgi_application_group(request_rec *r, const char *s);
+extern const char *wsgi_callable_object(request_rec *r, const char *s);
+
+extern char *wsgi_original_uri(request_rec *r);
 
 /* ------------------------------------------------------------------------- */
 

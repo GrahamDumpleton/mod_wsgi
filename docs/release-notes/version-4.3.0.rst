@@ -1,10 +1,8 @@
+:orphan:
+
 =============
 Version 4.3.0
 =============
-
-Version 4.3.0 of mod_wsgi can be obtained from:
-
-  https://github.com/GrahamDumpleton/mod_wsgi/archive/4.3.0.tar.gz
 
 Known Issues
 ------------

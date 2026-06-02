@@ -1,10 +1,8 @@
+:orphan:
+
 ===========
 Version 2.8
 ===========
-
-Version 2.8 of mod_wsgi can be obtained from:
-
-  http://modwsgi.googlecode.com/files/mod_wsgi-2.8.tar.gz
 
 Bug Fixes
 ---------

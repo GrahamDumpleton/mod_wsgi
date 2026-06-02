@@ -25,10 +25,13 @@ avenue for performing automatic source code reloading.
 As a consequence, it is important to understand what mode your WSGI
 application is running in.
 
-If you are running on Windows, are using Apache 1.3, or have not used
+If you are running on Windows, or have not used
 WSGIDaemonProcess/WSGIProcessGroup directives to delegate your WSGI
 application to a mod_wsgi daemon mode process, then you will be using
-embedded mode.
+embedded mode. Note that ``mod_wsgi-express`` always runs in daemon
+mode by default, so applications served via ``mod_wsgi-express
+start-server`` benefit from the daemon-mode reloading behaviour
+described below.
 
 If you are not sure whether you are using embedded mode or daemon mode,
 then substitute your WSGI application entry point with::
@@ -37,16 +40,16 @@ then substitute your WSGI application entry point with::
         status = '200 OK'
 
         if not environ['mod_wsgi.process_group']:
-          output = u'EMBEDDED MODE'
+          output = b'EMBEDDED MODE'
         else:
-          output = u'DAEMON MODE'
+          output = b'DAEMON MODE'
 
         response_headers = [('Content-Type', 'text/plain'),
                             ('Content-Length', str(len(output)))]
 
         start_response(status, response_headers)
 
-        return [output.encode('UTF-8')]
+        return [output]
 
 If your WSGI application is running in embedded mode, this will output to
 the browser 'EMBEDDED MODE'. If your WSGI application is running in daemon
@@ -66,7 +69,9 @@ default it will be reloaded whenever the file is changed. The primary
 intent with the file being reloaded is to provide a second chance at
 getting any configuration in it and the mapping to the application correct.
 If the script weren't reloaded in this way, you would need to restart
-Apache even for a trivial change to the script file.
+Apache even for a trivial change to the script file. This reload
+behaviour is governed by the
+:doc:`../configuration-directives/WSGIScriptReloading` directive.
 
 Do note though that this script reloading mechanism is not intended as a
 general purpose code reloading mechanism. Only the script file itself is
@@ -142,39 +147,30 @@ directory.
 Restarting Apache Processes
 ---------------------------
 
-As explained above, the only facility that mod_wsgi provides for reloading
-source code files in embedded mode, is the reloading of just the script
-file providing the entry point for your WSGI application.
+As explained above, the only facility that mod_wsgi provides for
+reloading source code files in embedded mode is the reloading of the
+script file itself. There is no embedded-mode mechanism for reloading
+the Python modules the script imports without restarting the process.
 
-If you don't have a choice but to use embedded mode and still desire some
-measure of automatic source code reloading, one option available which
-works for both Windows and UNIX systems is to force Apache to recycle the
-Apache server child process that handles the request automatically after
-the request has completed.
+The strong recommendation is to switch to daemon mode for any
+deployment where automatic code reloading matters. The daemon-mode
+behaviour described below — touch the script file, daemon process
+recycles, new code picked up — does not have an equivalent in
+embedded mode.
 
-To enable this, you need to modify the value of the MaxRequestsPerChild
-directive in the Apache configuration. Normally this would be set to a
-value of '0', indicating that the process should never be restarted as a
-result of the number of requests processed. To have it restart a process
-after every request, set it to the value '1' instead::
+If switching to daemon mode is not possible (for example on Windows,
+where daemon mode is not available), one workaround is to set the
+Apache ``MaxRequestsPerChild`` directive to ``1``::
 
     MaxRequestsPerChild 1
 
-Do note however that this will cause the process to be restarted after any
-request. That is, the process will even be restarted if the request was for
-a static file or a PHP application and wasn't even handled by your WSGI
-application. The restart will also occur even if you have made no changes
-to your code.
-
-Because a restart happens regardless of the request type, using this method
-is not recommended.
-
-Because of how the Apache server child processes are monitored and restarts
-handled, it is technically possible that this method will yield performance
-which is worse than CGI scripts. For that reason you may even be better off
-using a CGI/WSGI bridge to host your WSGI application. At least that way
-the handling of other types of requests, such as for static files and PHP
-applications will not be affected.
+This causes the Apache child process to be recycled after every
+request, which means each request is served by a fresh Python
+interpreter that imports the latest code. The cost is high: the
+recycle happens after *every* request, not just requests that hit
+your WSGI application, so static files and any other content served
+by the same Apache instance pay the same overhead. It is suitable
+only as a development convenience, not for production.
 
 Reloading In Daemon Mode
 ------------------------
@@ -205,6 +201,16 @@ script file containing the WSGI application entry point. Having done that,
 on the next request the process will be restarted and your Django
 application reloaded.
 
+Apart from script-file modification, daemon processes can also be
+recycled by various ``WSGIDaemonProcess`` options including
+``maximum-requests``, ``restart-interval``, ``inactivity-timeout``
+and ``cpu-time-limit``. Those options exist for operational reasons
+(memory pressure, leaks, periodic refresh) rather than for source-code
+reloading, but in practice any one of them can result in the latest
+on-disk code being picked up the next time a process is recycled.
+See :doc:`../configuration-directives/WSGIDaemonProcess` for the full
+set of options.
+
 Restarting Daemon Processes
 ---------------------------
 
@@ -234,23 +240,58 @@ ready for subsequent requests. On the restart it will pick up your new
 code. This way you can control a reload from your application through some
 special web page specifically for that purpose.
 
-You can also send this signal from an external application, but a problem
-there may be identifying which process to send the signal to. If you are
-running the daemon process(es) as a distinct user/group to Apache and each
-application is running as a different user then you could just look for the
-Apache (httpd) processes owned by the user the application is running as,
-as opposed to the Apache user, and send them all signals.
+The same signal can also be sent from outside the application — for
+example from a shell script, deployment tool, or operator command —
+in which case the harder part is identifying which processes to
+target. If the daemon process group is configured to run as a
+different user or group from Apache itself, and each application is
+running as its own user, you can simply look for the Apache
+(``httpd``) processes owned by that user (as opposed to the Apache
+user) and signal them all.
 
 If the daemon process is running as the same user as Apache or there are
 distinct applications running in different daemon processes but as the same
 user, knowing which daemon processes to send the signal may be harder to
 determine.
 
-Either way, to make it easier to identify which processes belong to a
-daemon process group, you can use the 'display-name' option to the
-WSGIDaemonProcess to name the process. On many platforms, when this option
-is used, that name will then appear in the output from the 'ps' command
-and not the name of the actual Apache server binary.
+Either way, to make it easier to identify which processes belong to
+a daemon process group, you can use the ``display-name`` option to
+``WSGIDaemonProcess`` to name the process. By default the daemon
+processes retain Apache's own ``argv[0]``, so they are
+indistinguishable from the rest of the Apache process tree in ``ps``
+output. With ``display-name`` set, that custom name appears in
+``ps`` output instead on most platforms, which is what makes
+external identification practical.
+
+Once daemon processes are nameable in this way, ``pkill`` can be
+used to send the signal directly. For example, with::
+
+    WSGIDaemonProcess myapp display-name=%{GROUP}
+
+the daemon processes will appear in ``ps`` output as
+``(wsgi:myapp)``, and they can be signalled with::
+
+    pkill -INT -f 'wsgi:myapp'
+
+The important caveat is that ``pkill -f`` matches against the full
+command line as a regular expression, so the chosen display name
+must be specific enough that no unrelated processes match. Generic
+names like ``wsgi`` or ``app`` will match too widely; daemon-group
+names should be unique per application within the host. The
+``%{GROUP}`` form above is the safest pattern, since the
+``WSGIDaemonProcess`` group name is already required to be unique
+within the Apache configuration and the ``wsgi:`` prefix is
+distinctive enough not to collide with anything else in normal
+process listings.
+
+Always sanity-check the pattern before sending the signal by
+listing the matching processes first::
+
+    pgrep -fl 'wsgi:myapp'
+
+This prints the PID and command line of every process the same
+pattern would target, so any unintended matches are visible before
+``pkill`` actually delivers the signal.
 
 Monitoring For Code Changes
 ---------------------------
@@ -264,19 +305,11 @@ a restart if they have.
 Example code for such an automatic restart mechanism which is compatible
 with how mod_wsgi works is shown below::
 
-    from __future__ import print_function
-
     import os
     import sys
-    import time
     import signal
     import threading
-    import atexit
-
-    try:
-        import Queue as queue
-    except ImportError:
-        import queue
+    import queue
 
     _interval = 1.0
     _times = {}
@@ -288,9 +321,9 @@ with how mod_wsgi works is shown below::
 
     def _restart(path):
         _queue.put(True)
-        prefix = 'monitor (pid=%d):' % os.getpid()
-        print('%s Change detected to \'%s\'.' % (prefix, path), file=sys.stderr)
-        print('%s Triggering process restart.' % prefix, file=sys.stderr)
+        prefix = f'monitor (pid={os.getpid()}):'
+        print(f'{prefix} Change detected to {path!r}.', file=sys.stderr)
+        print(f'{prefix} Triggering process restart.', file=sys.stderr)
         os.kill(os.getpid(), signal.SIGINT)
 
     def _modified(path):
@@ -317,19 +350,19 @@ with how mod_wsgi works is shown below::
 
             if mtime != _times[path]:
                 return True
-        except:
-            # If any exception occured, likely that file has been
-            # been removed just before stat(), so force a restart.
+        except Exception:
+            # If any exception occurred, likely that file has been
+            # removed just before stat(), so force a restart.
 
             return True
 
         return False
 
     def _monitor():
-        while 1:
+        while True:
             # Check modification times on all files in sys.modules.
 
-            for module in sys.modules.values():
+            for module in list(sys.modules.values()):
                 if not hasattr(module, '__file__'):
                     continue
                 path = getattr(module, '__file__')
@@ -351,23 +384,13 @@ with how mod_wsgi works is shown below::
 
             try:
                 return _queue.get(timeout=_interval)
-            except:
+            except queue.Empty:
                 pass
 
-    _thread = threading.Thread(target=_monitor)
-    _thread.daemon = True
-
-    def _exiting():
-        try:
-            _queue.put(True)
-        except:
-            pass
-        _thread.join()
-
-    atexit.register(_exiting)
+    _thread = threading.Thread(target=_monitor, daemon=True)
 
     def track(path):
-        if not path in _files:
+        if path not in _files:
             _files.append(path)
 
     def start(interval=1.0):
@@ -376,13 +399,12 @@ with how mod_wsgi works is shown below::
             _interval = interval
 
         global _running
-        _lock.acquire()
-        if not _running:
-            prefix = 'monitor (pid=%d):' % os.getpid()
-            print('%s Starting change monitor.' % prefix, file=sys.stderr)
-            _running = True
-            _thread.start()
-        _lock.release()
+        with _lock:
+            if not _running:
+                prefix = f'monitor (pid={os.getpid()}):'
+                print(f'{prefix} Starting change monitor.', file=sys.stderr)
+                _running = True
+                _thread.start()
 
 This would be used by importing into the script file the Python module
 containing the above code, starting the monitoring system and adding any
@@ -397,11 +419,11 @@ additional non Python files which should be tracked::
     def application(environ, start_response):
         ...
 
-Where needing to add many non Python files in a directory hierarchy, such
-as template files which would otherwise be cached within the running
-process, the ``os.path.walk()`` function could be used to traverse
+Where needing to add many non Python files in a directory hierarchy,
+such as template files which would otherwise be cached within the
+running process, the ``os.walk()`` function can be used to traverse
 all files and add required files based on extension or other criteria
-using the 'track()' function.
+using the ``track()`` function.
 
 This mechanism would generally work adequately where a single daemon
 process is used within a process group. You would need to be careful

@@ -2,25 +2,68 @@
 User Guides
 ============
 
+The mod_wsgi user guides, grouped by purpose.
+
+Installation
+------------
+
 .. toctree::
    :maxdepth: 1
 
-   user-guides/quick-installation-guide
+   user-guides/installation-from-pypi
+   user-guides/installation-on-linux
    user-guides/installation-on-macosx
+   user-guides/installation-on-windows
+   user-guides/quick-installation-guide
+   user-guides/mod-wsgi-express-quickstart
+   user-guides/installing-with-docker
+
+Configuration basics
+--------------------
+
+.. toctree::
+   :maxdepth: 1
+
    user-guides/quick-configuration-guide
    user-guides/configuration-guidelines
+   user-guides/checking-your-installation
+
+Diagnosing problems
+-------------------
+
+.. toctree::
+   :maxdepth: 1
+
    user-guides/installation-issues
    user-guides/configuration-issues
    user-guides/application-issues
-   user-guides/frequently-asked-questions
-   user-guides/checking-your-installation
    user-guides/debugging-techniques
+   user-guides/frequently-asked-questions
+
+Beyond the basics
+-----------------
+
+.. toctree::
+   :maxdepth: 1
+
+   user-guides/detecting-mod-wsgi
+   user-guides/mod-wsgi-python-module
    user-guides/processes-and-threading
+   user-guides/embedded-and-daemon-mode
+   user-guides/gil-modes-and-free-threading
+   user-guides/request-pipeline
    user-guides/reloading-source-code
    user-guides/virtual-environments
-   user-guides/access-control-mechanisms
+   user-guides/upgrading-an-application
    user-guides/file-wrapper-extension
+   user-guides/subscribing-to-events
    user-guides/registering-cleanup-code
-   user-guides/assorted-tips-and-tricks
+   user-guides/internal-metrics-api
+   user-guides/external-telemetry-service
+   user-guides/logging-from-applications
+   user-guides/running-behind-a-reverse-proxy
+   user-guides/hosting-websocket-applications
+   user-guides/enabling-https
+   user-guides/access-control-mechanisms
+   user-guides/security-hardening
    user-guides/issues-with-pickle-module
-   user-guides/issues-with-expat-library

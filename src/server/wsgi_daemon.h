@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2024 GRAHAM DUMPLETON
+ * Copyright 2007-2026 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,11 +23,14 @@
 
 #include "wsgi_python.h"
 #include "wsgi_apache.h"
+#include "wsgi_thread.h"
 
 /* ------------------------------------------------------------------------- */
 
+extern char *wsgi_shutdown_reason;
+
 #ifndef WIN32
-#if APR_HAS_OTHER_CHILD && APR_HAS_THREADS && APR_HAS_FORK
+#if APR_HAS_OTHER_CHILD && APR_HAS_FORK
 #define MOD_WSGI_WITH_DAEMONS 1
 #endif
 #endif
@@ -78,12 +81,13 @@
 #define WSGI_LISTEN_BACKLOG 100
 #endif
 
-#define WSGI_STACK_HEAD  0xffff
-#define WSGI_STACK_LAST  0xffff
+#define WSGI_STACK_HEAD 0xffff
+#define WSGI_STACK_LAST 0xffff
 #define WSGI_STACK_TERMINATED 0x10000
 #define WSGI_STACK_NO_LISTENER 0x20000
 
-typedef struct {
+typedef struct
+{
     server_rec *server;
     long random;
     int id;
@@ -106,6 +110,7 @@ typedef struct {
     const char *python_home;
     const char *python_path;
     const char *python_eggs;
+    double switch_interval;
     int stack_size;
     int maximum_requests;
     int shutdown_timeout;
@@ -113,6 +118,7 @@ typedef struct {
     apr_time_t deadlock_timeout;
     apr_time_t inactivity_timeout;
     apr_time_t request_timeout;
+    apr_time_t interrupt_timeout;
     apr_time_t graceful_timeout;
     apr_time_t eviction_timeout;
     apr_time_t restart_interval;
@@ -136,21 +142,21 @@ typedef struct {
     const char *socket_path;
     int socket_rotation;
     int listener_fd;
-    const char* mutex_path;
-    apr_proc_mutex_t* mutex;
+    const char *mutex_path;
+    apr_proc_mutex_t *mutex;
     int server_metrics;
-    const char *newrelic_config_file;
-    const char *newrelic_environment;
 } WSGIProcessGroup;
 
-typedef struct {
+typedef struct
+{
     WSGIProcessGroup *group;
     int instance;
     apr_proc_t process;
     apr_socket_t *listener;
 } WSGIDaemonProcess;
 
-typedef struct {
+typedef struct
+{
     int id;
     WSGIDaemonProcess *process;
     apr_thread_t *thread;
@@ -160,19 +166,33 @@ typedef struct {
     apr_thread_cond_t *condition;
     apr_thread_mutex_t *mutex;
     apr_time_t request;
+    unsigned long python_thread_id;
+    apr_time_t injected_at;
+
+    /* Back-pointer to this worker's WSGIThreadInfo, published once at
+     * thread startup. Lets the daemon monitor follow the chain to per-
+     * thread per-request state (specifically current_application_group)
+     * without needing apr_threadkey access from outside the worker's
+     * own thread. NULL until the worker thread has run far enough
+     * through wsgi_daemon_thread to publish it. */
+    WSGIThreadInfo *thread_info;
 } WSGIDaemonThread;
 
-typedef struct {
+typedef struct
+{
     apr_uint32_t state;
 } WSGIThreadStack;
 
-typedef struct {
+typedef struct
+{
     const char *name;
     const char *socket_path;
     apr_time_t connect_timeout;
     apr_time_t socket_timeout;
     apr_socket_t *socket;
 } WSGIDaemonSocket;
+
+extern apr_array_header_t *wsgi_daemon_list;
 
 extern int wsgi_daemon_count;
 extern apr_hash_t *wsgi_daemon_index;
@@ -187,6 +207,27 @@ extern WSGIDaemonThread *wsgi_worker_threads;
 extern WSGIThreadStack *wsgi_worker_stack;
 
 extern int volatile wsgi_daemon_shutdown;
+
+extern apr_interval_time_t wsgi_idle_timeout;
+extern apr_time_t volatile wsgi_idle_shutdown_time;
+
+extern apr_interval_time_t wsgi_startup_timeout;
+extern apr_time_t volatile wsgi_startup_shutdown_time;
+
+extern apr_pool_t *wsgi_pconf_pool;
+
+extern const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
+                                           const char *args);
+extern const char *wsgi_set_socket_prefix(cmd_parms *cmd, void *mconfig,
+                                          const char *arg);
+extern const char *wsgi_set_socket_rotation(cmd_parms *cmd, void *mconfig,
+                                            const char *f);
+extern const char *wsgi_set_accept_mutex(cmd_parms *cmd, void *mconfig,
+                                         const char *arg);
+
+extern int wsgi_start_daemons(apr_pool_t *p);
+extern int wsgi_deferred_start_daemons(apr_pool_t *p, ap_scoreboard_e sb_type);
+extern int wsgi_hook_daemon_handler(conn_rec *c);
 
 #endif
 

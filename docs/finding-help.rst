@@ -2,76 +2,34 @@
 Finding Help
 ============
 
-If after you have gone through all the available documentation you still
-cannot work out how to do something or can't resolve a problem you are
-having, use the mod_wsgi mailing list to post your question. The mailing
-list is hosted by Google Groups at:
+The primary support channel for mod_wsgi is the GitHub issue tracker:
 
-* http://groups.google.com/group/modwsgi
+  * https://github.com/GrahamDumpleton/mod_wsgi/issues
 
-You do not need to have a Google email account as Google Groups allows you
-to register external email addresses as well.
+Use this for both bug reports and general questions about mod_wsgi.
 
-Please use the mailing list in preference to raising a ticket in the issue
-tracker, unless you are somewhat certain that the problem is a bug in
-mod_wsgi and not just some environment issue related to your application,
-any third party packages being used or the operating system. It is much
-easier to have a discussion on the mailing list than the issue tracker.
+Before opening an issue, see :doc:`troubleshooting` for pointers into
+the user-guide pages on installation, configuration, and application
+problems, and :doc:`error-reference` if you have a ``WSGI####`` error
+code in your Apache logs.
 
-The mailing list also has many people participating, or at least reading,
-so you have people with a broad experience with many third party Python web
-packages and operating systems who may be able to help.
+For suspected security issues, see :doc:`security-issues` for the
+private disclosure process — do not open a public issue.
 
-If the problem is potentially more an issue with a third party package or
-the operating system rather than mod_wsgi, you might also consider asking
-on any mailing list related to the third party package instead.
+Mailing list
+------------
 
-A final option is to ask your question on StackOverflow, if a programming
-question, or ServerFault, if an administration issue. These sites allow a
-broad range of questions about many topics with quite a large user base of
-sometimes knowledgeable people.
+The historical mod_wsgi mailing list at
+https://groups.google.com/group/modwsgi is no longer in use for new
+questions. It remains as a read-only archive of past discussions and
+can be useful for searching up answers from many years ago. Do not
+post new questions there; they will not be seen.
 
-Do be aware though that the only general forum that is monitored is the
-mod_wsgi mailing list, so use it if you want an informed answer for a mod_wsgi
-specific question.
+Other forums
+------------
 
-Remember that people on the mailing list are volunteering their time to
-help and don't get paid for answering questions. Thus, it is in your
-interest not to annoy them too much.
-
-No matter which forum you use, when asking questions, it is always helpful
-to detail the following:
-
-1. Which version of mod_wsgi you are using and if using a packaged
-   distribution, who provided the distribution.
-
-   If you are not using the latest version, then upgrade first and verify
-   the problem still occurs with the latest version.
-
-2. Which version of Python you are using and if using a packaged
-   distribution, who provided the distribution.
-
-3. Which version of Apache you are using and if using a packaged
-   distribution, who provided the distribution.
-
-   If not using latest version of Apache available, then consider upgrading
-   and trying again.
-
-4. What operating system you are using.
-
-5. Details on any third party packages being used and what versions of
-   those packages.
-
-6. The mod_wsgi configuration you are using from Apache configuration files.
-
-   In particular you should indicate whether you are using mod_wsgi
-   embedded mode or daemon mode. Also can be helpful to indicate what MPM
-   Apache has been compiled for and whether mod_php or mod_python are being
-   loaded into the same Apache instance.
-
-7. Relevant error messages from the Apache error logs.
-
-   Specifically, don't just quote the single line you think shows the error
-   message. Instead, also show the lines before and after that point. These
-   other lines from the error logs may show supplemental error messages
-   from Apache or mod_wsgi or provide Python traceback information.
+Stack Overflow and Server Fault are reasonable places to ask general
+programming or system-administration questions where the mod_wsgi
+part is incidental. They are not monitored by the mod_wsgi
+maintainer, so for questions that need an authoritative answer about
+mod_wsgi specifically, use the GitHub issue tracker instead.

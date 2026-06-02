@@ -7,43 +7,26 @@ WSGIPythonOptimize
 :Default: ``WSGIPythonOptimize 0``
 :Context: server config
 
-Sets the level of Python compiler optimisations. The default is '0' which
-means no optimisations are applied.
+Sets the Python interpreter's optimisation level. This is the embedded
+equivalent of the ``-O`` and ``-OO`` command-line options to the
+``python`` executable.
 
-Setting the optimisation level to '1' or above will have the effect of
-enabling basic Python optimisations and changes the filename extension for
-compiled (bytecode) files from ``.pyc`` to ``.pyo``.
+* **0** (default): no optimisations applied.
+* **1** (equivalent to ``-O``): ``assert`` statements are skipped and
+  ``__debug__`` is set to ``False``.
+* **2** (equivalent to ``-OO``): everything from level 1, plus
+  docstrings are stripped from the bytecode. Some Python packages
+  inspect docstrings at runtime and may fail under this level.
 
-On the Windows platform, optimisation level of '0' apparently results in
-the same outcome as if the optimisation level had been set to '1'.
+For example::
 
-When the optimisation level is set to '2', doc strings will not be
-generated and thus not retained. This may techically result in a smaller
-memory footprint if all ``.pyo`` files were compiled at this optimisation
-level, but may cause some Python packages which interrogate doc strings in
-some way to fail.
+  WSGIPythonOptimize 1
 
-Since all the installed ``.pyo`` files in your Python installation are
-not likely to be installed with level '2' optimisation, the gain from using
-this level of optimisation will probably be negligible if any. This is
-because potentially only the Python code for your own application code will
-be compiled with this level of optimisation. This will be the case as the
-``.pyo`` files will aready exist for modules in the standard Python
-library and they will be used as is, rather than them being regenerated
-with a higher level of optimisation than they might be. Use of level '2'
-optimisation is therefore discouraged.
+Note that this only affects bytecode that mod_wsgi causes to be
+compiled while the application runs. Bytecode files that already
+exist on disk for the standard library or installed packages are
+reused as-is, regardless of the level set here. As a result, the
+practical effect on memory or performance is usually small.
 
-This directive will have no affect if mod_python is being loaded into Apache
-at the same time as mod_wsgi as mod_python will in that case be responsible
-for initialising Python.
-
-Overall, if you do not understand what the normal 'python' executable ``-O``
-option does, how the Python runtime changes it behaviour as a result, and
-you don't know exactly how your application would be affected by enabling
-this option, then do not use this option. In other words, stop trying to
-prematurely optimise the performance of your application through shortcuts.
-You will get much better performance gains by looking at the design of your
-application and eliminating bottlenecks within it and how it uses any
-database. So, put the gun down and back away, it will be better for all
-concerned.
-
+Code that depends on ``assert`` statements for runtime validation
+will silently change behaviour at level 1 or higher.

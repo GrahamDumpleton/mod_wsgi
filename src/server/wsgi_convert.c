@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2024 GRAHAM DUMPLETON
+ * Copyright 2007-2026 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,30 +28,18 @@ PyObject *wsgi_convert_string_to_bytes(PyObject *value)
 {
     PyObject *result = NULL;
 
-#if PY_MAJOR_VERSION >= 3
-    if (!PyUnicode_Check(value)) {
+    if (!PyUnicode_Check(value))
+    {
         PyErr_Format(PyExc_TypeError, "expected unicode object, value "
-                     "of type %.200s found", value->ob_type->tp_name);
+                                      "of type %.200s found",
+                     Py_TYPE(value)->tp_name);
         return NULL;
     }
 
     result = PyUnicode_AsLatin1String(value);
 
-    if (!result) {
-        PyErr_SetString(PyExc_ValueError, "unicode object contains non "
-                        "latin-1 characters");
+    if (!result)
         return NULL;
-    }
-#else
-    if (!PyBytes_Check(value)) {
-        PyErr_Format(PyExc_TypeError, "expected byte string object, "
-                     "value of type %.200s found", value->ob_type->tp_name);
-        return NULL;
-    }
-
-    Py_INCREF(value);
-    result = value;
-#endif
 
     return result;
 }
@@ -67,7 +55,8 @@ PyObject *wsgi_convert_status_line_to_bytes(PyObject *status_line)
     if (!result)
         return NULL;
 
-    if (!wsgi_validate_status_line(result)) {
+    if (!wsgi_validate_status_line(result))
+    {
         Py_DECREF(result);
         return NULL;
     }
@@ -81,19 +70,25 @@ PyObject *wsgi_convert_headers_to_bytes(PyObject *headers)
 {
     PyObject *result = NULL;
 
-    int i;
-    long size;
+    Py_ssize_t i;
+    Py_ssize_t size;
 
-    if (!PyList_Check(headers)) {
+    if (!PyList_Check(headers))
+    {
         PyErr_Format(PyExc_TypeError, "expected list object for headers, "
-                     "value of type %.200s found", headers->ob_type->tp_name);
-        return 0;
+                                      "value of type %.200s found",
+                     Py_TYPE(headers)->tp_name);
+        return NULL;
     }
 
     size = PyList_Size(headers);
     result = PyList_New(size);
 
-    for (i = 0; i < size; i++) {
+    if (!result)
+        return NULL;
+
+    for (i = 0; i < size; i++)
+    {
         PyObject *header = NULL;
 
         PyObject *header_name = NULL;
@@ -106,23 +101,29 @@ PyObject *wsgi_convert_headers_to_bytes(PyObject *headers)
 
         header = PyList_GetItem(headers, i);
 
-        if (!PyTuple_Check(header)) {
+        if (!PyTuple_Check(header))
+        {
             PyErr_Format(PyExc_TypeError, "list of tuple values "
-                         "expected for headers, value of type %.200s found",
-                         header->ob_type->tp_name);
+                                          "expected for headers, value of type %.200s found",
+                         Py_TYPE(header)->tp_name);
             Py_DECREF(result);
-            return 0;
+            return NULL;
         }
 
-        if (PyTuple_Size(header) != 2) {
+        if (PyTuple_Size(header) != 2)
+        {
             PyErr_Format(PyExc_ValueError, "tuple of length 2 "
-                         "expected for header, length is %d",
-                         (int)PyTuple_Size(header));
+                                           "expected for header, length is %zd",
+                         PyTuple_Size(header));
             Py_DECREF(result);
-            return 0;
+            return NULL;
         }
 
         result_tuple = PyTuple_New(2);
+
+        if (!result_tuple)
+            goto failure;
+
         PyList_SET_ITEM(result, i, result_tuple);
 
         header_name = PyTuple_GetItem(header, 0);

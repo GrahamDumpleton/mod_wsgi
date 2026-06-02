@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------------- */
 
 /*
- * Copyright 2007-2024 GRAHAM DUMPLETON
+ * Copyright 2007-2026 GRAHAM DUMPLETON
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,13 +37,6 @@ pid_t wsgi_parent_pid = 0;
 pid_t wsgi_worker_pid = 0;
 pid_t wsgi_daemon_pid = 0;
 
-apr_time_t wsgi_restart_time = 0;
-
-/* New Relic monitoring agent. */
-
-const char *wsgi_newrelic_config_file = NULL;
-const char *wsgi_newrelic_environment = NULL;
-
 /* Python interpreter state. */
 
 PyThreadState *wsgi_main_tstate = NULL;
@@ -59,8 +52,10 @@ WSGIScriptFile *newWSGIScriptFile(apr_pool_t *p)
     object = (WSGIScriptFile *)apr_pcalloc(p, sizeof(WSGIScriptFile));
 
     object->handler_script = NULL;
-    object->application_group = NULL;
     object->process_group = NULL;
+    object->application_group = NULL;
+    object->callable_object = NULL;
+    object->pass_authorization = NULL;
 
     return object;
 }
@@ -83,12 +78,12 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 #endif
 
     object->socket_rotation = 1;
+    object->lock_mechanism = 0;
 
     object->verbose_debugging = 0;
 
     object->python_warnings = NULL;
 
-    object->py3k_warning_flag = -1;
     object->python_optimize = -1;
     object->dont_write_bytecode = -1;
 
@@ -101,11 +96,18 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
 
     object->python_hash_seed = NULL;
 
+    object->switch_interval = 0.0;
+
     object->destroy_interpreter = -1;
     object->restrict_embedded = -1;
     object->restrict_stdin = -1;
     object->restrict_stdout = -1;
     object->restrict_signal = -1;
+
+    object->per_interpreter_gil = -1;
+    object->free_threading = -1;
+
+    object->interpreter_option_blocks = NULL;
 
 #if defined(WIN32) || defined(DARWIN)
     object->case_sensitivity = 0;
@@ -126,14 +128,17 @@ WSGIServerConfig *newWSGIServerConfig(apr_pool_t *p)
     object->script_reloading = -1;
     object->error_override = -1;
     object->chunked_request = -1;
+    object->map_head_to_get = -1;
     object->ignore_activity = -1;
+
+    object->trusted_proxy_headers = NULL;
+    object->trusted_proxies = NULL;
 
     object->enable_sendfile = -1;
 
-    object->server_metrics = -1;
+    object->handler_scripts = NULL;
 
-    object->newrelic_config_file = NULL;
-    object->newrelic_environment = NULL;
+    object->server_metrics = -1;
 
     return object;
 }

@@ -22,9 +22,8 @@ The options which can be supplied to the ``WSGIAuthGroupScript`` directive are:
 
     If the ``application-group`` option is not supplied, the special value
     ``%{GLOBAL}`` which denotes that the script file be loaded within the
-    context of the first interpreter created by Python when it is
-    initialised will be used. Otherwise, will be loaded into the
-    interpreter for the specified application group.
+    context of the main Python interpreter will be used. Otherwise, will
+    be loaded into the interpreter for the specified application group.
 
 Note that the script always runs in processes associated with embedded
 mode. It is not possible to delegate the script such that it is run within

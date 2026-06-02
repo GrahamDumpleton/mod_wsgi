@@ -42,7 +42,7 @@ log level instead::
 If you don't want to turn up log verbosity for the whole server, you can
 also set the log level for just the mod_wsgi module::
 
-    LogLevel warn mod_wsgi:info
+    LogLevel warn wsgi:info
 
 If your Apache web server is only providing services for one host, it is
 likely that you will only have one error log file. If however the Apache
@@ -91,20 +91,9 @@ below::
 
         return [output]
 
-.. note::
-
-    If you are using Python 2, you will need to enable the `print` function
-    at the beginning of the file::
-
-        from __future__ import print_function
-
-    Alternatively, always use `print` as a statement rather than a function::
-
-        print >> environ['wsgi.errors'], "application debug #N"
-
-If 'wsgi.errors' is not available to the code which needs to output log
-messages, then it should explicitly direct output from 'print'
-to 'sys.stderr'::
+If ``wsgi.errors`` is not available to the code which needs to output
+log messages, it should explicitly direct output from ``print`` to
+``sys.stderr``::
 
     import sys
 
@@ -112,33 +101,25 @@ to 'sys.stderr'::
         print("application debug #3", file=sys.stderr)
         ...
 
-If ``sys.stderr`` or ``sys.stdout`` is used directly then
-these messages will end up in the main server host error log file and not
-that for the virtual host unless the WSGI application is running in a
-daemon process specifically associated with a virtual host.
+If ``sys.stderr`` or ``sys.stdout`` is used directly the messages will
+end up in the main server host error log file and not the virtual host
+log file, unless the WSGI application is running in a daemon process
+specifically associated with the virtual host.
 
-Do be aware though that writing to ``sys.stdout`` is by default
-restricted in versions of mod_wsgi prior to 3.0 and will result in an
-exception occurring of the form::
+A portable WSGI application should not write to ``sys.stdout`` or use
+``print`` without redirecting it to an alternate stream, since some
+ways of hosting WSGI use ``sys.stdout`` as the response channel back
+to the web server (CGI being the canonical example). Under mod_wsgi
+the default behaviour is to redirect anything written to
+``sys.stdout`` to the Apache error log, so writes do not fail —
+but ``sys.stderr`` should still be preferred. See
+:doc:`../configuration-directives/WSGIRestrictStdout` if the older
+strict behaviour (raise on ``sys.stdout`` use) is required.
 
-    IOError: sys.stdout access restricted by mod_wsgi
-
-This is because portable WSGI applications should not write to
-``sys.stdout`` or use 'print' without specifying an
-alternate file object besides ``sys.stdout`` as the target. This
-restriction can be disabled for the whole server using the
-WSGIRestrictStdout directive, or by mapping ``sys.stdout`` to
-``sys.stderr`` at global scope within in the WSGI application script
-file::
-
-    import sys
-    sys.stdout = sys.stderr
-
-In general, a WSGI application should always endeavour to only log messages
-via the 'wsgi.errors' object that is passed through to a WSGI application
-in the WSGI environment. This is because this is the only way of logging
-messages for which there is some guarantee that they will end up in a log
-file that you might have access to if using a shared server.
+In general, a WSGI application should always endeavour to log messages
+via the ``wsgi.errors`` object passed through in the WSGI environment.
+This is the only logging path with any guarantee of ending up in a log
+file the operator can reach on a shared server.
 
 An application shouldn't however cache 'wsgi.errors' and try to use it
 outside of the context of a request. If this is done an exception will be
@@ -172,31 +153,30 @@ Such a task can be achieved with the following test application. The
 application could be extended as necessary to display other information as
 well, with process ID, user ID and group ID being shown as examples::
 
-    import cStringIO
+    import io
     import os
 
     def application(environ, start_response):
-        headers = []
-        headers.append(('Content-Type', 'text/plain'))
-        write = start_response('200 OK', headers)
+        headers = [('Content-Type', 'text/plain')]
+        start_response('200 OK', headers)
 
-        input = environ['wsgi.input']
-        output = cStringIO.StringIO()
+        output = io.StringIO()
 
-        print("PID: %s" % os.getpid(), file=output)
-        print("UID: %s" % os.getuid(), file=output)
-        print("GID: %s" % os.getgid(), file=output)
+        print(f'PID: {os.getpid()}', file=output)
+        print(f'UID: {os.getuid()}', file=output)
+        print(f'GID: {os.getgid()}', file=output)
         print(file=output)
 
-        keys = environ.keys()
-        keys.sort()
-        for key in keys:
-            print('%s: %s' % (key, repr(environ[key])), file=output)
+        for key in sorted(environ.keys()):
+            print(f'{key}: {environ[key]!r}', file=output)
         print(file=output)
 
-        output.write(input.read(int(environ.get('CONTENT_LENGTH', '0'))))
+        body = environ['wsgi.input'].read(
+            int(environ.get('CONTENT_LENGTH', '0')))
+        if body:
+            print(body.decode('latin-1', errors='replace'), file=output)
 
-        return [output.getvalue()]
+        return [output.getvalue().encode('utf-8')]
 
 For the case of the process group as recorded by the
 'mod_wsgi.process_group' variable in the WSGI request environment, if the
@@ -213,9 +193,9 @@ application to a named daemon process group.
 For the case of the application group as recorded by the
 'mod_wsgi.application_group' variable in the WSGI request environment, if the
 value is an empty string then the WSGI application is running in the main
-Python interpreter. That is, the very first interpreter created when Python
-was initialised. For any other value it indicates it is running in the named
-Python sub interpreter.
+Python interpreter — the one Python creates at process startup, before any
+sub-interpreters are spawned. For any other value it indicates it is
+running in the named Python sub interpreter.
 
 Note that by default WSGI applications would always run in a sub
 interpreter rather than the main interpreter. The name of this sub
@@ -389,21 +369,38 @@ preexisting directory. For each request four files will be saved. These
 correspond to input headers, input content, response status and headers,
 and request content.
 
+Under ``mod_wsgi-express`` the equivalent capability is
+built in via ``--enable-recorder``, which wraps the
+application in a middleware functionally equivalent to the
+``LoggingMiddleware`` shown above. Per-request files use
+the same ``.iheaders`` / ``.icontent`` / ``.oheaders`` /
+``.ocontent`` naming, plus ``.oaexcept`` / ``.orexcept`` /
+``.ofexcept`` capturing exceptions raised during the
+application call, response iteration, and ``close()``
+respectively. The headers files contain a
+``pprint``-formatted Python repr (inspectable in any text
+editor; round-trip with ``ast.literal_eval()``). The
+output directory defaults to ``<server-root>/archive/``
+and is overridable with ``--recorder-directory``.
+``--enable-recorder`` implies ``--debug-mode`` (single
+process, single-threaded) so output from concurrent
+workers does not interleave.
+
 Poorly Performing Code
 ----------------------
 
-The WSGI specification allows any iterable object to be returned as the
-response, so long as the iterable yields byte-strings (``bytes``, or
-``str`` on Python 2). That this is the case means that one can too easily
-return an object which satisfies this requirement but has some sort of
-performance related issue.
+The WSGI specification allows any iterable object to be returned as
+the response, so long as the iterable yields ``bytes``. That this is
+the case means that one can too easily return an object which
+satisfies the requirement but has some sort of performance-related
+issue.
 
-The worst case of this is where instead of returning a list containing
-byte-strings, a single byte-string value is returned. The problem is that
-when a byte-string is iterated over, a single byte is yielded each
-time. In other words, a single byte is written back to the client on
-each loop, with a flush occurring in between to ensure that the byte
-has actually been written and isn't just being buffered.
+The worst case of this is where instead of returning a list
+containing one ``bytes`` value, the ``bytes`` value itself is
+returned. When a ``bytes`` value is iterated over a single integer
+is yielded each time, so mod_wsgi ends up processing the response
+one byte at a time, with a flush between each, to ensure each byte
+is actually written rather than just buffered.
 
 Although for small byte-strings a performance impact may not be noticed, if
 returning more data the effect on request throughput could be quite
@@ -442,16 +439,6 @@ types, the following code can be used::
       socket.socket,
       io.IOBase,
     ]
-    if sys.version_info < (3, 0):
-        # Python 2
-        import types
-        import cStringIO
-        import StringIO
-        BAD_ITERABLES.extend([
-            types.FileType,
-            cStringIO.InputType,
-            StringIO.StringIO,
-        ])
 
     class ValidatingMiddleware:
 
@@ -476,35 +463,143 @@ types, the following code can be used::
 
     application = ValidatingMiddleware(application)
 
+Profiling Code Execution
+------------------------
+
+When a WSGI application is slower than expected and the
+cause is not obvious from the patterns covered above,
+profiling is the next step. The standard library
+``cProfile`` module measures call counts and total /
+inline time per function for the duration the profiler is
+running.
+
+The pattern that works for an Apache + mod_wsgi
+deployment is to start the profiler at WSGI script load
+time and dump its data on process shutdown. A minimal
+version that can be added to any WSGI script::
+
+    import os
+    import time
+
+    import mod_wsgi
+    from cProfile import Profile
+
+    _profiler = Profile()
+    _profiler.enable()
+
+    def _dump_profile(*args, **kwargs):
+        _profiler.disable()
+        output = '%d-%d.pstats' % (
+                int(time.time() * 1000000), os.getpid())
+        _profiler.dump_stats(os.path.join('/tmp/pstats', output))
+
+    mod_wsgi.subscribe_shutdown(_dump_profile)
+
+This produces a ``.pstats`` file in ``/tmp/pstats/``
+(which must already exist) every time the daemon process
+shuts down. The filename includes a microsecond timestamp
+and the process ID so concurrent workers do not collide.
+``mod_wsgi.subscribe_shutdown()`` is preferred over
+``atexit`` for dumping data on shutdown because it fires
+reliably regardless of interpreter-shutdown ordering; see
+:doc:`registering-cleanup-code`.
+
+Inspect the data with the standard library's ``pstats``
+module, or with ``snakeviz`` (browser-rendered icicle /
+sunburst) or ``gprof2dot`` plus Graphviz for a
+call-graph visualisation.
+
+For meaningful results the profiler should observe a
+single process; with multiple daemon processes the
+measurements split across them. Restrict the daemon to
+one process before profiling::
+
+    WSGIDaemonProcess myapp processes=1 threads=N
+
+Under ``mod_wsgi-express`` the equivalent of the manual
+recipe is automated by ``--enable-profiler``. It implies
+``--debug-mode`` (single process, single-threaded), and
+writes ``.pstats`` files under ``<server-root>/pstats/``
+by default; override with ``--profiler-directory``::
+
+    mod_wsgi-express start-server wsgi.py \
+        --enable-profiler \
+        --profiler-directory /tmp/pstats
+
+For profiling under realistic concurrency the manual
+recipe above is preferable, since ``--enable-profiler``
+forces single-process / single-threaded operation.
+
+Measuring Code Coverage
+-----------------------
+
+Code coverage measurement records which Python source
+lines actually execute during a run. The third-party
+``coverage`` package (installable from PyPI) plugs into
+mod_wsgi the same way profiling does: start it at WSGI
+script load time and emit its report on process
+shutdown::
+
+    import mod_wsgi
+    from coverage import coverage
+
+    _cov = coverage()
+    _cov.start()
+
+    def _dump_coverage(*args, **kwargs):
+        _cov.stop()
+        _cov.html_report(directory='/tmp/htmlcov')
+
+    mod_wsgi.subscribe_shutdown(_dump_coverage)
+
+This writes an HTML coverage report under
+``/tmp/htmlcov/`` (created on demand) every time the
+daemon process shuts down; open ``index.html`` in a
+browser to see per-line coverage with red / green
+highlighting. As with the profiler recipe above,
+``mod_wsgi.subscribe_shutdown()`` is the recommended way
+to register the dump callback rather than
+``atexit.register()``; see :doc:`registering-cleanup-code`.
+
+As with profiling, multi-process operation produces one
+report per process. Restrict the daemon to a single
+process before measuring::
+
+    WSGIDaemonProcess myapp processes=1 threads=N
+
+Under ``mod_wsgi-express`` the equivalent is
+``--enable-coverage``, which implies ``--debug-mode``.
+The output directory defaults to
+``<server-root>/htmlcov/`` and is overridable with
+``--coverage-directory``::
+
+    mod_wsgi-express start-server wsgi.py \
+        --enable-coverage \
+        --coverage-directory /tmp/htmlcov
+
+The ``coverage`` package must be installed in the same
+environment as ``mod_wsgi-express`` for the express form
+to work.
+
 Error Catching Middleware
 -------------------------
 
-Because mod_wsgi only logs details of uncaught exceptions to the Apache
-error log and returns a generic HTTP 500 "Internal Server Error" response,
-if you want the details of any exception to be displayed in the error
-page and be visible from the browser, you will need to use a WSGI error
-catching middleware component.
+Because mod_wsgi only logs details of uncaught exceptions to the
+Apache error log and returns a generic HTTP 500 "Internal Server
+Error" response, if you want the details of any exception to be
+displayed in the browser, you will need to use a WSGI error-catching
+middleware component or rely on the framework's own debug page.
 
-One example of WSGI error catching middleware is the ErrorMiddleware class
-from Paste.
+If you are using a Python web framework, the simplest path is the
+framework's built-in debug mode — for example Django with
+``DEBUG = True`` in ``settings.py``, Flask with
+``app.run(debug=True)`` or ``app.config['DEBUG'] = True``, or any
+WSGI framework's equivalent setting. These all render exception
+tracebacks back to the browser, often with interactive
+introspection.
 
-  * https://pythonpaste.readthedocs.io/en/latest/
-
-This class can be configured not only to catch exceptions and present the
-details to the browser in an error page, it can also be configured to send
-the details of any errors in email to a designated recipient, or log the
-details to an alternate log file.
-
-Being able to have error details sent by email would be useful in a
-production environment or where your application is running on a web
-hosting environment and the Apache error logs would not necessarily be
-closely monitored on a day to day basis. Enabling of that particular
-feature though should possibly only be done when you have some confidence
-in the application else you might end up getting inundated with emails.
-
-To use the error catching middleware from Paste you simply need to wrap
-your existing application with it such that it then becomes the top level
-application entry point::
+If you are running a bare WSGI application without a framework, the
+canonical generic option is Werkzeug's ``DebuggedApplication``::
 
     def application(environ, start_response):
         status = '200 OK'
@@ -516,30 +611,26 @@ application entry point::
 
         return [output]
 
-    from paste.exceptions.errormiddleware import ErrorMiddleware
-    application = ErrorMiddleware(application, debug=True)
+    from werkzeug.debug import DebuggedApplication
+    application = DebuggedApplication(application, evalex=True)
 
-In addition to displaying information about the Python exception that has
-occurred and the stack traceback, this middleware component will also
-output information about the WSGI environment such that you can see what
-was being passed to the WSGI application. This can be useful if the cause
-of any problem was unexpected values passed in the headers of the HTTP
-request.
+This wraps the application so that any uncaught exception produces an
+interactive traceback in the browser, with clickable frames and an
+inline Python REPL bound to the selected frame's locals when
+``evalex=True``.
 
-Note that error catching middleware is of absolutely no use for trying
-to capture and display in the browser any errors that occur at global scope
-within the WSGI application script when it is being imported. Details of
-any such errors occurring at this point will only be captured in the Apache
-error log files. As much as possible you should avoid performing
-complicated tasks when the WSGI application script file is being imported,
-instead you should only trigger such actions the first time a request is
-received. By doing this you will be able to capture errors in such
-initialisation code with the error catching middleware.
+Note that error-catching middleware is of no use for capturing errors
+that occur at global scope when the WSGI application script is being
+imported. Details of those errors will only be captured in the Apache
+error log. As much as possible you should avoid performing complicated
+tasks at import time and defer such actions to the first request
+instead, so that error-catching middleware can capture them.
 
-Also note that the debug mode whereby details are displayed in the browser
-should only be used during development and not in a production system. This
-is because details which are displayed may be of use to anyone who may wish
-to compromise your site.
+Debug mode of any of the options above must only be used during
+development and never in production. The traceback page exposes
+source code, locals, and (with ``evalex=True``) an arbitrary Python
+REPL — anyone who can hit the URL can run code in your application
+process.
 
 Python Interactive Debugger
 ---------------------------
@@ -651,85 +742,96 @@ and also consult the documentation for the 'pdb' module on the Python web
 site.
 
 Note that the Python debugger expects to be able to write to
-``sys.stdout`` to display information to the terminal. Thus if using
-using a Python web framework which replaces ``sys.stdout`` such as
-web.py, you will not be able to use the Python debugger.
+``sys.stdout`` to display information to the terminal. If a web
+framework or middleware replaces ``sys.stdout`` (capturing or
+redirecting it), the Python debugger will not be usable until that
+behaviour is disabled.
+
+Under ``mod_wsgi-express`` two flags provide a similar but
+narrower capability than the per-call ``settrace`` wrapper
+above:
+
+* ``--debug-mode`` runs Apache in single-process mode with
+  stdin/stdout attached to the terminal. This is the
+  equivalent of the ``apachectl stop`` plus ``httpd -X``
+  flow described above; the express form does not require
+  manual control of the underlying Apache.
+
+* ``--enable-debugger`` wraps the WSGI application in a
+  *post-mortem* ``pdb`` handler. Rather than stepping
+  through every line, it activates ``pdb`` only when an
+  exception propagates out of the application. The
+  controlling terminal then drops into
+  ``pdb.Pdb().interaction(None, traceback)`` so the
+  failing frame can be inspected. ``c`` or ``q`` lets the
+  request finish with a 500 response and the server keeps
+  running.
+
+* ``--debugger-startup`` pairs with ``--enable-debugger``
+  and drops into ``pdb`` once *immediately* after the WSGI
+  script has been imported, before any request is served.
+  Use this to set breakpoints (``b file.py:NN``) on
+  application code, then ``c`` to resume into normal
+  request handling.
+
+``--enable-debugger`` and ``--debugger-startup`` both
+imply ``--debug-mode``. For the per-line ``settrace``
+pattern the manual ``Debugger`` wrapper above is still
+the right tool.
 
 Browser Based Debugger
 ----------------------
 
-In order to use the Python debugger modules you need to have direct access
-to the host and the Apache web server that is running your WSGI application.
-If your only access to the system is via your web browser this makes the use
-of the full Python debugger impractical.
+In order to use the Python debugger modules you need direct access
+to the host and the Apache web server running your WSGI application.
+If your only access to the system is via your web browser, the full
+``pdb`` debugger described above is not usable.
 
-An alternative to the Python debugger modules which is available is an
-extension of the WSGI error catching middleware previously described. This
-is the EvalException class from Paste. It embodies the error catching
-attributes of the ErrorMiddleware class, but also allows some measure of
-interactive debugging and introspection through the web browser.
+The browser-based equivalent is Werkzeug's ``DebuggedApplication``
+already described in `Error Catching Middleware`_, with the
+``evalex=True`` option enabled::
 
-As with any WSGI middleware component, to use the class entails creating
-a wrapper around the application you wish to debug::
+    from werkzeug.debug import DebuggedApplication
+    application = DebuggedApplication(application, evalex=True)
 
-    def application(environ, start_response):
-        status = '200 OK'
-        output = b'Hello World!\n'
+When an unexpected exception occurs, the resulting traceback page
+allows you to inspect the local variables in each stack frame and to
+type Python code which is evaluated against the locals of the
+selected frame. This gives the same investigative capability as
+``pdb`` without needing terminal access.
 
-        response_headers = [('Content-type', 'text/plain'),
-                            ('Content-Length', str(len(output)))]
-        start_response(status, response_headers)
+For this to work reliably, subsequent requests from the traceback
+page must reach the same process where the error originally
+occurred. mod_wsgi can route requests across multiple processes, so
+the application must be configured to use only one.
 
-        return [output]
+The standard way to ensure this is to put the WSGI application in a
+mod_wsgi daemon process group with a single process::
 
-    from paste.evalexception.middleware import EvalException
-    application = EvalException(application)
+    WSGIDaemonProcess mydebug processes=1 threads=N
+    WSGIProcessGroup mydebug
 
-Like ErrorMiddleware when an unexpected exception occurs a web page is
-presented which shows the location of the error along with the contents of
-the WSGI application environment. Where EvalException is different however
-is that it is possible to inspect the local variables residing within each
-stack frame down to where the error occurred. Further, it is possible to
-enter Python code which can be evaluated within the context of the selected
-stack frame in order to access data or call functions or methods of
-objects.
+(Choose ``threads`` to suit the application — multithreaded is fine.)
 
-In order for this to all work requires that subsequent requests back to
-the WSGI application always end up with the same process where the error
-originally occurred. With mod_wsgi this does however present a bit of a
-problem as Apache can create and use multiple child processes to handle
-requests.
-
-Because of this requirement, if you want to be able to use this browser
-based interactive debugger, if running your application in embedded mode of
-mod_wsgi, you will need to configure Apache such that it only starts up one
-child process to handle requests and that it never creates any additional
-processes. The Apache configuration directives required to achieve this are
-as follows::
+If embedded mode is unavoidable (for example on Windows, where
+daemon mode is not available), restrict Apache itself to a single
+child process by adding the following at global scope to the main
+Apache configuration::
 
     StartServers 1
     ServerLimit 1
 
-The directives must be placed at global scope within the main Apache
-configuration files and will affect the whole Apache web server.
+Bear in mind this affects the whole Apache instance, not just the
+WSGI application. With prefork MPM that means only one request at a
+time is handled, which can break AJAX-heavy pages that rely on
+parallel requests; with worker or event MPM other requests can still
+be handled by additional threads in the single child process.
 
-If you are using the worker MPM on a UNIX system, restricting Apache to
-just a single process may not be an issue, at least during development. If
-however you are using the prefork MPM on a UNIX system, you may see issues
-if you are using an AJAX intensive page that relies on being able to
-execute parallel requests, as only one request at a time will be able to be
-handled by the Apache web server.
-
-If using Apache 2.X on a UNIX system, a better approach is to use daemon
-mode of mod_wsgi and delegate your application to run in a single daemon
-process. This process may be single or multithreaded as per any threading
-requirements of your application.
-
-Which ever configuration is used, if the browser based interactive debugger
-is used it should only be used on a development system and should never be
-deployed on a production system or in a web hosting environment. This is
-because the debugger will allow one to execute arbitrary Python code within
-the context of your application from a remote client.
+Whichever configuration is used, the browser-based interactive
+debugger must only be used on a development system. It must never be
+deployed to a production environment or any shared host: the
+``evalex=True`` REPL allows arbitrary Python code execution by
+anyone who can reach the URL.
 
 Debugging Crashes With GDB
 --------------------------
@@ -738,38 +840,34 @@ In cases where Apache itself crashes for no apparent reason, the above
 techniques are not always particularly useful. This is especially the case
 where the crash occurs in non Python code outside of your WSGI application.
 
-The most common cause of Apache crashing, besides any still latent bugs
-that may exist in mod_wsgi, of which hopefully there aren't any, are shared
-library version mismatches. Another major cause of crashes is third party C
-extension modules for Python which are not compatible with being used in a
-Python sub interpreter which isn't the first interpreter created when
-Python is initialised, or modules which are not compatible with Python sub
-interpreters being destroyed and the module then being used in a new Python
-sub interpreter.
+The most common cause of Apache crashing, besides any still-latent
+bugs in mod_wsgi, is shared library version mismatch. The other
+major cause is third-party C extension modules that are not
+compatible with running in a Python sub interpreter (rather than the
+main interpreter), or that cache references to one interpreter and
+then misbehave when used from another.
 
-Examples of where shared library version mismatches are known to occur are
-between the version of the 'expat' library used by Apache and that embedded
-within the Python 'pyexpat' module. Another is between the version of the
-MySQL client libraries used by PHP and the Python MySQL module.
+A classic shared-library mismatch is between mod_ssl statically
+linked into Apache against one OpenSSL version, and the Python
+``ssl`` module dynamically linked against a different OpenSSL
+version. The two copies of the OpenSSL state collide, and the
+process can segfault or behave nonsensically. Background and
+workaround are covered under "Anaconda Python Conflicting With
+System Shared Libraries" in
+:doc:`../user-guides/installation-issues`. The same class of
+problem can occur with any other library that gets linked into both
+Apache (or another Apache module) and a Python C extension at
+incompatible versions.
 
-Both these can be a cause of crashes where the different components are
-compiled and linked against different versions of the shared library for
-the packages in question. It is vitally important that all packages making
-use of a shared library were compiled against and use the same version of
-a shared library.
-
-Another problematic package is Subversion. In this case there can be
-conflicts between the version of Subversion libraries used by mod_dav_svn
-and the Python Subversion bindings. Certain versions of the Python
-Subversion modules also cause problems because they appear to be
-incompatible with use in a Python sub interpreter which isn't the first
-interpreter created when Python is initialised.
-
-In this latter issue, the sub interpreter problems can often be solved by
-forcing the WSGI application using the Python Subversion modules to run in
-the '%{GLOBAL}' application group. This solution often also resolves issues
-with SWIG generated bindings, especially where the ``-thread`` option was
-supplied to 'swig' when the bindings were generated.
+For the C-extensions-and-sub-interpreters case, the prominent
+modern examples are NumPy, SciPy and modules built on top of them.
+Symptoms range from import errors to deadlocks to crashes. The
+workaround is to force the affected WSGI application to run in the
+main Python interpreter by setting ``WSGIApplicationGroup
+%{GLOBAL}``. Failure modes and trade-offs are discussed under
+"WSGIApplicationGroup and C extension modules" in
+:doc:`../user-guides/configuration-issues` and "Multiple Python Sub
+Interpreters" in :doc:`../user-guides/application-issues`.
 
 Whatever the reason, in some cases the only way to determine why Apache or
 Python is crashing is to use a C code debugger such as 'gdb'. Now although
@@ -814,6 +912,18 @@ only catch crashes which occur when the application is running in embedded
 mode. If it turns out that the application only crashes when run in mod_wsgi
 daemon mode, an alternate method of using 'gdb' will be required.
 
+Under ``mod_wsgi-express`` the embedded-mode flow above
+(``apachectl stop`` plus ``gdb httpd`` plus ``run -X``) is
+automated by the ``--enable-gdb`` flag. The generated
+``apachectl`` wrapper substitutes ``gdb`` for the direct
+``httpd`` exec, with a small ``gdb.cmds`` script
+supplying ``run`` plus the single-process Apache argv.
+``--gdb-executable FILE-PATH`` overrides the path to the
+``gdb`` binary if needed. ``--enable-gdb`` implies
+``--debug-mode`` and so only catches crashes occurring in
+embedded mode; the daemon-mode attach-by-pid procedure
+described next has no equivalent express flag.
+
 In this circumstance you should run Apache as normal, but ensure that you
 only create one mod_wsgi daemon process and have it use only a single
 thread::
@@ -821,15 +931,20 @@ thread::
     WSGIDaemonProcess debug threads=1
     WSGIProcessGroup debug
 
-If not running the daemon process as a distinct user where you can tell
-which process it is, then you will also need to ensure that Apache
-!LogLevel directive has been set to 'info'. This is to ensure that
-information about daemon processes created by mod_wsgi are logged to the
-Apache error log. This is necessary, as you will need to consult the Apache
-error logs to determine the process ID of the daemon process that has been
-created for that daemon process group::
+If not running the daemon process as a distinct user where you can
+tell which process it is, you will also need to ensure that Apache
+``LogLevel`` has been set high enough that mod_wsgi's startup
+messages are emitted (``LogLevel warn wsgi:info`` is sufficient).
+This is needed so that information about daemon processes created
+by mod_wsgi appears in the Apache error log. You will need to
+consult the error log to determine the process ID of the daemon
+process that has been created for that daemon process group. The
+relevant entry looks like::
 
-    mod_wsgi (pid=666): Starting process 'debug' with threads=1.
+    [Wed Apr 29 12:34:56.123456 2026] [wsgi:info] [pid 666:tid 0x...] Starting process 'debug' with threads=1.
+
+The PID is supplied by Apache's standard log framing (``[pid 666:tid
+...]``).
 
 Knowing the process ID, you should then run 'gdb', telling it to attach
 directly to the daemon process::
@@ -938,12 +1053,13 @@ daemon process group, then first off ensure that daemon processes are named
 in 'ps' output by using the 'display-name' option to WSGIDaemonProcess
 directive.
 
-For example, to apply default naming strategy as implemented by mod_wsgi, use::
+For example, to apply the default naming strategy implemented by
+mod_wsgi, use::
 
-    WSGIDaemonProcess xxx display-name=%{GLOBAL}
+    WSGIDaemonProcess xxx display-name=%{GROUP}
 
-In the output of a BSD derived 'ps' command, this will now show the process
-as being named '(wsgi:xxx)'::
+In the output of a BSD derived ``ps`` command, this will now show
+the process as being named ``(wsgi:xxx)``::
 
     $ ps -cxo command,pid | grep wsgi
     (wsgi:xxx)        666
@@ -979,20 +1095,25 @@ actual Python code execution was at. Your only clue is going to be where a
 call out was being made to some distinct C function in a C extension module
 for Python.
 
-One can get stack traces for Python code by using::
+A small helper that walks every active Python thread's stack and writes
+it to the Apache error log::
 
-    def _stacktraces():
-       code = []
-       for threadId, stack in sys._current_frames().items():
-           code.append("\n# ThreadID: %s" % threadId)
-           for filename, lineno, name, line in traceback.extract_stack(stack):
-               code.append('File: "%s", line %d, in %s' % (filename,
-                       lineno, name))
-               if line:
-                   code.append("  %s" % (line.strip()))
+    import os
+    import sys
+    import traceback
 
-       for line in code:
-           print >> sys.stderr, line
+    def dump_stack_traces():
+        code = []
+        for thread_id, stack in sys._current_frames().items():
+            code.append(f'\n# ProcessId: {os.getpid()}')
+            code.append(f'# ThreadID: {thread_id}')
+            for filename, lineno, name, line in traceback.extract_stack(stack):
+                code.append(f'File: "{filename}", line {lineno}, in {name}')
+                if line:
+                    code.append(f'  {line.strip()}')
+
+        for line in code:
+            print(line, file=sys.stderr)
 
 The caveat here obviously is that the process has to still be running. There
 is also the issue of how you trigger that function to dump stack traces for
@@ -1008,163 +1129,159 @@ This though depends on you only running your application within a single
 process because as soon as you have multiple processes you have no guarantee
 that a request will go to the process you want to debug.
 
-A better method therefore is to have a perpetually running background thread
-which monitors for a specific file in the file system. When that file is
-created or the modification time changes, then the background thread would
-dump the stack traces for the process.
+The two patterns below show the recommended triggers for daemon mode and
+embedded mode respectively. Both invoke the same ``dump_stack_traces()``
+helper defined above.
 
-Sample code which takes this approach is included below. This code could be
-placed temporarily at the end of your WSGI script file if you know you are
-going to need it because of a recurring problem::
+In daemon mode the supported trigger is to register a ``SIGUSR2``
+subscriber via ``mod_wsgi.subscribe_signals``. The signal is delivered
+to each daemon process independently, so a stack dump fires in whichever
+process the operator sent the signal to, and all processes can be dumped
+at once by sending the signal to every PID in the daemon group. See
+:doc:`subscribing-to-events` for the full subscription API. Add the
+following to your WSGI script file::
 
-    from __future__ import print_function
+    import mod_wsgi
+
+    @mod_wsgi.subscribe_signals
+    def _on_signal(name, *, signame, **event):
+        if signame == 'SIGUSR2':
+            dump_stack_traces()
+
+For service-script daemons (``WSGIDaemonProcess threads=0``)
+``mod_wsgi.subscribe_signals`` is inert (the dispatcher
+infrastructure is not started when there are no worker
+threads). Use Python's ``signal`` module directly in the
+service script instead, since signal-handler registration is
+not intercepted for service scripts::
+
+    import signal
+
+    signal.signal(signal.SIGUSR2, lambda signum, frame: dump_stack_traces())
+
+See the service-script notes in :doc:`subscribing-to-events`.
+
+Sending ``SIGUSR2`` to a daemon process will then cause stack traces for
+active Python threads to be written to the Apache error log::
+
+    kill -USR2 <daemon-pid>
+
+The daemon PIDs are visible in the Apache error log near startup
+(``LogLevel wsgi:info`` or higher) and can also be listed via ``ps`` if
+the daemon group is configured with ``display-name=`` (see
+:doc:`../configuration-directives/WSGIDaemonProcess`).
+
+In embedded mode ``mod_wsgi.subscribe_signals`` cannot deliver callbacks
+(see "Signal delivery is daemon-mode only" in
+:doc:`subscribing-to-events`), so the trigger has to come from inside the
+process. A long-lived background thread that polls the modification time
+of a sentinel file is the standard fallback: touching the file from the
+shell makes the next poll fire ``dump_stack_traces()``. Add the
+following to your WSGI script file::
 
     import os
-    import sys
-    import time
-    import signal
     import threading
-    import atexit
-    import traceback
 
-    try:
-        from Queue import Queue  # Python 2
-    except ImportError:
-        from queue import Queue  # Python 3
+    from queue import Queue, Empty
 
-    FILE = '/tmp/dump-stack-traces.txt'
+    SENTINEL_FILE = '/tmp/dump-stack-traces.txt'
 
     _interval = 1.0
-
-    _running = False
     _queue = Queue()
     _lock = threading.Lock()
-
-    def _stacktraces(): 
-        code = [] 
-        for threadId, stack in sys._current_frames().items(): 
-            code.append("\n# ProcessId: %s" % os.getpid()) 
-            code.append("# ThreadID: %s" % threadId) 
-            for filename, lineno, name, line in traceback.extract_stack(stack): 
-                code.append('File: "%s", line %d, in %s' % (filename, 
-                        lineno, name)) 
-                if line: 
-                    code.append("  %s" % (line.strip())) 
-
-        for line in code:
-            print(line, file=sys.stderr)
-
-    try:
-        mtime = os.path.getmtime(FILE)
-    except:
-        mtime = None
+    _running = False
 
     def _monitor():
-        while True:
-            global mtime
+        try:
+            mtime = os.path.getmtime(SENTINEL_FILE)
+        except OSError:
+            mtime = None
 
+        while True:
             try:
-                current = os.path.getmtime(FILE)
-            except:
+                current = os.path.getmtime(SENTINEL_FILE)
+            except OSError:
                 current = None
 
             if current != mtime:
                 mtime = current
-                _stacktraces()
-
-            # Go to sleep for specified interval.
+                dump_stack_traces()
 
             try:
                 return _queue.get(timeout=_interval)
-            except:
+            except Empty:
                 pass
 
-    _thread = threading.Thread(target=_monitor)
-    _thread.daemon = True
-
-    def _exiting():
-        try:
-            _queue.put(True)
-        except:
-            pass
-        _thread.join()
-
-    atexit.register(_exiting)
-
-    def _start(interval=1.0):
-        global _interval
-        if interval < _interval:
-            _interval = interval
-
+    def _start():
         global _running
-        _lock.acquire()
-        if not _running:
-            prefix = 'monitor (pid=%d):' % os.getpid()
-            print('%s Starting stack trace monitor.' % prefix, file=sys.stderr)
-            _running = True
-            _thread.start()
-        _lock.release()
+        with _lock:
+            if not _running:
+                print(f'monitor (pid={os.getpid()}):'
+                      f' Starting stack trace monitor.',
+                      file=sys.stderr)
+                _running = True
+                threading.Thread(target=_monitor, daemon=True).start()
 
     _start()
 
-Once your WSGI script file has been loaded, then touching the file
-'/tmp/dump-stack-traces.txt' will cause stack traces for active Python
-threads to be output to the Apache error log.
+Once your WSGI script file has been loaded, touching the file
+``/tmp/dump-stack-traces.txt`` will cause every Apache child process that
+has the script imported to write its active Python stack traces to the
+error log.
 
-Note that the sample code doesn't deal with possibility that with multiple
-processes for same application, that all processes may attempt to dump
-information at the same time. As such, you may get interleaving of output
-from multiple processes in Apache error logs at the same time.
-
-What you may want to do is modify this code to dump out to some special
-directory, distinct files containing the trace where the names of the file
-include the process ID and a date/time. That way each will be separate.
+For either trigger, if you have multiple processes serving the
+application and send the trigger to all of them at once, the dumps will
+interleave in the Apache error log. ``# ProcessId:`` lines in each dump
+identify which process the trace came from. For more separable output,
+modify ``dump_stack_traces()`` to write each dump to a distinct file
+under a chosen directory, with filenames that include the process ID and
+a date/time.
 
 An example of what one might expect to see from the above code is as
 follows::
 
     # ProcessId: 666
-    # ThreadID: 4352905216
-    File: "/System/Library/Frameworks/Python.framework/Versions/2.6/lib/python2.6/threading.py", line 497, in __bootstrap
-      self.__bootstrap_inner()
-    File: "/System/Library/Frameworks/Python.framework/Versions/2.6/lib/python2.6/threading.py", line 522, in __bootstrap_inner
+    # ThreadID: 140234567890432
+    File: "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap
+      self._bootstrap_inner()
+    File: "/usr/lib/python3.12/threading.py", line 1115, in _bootstrap_inner
       self.run()
-    File: "/System/Library/Frameworks/Python.framework/Versions/2.6/lib/python2.6/threading.py", line 477, in run
-      self.__target(*self.__args, **self.__kwargs)
-    File: "/Library/WebServer/Sites/django-1/htdocs/project.wsgi", line 72, in _monitor
-      _stacktraces()
-    File: "/Library/WebServer/Sites/django-1/htdocs/project.wsgi", line 47, in _stacktraces
+    File: "/usr/lib/python3.12/threading.py", line 1052, in run
+      self._target(*self._args, **self._kwargs)
+    File: "/srv/www/myproject/wsgi.py", line 72, in _monitor
+      dump_stack_traces()
+    File: "/srv/www/myproject/wsgi.py", line 47, in dump_stack_traces
       for filename, lineno, name, line in traceback.extract_stack(stack):
 
-    # ThreadID: 4322832384
-    File: "/Library/WebServer/Sites/django-1/htdocs/project.wsgi", line 21, in application
+    # ThreadID: 140234567890123
+    File: "/srv/www/myproject/wsgi.py", line 21, in application
       return _application(environ, start_response)
-    File: "/Library/WebServer/Sites/django-1/lib/python2.6/site-packages/django/core/handlers/wsgi.py", line 245, in __call__
-      response = middleware_method(request, response)
-    File: "/Library/WebServer/Sites/django-1/lib/python2.6/site-packages/django/contrib/sessions/middleware.py", line 36, in process_response
+    File: "/srv/www/myproject/venv/lib/python3.12/site-packages/django/core/handlers/wsgi.py", line 145, in __call__
+      response = self.get_response(request)
+    File: "/srv/www/myproject/venv/lib/python3.12/site-packages/django/contrib/sessions/middleware.py", line 60, in process_response
       request.session.save()
-    File: "/Library/WebServer/Sites/django-1/lib/python2.6/site-packages/django/contrib/sessions/backends/db.py", line 63, in save
+    File: "/srv/www/myproject/venv/lib/python3.12/site-packages/django/contrib/sessions/backends/db.py", line 80, in save
       obj.save(force_insert=must_create, using=using)
-    File: "/Library/WebServer/Sites/django-1/lib/python2.6/site-packages/django/db/models/base.py", line 434, in save
+    File: "/srv/www/myproject/venv/lib/python3.12/site-packages/django/db/models/base.py", line 812, in save
       self.save_base(using=using, force_insert=force_insert, force_update=force_update)
-    File: "/Library/WebServer/Sites/django-1/lib/python2.6/site-packages/django/db/models/base.py", line 527, in save_base
-      result = manager._insert(values, return_id=update_pk, using=using)
-    File: "/Library/WebServer/Sites/django-1/lib/python2.6/site-packages/django/db/models/manager.py", line 195, in _insert
-      return insert_query(self.model, values, **kwargs)
-    File: "/Library/WebServer/Sites/django-1/lib/python2.6/site-packages/django/db/models/query.py", line 1479, in insert_query
-      return query.get_compiler(using=using).execute_sql(return_id)
-    File: "/Library/WebServer/Sites/django-1/lib/python2.6/site-packages/django/db/models/sql/compiler.py", line 783, in execute_sql
-      cursor = super(SQLInsertCompiler, self).execute_sql(None)
-    File: "/Library/WebServer/Sites/django-1/lib/python2.6/site-packages/django/db/models/sql/compiler.py", line 727, in execute_sql
+    File: "/srv/www/myproject/venv/lib/python3.12/site-packages/django/db/models/base.py", line 880, in save_base
+      updated = self._save_table(force_insert=force_insert, using=using)
+    File: "/srv/www/myproject/venv/lib/python3.12/site-packages/django/db/models/base.py", line 1015, in _save_table
+      results = self._do_insert(cls._base_manager, using, fields, returning_fields, raw)
+    File: "/srv/www/myproject/venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py", line 1517, in execute_sql
       cursor.execute(sql, params)
-    File: "/Library/WebServer/Sites/django-1/lib/python2.6/site-packages/debug_toolbar/panels/sql.py", line 95, in execute
-      stacktrace = tidy_stacktrace(traceback.extract_stack())
-    File: "/Library/WebServer/Sites/django-1/lib/python2.6/site-packages/debug_toolbar/panels/sql.py", line 40, in tidy_stacktrace
+    File: "/srv/www/myproject/venv/lib/python3.12/site-packages/django/db/backends/utils.py", line 89, in execute
+      return super().execute(sql, params)
+    File: "/srv/www/myproject/venv/lib/python3.12/site-packages/debug_toolbar/panels/sql/tracking.py", line 230, in execute
+      return self._record(self.cursor.execute, sql, params)
+    File: "/srv/www/myproject/venv/lib/python3.12/site-packages/debug_toolbar/panels/sql/tracking.py", line 158, in _record
+      stacktrace = tidy_stacktrace(reversed(get_stack()))
+    File: "/srv/www/myproject/venv/lib/python3.12/site-packages/debug_toolbar/panels/sql/tracking.py", line 39, in tidy_stacktrace
       s_path = os.path.realpath(s[0])
-    File: "/System/Library/Frameworks/Python.framework/Versions/2.6/lib/python2.6/posixpath.py", line 355, in realpath
-      if islink(component):
-    File: "/System/Library/Frameworks/Python.framework/Versions/2.6/lib/python2.6/posixpath.py", line 132, in islink
-      st = os.lstat(path)
+    File: "/usr/lib/python3.12/posixpath.py", line 396, in realpath
+      path, ok = _joinrealpath(filename[:0], filename, strict, {})
+    File: "/usr/lib/python3.12/posixpath.py", line 426, in _joinrealpath
+      st = os.lstat(newpath)
 
 Note that one of the displayed threads will be that for the thread which is
 dumping the stack traces. That stack trace can obviously be ignored.
