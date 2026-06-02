@@ -27,6 +27,10 @@ Setting ``WSGISlowRequests`` without ``WSGITelemetryService`` is
 not treated as a configuration error: the per-request bookkeeping
 runs and the records are constructed, but nothing reads them.
 
+Note that, like the telemetry reporter it feeds, this directive is
+not available on Windows. See :doc:`WSGITelemetryService` for
+details.
+
 Each slow-request record carries:
 
 * The originating process PID and worker thread ID.

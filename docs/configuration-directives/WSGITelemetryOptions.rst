@@ -16,6 +16,10 @@ This is a server-wide directive: it may only appear at the top
 level of the Apache configuration, outside any ``<VirtualHost>``
 block.
 
+Note that, like the telemetry reporter it configures, this directive
+is not available on Windows. See :doc:`WSGITelemetryService` for
+details.
+
 Syntax follows the Apache ``Options`` directive convention. Two
 argument forms are supported, and may not be mixed within one
 line:

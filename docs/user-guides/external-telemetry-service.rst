@@ -34,6 +34,14 @@ using the operating-system ``mod_wsgi`` package (or any other
 manually-configured Apache) can use the telemetry pipeline without
 adopting ``mod_wsgi-express`` as well.
 
+.. note::
+
+   The telemetry reporter is not available on Windows. It delivers its
+   datagrams over a UNIX ``SOCK_DGRAM`` socket, which Windows does not
+   provide, so the feature is not built there and the
+   ``WSGITelemetryService``, ``WSGISlowRequests`` and
+   ``WSGITelemetryOptions`` directives are not registered.
+
 How it works
 ------------
 
