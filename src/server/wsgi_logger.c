@@ -543,10 +543,23 @@ static int Log_queue(LogObject *self, const char *msg, Py_ssize_t len)
     return 0;
 }
 
+/*
+ * Set once a str has been written to the binary log buffer and the
+ * deprecation warning in Log_write() has been issued. This is process
+ * global, not per Log instance: a new Log object is created for each
+ * request, so storing the flag on the instance would warn once per
+ * request rather than once per process.
+ */
+
+static int wsgi_warned_log_str_write = 0;
+
 static PyObject *Log_write(LogObject *self, PyObject *args)
 {
     const char *msg = NULL;
     Py_ssize_t len = -1;
+
+    PyObject *object = NULL;
+    Py_buffer view;
 
     WSGIThreadInfo *thread_info = NULL;
 
@@ -565,11 +578,68 @@ static PyObject *Log_write(LogObject *self, PyObject *args)
         return NULL;
     }
 
-    if (!PyArg_ParseTuple(args, "s#:write", &msg, &len))
+    /*
+     * Accept any bytes-like object using the star buffer protocol so
+     * that bytes, bytearray, memoryview and similar all work. This is
+     * the binary buffer layer (exposed as wsgi.errors.buffer and
+     * sys.stderr.buffer), so a bytes-like object is what should be
+     * written here.
+     *
+     * A str is also still accepted, falling back to the original 's#'
+     * code path. Accepting str is wrong for a binary buffer, but is a
+     * leftover from the original Python 2 to Python 3 port: the 's#'
+     * format used here was carried across unchanged instead of being
+     * converted to a binary only format. Because the text level streams
+     * (wsgi.errors and sys.stderr) are now io.TextIOWrapper objects
+     * layered on top of this object, nothing should be writing str
+     * directly to the buffer. We cannot rule out existing code relying,
+     * probably by mistake, on str being accepted though, so the old
+     * behaviour is preserved and a deprecation warning is issued instead.
+     */
+
+    if (!PyArg_ParseTuple(args, "O:write", &object))
         return NULL;
 
-    if (Log_queue(self, msg, len) != 0)
-        return NULL;
+    if (PyUnicode_Check(object))
+    {
+        if (!wsgi_warned_log_str_write)
+        {
+            /*
+             * Set the flag before warning. PyErr_WarnEx can run the
+             * Python warnings machinery and release the GIL, so setting
+             * it first means another request thread reaching here in the
+             * meantime sees it already set and skips, keeping this to a
+             * single warning per process even under concurrency.
+             */
+
+            wsgi_warned_log_str_write = 1;
+
+            if (PyErr_WarnEx(PyExc_DeprecationWarning,
+                             "Writing str to wsgi.errors.buffer / "
+                             "sys.stderr.buffer is deprecated; write a "
+                             "bytes-like object instead.", 1) != 0)
+                return NULL;
+        }
+
+        if (!PyArg_ParseTuple(args, "s#:write", &msg, &len))
+            return NULL;
+
+        if (Log_queue(self, msg, len) != 0)
+            return NULL;
+    }
+    else
+    {
+        if (!PyArg_ParseTuple(args, "y*:write", &view))
+            return NULL;
+
+        if (Log_queue(self, view.buf, view.len) != 0)
+        {
+            PyBuffer_Release(&view);
+            return NULL;
+        }
+
+        PyBuffer_Release(&view);
+    }
 
     Py_RETURN_NONE;
 }
@@ -605,7 +675,7 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
     if (iterator == NULL)
     {
         wsgi_set_python_exception_from_cause(PyExc_TypeError,
-                                             "writelines() argument must be an iterable of str");
+                                             "writelines() argument must be an iterable of bytes-like objects");
 
         return NULL;
     }

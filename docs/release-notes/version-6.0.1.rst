@@ -19,3 +19,12 @@ Bugs Fixed
   directory's inode value exceeded 32 bits, as ``apr_stat()`` returns
   ``APR_INCOMPLETE`` in that case for ABI compatibility reasons. The
   stat now requests only the file type, which is all that is required.
+
+* The binary ``write()`` method on ``wsgi.errors.buffer`` and
+  ``sys.stderr.buffer`` did not accept a ``memoryview`` (or other
+  bytes-like objects such as ``bytearray``), failing with a ``TypeError``.
+  This dated back to the original Python 3 port, where the byte string
+  argument parsing was carried across from Python 2 unchanged rather than
+  being updated to the buffer protocol. It now accepts any bytes-like
+  object. For backward compatibility a ``str`` is still accepted, but
+  doing so is now deprecated and will emit a ``DeprecationWarning``.
