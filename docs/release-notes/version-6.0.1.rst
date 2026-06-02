@@ -29,12 +29,19 @@ Bugs Fixed
   object. For backward compatibility a ``str`` is still accepted, but
   doing so is now deprecated and will emit a ``DeprecationWarning``.
 
-* Compilation failed on Windows with ``error C2065: 'wsgi_daemon_shutdown':
-  undefined variable``. The script preload loop referenced the daemon
-  shutdown flag without guarding it with ``MOD_WSGI_WITH_DAEMONS``, but
-  that variable is only declared when daemon mode is available, which is
-  never the case on Windows. The reference is now protected by the
-  appropriate conditional.
+* Compilation failed when daemon mode was not available, which is always
+  the case on Windows, but can also occur on other platforms lacking the
+  required ``fork()`` and APR other-child support. Several places in code
+  which is compiled regardless of whether daemon mode is enabled referred
+  to daemon mode symbols, such as ``wsgi_daemon_process`` and
+  ``wsgi_daemon_shutdown``, without guarding the references with
+  ``MOD_WSGI_WITH_DAEMONS``. Those symbols are only declared when daemon
+  mode is available, so the build failed with errors such as ``error
+  C2065: 'wsgi_daemon_shutdown': undefined variable``. The references are
+  now protected by the appropriate conditional. In addition, the
+  ``apr_atomic.h`` header, used by code unrelated to daemon mode, was only
+  being included indirectly via the daemon mode header and so was missing
+  when daemon mode was disabled; it is now included from a common header.
 
 * When using daemon mode, output written to ``wsgi.errors`` (and anything
   sent to ``sys.stdout`` or ``sys.stderr``) could be written to the main

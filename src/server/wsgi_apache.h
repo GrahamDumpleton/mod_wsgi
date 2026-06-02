@@ -50,6 +50,7 @@
 #endif
 
 #include "apr_lib.h"
+#include "apr_atomic.h"
 #include "ap_mpm.h"
 #include "ap_compat.h"
 #include "apr_tables.h"

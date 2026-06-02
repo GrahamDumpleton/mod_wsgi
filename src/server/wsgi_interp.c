@@ -2415,8 +2415,12 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
          * from daemon->group->switch_interval after wsgi_python_child_init
          * (see wsgi_daemon.c) — applying the server-config value here
          * would shadow that and emit a redundant INFO log line. */
+#if defined(MOD_WSGI_WITH_DAEMONS)
         if (wsgi_daemon_process == NULL &&
             wsgi_server_config->switch_interval > 0.0)
+#else
+        if (wsgi_server_config->switch_interval > 0.0)
+#endif
         {
             if (wsgi_free_threading_active)
             {
