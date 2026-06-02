@@ -2,6 +2,15 @@
 Version 6.0.1
 =============
 
+Features Changed
+----------------
+
+* The Python exception messages raised by the WSGI adapter layer
+  (``start_response()``, ``write()``, ``wsgi.input``, ``wsgi.errors``,
+  the file wrapper, and response status/header validation) have been
+  reworded to be more descriptive and, where appropriate, to identify
+  mod_wsgi as their source, making them easier to diagnose.
+
 Bugs Fixed
 ----------
 

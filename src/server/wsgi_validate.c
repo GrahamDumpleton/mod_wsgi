@@ -51,15 +51,15 @@ int wsgi_validate_status_line(PyObject *value)
 
     if (!isdigit((unsigned char)*s++) || !isdigit((unsigned char)*s++) || !isdigit((unsigned char)*s++))
     {
-        PyErr_SetString(PyExc_ValueError,
-                        "status code is not a 3 digit integer");
+        PyErr_Format(PyExc_ValueError,
+                     "status code must be a 3 digit integer: %R", value);
         return 0;
     }
 
     if (isdigit((unsigned char)*s))
     {
-        PyErr_SetString(PyExc_ValueError,
-                        "status code is not a 3 digit integer");
+        PyErr_Format(PyExc_ValueError,
+                     "status code must be a 3 digit integer: %R", value);
         return 0;
     }
 
@@ -70,7 +70,8 @@ int wsgi_validate_status_line(PyObject *value)
 
     if (*s != ' ')
     {
-        PyErr_SetString(PyExc_ValueError, "no space following status code");
+        PyErr_Format(PyExc_ValueError,
+                     "no space following status code: %R", value);
         return 0;
     }
 
@@ -80,8 +81,9 @@ int wsgi_validate_status_line(PyObject *value)
     {
         if (iscntrl((unsigned char)*s))
         {
-            PyErr_SetString(PyExc_ValueError,
-                            "control character present in reason phrase");
+            PyErr_Format(PyExc_ValueError,
+                         "control character in status reason phrase: %R",
+                         value);
             return 0;
         }
         s++;
@@ -125,15 +127,15 @@ int wsgi_validate_header_name(PyObject *value)
     {
         if (iscntrl((unsigned char)*s))
         {
-            PyErr_SetString(PyExc_ValueError,
-                            "control character present in header name");
+            PyErr_Format(PyExc_ValueError,
+                         "control character in header name: %R", value);
             return 0;
         }
 
         if (*s == ' ')
         {
-            PyErr_SetString(PyExc_ValueError,
-                            "space character present in header name");
+            PyErr_Format(PyExc_ValueError,
+                         "space character in header name: %R", value);
             return 0;
         }
         s++;
@@ -173,8 +175,9 @@ int wsgi_validate_header_value(PyObject *value)
     {
         if (*s == '\r' || *s == '\n')
         {
-            PyErr_SetString(PyExc_ValueError, "carriage return/line "
-                                              "feed character present in header value");
+            PyErr_Format(PyExc_ValueError, "carriage return/line feed "
+                                           "character in header value: %R",
+                         value);
             return 0;
         }
         s++;

@@ -30,8 +30,7 @@ PyObject *wsgi_convert_string_to_bytes(PyObject *value)
 
     if (!PyUnicode_Check(value))
     {
-        PyErr_Format(PyExc_TypeError, "expected unicode object, value "
-                                      "of type %.200s found",
+        PyErr_Format(PyExc_TypeError, "must be str, not %.200s",
                      Py_TYPE(value)->tp_name);
         return NULL;
     }
@@ -75,8 +74,7 @@ PyObject *wsgi_convert_headers_to_bytes(PyObject *headers)
 
     if (!PyList_Check(headers))
     {
-        PyErr_Format(PyExc_TypeError, "expected list object for headers, "
-                                      "value of type %.200s found",
+        PyErr_Format(PyExc_TypeError, "headers must be a list, not %.200s",
                      Py_TYPE(headers)->tp_name);
         return NULL;
     }
@@ -103,8 +101,8 @@ PyObject *wsgi_convert_headers_to_bytes(PyObject *headers)
 
         if (!PyTuple_Check(header))
         {
-            PyErr_Format(PyExc_TypeError, "list of tuple values "
-                                          "expected for headers, value of type %.200s found",
+            PyErr_Format(PyExc_TypeError, "each header must be a 2-tuple, "
+                                          "not %.200s",
                          Py_TYPE(header)->tp_name);
             Py_DECREF(result);
             return NULL;
@@ -112,8 +110,8 @@ PyObject *wsgi_convert_headers_to_bytes(PyObject *headers)
 
         if (PyTuple_Size(header) != 2)
         {
-            PyErr_Format(PyExc_ValueError, "tuple of length 2 "
-                                           "expected for header, length is %zd",
+            PyErr_Format(PyExc_ValueError, "each header must be a 2-tuple, "
+                                           "got length %zd",
                          PyTuple_Size(header));
             Py_DECREF(result);
             return NULL;

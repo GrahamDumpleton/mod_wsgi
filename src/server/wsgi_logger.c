@@ -260,8 +260,9 @@ PyObject *newLogWrapperObject(PyObject *buffer)
     if (!object)
     {
         Py_DECREF(module);
-        PyErr_SetString(PyExc_NameError,
-                        "name 'TextIOWrapper' is not defined");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "mod_wsgi could not obtain io.TextIOWrapper for "
+                        "wsgi.errors");
         return NULL;
     }
 
@@ -350,7 +351,9 @@ static PyObject *Log_flush(LogObject *self, PyObject *args)
 
     if (self->expired && self->s)
     {
-        PyErr_SetString(PyExc_RuntimeError, "log object has expired");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "flush() called on wsgi.errors after request "
+                        "completed");
         return NULL;
     }
 
@@ -556,7 +559,9 @@ static PyObject *Log_write(LogObject *self, PyObject *args)
 
     if (self->expired)
     {
-        PyErr_SetString(PyExc_RuntimeError, "log object has expired");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "write() called on wsgi.errors after request "
+                        "completed");
         return NULL;
     }
 
@@ -586,7 +591,9 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
 
     if (self->expired)
     {
-        PyErr_SetString(PyExc_RuntimeError, "log object has expired");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "writelines() called on wsgi.errors after request "
+                        "completed");
         return NULL;
     }
 
@@ -598,7 +605,7 @@ static PyObject *Log_writelines(LogObject *self, PyObject *args)
     if (iterator == NULL)
     {
         wsgi_set_python_exception_from_cause(PyExc_TypeError,
-                                             "argument must be sequence of strings");
+                                             "writelines() argument must be an iterable of str");
 
         return NULL;
     }
@@ -666,8 +673,8 @@ static PyObject *Log_writable(LogObject *self, PyObject *Py_UNUSED(args))
 
 static PyObject *Log_fileno(LogObject *self, PyObject *Py_UNUSED(args))
 {
-    PyErr_SetString(PyExc_OSError, "Apache/mod_wsgi log object is not "
-                                   "associated with a file descriptor.");
+    PyErr_SetString(PyExc_OSError, "wsgi.errors log object has no file "
+                                   "descriptor");
 
     return NULL;
 }

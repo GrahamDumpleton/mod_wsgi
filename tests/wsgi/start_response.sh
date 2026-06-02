@@ -20,7 +20,7 @@ assert_body_equals "$URL/write-before-return" "pre-mid-post1-post2" \
 # ----- Non-tuple exc_info -----
 
 assert_body_equals "$URL/non-tuple-exc-info" \
-    "got:exception info must be a tuple" \
+    "got:start_response() argument 'exc_info' must be a 3-tuple or None" \
     "non-tuple exc_info raises RuntimeError"
 
 # ----- exc_info after headers sent -----
@@ -74,29 +74,29 @@ assert_header_equals "$URL/double-no-exc-before-headers" \
 # ----- Double start_response without exc_info, after output -----
 
 assert_body_equals "$URL/double-no-exc-after-headers" \
-    "pre-err:headers have already been sent" \
+    "pre-err:start_response() called more than once without exc_info" \
     "second start_response without exc_info after output raises RuntimeError"
 
 # ----- Invalid status lines -----
 
 assert_body_equals "$URL/invalid-status?case=no-digits" \
-    "ValueError:status code is not a 3 digit integer;end" \
+    "ValueError:status code must be a 3 digit integer: b'OK';end" \
     "status line without any leading digits is rejected"
 
 assert_body_equals "$URL/invalid-status?case=mixed" \
-    "ValueError:status code is not a 3 digit integer;end" \
+    "ValueError:status code must be a 3 digit integer: b'20X OK';end" \
     "status line with a non-digit in the code is rejected"
 
 assert_body_equals "$URL/invalid-status?case=four-digits" \
-    "ValueError:status code is not a 3 digit integer;end" \
+    "ValueError:status code must be a 3 digit integer: b'2000 OK';end" \
     "status line with a 4-digit code is rejected"
 
 assert_body_equals "$URL/invalid-status?case=no-space" \
-    "ValueError:no space following status code;end" \
+    "ValueError:no space following status code: b'200OK';end" \
     "status line without a space after the 3-digit code is rejected"
 
 assert_body_equals "$URL/invalid-status?case=control-char" \
-    "ValueError:control character present in reason phrase;end" \
+    "ValueError:control character in status reason phrase: b'200 OK\r\nX-Injected: yes';end" \
     "status line with embedded CR/LF is rejected (prevents header injection)"
 
 # ----- Invalid header entries -----
@@ -106,23 +106,23 @@ assert_body_equals "$URL/invalid-header?case=empty-name" \
     "empty header name is rejected"
 
 assert_body_equals "$URL/invalid-header?case=space-name" \
-    "ValueError:space character present in header name;end" \
+    "ValueError:space character in header name: b'X Foo';end" \
     "header name containing a space is rejected"
 
 assert_body_equals "$URL/invalid-header?case=control-name" \
-    "ValueError:control character present in header name;end" \
+    "ValueError:control character in header name: b'X\tFoo';end" \
     "header name containing a control character (tab) is rejected"
 
 assert_body_equals "$URL/invalid-header?case=cr-value" \
-    "ValueError:carriage return/line feed character present in header value;end" \
+    "ValueError:carriage return/line feed character in header value: b'line1\r\nline2';end" \
     "header value containing CR is rejected (prevents header injection)"
 
 assert_body_equals "$URL/invalid-header?case=lf-value" \
-    "ValueError:carriage return/line feed character present in header value;end" \
+    "ValueError:carriage return/line feed character in header value: b'line1\nline2';end" \
     "header value containing LF is rejected (prevents header injection)"
 
 assert_body_equals "$URL/invalid-header?case=non-string-name" \
-    "TypeError:expected unicode object, value of type int found;end" \
+    "TypeError:must be str, not int;end" \
     "non-string header name is rejected with TypeError"
 
 assert_body_equals "$URL/invalid-header?case=non-latin1-value" \
@@ -130,11 +130,11 @@ assert_body_equals "$URL/invalid-header?case=non-latin1-value" \
     "header value with non-latin1 characters is rejected"
 
 assert_body_equals "$URL/invalid-header?case=not-a-tuple" \
-    "TypeError:list of tuple values expected for headers, value of type str found;end" \
+    "TypeError:each header must be a 2-tuple, not str;end" \
     "header list item that is not a tuple is rejected"
 
 assert_body_equals "$URL/invalid-header?case=wrong-tuple-size" \
-    "ValueError:tuple of length 2 expected for header, length is 3;end" \
+    "ValueError:each header must be a 2-tuple, got length 3;end" \
     "header tuple with more than two entries is rejected"
 
 # ----- Invalid types for the headers argument itself -----
