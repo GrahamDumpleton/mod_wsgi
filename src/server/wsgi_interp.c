@@ -2220,7 +2220,7 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
                                wsgi_server->process->pool));
 
 #if !defined(WIN32)
-            rv = apr_stat(&finfo, python_home, APR_FINFO_NORM, p);
+            rv = apr_stat(&finfo, python_home, APR_FINFO_TYPE, p);
 
             if (rv != APR_SUCCESS)
             {
