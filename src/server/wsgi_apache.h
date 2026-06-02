@@ -76,6 +76,27 @@ APR_DECLARE_OPTIONAL_FN(char *, ssl_var_lookup, (apr_pool_t *, server_rec *, con
 #include "util_md5.h"
 #include "scoreboard.h"
 
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Whether mod_wsgi is built with support for separate daemon processes
+ * (WSGIDaemonProcess). This requires fork() and APR other-child support
+ * and is never available on Windows.
+ *
+ * Defined here in the common Apache header, rather than in the daemon
+ * specific wsgi_daemon.h, so that every translation unit which
+ * conditionally compiles daemon mode code sees a consistent value
+ * without having to include the daemon API header. When this is not
+ * visible the guarded code is silently compiled out rather than failing
+ * to build.
+ */
+
+#ifndef WIN32
+#if APR_HAS_OTHER_CHILD && APR_HAS_FORK
+#define MOD_WSGI_WITH_DAEMONS 1
+#endif
+#endif
+
 APLOG_USE_MODULE(wsgi);
 
 #if defined(WIN32) && defined(APR_HAS_UNICODE_FS)

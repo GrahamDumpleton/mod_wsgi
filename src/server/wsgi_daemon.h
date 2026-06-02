@@ -29,12 +29,6 @@
 
 extern char *wsgi_shutdown_reason;
 
-#ifndef WIN32
-#if APR_HAS_OTHER_CHILD && APR_HAS_FORK
-#define MOD_WSGI_WITH_DAEMONS 1
-#endif
-#endif
-
 /*
  * Apache 2.X and UNIX specific definitions related to
  * distinct daemon processes.

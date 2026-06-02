@@ -35,3 +35,17 @@ Bugs Fixed
   that variable is only declared when daemon mode is available, which is
   never the case on Windows. The reference is now protected by the
   appropriate conditional.
+
+* When using daemon mode, output written to ``wsgi.errors`` (and anything
+  sent to ``sys.stdout`` or ``sys.stderr``) could be written to the main
+  server ``ErrorLog`` instead of the ``ErrorLog`` of the ``VirtualHost``
+  actually handling the request. The daemon process maps each proxied
+  request back to the correct server using listener address details
+  supplied by the Apache child worker, but the code which populated those
+  details was guarded by ``MOD_WSGI_WITH_DAEMONS``, and that symbol was not
+  defined in the relevant source file, so the guarded code was silently
+  compiled out and no listener details were sent. This was introduced by
+  the 6.0.0 code restructuring, which moved the definition of
+  ``MOD_WSGI_WITH_DAEMONS`` into a daemon specific header that the affected
+  source file did not include. The definition has been moved to a common
+  header visible to all source files.
