@@ -43,6 +43,18 @@ Bugs Fixed
   being included indirectly via the daemon mode header and so was missing
   when daemon mode was disabled; it is now included from a common header.
 
+* The telemetry reporter (``WSGITelemetryService`` and the related
+  ``WSGISlowRequests`` and ``WSGITelemetryOptions`` directives) delivers
+  its datagrams over an ``AF_UNIX`` datagram socket, which is not available
+  on Windows, so its implementation failed to compile there. The reporter
+  is now gated behind a new ``MOD_WSGI_WITH_TELEMETRY`` build conditional,
+  defined only when not building for Windows, and the relevant call sites
+  are guarded with it. As a result the telemetry directives are no longer
+  registered on Windows and using one is reported as an unknown directive,
+  matching how the daemon mode directives already behave on that platform.
+  The platform neutral telemetry wire format definitions remain available
+  everywhere, as the in process metrics accounting depends on them.
+
 * When using daemon mode, output written to ``wsgi.errors`` (and anything
   sent to ``sys.stdout`` or ``sys.stderr``) could be written to the main
   server ``ErrorLog`` instead of the ``ErrorLog`` of the ``VirtualHost``

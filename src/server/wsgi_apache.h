@@ -98,6 +98,27 @@ APR_DECLARE_OPTIONAL_FN(char *, ssl_var_lookup, (apr_pool_t *, server_rec *, con
 #endif
 #endif
 
+/*
+ * Whether mod_wsgi is built with support for the telemetry reporter
+ * (WSGITelemetryService and related directives). The reporter delivers
+ * its datagrams over an AF_UNIX SOCK_DGRAM socket, which is not available
+ * on Windows, so the feature is never built there.
+ *
+ * Defined here in the common Apache header, alongside MOD_WSGI_WITH_DAEMONS
+ * and for the same reason, so that every translation unit which
+ * conditionally compiles telemetry code sees a consistent value without
+ * having to include the telemetry API header. When this is not defined the
+ * guarded code is silently compiled out rather than failing to build.
+ *
+ * Note that the wire format definitions in wsgi_telemetry.h are platform
+ * neutral and remain available regardless, as the always-compiled metrics
+ * accounting in wsgi_metrics.c depends on them.
+ */
+
+#ifndef WIN32
+#define MOD_WSGI_WITH_TELEMETRY 1
+#endif
+
 APLOG_USE_MODULE(wsgi);
 
 #if defined(WIN32) && defined(APR_HAS_UNICODE_FS)

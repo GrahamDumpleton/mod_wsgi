@@ -3290,9 +3290,11 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     }
 #else
     wsgi_publish_process_stopping(wsgi_shutdown_reason);
+#if defined(MOD_WSGI_WITH_TELEMETRY)
     wsgi_telemetry_emit_process_stopping(wsgi_shutdown_reason);
     wsgi_telemetry_pause_reporter();
     wsgi_telemetry_emit_final_tick(wsgi_shutdown_reason);
+#endif
 #endif
 
     /* Skip destruction of Python interpreter. */

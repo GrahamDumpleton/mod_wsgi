@@ -274,10 +274,13 @@ int wsgi_gc_init_state(PyObject *module)
      * Skip when telemetry is disabled. tier-1 reads and tier-2
      * events only feed the external reporter; without it the
      * gc.callbacks entry would run on every collection in every
-     * interpreter for no consumer.
+     * interpreter for no consumer. When telemetry is not built at all
+     * there is never a consumer, so the hooks are always skipped.
      */
 
+#if defined(MOD_WSGI_WITH_TELEMETRY)
     if (!wsgi_telemetry_is_enabled())
+#endif
     {
         mstate->gc = NULL;
         return 0;

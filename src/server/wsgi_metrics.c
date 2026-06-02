@@ -135,7 +135,9 @@ static double wsgi_utilization_time_locked(int adjustment,
 #define WSGI_SLOW_RING_SAFETY 5
 
 apr_time_t wsgi_slow_threshold_us = 0;
+#if defined(MOD_WSGI_WITH_TELEMETRY)
 extern double wsgi_telemetry_interval;
+#endif
 
 /*
  * Forward declarations; implementations live after wsgi_metrics_snapshot.
@@ -1357,6 +1359,7 @@ static void wsgi_slow_ring_ensure_locked(void)
      * prevent pathological sizing when WSGISlowRequests is set very low.
      */
 
+#if defined(MOD_WSGI_WITH_TELEMETRY)
     if (wsgi_slow_threshold_us > 0)
     {
         double tick_s = wsgi_telemetry_interval > 0
@@ -1376,6 +1379,7 @@ static void wsgi_slow_ring_ensure_locked(void)
                 ring = WSGI_SLOW_RING_CAP;
         }
     }
+#endif
     wsgi_process_metrics->slow_completed_ring = (wsgi_slow_request_t *)apr_pcalloc(
         wsgi_server_config->pool, ring * sizeof(*wsgi_process_metrics->slow_completed_ring));
     wsgi_process_metrics->slow_completed_ring_size = ring;
@@ -1609,6 +1613,7 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
      * header is reachable only via subprocess_env.
      */
 
+#if defined(MOD_WSGI_WITH_TELEMETRY)
     if (wsgi_telemetry_options & WSGI_TELEMETRY_OPT_CAPTURE_USER_AGENT)
     {
         const char *ua = NULL;
@@ -1619,6 +1624,7 @@ static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r)
         wsgi_slow_copy_str(rec->user_agent, sizeof(rec->user_agent),
                            ua ? ua : "");
     }
+#endif
 }
 
 /*
@@ -2043,8 +2049,10 @@ static PyObject *wsgi_request_metrics(void)
      * detect the configured mode by checking for None.
      */
 
+#if defined(MOD_WSGI_WITH_TELEMETRY)
     if (wsgi_telemetry_is_enabled())
         Py_RETURN_NONE;
+#endif
 
     /*
      * Per-request recording must be opted in via
@@ -2728,8 +2736,10 @@ static PyObject *wsgi_process_metrics_dict(void)
      * detect the configured mode by checking for None.
      */
 
+#if defined(MOD_WSGI_WITH_TELEMETRY)
     if (wsgi_telemetry_is_enabled())
         Py_RETURN_NONE;
+#endif
 
     /*
      * Per-request recording must be opted in via

@@ -1035,9 +1035,11 @@ static void wsgi_hook_child_init(apr_pool_t *p, server_rec *s)
      * start until Python has been initialised in this child.
      */
 
+#if defined(MOD_WSGI_WITH_TELEMETRY)
     if (wsgi_server_config->restrict_embedded != 1 &&
         wsgi_python_initialized)
         wsgi_telemetry_start_reporter(p);
+#endif
 }
 
 APR_OPTIONAL_FN_TYPE(ap_logio_add_bytes_out) * wsgi_logio_add_bytes_out;
@@ -1230,6 +1232,7 @@ static const command_rec wsgi_commands[] =
         AP_INIT_TAKE1("WSGIServerMetrics", wsgi_set_server_metrics,
                       NULL, RSRC_CONF, "Enabled/Disable access to server metrics."),
 
+#if defined(MOD_WSGI_WITH_TELEMETRY)
         AP_INIT_TAKE12("WSGITelemetryService", wsgi_set_telemetry_service,
                        NULL, RSRC_CONF, "Push telemetry to a metrics service. "
                                         "Args: unix:/path [interval=N]"),
@@ -1241,6 +1244,7 @@ static const command_rec wsgi_commands[] =
                          "Toggle metrics capture options. "
                          "Args: [+|-]Flag... | None | All. "
                          "Flags: CaptureUserAgent."),
+#endif
 
         {NULL}};
 
