@@ -793,6 +793,20 @@ static int wsgi_hook_handler(request_rec *r)
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
+    /*
+     * Embedded execution needs a Python interpreter in this child. If
+     * one was never initialised (or initialisation failed), the
+     * per-thread state used by wsgi_execute_script() does not exist and
+     * running it would crash the process, so refuse the request.
+     */
+
+    if (!wsgi_python_initialized)
+    {
+        wsgi_log_rerror(APLOG_ERR, 0, r, WSGI_APLOGNO(0210) "Embedded mode of mod_wsgi cannot be used as Python "
+                                                            "was not initialised in this process.");
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
     return wsgi_execute_script(r);
 }
 
