@@ -285,6 +285,74 @@ mode and delegate applications requiring different settings to different
 daemon process groups. Alternatively, completely different instances of
 Apache should be used.
 
+Timezones and the Apache Error Log
+----------------------------------
+
+A related, but more visible, consequence of the timezone issue described
+above shows up in the Apache error log itself rather than in application
+behaviour.
+
+Apache prefixes each line it writes to the error log with a timestamp.
+That timestamp is formatted by the process which emits the line, using
+that process's current timezone as determined by the ``TZ`` environment
+variable. The Apache parent process and the child worker processes
+normally retain the system timezone, but a WSGI application is able to
+change the timezone of the mod_wsgi daemon process it runs in.
+
+The most common way this happens is Django. When ``TIME_ZONE`` is set in a
+Django project's settings, Django assigns ``os.environ["TZ"]`` and then
+calls ``time.tzset()``. Because ``tzset()`` acts on the whole process, the
+daemon process from that point on formats all of its log line timestamps,
+both those written by Apache for that process and those written by the
+application's own logging, in the application's timezone.
+
+When the daemon process and the rest of Apache write to a single shared
+error log, the leading timestamps appear to jump backwards and forwards
+between the two timezones depending on which process emitted each line.
+For example, lines emitted by the daemon process for a Django site
+configured with ``TIME_ZONE = "UTC"`` are stamped an hour earlier than
+adjacent ``ssl:info`` lines emitted by an Apache child process on a host
+running in ``Europe/Berlin``::
+
+    21:33:00 ... [wsgi:error] ... (daemon process, application TZ=UTC)
+    22:33:05 ... [ssl:info]  ... (Apache child process, system TZ)
+
+This is confusing to read but is not in itself a malfunction. The
+underlying events occur at the same real instant; only the timezone used
+to format them differs. The behaviour is independent of which Apache MPM
+is in use, since it derives from the daemon process having a different
+process-wide ``TZ`` value than the rest of Apache, not from threading.
+
+The simplest way to make the log readable again is to give each
+VirtualHost that hosts a WSGI application its own error log, so the lines
+written by its daemon process group are separated out and consistently
+stamped in the application's timezone::
+
+    <VirtualHost *:443>
+        ServerName www.example.com
+
+        ErrorLog /var/log/apache2/www.example.com-error.log
+
+        WSGIDaemonProcess www.example.com
+        WSGIProcessGroup www.example.com
+        ...
+    </VirtualHost>
+
+Note that this only separates log lines by process, not by sub
+interpreter. If a single daemon process hosts multiple sub interpreters
+that set different timezones, the process-global ``TZ`` value is shared
+and the last sub interpreter to initialise wins, exactly as described in
+the previous section. A per-VirtualHost error log cannot disentangle that
+case; the only robust solution remains delegating applications that
+require different timezones to separate daemon process groups.
+
+Alternatively, if all hosted applications can agree on a single timezone,
+set ``TZ`` in the environment that Apache is started from, for example in
+the Apache ``envvars`` file or the systemd unit for the service, and
+configure each application to use that same timezone. When the parent,
+child worker and daemon processes all start with, and keep, the same
+timezone, the error log timestamps remain consistent.
+
 User HOME Environment Variable
 ------------------------------
 
