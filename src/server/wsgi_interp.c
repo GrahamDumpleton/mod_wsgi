@@ -3456,8 +3456,10 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
              * we have already been flagged to be shutdown.
              */
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
             if (wsgi_daemon_shutdown)
                 break;
+#endif
 
             if (!strcmp(wsgi_daemon_group, entry->process_group))
             {

@@ -28,3 +28,10 @@ Bugs Fixed
   being updated to the buffer protocol. It now accepts any bytes-like
   object. For backward compatibility a ``str`` is still accepted, but
   doing so is now deprecated and will emit a ``DeprecationWarning``.
+
+* Compilation failed on Windows with ``error C2065: 'wsgi_daemon_shutdown':
+  undefined variable``. The script preload loop referenced the daemon
+  shutdown flag without guarding it with ``MOD_WSGI_WITH_DAEMONS``, but
+  that variable is only declared when daemon mode is available, which is
+  never the case on Windows. The reference is now protected by the
+  appropriate conditional.
