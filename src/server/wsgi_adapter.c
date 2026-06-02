@@ -164,7 +164,8 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 
     if (!self->r)
     {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "start_response() called after request completed");
         return NULL;
     }
 
@@ -176,7 +177,9 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 
     if (exc_info != Py_None && !PyTuple_Check(exc_info))
     {
-        PyErr_SetString(PyExc_RuntimeError, "exception info must be a tuple");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "start_response() argument 'exc_info' must be a "
+                        "3-tuple or None");
         return NULL;
     }
 
@@ -205,7 +208,9 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
     }
     else if (self->status_line && !self->headers)
     {
-        PyErr_SetString(PyExc_RuntimeError, "headers have already been sent");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "start_response() called more than once without "
+                        "exc_info");
         return NULL;
     }
 
@@ -317,7 +322,9 @@ static int Adapter_output(AdapterObject *self, const char *data,
 
     if (!self->status_line)
     {
-        PyErr_SetString(PyExc_RuntimeError, "response has not been started");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "start_response() must be called before response "
+                        "content is produced");
         return 0;
     }
 
@@ -387,8 +394,9 @@ static int Adapter_output(AdapterObject *self, const char *data,
                 if (wsgi_strtoff(&length, value, &endstr, 10) || *endstr || length < 0)
                 {
 
-                    PyErr_SetString(PyExc_ValueError,
-                                    "invalid content length");
+                    PyErr_Format(PyExc_ValueError,
+                                 "invalid Content-Length header value: '%s'",
+                                 value);
 
                     /* No I/O has happened yet on this code path, so
                      * nothing to fold into output_time. */
@@ -484,8 +492,8 @@ static int Adapter_output(AdapterObject *self, const char *data,
                                        "Client closed connection.");
             }
             else
-                PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client "
-                                               "connection closed.");
+                PyErr_SetString(PyExc_IOError, "mod_wsgi client "
+                                               "connection closed");
 
             /* No I/O has happened yet on this code path, so nothing
              * to fold into output_time. */
@@ -543,7 +551,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
             }
             else
             {
-                error_message = apr_psprintf(r->pool, "Apache/mod_wsgi "
+                error_message = apr_psprintf(r->pool, "mod_wsgi "
                                                       "failed to write response data: %s",
                                              apr_strerror(rv, status_buffer,
                                                           sizeof(status_buffer) - 1));
@@ -584,8 +592,8 @@ static int Adapter_output(AdapterObject *self, const char *data,
                                    "Client closed connection.");
         }
         else
-            PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client "
-                                           "connection closed.");
+            PyErr_SetString(PyExc_IOError, "mod_wsgi client "
+                                           "connection closed");
 
         return 0;
     }
@@ -619,8 +627,8 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
 
     if (r->connection->aborted)
     {
-        PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client "
-                                       "connection closed.");
+        PyErr_SetString(PyExc_IOError, "mod_wsgi client "
+                                       "connection closed");
         return 0;
     }
 
@@ -636,8 +644,8 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
         char status_buffer[512];
         const char *error_message;
 
-        error_message = apr_psprintf(r->pool, "Apache/mod_wsgi failed "
-                                              "to duplicate file handle: %s.",
+        error_message = apr_psprintf(r->pool, "mod_wsgi failed "
+                                              "to duplicate file handle: %s",
                                      apr_strerror(rv, status_buffer,
                                                   sizeof(status_buffer) - 1));
 
@@ -711,8 +719,8 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
         char status_buffer[512];
         const char *error_message;
 
-        error_message = apr_psprintf(r->pool, "Apache/mod_wsgi failed "
-                                              "to write response data: %s.",
+        error_message = apr_psprintf(r->pool, "mod_wsgi failed "
+                                              "to write response data: %s",
                                      apr_strerror(rv,
                                                   status_buffer, sizeof(status_buffer) - 1));
 
@@ -730,8 +738,8 @@ static int Adapter_output_file(AdapterObject *self, apr_file_t *tmpfile,
 
     if (r->connection->aborted)
     {
-        PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi client connection "
-                                       "closed.");
+        PyErr_SetString(PyExc_IOError, "mod_wsgi client connection "
+                                       "closed");
         return 0;
     }
 
@@ -1495,9 +1503,9 @@ int Adapter_run(AdapterObject *self, PyObject *object)
                 {
                     if (!PyBytes_Check(item))
                     {
-                        PyErr_Format(PyExc_TypeError, "sequence of byte "
-                                                      "string values expected, value of "
-                                                      "type %.200s found",
+                        PyErr_Format(PyExc_TypeError, "response iterable "
+                                                      "must yield bytes, not "
+                                                      "%.200s",
                                      item->ob_type->tp_name);
                         Py_DECREF(item);
                         break;
@@ -2081,7 +2089,8 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
 
     if (!self->r)
     {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "write() called after request completed");
         return NULL;
     }
 
@@ -2090,8 +2099,8 @@ static PyObject *Adapter_write(AdapterObject *self, PyObject *args)
 
     if (!PyBytes_Check(item))
     {
-        PyErr_Format(PyExc_TypeError, "byte string value expected, value "
-                                      "of type %.200s found",
+        PyErr_Format(PyExc_TypeError, "write() argument must be bytes, "
+                                      "not %.200s",
                      item->ob_type->tp_name);
         return NULL;
     }
@@ -2113,7 +2122,8 @@ static PyObject *Adapter_ssl_is_https(AdapterObject *self, PyObject *args)
 
     if (!self->r)
     {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "ssl_is_https() called after request completed");
         return NULL;
     }
 
@@ -2140,7 +2150,8 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
 
     if (!self->r)
     {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "ssl_var_lookup() called after request completed");
         return NULL;
     }
 
@@ -2153,8 +2164,8 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
         if (!latin_item)
         {
             wsgi_set_python_exception_from_cause(PyExc_TypeError,
-                                                 "byte string value expected, value containing non "
-                                                 "'latin-1' characters found");
+                                                 "ssl_var_lookup() argument must be bytes or a "
+                                                 "latin-1 str");
 
             return NULL;
         }
@@ -2164,8 +2175,8 @@ static PyObject *Adapter_ssl_var_lookup(AdapterObject *self, PyObject *args)
 
     if (!PyBytes_Check(item))
     {
-        PyErr_Format(PyExc_TypeError, "byte string value expected, value "
-                                      "of type %.200s found",
+        PyErr_Format(PyExc_TypeError, "ssl_var_lookup() argument must be "
+                                      "bytes, not %.200s",
                      item->ob_type->tp_name);
 
         Py_XDECREF(latin_item);

@@ -50,6 +50,7 @@
 #endif
 
 #include "apr_lib.h"
+#include "apr_atomic.h"
 #include "ap_mpm.h"
 #include "ap_compat.h"
 #include "apr_tables.h"
@@ -75,6 +76,48 @@ APR_DECLARE_OPTIONAL_FN(char *, ssl_var_lookup, (apr_pool_t *, server_rec *, con
 #include "util_script.h"
 #include "util_md5.h"
 #include "scoreboard.h"
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Whether mod_wsgi is built with support for separate daemon processes
+ * (WSGIDaemonProcess). This requires fork() and APR other-child support
+ * and is never available on Windows.
+ *
+ * Defined here in the common Apache header, rather than in the daemon
+ * specific wsgi_daemon.h, so that every translation unit which
+ * conditionally compiles daemon mode code sees a consistent value
+ * without having to include the daemon API header. When this is not
+ * visible the guarded code is silently compiled out rather than failing
+ * to build.
+ */
+
+#ifndef WIN32
+#if APR_HAS_OTHER_CHILD && APR_HAS_FORK
+#define MOD_WSGI_WITH_DAEMONS 1
+#endif
+#endif
+
+/*
+ * Whether mod_wsgi is built with support for the telemetry reporter
+ * (WSGITelemetryService and related directives). The reporter delivers
+ * its datagrams over an AF_UNIX SOCK_DGRAM socket, which is not available
+ * on Windows, so the feature is never built there.
+ *
+ * Defined here in the common Apache header, alongside MOD_WSGI_WITH_DAEMONS
+ * and for the same reason, so that every translation unit which
+ * conditionally compiles telemetry code sees a consistent value without
+ * having to include the telemetry API header. When this is not defined the
+ * guarded code is silently compiled out rather than failing to build.
+ *
+ * Note that the wire format definitions in wsgi_telemetry.h are platform
+ * neutral and remain available regardless, as the always-compiled metrics
+ * accounting in wsgi_metrics.c depends on them.
+ */
+
+#ifndef WIN32
+#define MOD_WSGI_WITH_TELEMETRY 1
+#endif
 
 APLOG_USE_MODULE(wsgi);
 

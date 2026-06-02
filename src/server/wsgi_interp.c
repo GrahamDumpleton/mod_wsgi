@@ -2220,7 +2220,7 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
                                wsgi_server->process->pool));
 
 #if !defined(WIN32)
-            rv = apr_stat(&finfo, python_home, APR_FINFO_NORM, p);
+            rv = apr_stat(&finfo, python_home, APR_FINFO_TYPE, p);
 
             if (rv != APR_SUCCESS)
             {
@@ -2415,8 +2415,12 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
          * from daemon->group->switch_interval after wsgi_python_child_init
          * (see wsgi_daemon.c) — applying the server-config value here
          * would shadow that and emit a redundant INFO log line. */
+#if defined(MOD_WSGI_WITH_DAEMONS)
         if (wsgi_daemon_process == NULL &&
             wsgi_server_config->switch_interval > 0.0)
+#else
+        if (wsgi_server_config->switch_interval > 0.0)
+#endif
         {
             if (wsgi_free_threading_active)
             {
@@ -3286,9 +3290,11 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     }
 #else
     wsgi_publish_process_stopping(wsgi_shutdown_reason);
+#if defined(MOD_WSGI_WITH_TELEMETRY)
     wsgi_telemetry_emit_process_stopping(wsgi_shutdown_reason);
     wsgi_telemetry_pause_reporter();
     wsgi_telemetry_emit_final_tick(wsgi_shutdown_reason);
+#endif
 #endif
 
     /* Skip destruction of Python interpreter. */
@@ -3456,8 +3462,10 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
              * we have already been flagged to be shutdown.
              */
 
+#if defined(MOD_WSGI_WITH_DAEMONS)
             if (wsgi_daemon_shutdown)
                 break;
+#endif
 
             if (!strcmp(wsgi_daemon_group, entry->process_group))
             {

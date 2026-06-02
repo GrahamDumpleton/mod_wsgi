@@ -28,6 +28,19 @@ Endpoints:
   /test/wsgi/logging/wsgi-errors-writelines
     Calls wsgi.errors.writelines() with a list of pre-terminated
     lines. PEP 3333 requires wsgi.errors to support writelines().
+
+  /test/wsgi/logging/wsgi-errors-buffer
+    Writes bytes, bytearray and memoryview objects to the underlying
+    binary stream wsgi.errors.buffer. The memoryview case is the
+    regression from issue #863, where it raised TypeError because the
+    binary write() only accepted read-only bytes-like objects without a
+    releasebuffer slot.
+
+  /test/wsgi/logging/wsgi-errors-buffer-writelines
+    Calls writelines() on the binary stream wsgi.errors.buffer with an
+    iterable of mixed bytes-like objects. Unlike writelines() on
+    wsgi.errors (which is the io.TextIOWrapper), this exercises the
+    mod_wsgi.Log.writelines() C implementation directly.
 """
 
 import sys
@@ -50,6 +63,10 @@ def application(environ, start_response):
         return handle_flush(environ, start_response)
     elif path == "/wsgi-errors-writelines":
         return handle_wsgi_errors_writelines(environ, start_response)
+    elif path == "/wsgi-errors-buffer":
+        return handle_wsgi_errors_buffer(environ, start_response)
+    elif path == "/wsgi-errors-buffer-writelines":
+        return handle_wsgi_errors_buffer_writelines(environ, start_response)
     else:
         start_response("404 Not Found", [("Content-Type", "text/plain")])
         return [b"Unknown test path"]
@@ -117,3 +134,34 @@ def handle_wsgi_errors_writelines(environ, start_response):
 
     start_response("200 OK", [("Content-Type", "text/plain")])
     return [b"writelines done"]
+
+
+def handle_wsgi_errors_buffer(environ, start_response):
+    # wsgi.errors is an io.TextIOWrapper; its .buffer attribute is the
+    # underlying binary stream. It must accept any bytes-like object.
+    # The memoryview case is the issue #863 regression.
+    buffer = environ["wsgi.errors"].buffer
+    buffer.write(b"MARKER_BUFFER_BYTES_44444\n")
+    buffer.write(bytearray(b"MARKER_BUFFER_BYTEARRAY_44444\n"))
+    buffer.write(memoryview(b"MARKER_BUFFER_MEMORYVIEW_44444\n"))
+    buffer.flush()
+
+    start_response("200 OK", [("Content-Type", "text/plain")])
+    return [b"buffer done"]
+
+
+def handle_wsgi_errors_buffer_writelines(environ, start_response):
+    # writelines() on the binary .buffer goes through the
+    # mod_wsgi.Log.writelines() C implementation, not the
+    # io.TextIOWrapper one. Each element must be a bytes-like object;
+    # here we mix bytes, bytearray and memoryview.
+    buffer = environ["wsgi.errors"].buffer
+    buffer.writelines([
+        b"MARKER_BUFFER_WL_BYTES_55555\n",
+        bytearray(b"MARKER_BUFFER_WL_BYTEARRAY_55555\n"),
+        memoryview(b"MARKER_BUFFER_WL_MEMORYVIEW_55555\n"),
+    ])
+    buffer.flush()
+
+    start_response("200 OK", [("Content-Type", "text/plain")])
+    return [b"buffer writelines done"]

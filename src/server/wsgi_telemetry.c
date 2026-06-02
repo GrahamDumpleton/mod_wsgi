@@ -46,6 +46,16 @@
 #include "wsgi_interp.h"
 #include "wsgi_gc.h"
 
+/*
+ * The telemetry reporter relies on AF_UNIX datagram sockets and so is
+ * never built on Windows. When MOD_WSGI_WITH_TELEMETRY is not defined the
+ * entire implementation below is compiled out; callers guard their use
+ * of the public API with the same macro. The platform neutral wire
+ * format in wsgi_telemetry.h remains available either way.
+ */
+
+#if defined(MOD_WSGI_WITH_TELEMETRY)
+
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -1657,6 +1667,8 @@ void wsgi_telemetry_emit_final_tick(const char *reason)
     }
     wsgi_telemetry_ctx_ready = 0;
 }
+
+#endif /* MOD_WSGI_WITH_TELEMETRY */
 
 /* ------------------------------------------------------------------------- */
 

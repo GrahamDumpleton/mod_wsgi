@@ -4642,22 +4642,62 @@ int wsgi_hook_daemon_handler(conn_rec *c)
     r->useragent_addr = c->client_addr;
     r->useragent_ip = c->client_ip;
 
-    key = apr_psprintf(p, "%s|%s",
-                       apr_table_get(r->subprocess_env,
-                                     "mod_wsgi.listener_host"),
-                       apr_table_get(r->subprocess_env,
-                                     "mod_wsgi.listener_port"));
+    /*
+     * Reconstruct the local socket address the original connection was
+     * accepted on in the Apache child worker, so that the virtual host
+     * matching below resolves to the same server, and therefore the
+     * same error log, as the Apache child worker resolved to. The
+     * genuine local IP the client connected to is carried across as
+     * SERVER_ADDR. It must be used in preference to the listener socket
+     * bind address, because when the Listen directive uses a wildcard
+     * the bind address is 0.0.0.0 (or ::) and would never match a
+     * VirtualHost specified by IP address.
+     */
 
-    wsgi_log_error(APLOG_TRACE1, 0, wsgi_server,
-                   "Server listener address '%s'.", key);
+    addr = NULL;
 
-    addr = (apr_sockaddr_t *)apr_hash_get(wsgi_daemon_listeners,
-                                          key, APR_HASH_KEY_STRING);
+    {
+        const char *local_ip;
+        const char *local_port;
 
-    wsgi_log_error(APLOG_TRACE1, 0, wsgi_server,
-                   "Server listener address '%s' was%s found in lookup "
-                   "table.",
-                   key, addr ? "" : " not");
+        local_ip = apr_table_get(r->subprocess_env, "SERVER_ADDR");
+        local_port = apr_table_get(r->subprocess_env,
+                                   "mod_wsgi.listener_port");
+
+        if (local_ip && *local_ip)
+        {
+            if (apr_sockaddr_info_get(&addr, local_ip, APR_UNSPEC,
+                                      local_port ? atoi(local_port) : 0,
+                                      0, p) != APR_SUCCESS)
+                addr = NULL;
+        }
+
+        wsgi_log_error(APLOG_TRACE1, 0, wsgi_server,
+                       "Server local address reconstructed as '%s|%s'.",
+                       local_ip ? local_ip : "",
+                       local_port ? local_port : "");
+
+        /*
+         * Fall back to the table of listener socket bind addresses,
+         * keyed on listener host and port, if the address could not be
+         * reconstructed from SERVER_ADDR.
+         */
+
+        if (!addr)
+        {
+            key = apr_psprintf(p, "%s|%s",
+                               apr_table_get(r->subprocess_env,
+                                             "mod_wsgi.listener_host"),
+                               local_port ? local_port : "");
+
+            addr = (apr_sockaddr_t *)apr_hash_get(wsgi_daemon_listeners,
+                                                  key, APR_HASH_KEY_STRING);
+
+            wsgi_log_error(APLOG_TRACE1, 0, wsgi_server,
+                           "Server listener address '%s' was%s found in "
+                           "lookup table.", key, addr ? "" : " not");
+        }
+    }
 
     if (addr)
     {

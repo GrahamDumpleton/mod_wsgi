@@ -138,7 +138,9 @@ static PyObject *Input_close(InputObject *self, PyObject *args)
 
     if (!self->r)
     {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "close() called on wsgi.input after request "
+                        "completed");
         return NULL;
     }
 
@@ -168,8 +170,8 @@ static apr_int64_t Input_read_from_input(InputObject *self, char *buffer,
 
     if (self->seen_error)
     {
-        PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi request data read "
-                                       "error: Input is already in error state.");
+        PyErr_SetString(PyExc_IOError, "mod_wsgi request data read "
+                                       "error: input is already in error state");
 
         return -1;
     }
@@ -294,8 +296,8 @@ finally:
     {
         char status_buffer[512];
 
-        error_message = apr_psprintf(r->pool, "Apache/mod_wsgi request "
-                                              "data read error: %s.",
+        error_message = apr_psprintf(r->pool, "mod_wsgi request "
+                                              "data read error: %s",
                                      apr_strerror(error_status,
                                                   status_buffer, sizeof(status_buffer) - 1));
 
@@ -307,8 +309,8 @@ finally:
     }
     else if (error_message)
     {
-        error_message = apr_psprintf(r->pool, "Apache/mod_wsgi request "
-                                              "data read error: %s.",
+        error_message = apr_psprintf(r->pool, "mod_wsgi request "
+                                              "data read error: %s",
                                      error_message);
 
         PyErr_SetString(PyExc_IOError, error_message);
@@ -339,7 +341,9 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
     if (!self->r)
     {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "read() called on wsgi.input after request "
+                        "completed");
         return NULL;
     }
 
@@ -363,8 +367,8 @@ static PyObject *Input_read(InputObject *self, PyObject *args)
 
     if (self->seen_error)
     {
-        PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi request data read "
-                                       "error: Input is already in error state.");
+        PyErr_SetString(PyExc_IOError, "mod_wsgi request data read "
+                                       "error: input is already in error state");
 
         return NULL;
     }
@@ -650,7 +654,9 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
 
     if (!self->r)
     {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "readline() called on wsgi.input after request "
+                        "completed");
         return NULL;
     }
 
@@ -659,8 +665,8 @@ static PyObject *Input_readline(InputObject *self, PyObject *args)
 
     if (self->seen_error)
     {
-        PyErr_SetString(PyExc_IOError, "Apache/mod_wsgi request data read "
-                                       "error: Input is already in error state.");
+        PyErr_SetString(PyExc_IOError, "mod_wsgi request data read "
+                                       "error: input is already in error state");
 
         return NULL;
     }
@@ -1004,7 +1010,9 @@ static PyObject *Input_readlines(InputObject *self, PyObject *args)
 
     if (!self->r)
     {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "readlines() called on wsgi.input after request "
+                        "completed");
         return NULL;
     }
 
@@ -1068,7 +1076,9 @@ static PyObject *Input_iter(InputObject *self)
 {
     if (!self->r)
     {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "iteration of wsgi.input attempted after request "
+                        "completed");
         return NULL;
     }
 
@@ -1083,7 +1093,9 @@ static PyObject *Input_iternext(InputObject *self)
 
     if (!self->r)
     {
-        PyErr_SetString(PyExc_RuntimeError, "request object has expired");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "iteration of wsgi.input attempted after request "
+                        "completed");
         return NULL;
     }
 

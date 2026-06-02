@@ -13,7 +13,7 @@ Covers:
     lets the second call replace the previously recorded status
     line and headers while nothing has reached the wire yet
   * a second start_response without exc_info after output: must
-    raise "headers have already been sent"
+    raise "start_response() called more than once without exc_info"
   * invalid status-line formats rejected by
     wsgi_validate_status_line (missing code, mixed digits, extra
     digit, missing space, embedded control character)

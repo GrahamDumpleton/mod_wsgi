@@ -87,3 +87,37 @@ assert_log_contains "MARKER_WRITELINES_B_33333" \
 
 assert_log_contains "MARKER_WRITELINES_C_33333" \
     "third line of writelines() appears in error log"
+
+# Test wsgi.errors.buffer binary writes with assorted bytes-like objects.
+# A non-200 here would mean the binary write() rejected one of them; the
+# memoryview case is the issue #863 regression.
+assert_status "$URL/wsgi-errors-buffer" "200" \
+    "wsgi.errors.buffer binary writes return 200"
+
+sleep 1
+
+assert_log_contains "MARKER_BUFFER_BYTES_44444" \
+    "bytes written to wsgi.errors.buffer appears in error log"
+
+assert_log_contains "MARKER_BUFFER_BYTEARRAY_44444" \
+    "bytearray written to wsgi.errors.buffer appears in error log"
+
+assert_log_contains "MARKER_BUFFER_MEMORYVIEW_44444" \
+    "memoryview written to wsgi.errors.buffer appears in error log"
+
+# Test wsgi.errors.buffer.writelines(). This exercises the
+# mod_wsgi.Log.writelines() C path directly (writelines() on the text
+# level wsgi.errors goes through io.TextIOWrapper instead).
+assert_status "$URL/wsgi-errors-buffer-writelines" "200" \
+    "wsgi.errors.buffer.writelines() returns 200"
+
+sleep 1
+
+assert_log_contains "MARKER_BUFFER_WL_BYTES_55555" \
+    "bytes line from buffer.writelines() appears in error log"
+
+assert_log_contains "MARKER_BUFFER_WL_BYTEARRAY_55555" \
+    "bytearray line from buffer.writelines() appears in error log"
+
+assert_log_contains "MARKER_BUFFER_WL_MEMORYVIEW_55555" \
+    "memoryview line from buffer.writelines() appears in error log"

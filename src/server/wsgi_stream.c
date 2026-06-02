@@ -139,7 +139,7 @@ static PyObject *Stream_iternext(StreamObject *self)
     if (!PyLong_Check(attribute))
     {
         PyErr_Format(PyExc_TypeError,
-                     "expected integer for blksize, value of type %.200s found",
+                     "blksize must be an int, not %.200s",
                      Py_TYPE(attribute)->tp_name);
         Py_DECREF(method);
         Py_DECREF(attribute);
@@ -176,10 +176,11 @@ static PyObject *Stream_iternext(StreamObject *self)
         return result;
     }
 
-    Py_DECREF(result);
+    PyErr_Format(PyExc_TypeError,
+                 "file wrapper read() must return bytes, not %.200s",
+                 Py_TYPE(result)->tp_name);
 
-    PyErr_SetString(PyExc_TypeError,
-                    "file like object yielded non string type");
+    Py_DECREF(result);
 
     return NULL;
 }
