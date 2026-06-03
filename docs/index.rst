@@ -86,6 +86,7 @@ Where to start
    :maxdepth: 1
 
    troubleshooting
+   known-issues
    finding-help
    reporting-bugs
    contributing
