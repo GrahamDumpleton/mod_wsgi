@@ -127,6 +127,7 @@ typedef struct
     int header_buffer_size;
     int response_buffer_size;
     apr_time_t response_socket_timeout;
+    apr_time_t response_flush_delay;
     const char *script_user;
     const char *script_group;
     int cpu_time_limit;

@@ -803,7 +803,9 @@ static int wsgi_scan_headers_brigade(request_rec *r, apr_bucket_brigade *bb,
 }
 
 static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
-                                  apr_size_t buffer_size, apr_time_t timeout)
+                                  apr_size_t buffer_size, apr_time_t timeout,
+                                  apr_socket_t *daemon_socket,
+                                  apr_time_t flush_delay)
 {
     apr_bucket *e;
     apr_read_type_e mode = APR_NONBLOCK_READ;
@@ -815,15 +817,24 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
     apr_size_t bytes_transfered = 0;
 
-    int bucket_count = 0;
-
     apr_status_t rv;
 
     apr_socket_t *sock;
     apr_interval_time_t existing_timeout = 0;
 
+    apr_interval_time_t daemon_timeout = 0;
+    int lingering = 0;
+
+    /*
+     * response-buffer-size bounds how many bytes of response content
+     * may be passed downstream without a flush, acting as a coarse
+     * runaway guard (see where it is applied below). Zero selects the
+     * default, which is high enough that the guard does not affect
+     * normal operation.
+     */
+
     if (buffer_size == 0)
-        buffer_size = 65536;
+        buffer_size = 8 * 1024 * 1024;
 
     /*
      * Override the socket timeout for writing back data to the
@@ -851,15 +862,22 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
     }
 
     /*
-     * Transfer any response content. We want to avoid the
-     * problem where the core output filter has no flow control
-     * to deal with slow HTTP clients and can actually buffer up
-     * excessive amounts of response content in memory. A fix
-     * for this was only introduced in Apache 2.3.3, with
-     * possible further tweaks in Apache 2.4.1. To avoid issue of
-     * what version it was implemented in, just employ a
-     * strategy of forcing a flush every time we pass through
-     * more than a certain amount of data.
+     * When a response flush delay is configured, remember the daemon
+     * socket's current read timeout. While lingering for more data we
+     * lower it to the flush delay and restore it afterwards. Guard
+     * against a NULL daemon socket by disabling the linger.
+     */
+
+    if (!daemon_socket)
+        flush_delay = 0;
+
+    if (flush_delay)
+        apr_socket_timeout_get(daemon_socket, &daemon_timeout);
+
+    /*
+     * Transfer the response content back to the client, reading it
+     * from the daemon a block at a time and passing each block down
+     * the output filter chain.
      */
 
     tmpbb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
@@ -923,13 +941,46 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
         rv = apr_bucket_read(e, &data, &length, mode);
 
         /*
-         * If we would have blocked if not in non blocking mode
-         * we send a flush bucket to ensure that all buffered
-         * data is sent out before we block waiting for more.
+         * A non-blocking read returned no data. Rather than flushing
+         * immediately, which would force any downstream pacing filter
+         * such as mod_ratelimit to emit a short write and so defeat
+         * its rate calculation, first wait a bounded flush delay for
+         * more data using a blocking read with a short timeout on the
+         * daemon socket. If data arrives within that window the
+         * transfer is still active and we keep accumulating without a
+         * flush. Only if the producer stays idle for the whole delay
+         * do we flush, so streaming responses still reach the client
+         * promptly. When the flush delay is zero this step is skipped
+         * and the data is flushed on any would-block.
          */
 
-        if (rv == APR_EAGAIN && mode == APR_NONBLOCK_READ)
+        if (rv == APR_EAGAIN && mode == APR_NONBLOCK_READ && flush_delay)
         {
+            apr_socket_timeout_set(daemon_socket, flush_delay);
+
+            mode = APR_BLOCK_READ;
+            lingering = 1;
+
+            continue;
+        }
+
+        /*
+         * If we would have blocked, or the producer stayed idle for
+         * the whole flush delay, we send a flush bucket to ensure that
+         * all buffered data is sent out before we block waiting for
+         * more.
+         */
+
+        if ((rv == APR_EAGAIN && mode == APR_NONBLOCK_READ) ||
+            (rv == APR_TIMEUP && lingering))
+        {
+            if (lingering)
+            {
+                apr_socket_timeout_set(daemon_socket, daemon_timeout);
+
+                lingering = 0;
+            }
+
             APR_BRIGADE_INSERT_TAIL(tmpbb, apr_bucket_flush_create(
                                                r->connection->bucket_alloc));
 
@@ -961,8 +1012,6 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
             bytes_transfered = 0;
 
-            bucket_count = 0;
-
             /*
              * Retry read from daemon using a blocking read. We do
              * not delete the bucket as we want to operate on the
@@ -991,8 +1040,17 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
 
         /*
          * We had some data to transfer. Next time round we need to
-         * always be try a non-blocking read first.
+         * always be try a non-blocking read first. If we got here from
+         * a lingering blocking read, restore the daemon socket timeout
+         * that we lowered to the flush delay.
          */
+
+        if (lingering)
+        {
+            apr_socket_timeout_set(daemon_socket, daemon_timeout);
+
+            lingering = 0;
+        }
 
         mode = APR_NONBLOCK_READ;
 
@@ -1010,41 +1068,38 @@ static int wsgi_transfer_response(request_rec *r, apr_bucket_brigade *bb,
         APR_BRIGADE_INSERT_TAIL(tmpbb, e);
 
         /*
-         * If we have reached the buffer size threshold, we want
-         * to flush the data so that we aren't buffering too much
-         * in memory and blowing out memory size. We also have a
-         * check on the number of buckets we have accumulated as
-         * a large number of buckets with very small amounts of
-         * data will also accumulate a lot of memory. Apache's
-         * own flow control doesn't cope with such a situation.
-         * Right now hard wire the max number of buckets at 16
-         * which equates to worst case number of separate data
-         * blocks can be written by a writev() call on systems
-         * such as Solaris.
+         * Each block is passed straight on without a forced flush. The
+         * Apache 2.4 core output filter bounds how much response data
+         * is buffered in the child process: it switches to blocking
+         * writes once its own threshold is reached, which backpressures
+         * through ap_pass_brigade and on to the daemon, and it batches
+         * its own writev() calls. Passing whole blocks on keeps writes
+         * large enough for a downstream pacing filter such as
+         * mod_ratelimit to pace correctly. Pending data is otherwise
+         * flushed when the producer goes idle (above) and at end of
+         * stream.
+         *
+         * As a coarse runaway guard, force a flush if more than
+         * buffer_size bytes have been passed downstream since the last
+         * flush. This bounds a downstream filter that buffers without
+         * draining to roughly buffer_size per request. It counts bytes
+         * transferred, not bytes currently buffered, so on a healthy
+         * connection it just emits an otherwise harmless flush every
+         * buffer_size bytes; buffer_size is high by default so it does
+         * not fire in normal operation.
          */
 
         bytes_transfered += length;
 
-        bucket_count += 1;
-
-        if (bytes_transfered > buffer_size || bucket_count >= 16)
+        if (bytes_transfered > buffer_size)
         {
             APR_BRIGADE_INSERT_TAIL(tmpbb, apr_bucket_flush_create(
                                                r->connection->bucket_alloc));
 
             bytes_transfered = 0;
-
-            bucket_count = 0;
-
-            /*
-             * Since we flushed the data out to the client, it is
-             * okay to go back and do a blocking read the next time.
-             */
-
-            mode = APR_BLOCK_READ;
         }
 
-        /* Pass the heap bucket and any flush bucket on. */
+        /* Pass the heap bucket and any runaway-guard flush on. */
 
         rv = ap_pass_brigade(r->output_filters, tmpbb);
 
@@ -1835,7 +1890,8 @@ int wsgi_execute_remote(request_rec *r)
     /* Transfer any response content. */
 
     return wsgi_transfer_response(r, bbin, group->response_buffer_size,
-                                  group->response_socket_timeout);
+                                  group->response_socket_timeout,
+                                  daemon->socket, group->response_flush_delay);
 }
 
 static apr_status_t wsgi_socket_read(apr_socket_t *sock, void *vbuf,

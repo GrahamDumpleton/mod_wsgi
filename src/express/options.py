@@ -395,18 +395,32 @@ add_option('unix', '--header-buffer-size', type='int', default=0,
         'indicating internal default of 32768 bytes is used.')
 
 add_option('unix', '--response-buffer-size', type='int', default=0,
-        metavar='NUMBER', help='Maximum amount of response content '
-        'that will be allowed to be buffered in the Apache child '
-        'worker process when proxying the response from a daemon '
-        'process. Defaults to 0, indicating internal default of '
-        '65536 bytes is used.')
+        metavar='NUMBER', help='Coarse upper bound, in bytes, on how '
+        'much response content is passed down the output filter chain '
+        'without a flush when proxying the response from a daemon '
+        'process. Only bounds a downstream filter that buffers without '
+        'draining; the Apache core output filter handles normal memory '
+        'bounding. Defaults to 0, indicating the internal default of '
+        '8388608 bytes (8 MB) is used. Setting it low can interfere with '
+        'a downstream pacing filter such as mod_ratelimit.')
 
 add_option('unix', '--response-socket-timeout', type='int', default=0,
         metavar='SECONDS', help='Maximum number of seconds allowed '
         'to pass before timing out on a write operation back to the '
-        'HTTP client when the response buffer has filled and data is '
-        'being forcibly flushed. Defaults to 0 seconds indicating that '
-        'it will default to the value of the \'socket-timeout\' option.')
+        'HTTP client when transferring the response body. Defaults to 0 '
+        'seconds indicating that it will default to the value of the '
+        '\'socket-timeout\' option.')
+
+add_option('unix', '--response-flush-delay', type='int', default=5,
+        metavar='MILLISECONDS', help='Number of milliseconds mod_wsgi '
+        'will wait for further response data from a daemon process before '
+        'flushing what it has to the HTTP client. Waiting briefly lets a '
+        'downstream output filter such as mod_ratelimit pace or batch the '
+        'response correctly instead of being forced to emit a short write '
+        'on every momentary stall. Defaults to 5 milliseconds. Setting it '
+        'to 0 flushes on any stall and is not recommended when a pacing '
+        'filter such as mod_ratelimit is in use, as it can throttle '
+        'responses far below the configured rate.')
 
 add_option('all', '--enable-sendfile', action='store_true',
         default=False, help='Flag indicating whether sendfile() support '

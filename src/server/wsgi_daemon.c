@@ -149,6 +149,8 @@ const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
 
     int response_socket_timeout = 0;
 
+    int response_flush_delay = -1;
+
     const char *script_user = NULL;
     const char *script_group = NULL;
 
@@ -510,6 +512,17 @@ const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
             if (response_socket_timeout < 0)
                 return "Invalid response socket timeout for WSGI daemon process.";
         }
+        else if (!strcmp(option, "response-flush-delay"))
+        {
+            if (!*value)
+                return "Invalid response flush delay for WSGI daemon process.";
+
+            /* Value is in milliseconds; 0 disables the delay. */
+
+            response_flush_delay = atoi(value);
+            if (response_flush_delay < 0)
+                return "Invalid response flush delay for WSGI daemon process.";
+        }
         else if (!strcmp(option, "socket-user"))
         {
             uid_t socket_uid;
@@ -740,6 +753,13 @@ const char *wsgi_add_daemon_process(cmd_parms *cmd, void *mconfig,
         response_socket_timeout = socket_timeout;
 
     entry->response_socket_timeout = apr_time_from_sec(response_socket_timeout);
+
+    /* Default the response flush delay to 5 milliseconds. */
+
+    if (response_flush_delay < 0)
+        response_flush_delay = 5;
+
+    entry->response_flush_delay = apr_time_from_msec(response_flush_delay);
 
     entry->script_user = script_user;
     entry->script_group = script_group;

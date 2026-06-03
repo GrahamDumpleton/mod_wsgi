@@ -769,20 +769,69 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
 .. _response-buffer-size:
 
 **response-buffer-size=nnn**
-    Defines the maximum number of bytes that will be buffered for a
-    response in the Apache child processes when proxying the response body
-    from the WSGI application. The default size is 65536 bytes. Be careful
-    increasing this to provide extra buffering of responses as it
-    contributes to the runtime memory size of the Apache child processes.
+    Acts as a coarse upper bound, in bytes, on how much response content is
+    passed down the output filter chain without a flush when proxying a
+    response body from the WSGI application. If this many bytes are passed
+    without a flush occurring for another reason, a flush is forced. The
+    default is 8388608 bytes (8 MB), and if specified the value must be at
+    least 65536 bytes.
+
+    Its only purpose is to bound a downstream output filter that buffers
+    response data without draining it, capping such buffering to roughly
+    this many bytes per request. The Apache core output filter already
+    bounds normal in-memory buffering of the response in the Apache child
+    processes, so the default is set high and the guard does not affect
+    normal operation. Setting it low forces frequent flushes that can
+    interfere with a downstream pacing or batching output filter such as
+    ``mod_ratelimit`` (see ``response-flush-delay``), so it should only be
+    reduced if you specifically need to cap such a filter.
 
 .. _response-socket-timeout:
 
 **response-socket-timeout=nnn**
     Defines the maximum number of seconds allowed to pass before timing out
-    on a write operation back to the HTTP client when the response buffer
-    has filled and data is being forcibly flushed. Defaults to 0 seconds
-    indicating that it will default to the value of the ``socket-timeout``
-    option.
+    on a write operation back to the HTTP client when transferring the
+    response body. Defaults to 0 seconds indicating that it will default to
+    the value of the ``socket-timeout`` option.
+
+.. _response-flush-delay:
+
+**response-flush-delay=nnn**
+    Defines, in **milliseconds**, how long mod_wsgi will wait for further
+    response data to arrive from the daemon process before flushing the
+    data already read out to the HTTP client. Defaults to 5 milliseconds.
+
+    When proxying a response back from a daemon process, mod_wsgi reads the
+    data as it becomes available and would otherwise flush to the client
+    every time the daemon socket momentarily ran dry. During a bulk
+    transfer that emptying is usually just an artefact of timing, and
+    flushing on it defeats a downstream output filter that paces or batches
+    data, most notably ``mod_ratelimit`` (whose ``RATE_LIMIT`` filter is
+    forced to emit a short write on every flush and so throttles the
+    response far below the configured rate). Waiting a brief period for
+    more data lets mod_wsgi coalesce it into larger writes so such a filter
+    can do its job, while a genuinely idle application still has its partial
+    output flushed within the delay so streaming responses remain
+    responsive.
+
+    The default of 5 milliseconds is comfortably longer than the time it
+    takes the local daemon process to produce more data during an active
+    transfer, so it does not affect throughput, while bounding any extra
+    latency added to a paused streaming response to that same small value.
+
+    Setting the value to 0 disables the wait, so data is flushed on any
+    momentary stall. This is generally not recommended. In particular, do
+    not set it to 0 when a downstream pacing or batching output filter such
+    as ``mod_ratelimit`` is in use: doing so reintroduces a flush on every
+    momentary stall, which prevents such a filter from accumulating
+    full-size writes and can throttle responses far below the configured
+    rate. A value of 0 is only appropriate for latency-sensitive streaming
+    where no such filter is present and even a few milliseconds of flush
+    delay must be avoided.
+
+    Note that, unlike the various ``*-timeout`` options which are expressed
+    in seconds, this option is expressed in milliseconds because the useful
+    values are far smaller than one second.
 
 .. _server-metrics:
 
