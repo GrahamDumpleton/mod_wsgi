@@ -82,7 +82,7 @@ def default_run_group():
 
 def find_program(names, default=None, paths=[]):
     for name in names:
-        for path in os.environ['PATH'].split(':') + paths:
+        for path in os.environ['PATH'].split(os.pathsep) + paths:
             program = posixpath.join(path, name)
             if os.path.exists(program):
                 return program
