@@ -243,6 +243,7 @@ WSGIDaemonProcess %(process_group)s \\
    header-buffer-size=%(header_buffer_size)s \\
    response-buffer-size=%(response_buffer_size)s \\
    response-socket-timeout=%(response_socket_timeout)s \\
+   response-flush-delay=%(response_flush_delay)s \\
    server-metrics=%(server_metrics_flag)s%(daemon_switch_interval_option)s
 </IfDefine>
 <IfDefine !MOD_WSGI_MULTIPROCESS>
@@ -273,6 +274,7 @@ WSGIDaemonProcess %(process_group)s \\
    receive-buffer-size=%(receive_buffer_size)s \\
    response-buffer-size=%(response_buffer_size)s \\
    response-socket-timeout=%(response_socket_timeout)s \\
+   response-flush-delay=%(response_flush_delay)s \\
    server-metrics=%(server_metrics_flag)s%(daemon_switch_interval_option)s
 </IfDefine>
 </IfDefine>

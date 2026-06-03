@@ -778,6 +778,12 @@ const char *wsgi_set_restrict_embedded(cmd_parms *cmd, void *mconfig,
         if (wsgi_python_required == -1)
             wsgi_python_required = 0;
     }
+    else
+    {
+        /* Embedded mode enabled, so Python is needed in the child. */
+
+        wsgi_python_required = 1;
+    }
 
     return NULL;
 }

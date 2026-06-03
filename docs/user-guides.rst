@@ -56,6 +56,7 @@ Beyond the basics
    user-guides/virtual-environments
    user-guides/upgrading-an-application
    user-guides/file-wrapper-extension
+   user-guides/delegating-file-serving
    user-guides/subscribing-to-events
    user-guides/registering-cleanup-code
    user-guides/internal-metrics-api

@@ -5413,3 +5413,36 @@ WSGI0209 — Unable to publish 'process_signal' event for interpreter
    subscribers should be defensive about missed signals (idempotent
    reload, polling-based fallback) since signals are not
    refcounted and a dropped delivery is not redelivered.
+
+.. _WSGI0210:
+
+WSGI0210 — Embedded mode of mod_wsgi cannot be used as Python was not initialised
+---------------------------------------------------------------------------------
+
+:Severity: ERR
+:Source: ``src/server/mod_wsgi.c``
+
+:Logged message:
+   ``Embedded mode of mod_wsgi cannot be used as Python was not
+   initialised in this process.``
+
+:Cause:
+   A request reached the embedded-mode code path and embedded mode
+   was permitted, but no Python interpreter is available in this
+   Apache child process, so the per-thread state needed to run the
+   handler does not exist. This normally means the child was never
+   asked to initialise Python (for example a daemon-only
+   configuration), or initialisation was attempted but failed (see
+   :ref:`WSGI0001`).
+
+:Outcome:
+   The request returns ``500 Internal Server Error``. The check
+   exists so this condition is reported rather than crashing the
+   process by dereferencing the uninitialised per-thread state.
+
+:Operator action:
+   Route the request to a ``WSGIDaemonProcess`` via
+   ``WSGIProcessGroup``, or ensure embedded mode is configured so
+   Python is initialised in the Apache child processes. If
+   :ref:`WSGI0001` was logged at child start up, resolve that
+   initialisation failure first.

@@ -25,6 +25,9 @@ Additional pages that may help:
   approaches.
 * :doc:`user-guides/frequently-asked-questions` — common questions
   and gotchas.
+* :doc:`known-issues` — confirmed defects and accepted limitations
+  in mod_wsgi itself, where the problem is not in your install,
+  configuration, or application.
 
 If none of these resolve the issue, see :doc:`finding-help` for
 where to ask.

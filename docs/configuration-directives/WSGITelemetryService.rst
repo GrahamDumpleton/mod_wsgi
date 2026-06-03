@@ -39,6 +39,14 @@ configuration line enables the reporter for the entire Apache
 instance, covering every daemon process group and every
 embedded-mode Apache child.
 
+Note that the telemetry reporter, and so the ``WSGITelemetryService``,
+:doc:`WSGISlowRequests` and :doc:`WSGITelemetryOptions` directives, are
+not available on Windows. The reporter delivers its datagrams over a
+UNIX ``SOCK_DGRAM`` socket, which Windows does not provide, so the
+feature is not built there and these directives are not registered.
+Using one of them on Windows is reported by Apache as an unknown
+directive.
+
 Arguments
 ---------
 

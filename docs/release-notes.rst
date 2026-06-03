@@ -8,6 +8,7 @@ mod_wsgi. See :doc:`project-status` for the version support policy.
 .. toctree::
    :maxdepth: 2
 
+   release-notes/version-6.0.2
    release-notes/version-6.0.1
    release-notes/version-6.0.0
 

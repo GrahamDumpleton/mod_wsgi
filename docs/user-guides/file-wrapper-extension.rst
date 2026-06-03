@@ -210,5 +210,6 @@ web server, or in the case of mod_wsgi the underlying Apache web server.
 Where necessary, features of web servers or proxies such as
 'X-Accel-Redirect', 'X-Sendfile' or other special purpose headers could be
 used. With mod_wsgi daemon mode the 'Location' response header can also be
-used to delegate the response to another handler in Apache.
+used to delegate the response to another handler in Apache. This last
+option is described in :doc:`delegating-file-serving`.
 
