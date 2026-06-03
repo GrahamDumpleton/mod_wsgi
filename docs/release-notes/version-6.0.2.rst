@@ -51,6 +51,18 @@ Features Changed
 Bugs Fixed
 ----------
 
+* Building the Windows ``mod_wsgi`` extension failed at the link stage with
+  a ``LNK2005`` multiply defined symbol error for ``PyInit_mod_wsgi``, and a
+  fatal ``LNK1169``. When the single ``mod_wsgi.c`` source file was split
+  into the separate ``wsgi_*.c`` files in version 6.0.0, the real
+  ``PyInit_mod_wsgi`` module init function moved into ``wsgi_module.c`` as
+  an unconditional definition, but an older Windows-only stub of the same
+  function was left behind in ``mod_wsgi.c``. On non-Windows builds the stub
+  was excluded by ``#if defined(_WIN32)`` so only one definition was
+  compiled, but on Windows both were compiled and the linker rejected the
+  duplicate. The obsolete stub has been removed so ``wsgi_module.c`` is the
+  sole provider of ``PyInit_mod_wsgi`` on all platforms.
+
 * Setting ``WSGIRestrictEmbedded Off`` after it had previously been set
   to ``On`` could crash the Apache child process when an embedded mode
   request was subsequently received. ``WSGIRestrictEmbedded On`` not only

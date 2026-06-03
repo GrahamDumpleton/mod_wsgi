@@ -1276,27 +1276,4 @@ module AP_MODULE_DECLARE_DATA wsgi_module = {
 
 /* ------------------------------------------------------------------------- */
 
-#if defined(_WIN32)
-PyMODINIT_FUNC PyInit_mod_wsgi(void)
-{
-    /* The 'mod_wsgi' Python module is created at runtime by the Apache
-     * module when it sets up each interpreter; it is not a regular
-     * Python extension and cannot be imported from a standalone Python
-     * process. This stub exists only to satisfy the Windows linker and
-     * is not expected to be reached. Set an explicit ImportError so the
-     * importer reports the actual situation instead of the generic
-     * "initialization of mod_wsgi failed without raising an exception"
-     * SystemError. */
-
-    PyErr_SetString(PyExc_ImportError,
-                    "mod_wsgi cannot be imported as a regular Python "
-                    "module; it is provided by the Apache mod_wsgi "
-                    "module and is only available inside an Apache "
-                    "process running mod_wsgi.");
-    return NULL;
-}
-#endif
-
-/* ------------------------------------------------------------------------- */
-
 /* vi: set sw=4 expandtab : */
