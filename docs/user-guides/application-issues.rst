@@ -408,6 +408,25 @@ make them consistent. The only way to have every process agree remains to
 start the Apache parent process with the same ``TZ`` the application uses,
 as described above.
 
+All of the above concerns the error log specifically. The access log does
+not suffer the same silent confusion, for two reasons. First, its default
+format already includes the timezone offset: the standard ``common`` and
+``combined`` ``LogFormat`` definitions use ``%t``, which mod_log_config
+renders in Common Log Format, with the offset built in::
+
+    ::1 - - [05/Jun/2026:09:07:53 +1000] "GET / HTTP/1.1" 200 12
+
+Second, in daemon mode the access log is written by the Apache child worker
+process, since that is where mod_log_config runs as it proxies the
+request. The worker keeps the Apache parent's ``TZ`` and never runs the
+application, so its timezone cannot be changed by the application's call to
+``tzset()``. Access log lines therefore stay in one consistent timezone,
+unlike error log lines which mix the daemon process's application timezone
+with the worker process's timezone. The access log timestamp is still
+local time rather than UTC, so the parent-process ``TZ`` fix is still what
+to reach for if UTC is required, but the access log never exhibits the
+silent, hard to spot divergence that the error log does.
+
 Be aware also that this only addresses divergence between processes. If a
 single daemon process hosts multiple sub interpreters that set different
 timezones, the process-global ``TZ`` value is shared and the last sub
