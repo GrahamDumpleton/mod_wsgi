@@ -255,14 +255,17 @@ def setup_server(command, args, options):
         options['access_log_file'] = posixpath.join(
                 options['log_directory'], options['access_log_name'])
     else:
-        try:
-            with open('/dev/stdout', 'w'):
-                pass
-        except IOError:
-            options['access_log_file'] = '|%s' % find_program(
-                    ['tee'], default='tee')
+        if os.name == 'nt':
+            options['access_log_file'] = 'CON'
         else:
-            options['access_log_file'] = '/dev/stdout'
+            try:
+                with open('/dev/stdout', 'w'):
+                    pass
+            except IOError:
+                options['access_log_file'] = '|%s' % find_program(
+                        ['tee'], default='tee')
+            else:
+                options['access_log_file'] = '/dev/stdout'
 
     if options['access_log_format']:
         if options['access_log_format'] in ('common', 'combined'):

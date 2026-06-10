@@ -97,6 +97,17 @@ def track_changes(path):
         _files.append(path)
 
 def start_reloader(interval=1.0):
+    # The reloader triggers a restart by sending SIGINT to this process. On
+    # Windows os.kill() cannot deliver SIGINT to ourselves: any signal other
+    # than CTRL_C_EVENT/CTRL_BREAK_EVENT is implemented as an unconditional
+    # TerminateProcess, so the reloader would hard kill the server rather than
+    # trigger a graceful restart. Disable it on Windows.
+    if os.name == 'nt':
+        prefix = 'monitor (pid=%d):' % os.getpid()
+        print('%s Source code reloading is not supported on Windows.' % prefix,
+                file=sys.stderr)
+        return
+
     global _interval
     if interval < _interval:
         _interval = interval

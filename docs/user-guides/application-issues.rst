@@ -344,14 +344,88 @@ matches the default for many applications, including Django when
 ``TIME_ZONE`` is left at its ``UTC`` default. If the application uses a
 different timezone, set ``TZ`` to that same timezone instead.
 
-Note that there is no Apache log format directive which will solve this by
-forcing UTC. Both ``ErrorLogFormat`` and ``CustomLog`` / ``LogFormat``
-format their ``%t`` timestamps from the process's local time, derived from
-``TZ``; even the compact ISO 8601 forms such as ``%{cu}t`` use local time,
-not UTC. The ``%{cuz}t`` form (Apache 2.4.58 and later) at least appends
-the numeric timezone offset, so lines stamped in different timezones can
-be told apart rather than silently misread, but it does not make them
-consistent.
+Where you are not able to change how Apache is started, a log format
+directive offers a partial mitigation, though not a cure. It is worth
+being clear about its limits, because reaching for the log configuration
+is the natural first instinct. No ``ErrorLogFormat`` or ``CustomLog`` /
+``LogFormat`` option can force these timestamps to a fixed zone such as
+UTC; ``%t`` is always formatted from the emitting process's local time,
+derived from ``TZ``. What a log format *can* do is make the timezone of
+each line explicit, so that lines stamped by processes in different
+timezones can be told apart rather than silently misread.
+
+In an ``ErrorLogFormat`` the ``%t`` field accepts a small set of single
+letter options inside the braces:
+
+* ``%t`` produces the default ``ctime`` style, ``Fri Jun 05 08:42:44 2026``.
+* ``%{u}t`` is the same but with microseconds. This is what the Apache
+  default ``ErrorLogFormat`` uses.
+* the ``c`` option switches to the compact ISO 8601 form,
+  ``2026-06-05 08:42:36``.
+* the ``z`` option (Apache 2.4.58 and later) appends the numeric timezone
+  offset, ``+1000``.
+
+The options combine, so ``%{cu}t`` is compact ISO 8601 with microseconds
+but still no offset, and ``%{cuz}t`` is that with the offset added on the
+end.
+
+To keep the familiar default layout and simply add the timezone offset,
+take the Apache default ``ErrorLogFormat`` and change its ``%{u}t`` field
+to ``%{uz}t``::
+
+    ErrorLogFormat "[%{uz}t] [%-m:%l] [pid %P:tid %T] %7F: %E: [client\ %a] %M% ,\ referer\ %{Referer}i"
+
+A line then looks like the following, identical to the default apart from
+the trailing ``+1000``::
+
+    [Fri Jun 05 08:42:29.986168 2026 +1000] [mpm_event:notice] [pid 37192:tid 140704575428864] AH00489: ...
+
+If you prefer the compact ISO 8601 timestamp, use ``%{cuz}t`` instead::
+
+    ErrorLogFormat "[%{cuz}t] [%-m:%l] [pid %P:tid %T] %7F: %E: [client\ %a] %M% ,\ referer\ %{Referer}i"
+
+    [2026-06-05 08:42:36.978307 +1000] [mpm_event:notice] [pid 37243:tid 140704575428864] AH00489: ...
+
+A word of caution about the syntax. The ``c``, ``u`` and ``z`` letters are
+options, not ``strftime`` conversions, and must appear directly inside the
+braces with no leading ``%``. If you write ``%{%cuz}t`` instead of
+``%{cuz}t``, the leading ``%`` switches the field into ``strftime`` mode,
+where ``%c`` expands to the C library's locale date and time and the
+remaining ``uz`` is copied through literally, producing nonsense such as
+``Fri Jun  5 08:42:25 2026uz``.
+
+This distinction also matters across platforms. The ``c``, ``u`` and ``z``
+options are formatted by Apache itself and behave identically on Linux,
+macOS and Windows. The ``strftime`` forms, such as ``%{%d/%b/%Y %T}t``,
+are passed to the platform C library's ``strftime(3)``, whose set of
+supported conversions varies; Windows in particular omits or alters
+several of them, with ``%z`` for example yielding a timezone name rather
+than a numeric offset. Preferring ``%{cuz}t`` over a hand written
+``strftime`` string therefore also gives consistent output everywhere.
+
+Adding the offset lets the two timezones be distinguished, but it does not
+make them consistent. The only way to have every process agree remains to
+start the Apache parent process with the same ``TZ`` the application uses,
+as described above.
+
+All of the above concerns the error log specifically. The access log does
+not suffer the same silent confusion, for two reasons. First, its default
+format already includes the timezone offset: the standard ``common`` and
+``combined`` ``LogFormat`` definitions use ``%t``, which mod_log_config
+renders in Common Log Format, with the offset built in::
+
+    ::1 - - [05/Jun/2026:09:07:53 +1000] "GET / HTTP/1.1" 200 12
+
+Second, in daemon mode the access log is written by the Apache child worker
+process, since that is where mod_log_config runs as it proxies the
+request. The worker keeps the Apache parent's ``TZ`` and never runs the
+application, so its timezone cannot be changed by the application's call to
+``tzset()``. Access log lines therefore stay in one consistent timezone,
+unlike error log lines which mix the daemon process's application timezone
+with the worker process's timezone. The access log timestamp is still
+local time rather than UTC, so the parent-process ``TZ`` fix is still what
+to reach for if UTC is required, but the access log never exhibits the
+silent, hard to spot divergence that the error log does.
 
 Be aware also that this only addresses divergence between processes. If a
 single daemon process hosts multiple sub interpreters that set different

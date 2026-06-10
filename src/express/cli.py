@@ -67,11 +67,33 @@ def cmd_start_server(params):
         httpd_arguments.extend(['-f', config['httpd_conf']])
         httpd_arguments.extend(['-DONE_PROCESS'])
 
-        os.environ['MOD_WSGI_MODULES_DIRECTORY'] = config['modules_directory']
+        # On Windows httpd shares our console, so a Ctrl-C delivers a
+        # CTRL_C_EVENT to the whole console process group and httpd runs
+        # its own graceful shutdown. We must not let the same Ctrl-C kill
+        # this launcher first, or it returns to the shell while httpd is
+        # still tearing down (and dumps a KeyboardInterrupt traceback). So
+        # absorb our own interrupt and keep waiting until httpd exits.
+        #
+        # A first Ctrl-C is treated as "you should have received the
+        # console event, shutting down gracefully, I will wait". If httpd
+        # did not actually receive the event (for example a git-bash pty
+        # bridge that does not forward it to the child), a second Ctrl-C
+        # escalates to terminating it so we cannot hang indefinitely.
 
-        subprocess.call([executable]+httpd_arguments)
+        process = subprocess.Popen([executable]+httpd_arguments, env=environ)
 
-        sys.exit(0)
+        interrupts = 0
+
+        while True:
+            try:
+                process.wait()
+                break
+            except KeyboardInterrupt:
+                interrupts += 1
+                if interrupts >= 2:
+                    process.terminate()
+
+        sys.exit(process.returncode)
 
     else:
         executable = posixpath.join(config['server_root'], 'apachectl')
