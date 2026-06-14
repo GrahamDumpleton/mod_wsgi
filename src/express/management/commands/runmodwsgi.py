@@ -7,9 +7,12 @@ import subprocess
 from django.core.management.base import BaseCommand, CommandError
 
 import mod_wsgi.express
+import mod_wsgi.express.options
+import mod_wsgi.express.server
 
 def check_percentage(string):
-    if value is not None and value < 0 or value > 1:
+    value = float(string)
+    if value < 0 or value > 1:
         import argparse
         msg = '%s option value needs to be within the range 0 to 1.' % string
         raise argparse.ArgumentTypeError(msg)
@@ -48,6 +51,20 @@ class Command(BaseCommand):
                         elif attr == 'default':
                             if getattr(option, attr) != ('NO', 'DEFAULT'):
                                 kwargs[attr] = getattr(option, attr)
+                        elif attr == 'help':
+                            # optparse displays help text literally, but
+                            # argparse expands it with '%'-formatting. Escape
+                            # any literal '%' (e.g. the '%{GLOBAL}' token) and
+                            # translate the optparse '%default'/'%prog' tokens
+                            # to their argparse equivalents.
+                            help_text = getattr(option, attr)
+                            if help_text is not None:
+                                help_text = help_text.replace('%', '%%')
+                                help_text = help_text.replace(
+                                        '%%default', '%(default)s')
+                                help_text = help_text.replace(
+                                        '%%prog', '%(prog)s')
+                                kwargs[attr] = help_text
                         else:
                             if getattr(option, attr) is not None:
                                 kwargs[attr] = getattr(option, attr)
