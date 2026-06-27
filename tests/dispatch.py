@@ -19,6 +19,16 @@ def process_group(environ):
     if environ.get("SCRIPT_NAME", "").startswith("/test/wsgi/interrupt-timeout"):
         return "interrupt-timeout-test"
 
+    # The request_body test's /no-handshake mount routes to a dedicated
+    # daemon group whose queue-timeout is 0 (see request_body.conf).
+    # Combined with WSGIScriptReloading Off on that mount this disables
+    # the deferred-content handshake, exercising the daemon frame-read
+    # path that must not over-read the proxied request body.
+    if environ.get("SCRIPT_NAME", "").startswith(
+        "/test/wsgi/request-body/no-handshake"
+    ):
+        return "request-body-no-handshake"
+
     # Matches "process-group=localhost:$PORT" on the WSGIScriptAlias.
     # The harness passes MOD_WSGI_TESTS_DAEMON_PORT via SetEnv so
     # requests arriving on the HTTPS listener (where SERVER_PORT is
