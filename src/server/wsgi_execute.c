@@ -18,6 +18,9 @@
 
 /* ------------------------------------------------------------------------- */
 
+#include "wsgi_python.h"
+#include "wsgi_apache.h"
+
 #include "wsgi_execute.h"
 
 #include "wsgi_server.h"

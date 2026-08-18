@@ -18,8 +18,8 @@
 
 /* ------------------------------------------------------------------------- */
 
-#include "wsgi_apache.h"
 #include "wsgi_python.h"
+#include "wsgi_apache.h"
 
 #ifdef HAVE_SYS_PRCTL_H
 #include <sys/prctl.h>

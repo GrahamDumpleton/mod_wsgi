@@ -18,9 +18,11 @@
 
 /* ------------------------------------------------------------------------- */
 
+#include "wsgi_python.h"
+#include "wsgi_apache.h"
+
 #include "wsgi_shutdown.h"
 
-#include "wsgi_apache.h"
 #include "wsgi_server.h"
 #include "wsgi_logger.h"
 #include "wsgi_module.h"
