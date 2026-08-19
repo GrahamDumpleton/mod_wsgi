@@ -36,11 +36,13 @@
 
 #include "wsgi_python.h"
 #include "wsgi_apache.h"
+
+#include "wsgi_telemetry.h"
+
 #include "wsgi_server.h"
 #include "wsgi_daemon.h"
 #include "wsgi_logger.h"
 #include "wsgi_metrics.h"
-#include "wsgi_telemetry.h"
 #include "wsgi_version.h"
 #include "wsgi_module.h"
 #include "wsgi_interp.h"

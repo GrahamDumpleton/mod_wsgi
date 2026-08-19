@@ -5,6 +5,9 @@
  *          http://creativecommons.org/licenses/by/3.0/deed.en_US
  */
 
+#include "wsgi_python.h"
+#include "wsgi_apache.h"
+
 #if defined(_WIN32)
 #include <winsock2.h>
 #include <windows.h>

@@ -33,6 +33,8 @@
 
 /* ------------------------------------------------------------------------- */
 
+#include "wsgi_python.h"
+
 #define CORE_PRIVATE 1
 
 #if defined(_WIN32)

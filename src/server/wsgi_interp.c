@@ -18,11 +18,12 @@
 
 /* ------------------------------------------------------------------------- */
 
+#include "wsgi_python.h"
+#include "wsgi_apache.h"
+
 #include "wsgi_interp.h"
 
 #include "wsgi_version.h"
-
-#include "wsgi_apache.h"
 #include "wsgi_server.h"
 #include "wsgi_config.h"
 #include "wsgi_logger.h"
