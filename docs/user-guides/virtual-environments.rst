@@ -79,6 +79,86 @@ resulting ABIs can differ in subtle ways. Mixing them is not safe.
 If you need to switch Python version or installation, rebuild
 mod_wsgi against the new Python.
 
+This restriction applies to the Apache instance as a whole and not
+just to one application. See `Hosting Multiple Python Versions`_
+below if applications on the same host need different Python
+versions.
+
+Hosting Multiple Python Versions
+--------------------------------
+
+The Python version is a property of the Apache instance, not of a
+virtual host, a daemon process group, or an individual WSGI
+application. Apache loads a single copy of the mod_wsgi module, and
+that module has one Python library bound into it, so every WSGI
+application hosted by that Apache runs under the same Python
+version.
+
+A single Apache therefore cannot host one application under Python
+3.10 and another under Python 3.12. Neither ``WSGIPythonHome``, nor
+the ``python-home`` option of ``WSGIDaemonProcess``, nor per
+application virtual environments change this. All they do is select
+which set of installed packages the one Python version sees.
+
+The recommended way to host applications needing different Python
+versions on the one host is to run each application under its own
+``mod_wsgi-express`` instance, listening on its own loopback port,
+with a front-end Apache acting as a reverse proxy. Each instance is
+an independent Apache plus mod_wsgi, built for the Python of the
+virtual environment it was installed into, so the Python versions
+never have to agree.
+
+Install ``mod_wsgi`` from PyPI into each virtual environment. This
+builds a separate module for that environment's Python::
+
+    /usr/local/venvs/legacy/bin/pip install mod_wsgi
+    /usr/local/venvs/current/bin/pip install mod_wsgi
+
+Start one instance per application, each run from its own virtual
+environment::
+
+    /usr/local/venvs/legacy/bin/mod_wsgi-express start-server \
+        /some/path/legacy/wsgi.py --host 127.0.0.1 --port 8001
+
+    /usr/local/venvs/current/bin/mod_wsgi-express start-server \
+        /some/path/current/wsgi.py --host 127.0.0.1 --port 8002
+
+Then map each application into the public site from the front-end
+Apache::
+
+    <VirtualHost *:80>
+        ServerName www.example.com
+
+        ProxyPass        /legacy/ http://127.0.0.1:8001/
+        ProxyPassReverse /legacy/ http://127.0.0.1:8001/
+
+        ProxyPass        / http://127.0.0.1:8002/
+        ProxyPassReverse / http://127.0.0.1:8002/
+    </VirtualHost>
+
+The front-end Apache does not need mod_wsgi loaded at all in this
+arrangement, as it only proxies. Because each back end is a separate
+Apache instance, the applications can also be owned by different
+users, be restarted independently, and be given different process
+and thread counts. Running each application in a container is a
+variation on the same pattern, with the container boundary replacing
+the process boundary.
+
+The mechanics of the reverse proxy setup, including ensuring the
+application sees the correct scheme, host name and client IP
+address, are covered in :doc:`running-behind-a-reverse-proxy`. The
+deployment pattern as a whole, and how it compares with hosting WSGI
+applications directly in the system Apache, is described under
+"mod_wsgi-express behind a reverse proxy" in
+:doc:`../how-mod-wsgi-works`. For running and supervising the
+instances see :doc:`mod-wsgi-express-quickstart`, and for installing
+mod_wsgi into a virtual environment see
+:doc:`installation-from-pypi`.
+
+If instead all applications on the host are to keep running inside
+the one Apache, they must be migrated to a common Python version and
+mod_wsgi rebuilt against it, as described in the previous section.
+
 Daemon Mode (Single Application)
 --------------------------------
 

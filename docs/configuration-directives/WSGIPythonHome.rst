@@ -37,6 +37,13 @@ major/minor version of Python that mod_wsgi was compiled against. To
 use a different major/minor version, mod_wsgi must be rebuilt against
 that version.
 
+Since only one mod_wsgi module is loaded into an Apache instance, this
+fixes the Python version for every WSGI application that Apache hosts.
+To host applications requiring different Python versions on the one
+host, run each under its own ``mod_wsgi-express`` instance behind a
+reverse proxy; see "Hosting Multiple Python Versions" in
+:doc:`../user-guides/virtual-environments`.
+
 This directive is the same as setting the environment variable
 ``PYTHONHOME`` in the environment of the user that Apache executes as.
 If the directive is used it overrides any setting of ``PYTHONHOME`` in

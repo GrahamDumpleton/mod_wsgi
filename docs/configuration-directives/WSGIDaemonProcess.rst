@@ -244,6 +244,12 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     version of Python, you will need to reinstall mod_wsgi, compiling it
     for the version you want.
 
+    The Python version is fixed for the Apache instance as a whole, so
+    different daemon process groups cannot use different Python versions
+    either. See "Hosting Multiple Python Versions" in
+    :doc:`../user-guides/virtual-environments` for how to host
+    applications needing different Python versions on the one host.
+
     This option is the daemon-mode equivalent of the WSGIPythonHome
     directive. See :doc:`WSGIPythonHome` for the full description.
 

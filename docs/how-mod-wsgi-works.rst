@@ -221,6 +221,14 @@ This pattern is appropriate when you administer the host yourself,
 the WSGI application is one of several things the host serves, and
 you want a single Apache instance handling everything.
 
+Everything hosted this way shares the one Python version that
+mod_wsgi was built against. Apache loads a single mod_wsgi module,
+with a single Python library bound into it, so this pattern cannot
+host one application under Python 3.10 and another under Python
+3.12. Where different Python versions are needed on the one host,
+use the reverse proxy pattern described below; see "Hosting Multiple
+Python Versions" in :doc:`user-guides/virtual-environments`.
+
 mod_wsgi-express as the front-line server
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -286,6 +294,15 @@ and stopped independently, and run different versions of Python or
 different framework dependencies in their respective virtual
 environments without interfering with each other.
 
+It is also the answer when applications on the one host need
+different Python versions. Each ``mod_wsgi-express`` instance is a
+separate Apache with its own copy of mod_wsgi, built for the Python
+of the virtual environment it was installed into, so an application
+on Python 3.10 and an application on Python 3.12 can be served from
+the same public site. A single Apache hosting WSGI applications
+directly cannot do that. See "Hosting Multiple Python Versions" in
+:doc:`user-guides/virtual-environments`.
+
 This pattern is appropriate when multiple applications share a host,
 when applications belong to different users or teams, or when you
 want application restarts to be isolated from the front-end
@@ -339,6 +356,10 @@ depends on what else lives on the host:
 * If the host serves multiple WSGI applications, especially under
   different users, put ``mod_wsgi-express`` instances behind a
   reverse proxy.
+* If applications on the host need different Python versions, put
+  ``mod_wsgi-express`` instances behind a reverse proxy. This is the
+  only way to serve more than one Python version from a single
+  public site.
 * If you are deploying into containers or onto a container-based
   platform, use ``mod_wsgi-express`` inside the container and let
   the platform's existing ingress layer handle TLS and routing.

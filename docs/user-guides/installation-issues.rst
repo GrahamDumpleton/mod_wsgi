@@ -190,6 +190,14 @@ mod_wsgi to use a specific one, pass ``--with-python`` to
 
     ./configure --with-python=/usr/local/bin/python3.12
 
+This selects which Python mod_wsgi is built for. It does not allow one
+Apache to use more than one of the installed Python versions at the
+same time, as the choice made at build time applies to every WSGI
+application that Apache hosts. To host applications requiring
+different Python versions on the one host, run each under its own
+``mod_wsgi-express`` instance behind a reverse proxy; see "Hosting
+Multiple Python Versions" in :doc:`virtual-environments`.
+
 This is enough when the chosen Python and any other Pythons on the
 host share the same installation prefix. If they do not — for
 example the chosen Python is at ``/usr/local`` while another Python

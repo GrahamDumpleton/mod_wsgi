@@ -200,6 +200,24 @@ standard library or ``uv venv``; the older ``virtualenv`` package
 also continues to work. For setup details see
 :doc:`../user-guides/virtual-environments`.
 
+**Q**: Can a single Apache host WSGI applications which use different
+Python versions?
+
+**A**: No. Apache loads one mod_wsgi module and that module has a
+single Python library bound into it at build time, so every WSGI
+application hosted by that Apache runs under the same Python version.
+Virtual environments, the ``WSGIPythonHome`` directive and the
+``python-home`` option of ``WSGIDaemonProcess`` only select which
+packages are visible; none of them can change the Python version.
+
+The recommended solution is to run each application under its own
+``mod_wsgi-express`` instance, installed into a virtual environment
+created from the Python version that application needs, with Apache
+in front acting as a reverse proxy. See "Hosting Multiple Python
+Versions" in :doc:`../user-guides/virtual-environments` and
+"mod_wsgi-express behind a reverse proxy" in
+:doc:`../how-mod-wsgi-works`.
+
 Access Control Mechanisms
 -------------------------
 
