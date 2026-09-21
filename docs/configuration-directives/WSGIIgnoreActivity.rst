@@ -15,7 +15,7 @@ WSGIDaemonProcess directive.
 mod_wsgi tracks daemon-process activity at three points in the
 request path: at the start of overall request handling, when
 ``wsgi.input.read()`` is called, and each time response data is
-written back to the client — whether the WSGI application yields a
+written back to the client, whether the WSGI application yields a
 chunk from its iterable or calls the legacy ``write()`` callable
 returned by ``start_response()``. Each of these resets the
 inactivity countdown. With ``WSGIIgnoreActivity On``, those resets

@@ -85,7 +85,7 @@ Lack Of Python Shared Library
 
 A normally-built ``mod_wsgi.so`` is under 0.5MB. If your build comes
 out well over 1MB, the Python installation it was built against does not
-provide a shared library — only a static one — and ``libtool`` has
+provide a shared library (only a static one) and ``libtool`` has
 embedded the static Python objects directly into ``mod_wsgi.so``
 instead of linking against ``libpython3.X.so`` dynamically.
 
@@ -138,7 +138,7 @@ The simplest fix is to ensure the Python shared library is on the
 system-wide library search path. ``/lib`` and ``/usr/lib`` are
 typically always searched. ``/usr/local/lib`` is also searched on
 many systems, but only if it has been added to the loader's
-configuration — on Linux this is typically ``/etc/ld.so.conf`` or a
+configuration: on Linux this is typically ``/etc/ld.so.conf`` or a
 file under ``/etc/ld.so.conf.d/``, with ``ldconfig`` rerun
 afterwards.
 
@@ -170,7 +170,7 @@ it is not emitted by default but can be added manually if needed.
 
 The same ``LoadFile`` trick is also useful when the Python shared
 library *is* findable but the dynamic linker resolves to the wrong
-copy — for example on hosts that have multiple installations of the
+copy, for example on hosts that have multiple installations of the
 same Python major version, when ``rpath`` settings baked into a
 relocated Python installation no longer point at the right place,
 or when the Python shared library exists at an unusual location
@@ -182,9 +182,9 @@ copy to be the one used.
 Multiple Python Versions
 ------------------------
 
-If multiple Python installations are present on the host — for
+If multiple Python installations are present on the host (for
 example a system Python plus a ``pyenv``- or ``uv``-managed Python,
-or a python.org installer alongside a Homebrew Python — and you need
+or a python.org installer alongside a Homebrew Python) and you need
 mod_wsgi to use a specific one, pass ``--with-python`` to
 ``configure`` when building::
 
@@ -199,9 +199,9 @@ different Python versions on the one host, run each under its own
 Multiple Python Versions" in :doc:`virtual-environments`.
 
 This is enough when the chosen Python and any other Pythons on the
-host share the same installation prefix. If they do not — for
+host share the same installation prefix. If they do not (for
 example the chosen Python is at ``/usr/local`` while another Python
-is at ``/usr`` — Apache may fail to find the Python library files
+is at ``/usr``), Apache may fail to find the Python library files
 at startup.
 
 The Python interpreter determines its installation prefix at startup
@@ -225,7 +225,7 @@ If there *is* a Python installation under ``/usr`` of the same
 major and minor version (but not the one mod_wsgi was built
 against), startup may succeed but at runtime imports may resolve to
 a different installation than expected. Imports may fail entirely
-or — worse — silently pick up incompatible third-party modules.
+or, worse, silently pick up incompatible third-party modules.
 
 To direct mod_wsgi to the right Python installation explicitly, use
 the ``WSGIPythonHome`` directive::
@@ -294,7 +294,7 @@ Anaconda Python Conflicting With System Shared Libraries
 --------------------------------------------------------
 
 Anaconda Python ships its own copies of various third-party shared
-libraries inside the Anaconda installation — including SSL,
+libraries inside the Anaconda installation, including SSL,
 image manipulation, cryptography, and others. When mod_wsgi is
 built against Anaconda Python and loaded into an Apache instance
 that also has another module loaded which links against the
@@ -307,9 +307,9 @@ Two examples that have been seen in practice:
 * **mod_ssl plus Anaconda Python's ssl module.** mod_ssl is built
   against the host's system SSL libraries. Anaconda Python's
   ``ssl`` module is built against Anaconda's own SSL libraries.
-  When both are loaded into the same Apache process — for example
+  When both are loaded into the same Apache process (for example
   when an HTTPS-serving Apache also hosts a WSGI application that
-  imports Python's ``ssl`` module — this has been observed to
+  imports Python's ``ssl`` module), this has been observed to
   cause crashes of the Apache worker process.
 
 * **PHP plus Anaconda Python.** mod_php (and other Apache modules)
@@ -331,8 +331,8 @@ If you must use Anaconda Python for your WSGI application, do not
 load mod_wsgi into the same Apache instance as mod_ssl, mod_php,
 or other modules that overlap with Anaconda's bundled native
 dependencies. Run the WSGI application in a separate Apache
-instance — for example via ``mod_wsgi-express`` on an
+instance (for example via ``mod_wsgi-express`` on an
 unprivileged port behind a front-end Apache or nginx that
-terminates HTTPS — so the two sets of libraries are not loaded
+terminates HTTPS) so the two sets of libraries are not loaded
 into the same process. Otherwise, use a system Python or a
 python.org installer for the mod_wsgi build instead of Anaconda.

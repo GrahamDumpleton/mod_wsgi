@@ -14,7 +14,7 @@ problems, and :doc:`error-reference` if you have a ``WSGI####`` error
 code in your Apache logs.
 
 For suspected security issues, see :doc:`security-issues` for the
-private disclosure process — do not open a public issue.
+private disclosure process. Do not open a public issue.
 
 Mailing list
 ------------

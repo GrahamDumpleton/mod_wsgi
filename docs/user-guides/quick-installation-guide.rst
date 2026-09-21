@@ -83,7 +83,7 @@ Once configured, build the module::
     make
 
 The only product that needs to be installed is the compiled Apache
-module ``mod_wsgi.so``. There are no separate Python files — all
+module ``mod_wsgi.so``. There are no separate Python files: all
 mod_wsgi behaviour is implemented in the C code compiled into the
 module. After ``make``, the compiled module can be found in the
 ``.libs`` subdirectory of the source tree.
@@ -138,8 +138,8 @@ Software Foundation, ``apachectl`` works directly::
 
     apachectl restart
 
-If a restart misbehaves — most often when upgrading from an older
-mod_wsgi version — perform a full stop and then start instead of a
+If a restart misbehaves (most often when upgrading from an older
+mod_wsgi version), perform a full stop and then start instead of a
 single restart.
 
 If the module loaded successfully, the Apache error log will contain

@@ -134,7 +134,7 @@ apr_bucket *wsgi_apr_bucket_python_create(const char *buf, apr_size_t length,
  * for the matching decref.
  *
  * The two branches have asymmetric GIL-handling invariants that are
- * load-bearing — do not collapse them.
+ * load-bearing, so do not collapse them.
  *
  * else-branch (first setaside, decref_string == 0): the caller is the
  * WSGI write path, which already holds the GIL on

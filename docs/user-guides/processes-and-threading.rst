@@ -278,8 +278,8 @@ The UNIX 'event' MPM
 --------------------
 
 The 'event' MPM is the default MPM on most current Linux
-distributions. It is structurally similar to the 'worker' MPM —
-multiple child processes, each containing a pool of worker threads —
+distributions. It is structurally similar to the 'worker' MPM
+(multiple child processes, each containing a pool of worker threads)
 but uses an event-driven listener thread to handle idle keep-alive
 connections without holding a worker thread for them. This means a
 given child process can handle a much larger number of concurrent
@@ -378,7 +378,7 @@ attribute ``wsgi.multiprocess``: it is set to True when the
 False when the option is omitted entirely. This distinction is
 provided for deployments where a load balancer distributes requests
 across multiple process groups on the same host, or across separate
-Apache installations — even though each individual daemon process
+Apache installations: even though each individual daemon process
 group is configured with a single process, the application as a whole
 is still effectively running multiprocess and ``wsgi.multiprocess``
 should reflect that.
@@ -504,7 +504,7 @@ processes, each child process will contain sub interpreters for each WSGI
 application.
 
 A sub interpreter, once created, persists for the life of the
-process. To reload code, the process itself is recycled — see
+process. To reload code, the process itself is recycled; see
 :doc:`../user-guides/reloading-source-code` for the available
 mechanisms.
 
@@ -524,8 +524,8 @@ will then have access to the same global data. Do note though that
 this doesn't change the fact that global data will not be shared
 between processes.
 
-Some C extension modules — most prominently NumPy, SciPy and modules
-built on top of them — do not work correctly outside the main Python
+Some C extension modules (most prominently NumPy, SciPy and modules
+built on top of them) do not work correctly outside the main Python
 interpreter. WSGI applications using such extensions need to be run
 in the main interpreter by setting ``WSGIApplicationGroup %{GLOBAL}``
 or by being delegated to a daemon process group, which gets its own

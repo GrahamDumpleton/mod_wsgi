@@ -96,7 +96,7 @@ def summarise(seen):
 
     print("")
     print("=" * 72)
-    print(f"mod_wsgi.request_metrics() — {n} process(es)")
+    print(f"mod_wsgi.request_metrics(): {n} process(es)")
     print("=" * 72)
 
     agg_req = 0
@@ -182,7 +182,7 @@ def main():
     elif mode == "report":
         seen = collect_report(base_url, expected)
         if len(seen) < expected:
-            print(f"metrics: WARNING — only {len(seen)}/{expected} process(es) reported",
+            print(f"metrics: WARNING - only {len(seen)}/{expected} process(es) reported",
                   file=sys.stderr)
         summarise(seen)
     else:

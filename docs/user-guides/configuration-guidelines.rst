@@ -9,9 +9,9 @@ model, application groups, per-application configuration injection,
 authentication, request-body limits, and reverse-proxy/HTTPS
 deployment.
 
-For a step-by-step first-time tutorial — three progressively richer
+For a step-by-step first-time tutorial (three progressively richer
 ``VirtualHost`` examples building up from basic mounting to daemon
-mode — see :doc:`quick-configuration-guide` instead.
+mode) see :doc:`quick-configuration-guide` instead.
 
 If you do not need to integrate with an existing system Apache
 install, the ``mod_wsgi-express`` command (installed alongside the
@@ -69,12 +69,12 @@ Apache, declare it with a ``<Directory>`` block::
         Require all granted
     </Directory>
 
-Apply ``Require`` to ``<Directory>`` rather than ``<Location>`` —
+Apply ``Require`` to ``<Directory>`` rather than ``<Location>``:
 applying access controls to a ``<Location>`` (especially ``/``) is
 not best practice and can weaken the security of the server.
 
 Use of ``WSGIScriptAlias`` does not require explicitly enabling
-``ExecCGI`` via ``Options`` — execute permission is implied by the
+``ExecCGI`` via ``Options``: execute permission is implied by the
 directive itself, just as for ``ScriptAlias``.
 
 To mount a WSGI application at the root of the site::
@@ -136,7 +136,7 @@ the framework already provides:
       </Directory>
 
   This avoids the extra shim file at the cost of having
-  ``WSGIScriptAlias`` point at a ``.py`` file — only do this if no
+  ``WSGIScriptAlias`` point at a ``.py`` file. Only do this if no
   ``AddHandler`` directive in scope already maps ``.py`` to a
   different handler.
 
@@ -150,14 +150,14 @@ on a WSGI server. They can be hosted under mod_wsgi via an
 ASGI-to-WSGI shim such as ``a2wsgi``, but the async benefits are
 lost in that configuration. The recommended pattern for ASGI
 applications is to run them under a dedicated ASGI server
-(``uvicorn``, ``hypercorn``) — optionally with Apache acting as a
+(``uvicorn``, ``hypercorn``), optionally with Apache acting as a
 reverse proxy in front, terminating TLS and serving static files.
 
 Hosting Of Static Files
 -----------------------
 
 When ``WSGIScriptAlias`` mounts an application at the root of the
-site, every request maps to the WSGI application — including
+site, every request maps to the WSGI application, including
 requests for static assets that the application does not own. Use
 ``Alias``, ``AliasMatch``, or directory-based handler configuration
 to route those requests back to Apache before the WSGI alias
@@ -254,7 +254,7 @@ A few of the more commonly used options to ``WSGIDaemonProcess``:
     The UNIX user *name* or numeric user *uid* the daemon processes
     run as. Defaults to whatever user Apache runs its child
     processes as (the ``User`` directive). Ignored when Apache was
-    not started as ``root`` — in that case daemon processes run as
+    not started as ``root``; in that case daemon processes run as
     the user Apache was started as, regardless of this option.
 
 **group=name | group=#gid**
@@ -383,8 +383,8 @@ supports only embedded mode.
 Defining Application Groups
 ---------------------------
 
-Within a process — whether an Apache child process in embedded mode
-or a daemon process — the WSGI application runs inside a Python
+Within a process (whether an Apache child process in embedded mode
+or a daemon process) the WSGI application runs inside a Python
 sub-interpreter. The sub-interpreter is identified by an
 *application group* name. By default each WSGI application gets its
 own application group, which means each one gets its own
@@ -405,13 +405,13 @@ values:
 
 **%{GLOBAL}**
 
-    The application runs in the main Python interpreter — the one
+    The application runs in the main Python interpreter, the one
     Python creates at process startup, before any sub-interpreters
     are spawned.
 
-    A small number of C extension modules — most commonly NumPy and
+    A small number of C extension modules (most commonly NumPy and
     SciPy, plus other modules built on the same simplified
-    Python C API for GIL management — assume they are running in
+    Python C API for GIL management) assume they are running in
     the main interpreter and misbehave inside sub-interpreters. The
     symptoms range from import errors to crashes once the
     extension is exercised. If your application uses such an
@@ -455,7 +455,7 @@ to the WSGI application, use ``SetEnv``::
     SetEnv demo.debugging 0
 
 Variables set this way appear in the WSGI ``environ`` dictionary on
-each request. They are *not* the same as ``os.environ`` — the
+each request. They are *not* the same as ``os.environ``: the
 process environment is unaffected by ``SetEnv`` and there is no
 mod_wsgi mechanism for setting process environment variables from
 Apache configuration.
@@ -501,7 +501,7 @@ implements authentication::
 
 When Apache (rather than the WSGI application) performs the
 authentication, the WSGI application can still see the result via
-the ``AUTH_TYPE`` and ``REMOTE_USER`` environment variables —
+the ``AUTH_TYPE`` and ``REMOTE_USER`` environment variables:
 ``AUTH_TYPE`` indicates which authentication scheme Apache used,
 ``REMOTE_USER`` is the authenticated login name.
 
@@ -559,8 +559,8 @@ application. As an alternative, the standard Apache ``Alias``
 directive can be combined with ``SetHandler`` or ``AddHandler`` to
 designate URLs as WSGI scripts. This pattern is mostly relevant
 when WSGI scripts need to coexist with static files, CGI scripts,
-or directory indexes in the same directory — situations the
-``WSGIScriptAlias`` form does not address.
+or directory indexes in the same directory (situations the
+``WSGIScriptAlias`` form does not address).
 
 The equivalent of::
 
@@ -605,7 +605,7 @@ handler is selected by file extension::
 
 For whichever extensions you use, make sure no earlier
 configuration applies a different handler to those same extensions
-in the same context — if both ``cgi-script`` and ``wsgi-script``
+in the same context: if both ``cgi-script`` and ``wsgi-script``
 are bound to the same extension the order of the directives
 determines which wins, and the wrong handler may be selected.
 
@@ -624,7 +624,7 @@ handlers when matching::
     </Directory>
 
 This is most useful when migrating from CGI to WSGI without
-changing existing URLs — Apache picks the WSGI version of a
+changing existing URLs: Apache picks the WSGI version of a
 resource over the CGI version when both exist.
 
 To enable directory listings or directory indexes alongside the
@@ -642,7 +642,7 @@ WSGI handler::
     </Directory>
 
 ``DirectoryIndex`` only works for a WSGI application that returns a
-single page when the URL maps directly to the directory itself —
+single page when the URL maps directly to the directory itself;
 it is not invoked when the request URL has additional path
 information beyond the directory mount point. It cannot be used to
 route a complex multi-URL application.
@@ -693,7 +693,7 @@ The ``[PT]`` (pass-through) flag is required so that the rewrite is
 re-resolved through the alias and handler phases.
 
 A side effect of this rewrite is that the WSGI ``SCRIPT_NAME``
-environment variable is ``/site.wsgi`` rather than ``/`` — which
+environment variable is ``/site.wsgi`` rather than ``/``, which
 will leak into any URLs the application generates from
 ``SCRIPT_NAME``. Many frameworks expose a configuration option to
 override the mount point. As a fallback, wrap the application

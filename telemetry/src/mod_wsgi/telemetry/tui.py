@@ -571,14 +571,14 @@ def render_header(win, state: State, ui: UIState, h: dict) -> int:
             pgroup = ",".join(groups) if groups else "(any)"
         sample_period = ps.sample_period
 
-    # Line 0 — title bar + connection state.
+    # Line 0: title bar + connection state.
     title = f" mod_wsgi-telemetry top  {hostname or '-'} · {pgroup} "
     status = "[paused]" if ui.paused else ("[live]" if state.connected else "[disconnected]")
     extras = f" tick={sample_period:.1f}s  refresh={ui.refresh:g}s  win={_win_label(ui.window)}  {status} "
     pad = " " * max(0, width - len(title) - len(extras))
     safe_addstr(win, 0, 0, title + pad + extras, curses.color_pair(CP_HEADER) | curses.A_BOLD)
 
-    # Line 1 — throughput. No padding on rps_now so the value starts
+    # Line 1: throughput. No padding on rps_now so the value starts
     # at column 13, lining up vertically with the labels on the rows
     # below (Capacity:, CPU:, Status:, Latency:, Slow:).
     safe_addstr(win, 1, 0,
@@ -586,7 +586,7 @@ def render_header(win, state: State, ui: UIState, h: dict) -> int:
         f"{h['rps_1m']:.1f}/s 1m  {h['rps_10m']:.1f}/s 10m  "
         f"in {fmt_bytes(h['in_bps'])}/s  out {fmt_bytes(h['out_bps'])}/s")
 
-    # Line 2 — capacity bar.
+    # Line 2: capacity bar.
     cap_total = h["threads_total"]
     cap_busy = h["busy"]
     frac = (cap_busy / cap_total) if cap_total else 0.0
@@ -602,13 +602,13 @@ def render_header(win, state: State, ui: UIState, h: dict) -> int:
                 f" {cap_busy:>4d}/{cap_total:<4d} threads busy "
                 f"({frac*100:5.1f}%)  {qstr}")
 
-    # Line 3 — CPU + memory.
+    # Line 3: CPU + memory.
     safe_addstr(win, 3, 0,
         f" CPU:        user {h['cpu_user']:.2f}  sys {h['cpu_sys']:.2f}  "
         f"total {h['cpu_user']+h['cpu_sys']:.2f} cores   "
         f"Memory: RSS {fmt_bytes(h['rss_total'])} (max {fmt_bytes(h['rss_max'])})")
 
-    # Line 4 — per-class HTTP response distribution for the latest
+    # Line 4: per-class HTTP response distribution for the latest
     # interval. 2xx / 3xx / 4xx / 5xx as percentages of request_count.
     # 1xx is a PEP 3333 tripwire (a WSGI app should never return 1xx)
     # so it carries its raw count and renders amber when > 0; dim when
@@ -637,19 +637,19 @@ def render_header(win, state: State, ui: UIState, h: dict) -> int:
               else curses.color_pair(CP_DIM)
     safe_addstr(win, 4, x, s5, s5_attr)
 
-    # Line 5 — latency percentiles.
+    # Line 5: latency percentiles.
     p50 = fmt_seconds(h["p50"]); p95 = fmt_seconds(h["p95"]); p99 = fmt_seconds(h["p99"])
     mn = fmt_seconds(h["min"]); mx = fmt_seconds(h["max"])
     safe_addstr(win, 5, 0,
         f" Latency:    p50 {p50:>8}  p95 {p95:>8}  p99 {p99:>8}   "
         f"min {mn:>8}  max {mx:>8}")
 
-    # Line 6 — slow-request counters.
+    # Line 6: slow-request counters.
     safe_addstr(win, 6, 0,
         f" Slow:       {h['active_slow']} active  /  "
         f"{h['recent_slow']} 1m  /  {h['total_slow']} total")
 
-    # Line 7 — tab bar.
+    # Line 7: tab bar.
     _render_tabs(win, 7, width, ui.view)
     return 8
 
@@ -706,7 +706,7 @@ def render_overview(win, state: State, ui: UIState, h: dict, y0: int) -> None:
         ("RSS MB      ", rss_series, lambda v: f"{v/1_048_576:.0f} MB"),
     ]
     y = y0 + 1
-    safe_addstr(win, y0, 1, f"Overview — last {_win_label(seconds)} (use < > to change window)",
+    safe_addstr(win, y0, 1, f"Overview: last {_win_label(seconds)} (use < > to change window)",
                 curses.A_BOLD)
     for label, series, fmt in rows:
         if y >= height - 1:
@@ -822,7 +822,7 @@ def render_processes(win, state: State, ui: UIState, y0: int) -> None:
     rows.sort(key=keyfn)
 
     safe_addstr(win, y0, 1,
-        f"Processes — sort: {sort_key} (use < > to change)   "
+        f"Processes - sort: {sort_key} (use < > to change)   "
         f"{len(rows)} pids", curses.A_BOLD)
     header = f"  {'PID':>7}  {'GROUP':<16}  {'THREADS':>9}  {'RPS':>7}  " \
              f"{'CPU':>6}  {'RSS':>9}  {'P95':>9}  {'SLOW':>5}"
@@ -853,7 +853,7 @@ def render_processes(win, state: State, ui: UIState, y0: int) -> None:
 def render_workers(win, state: State, ui: UIState, y0: int) -> None:
     height, width = win.getmaxyx()
     safe_addstr(win, y0, 1,
-        "Workers — slot grid: . idle  * <1s  # 1-5s  ! >=slow-threshold",
+        "Workers - slot grid: . idle  * <1s  # 1-5s  ! >=slow-threshold",
         curses.A_BOLD)
     y = y0 + 1
     pids = sorted(state.processes.keys())
@@ -944,7 +944,7 @@ def render_latency(win, state: State, ui: UIState, y0: int) -> None:
     lo, hi = _phase_min_max(state, phase, seconds, ui.group_filter)
 
     safe_addstr(win, y0, 1,
-        f"Latency — phase: {phase}  window: {_win_label(seconds)}  "
+        f"Latency - phase: {phase}  window: {_win_label(seconds)}  "
         f"samples: {total}    "
         f"([ ] phase, < > window)", curses.A_BOLD)
     safe_addstr(win, y0 + 1, 1,
@@ -1058,7 +1058,7 @@ def render_slow(win, state: State, ui: UIState, y0: int) -> None:
         rows.sort(key=lambda r: (r[2].url(), -r[0]))
 
     state_filter = {-1: "any", 0: "active", 1: "completed"}[ui.slow_state_filter]
-    title = (f"Slow requests — sort: {sort_key}  state: {state_filter}  "
+    title = (f"Slow requests - sort: {sort_key}  state: {state_filter}  "
              f"({len(rows)} shown / {len(state.slow)} total)   "
              f"(< > sort, f filter, / search)")
     safe_addstr(win, y0, 1, title, curses.A_BOLD)
@@ -1123,7 +1123,7 @@ def render_help(win) -> None:
     for r in range(box_h):
         safe_addstr(win, y0 + r, x0, " " * box_w, curses.color_pair(CP_TAB))
     safe_addstr(win, y0, x0, " " * box_w, curses.color_pair(CP_HEADER) | curses.A_BOLD)
-    safe_addstr(win, y0, x0 + 2, " mod_wsgi-telemetry top — help ",
+    safe_addstr(win, y0, x0 + 2, " mod_wsgi-telemetry top: help ",
                 curses.color_pair(CP_HEADER) | curses.A_BOLD)
     for i, line in enumerate(HELP_LINES):
         safe_addstr(win, y0 + 2 + i, x0 + 2, line, curses.color_pair(CP_TAB))

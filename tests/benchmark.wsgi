@@ -42,8 +42,8 @@
 #                       5% draw from a slow lognormal centred on 2 s,
 #                       capped at 5 s (thin but real long tail). Models
 #                       fast happy path + rare slow path (DB retries,
-#                       cache misses, GC pauses) — how real HTTP latency
-#                       decomposes in production. CPU side uses the
+#                       cache misses, GC pauses), which is how real HTTP
+#                       latency decomposes in production. CPU side uses the
 #                       plain lognormal (no tail branch) to avoid
 #                       pathological stalls on rare CPU outliers.
 #
@@ -87,7 +87,7 @@
 #
 # BENCHMARK_4XX_RATE and BENCHMARK_5XX_RATE env vars (floats in [0, 1];
 # default 0) inject error responses at the given per-request probability.
-# 5xx is rolled first, then 4xx, then a normal 2xx — so the two rates
+# 5xx is rolled first, then 4xx, then a normal 2xx, so the two rates
 # are independent probabilities of *each* error class, and their sum
 # must be <= 1. 4xx returns "404 Not Found", 5xx returns
 # "500 Internal Server Error" (the most operationally common code in
@@ -230,7 +230,7 @@ def _maybe_wedge():
     response).
 
     The loop sleeps each iteration so the wedged thread does not hog
-    the GIL — sibling threads in the same process must keep serving
+    the GIL: sibling threads in the same process must keep serving
     normal requests while one thread sits here. PyThreadState_SetAsyncExc
     only fires on bytecode dispatch, so the injected exception lands on
     the loop iteration after sleep returns; the small sleep adds at most
@@ -317,7 +317,7 @@ if _DISTRIBUTION == "lognormal":
                 _sample_lognormal(_CPU, _CPU_SIGMA))
 elif _DISTRIBUTION == "mixture":
     def _per_request_times():
-        # CPU uses plain lognormal — a rare 5 s CPU sample would stall
+        # CPU uses plain lognormal: a rare 5 s CPU sample would stall
         # an entire thread and saturate the host. I/O sleeps release
         # the GIL, so long I/O tail samples are safe.
         return (_sample_mixture(_DELAY, _IO_SIGMA),
@@ -360,7 +360,7 @@ _BASE_HEADERS = [
 
 def _pick_status():
     """Roll the per-request response class. 5xx wins first, then 4xx,
-    then 2xx fills the rest. One uniform draw — the two rates are
+    then 2xx fills the rest. One uniform draw: the two rates are
     independent probabilities, not a partition of weights."""
     if _RATE_5XX <= 0 and _RATE_4XX <= 0:
         return _STATUS_2XX

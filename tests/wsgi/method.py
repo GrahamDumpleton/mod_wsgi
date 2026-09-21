@@ -4,9 +4,9 @@ mod_wsgi can translate HEAD requests into GET before dispatching
 them to the WSGI application. The WSGIMapHEADToGET directive
 controls this:
 
-  * On — always translate HEAD to GET.
-  * Off — never translate; app always sees HEAD.
-  * Auto (default) — translate only when a content output filter
+  * On: always translate HEAD to GET.
+  * Off: never translate; app always sees HEAD.
+  * Auto (default): translate only when a content output filter
     (e.g. mod_deflate, mod_include) is in the filter chain so
     that filter processing still sees a real body.
 

@@ -16,7 +16,7 @@ directive sets the method used for this serialisation.
 If this directive is not defined then the same type of mutex mechanism
 as used by Apache for its own child processes when accepting connections
 from a client will be used. If set, the available method values are the
-same as those documented for the Apache `Mutex`_ directive — typically
+same as those documented for the Apache `Mutex`_ directive, typically
 ``posixsem``, ``sysvsem``, ``fcntl``, ``flock``, ``pthread``, or
 ``default``.
 

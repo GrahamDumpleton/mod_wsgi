@@ -54,7 +54,7 @@ A WSGI application can also be mounted at the root of the site by using
 In this case all requests to the site will be dispatched to the
 specified WSGI script file.
 
-The ``.wsgi`` extension shown here is a convention only — when
+The ``.wsgi`` extension shown here is a convention only: when
 ``WSGIScriptAlias`` is used, the script is identified by its full file
 path and any extension (or none) is acceptable. The ``.wsgi`` convention
 is used to avoid clashing with any pre-existing ``AddHandler`` directive

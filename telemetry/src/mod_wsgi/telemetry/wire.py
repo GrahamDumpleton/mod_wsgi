@@ -127,11 +127,11 @@ FIELDS = {
 
     # 60-69: per-phase mean times for the interval (seconds).
     # request_time is the per-request total
-    # (server + queue + daemon + application) — what the caller actually
+    # (server + queue + daemon + application): what the caller actually
     # experienced. gil_wait_time, input_read_time and output_write_time
     # are cross-cutting overlap indicators that accumulate *during*
     # application_time and are *not* addends in the request_time
-    # invariant. gil_wait_time is partial — see UI help text for the
+    # invariant. gil_wait_time is partial: see UI help text for the
     # full coverage caveat. output_write_time is adapter-handoff time
     # (Apache may buffer / async-flush past the WSGI app's return), not
     # client-receive latency.
@@ -210,7 +210,7 @@ FIELDS = {
     # end-of-request, sharing drain-and-reset semantics with the
     # 100-109 I/O totals block. status==0 (no start_response call) is
     # folded into status_5xx_total. 1xx is included as a PEP-3333
-    # tripwire — a WSGI app should never return 1xx, so a non-zero
+    # tripwire: a WSGI app should never return 1xx, so a non-zero
     # count flags a protocol violation. Sum equals request_count for
     # the same interval; consumers can use this as a sanity check.
     120: "status_1xx_total",

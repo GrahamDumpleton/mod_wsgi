@@ -26,7 +26,7 @@ Quick start with mod_wsgi-express
 when you ``pip install mod_wsgi``. It builds the mod_wsgi module
 against the Apache on your host, generates a self-contained Apache
 configuration, and starts an Apache instance hosting your WSGI
-application — all without touching the system Apache.
+application, all without touching the system Apache.
 
 Prerequisites
 ~~~~~~~~~~~~~
@@ -94,7 +94,7 @@ Server instance, with the freshly-built mod_wsgi module loaded
 into it, configured to serve your ``hello.py`` as a WSGI
 application in daemon mode. The Apache configuration was
 generated automatically in a private directory and is owned by
-your user — there is no system Apache involved and nothing in
+your user: there is no system Apache involved and nothing in
 ``/etc`` was touched.
 
 For the bigger picture of what mod_wsgi and ``mod_wsgi-express``
@@ -129,13 +129,13 @@ Where to go next
 
 Once you have a Hello world running:
 
-* :doc:`user-guides/mod-wsgi-express-quickstart` — going further
+* :doc:`user-guides/mod-wsgi-express-quickstart`: going further
   with ``mod_wsgi-express`` (privileged ports, Django, process
   supervisors, containers).
-* :doc:`how-mod-wsgi-works` — architectural picture and the
+* :doc:`how-mod-wsgi-works`: architectural picture and the
   common deployment patterns.
-* :doc:`installation` — installation methods and trade-offs.
-* :doc:`user-guides/configuration-guidelines` — richer
+* :doc:`installation`: installation methods and trade-offs.
+* :doc:`user-guides/configuration-guidelines`: richer
   configuration examples.
-* :doc:`configuration` — Apache directive reference.
-* :doc:`troubleshooting` — what to do when things don't work.
+* :doc:`configuration`: Apache directive reference.
+* :doc:`troubleshooting`: what to do when things don't work.

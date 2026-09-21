@@ -94,11 +94,12 @@ aplogno:
     printf 'Highest allocated: WSGI%04d\n' "$((10#$highest))"
     printf 'Next to allocate:  WSGI%04d\n' "$((10#$highest + 1))"
 
-# List the tracked files which contain emdashes, with a count for each.
+# This file is excluded because the patterns searched for appear in it.
+# List the tracked files which contain emdashes, literal or escaped, with a count for each.
 check-emdashes:
     #!/usr/bin/env bash
     set -uo pipefail
-    if git grep -c $'\xe2\x80\x94' -- . ; then
+    if git grep -c -i -E $'\xe2\x80\x94|\\\\u2014|&mdash;|&#8212;|&#x2014;' -- . ':!Justfile'; then
         echo
         echo "The files above contain emdashes."
         exit 1

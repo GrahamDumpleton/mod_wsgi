@@ -232,8 +232,11 @@ will be committed.
 ## Style
 
 - Do not use emdashes in any files in this project: not in code
-  comments, docstrings, README files or the docs. Rephrase with
-  commas, parentheses, colons, or separate sentences instead.
+  comments, docstrings, README files, the docs, or text shown to
+  users. That includes the escaped forms, such as the Unicode escape
+  in a JavaScript string or the HTML entity. Rephrase with commas,
+  parentheses, colons, or separate sentences instead.
+  `just check-emdashes` lists any that are present.
 
 - In bulleted lists where items run to multiple lines, put a blank
   line between the bullets: in docstrings, markdown files,

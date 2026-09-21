@@ -41,20 +41,20 @@ The following CVEs have been issued against past versions of
 mod_wsgi. All of them have been fixed; running a current release of
 mod_wsgi means none of them apply.
 
-* **CVE-2022-2255** — Trusted proxy header bypass. The
+* **CVE-2022-2255**: Trusted proxy header bypass. The
   ``X-Client-IP`` request header was not stripped from requests
   received from untrusted proxies, allowing a remote attacker to
   spoof the header value to the hosted WSGI application. Affected
   versions prior to 4.9.3; fixed in 4.9.3.
 
-* **CVE-2014-8583** — Daemon process group privilege drop. When
+* **CVE-2014-8583**: Daemon process group privilege drop. When
   creating a daemon process group, mod_wsgi did not correctly check
   the result of dropping supplementary group privileges in some
   configurations. Affected versions prior to 4.2.4; fixed in 4.2.4.
   Reaching the affected code path required local root in order to
   set up the misconfigured daemon process group in the first place.
 
-* **CVE-2014-0240** — setuid error code handling. On certain Linux
+* **CVE-2014-0240**: setuid error code handling. On certain Linux
   kernels, mod_wsgi did not correctly handle non-POSIX error codes
   returned by ``setuid()`` when dropping privileges in daemon mode.
   In a configuration that allowed unprivileged users to run their
@@ -62,7 +62,7 @@ mod_wsgi means none of them apply.
   escalate privileges. Affected versions up to and including 3.4;
   fixed in 3.5.
 
-* **CVE-2014-0242** — Content-Type response header memory reuse. In
+* **CVE-2014-0242**: Content-Type response header memory reuse. In
   embedded mode, the response Content-Type header could be corrupted
   by a concurrent thread reusing memory that had been freed,
   potentially exposing data from other requests. Affected versions

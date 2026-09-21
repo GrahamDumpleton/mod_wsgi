@@ -1200,7 +1200,7 @@ void wsgi_log_python_error_ex(const char *file, int line, int module_index,
      * Server-scope callers run during single-threaded init, so the
      * sub-pool create on the process pool is not racing other
      * threads. If the sub-pool can't be created (OOM), fall back
-     * to the parent pool — the leak is preferable to crashing
+     * to the parent pool: the leak is preferable to crashing
      * while logging an exception. The sub-pool is destroyed once
      * the header has been emitted.
      */

@@ -269,7 +269,7 @@ static PyObject *Adapter_start_response(AdapterObject *self, PyObject *args)
 
     /* Transfer ownership of headers_as_bytes to self->headers and
      * disclaim the local so the finally XDECREF below is a no-op
-     * for this object — avoids the +1/-1 refcount round-trip the
+     * for this object, which avoids the +1/-1 refcount round-trip the
      * older INCREF-then-XDECREF pattern incurred. */
 
     Py_XDECREF(self->headers);
@@ -300,7 +300,7 @@ static int Adapter_output(AdapterObject *self, const char *data,
      * around ap_pass_brigade and apr_brigade_cleanup. They are
      * captured *inside* each WSGI_BEGIN_ALLOW_THREADS block, so the
      * accumulated self->output_time measures only the time the WSGI
-     * app spent waiting for Apache to take its data — header
+     * app spent waiting for Apache to take its data: header
      * processing, bucket construction and the GIL re-acquire wait
      * (which WSGI_END_ALLOW_THREADS attributes to gil_wait_time)
      * are deliberately excluded. Same pattern as Input_read_from_input
@@ -1670,7 +1670,7 @@ int Adapter_run(AdapterObject *self, PyObject *object)
         /* PyObject_HasAttrString swallows all exceptions raised by
          * the lookup, so a custom __getattribute__ that raises would
          * be silently treated as "no close method". Use
-         * GetAttrString and only treat AttributeError as benign — any
+         * GetAttrString and only treat AttributeError as benign. Any
          * other exception gets a context preamble logged here, then
          * is left set so the PyErr_Occurred() block below prints the
          * traceback after our preamble. */

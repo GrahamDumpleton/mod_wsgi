@@ -27,10 +27,10 @@ ongoing themes include:
 Version support
 ---------------
 
-* **6.x** — current development line. New features and fixes go here.
-* **5.x** — stable. Once 6.x has stabilised, 5.x will receive backports
+* **6.x**: current development line. New features and fixes go here.
+* **5.x**: stable. Once 6.x has stabilised, 5.x will receive backports
   of essential fixes only; new features will not be backported.
-* **Older versions (4.x and earlier)** — no longer maintained. Linux
+* **Older versions (4.x and earlier)**: no longer maintained. Linux
   distributions sometimes ship older versions of mod_wsgi as part of
   long-term-support releases; those older versions are not supported
   by this project even when shipped by an LTS distribution.

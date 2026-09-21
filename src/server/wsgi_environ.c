@@ -848,7 +848,7 @@ static void wsgi_add_vars_to_environment(request_rec *r)
      * CGI request-line variables, transcribed from ap_add_cgi_vars().
      * Use setn so these win over any pre-existing entries inherited
      * via the temp table. The PATH_TRANSLATED block is deliberately
-     * omitted — that is the subrequest we are avoiding. GATEWAY_INTERFACE
+     * omitted: that is the subrequest we are avoiding. GATEWAY_INTERFACE
      * is also omitted: it is not required by PEP 3333 and the "CGI/1.1"
      * value upstream sets is misleading for a WSGI environment.
      */

@@ -462,10 +462,10 @@
    * the four phases (which equals request_time end-to-end, so the bar
    * always fills the row regardless of which phase dominates).
    * Colour palette aligns with how the phases are framed in the docs:
-   *   server      = gray   — pre-mod_wsgi Apache overhead
-   *   queue       = amber  — waiting on a daemon worker
-   *   daemon      = blue   — daemon-side request setup
-   *   application = green  — actual WSGI callable
+   *   server      = gray   - pre-mod_wsgi Apache overhead
+   *   queue       = amber  - waiting on a daemon worker
+   *   daemon      = blue   - daemon-side request setup
+   *   application = green  - actual WSGI callable
    * Active records render with reduced opacity on the segment that is
    * still in flight so the user sees "this is partial". */
   .slow-details .phase-bar {
@@ -522,7 +522,7 @@
     border-radius: 4px;
     padding: 10px;
     transition: border-color 0.3s, box-shadow 0.3s;
-    /* Responsive meta-line layout — see @container rule below. */
+    /* Responsive meta-line layout: see @container rule below. */
     container-type: inline-size;
   }
   .capacity-card h3 {
@@ -544,7 +544,7 @@
     .capacity-card .meta .meta-secondary { display: block; }
   }
   /* Saturated: queue time growing, busy sustained near 100%, or
-   * slow requests under load. Adding threads probably won't help —
+   * slow requests under load. Adding threads probably won't help:
    * this process can't serve what it's already been given. */
   .capacity-card.saturated {
     border-color: #e53935;
@@ -553,7 +553,7 @@
   }
   /* CPU/GIL-bound: process pinned to ~one core with multiple threads.
    * Indistinguishable from outside whether the bottleneck is the GIL
-   * or genuine per-request CPU work — the fix is the same: add
+   * or genuine per-request CPU work; the fix is the same: add
    * processes, not threads. */
   .capacity-card.cpu-gil-bound {
     border-color: #ffb300;
@@ -747,7 +747,7 @@
     background: #161616;
     border-radius: 3px;
   }
-  /* Processes tab — Gantt timeline on top, event log below.
+  /* Processes tab: Gantt timeline on top, event log below.
    * The Gantt row count is unbounded, so its canvas lives inside a
    * scrollable container with a max height; the event log is a plain
    * table with its own scroll cap so the page stays compact when a
@@ -941,7 +941,7 @@
 <div class="help-backdrop" id="help_backdrop" role="dialog" aria-modal="true">
   <div class="help-modal">
     <div class="help-head">
-      <h2>mod_wsgi telemetry &mdash; reference</h2>
+      <h2>mod_wsgi telemetry: reference</h2>
       <button type="button" id="help_copy">Copy help</button>
       <button type="button" id="help_copy_stats">Copy current stats (last 1 min)</button>
       <button type="button" id="help_close">Close</button>
@@ -1042,7 +1042,7 @@
             </label>
           </div>
           <div class="header-row">
-            <div class="unit" title="HDR buckets, 1ms..65s — 16 octaves x 4 sub-buckets per octave + 1 overflow = 65 entries per phase. Max relative error inside any sub-bucket is ≤25%. Aggregated across visible processes.">HDR buckets 1ms..65s &mdash; last
+            <div class="unit" title="HDR buckets, 1ms..65s: 16 octaves x 4 sub-buckets per octave + 1 overflow = 65 entries per phase. Max relative error inside any sub-bucket is ≤25%. Aggregated across visible processes.">HDR buckets 1ms..65s: last
               <select id="dist_window" class="window-picker">
                 <option value="10">10s</option>
                 <option value="30">30s</option>
@@ -1237,7 +1237,7 @@ const COLORS = ["#4fc3f7","#ff8a65","#81c784","#ba68c8","#fff176","#4db6ac","#e5
 // Line charts always show the most recent LINE_WINDOW_SEC. Samples are
 // retained for up to SAMPLE_RETENTION_SEC so the distribution panel's
 // window picker can reach 10 minutes even though the line charts stay
-// focused on recent activity. 60s is the shared default across the UI —
+// focused on recent activity. 60s is the shared default across the UI:
 // line charts, distribution histogram, Capacity heatmap and sidebar
 // per-process stats all key off the same 1-minute window so numbers
 // read consistently across tabs.
@@ -1292,18 +1292,18 @@ const state = {
   // frozen snapshot of slow-request entries (frozen at pause time)
   // and the GC pass that would evict aged-out rows is suppressed.
   // New samples still accumulate in state.slowRequests in the
-  // background — resume drops the snapshot and the live view returns.
+  // background; resume drops the snapshot and the live view returns.
   slowPaused: false,
   slowPausedSnapshot: null,
   // Processes tab. windowSec is the Gantt's visible time span (also
   // used to clip event-log rows). highlightPid + highlightUntilMs
-  // drive the post-click "flash this process" affordance — the Gantt
+  // drive the post-click "flash this process" affordance: the Gantt
   // row gets a tinted backdrop and the matching event-log rows get
   // a flash class until the deadline. scrollRequestedPid is consumed
   // by the next Gantt redraw to scroll the matching row into view
   // (the redraw is the only place that knows each row's Y). When
   // paused, pausedAt freezes the "now" clock so neither surface
-  // shifts while the operator reads — lifecycle events continue to
+  // shifts while the operator reads; lifecycle events continue to
   // accumulate in state.lifecycleEvents in the background.
   processesTab: {
     windowSec: 60,
@@ -1321,13 +1321,13 @@ const PROCESSES_HIGHLIGHT_MS = 2500;
 // tidy while click-through correlation (e.g. from the Capacity
 // heatmap) can reach back further than the visible table window.
 //
-//   STORAGE  — how long state.slowRequests holds an entry. Pruned by
+//   STORAGE:   how long state.slowRequests holds an entry. Pruned by
 //              pruneSlowStorage(). The Capacity tab's drill-down
 //              consults storage, so this needs to outlive the
 //              heatmap's visible window plus a comfortable
 //              pause-and-browse buffer.
 //
-//   DISPLAY  — how long the Slow Requests table shows a row.
+//   DISPLAY:   how long the Slow Requests table shows a row.
 //              Filtered inside renderSlowRequests(); does not
 //              delete from storage. Keeps the live table compact.
 //
@@ -1344,10 +1344,10 @@ const SLOW_COMPLETED_TTL_MS = 15000;            // display only (completed)
 
 // Shutdown-reason → marker category. Keep in sync with the C side's
 // wsgi_shutdown_reason assignments (see wsgi_daemon.c / wsgi_execute.c).
-// "planned" — operator-configured cycling that's expected to fire.
-// "tuning" — fired by limits the operator set to bound bad behaviour;
-//            interesting when investigating, not alarming day-to-day.
-// "unplanned" — abnormal exit paths that operators want to know about.
+// "planned": operator-configured cycling that's expected to fire.
+// "tuning": fired by limits the operator set to bound bad behaviour;
+//           interesting when investigating, not alarming day-to-day.
+// "unplanned": abnormal exit paths that operators want to know about.
 const REASON_CATEGORIES = {
   // planned
   restart_interval:    "planned",
@@ -1404,7 +1404,7 @@ function colorFor(pid) {
 }
 
 // A process counts as "embedded" when it did not send a process_group
-// field — i.e. it runs inside an Apache MPM child rather than a WSGI
+// field, i.e. it runs inside an Apache MPM child rather than a WSGI
 // daemon process. The group filter treats "" (empty) as the embedded
 // group and "*" as the wildcard that selects every process.
 function groupKey(p) {
@@ -1686,7 +1686,7 @@ function renderProcs() {
     const respMs = respSamples > 0 ? (respSum / respSamples) * 1000 : null;
     const last = p.samples[p.samples.length - 1];
     const f = last ? last.fields : {};
-    const rss = f.memory_rss ? (f.memory_rss / 1048576).toFixed(0) : "—";
+    const rss = f.memory_rss ? (f.memory_rss / 1048576).toFixed(0) : "-";
     const respPart = respMs !== null
       ? ` · resp ${respMs >= 10 ? respMs.toFixed(0) : respMs.toFixed(1)} ms`
       : "";
@@ -1707,7 +1707,7 @@ function renderProcs() {
     el.innerHTML += `<div class="meta" style="margin-top:8px;color:var(--muted);font-size:11px">
       ${hiddenCount} filtered out</div>`;
   }
-  // Show decode errors only when non-zero — "0 errors" on the title
+  // Show decode errors only when non-zero: "0 errors" on the title
   // bar is noise. The sample count is the primary "am I seeing
   // traffic?" signal so it stays.
   const errPart = state.decodeErrors > 0
@@ -1781,7 +1781,7 @@ function serverSlowThresholdSec(pid) {
   return typeof v === "number" ? v : null;
 }
 
-// Pretty-print a threshold in seconds for inline UI labels — sub-
+// Pretty-print a threshold in seconds for inline UI labels: sub-
 // second values keep two decimals ("0.5 s"), seconds drop trailing
 // zeros for whole values ("1 s", "2 s") and otherwise show one
 // decimal ("1.5 s"). Used in the heatmap dropdown warning and the
@@ -1885,7 +1885,7 @@ function pruneSlowStorage() {
 // row should be visible right now: completed rows hide after the
 // display TTL even though the underlying entry is still in storage,
 // active rows stay until the storage prune drops them. Capacity-tab
-// drill-downs do NOT consult this filter — they read storage
+// drill-downs do NOT consult this filter: they read storage
 // directly so an aged-out display row can still be resolved.
 function isSlowDisplayFresh(rec) {
   if (rec.entry.state !== 1) return true;
@@ -1897,7 +1897,7 @@ function isSlowDisplayFresh(rec) {
 function fmtElapsed(s) {
   // Display labels stay as "ms" / "s" even though the input is now a
   // float in seconds (matching the wire-protocol convention).
-  if (typeof s !== "number" || !isFinite(s) || s < 0) return "—";
+  if (typeof s !== "number" || !isFinite(s) || s < 0) return "-";
   const ms = s * 1000;
   if (ms >= 1000) return s.toFixed(2) + " s";
   return ms.toFixed(0) + " ms";
@@ -1906,7 +1906,7 @@ function fmtElapsed(s) {
 // Compact binary-prefix byte formatter. KB/MB/GB use IEC base-1024
 // values throughout the UI to match free/top conventions for memory.
 function humanBytes(n) {
-  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return "—";
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return "-";
   if (n < 1024) return n + " B";
   const units = ["KB", "MB", "GB", "TB"];
   let v = n / 1024;
@@ -1916,11 +1916,11 @@ function humanBytes(n) {
     + " " + units[i];
 }
 
-// Compact count formatter — keeps small counts exact, abbreviates
+// Compact count formatter: keeps small counts exact, abbreviates
 // large counts so a high-write streaming response doesn't blow out the
 // expand panel ("60 042 writes" vs "60k writes" reads the same way).
 function humanCount(n) {
-  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
+  if (typeof n !== "number" || !Number.isFinite(n)) return "-";
   if (n < 1000) return String(n);
   if (n < 1_000_000) return (n / 1000).toFixed(n < 10000 ? 1 : 0) + "k";
   return (n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0) + "M";
@@ -1936,7 +1936,7 @@ function avgChunk(bytes, calls) {
   return bytes / calls;
 }
 
-// Smell threshold for tiny per-call payloads — under 64 B/call usually
+// Smell threshold for tiny per-call payloads: under 64 B/call usually
 // means a generator yielding tiny tokens (output) or a reader pulling
 // bytes one at a time (input). Tinted amber in the expand panel.
 const IO_SMELL_BYTES_PER_CALL = 64;
@@ -1953,7 +1953,7 @@ const CPU_MULTI_PCT = 100;
 // Mirrors fmtElapsed but with smaller units and a millisecond
 // floor so 0 reads as "0 ms" rather than the seconds form.
 function fmtCpuTime(s) {
-  if (typeof s !== "number" || !isFinite(s) || s < 0) return "—";
+  if (typeof s !== "number" || !isFinite(s) || s < 0) return "-";
   const ms = s * 1000;
   if (ms >= 1000) return s.toFixed(2) + " s";
   if (ms >= 10)   return ms.toFixed(0) + " ms";
@@ -2083,7 +2083,7 @@ function slowEntriesForRender() {
   if (state.slowPaused && state.slowPausedSnapshot) {
     return state.slowPausedSnapshot;
   }
-  // Display filter only — storage pruning runs separately in the
+  // Display filter only: storage pruning runs separately in the
   // redraw tick (pruneSlowStorage) so click-through drill-down can
   // see entries the table has aged out.
   const out = [];
@@ -2102,7 +2102,7 @@ function renderSlowExpandPanel(e) {
   const inAvg = avgChunk(inBytes, inCalls);
   const outAvg = avgChunk(outBytes, outCalls);
   const fmtIO = (bytes, calls, avg, callNoun) => {
-    if (bytes === 0 && calls === 0) return "—";
+    if (bytes === 0 && calls === 0) return "-";
     let s = humanBytes(bytes) + " / " + humanCount(calls) + " " + callNoun;
     if (avg !== null) {
       const cls = avg < IO_SMELL_BYTES_PER_CALL ? " io-amber" : "";
@@ -2129,7 +2129,7 @@ function renderSlowExpandPanel(e) {
   const duration = e.duration || 0;
   let cpuLine, cpuBreakdownLine;
   if (e.state === 0) {
-    cpuLine = `\u2014 <span class="label">(reported at completion)</span>`;
+    cpuLine = `- <span class="label">(reported at completion)</span>`;
     cpuBreakdownLine = "";
   } else if (duration <= 0 || cpuTotal === 0) {
     cpuLine = `${fmtCpuTime(cpuTotal)} <span class="label">(no CPU consumed)</span>`;
@@ -2155,7 +2155,7 @@ function renderSlowExpandPanel(e) {
     ? `<div class="label">Phases</div><div>${phaseBar}</div>`
     : "";
   // GIL wait pressure indicator. Cross-cutting overlap (NOT a phase
-  // addend) — sum of waits at every instrumented re-acquire site
+  // addend): sum of waits at every instrumented re-acquire site
   // reached during this request, plus the initial sub-interp GIL
   // acquire. Cannot see waits inside the application's own C
   // extensions, so it's a partial pressure indicator. Always rendered
@@ -2166,8 +2166,8 @@ function renderSlowExpandPanel(e) {
   let gilRow = "";
   if (gilWaitTime > 0 || gilWaitCount > 0) {
     const pctOfDuration = (duration > 0)
-      ? ((gilWaitTime / duration) * 100).toFixed(0) : "—";
-    const pctText = pctOfDuration === "—"
+      ? ((gilWaitTime / duration) * 100).toFixed(0) : "-";
+    const pctText = pctOfDuration === "-"
       ? "" : ` <span class="label">(${pctOfDuration}% of duration)</span>`;
     const eventsText = gilWaitCount === 1 ? "event" : "events";
     gilRow = `<div class="label">GIL wait</div>` +
@@ -2176,7 +2176,7 @@ function renderSlowExpandPanel(e) {
   }
   // I/O time overlap. Both fields are zero on active (in-flight)
   // records: the slot's input_read_time / output_write_time are
-  // only stamped at end-of-request — so the rows naturally appear
+  // only stamped at end-of-request, so the rows naturally appear
   // only on completed records. Shown with the share of duration
   // they cover so an LLM/operator can see at a glance whether time
   // was lost in the read or write side. output_write covers
@@ -2225,7 +2225,7 @@ function renderSlowExpandPanel(e) {
   if (ppid && hostname) httpdValue = `${ppid} &middot; ${hostname}`;
   else if (ppid) httpdValue = `${ppid}`;
   else if (hostname) httpdValue = hostname;
-  else httpdValue = "&mdash;";
+  else httpdValue = "-";
   const httpdRow = `<div class="label">HTTPD</div><div>${httpdValue}</div>`;
   const processRoleRows = isDaemonMode
     ? `<div class="label">proxy</div><div>${serverPid}</div>` +
@@ -2287,7 +2287,7 @@ function renderSlowExpandPanel(e) {
     ${clientRow}
     ${userAgentRow}
     <div class="label">Log ID</div>
-    <div>${escapeHtml(e.log_id || "—")}</div>
+    <div>${escapeHtml(e.log_id || "-")}</div>
     ${phaseRow}
     ${gilRow}
     ${concurrencyRow}
@@ -2380,15 +2380,15 @@ function renderSlowRequests() {
       : `<span class="state-active">active</span>`;
     const method = e.method
       ? `<span class="method">${escapeHtml(e.method)}</span>`
-      : `<span class="method-none">—</span>`;
+      : `<span class="method-none">-</span>`;
     const urlEsc = escapeHtml(url);
 
-    // status==0 — no start_response yet, render a dash so it's
+    // status==0: no start_response yet, render a dash so it's
     // visibly distinct from a real status. 5xx in red.
     const statusVal = e.status || 0;
     let statusCell;
     if (!statusVal) {
-      statusCell = `<span class="method-none">—</span>`;
+      statusCell = `<span class="method-none">-</span>`;
     } else {
       const cls = statusVal >= 500 && statusVal < 600 ? "state-active" : "";
       statusCell = `<span class="${cls}">${statusVal}</span>`;
@@ -2554,7 +2554,7 @@ const SLOW_RUN_MATCH_SLACK_S = 1.0;
 // end is treated as "now" since the request is still in progress.
 //
 // Match selection: when multiple entries qualify, pick the one with
-// the largest absolute overlap with the run window — handles
+// the largest absolute overlap with the run window. Handles
 // multiple short slow requests rolling through the same slot in
 // quick succession by preferring the one most contained by the run.
 function findSlowEntryForRun(pid, slot, runStartT, runEndT) {
@@ -2671,7 +2671,7 @@ function drawCapacityHeatmap(canvas, p, stuckThresh, nowOverride) {
 
   // Merge consecutive stuck cells on the same slot into one run. A run
   // is a maximal span of ticks where elapsedMs >= threshold AND elapsed
-  // is monotonically non-decreasing — meaning the same long request
+  // is monotonically non-decreasing, meaning the same long request
   // kept running across those ticks. When elapsed drops (the old request
   // finished and a fresh one started within the next tick) we end the
   // run and start a new one, so distinct stuck requests stay visually
@@ -2723,7 +2723,7 @@ function drawCapacityHeatmap(canvas, p, stuckThresh, nowOverride) {
 
     // Estimate the request's actual start/end from the slot
     // signals alone. These bounds drive both the matcher query
-    // (so long requests still find their entry — see below) and
+    // (so long requests still find their entry; see below) and
     // the painter when no matching entry exists.
     let estStartT, estEndT, estEndKnown;
     if (run.viaMax) {
@@ -2774,7 +2774,7 @@ function drawCapacityHeatmap(canvas, p, stuckThresh, nowOverride) {
         actualEndT = actualStartT + (entry.duration || 0);
         endIsKnown = true;
       } else {
-        // Active request — end the fill at the latest sample's
+        // Active request: end the fill at the latest sample's
         // tick time, not at `now`. The cells in this slot row also
         // end at the latest sample, so this keeps the bar aligned
         // with the cells instead of protruding into the empty
@@ -2791,8 +2791,8 @@ function drawCapacityHeatmap(canvas, p, stuckThresh, nowOverride) {
     }
 
     // Translate to canvas x using the actual request bounds, then
-    // clamp to the heatmap drawing area (NOT to cellLeftX/cellRightX
-    // — clamping there is what made the fill snap to the first
+    // clamp to the heatmap drawing area (NOT to cellLeftX/cellRightX:
+    // clamping there is what made the fill snap to the first
     // threshold-crossing cell instead of the real start, so lowering
     // the stuck-threshold made the fill visibly jump left). With
     // bounds tied to the actual request, threshold changes only
@@ -2836,7 +2836,7 @@ function drawCapacityHeatmap(canvas, p, stuckThresh, nowOverride) {
 
     // Top-left "captured" marker: a small white square indicating
     // this run is backed by a real slow-request record (so the
-    // drill-down popup has actual data — URL, log_id, I/O — not
+    // drill-down popup has actual data (URL, log_id, I/O), not
     // just heuristic detection). Skipped on very narrow runs to
     // avoid eating the bar itself.
     if (entry && w >= 8) {
@@ -2871,7 +2871,7 @@ function drawCapacityHeatmap(canvas, p, stuckThresh, nowOverride) {
   //
   // busy is normalised against total slot capacity (1.0 = every slot
   // busy the whole tick). cpu is process-wide (cpu_utilization), i.e.
-  // fraction of a single CPU core — pure-Python workloads top out
+  // fraction of a single CPU core: pure-Python workloads top out
   // near 1.0 (GIL-serialised), C extensions that release the GIL can
   // exceed 1.0. The CPU/GIL-bound heuristic still needs a
   // slot-normalised cpu figure so the cpu/busy ratio is dimensionally
@@ -3008,7 +3008,7 @@ function drawCapacityHeatmap(canvas, p, stuckThresh, nowOverride) {
     // Weighted slot-cpu / slot-busy: near 1.0 means threads are on-CPU
     // whenever assigned (real CPU work); near 0 means slots appear
     // busy but threads aren't running (I/O wait or GIL blocking).
-    // Used to colour the CPU/GIL-bound tooltip — a weak hint, not a
+    // Used to colour the CPU/GIL-bound tooltip: a weak hint, not a
     // hard classifier, because I/O-with-GIL-release looks the same.
     slotCpuBusyRatio: slotBusyTotal > 0
       ? slotCpuTotal / slotBusyTotal
@@ -3083,7 +3083,7 @@ function renderCapacity() {
     if (!p) return false;
     if (isHidden(p)) return false;
     // Keep the card visible until the heatmap's window can no longer
-    // cover any sample for this process — the global isStale (10s)
+    // cover any sample for this process: the global isStale (10s)
     // would hide the card while there are still cells to render in
     // the 60s window.
     const last = p.samples[p.samples.length - 1];
@@ -3136,7 +3136,7 @@ function renderCapacity() {
         ms >= 1000 ? (ms / 1000).toFixed(1) + " s"
         : ms >= 10 ? ms.toFixed(0) + " ms"
         : ms.toFixed(2) + " ms";
-      // Render as three spans — primary (busy/cpu), a separator, and
+      // Render as three spans: primary (busy/cpu), a separator, and
       // secondary (queue + slow). A @container rule on narrow cards
       // hides the separator and promotes secondary to display:block
       // so queue and slow-requests drop onto a second line instead
@@ -3351,8 +3351,8 @@ function computeProcessStats(p, windowSec) {
       ? (gilWaitSumS / gilWaitSamples) * 1000 : 0,
     gilWaitMsPeak: gilWaitPeakS * 1000,
     // Share of application time consumed by GIL re-acquire waits at
-    // mod_wsgi instrumentation points. Partial — does not see waits
-    // inside the application's own C extensions — so this is a lower
+    // mod_wsgi instrumentation points. Partial (does not see waits
+    // inside the application's own C extensions), so this is a lower
     // bound on actual GIL pressure. Used as a positive confirmation
     // signal in classifyCapacity (high = unambiguous GIL); a low value
     // does NOT rule out GIL pressure.
@@ -3363,7 +3363,7 @@ function computeProcessStats(p, windowSec) {
     // wsgi.input.read* (input) or in the adapter output path
     // (output). Both are *complete* for traffic mediated by the
     // adapter, but output_write is "adapter handoff" not
-    // client-receive time — see the help text for the full caveat.
+    // client-receive time: see the help text for the full caveat.
     hasInputReadTime: inputReadSamples > 0,
     inputReadMsMean: inputReadSamples > 0
       ? (inputReadSumS / inputReadSamples) * 1000 : 0,
@@ -3473,18 +3473,18 @@ function rollupAcross(pids, windowSec) {
   };
 }
 
-// Pure classifier — takes a stats object (as produced by the capacity
+// Pure classifier: takes a stats object (as produced by the capacity
 // heatmap rollup) and returns {saturated, cpuGilBound, reasons,
 // gilReasons, lean}. Shared by the capacity card renderer (visual
 // state + tooltip) and the snapshot copy (text for LLM paste) so both
 // produce the same verdict and wording.
 //
-//   Saturated        — busy_avg ≥ 80% sustained, daemon queue_time ≥
+//   Saturated:         busy_avg ≥ 80% sustained, daemon queue_time ≥
 //                      50 ms, or multiple slow runs with high busy.
 //                      Gate on a minimum request rate so a near-idle
 //                      process doesn't flag red because one long
 //                      request briefly spiked the window average.
-//   CPU/GIL-bound    — process pinned to ~one core's worth of CPU
+//   CPU/GIL-bound:     process pinned to ~one core's worth of CPU
 //                      with multiple threads. Could be the GIL
 //                      serialising Python work, or per-request CPU
 //                      exhausting one core; indistinguishable from
@@ -3493,20 +3493,20 @@ function rollupAcross(pids, windowSec) {
 //                      amber, independent of overload. Carve-out:
 //                      if cpu clearly exceeds one core with threads
 //                      busy, that's healthy multi-core via C
-//                      extensions releasing the GIL — no flag.
+//                      extensions releasing the GIL: no flag.
 //
 // Independent CPU/GIL-bound fingerprints (any one triggers):
 //   (a) slot-normalised cpu / busy ratio is low under moderate+
-//       load — threads appear busy but aren't consuming CPU.
-//   (b) absolute dispatch daemon time is high — first-GIL-acquire
+//       load: threads appear busy but aren't consuming CPU.
+//   (b) absolute dispatch daemon time is high: first-GIL-acquire
 //       after worker pickup is waiting behind other threads.
 //   (c) process cpu is pegged near one core with multiple threads
-//       and non-trivial busy — the unambiguous "one-core, many
+//       and non-trivial busy: the unambiguous "one-core, many
 //       threads" fingerprint, catches cases where busy and daemon
 //       ratios are both flattened because application_time is
 //       itself stretched by the same contention.
 //   (d) measured GIL re-acquire wait at mod_wsgi instrumentation
-//       sites is a non-trivial fraction of application time —
+//       sites is a non-trivial fraction of application time:
 //       direct positive evidence of contention. The metric is
 //       partial (cannot see waits inside the application's own C
 //       extensions) so it is a one-way signal: high value confirms
@@ -3547,10 +3547,10 @@ function classifyCapacity(stats) {
     && stats.busyMean > 0.3;
   // Direct GIL evidence: measured re-acquire wait at mod_wsgi sites
   // accounts for >=15% of mean application time, with enough load to
-  // matter. One-way signal — see classifyCapacity preamble for why a
+  // matter. One-way signal: see classifyCapacity preamble for why a
   // low value can't refute the other triggers. Coerced to a real
   // boolean so a missing stats.hasGilWait field cannot leak `undefined`
-  // into out.cpuGilBound — that would silently flip
+  // into out.cpuGilBound; that would silently flip
   // classList.toggle("cpu-gil-bound") into its argumentless branch
   // (toggle every call) and produce an on/off flicker without a
   // matching label. The same coercion is applied to out.cpuGilBound
@@ -3579,20 +3579,20 @@ function classifyCapacity(stats) {
     out.gilReasons.push(
       `gil_wait ${Math.round(stats.gilWaitFracOfApp * 100)}% of app time`);
 
-  // Lean wording. Direct GIL evidence wins when present — it
+  // Lean wording. Direct GIL evidence wins when present: it
   // converts the ambiguous "GIL or I/O" reading into a confirmed
   // GIL diagnosis. Otherwise fall back to the per-slot cpu / busy as a
   // weak proxy.
   if (out.cpuGilBound) {
     if (gilDirectTrigger)
-      out.lean = `gil_wait ${Math.round(stats.gilWaitFracOfApp * 100)}% of app time confirms GIL serialisation — add processes for more cores`;
+      out.lean = `gil_wait ${Math.round(stats.gilWaitFracOfApp * 100)}% of app time confirms GIL serialisation: add processes for more cores`;
     else if (stats.slotCpuBusyRatio >= 0.7)
-      out.lean = "threads burning CPU under GIL serialisation — add processes for more cores";
+      out.lean = "threads burning CPU under GIL serialisation: add processes for more cores";
     else if (stats.slotCpuBusyRatio < 0.4
       && (gilDaemonTrigger || stats.slotCpuBusyRatio > 0))
-      out.lean = "threads waiting on GIL or I/O, not on CPU — add processes to reduce contention";
+      out.lean = "threads waiting on GIL or I/O, not on CPU: add processes to reduce contention";
     else
-      out.lean = "one core saturated with multiple threads — add processes, not threads";
+      out.lean = "one core saturated with multiple threads: add processes, not threads";
   }
   return out;
 }
@@ -3624,7 +3624,7 @@ function applyCapacityCardState(card, flag, stats) {
     tooltip.push("Saturated: " + verdict.reasons.join("; "));
   if (verdict.cpuGilBound && !verdict.saturated)
     tooltip.push("CPU/GIL-bound: " + verdict.gilReasons.join("; ") +
-                 " — " + verdict.lean);
+                 " - " + verdict.lean);
   if (header) {
     if (tooltip.length) header.title = tooltip.join("\n");
     else header.removeAttribute("title");
@@ -3683,7 +3683,7 @@ function refreshCapacityTooltip() {
   const hovered = capacityTooltipState.cell;
   if (!hovered) {
     // Only hide the shared element if the histogram tooltip isn't
-    // actively using it — otherwise the capacity redraw would
+    // actively using it; otherwise the capacity redraw would
     // stomp on a visible histogram tooltip every tick.
     if (tooltipState.idx === null) tip.style.display = "none";
     return;
@@ -3700,10 +3700,10 @@ function refreshCapacityTooltip() {
     if (e) {
       const url = slowUrlFor(e);
       const urlShort = url.length > 60 ? url.slice(0, 57) + "\u2026" : url;
-      lines.push(`<div><span class="label">${escapeHtml(e.method || "—")}</span>${escapeHtml(urlShort)}</div>`);
+      lines.push(`<div><span class="label">${escapeHtml(e.method || "-")}</span>${escapeHtml(urlShort)}</div>`);
       if (e.log_id)
         lines.push(`<div><span class="label">log id</span>${escapeHtml(e.log_id)}</div>`);
-      // CPU% hint — concise, no breakdown. Active records carry
+      // CPU% hint: concise, no breakdown. Active records carry
       // zero CPU on the wire today; show "(at completion)" so the
       // reader knows the value isn't suppressed in error.
       const cpuTotal = (e.cpu_user_time || 0) + (e.cpu_system_time || 0);
@@ -3728,7 +3728,7 @@ function refreshCapacityTooltip() {
       `<div><span class="label">busy</span>${(c.frac * 100).toFixed(0)}%</div>` +
       `<div><span class="label">cpu</span>${(c.cpuFrac * 100).toFixed(0)}%</div>` +
       `<div><span class="label">count</span>${c.count}</div>` +
-      `<div><span class="label">elapsed</span>${c.elapsed ? fmtElapsed(c.elapsed) : "—"}</div>` +
+      `<div><span class="label">elapsed</span>${c.elapsed ? fmtElapsed(c.elapsed) : "-"}</div>` +
       `<div><span class="label">max</span>${fmtElapsed(c.maxDuration)}</div>`;
   }
   tip.style.display = "block";
@@ -3771,7 +3771,7 @@ function autoPrecision(v) {
 }
 
 function fmt(v, precision) {
-  if (v === undefined || v === null || Number.isNaN(v)) return "—";
+  if (v === undefined || v === null || Number.isNaN(v)) return "-";
   const p = precision !== undefined ? precision : autoPrecision(v);
   return v.toFixed(p);
 }
@@ -3794,7 +3794,7 @@ const BUCKET_UPPER_MS = (() => {
   arr.push(Infinity);
   return arr;
 })();
-// X-axis labels — only the last sub-bucket of each octave is labelled
+// X-axis labels: only the last sub-bucket of each octave is labelled
 // (every 4th bar) so the axis isn't a wall of numbers. Labels are the
 // upper edge of that octave, abbreviated. The final octave's label
 // is left blank because the next bar (the >65k overflow) carries the
@@ -3911,7 +3911,7 @@ function aggregateBucketsForMinMax(pids, bucketField, windowSec) {
 // Interpolated percentile: locate the bucket containing the target
 // rank, then return a point inside that bucket proportional to where
 // the rank falls. Assumes uniform distribution within the containing
-// sub-bucket — best we can do without per-request data, and a much
+// sub-bucket: best we can do without per-request data, and a much
 // closer approximation than rounding to the bucket's upper edge.
 function bucketPercentileMs(hist, pct) {
   const total = hist.reduce((a, b) => a + b, 0);
@@ -3937,7 +3937,7 @@ function bucketPercentileMs(hist, pct) {
 
 // Map an interpolated ms value back to (bucket index, fraction within
 // the bar's horizontal extent). Used for placing percentile markers
-// on the histogram canvas — with interpolation, a percentile no
+// on the histogram canvas: with interpolation, a percentile no
 // longer lines up with a bucket's upper edge, so we place the marker
 // proportionally inside the bar that contains it.
 function bucketLocator(ms) {
@@ -3957,11 +3957,11 @@ function bucketLocator(ms) {
 }
 
 function fmtMs(ms) {
-  if (ms === null || ms === undefined) return "—";
+  if (ms === null || ms === undefined) return "-";
   if (ms === Infinity) return ">65s";
   if (ms >= 1000) return (ms / 1000).toFixed(1) + "s";
   if (ms >= 10) return Math.round(ms) + "ms";
-  // Sub-10 ms territory — keep one decimal so the new HDR sub-buckets
+  // Sub-10 ms territory: keep one decimal so the new HDR sub-buckets
   // don't all collapse to the same integer ms in tooltips and labels.
   return (Math.round(ms * 10) / 10) + "ms";
 }
@@ -4039,7 +4039,7 @@ function fitGeometricDecay(points) {
 
 // GIL contention coefficient. Primary path fits a geometric to cycle
 // bands c1..c3. Fallback path fits c2..c4plus when c1 is contaminated
-// by the HDR head bucket — at switch intervals ≲ 1 ms the head bucket
+// by the HDR head bucket: at switch intervals ≲ 1 ms the head bucket
 // [0, 1.25 ms) absorbs both k=0 (immediate) and k=1 (one missed cycle),
 // leaving c1 holding only spillover. The contamination signature is
 // c1 < c2, which violates the geometric monotonicity assumption.
@@ -4078,7 +4078,7 @@ function gilContentionCoefficient(buckets, switchIntervalSec) {
   // Fallback: fit on c2, c3, c4plus. c4plus aggregates the true k=4
   // cycle band with the OS-stall tail beyond it, so the fit is
   // somewhat noisier and biased high in q (tail inflates c4plus); the
-  // R² check still applies. Only attempted when c1 is contaminated —
+  // R² check still applies. Only attempted when c1 is contaminated:
   // the primary fit is preferred whenever it can run.
   const nFitFallback = bands[2] + bands[3] + bands[4];
   if (nFitFallback < 100) return null;
@@ -4105,7 +4105,7 @@ function gilContentionCoefficient(buckets, switchIntervalSec) {
 // quickly (a missed cycle rarely chains into more), low q means they
 // persist (the Beazley convoy signature). Whether q maps to "things
 // are bad" depends on the absolute wall-clock cost per cycle (the
-// switch interval) and the gil_wait_time mean — see the help text for
+// switch interval) and the gil_wait_time mean: see the help text for
 // the 2x2 diagnostic that combines q with gil_wait_time mean to reach
 // an action recommendation.
 function gilDecayLabel(q) {
@@ -4178,7 +4178,7 @@ function drawHistogram(canvas, hist) {
 
   // Layout constants. The percentile-marker legend lives in the
   // readout above the chart (n / min / p50 / p95 / p99 / max), so we
-  // don't draw textual P-labels on the canvas — the dashed lines
+  // don't draw textual P-labels on the canvas: the dashed lines
   // alone are enough, and dropping the labels avoids the overlap
   // jankiness when two markers landed in adjacent bars.
   const padLeft = 46 * devicePixelRatio;
@@ -4189,7 +4189,7 @@ function drawHistogram(canvas, hist) {
   const plotH = h - padTop - padBottom;
   const barW = plotW / N_BUCKETS;
 
-  // Percentile marker positions — vertical dashed lines positioned
+  // Percentile marker positions: vertical dashed lines positioned
   // inside the bar that contains the interpolated percentile,
   // proportional to where the rank falls within that bucket's range.
   // Colors match the tinted p50/p95/p99 spans in the live readout so
@@ -4254,7 +4254,7 @@ function drawHistogram(canvas, hist) {
   ctx.fillText("<= ms", padLeft + plotW / 2,
     padTop + plotH + 20 * devicePixelRatio);
 
-  // Percentile marker lines. No on-canvas text labels — the legend
+  // Percentile marker lines. No on-canvas text labels: the legend
   // is the colour-tinted p50/p95/p99 spans in the live readout above.
   ctx.lineWidth = 1 * devicePixelRatio;
   ctx.setLineDash([3 * devicePixelRatio, 3 * devicePixelRatio]);
@@ -4269,7 +4269,7 @@ function drawHistogram(canvas, hist) {
 
   // Filled triangle anchors above the plot, apex pointing down at the
   // line. Bars never extend into the top padding, so the triangle is
-  // always visible — crucial when a percentile lands inside a tall
+  // always visible, crucial when a percentile lands inside a tall
   // bar (e.g. p50 on the mode) where the dashed line alone blends
   // into the bar fill.
   const triH = 6 * devicePixelRatio;
@@ -4328,7 +4328,7 @@ function drawChart(canvas, extract, opts = {}) {
   ctx.lineTo(w, h - 1);
   ctx.stroke();
 
-  // y-axis labels — adaptive precision, or caller-supplied formatter
+  // y-axis labels: adaptive precision, or caller-supplied formatter
   // (used by the byte-rate Throughput selections so the axis reads
   // "12 KB/s" instead of "12000").
   const prec = opts.precision !== undefined ? opts.precision : autoPrecision(vmax);
@@ -4417,7 +4417,7 @@ function drawLifecycleMarkers(ctx, canvas, w, h, tmin, tmax, xOf) {
     ctx.moveTo(x + 0.5, 0);
     ctx.lineTo(x + 0.5, h);
     ctx.stroke();
-    // Solid down-pointing triangle anchored to the top edge — this is
+    // Solid down-pointing triangle anchored to the top edge: this is
     // the click/hover affordance, sized to be a comfortable hit
     // target without dominating the chart.
     ctx.globalAlpha = 1;
@@ -4441,7 +4441,7 @@ function attachChartHover(canvas) {
   if (canvas._chartHoverAttached) return;
   canvas._chartHoverAttached = true;
   const tip = document.getElementById("tooltip");
-  // Hit radius — the marker line is 1px wide but operators won't
+  // Hit radius: the marker line is 1px wide but operators won't
   // pixel-hunt; widen to ~6 device-px so a casual hover lands.
   const HIT_RADIUS = 6;
   canvas.addEventListener("mousemove", e => {
@@ -4576,7 +4576,7 @@ function passesGroupFilter(group, sel) {
   return (group || "(embedded)") === sel;
 }
 function passesCategoryFilter(rec) {
-  // Running rows have no category yet — always show; the Markers
+  // Running rows have no category yet: always show; the Markers
   // checkboxes only gate completed bars.
   if (rec.stopped_t === null && rec.stopping_t === null) return true;
   return !!state.markerFilters[rec.category];
@@ -4584,7 +4584,7 @@ function passesCategoryFilter(rec) {
 
 // "Now" reference for the Processes tab. While paused, freezes at
 // pausedAt so the Gantt's tmax stops advancing and the event log's
-// in-window filter doesn't admit new rows past the freeze instant —
+// in-window filter doesn't admit new rows past the freeze instant:
 // the two surfaces stay locked together.
 function processesNow() {
   return state.processesTab.paused
@@ -4594,7 +4594,7 @@ function processesNow() {
 
 // Stick-to-bottom helper: an "at-bottom" scroller follows the tail as
 // new content is appended, and detaches the moment the user scrolls
-// up. Re-attaches automatically when they scroll back to the bottom —
+// up. Re-attaches automatically when they scroll back to the bottom:
 // no explicit toggle, just observation. Threshold gives a few pixels
 // of slack so sub-pixel rounding doesn't break the stick.
 function isAtBottom(el, threshold = 6) {
@@ -4611,7 +4611,7 @@ function fmtTimeOfDay(stamp) {
   return `${hh}:${mm}:${ss}.${ms}`;
 }
 function fmtUptimeSecs(secs) {
-  if (!secs || secs <= 0) return "—";
+  if (!secs || secs <= 0) return "-";
   if (secs < 60) return secs.toFixed(1) + " s";
   if (secs < 3600) return (secs / 60).toFixed(1) + " m";
   return (secs / 3600).toFixed(2) + " h";
@@ -4638,7 +4638,7 @@ function drawProcessGantt() {
   // Feed the FULL lifecycle ring to buildPidTimelines, not just the
   // events whose stamp falls inside the window. This means each pid's
   // record carries its actual started_t / stopping_t / stopped_t even
-  // when one of those events is just outside the visible window —
+  // when one of those events is just outside the visible window,
   // important for the truncated-start notch and for the tooltip's
   // "started" line. The window filter is then applied per-record
   // below: keep records that are currently live OR had any of their
@@ -4646,7 +4646,7 @@ function drawProcessGantt() {
   let records = buildPidTimelines(state.lifecycleEvents);
 
   // First pass: drop records whose pid has nothing to do with the
-  // current view — no in-window event AND not currently live in the
+  // current view: no in-window event AND not currently live in the
   // periodic-sample stream. Currently-live pids are kept regardless
   // of when their events fired (a process started before tmin and
   // still serving requests should appear with a fully truncated
@@ -4661,7 +4661,7 @@ function drawProcessGantt() {
   });
 
   // Second pass: augment with currently-live pids that have NO
-  // lifecycle events in the ring at all — long-lived processes
+  // lifecycle events in the ring at all: long-lived processes
   // whose STARTED has aged out of the 10-minute ring. The periodic-
   // sample stream is the authoritative "currently live" set; without
   // this augmentation the Gantt would silently hide them forever
@@ -4802,7 +4802,7 @@ function drawProcessGantt() {
     // Bar geometry: clipped to plot area; truncation flags set so we
     // can decorate the open edges below. truncStart fires both when
     // the start is unknown (pruned from ring) and when it is known
-    // but predates the window — both render with the same left-edge
+    // but predates the window; both render with the same left-edge
     // notch so the bar reads as "extends past the visible left."
     const startT = rec.started_t !== null ? rec.started_t : tmin;
     let endT;
@@ -4848,7 +4848,7 @@ function drawProcessGantt() {
       ctx.fill();
     }
 
-    // STOPPING tick — drain start, drawn as a dark vertical inside
+    // STOPPING tick: drain start, drawn as a dark vertical inside
     // the bar so the gap between drain start and final exit is
     // visible at a glance (graceful drain length).
     if (rec.stopping_t !== null) {
@@ -4867,7 +4867,7 @@ function drawProcessGantt() {
 
   // Resolve any pending click-to-scroll. The row's Y is only known
   // after layout, hence why this happens at end-of-draw. If a
-  // click-driven scroll is pending it overrides stick-to-bottom —
+  // click-driven scroll is pending it overrides stick-to-bottom:
   // the user has explicitly asked for a different position, and
   // their next manual scroll back to the bottom will re-arm sticking.
   if (state.processesTab.scrollRequestedPid !== null) {
@@ -4887,7 +4887,7 @@ function drawProcessGantt() {
   }
 }
 
-// Gantt hover state — survives between mousemove events so that
+// Gantt hover state: survives between mousemove events so that
 // refreshTooltip() (which fires from the histogram's redraw) doesn't
 // blank out a tooltip the user is still parked on. Mirrors the same
 // pattern capacityTooltipState uses.
@@ -4978,7 +4978,7 @@ function refreshGanttTooltip() {
   ganttTooltipState.hit = hit;
   if (!hit) {
     canvas.style.cursor = "";
-    // Don't hide the tooltip directly here — the cursor may be over a
+    // Don't hide the tooltip directly here: the cursor may be over a
     // different consumer (capacity tab is on a different panel, but
     // the histogram's refreshTooltip may still want to take over);
     // refreshTooltip's hideIfIdle handles the actual hide path.
@@ -5053,7 +5053,7 @@ function triggerProcessHighlight(pid, scrollGantt, scrollLog) {
 function renderEventLog() {
   const tbody = document.getElementById("eventlog_tbody");
   if (!tbody) return;
-  // Capture stick-to-bottom intent before we replace the tbody —
+  // Capture stick-to-bottom intent before we replace the tbody:
   // append-then-snap-to-tail keeps the operator on the freshest event
   // unless they've scrolled up to inspect older history.
   const eventScroller = tbody.closest(".eventlog-scroll");
@@ -5072,7 +5072,7 @@ function renderEventLog() {
   const highlightPid = highlightActive ? state.processesTab.highlightPid : null;
 
   // Filter: in-window, group match, category match. STARTED events
-  // have no category — they pass the category filter unconditionally
+  // have no category; they pass the category filter unconditionally
   // so the operator can always see when a process appeared.
   const rows = [];
   for (const ev of state.lifecycleEvents) {
@@ -5085,7 +5085,7 @@ function renderEventLog() {
     }
     rows.push(ev);
   }
-  // Oldest first so the freshest event lands at the bottom — pairs
+  // Oldest first so the freshest event lands at the bottom. Pairs
   // with the stick-to-bottom logic so the operator naturally sees
   // new arrivals without having to scroll.
 
@@ -5105,12 +5105,12 @@ function renderEventLog() {
     process_stopped: "kind-stopped",
   };
 
-  // PPID isn't carried on the wire for STOPPING / STOPPED — only the
+  // PPID isn't carried on the wire for STOPPING / STOPPED: only the
   // STARTED event includes process_parent_pid. Build a pid → ppid map
   // from every STARTED in the visible ring so the column can be
   // populated for those rows too. Falls back to ProcessState (which
   // also latches ppid from STARTED) for rows whose STARTED has aged
-  // out of the window. Shows "—" if neither source has it.
+  // out of the window. Shows "-" if neither source has it.
   const ppidByPid = new Map();
   for (const ev of state.lifecycleEvents) {
     if (ev.kind === "process_started" && ev.process_parent_pid) {
@@ -5130,12 +5130,12 @@ function renderEventLog() {
     const kindCls = KIND_CLS[ev.kind] || "";
     const reasonCls = ev.kind === "process_started" ? "" :
       "reason-" + categoryForReason(ev.shutdown_reason);
-    const reason = ev.kind === "process_started" ? "—" :
+    const reason = ev.kind === "process_started" ? "-" :
       escapeHtml(ev.shutdown_reason || "(unknown)");
     const ppid = ppidFor(ev);
-    const ppidCell = ppid ? `${ppid}` : `<span class="dim">—</span>`;
+    const ppidCell = ppid ? `${ppid}` : `<span class="dim">-</span>`;
     const groupCell = escapeHtml(ev.process_group || "(embedded)");
-    let uptime = "—", reqs = "—", inflight = "—", drain = "—";
+    let uptime = "-", reqs = "-", inflight = "-", drain = "-";
     if (ev.kind === "process_stopped") {
       uptime = escapeHtml(fmtUptimeSecs(ev.process_uptime || 0));
       reqs = String(ev.lifetime_request_count || 0);
@@ -5180,7 +5180,7 @@ function redraw() {
   // alongside the rest of the UI.
   if (isSlowDetailOpen()) renderSlowDetailModal();
   // Re-run the capacity hover hit-test after the heatmap redraws so
-  // a stationary cursor keeps tracking whichever cell is under it —
+  // a stationary cursor keeps tracking whichever cell is under it:
   // essential in live mode where cells scroll left every tick, and
   // also removes the "tooltip blinks off for 500 ms" artefact that
   // came from the shared tooltip element being hidden by the
@@ -5201,7 +5201,7 @@ function redraw() {
   // on the same line. For the other metric selections (body bytes,
   // 4xx/sec, 5xx/sec) the chart's own total/mean already carries the
   // error count for that class, and the extra percentages would push
-  // the line past narrow panels — so they're dropped. Counts remain
+  // the line past narrow panels, so they're dropped. Counts remain
   // on the wire and per-request detail is surfaced on the Slow tab.
   let liveText =
     `<span class="label">total</span>${tpSpec.fmt(rps.sum)} ` +
@@ -5219,7 +5219,7 @@ function redraw() {
     }
     const pct = (n) => req > 0 ? (n / req * 100).toFixed(1) : "0.0";
     // 5xx red when > 0; 4xx dim (mostly noise). 1xx is a PEP 3333
-    // tripwire — only show when non-zero, in amber.
+    // tripwire: only show when non-zero, in amber.
     const errParts = [];
     if (c1xx > 0) {
       errParts.push(`<span class="label" style="color:#e0a000">1xx ${c1xx}</span>`);
@@ -5319,7 +5319,7 @@ function redraw() {
 // GC tab.
 //
 // Per-process and per-interpreter dimension. The sidebar process selector
-// is intentionally not reused here — GC behaviour is interpreter-scoped,
+// is intentionally not reused here: GC behaviour is interpreter-scoped,
 // and overlaying interpreter lines on the same axis as process lines only
 // reads cleanly when there's exactly one interpreter per process (which is
 // the common case but not the only one). Two tab-local selectors keep the
@@ -5761,7 +5761,7 @@ function renderGcStatus(series) {
       ? "<span class=\"value\">enabled</span>"
       : "<span class=\"value warn\">disabled</span>";
   const thrText = thr.some(v => v === null)
-    ? "—"
+    ? "-"
     : `${thr[0]}/${thr[1]}/${thr[2]}` + (thrVaries ? " (varies)" : "");
   const countsText = `${counts[0]}/${counts[1]}/${counts[2]}`;
   const cumText = `${cum[0]}/${cum[1]}/${cum[2]}`;
@@ -6094,7 +6094,7 @@ for (const id of ["c_rps", "c_cap", "c_cpu", "c_resp", "c_mem", "c_phase"]) {
   });
 
   // Click-to-expand on a summary row toggles the details row beneath
-  // it. Delegated on tbody so the handler survives every re-render —
+  // it. Delegated on tbody so the handler survives every re-render:
   // the table rebuilds its rows on each tick. Click on any cell of
   // the summary row, or the chevron button itself, both work; touch
   // displays get the same behaviour.
@@ -6110,7 +6110,7 @@ for (const id of ["c_rps", "c_cap", "c_cpu", "c_resp", "c_mem", "c_phase"]) {
   });
 })();
 
-// Hover + click wiring for capacity heatmaps — delegated so the
+// Hover + click wiring for capacity heatmaps, delegated so the
 // handlers survive canvas elements being recreated across ticks.
 (function () {
   const grid = document.getElementById("capacity_grid");
@@ -6161,7 +6161,7 @@ function refreshTooltip() {
   const tip = document.getElementById("tooltip");
   // The shared tooltip element is used by the histogram, the capacity
   // heatmap and the processes-tab Gantt. Only hide it from here if no
-  // other consumer is currently parked on it — otherwise a stationary
+  // other consumer is currently parked on it; otherwise a stationary
   // cursor would lose its tooltip every redraw.
   const hideIfIdle = () => {
     if (capacityTooltipState.cell) return;
@@ -6231,7 +6231,7 @@ function refreshTooltip() {
 // Help modal + LLM-paste artefacts.
 // -----------------------------------------------------------------
 
-const HELP_MARKDOWN = `# mod_wsgi telemetry — analysis reference
+const HELP_MARKDOWN = `# mod_wsgi telemetry: analysis reference
 
 ## Overview
 
@@ -6242,8 +6242,8 @@ pasted into a language model for diagnostic analysis. Screenshots
 of the UI may also be attached; the final section decodes visual
 elements a screenshot would show.
 
-Each mod_wsgi worker process — embedded MPM children, daemon
-processes from \`WSGIDaemonProcess\` groups, or both — reports
+Each mod_wsgi worker process (embedded MPM children, daemon
+processes from \`WSGIDaemonProcess\` groups, or both) reports
 telemetry over UDP every second. The collector aggregates samples
 into rolling per-process and deployment-level rollups exposed in the
 UI and the snapshot output.
@@ -6254,8 +6254,8 @@ UI and the snapshot output.
 
 - **Daemon mode.** \`WSGIDaemonProcess name processes=N threads=M\`
   declares a named daemon group. Its processes are forked from
-  Apache and managed by mod_wsgi *inside* Apache — not external
-  services — but distinct from the Apache MPM child workers that
+  Apache and managed by mod_wsgi *inside* Apache (not external
+  services) but distinct from the Apache MPM child workers that
   accept requests and proxy them to the daemon over a Unix socket.
   \`processes=\` / \`threads=\` tune the daemon group itself, not the
   Apache workers.
@@ -6267,7 +6267,7 @@ UI and the snapshot output.
 - **Mixing.** A single Apache instance can run daemon groups and
   embedded workers simultaneously, and can host multiple daemon
   groups with independent tuning per group. Tuning advice is
-  always **per-group** — a CPU-bound app in group A does not want
+  always **per-group**: a CPU-bound app in group A does not want
   the same knobs as an I/O-bound app in group B.
 - **mod_wsgi-express.** A launcher that generates the Apache
   configuration from command-line flags. Default is daemon mode
@@ -6284,26 +6284,26 @@ UI and the snapshot output.
 The stats snapshot is organised into tiers. Tuning applies at each
 tier's scope:
 
-- **Totals** — rollup across every process matching the filter in
+- **Totals**: rollup across every process matching the filter in
   effect when the snapshot was taken. \`cpu\` is summed across
   processes, so a 4-process deployment at 1.0 core each reads
   \`4.0 cores\`.
-- **Groups** — one section per daemon group. Emitted only when
+- **Groups**: one section per daemon group. Emitted only when
   more than one group is live and the filter is "all". Rollup is
   restricted to that group's processes.
-- **Process lifecycle** — restart counts by category and reason,
+- **Process lifecycle**: restart counts by category and reason,
   drain quality (graceful vs reaped), drain durations, completed-
   process uptime / lifetime-request stats, and orphan-STOPPING
   count. Aggregated over the lifecycle event ring (≤ 600 s,
   independent from the Totals window since restarts are too
   infrequent for a 60 s view to be useful). See **Process
   lifecycle** below for category definitions and inferences.
-- **Processes** — one block per live process, with per-pid detail.
+- **Processes**: one block per live process, with per-pid detail.
 
 Every scope carries the response status breakdown
 (\`1xx / 2xx / 3xx / 4xx / 5xx\` with shares of the scope's
 request count). Use Totals to establish the deployment-wide error
-mix, then look for processes whose mix diverges — a single
+mix, then look for processes whose mix diverges: a single
 process emitting all the 5xx is a useful signal that "redeploy
 that one" or "bisect the recent code change" is the right
 response.
@@ -6327,10 +6327,10 @@ carries the detail.
    status breakdown. These frame expectations before any
    per-process detail. A non-zero 5xx share or a non-zero 1xx
    count (which is a PEP 3333 violation) is a separate axis of
-   trouble from saturation/GIL — read it independently of the
+   trouble from saturation/GIL; read it independently of the
    capacity verdict.
 2. **Scope tuning to the group.** If a Groups section is present,
-   read it next — tuning is per-group. Any \`WSGIDaemonProcess\`
+   read it next: tuning is per-group. Any \`WSGIDaemonProcess\`
    recommendation must name the specific group.
 3. **Check each process's state.** For every process block note:
    state classification, cap, busy, cpu, resp, queue, daemon. Match
@@ -6340,7 +6340,7 @@ carries the detail.
    lean toward one cause: elevated \`daemon\` and/or low
    \`slot cpu / slot busy\` → GIL; slot cpu / slot busy near 1.0 with
    no daemon elevation → CPU. Report the call as a lean, not a
-   certainty — telemetry cannot distinguish them from outside in
+   certainty: telemetry cannot distinguish them from outside in
    the general case.
 5. **Consult the tail, not just the mean.** Use Time distributions
    to separate mean-driven problems from tail-driven ones. Compare
@@ -6357,18 +6357,18 @@ carries the detail.
 6. **Recommend scoped to the observed mode.** Every process block
    prints its mode in the header (\`daemon mode, group "<name>"\`
    or \`embedded mode\`). Produce advice in the form the operator
-   is actually using (raw Apache vs \`mod_wsgi-express\` — offer
+   is actually using (raw Apache vs \`mod_wsgi-express\`; offer
    both when unsure):
    - **Daemon mode.** Raw Apache: edit the matching
      \`WSGIDaemonProcess <name> processes=N threads=M\` directive
      (always name the group). \`mod_wsgi-express\`: pass
      \`--processes N --threads M\` (default is daemon mode).
-   - **Embedded mode.** \`WSGIDaemonProcess\` does not apply —
+   - **Embedded mode.** \`WSGIDaemonProcess\` does not apply:
      these are Apache MPM children running WSGI in-process. Raw
      Apache: tune the MPM (\`ServerLimit\`, \`MaxRequestWorkers\`,
      the relevant \`ThreadsPerChild\`). \`mod_wsgi-express\`:
      \`--embedded-mode --processes N --threads M\`. Consider
-     moving to daemon mode when GIL contention is the issue —
+     moving to daemon mode when GIL contention is the issue;
      with \`mod_wsgi-express\`, that's simply dropping
      \`--embedded-mode\`.
 7. **Apply timeout knobs carefully.** The *Tuning levers* section
@@ -6385,7 +6385,7 @@ carries the detail.
    resizing the process pool.
 9. **Honour snapshot-emitted suggestions.** If a
    \`## Tuning suggestion\` block is present, it is gated on
-   specific signal patterns — read the numbers it cites rather
+   specific signal patterns; read the numbers it cites rather
    than overriding it with generic advice.
 10. **If multi-host fan-in is flagged in the snapshot**, note
     that \`processes=N\` advice applies per-host and deployment
@@ -6393,49 +6393,49 @@ carries the detail.
 
 ## Field glossary
 
-- **samples** — total telemetry datagrams received since the
+- **samples**: total telemetry datagrams received since the
   collector started.
-- **rpm** — requests per minute, normalised from the reporting
+- **rpm**: requests per minute, normalised from the reporting
   window.
-- **cap / capacity utilization** — \`capacity_utilization\` field:
+- **cap / capacity utilization** - \`capacity_utilization\` field:
   fraction of the process's worker threads busy serving requests,
   window-averaged. 1.0 = every thread busy every tick.
-- **busy** — same quantity as \`cap\` computed from per-slot
+- **busy**: same quantity as \`cap\` computed from per-slot
   \`request_threads_busy_time\`. Used where per-thread resolution is
   needed; agrees with \`cap\` by construction.
-- **cpu** — \`cpu_utilization\`: process-wide CPU seconds
+- **cpu** - \`cpu_utilization\`: process-wide CPU seconds
   (user + system) divided by wall-clock, expressed as fraction of
   **one** CPU core. 1.0 = one core saturated. GIL-bound pure-Python
   caps near 1.0; C extensions that release the GIL can exceed 1.0
   on multi-core.
-- **resp / response time** — window-averaged mean of (server +
+- **resp / response time**: window-averaged mean of (server +
   queue + daemon + application). Approximates what the caller
   experiences; does **not** include the external Apache
   accept-queue wait (not observable from inside the worker).
-- **server time** — Apache-side processing before handoff to the
+- **server time**: Apache-side processing before handoff to the
   daemon socket queue. Embedded requests never leave this phase.
-- **queue time** — time the request sat in the daemon group's
+- **queue time**: time the request sat in the daemon group's
   socket queue before pickup. Daemon-mode only. Sustained high
   queue time = process can't accept requests fast enough.
-- **daemon time** — interval between a daemon worker dequeuing the
+- **daemon time**: interval between a daemon worker dequeuing the
   request and the WSGI callable being invoked. Includes request
   parsing, environ construction, thread dispatch, and the worker
   thread's **first GIL acquisition**. Sustained high daemon time
   under load is the canonical fingerprint of GIL contention on the
   dispatch path. Daemon-mode only.
-- **application time** — wall-clock time inside the WSGI callable.
+- **application time**: wall-clock time inside the WSGI callable.
   What the app code owns.
-- **slow-request run** — a sequence of consecutive ticks during
+- **slow-request run**: a sequence of consecutive ticks during
   which one worker thread held the same request past the configured
   slow threshold. One long request spanning many ticks is one run.
-- **slot cpu / slot busy** — ratio of on-CPU time to in-request
+- **slot cpu / slot busy**: ratio of on-CPU time to in-request
   time across worker slots. 1.0 = pure compute; near 0 = threads
   hold requests without running CPU work (GIL wait or blocking
   I/O).
-- **gil_wait_time** — mean per-request time the worker thread
+- **gil_wait_time**: mean per-request time the worker thread
   was held up waiting for the Python GIL while mod_wsgi was
   performing I/O or logging on the application's behalf.
-  Cross-cutting overlap metric — accumulates *during*
+  Cross-cutting overlap metric: accumulates *during*
   application time and is **not** an addend in the
   server / queue / daemon / application invariant. Surfaced
   with the share of application time it represents on each
@@ -6456,13 +6456,13 @@ carries the detail.
     workloads lives there and is invisible here.
   - **GIL contention inside C extensions the application
     calls.** NumPy, database drivers, \`requests\`, ML
-    frameworks, etc. — each library decides on its own when
+    frameworks, etc. Each library decides on its own when
     to drop and re-take the GIL during long operations; waits
     inside those library calls are not seen here.
 
   Treat the printed value as a **lower bound** on actual GIL
   pressure. A high value positively confirms contention exists;
-  a low value does **not** rule it out — a Python-CPU-bound or
+  a low value does **not** rule it out: a Python-CPU-bound or
   NumPy-heavy workload can be heavily GIL-serialised while
   reporting near-zero \`gil_wait_time\`. Use this metric to
   *raise confidence* in a CPU/GIL diagnosis, never to lower it.
@@ -6471,7 +6471,7 @@ carries the detail.
   is GIL-bound, individual waits cluster at multiples of
   \`sys.setswitchinterval\` (default 5 ms): a head bucket below
   1 ms for immediate handoffs, then bumps near 5 ms, 10 ms,
-  15 ms — one extra switch-interval cycle per missed handoff.
+  15 ms (one extra switch-interval cycle per missed handoff).
   The histogram is quantised by the GIL scheduler rather than
   smooth, so the bumps are signal, not sampling artefacts. The
   cluster centres move with \`sys.setswitchinterval\` (set it to
@@ -6481,29 +6481,29 @@ carries the detail.
   rate across the bumps is geometric under steady contention and
   is summarised as the **GIL contention coefficient \`q\`**
   surfaced in the GIL-wait time-distribution readout (live and
-  snapshot) — see the Time distributions section for the full
+  snapshot); see the Time distributions section for the full
   definition, label tiers, and the 2x2 diagnostic that pairs
   \`q\` with \`gil_wait_time\` mean to choose between tightening
   the switch interval and adding processes. Critically, \`q\`
   measures the **shape** of the convoy decay (how fast missed-
-  cycle waits stop chaining), not the **severity** of contention
-  — read it together with the wall-clock \`gil_wait_time\` mean
+  cycle waits stop chaining), not the **severity** of contention;
+  read it together with the wall-clock \`gil_wait_time\` mean
   to understand whether the GIL is actually hurting you.
-- **input_read_time** — mean per-request total time the WSGI
+- **input_read_time**: mean per-request total time the WSGI
   app spent inside \`wsgi.input.read*\` reading the request
   body. Surfaced in the time-breakdown / time-distribution
   dropdowns under "input read", on the slow-record detail
   panel with the share of request duration it covered, and on
   the per-process State block with the share of mean
-  application time it represents. Cross-cutting overlap —
+  application time it represents. Cross-cutting overlap:
   accumulates *during* application time and is **not** an
   addend in the server / queue / daemon / application
   invariant.
 
   Coverage is **complete** for the request body the WSGI app
   actually reads (the only standards-compliant path to it).
-  It is **not** the wire-level receive from the client — that
-  happens before the WSGI app sees the request — so very low
+  It is **not** the wire-level receive from the client (that
+  happens before the WSGI app sees the request), so very low
   values combined with non-trivial \`input_bytes_total\` simply
   mean Apache had already buffered the body by the time the
   app called \`read()\`.
@@ -6513,22 +6513,22 @@ carries the detail.
   counts is healthy bulk ingest; near-zero with meaningful
   \`input_bytes_total\` is normal for small bodies on fast
   clients (Apache pre-buffered).
-- **output_write_time** — mean per-request total time the WSGI
+- **output_write_time**: mean per-request total time the WSGI
   app spent inside \`start_response\`, \`write()\`, and the
   response-iteration / file-wrapper paths waiting for Apache
   to take the data. Surfaced in the same dropdowns,
   slow-record detail panel, and per-process State block as
-  \`input_read_time\`. Cross-cutting overlap — *not* an addend.
+  \`input_read_time\`. Cross-cutting overlap: *not* an addend.
 
   Coverage is **complete** for the response data the WSGI app
-  emits. **Caveat — read carefully:** this is **adapter-
+  emits. **Caveat, read carefully:** this is **adapter-
   handoff time**, not client-receive latency. Apache may
   buffer in kernel socket buffers, apply output filters, and
   async-flush past the WSGI app's return without that
   downstream wait being attributed here.
 
   Practical interpretation: high \`output_write_time\` means
-  *the WSGI app sat in \`write()\` for X ms* — typically
+  *the WSGI app sat in \`write()\` for X ms*, typically
   because Apache applied backpressure (kernel send buffer
   full, slow client, downstream filter blocking). It does
   **not** measure how long the client took to receive the
@@ -6536,14 +6536,14 @@ carries the detail.
   context (\`output_bytes_total / output_write_time\` is a
   usable rate for the adapter handoff but not for the
   network).
-- **response status: 1xx / 2xx / 3xx / 4xx / 5xx** — per-window
+- **response status: 1xx / 2xx / 3xx / 4xx / 5xx** - per-window
   counts of WSGI app responses by status class, drained from the
   same accumulator that updates \`request_count\`. Sum equals the
   request count for the same window. Snapshot prints each class
   with its share, e.g. \`response status: 1xx 0, 2xx 1234 (94.0%),
   3xx 0 (0.0%), 4xx 50 (3.8%), 5xx 28 (2.1%)\`. See *Response
   status classes* for interpretation rules.
-- **slow_status** — final HTTP response status carried on a
+- **slow_status**: final HTTP response status carried on a
   slow-request record (the per-request stream feeding the Slow
   requests UI tab). \`0\` = active record, status not yet known
   (\`start_response\` may not have been called). Lets an operator
@@ -6570,7 +6570,7 @@ Mechanics:
 - **Percentiles are interpolated inside the containing bucket**,
   assuming uniform distribution across the bucket's range. The
   printed value is a point inside the bucket proportional to the
-  rank's position within it — so p50 / p95 / p99 do not collapse
+  rank's position within it, so p50 / p95 / p99 do not collapse
   to a single number even when traffic is concentrated in one bar.
   Resolution is still bounded by the bucket grid (≤25%).
 - **Exact min and max** for the same window are displayed alongside
@@ -6596,9 +6596,9 @@ Mechanics:
   convoy decay across cycle bands \`c1\` → \`c2\` → \`c3\`, not
   the *severity* of contention. \`q\` ≈ 1 means once a waiter
   has missed one cycle, it almost always wins the next handoff
-  ("transient" — the convoy clears fast). \`q\` ≈ 0 means a
+  ("transient": the convoy clears fast). \`q\` ≈ 0 means a
   waiter that has missed one cycle keeps missing more
-  ("convoy" — the Beazley signature). The k=0 (immediate) band
+  ("convoy": the Beazley signature). The k=0 (immediate) band
   is intentionally excluded from the fit because it is
   contaminated by voluntary GIL releases (an I/O drop where the
   holder happened to release before its check fired) which are
@@ -6606,10 +6606,10 @@ Mechanics:
 
   **Label tiers** (purely about decay shape):
 
-  - \`q ≥ 0.7\` → "transient" — compounds clear quickly.
-  - \`0.4 ≤ q < 0.7\` → "compounding" — meaningful share of
+  - \`q ≥ 0.7\` → "transient": compounds clear quickly.
+  - \`0.4 ≤ q < 0.7\` → "compounding": meaningful share of
     waits chain across two or three cycles.
-  - \`q < 0.4\` → "convoy" — most contended waits compound
+  - \`q < 0.4\` → "convoy": most contended waits compound
     heavily.
 
   **\`q\` is NOT a severity signal on its own.** A workload
@@ -6624,10 +6624,10 @@ Mechanics:
 
   **\`q\` depends on switch interval, not just the workload.**
   Contrary to a first-pass intuition, \`q\` is *not* a workload-
-  invariant. At very short intervals (≲ 1 ms — well below typical
+  invariant. At very short intervals (≲ 1 ms, well below typical
   per-request compute slices) the holder is interrupted mid-work
   and immediately wants the GIL back, generating real convoy and
-  pushing \`q\` down. At long intervals (≥ ~10 ms — comparable
+  pushing \`q\` down. At long intervals (≥ ~10 ms, comparable
   to or longer than typical per-request compute) the holder
   usually finishes its critical section before the next checkpoint
   and releases voluntarily, eliminating compounding and pushing
@@ -6636,13 +6636,13 @@ Mechanics:
   release rhythm; in that band, a moving \`q\` after tuning means
   the workload's contention dynamics changed, not the timer.
 
-  **2x2 diagnostic — combine \`q\` with \`gil_wait_time\` mean
-  to choose an action:**
+  **2x2 diagnostic (combine \`q\` with \`gil_wait_time\` mean
+  to choose an action):**
 
   |  | low \`gil_wait\` mean | high \`gil_wait\` mean |
   |---|---|---|
-  | \`q\` "transient" (≥ 0.7) | not your bottleneck — leave it | each missed cycle is expensive but they don't chain — **tighten \`WSGISwitchInterval\`** for a clean wall-clock win |
-  | \`q\` "compounding" / "convoy" | rare — usually means low traffic | both cycle cost AND convoy hurt — **tighten interval AND consider adding processes**; tightening alone gives diminishing returns past ~2 ms |
+  | \`q\` "transient" (≥ 0.7) | not your bottleneck: leave it | each missed cycle is expensive but they don't chain: **tighten \`WSGISwitchInterval\`** for a clean wall-clock win |
+  | \`q\` "compounding" / "convoy" | rare: usually means low traffic | both cycle cost AND convoy hurt: **tighten interval AND consider adding processes**; tightening alone gives diminishing returns past ~2 ms |
 
   "High \`gil_wait\` mean" is workload-relative; a useful
   threshold is "≥ 5% of mean application time", matching the
@@ -6657,7 +6657,7 @@ Mechanics:
   3. If significant: tighten in steps (5 → 2 → 1 ms). Watch the
      **total response p95** in the time-distribution panel.
   4. p95 typically improves until diminishing returns kick in
-     around ~2 ms for steady mixed workloads. Stop there — going
+     around ~2 ms for steady mixed workloads. Stop there: going
      lower gives small wall-clock gains and risks throughput loss
      from context-switch overhead at high load (not visible
      under-saturated; may emerge at saturation).
@@ -6665,13 +6665,13 @@ Mechanics:
      meaningfully high: GIL is the wall, not the schedule.
      **Add processes** (\`WSGIDaemonProcess processes=\`),
      don't tighten further. Each daemon process is its own
-     interpreter with its own GIL — the only way to scale a
+     interpreter with its own GIL: the only way to scale a
      Python-CPU-bound workload past one core's throughput.
 
   **Fit fallback at sub-1 ms switch intervals.** When the switch
   interval is ≲ 1 ms the HDR head bucket ([0, 1.25 ms)) absorbs
   both \`k=0\` (immediate) and \`k=1\` (one missed cycle),
-  leaving \`c1\` holding only spillover — signature: \`c1 < c2\`.
+  leaving \`c1\` holding only spillover (signature: \`c1 < c2\`).
   The fitter detects this and falls back to a three-point fit on
   \`c2..c4+\`, which loses one cycle of signal but recovers a
   \`q\` value across the full directive range. Fallback fits are
@@ -6682,9 +6682,9 @@ Mechanics:
   contention it agrees with primary-fit \`q\` to within ~0.05 in
   practice. Suppressed when fewer than 100 events are in the
   chosen cycle bands or the fit's R² is below 0.5 (model doesn't
-  apply — likely non-stationary load, near-zero contention, or
+  apply: likely non-stationary load, near-zero contention, or
   extreme HDR contamination). The cycle-band counts are still
-  emitted in the snapshot output even when \`q\` is suppressed —
+  emitted in the snapshot output even when \`q\` is suppressed;
   inspect them directly when fit rejection is the limit.
 
 ## Response status classes
@@ -6699,9 +6699,9 @@ Mechanics:
 
 - **Counts only what the WSGI app set.** The status comes from
   the \`start_response\` status line. Errors generated **outside**
-  the WSGI app — Apache
+  the WSGI app (Apache
   worker-side outcomes such as queue-overflow \`503\`,
-  daemon-unavailable \`503\`, or inactivity-timeout \`504\` — never
+  daemon-unavailable \`503\`, or inactivity-timeout \`504\`) never
   reach the recorder and are **not** in these counters. If you
   need to investigate those, the Apache error log is the source
   of truth, not telemetry.
@@ -6709,7 +6709,7 @@ Mechanics:
   calling \`start_response\` leaves the integer status at 0;
   mod_wsgi serves a 500 in that case, so the recorder folds it
   into the 5xx bucket. The error rate matches what callers
-  actually saw — including unhandled-exception storms — rather
+  actually saw (including unhandled-exception storms) rather
   than only counting explicit \`start_response("500 …", …)\`
   paths.
 - **Sum invariant.** \`1xx + 2xx + 3xx + 4xx + 5xx\` equals
@@ -6720,7 +6720,7 @@ Interpretation:
 
 - **5xx** is the actionable signal. Sustained non-zero 5xx is the
   deployment-wide "is something on fire" indicator. Cross-check
-  with the Slow requests stream — slow records carry their final
+  with the Slow requests stream: slow records carry their final
   status on the wire, so an operator can see whether the slow
   outliers were also 5xx (typical for "downstream timeout
   manifested as exception → 500" patterns).
@@ -6772,9 +6772,9 @@ rpm ≥ 3 so near-idle processes cannot trip them.
 
 Score-based; flags when score ≥ 1.0. Contributions (summed):
 
-- **busy sustained > 80%** — up to +1.0 as busy approaches 100%.
-- **queue mean > 50 ms** — up to +1.0 as queue approaches 250 ms.
-- **≥ 3 slow-request runs under busy ≥ 70%** — up to +1.0 as the
+- **busy sustained > 80%**: up to +1.0 as busy approaches 100%.
+- **queue mean > 50 ms**: up to +1.0 as queue approaches 250 ms.
+- **≥ 3 slow-request runs under busy ≥ 70%**: up to +1.0 as the
   slow-run count grows.
 
 Remediation: add capacity (more processes, more threads, or reduce
@@ -6785,23 +6785,23 @@ per-request service time).
 Any trigger is enough to flag, unless the multi-core carve-out
 suppresses the label:
 
-- **cpu-peg** — cpu > 90% of one core with ≥ 2 threads and
+- **cpu-peg**: cpu > 90% of one core with ≥ 2 threads and
   busy > 30%. Multiple threads competing for a single core is the
   textbook GIL-bound pattern.
-- **slot-ratio** — busy > 50% and \`slot cpu / slot busy\` < 0.5.
+- **slot-ratio**: busy > 50% and \`slot cpu / slot busy\` < 0.5.
   Threads are not running CPU work while holding requests, which
-  on Python usually means GIL wait (or blocking I/O — treat as
+  on Python usually means GIL wait (or blocking I/O; treat as
   suggestive, not conclusive).
-- **daemon-absolute** — daemon mean > 50 ms. Dispatch stage slow
+- **daemon-absolute**: daemon mean > 50 ms. Dispatch stage slow
   enough to indicate GIL contention during request entry.
-- **gil-direct** — measured \`gil_wait_time\` is ≥ 15% of mean
+- **gil-direct**: measured \`gil_wait_time\` is ≥ 15% of mean
   application time with busy > 30%. Direct positive evidence
   of GIL contention. One-way signal: a high value confirms
   GIL pressure and tightens the lean to a definite GIL
   diagnosis; a low value does **not** rule out GIL pressure
   (see the \`gil_wait_time\` field entry for the full
   partial-coverage caveat).
-- **multi-core carve-out (exclusionary)** — cpu > 1.2 cores with
+- **multi-core carve-out (exclusionary)**: cpu > 1.2 cores with
   busy > 50%. Workload is demonstrably running across multiple
   cores, so the GIL is not serialising; the CPU/GIL label is
   suppressed even if other triggers fire.
@@ -6814,12 +6814,12 @@ per-request CPU cost is the alternative lever.
 From outside the process, pure-Python CPU-bound work and
 GIL-contended I/O work produce indistinguishable telemetry (one
 core used, threads waiting). Lean on
-\`slot cpu / slot busy\` — near 1.0 = CPU-bound; low with elevated
-daemon = GIL-bound — but state the call as a lean, not a
+\`slot cpu / slot busy\` (near 1.0 = CPU-bound; low with elevated
+daemon = GIL-bound) but state the call as a lean, not a
 certainty. When \`gil_wait_time\` is non-trivial relative to
 application time (the **gil-direct** trigger), the lean
 sharpens into a confirmed GIL diagnosis. The reverse does not
-hold: a low \`gil_wait_time\` does not refute GIL contention —
+hold: a low \`gil_wait_time\` does not refute GIL contention;
 see that field's coverage caveat.
 
 ### Normal
@@ -6831,24 +6831,24 @@ tuning implied.
 
 Combinations that identify specific bottlenecks:
 
-- **\`daemon\` sustained above ~50 ms, modest \`queue\`** —
+- **\`daemon\` sustained above ~50 ms, modest \`queue\`**:
   first-GIL acquisition at dispatch is backing up behind in-flight
   threads. More threads will not help; add processes.
-- **High \`queue\`, low \`daemon\`** — daemon can't accept requests
+- **High \`queue\`, low \`daemon\`**: daemon can't accept requests
   fast enough. Add processes. Increase \`threads=\` **only** if the
   workload is I/O-bound (threads release the GIL during I/O and
   scale). CPU-bound + more threads = more contention.
-- **cpu ~100% (one core) with multiple threads, busy moderate+** —
+- **cpu ~100% (one core) with multiple threads, busy moderate+**:
   process is pinned to one core. Could be CPU-bound work (threads
   want CPU, GIL serialises) or GIL-contended I/O work (threads
   blocked on the GIL between I/O calls). Telemetry cannot
   distinguish; both flag CPU/GIL-bound and both want more
   processes. If \`daemon\` is also elevated, lean GIL. If
   \`slot cpu / slot busy\` is near 1.0, lean CPU.
-- **cpu > ~120% with busy high** — healthy multi-core work via C
+- **cpu > ~120% with busy high**: healthy multi-core work via C
   extensions releasing the GIL. No label fires; still scale
   processes when cpu approaches (cores − 1) × 100%.
-- **busy high, cpu \`<<\` busy, no slow requests, daemon low** —
+- **busy high, cpu \`<<\` busy, no slow requests, daemon low**:
   threads waiting on I/O. Fine as long as response stays
   acceptable; more threads can help if demand outruns throughput.
   Confirm by reading \`gil_wait_time\`: if it is a small fraction
@@ -6856,12 +6856,12 @@ Combinations that identify specific bottlenecks:
   DB) and threads are the right lever; if it is a large fraction,
   the threads are contending for the GIL during would-be I/O
   windows and adding processes will help more than adding threads.
-- **\`response\` spike without \`rpm\` change** — use the time
+- **\`response\` spike without \`rpm\` change**: use the time
   distribution to find which phase carries the tail.
   \`application\` = app regression or downstream;
   \`daemon\` = GIL pressure; \`queue\` = upstream backpressure.
 - **High \`output_write_time\` with low rpm or upstream
-  retransmits** — the WSGI app is blocked in \`write()\` because
+  retransmits**: the WSGI app is blocked in \`write()\` because
   Apache's send buffer is full. Causes: slow client (mobile,
   satellite), small kernel \`SO_SNDBUF\`, an output filter
   (gzip / mod_security / SSI) holding bytes, or downstream
@@ -6870,18 +6870,18 @@ Combinations that identify specific bottlenecks:
   not help. Investigate: client population, Apache output
   filters, \`net.ipv4.tcp_wmem\`, and any reverse proxy in
   front.
-- **High \`input_read_time\` with modest \`input_bytes_total\`** —
+- **High \`input_read_time\` with modest \`input_bytes_total\`**:
   slow client uploader. Same diagnosis path as the output side
   (don't reach for processes / threads). Consider whether the
   app should be reading the body lazily, applying a body-size
   limit upstream, or moving large uploads to a streaming /
   chunked path that doesn't pin a worker thread.
-- **High \`input_read_time\` with high \`input_bytes_total\`** —
+- **High \`input_read_time\` with high \`input_bytes_total\`**:
   healthy bulk-ingest, expected. Confirm by computing
   \`input_bytes_total / input_read_time\` for a per-second
   ingest rate; if it matches the expected upload rate, no
   action needed.
-- **\`input_read_time\` ≈ 0 with \`input_bytes_total\` > 0** —
+- **\`input_read_time\` ≈ 0 with \`input_bytes_total\` > 0**:
   request body was fully buffered by Apache before the WSGI
   app ran (typical for small bodies on fast LAN clients). Not
   a problem; the metric is just being honest that the app
@@ -6901,20 +6901,20 @@ exit). These power the Processes tab and the
 Each STOPPING / STOPPED event carries a \`shutdown_reason\` string,
 binned into one of three categories for at-a-glance triage:
 
-- **planned** — operator-configured cycling that was expected to
+- **planned** - operator-configured cycling that was expected to
   fire: \`restart_interval\`, \`maximum_requests\`,
   \`inactivity_timeout\`, \`script_reload\`. Frequent planned
   restarts are usually fine; if a planned reason dominates, the
   corresponding knob is doing its job. Compare \`mean uptime\`
   against the configured \`restart-interval=\`, and \`mean
   lifetime requests / process\` for the \`maximum_requests\`
-  reason against the configured \`maximum-requests=\` — they should
+  reason against the configured \`maximum-requests=\`; they should
   match closely.
-- **tuning** — fired by limits set to bound bad behaviour:
+- **tuning** - fired by limits set to bound bad behaviour:
   \`request_timeout\`, \`cpu_time_limit\`, \`eviction_signal\`,
   \`graceful_signal\`, \`startup_timeout\`. Worth investigating;
   not alarming unless the rate is climbing.
-- **unplanned** — abnormal exit paths: \`deadlock_timeout\`,
+- **unplanned** - abnormal exit paths: \`deadlock_timeout\`,
   \`signal_pipe_error\`, \`shutdown_signal\`. Any non-zero count
   here warrants attention; a single case may be operator-initiated
   (\`apachectl graceful\`, supervisor-driven restart), but a
@@ -6928,7 +6928,7 @@ distinction is critical for reasoning about both abandoned-request
 counts and capacity impact, and the lifecycle stats only directly
 cover the second phase.
 
-**Phase 1 — graceful (\`graceful-timeout\`, default 15 s).** Triggered
+**Phase 1: graceful (\`graceful-timeout\`, default 15 s).** Triggered
 by \`maximum-requests\` / \`restart-interval\` / \`cpu-time-limit\` /
 \`request-timeout\` etc. when \`graceful-timeout\` is set and at
 least one non-stale request is still in flight. The process keeps
@@ -6936,12 +6936,12 @@ its listener open and **continues accepting new requests** while
 in-flight ones drain naturally. The slot remains fully productive;
 no replacement is spawned yet. The phase exits early as soon as the
 process reaches an idle state (no non-stale requests). Telemetry
-emits **no event** at the start or end of this phase — the only
+emits **no event** at the start or end of this phase: the only
 trace it leaves is the time gap between when the trigger condition
 was met and when STOPPING was emitted, and that gap is not currently
 exposed in the wire format.
 
-**Phase 2 — shutdown (\`shutdown-timeout\`, default 5 s).** Begins
+**Phase 2: shutdown (\`shutdown-timeout\`, default 5 s).** Begins
 the moment the daemon main thread is signalled to actually exit
 (SIGINT internally), which is the moment STOPPING is emitted. The
 worker accept loops break out, **no new requests are accepted**
@@ -6950,17 +6950,17 @@ the kernel listen-backlog with nothing draining them. In-flight
 requests continue running; the reaper thread sleeps for
 \`shutdown-timeout\` and force-exits the process if drain hasn't
 finished. STOPPED is emitted at successful drain completion or just
-before the reaper kills the process — \`graceful_drain=1\` or 0
+before the reaper kills the process; \`graceful_drain=1\` or 0
 distinguishes the two outcomes.
 
 **The "drain duration" stat (STOPPING → STOPPED gap) is exclusively
-the phase-2 length** — graceful-phase activity does not contribute.
+the phase-2 length**: graceful-phase activity does not contribute.
 This is also the **dark-period length**: during phase 2 the slot is
 not accepting, the replacement process has not been spawned (Apache
 spawns the replacement only after the old daemon exits), so the
 deployment loses one process worth of capacity for the drain
 duration on each restart. The "total drain time" stat is the sum
-across all drains in the window — \`total_drain_time / window_secs\`
+across all drains in the window; \`total_drain_time / window_secs\`
 is the per-process fraction of the window spent in the dark
 (divide by the live process count for the deployment-wide loss).
 
@@ -6973,7 +6973,7 @@ finished. The reaper thread emits STOPPED just before forced exit,
 so the snapshot still records the event; \`active_requests_at_exit\`
 is the number of requests the daemon had to abandon. The "requests
 in flight at non-graceful exit" line in the snapshot is the sum of
-these — read as "approximate count of requests likely abandoned by
+these; read as "approximate count of requests likely abandoned by
 reaped daemons in the visible window." These are user-facing
 failures (Apache will return 5xx or reset the connection).
 
@@ -6985,11 +6985,11 @@ proportion. The right order of remediation is below.
 
 ### Remediating non-graceful drains
 
-Apply in order — early levers cost no capacity, late levers do.
+Apply in order: early levers cost no capacity, late levers do.
 
 1. **Raise \`graceful-timeout\` to comfortably exceed the in-flight
    p99.** This is the canonical fix. Phase 1 has no listener
-   downside — the process keeps serving new requests while old
+   downside: the process keeps serving new requests while old
    ones drain. If your p99 application time is ~3 s, set
    \`graceful-timeout=15\` or higher; the process will exit phase 1
    the moment it goes idle, so the cost when there's nothing in
@@ -7008,7 +7008,7 @@ Apply in order — early levers cost no capacity, late levers do.
 4. **Raise \`shutdown-timeout\`** only as a last resort. The cost
    is paid as longer dark periods; the trade is that fewer drains
    reach the timeout. Acceptable when the alternative (phase-1
-   tuning) doesn't apply — e.g. a single-process group.
+   tuning) doesn't apply, e.g. a single-process group.
 
 ### What lifecycle stats can and cannot tell you
 
@@ -7027,7 +7027,7 @@ count). They do **not** currently expose:
 
 If drain mean is consistently small (say < 25% of the typical
 shutdown-timeout default) and graceful_drain=1 dominates, the
-deployment is healthy regardless of restart frequency — phase 1 is
+deployment is healthy regardless of restart frequency: phase 1 is
 absorbing the in-flight requests and phase 2 finds nothing to do.
 That's the target state.
 
@@ -7039,7 +7039,7 @@ That's the target state.
 - **Mean lifetime requests / process for the \`maximum_requests\`
   reason** approximates the configured \`maximum-requests=\`.
 - **Drain mean approaching shutdown-timeout default (5 s)** is the
-  leading signal that drains are at risk of being reaped — but
+  leading signal that drains are at risk of being reaped, but
   reach for \`graceful-timeout\` first, not \`shutdown-timeout\`,
   because the former costs no capacity.
 - **Non-zero \`requests in flight at non-graceful exit\` count**
@@ -7049,7 +7049,7 @@ That's the target state.
 - **High total drain time / window ratio** (say > 5% per process)
   indicates dark-period capacity loss is non-trivial. Cycle less
   often (raise \`maximum-requests\`) or shorten phase 2 (drains
-  finishing faster — fix the tail or raise \`graceful-timeout\` so
+  finishing faster: fix the tail or raise \`graceful-timeout\` so
   phase 2 starts with fewer in-flight requests).
 - **Non-zero unplanned count alongside healthy capacity numbers**
   points to something killing daemons from outside (operator,
@@ -7077,9 +7077,9 @@ runtime behaviour. Tune whichever form the operator is using.
   the Apache config. Default is daemon mode; \`--embedded-mode\`
   switches. \`--processes N --threads M\` sizes the active mode
   (in daemon mode the proxying MPM is sized automatically).
-  Timeout flags — \`--request-timeout\`, \`--graceful-timeout\`,
+  Timeout flags (\`--request-timeout\`, \`--graceful-timeout\`,
   \`--queue-timeout\`, \`--connect-timeout\`, \`--socket-timeout\`,
-  \`--maximum-requests\` — map one-to-one onto the identically-named
+  \`--maximum-requests\`) map one-to-one onto the identically-named
   \`WSGIDaemonProcess\` option.
 
 ### Primary knob: processes × threads
@@ -7093,21 +7093,21 @@ runtime behaviour. Tune whichever form the operator is using.
 
 ### Timeout knobs
 
-- **\`queue-timeout=\`** — maximum time a request may sit in the
+- **\`queue-timeout=\`**: maximum time a request may sit in the
   Apache↔daemon socket queue before the daemon dequeues it.
   Exceeded requests are rejected gateway-timeout-style.
   Per-request rejection only; no process-level consequence.
   Protects the daemon from pathological backpressure. Does
   **not** bound application time once a request has started
   running.
-- **\`request-timeout=\`** — **process-level fail-safe, not a
+- **\`request-timeout=\`**: **process-level fail-safe, not a
   per-request SLA knob.** Every second the monitor thread averages
   the age of in-flight requests across **all** threads in the
   process (sum / \`threads=\`, not sum / busy-threads); if the
   average exceeds the timeout the daemon restarts. Firing
   behaviour depends on the group:
   - With \`processes > 1\` and \`graceful-timeout > 0\`, the daemon
-    enters a drain state — stops competing for the accept mutex
+    enters a drain state: stops competing for the accept mutex
     so peer daemons absorb new work, healthy in-flight requests
     finish, and if drain completes before \`graceful-timeout\`
     expires the process restarts cleanly (otherwise the
@@ -7124,7 +7124,7 @@ runtime behaviour. Tune whichever form the operator is using.
     Raising \`threads=\` raises the effective trigger; a single
     wedged thread takes roughly \`threads\` × \`request-timeout\`
     seconds to fire. Do **not** compensate by padding
-    \`request-timeout\` — that only lengthens detection time.
+    \`request-timeout\`; that only lengthens detection time.
   - **No staggering across processes.** Each daemon decides
     independently, so a deterministic bad endpoint can send every
     daemon into drain (or restart, for single-process groups)
@@ -7135,24 +7135,24 @@ runtime behaviour. Tune whichever form the operator is using.
   per-request enforcement prefer **application-level timeouts**
   (HTTP client timeouts, DB statement timeouts, \`signal.alarm\`
   in request code) and let \`queue-timeout=\` handle backpressure.
-- **\`graceful-timeout=\`** — upper bound on how long a draining
+- **\`graceful-timeout=\`**: upper bound on how long a draining
   daemon waits for in-flight requests to finish before interrupting
   them. Unlocked by \`processes >= 2\`; without a second process
   there is no peer to absorb traffic so the drain path is skipped.
   Single-process groups that need cleaner recovery from wedged
   requests should move to \`processes >= 2\` plus a modest
   \`graceful-timeout\`.
-- **\`connect-timeout=\`** — cap on Apache-to-daemon connect.
-- **\`inactivity-timeout=\`** — idle worker eviction.
+- **\`connect-timeout=\`**: cap on Apache-to-daemon connect.
+- **\`inactivity-timeout=\`**: idle worker eviction.
 
 ### Throughput-ceiling tuning (low-latency workloads)
 
-Daemon-mode defaults — \`WSGIScriptReloading On\` and a non-zero
-\`queue-timeout=\` — add a small per-request handshake. Script
+Daemon-mode defaults (\`WSGIScriptReloading On\` and a non-zero
+\`queue-timeout=\`) add a small per-request handshake. Script
 reloading runs an mtime check on the WSGI script file; a non-zero
 \`queue-timeout=\` requires an Apache↔daemon handshake at request
 start so a queued request can be cleanly rejected if it sits past
-the deadline. Both are usually what you want — code edits take
+the deadline. Both are usually what you want: code edits take
 effect without a restart, and the daemon self-recovers from
 stuck-request backlogs by timing requests out of the accept queue.
 
@@ -7182,7 +7182,7 @@ Trade-offs:
 
 ### Slow-request emission
 
-- **\`WSGISlowRequests threshold=S\`** — emits a slow-request
+- **\`WSGISlowRequests threshold=S\`**: emits a slow-request
   record once a request's wall time exceeds S seconds. Feeds the
   per-process slow-run counters visible in the snapshot and the
   Slow requests stream in the UI.
@@ -7195,15 +7195,15 @@ UI directly can also use this as a navigation guide.
 
 ### Tabs
 
-- **Overview** — line charts over the last minute: request
+- **Overview** - line charts over the last minute: request
   throughput, capacity utilization, CPU utilization, response time,
   memory RSS, per-phase time breakdown, and a time-distribution
   histogram. Vertical markers on each chart mark restart events
-  (coloured by category — see Process lifecycle).
-- **Capacity** — per-process heatmap of per-slot (thread) state.
+  (coloured by category; see Process lifecycle).
+- **Capacity** - per-process heatmap of per-slot (thread) state.
   One row per worker thread, one column per tick, showing busy /
   slow / idle.
-- **Processes** — process lifecycle view. Top: a Gantt-style
+- **Processes** - process lifecycle view. Top: a Gantt-style
   timeline with one row per pid showing the STARTED → STOPPED span
   and a darker tick at STOPPING (drain start). Bottom: an event
   log with one row per lifecycle event. Click an event-log row to
@@ -7212,20 +7212,20 @@ UI directly can also use this as a navigation guide.
   picker, the global Process group + Markers filters, a Pause
   button, and stick-to-bottom scrolling so new arrivals stay in
   view.
-- **Slow requests** — live table of requests whose wall-clock
+- **Slow requests** - live table of requests whose wall-clock
   elapsed has crossed the \`WSGISlowRequests\` threshold. Shows
   in-flight and recently-finished entries.
 
 ### Colour coding
 
-- **Process card tint, red** — process is flagged **saturated**.
-- **Process card tint, amber** — process is flagged
+- **Process card tint, red**: process is flagged **saturated**.
+- **Process card tint, amber**: process is flagged
   **CPU/GIL-bound**.
-- **Process card tint, none** — process is **normal**.
-- **Capacity heatmap cell, shades of blue** — fraction of the slot
+- **Process card tint, none**: process is **normal**.
+- **Capacity heatmap cell, shades of blue**: fraction of the slot
   occupied by a request during that tick (darker = less busy;
   brighter = more busy).
-- **Capacity heatmap cell, red overlay** — one or more slow-request
+- **Capacity heatmap cell, red overlay**: one or more slow-request
   runs overlapped the tick (worker thread held a request past the
   slow threshold).
 
@@ -7241,11 +7241,11 @@ data at different fidelities:
   per-pid blocks.
 
 The Overview charts and Capacity heatmap do not have a snapshot
-equivalent — they are live-only telemetry views.
+equivalent: they are live-only telemetry views.
 `;
 
 // Render a conservative subset of markdown to HTML. Handles h2, lists,
-// paragraphs, inline `code` and **bold**. Deliberately minimal — the
+// paragraphs, inline `code` and **bold**. Deliberately minimal: the
 // help text is authored knowing these rules apply.
 function renderHelpMarkdown(md) {
   const esc = s => s
@@ -7299,14 +7299,14 @@ function renderHelpMarkdown(md) {
 // Roll up the lifecycle event ring into the aggregate stats consumed
 // by the snapshot's "Process lifecycle" section. The ring is bounded
 // to SAMPLE_RETENTION_SEC so the natural window is "whatever is in
-// the buffer" — usually ≤ 10 minutes. Returns null if no events pass
+// the buffer", usually ≤ 10 minutes. Returns null if no events pass
 // the filter so the caller can short-circuit the section.
 //
 // The aggregator pairs STARTED / STOPPING / STOPPED for the same pid
 // to derive drain duration (STOPPING → STOPPED gap) and to flag
 // "orphan" STOPPING events whose matching STOPPED never arrived
-// (drain still in progress, or — for older mod_wsgi without the
-// reaper-side STOPPED emission — a process that was force-exited).
+// (drain still in progress, or, for older mod_wsgi without the
+// reaper-side STOPPED emission, a process that was force-exited).
 //
 // groupSel mirrors the snapshot's group filter ("*" = all, "" =
 // embedded only, otherwise daemon group name). passesGroupFilter
@@ -7317,7 +7317,7 @@ function aggregateLifecycle(groupSel) {
     passesGroupFilter(ev.process_group, groupSel));
   if (events.length === 0) return null;
 
-  // Window actually covered by the ring after filtering — useful for
+  // Window actually covered by the ring after filtering, useful for
   // the section header ("last 547 s") since the ring may not be full.
   const now = Date.now() / 1000;
   const oldest = events[0].stamp;
@@ -7341,7 +7341,7 @@ function aggregateLifecycle(groupSel) {
   let uptimeTotal = 0;
   let uptimeCount = 0;
   let uptimeMax = 0;
-  // Mean lifetime by reason — operator can compare against the
+  // Mean lifetime by reason: operator can compare against the
   // configured maximum-requests= when planned reason is dominant,
   // and against restart_interval= when restart_interval dominates.
   const reasonUptimeTotal = new Map();
@@ -7441,7 +7441,7 @@ function appendLifecycleStats(lines, groupSel) {
   lines.push("");
 
   // Event counts up front. orphanStopping is a tail-of-the-bell
-  // signal — small numbers are normal (drains in flight at snapshot
+  // signal: small numbers are normal (drains in flight at snapshot
   // time); large numbers point to lost STOPPED datagrams.
   const eventBits = [
     a.started + " started",
@@ -7452,7 +7452,7 @@ function appendLifecycleStats(lines, groupSel) {
     eventBits.push(a.orphanStopping + " stopping without matching stopped");
   lines.push("- events: " + eventBits.join(", "));
 
-  // Categories — three buckets so the LLM can triage at a glance.
+  // Categories: three buckets so the LLM can triage at a glance.
   if (a.stopping > 0) {
     const cats = a.categoryCounts;
     lines.push("- restarts by category: planned " + cats.planned
@@ -7479,22 +7479,22 @@ function appendLifecycleStats(lines, groupSel) {
     if (a.abandonedRequests > 0) {
       lines.push("- requests in flight at non-graceful exit: "
         + a.abandonedRequests + " (sum of active_at_exit across "
-        + a.stoppedNonGraceful + " non-graceful STOPPED — "
+        + a.stoppedNonGraceful + " non-graceful STOPPED; "
         + "approximate count of requests likely abandoned by reaped "
         + "daemons)");
     }
   }
 
-  // Drain duration — gap between STOPPING and STOPPED. This is the
+  // Drain duration: gap between STOPPING and STOPPED. This is the
   // shutdown-timeout phase, i.e. the dark period during which the
   // process is no longer accepting new requests but has not yet
   // exited (so its replacement has not been started). Compares
   // against shutdown_timeout when read by an LLM that knows the
   // configured value. Total drain time lets the LLM size the
-  // process-equivalent capacity lost to drains across the window —
+  // process-equivalent capacity lost to drains across the window:
   // 12.8 s of drain in a 600 s window with 4 processes is ~0.5%
   // capacity per process, but 12.8 s in a 600 s window with 1
-  // process is 2.1% — so absolute is more diagnostic than per-
+  // process is 2.1%, so absolute is more diagnostic than per-
   // restart mean for capacity-impact reasoning.
   if (a.drains.length > 0) {
     const totalDrainSec = a.drains.reduce((x, y) => x + y, 0);
@@ -7508,11 +7508,11 @@ function appendLifecycleStats(lines, groupSel) {
     lines.push("- total drain time in window: "
       + totalDrainSec.toFixed(1) + " process-seconds (≈ "
       + pctOfWindow + "% of window per process if drains are evenly "
-      + "distributed across N processes — divide by N processes to "
+      + "distributed across N processes; divide by N processes to "
       + "estimate per-process capacity loss)");
   }
 
-  // Process lifetimes — comparable against the configured
+  // Process lifetimes: comparable against the configured
   // restart_interval (when planned-restart_interval dominates) and
   // maximum-requests (via mean requests / process for that reason).
   if (a.uptimeCount > 0) {
@@ -7525,7 +7525,7 @@ function appendLifecycleStats(lines, groupSel) {
       + a.uptimeMax.toFixed(0) + " s, mean lifetime requests "
       + meanReqs + " / process");
     // Per-reason mean uptime + mean lifetime requests when there's
-    // more than one reason represented — lets the LLM cross-reference
+    // more than one reason represented: lets the LLM cross-reference
     // restart_interval / maximum-requests against their effect.
     const reasonsWithStops = [...a.reasonUptimeCount.entries()];
     if (reasonsWithStops.length > 1) {
@@ -7563,7 +7563,7 @@ function buildCurrentStatsMarkdown() {
   const lines = [];
   const now = new Date();
   const filterSel = document.getElementById("group_filter").value;
-  lines.push("# mod_wsgi telemetry — current state");
+  lines.push("# mod_wsgi telemetry: current state");
   lines.push("");
   lines.push("Snapshot at " + now.toISOString() +
              " (local: " + now.toString() + ").");
@@ -7575,7 +7575,7 @@ function buildCurrentStatsMarkdown() {
       : "group \"" + filterSel + "\" only"));
   // `rpm` is always a per-minute rate: (requests in window / window_s) * 60.
   // When the window isn't 60 s the number is an extrapolation, so flag that
-  // explicitly — otherwise a reader might assume the snapshot contains a
+  // explicitly; otherwise a reader might assume the snapshot contains a
   // full minute of data.
   if (LINE_WINDOW_SEC !== 60) {
     lines.push("rpm values are per-minute rates extrapolated from the "
@@ -7601,7 +7601,7 @@ function buildCurrentStatsMarkdown() {
   // samples come from multiple hosts, multiple Apache instances, or
   // a mid-window rolling upgrade. Using hostname in the key means
   // two identical software stacks on different hosts show up as
-  // distinct entries — they may happen to run the same versions
+  // distinct entries: they may happen to run the same versions
   // today, but operator intent is per-Apache-instance.
   const envFields = [
     { attr: "mod_wsgi_version", label: "mod_wsgi" },
@@ -7651,7 +7651,7 @@ function buildCurrentStatsMarkdown() {
       // metrics socket. Each distinct tuple gets its own subsection
       // so tuning advice can be reasoned about per-Apache-instance.
       lines.push("Build/runtime identity differs across the reporting "
-        + "processes — listed per distinct combination below. Each "
+        + "processes: listed per distinct combination below. Each "
         + "entry corresponds to one Apache instance (or one rolling-"
         + "upgrade generation). Tuning decisions apply per-instance.");
       lines.push("");
@@ -7663,15 +7663,15 @@ function buildCurrentStatsMarkdown() {
         const nProc = g.pids.length;
         const procTxt = nProc + " process" + (nProc === 1 ? "" : "es");
         const header = g.hostname
-          ? g.hostname + " — " + procTxt
-          : "(unknown host) — " + procTxt;
+          ? g.hostname + ": " + procTxt
+          : "(unknown host): " + procTxt;
         lines.push("### " + header);
         lines.push("");
         for (const { attr, label } of envFields) {
           if (g[attr]) lines.push("- " + label + ": " + g[attr]);
         }
         // Always list the pids so a reader can cross-reference the
-        // Processes section below — especially useful when the same
+        // Processes section below, especially useful when the same
         // hostname appears under multiple entries (rolling upgrade).
         const pidList = [...g.pids].sort((a, b) => a - b).join(", ");
         lines.push("- pids: " + pidList);
@@ -7690,7 +7690,7 @@ function buildCurrentStatsMarkdown() {
     + (totals.hostnames.size === 0
         ? "(unknown)"
         : [...totals.hostnames].join(", "))
-    + (multiHost ? " (multi-host — see note below)" : ""));
+    + (multiHost ? " (multi-host; see note below)" : ""));
   lines.push("- rpm: " + totals.rpm);
   lines.push("- cpu: " + totals.cpuCores.toFixed(2) + " cores "
     + "(sum of per-process cpu_utilization, ≈ "
@@ -7703,7 +7703,7 @@ function buildCurrentStatsMarkdown() {
     + " across " + totals.groups.size + " group"
     + (totals.groups.size === 1 ? "" : "s"));
   // Mode breakdown: daemon vs embedded is an important distinction for
-  // an LLM recommending tuning — daemon-group processes tune via
+  // an LLM recommending tuning: daemon-group processes tune via
   // WSGIDaemonProcess processes=/threads=, embedded processes tune
   // via Apache MPM directives (ServerLimit/MaxRequestWorkers/
   // ThreadsPerChild). The empty-string key in totals.groups is the
@@ -7789,7 +7789,7 @@ function buildCurrentStatsMarkdown() {
   // --- Process lifecycle ------------------------------------------
   // Aggregated from the lifecycle event ring (started / stopping /
   // stopped). Window is the ring retention (≤ 600 s), independent
-  // from the Totals window above — restarts are infrequent enough
+  // from the Totals window above: restarts are infrequent enough
   // that a wider window is necessary to make the section useful.
   appendLifecycleStats(lines, filterSel);
 
@@ -7804,11 +7804,11 @@ function buildCurrentStatsMarkdown() {
     const modeLabel = ps.group
       ? `daemon mode, group "${ps.group}"`
       : "embedded mode";
-    lines.push("### pid " + pid + " — " + (ps.hostname || "?")
-      + " — " + modeLabel);
+    lines.push("### pid " + pid + " - " + (ps.hostname || "?")
+      + " - " + modeLabel);
     lines.push("");
     lines.push("- rpm: " + ps.rpm);
-    lines.push("- threads: " + (ps.nThreads > 0 ? ps.nThreads : "—"));
+    lines.push("- threads: " + (ps.nThreads > 0 ? ps.nThreads : "-"));
     lines.push("- cap: " + (ps.cap * 100).toFixed(0) + "%");
     lines.push("- cpu: " + (ps.cpuMean * 100).toFixed(0)
       + "% (fraction of one CPU core)");
@@ -7865,9 +7865,9 @@ function buildCurrentStatsMarkdown() {
     lines.push("#### State");
     lines.push("");
     if (verdict.saturated) {
-      lines.push("- **saturated** — " + verdict.reasons.join("; "));
+      lines.push("- **saturated**: " + verdict.reasons.join("; "));
     } else if (verdict.cpuGilBound) {
-      lines.push("- **CPU/GIL-bound** — " + verdict.gilReasons.join("; "));
+      lines.push("- **CPU/GIL-bound**: " + verdict.gilReasons.join("; "));
       lines.push("- lean: " + verdict.lean);
     } else {
       lines.push("- not flagged (within normal operating envelope)");
@@ -7884,7 +7884,7 @@ function buildCurrentStatsMarkdown() {
     const weightedTxt = ps.slotCpuBusyRatio.toFixed(2);
     const perTickTxt = slotRatio.toFixed(2);
     // When the two agree (typical on steady workloads), one number
-    // tells the whole story. Show both only when they diverge — that
+    // tells the whole story. Show both only when they diverge: that
     // divergence *is* the signal (hot ticks skew the weighted mean
     // away from the simple per-tick average).
     if (weightedTxt === perTickTxt) {
@@ -7906,7 +7906,7 @@ function buildCurrentStatsMarkdown() {
         : "";
       lines.push("  - gil wait mean: " + fmtSubMs(ps.gilWaitMsMean) + " ms"
         + " (peak " + fmtSubMs(ps.gilWaitMsPeak) + " ms)" + gilFracPct
-        + " — partial, lower bound");
+        + "; partial, lower bound");
     }
     if (ps.hasInputReadTime && ps.inputReadMsMean > 0.01) {
       const fracPct = ps.inputReadFracOfApp > 0
@@ -7923,7 +7923,7 @@ function buildCurrentStatsMarkdown() {
       lines.push("  - output write mean: "
         + fmtSubMs(ps.outputWriteMsMean) + " ms"
         + " (peak " + fmtSubMs(ps.outputWriteMsPeak) + " ms)" + fracPct
-        + " — adapter handoff, not client-receive");
+        + "; adapter handoff, not client-receive");
     }
     const triggerLabels = [];
     if (verdict.triggers.peg) triggerLabels.push("cpu-peg");
@@ -7944,7 +7944,7 @@ function buildCurrentStatsMarkdown() {
   // buckets, so the section stays tight
   // on low-variance workloads but the full shape is preserved when
   // a tail is present. Each phase gets p50/p90/p95/p99 percentiles
-  // (bucket upper-bounds — so they're upper estimates, always).
+  // (bucket upper-bounds, so they're upper estimates, always).
   const distSpecs = [
     { label: "Total response time (server + queue + daemon + application)",
       field: "request_time_buckets" },
@@ -7954,11 +7954,11 @@ function buildCurrentStatsMarkdown() {
       field: "daemon_time_buckets" },
     { label: "Queue time (daemon socket-queue wait; daemon mode only)",
       field: "queue_time_buckets" },
-    { label: "GIL wait (overlap, partial — not an addend)",
+    { label: "GIL wait (overlap, partial; not an addend)",
       field: "gil_wait_time_buckets" },
-    { label: "Input read time (overlap, complete for adapter — not an addend)",
+    { label: "Input read time (overlap, complete for adapter; not an addend)",
       field: "input_read_time_buckets" },
-    { label: "Output write time (overlap, adapter-handoff — not an addend, "
+    { label: "Output write time (overlap, adapter-handoff; not an addend, "
         + "not client-receive latency)",
       field: "output_write_time_buckets" },
   ];
@@ -7968,7 +7968,7 @@ function buildCurrentStatsMarkdown() {
     const total = hist.reduce((a, b) => a + b, 0);
     if (total === 0) continue;
     // When a homogeneous workload lands every request in one bucket,
-    // p50/p90/p95/p99 are all the same upper-bound — printing four
+    // p50/p90/p95/p99 are all the same upper-bound; printing four
     // identical numbers is just noise. Collapse to one entry in that
     // case; keep the full breakdown as soon as any percentile diverges.
     const pcts = [
@@ -7978,7 +7978,7 @@ function buildCurrentStatsMarkdown() {
       bucketPercentileMs(hist, 0.99),
     ];
     // With interpolation, the printed percentile is a point inside
-    // the containing bucket — three identical numbers used to mean
+    // the containing bucket; three identical numbers used to mean
     // "all in one bucket" but no longer do, so always print all four.
     const pctPart =
       "p50=" + fmtMs(pcts[0]) +
@@ -8011,7 +8011,7 @@ function buildCurrentStatsMarkdown() {
         const cc = gilContentionCoefficient(hist, sw);
         if (cc) {
           const fitNote = cc.fitKind === "fallback_c2_c4plus"
-            ? "; c2..c4+ fallback fit — c1 absorbed by HDR head bucket"
+            ? "; c2..c4+ fallback fit, c1 absorbed by HDR head bucket"
             : "";
           body.push("- GIL contention coefficient: q="
             + cc.q.toFixed(2) + " (" + gilDecayLabel(cc.q)
@@ -8029,7 +8029,7 @@ function buildCurrentStatsMarkdown() {
     for (let i = 0; i < N_BUCKETS; i++) {
       if (hist[i] === 0) continue;
       const pct = (hist[i] / total) * 100;
-      // A single request in a 10k-sample window is 0.01% — rounding
+      // A single request in a 10k-sample window is 0.01%; rounding
       // that to "0.0%" reads as "nothing there" and loses the signal
       // that a tail exists. Surface it as "<0.1%" so the reader knows
       // the bucket is non-empty but too small to quantify at this scale.
@@ -8055,7 +8055,7 @@ function buildCurrentStatsMarkdown() {
     lines.push("preserved even for requests that landed in overflow.");
     lines.push("");
     lines.push("A request is counted once per phase histogram and once in");
-    lines.push("the total histogram — the total is bucketed per-request,");
+    lines.push("the total histogram; the total is bucketed per-request,");
     lines.push("**not** derived by summing the four phase histograms.");
     lines.push("");
     for (const s of distSections) lines.push(s);
@@ -8073,7 +8073,7 @@ function buildCurrentStatsMarkdown() {
   lines.push("Self-contained digest of the labels, thresholds, and "
     + "signals that appear above, so the snapshot reads without "
     + "other attachments. The UI help doc (if attached alongside) "
-    + "is the fuller reference and goes into more depth — skip "
+    + "is the fuller reference and goes into more depth; skip "
     + "this section if you already have it loaded.");
   lines.push("");
 
@@ -8088,21 +8088,21 @@ function buildCurrentStatsMarkdown() {
     + "do not by themselves flag a process.");
 
   lines.push("- **Process state labels** (per process):");
-  lines.push("  - **saturated** \u2014 the process accumulated "
+  lines.push("  - **saturated**: the process accumulated "
     + "enough saturation signal to cross the flag threshold. "
     + "Contributors (each adds a partial score, summed): busy "
     + "fraction sustained > 80%, queue-time mean > 50 ms, \u2265 3 "
     + "slow-request runs under busy \u2265 70%. Remediation: add "
-    + "capacity \u2014 more processes (`WSGIDaemonProcess "
+    + "capacity: more processes (`WSGIDaemonProcess "
     + "processes=`), more threads (`threads=`), or reduce "
     + "per-request service time.");
-  lines.push("  - **CPU/GIL-bound** \u2014 throughput is limited by "
+  lines.push("  - **CPU/GIL-bound**: throughput is limited by "
     + "CPU/GIL serialisation, not by the size of the worker pool. "
     + "Adding more *threads* to this process will not raise "
     + "throughput and can make contention worse. Add more "
     + "*processes* instead, or reduce per-request CPU cost. The "
     + "label lists which trigger fired (see below).");
-  lines.push("  - **normal** \u2014 process is within the operating "
+  lines.push("  - **normal**: process is within the operating "
     + "envelope; no tuning implied. Reported as \"not flagged\" in "
     + "the per-process State block.");
 
@@ -8110,27 +8110,27 @@ function buildCurrentStatsMarkdown() {
     + "to flag CPU/GIL-bound; the block lists whichever ones are "
     + "currently firing. Gated by request rate \u2265 3 rpm so a "
     + "cold process with one sample isn't classified.");
-  lines.push("  - **cpu-peg** \u2014 per-process CPU > 90% of one "
+  lines.push("  - **cpu-peg**: per-process CPU > 90% of one "
     + "core with \u2265 2 worker threads and busy > 30%. Multiple "
     + "threads competing for one core is the textbook GIL-bound "
     + "pattern.");
-  lines.push("  - **slot-ratio** \u2014 busy > 50% and "
+  lines.push("  - **slot-ratio**: busy > 50% and "
     + "slot cpu / slot busy < 0.5. The threads are not running CPU "
     + "work while they hold a request, which on a Python workload "
-    + "usually means GIL wait (or blocking I/O \u2014 I/O-heavy "
+    + "usually means GIL wait (or blocking I/O; I/O-heavy "
     + "workloads can match this trigger too, so treat it as "
     + "suggestive rather than conclusive).");
-  lines.push("  - **daemon-absolute** \u2014 mean daemon-phase time "
+  lines.push("  - **daemon-absolute**: mean daemon-phase time "
     + "> 50 ms. The dispatch stage (first-GIL-acquire + handoff) "
     + "is slow enough to indicate contention for the interpreter "
     + "lock during request entry.");
-  lines.push("  - **gil-direct** \u2014 measured \`gil_wait_time\` "
+  lines.push("  - **gil-direct**: measured \`gil_wait_time\` "
     + "is \u2265 15% of mean application time, with busy > 30%. "
     + "Direct positive evidence of GIL contention. One-way "
     + "signal: a high value confirms GIL pressure, a low value "
-    + "does **not** rule it out \u2014 see the gil wait signal entry "
+    + "does **not** rule it out; see the gil wait signal entry "
     + "below for the partial-coverage caveat.");
-  lines.push("  - **multi-core carve-out** \u2014 *exclusionary, not "
+  lines.push("  - **multi-core carve-out**: *exclusionary, not "
     + "a flag reason.* When CPU mean > 1.2 cores and busy > 50%, "
     + "the workload is demonstrably running across multiple cores, "
     + "so the GIL isn't serialising; the CPU/GIL label is "
@@ -8139,26 +8139,26 @@ function buildCurrentStatsMarkdown() {
 
   lines.push("- **Signal glossary** (per-process \"signals used\" "
     + "entries):");
-  lines.push("  - **busy** \u2014 fraction of worker-thread time "
+  lines.push("  - **busy**: fraction of worker-thread time "
     + "spent holding a request. 1.0 = every worker slot occupied "
     + "the whole window.");
-  lines.push("  - **cpu** \u2014 per-process CPU utilisation as a "
+  lines.push("  - **cpu**: per-process CPU utilisation as a "
     + "fraction of one core (user + system). A 4-thread process "
     + "running flat-out on 4 cores reports 4.0.");
-  lines.push("  - **slot cpu / slot busy** \u2014 ratio of on-CPU "
+  lines.push("  - **slot cpu / slot busy**: ratio of on-CPU "
     + "time to in-request time across worker slots. 1.0 = pure "
     + "compute; near 0 = threads hold a request without running "
     + "CPU work (GIL wait or blocking I/O).");
-  lines.push("  - **daemon mean / peak** \u2014 mean and window-peak "
+  lines.push("  - **daemon mean / peak**: mean and window-peak "
     + "of the daemon phase (Apache handing the request to the "
     + "daemon process, plus the daemon's first-GIL-acquire + "
     + "dispatch).");
-  lines.push("  - **queue mean / peak** \u2014 time the request "
+  lines.push("  - **queue mean / peak**: time the request "
     + "spent waiting in the daemon's socket-accept queue before a "
     + "worker thread picked it up. Rises with both undersized "
     + "pools (not enough threads) and slow-to-dispatch daemons "
     + "(GIL contention at request entry).");
-  lines.push("  - **gil wait mean / peak** \u2014 mean (and peak "
+  lines.push("  - **gil wait mean / peak**: mean (and peak "
     + "per-tick mean) time per request the worker thread was held "
     + "up waiting for the Python GIL while mod_wsgi was performing "
     + "I/O or logging on the application's behalf. Reported with "
@@ -8173,9 +8173,9 @@ function buildCurrentStatsMarkdown() {
     + "internally). The printed value is therefore a **lower "
     + "bound** on actual GIL pressure: a high value confirms "
     + "contention exists, but a low value does **not** rule it "
-    + "out \u2014 Python-CPU-bound workloads can be heavily "
+    + "out: Python-CPU-bound workloads can be heavily "
     + "GIL-serialised while reporting near-zero \`gil_wait_time\`.");
-  lines.push("  - **input read mean / peak** — mean (and peak "
+  lines.push("  - **input read mean / peak**: mean (and peak "
     + "per-tick mean) time per request the WSGI app spent inside "
     + "\`wsgi.input.read*\` reading the request body. Cross-cutting "
     + "overlap, **not** an addend to the four request phases. "
@@ -8186,7 +8186,7 @@ function buildCurrentStatsMarkdown() {
     + "\`input_bytes_total\` = slow uploader; high with high bytes "
     + "= healthy bulk ingest; near zero with non-trivial bytes = "
     + "body was already buffered by Apache before the WSGI app ran.");
-  lines.push("  - **output write mean / peak** — mean (and peak "
+  lines.push("  - **output write mean / peak**: mean (and peak "
     + "per-tick mean) time per request the WSGI app spent inside "
     + "\`start_response\`, \`write()\`, and the response-iteration / "
     + "file-wrapper paths waiting for Apache to take the data. "
@@ -8220,12 +8220,12 @@ function buildCurrentStatsMarkdown() {
   //      tip is meaningless for embedded-only deployments.
   //   2. Every visible process is classified normal. Firing this
   //      tip on a saturated or CPU/GIL-bound deployment would be
-  //      wrong — capacity, not handshake overhead, is the issue.
+  //      wrong: capacity, not handshake overhead, is the issue.
   //   3. Mean response time is low enough that the per-request
   //      handshake is a measurable share. 50 ms is generous; below
   //      that the handshake is worth considering, above it the
   //      handshake is noise against the app work.
-  //   4. Non-trivial traffic — roughly > 100 rpm — so the advice
+  //   4. Non-trivial traffic (roughly > 100 rpm) so the advice
   //      actually matters. Idle snapshots shouldn't fire a tip.
   let daemonModePresent = false;
   for (const g of totals.groups.keys()) {
@@ -8309,7 +8309,7 @@ function buildCurrentStatsMarkdown() {
       await navigator.clipboard.writeText(text);
       flashCopied(sourceBtn);
     } catch (err) {
-      // Fallback — dump into a textarea and exec copy. Works when the
+      // Fallback: dump into a textarea and exec copy. Works when the
       // page is served over plain http where clipboard API is blocked.
       const ta = document.createElement("textarea");
       ta.value = text;
@@ -8330,7 +8330,7 @@ function buildCurrentStatsMarkdown() {
 // Reuses the same expand-panel renderer as the Slow Requests table
 // so the two surfaces stay consistent. When the run was detected
 // heuristically (no slow-request entry in storage) the modal still
-// opens but shows a "no record" notice — useful when
+// opens but shows a "no record" notice, useful when
 // WSGISlowRequests isn't configured or the storage entry has been
 // pruned.
 // Captured at click time. slowKey lets the redraw tick re-resolve

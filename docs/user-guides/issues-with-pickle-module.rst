@@ -93,7 +93,7 @@ The same problem occurs for class objects::
     ...
     _pickle.PicklingError: Can't pickle <class '__main__.B'>: it's not found as __main__.B
 
-It also occurs for instances of a class — pickling an instance validates
+It also occurs for instances of a class: pickling an instance validates
 the class against the current value of its qualified name::
 
     >>> class B: pass

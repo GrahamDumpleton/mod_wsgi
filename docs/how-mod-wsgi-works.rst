@@ -26,9 +26,9 @@ community.
 
 Apache is built around a small core that handles the basics of
 listening on sockets, parsing HTTP requests, and dispatching responses.
-Almost everything else — HTTPS termination, URL rewriting,
+Almost everything else (HTTPS termination, URL rewriting,
 authentication, content compression, language-specific application
-hosting — is implemented as a *loadable module*. Modules are compiled
+hosting) is implemented as a *loadable module*. Modules are compiled
 as shared libraries and pulled into the server at startup with the
 ``LoadModule`` directive::
 
@@ -73,7 +73,7 @@ Mapping URLs to a WSGI application is done with
     WSGIScriptAlias /myapp /path/to/myapp.wsgi
 
 The script file at the end of that path is a Python module that
-exposes an ``application`` callable — your WSGI entry point. mod_wsgi
+exposes an ``application`` callable, your WSGI entry point. mod_wsgi
 imports the module, finds the callable, and routes matching requests
 to it.
 
@@ -112,7 +112,7 @@ into Apache and by every other site or application the same Apache
 instance might be hosting.
 
 In **daemon mode** mod_wsgi runs your application in one or more
-*daemon process groups* — separate processes forked and managed by
+*daemon process groups*: separate processes forked and managed by
 Apache's parent process, but isolated from the worker processes that
 handle inbound HTTP traffic. Apache workers act as proxies that hand
 the request over a Unix domain socket to the daemon process, which
@@ -155,7 +155,7 @@ mod_wsgi components used in a traditional install.
 When you run ``mod_wsgi-express start-server myapp.wsgi``, the
 following happens:
 
-1. The package locates a working ``httpd`` binary on the system —
+1. The package locates a working ``httpd`` binary on the system:
    the same Apache binary that the host's package manager or
    manual install provides.
 2. It generates a fresh Apache configuration in a private directory,
@@ -312,9 +312,9 @@ mod_wsgi-express in a container
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A container is in many ways the natural home for a
-``mod_wsgi-express`` instance. The container model — one main
+``mod_wsgi-express`` instance. The container model (one main
 foreground process, one user, one filesystem, one or two predictable
-ports — maps directly onto how ``mod_wsgi-express`` is structured. ::
+ports) maps directly onto how ``mod_wsgi-express`` is structured. ::
 
     ┌──────────────────────────────────────┐
     │  Container                           │
@@ -335,9 +335,9 @@ stderr (suitable for the container runtime to collect), and exits
 cleanly when the container is stopped.
 
 Containers running ``mod_wsgi-express`` are typically deployed behind
-the same kind of reverse-proxy layer as native instances —
-Kubernetes ingress controllers, cloud load balancers, or a separate
-front-end Apache or nginx — so the architectural pattern is the same
+the same kind of reverse-proxy layer as native instances
+(Kubernetes ingress controllers, cloud load balancers, or a separate
+front-end Apache or nginx), so the architectural pattern is the same
 as the reverse-proxy deployment above, with container boundaries
 replacing process boundaries.
 
@@ -364,8 +364,8 @@ depends on what else lives on the host:
   platform, use ``mod_wsgi-express`` inside the container and let
   the platform's existing ingress layer handle TLS and routing.
 
-In every case the actual runtime — Apache plus mod_wsgi plus your
-Python application — is the same. The deployment pattern only
+In every case the actual runtime (Apache plus mod_wsgi plus your
+Python application) is the same. The deployment pattern only
 determines how that runtime is started, who owns it, and what sits
 in front of it.
 

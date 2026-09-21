@@ -22,7 +22,7 @@ like to share, please feel free to send it through.
 
 There is no obligation to contribute code in order to ask for
 something, though. If you have hit a problem or have a suggestion,
-opening a GitHub issue that describes it is just as helpful — and
+opening a GitHub issue that describes it is just as helpful, and
 often more so. mod_wsgi sits across both the Apache and CPython C
 APIs, which makes the code a fairly specialised place to work, and
 most fixes or small features are quicker for the author to develop

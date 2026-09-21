@@ -3,16 +3,16 @@ Installation On Linux
 =====================
 
 This page covers installing mod_wsgi on Linux from a distribution
-package — using your distribution's package manager to pull in a
+package: using your distribution's package manager to pull in a
 pre-built ``mod_wsgi.so`` and the corresponding Apache configuration
 glue.
 
 For the alternatives:
 
 * If you want to ``pip install`` mod_wsgi inside a Python virtual
-  environment — for example to use ``mod_wsgi-express`` or to keep
-  mod_wsgi co-located with your application's Python dependencies
-  — see :doc:`installation-from-pypi`.
+  environment (for example to use ``mod_wsgi-express`` or to keep
+  mod_wsgi co-located with your application's Python dependencies),
+  see :doc:`installation-from-pypi`.
 * If you want to compile mod_wsgi from source and install it into
   Apache the traditional way, see :doc:`quick-installation-guide`.
 
@@ -87,9 +87,9 @@ virtual host configuration of your choice.
 Software Collections (legacy)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-If you are using the Red Hat Software Collections Library (SCL) —
+If you are using the Red Hat Software Collections Library (SCL),
 typically because you need a newer Apache or Python than the base
-distribution provides — the package names instead look like::
+distribution provides, the package names instead look like::
 
     sudo dnf install httpd24 httpd24-python3-mod_wsgi
 
@@ -104,8 +104,8 @@ Other distributions
 mod_wsgi is also packaged by Arch (``mod_wsgi``), Alpine
 (``apache2-mod-wsgi``, ``apache2-mod-wsgi-python3``), Gentoo
 (``www-apache/mod_wsgi``), and a number of others. The general
-shape is the same — install the package, ensure Apache is
-configured to load the module, restart Apache — but the exact
+shape is the same (install the package, ensure Apache is
+configured to load the module, restart Apache) but the exact
 command names, package names, and configuration directory layout
 vary. Consult your distribution's documentation for specifics.
 
@@ -124,9 +124,9 @@ against.
 Where to go next
 ----------------
 
-* :doc:`quick-configuration-guide` — adding ``WSGIScriptAlias`` and
+* :doc:`quick-configuration-guide`: adding ``WSGIScriptAlias`` and
   ``WSGIDaemonProcess`` directives for your application.
-* :doc:`configuration-guidelines` — richer configuration examples.
-* :doc:`../configuration` — Apache directive reference.
-* :doc:`installation-issues` — what to do if Apache does not pick
+* :doc:`configuration-guidelines`: richer configuration examples.
+* :doc:`../configuration`: Apache directive reference.
+* :doc:`installation-issues`: what to do if Apache does not pick
   up the module after install.

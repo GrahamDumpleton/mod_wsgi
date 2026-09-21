@@ -111,7 +111,7 @@ A portable WSGI application should not write to ``sys.stdout`` or use
 ways of hosting WSGI use ``sys.stdout`` as the response channel back
 to the web server (CGI being the canonical example). Under mod_wsgi
 the default behaviour is to redirect anything written to
-``sys.stdout`` to the Apache error log, so writes do not fail —
+``sys.stdout`` to the Apache error log, so writes do not fail,
 but ``sys.stderr`` should still be preferred. See
 :doc:`../configuration-directives/WSGIRestrictStdout` if the older
 strict behaviour (raise on ``sys.stdout`` use) is required.
@@ -193,7 +193,7 @@ application to a named daemon process group.
 For the case of the application group as recorded by the
 'mod_wsgi.application_group' variable in the WSGI request environment, if the
 value is an empty string then the WSGI application is running in the main
-Python interpreter — the one Python creates at process startup, before any
+Python interpreter, the one Python creates at process startup, before any
 sub-interpreters are spawned. For any other value it indicates it is
 running in the named Python sub interpreter.
 
@@ -591,7 +591,7 @@ displayed in the browser, you will need to use a WSGI error-catching
 middleware component or rely on the framework's own debug page.
 
 If you are using a Python web framework, the simplest path is the
-framework's built-in debug mode — for example Django with
+framework's built-in debug mode, for example Django with
 ``DEBUG = True`` in ``settings.py``, Flask with
 ``app.run(debug=True)`` or ``app.config['DEBUG'] = True``, or any
 WSGI framework's equivalent setting. These all render exception
@@ -629,7 +629,7 @@ instead, so that error-catching middleware can capture them.
 Debug mode of any of the options above must only be used during
 development and never in production. The traceback page exposes
 source code, locals, and (with ``evalex=True``) an arbitrary Python
-REPL — anyone who can hit the URL can run code in your application
+REPL: anyone who can hit the URL can run code in your application
 process.
 
 Python Interactive Debugger
@@ -811,7 +811,7 @@ mod_wsgi daemon process group with a single process::
     WSGIDaemonProcess mydebug processes=1 threads=N
     WSGIProcessGroup mydebug
 
-(Choose ``threads`` to suit the application — multithreaded is fine.)
+(Choose ``threads`` to suit the application; multithreaded is fine.)
 
 If embedded mode is unavoidable (for example on Windows, where
 daemon mode is not available), restrict Apache itself to a single

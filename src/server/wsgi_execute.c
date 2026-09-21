@@ -47,8 +47,8 @@ int wsgi_execute_script(request_rec *r)
     WSGIThreadInfo *thread_info = NULL;
 
     /* Clear any leftover staged GIL-wait value from a prior request
-     * handled on this worker thread. The next instrumented site —
-     * starting with the initial interp acquire below — will accumulate
+     * handled on this worker thread. The next instrumented site,
+     * starting with the initial interp acquire below, will accumulate
      * into the staging slot, drained into the per-request active slot
      * at wsgi_start_request. */
     wsgi_gil_wait_reset();
@@ -85,7 +85,7 @@ int wsgi_execute_script(request_rec *r)
      * The interpreter handle's name is duplicated into the
      * wsgi_interpreters pool (process-lifetime), so the pointer
      * stored here remains valid for any reader for the rest of the
-     * Apache child's life — no dependency on the request pool.
+     * Apache child's life, with no dependency on the request pool.
      */
 
     wsgi_thread_info(1, 0)->current_application_group = interp->name;

@@ -13,7 +13,7 @@ When to use this method
 
 Use ``pip install`` if any of the following applies:
 
-* You want the simplest path to running your WSGI application —
+* You want the simplest path to running your WSGI application:
   installing the package gives you the ``mod_wsgi-express`` command
   which can host your application without any manual Apache
   configuration.
@@ -26,7 +26,7 @@ and ``mod_wsgi-express start-server`` are not available there. See
 :doc:`../project-status` for the current Windows support situation.
 
 If instead you want mod_wsgi managed system-wide by your operating
-system's package manager, use a Linux distribution package — see
+system's package manager, use a Linux distribution package; see
 :doc:`installation-on-linux`. If you need a from-source build that
 installs into Apache the traditional way (``configure`` / ``make`` /
 ``make install``), see :doc:`quick-installation-guide`.
@@ -184,8 +184,8 @@ follows the same release version numbering as the regular
 Where to go next
 ----------------
 
-* :doc:`../getting-started` — quick-start with ``mod_wsgi-express``.
-* :doc:`quick-configuration-guide` — manual Apache configuration
+* :doc:`../getting-started`: quick-start with ``mod_wsgi-express``.
+* :doc:`quick-configuration-guide`: manual Apache configuration
   for hosting a WSGI application after wiring the module in.
-* :doc:`configuration-guidelines` — richer configuration examples.
-* :doc:`../configuration` — Apache directive reference.
+* :doc:`configuration-guidelines`: richer configuration examples.
+* :doc:`../configuration`: Apache directive reference.

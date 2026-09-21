@@ -14,7 +14,7 @@ Endpoints:
 
   /test/wsgi/restrict/stderr-type
     Returns the type name of sys.stderr. This should never be
-    restricted — it is always a log wrapper object.
+    restricted: it is always a log wrapper object.
 """
 
 import sys

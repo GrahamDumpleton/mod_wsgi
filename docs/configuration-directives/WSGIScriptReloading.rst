@@ -21,7 +21,7 @@ which mode the application is running in:
   re-imported in the same request that detected the change, with the
   request then served by the freshly loaded code. The Python sub
   interpreter and any other Python modules already loaded into it are
-  not affected — changes to those other modules are not picked up
+  not affected: changes to those other modules are not picked up
   until Apache is restarted.
 
 * In **daemon mode**, the daemon process group that the application

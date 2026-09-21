@@ -4,7 +4,7 @@ Configuration Issues
 
 This page lists configuration-level problems that come up with mod_wsgi
 under typical Linux distributions and Apache installations. Most are not
-mod_wsgi bugs as such — they are interactions between mod_wsgi, Apache,
+mod_wsgi bugs as such: they are interactions between mod_wsgi, Apache,
 and the surrounding distribution defaults (filesystem permissions,
 SELinux/AppArmor, restrictive Apache runtime directories, and so on).
 
@@ -21,7 +21,7 @@ configtest`` typically logs a line of the form::
      domain name, using 192.0.2.10. Set the 'ServerName' directive \
      globally to suppress this message
 
-This warning is not specific to mod_wsgi — Apache emits it whenever it
+This warning is not specific to mod_wsgi: Apache emits it whenever it
 cannot determine its own canonical server name from the host's DNS
 configuration. The warning is harmless on its own, but the auto-detected
 fallback ``ServerName`` may not match what you intended, which can affect
@@ -38,7 +38,7 @@ local placeholder::
     ServerName localhost
 
 Per-virtual-host ``ServerName`` declarations inside ``<VirtualHost>``
-blocks do not suppress this warning — it is the global server scope that
+blocks do not suppress this warning: it is the global server scope that
 needs the declaration.
 
 File permissions on application files
@@ -58,8 +58,8 @@ or, for the script file itself, ``not readable to Apache``.
 The standard remedies are:
 
 * Place the application directory and its contents in a location that
-  is readable by the Apache user — typically under ``/var/www/`` or
-  ``/srv/`` — rather than under a per-user home.
+  is readable by the Apache user (typically under ``/var/www/`` or
+  ``/srv/``) rather than under a per-user home.
 * If keeping the application under a home directory is required, grant
   the Apache user (or its group) read and traversal access via
   ``chgrp`` and ``chmod g+rx`` on the path components, or via ACLs
@@ -69,7 +69,7 @@ The standard remedies are:
   :doc:`../configuration-directives/WSGIDaemonProcess` ``user=`` and
   ``group=`` options. The daemon process runs as that user and reads
   the application files with that user's permissions, so the
-  Apache-user permission constraint no longer applies — only the
+  Apache-user permission constraint no longer applies; only the
   daemon-user constraint does.
 
 Note that ``WSGIDaemonProcess user=``/``group=`` only takes effect when
@@ -83,7 +83,7 @@ Location of UNIX sockets
 When mod_wsgi is used in daemon mode, UNIX sockets are used to
 communicate between the Apache child processes and the daemon
 processes. These sockets and their associated mutex lock files are
-placed in the standard Apache runtime directory by default — the same
+placed in the standard Apache runtime directory by default, the same
 directory that Apache log files are placed in.
 
 Some Linux distributions apply restrictive permissions to that
@@ -154,11 +154,11 @@ The standard remediations, in order of preference:
 * **Set SELinux booleans** for whole categories of permission. The
   most commonly relevant for WSGI applications:
 
-  * ``httpd_can_network_connect`` — allow Apache (and mod_wsgi) to
+  * ``httpd_can_network_connect``: allow Apache (and mod_wsgi) to
     make outbound network connections (databases, upstream APIs).
-  * ``httpd_can_network_connect_db`` — narrower; just databases on
+  * ``httpd_can_network_connect_db``: narrower; just databases on
     standard ports.
-  * ``httpd_can_sendmail`` — allow sending mail via the local MTA.
+  * ``httpd_can_sendmail``: allow sending mail via the local MTA.
 
   Toggle via ``setsebool``, with ``-P`` to make the change persist
   across reboots::
@@ -172,7 +172,7 @@ The standard remediations, in order of preference:
       sudo restorecon -R /srv/myapp
 
   Use ``httpd_sys_rw_content_t`` instead of ``httpd_sys_content_t`` if
-  the application also needs to write — for example to maintain a
+  the application also needs to write, for example to maintain a
   cache directory.
 
 * **Generate a custom policy** with ``audit2allow`` for one-off
@@ -181,11 +181,11 @@ The standard remediations, in order of preference:
       sudo ausearch -m AVC -ts recent | audit2allow -M mywsgi
       sudo semodule -i mywsgi.pp
 
-  Review the generated ``mywsgi.te`` before installing — `audit2allow`
+  Review the generated ``mywsgi.te`` before installing: `audit2allow`
   builds the minimum policy that would have allowed the denied
   operations, but does not assess whether allowing them is wise.
 
-* **Last-resort permissive mode** — useful only for diagnosis, never
+* **Last-resort permissive mode**: useful only for diagnosis, never
   for permanent deployment. Switch the host to permissive mode
   temporarily, reproduce the failure, then read the audit log for the
   denials that would have occurred under enforcing::
@@ -246,7 +246,7 @@ configuration error, regardless of where the directives appear.
 When ``WSGIDaemonProcess`` is associated with a virtual host, the
 mod_wsgi messages for that daemon group are written to the virtual
 host's error log rather than to the main Apache error log. Always
-check both logs when diagnosing daemon-process startup failures —
+check both logs when diagnosing daemon-process startup failures:
 the relevant message may be in either, depending on whether the
 declaration is at server or virtual-host scope.
 
@@ -286,8 +286,8 @@ WSGIApplicationGroup and C extension modules
 --------------------------------------------
 
 By default each WSGI application runs in its own Python sub-interpreter
-(application group). Some C extension modules — most prominently
-NumPy, SciPy, and modules built on top of them — do not work correctly
+(application group). Some C extension modules (most prominently
+NumPy, SciPy, and modules built on top of them) do not work correctly
 in a sub-interpreter and assume they are running in the main Python
 interpreter. The symptoms range from import errors at startup to
 crashes and hangs once the C extension is exercised.
@@ -307,7 +307,7 @@ The trade-off is that all applications running with
 and therefore the same Python module namespace. If you host multiple
 WSGI applications on the same server and need them isolated from each
 other (different versions of the same library, for instance), run
-each one in its own daemon process group instead — daemon processes
+each one in its own daemon process group instead: daemon processes
 each have their own main interpreter.
 
 .htaccess directive limitations
@@ -317,7 +317,7 @@ Not all mod_wsgi directives can be used inside a ``.htaccess`` file.
 The ones that affect URL-to-script mapping (``WSGIScriptAlias``,
 ``WSGIScriptAliasMatch``) and process-model selection
 (``WSGIDaemonProcess``, ``WSGIProcessGroup``) are server-config-only
-and silently ineffective if placed in ``.htaccess`` — Apache will
+and silently ineffective if placed in ``.htaccess``: Apache will
 not error, but the directive will not take effect.
 
 The directives that *can* appear in ``.htaccess`` (subject to the
@@ -332,8 +332,8 @@ are those that affect per-directory request processing:
 
 Each directive page in :doc:`../configuration` lists its allowed
 contexts and required override level under the ``Context`` and
-``Override`` headings. The full directory-level configuration —
-including ``WSGIScriptAlias`` — must live in the main Apache
+``Override`` headings. The full directory-level configuration,
+including ``WSGIScriptAlias``, must live in the main Apache
 configuration files.
 
 RewriteRule and WSGIScriptAlias interaction
@@ -419,7 +419,7 @@ that ``dlclose()`` does not guarantee that the libraries the
 module depended on are also unloaded from the process. Shared
 libraries can be loaded with flags that explicitly prevent
 unloading (``RTLD_NODELETE`` and platform equivalents), and they
-may stay resident for other reasons besides — including being
+may stay resident for other reasons besides, including being
 referenced by another loaded library. The Python shared library
 typically remains mapped for the life of the Apache parent
 process once it has been loaded.
@@ -429,7 +429,7 @@ minor version (for example ``3.12`` → ``3.13``). The freshly
 reloaded ``mod_wsgi.so`` is linked against the new
 ``libpython3.X.so``, but at runtime it resolves its Python symbols
 against whichever ``libpython`` is already resident in the
-process — that is, the *older* version that did not unload. The
+process: that is, the *older* version that did not unload. The
 result is undefined behaviour or outright crashes.
 
 To avoid this, fully stop and start Apache (``apachectl stop``
@@ -438,8 +438,8 @@ upgrading Python. Stopping the parent process unloads everything;
 the new parent then loads ``mod_wsgi.so`` and the matching
 ``libpython`` fresh.
 
-For changes within the WSGI application itself — Python code,
-imported modules, configuration files read by the application —
+For changes within the WSGI application itself (Python code,
+imported modules, configuration files read by the application),
 neither a graceful reload, restart, nor full Apache stop/start is
 required. ``touch``-ing the WSGI script file causes the daemon
 process group to recycle on the next request, picking up the new

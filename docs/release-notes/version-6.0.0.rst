@@ -86,14 +86,14 @@ New Features
   ``PyThreadState_SetAsyncExc``. If the injection unwinds the stuck
   request within the ``interrupt-timeout`` grace window, the WSGI
   adapter returns ``504 Gateway Timeout`` and the worker thread returns
-  to the pool — the daemon process keeps running, and other threads
+  to the pool: the daemon process keeps running, and other threads
   were never disturbed. ``RequestTimeout`` derives directly from
   ``BaseException`` so well-written code does not catch it via
   ``except Exception:``; user code may catch it for cleanup but should
   re-raise. When ``interrupt-timeout`` is ``0`` (the default) injection
   is skipped and recovery falls straight through to
   ``graceful-timeout`` followed by ``shutdown-timeout``. Either way,
-  detection is identical — ``interrupt-timeout`` only changes the
+  detection is identical: ``interrupt-timeout`` only changes the
   recovery method.
 
   Drain: the ``graceful-timeout`` "is the process idle yet?" check now
@@ -235,8 +235,8 @@ Features Changed
   system CPU seconds for that scope.
 
 * The dict returned by ``mod_wsgi.request_metrics()`` now also carries
-  five HTTP response class counters — ``status_1xx``, ``status_2xx``,
-  ``status_3xx``, ``status_4xx`` and ``status_5xx`` — counting the
+  five HTTP response class counters (``status_1xx``, ``status_2xx``,
+  ``status_3xx``, ``status_4xx`` and ``status_5xx``) counting the
   per-class responses returned by the WSGI application during the
   sampling window. Their sum equals ``request_count`` for the same
   window, so ``status_4xx + status_5xx`` is a ready-made error rate
@@ -245,7 +245,7 @@ Features Changed
   into ``status_5xx`` so the error rate matches the user-visible
   outcome rather than only counting explicit
   ``start_response("500 ...", ...)`` paths. ``status_1xx`` is included
-  as a tripwire — PEP 3333 forbids a WSGI application from returning a
+  as a tripwire: PEP 3333 forbids a WSGI application from returning a
   1xx response, so a non-zero count flags a protocol violation. The
   per-class counters do not distinguish between specific codes
   (404 vs 401 vs 410, etc.); for per-code detail on slow responses,
@@ -267,9 +267,9 @@ Features Changed
 * Log messages emitted by mod_wsgi no longer carry the historic
   ``mod_wsgi (pid=NNN): `` prefix that the module manually prepended to
   its own output. The same information already appears in Apache's
-  standard log line decoration — the ``[wsgi:LEVEL]`` module tag and
+  standard log line decoration (the ``[wsgi:LEVEL]`` module tag and
   the ``[pid NNN:tid NNN]`` field that Apache prepends to every entry
-  emitted via the ``ap_log_*`` family — so the manual prefix only
+  emitted via the ``ap_log_*`` family), so the manual prefix only
   duplicated information and produced two ``pid=`` fields per line.
   Log-scraping pipelines that previously matched on the literal
   ``mod_wsgi (pid=`` substring should match on the ``[wsgi:`` module
@@ -369,7 +369,7 @@ Features Changed
   ``mod_wsgi.start_recording_metrics()`` function. Previously the
   first call to ``request_metrics()`` enabled accounting as a side
   effect and returned an empty "seeding" sample, while
-  ``process_metrics()`` did not enable it at all — an asymmetry that
+  ``process_metrics()`` did not enable it at all, an asymmetry that
   meant an application polling only ``process_metrics()`` would never
   see the per-tick aggregator data come on. With the explicit opt-in,
   both accessors gate identically: they return ``None`` until
@@ -526,7 +526,7 @@ Bugs Fixed
   when the filesystem was case-sensitive (Linux default, or
   ``WSGICaseSensitivity On``) and preserved case when the filesystem
   was case-insensitive (Windows/macOS defaults, or
-  ``WSGICaseSensitivity Off``) — the opposite of the directive's
+  ``WSGICaseSensitivity Off``), the opposite of the directive's
   documented meaning and the function's comment. A deployment that
   served the same script via paths differing only in case would have
   observed duplicate module loads on Windows/macOS and cache
