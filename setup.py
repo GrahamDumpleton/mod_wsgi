@@ -441,6 +441,7 @@ setup(name = package_name,
         'Programming Language :: Python :: 3.12',
         'Programming Language :: Python :: 3.13',
         'Programming Language :: Python :: 3.14',
+        'Programming Language :: Python :: 3.15',
         'Topic :: Internet :: WWW/HTTP :: WSGI',
         'Topic :: Internet :: WWW/HTTP :: WSGI :: Server'
     ],
@@ -456,6 +457,6 @@ setup(name = package_name,
     entry_points = { 'console_scripts':
         ['mod_wsgi-express = mod_wsgi.express.cli:main'],},
     zip_safe = False,
-    install_requires = standalone and ['mod_wsgi-httpd==2.4.68.1'] or [],
+    install_requires = standalone and ['mod_wsgi-httpd==2.4.68.2'] or [],
     python_requires='>=3.10',
 )
