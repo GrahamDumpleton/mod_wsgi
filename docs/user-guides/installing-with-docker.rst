@@ -169,11 +169,14 @@ The same Dockerfile shape, with no system Apache::
          "--log-to-terminal"]
 
 ``mod_wsgi-standalone`` pulls in the companion ``mod_wsgi-httpd``
-package, which downloads and compiles Apache, APR, APR-util and
-PCRE from source inside the Python environment. The system
-packages installed here are the build toolchain
-(``build-essential``) and ``libexpat1-dev`` (needed by APR-util);
-``apache2`` and ``apache2-dev`` are no longer needed.
+package, which compiles Apache, APR, APR-util and PCRE2 from source
+inside the Python environment. The system packages installed here
+are the build toolchain (``build-essential``) and ``libexpat1-dev``
+(needed by APR-util); ``apache2`` and ``apache2-dev`` are no longer
+needed. If the container is to terminate HTTPS itself, add
+``libssl-dev`` to that list, since the bundled Apache only includes
+``mod_ssl`` when the OpenSSL development files are present at the
+time it is compiled.
 
 Trade-off versus the system-Apache example: building
 ``mod_wsgi-httpd`` from source takes several minutes the first
@@ -191,7 +194,7 @@ container behaves identically to the system-Apache variant
 above, including the PID 1 reaping and signal handling described
 earlier.
 
-See :doc:`installation-from-pypi` for the broader context on
+See :doc:`mod-wsgi-standalone-package` for the broader context on
 ``mod_wsgi-standalone`` and when to reach for it outside the
 container case.
 

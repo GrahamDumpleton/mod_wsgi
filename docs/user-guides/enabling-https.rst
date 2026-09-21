@@ -46,6 +46,10 @@ For ``mod_wsgi-express``, ``mod_ssl`` only needs to be present
 on disk; the generated Apache configuration does its own
 ``LoadModule`` and listener setup. Distribution packages of
 Apache that ship ``mod_ssl`` as a separate package satisfy this.
+With the ``mod_wsgi-standalone`` package, ``mod_ssl`` is present
+only if the OpenSSL development files were on the host when the
+bundled Apache was compiled; see
+:ref:`standalone-https-support`.
 
 HTTPS with mod_wsgi-express
 ---------------------------

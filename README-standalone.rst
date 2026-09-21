@@ -31,6 +31,17 @@ usage instructions outlined on the mod_wsgi documentation site at
 https://www.modwsgi.org, substituting ``mod_wsgi-standalone`` for
 ``mod_wsgi`` as the package to install.
 
+The documentation has a page specifically about this package, `The
+mod_wsgi-standalone Package
+<https://www.modwsgi.org/en/latest/user-guides/mod-wsgi-standalone-package.html>`_.
+It covers what the host needs in order to compile everything, how
+support for HTTPS depends on the OpenSSL development files being
+present when Apache is compiled, how the version of Apache you get is
+tied to the version of ``mod_wsgi-standalone`` you install, how
+security fixes for Apache reach you, and why ``mod_wsgi-httpd`` and
+``mod_wsgi`` should not be listed as two separate dependencies in place
+of ``mod_wsgi-standalone``.
+
 **NOTE: Although this package may allow you to install a standalone Apache
 version, it is only really recommended that you use this package if you
 have absolutely no other choice for getting the Apache httpd server
