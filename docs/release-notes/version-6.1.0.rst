@@ -15,3 +15,12 @@ Features Changed
 * Python 3.15 has been added to the Python versions listed in the package
   classifiers for the ``mod_wsgi`` and ``mod_wsgi-standalone`` packages
   on PyPi.
+
+* The ``mod_wsgi-telemetry`` package now requires ``aiohttp`` 3.14.3 or
+  later, where previously any version from 3.9 was accepted. Security
+  advisories published against earlier ``aiohttp`` releases include HTTP
+  request smuggling via a WebSocket upgrade and an out of bounds read in
+  the HTTP parser, and ``mod_wsgi-telemetry`` hosts an HTTP and WebSocket
+  server with ``aiohttp``. Installing or upgrading ``mod_wsgi-telemetry``
+  pulls in a fixed ``aiohttp`` as a result. Python 3.10 or later is still
+  all that is required.

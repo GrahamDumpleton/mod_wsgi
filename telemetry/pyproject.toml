@@ -32,7 +32,7 @@ classifiers = [
     "Topic :: System :: Monitoring",
 ]
 dependencies = [
-    "aiohttp>=3.9",
+    "aiohttp>=3.14.3",
 ]
 
 [project.urls]
