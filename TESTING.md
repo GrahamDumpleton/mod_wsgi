@@ -196,7 +196,7 @@ When a change adds or alters a `#if PY_VERSION_HEX >= 0x...` guard
 around Python C API code, only one side of the guard is compiled by
 the Python in `.venv`. Both sides have to be checked, by running the
 integration tests under the oldest and the newest supported Python.
-As of this writing those are 3.10 and 3.14.
+As of this writing those are 3.10 and 3.15.
 
 ```
 just test-bounds
@@ -214,7 +214,7 @@ at what is there first with `uv pip list`, and say in the summary of
 the work if something will need to be installed again.
 
 `just test-versions` checks something narrower: that for each of 3.10
-to 3.14 the module builds, installs, and serves one request under
+to 3.15 the module builds, installs, and serves one request under
 `mod_wsgi-express` on port 8000. It deletes and recreates `.venv` for
 each version and deletes it at the end, so `.venv` has to be set up
 again afterwards with `just install`. Specific versions can be given,

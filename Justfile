@@ -1,7 +1,7 @@
 # Oldest and newest supported Python versions. A change which depends on
 # the Python version has to be tested under both.
 python_oldest := "3.10"
-python_newest := "3.14"
+python_newest := "3.15"
 
 # List available targets.
 default:
