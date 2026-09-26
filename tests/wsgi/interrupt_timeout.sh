@@ -5,7 +5,7 @@
 # /slow spins in pure Python; the monitor thread injects
 # mod_wsgi.RequestTimeout, which unwinds to the adapter and produces
 # a 504. The process must keep serving subsequent requests because
-# injection succeeded — only the wedged thread was disturbed.
+# injection succeeded: only the wedged thread was disturbed.
 
 CATCH_MARKER="/tmp/mod_wsgi_interrupt_timeout_catch_marker"
 rm -f "$CATCH_MARKER"

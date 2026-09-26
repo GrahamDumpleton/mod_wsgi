@@ -35,7 +35,7 @@ from Apache Lounge:
   * https://www.apachelounge.com
 
 Apache distributions other than Apache Lounge are sometimes
-incomplete — in particular missing the development files (the
+incomplete, in particular missing the development files (the
 ``include`` directory and the build glue equivalent to ``apxs``)
 that are needed to compile third-party Apache modules. Apache
 Lounge supplies a complete distribution suitable for building
@@ -53,7 +53,7 @@ components that contain spaces::
 Python
 ------
 
-Use a standard Python installation — for example a python.org
+Use a standard Python installation, for example a python.org
 installer, ``uv``-managed Python, or ``conda``-managed Python.
 Python 3.10 or later is required. The Python installation must
 include the standard development headers and import library so
@@ -65,8 +65,8 @@ C compiler
 ``pip install mod_wsgi`` compiles native C code, so the host needs
 a Microsoft Visual C++ build environment compatible with the
 Python in use. The simplest way to provide this is to install the
-free *Build Tools for Visual Studio* — selecting the "Desktop
-development with C++" workload — from Microsoft's downloads page.
+free *Build Tools for Visual Studio* (selecting the "Desktop
+development with C++" workload) from Microsoft's downloads page.
 
 Installing mod_wsgi
 -------------------
@@ -94,8 +94,8 @@ Add the printed ``LoadModule`` and ``WSGIPythonHome`` directives to
 your Apache ``httpd.conf`` file at the same point that other
 modules are loaded.
 
-Application-specific Apache configuration — for example a
-``WSGIScriptAlias`` directive mapping a URL to a WSGI script — is
+Application-specific Apache configuration (for example a
+``WSGIScriptAlias`` directive mapping a URL to a WSGI script) is
 added to ``httpd.conf`` in the same way as on UNIX. See
 :doc:`quick-configuration-guide`.
 
@@ -106,10 +106,10 @@ effect.
 Where to go next
 ----------------
 
-* :doc:`installation-from-pypi` — non-Windows-specific aspects of
+* :doc:`installation-from-pypi`: non-Windows-specific aspects of
   the pip-install workflow, including the ``module-config`` and
   ``install-module`` subcommands.
-* :doc:`quick-configuration-guide` — adding ``WSGIScriptAlias``
+* :doc:`quick-configuration-guide`: adding ``WSGIScriptAlias``
   directives for your application.
-* :doc:`../configuration` — Apache directive reference.
-* :doc:`../project-status` — current Windows support status.
+* :doc:`../configuration`: Apache directive reference.
+* :doc:`../project-status`: current Windows support status.

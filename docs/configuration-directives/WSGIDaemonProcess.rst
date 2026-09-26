@@ -244,6 +244,12 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     version of Python, you will need to reinstall mod_wsgi, compiling it
     for the version you want.
 
+    The Python version is fixed for the Apache instance as a whole, so
+    different daemon process groups cannot use different Python versions
+    either. See "Hosting Multiple Python Versions" in
+    :doc:`../user-guides/virtual-environments` for how to host
+    applications needing different Python versions on the one host.
+
     This option is the daemon-mode equivalent of the WSGIPythonHome
     directive. See :doc:`WSGIPythonHome` for the full description.
 
@@ -409,7 +415,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     ``interrupt-timeout`` for the details of injection-based recovery.
 
     Sizing guidance: set ``request-timeout`` a few times above the p99
-    of normal request duration — enough that steady-state traffic never
+    of normal request duration, enough that steady-state traffic never
     trips it. The natural-log scaling already provides headroom for
     higher thread counts; do not pad the value further to compensate.
     For user-visible per-request deadlines (as distinct from a
@@ -429,7 +435,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     and that guarantee is gone when free-threading is active.
 
     See also ``deadlock-timeout`` for handling cases where a Python C
-    extension wedges the GIL — the injection mechanism cannot recover
+    extension wedges the GIL: the injection mechanism cannot recover
     those, but ``deadlock-timeout`` will detect the wedge and restart
     the process.
 
@@ -444,13 +450,13 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     request to unwind. Defaults to 0 (disabled).
 
     This option only changes the **recovery method** taken when
-    ``request-timeout`` fires. It does not change **detection** —
+    ``request-timeout`` fires. It does not change **detection**:
     the fire point set by ``request-timeout`` is the same regardless
     of this setting.
 
     The injected exception derives directly from ``BaseException``,
     so well-written code using ``except Exception:`` will not catch it.
-    It may be caught for cleanup purposes but should be re-raised —
+    It may be caught for cleanup purposes but should be re-raised;
     swallowing it is counter to its purpose. If the exception unwinds
     back to the WSGI adapter within the ``interrupt-timeout`` grace
     window, the adapter returns ``504 Gateway Timeout`` and the worker
@@ -473,7 +479,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
       This is the case the mechanism is designed for.
 
     * **Thread blocked in a C call that has released the GIL** (the
-      common case — most socket reads, database driver calls,
+      common case: most socket reads, database driver calls,
       ``time.sleep``, file I/O, etc.): the injected exception is
       queued on the thread but does not fire until the blocking call
       returns and Python bytecode runs again. If the external service
@@ -485,7 +491,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
       the wedged request down with it. For user-visible per-request
       deadlines on external calls, prefer explicit application-level
       timeouts on the client itself (HTTP client read timeouts,
-      database statement timeouts, etc.) — those bound the blocking
+      database statement timeouts, etc.); those bound the blocking
       call, which then lets ``interrupt-timeout`` do its job cleanly.
 
     * **Thread blocked in a C extension that holds the GIL**: the
@@ -501,7 +507,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     window, in which case those threads free up and the drain check
     progresses.
 
-    The ``threads=0`` managed-process mode is unaffected — it has no
+    The ``threads=0`` managed-process mode is unaffected: it has no
     requests and no per-thread timers.
 
 .. _deadlock-timeout:
@@ -551,7 +557,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     Such a request will not unwind voluntarily, so waiting for it
     before progressing to ``shutdown-timeout`` serves no purpose. This
     is what allows graceful-timeout to complete promptly when a wedged
-    thread is the only thing still tying up the process — sibling
+    thread is the only thing still tying up the process: sibling
     requests get the chance to finish cleanly while the wedged one
     rides out via ``shutdown-timeout``'s forced kill.
 
@@ -589,7 +595,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
       with ``eviction-timeout`` set);
     * ``request-timeout`` firing (when ``interrupt-timeout`` is 0 and
       so injection is skipped) or ``interrupt-timeout`` grace window
-      expiry — both paths run via ``graceful-timeout`` when it is set
+      expiry: both paths run via ``graceful-timeout`` when it is set
       and the process still has non-stale active requests, otherwise
       they proceed straight to shutdown;
     * ``deadlock-timeout`` firing;
@@ -600,7 +606,7 @@ Options which can be supplied to the ``WSGIDaemonProcess`` directive are:
     cleanly is ``graceful-timeout``, not ``shutdown-timeout``. Once
     shutdown is actually under way, ``shutdown-timeout`` is the hard
     cutoff before the process is force-killed regardless of remaining
-    state. The default of 5 seconds suits most workloads — too short
+    state. The default of 5 seconds suits most workloads: too short
     and Python ``atexit`` handlers or framework shutdown hooks may not
     finish cleanly; too long and recovery from a wedged process is
     delayed.

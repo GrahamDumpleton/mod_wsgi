@@ -36,9 +36,9 @@ Apache versions.
 
 On UNIX-like systems any of the standard Apache MPMs can be used:
 
-* ``prefork`` — single-threaded, multi-process.
-* ``worker`` — multi-threaded, multi-process.
-* ``event`` — multi-threaded, multi-process, asynchronous
+* ``prefork``: single-threaded, multi-process.
+* ``worker``: multi-threaded, multi-process.
+* ``event``: multi-threaded, multi-process, asynchronous
   connection handling.
 
 On Windows the ``mpm_winnt`` MPM is used.
@@ -54,7 +54,7 @@ Python
 Python 3.10 or later is required.
 
 The Python installation must have been built such that an
-embeddable shared library is available — for example
+embeddable shared library is available, for example
 ``libpython3.X.so`` on Linux, ``Python.framework`` on macOS.
 mod_wsgi embeds the Python interpreter into Apache processes,
 which is not possible against a static-only Python build.
@@ -75,7 +75,7 @@ A return value of ``1`` indicates a shared build.
 The Anaconda Python distribution can cause shared-library
 conflicts when mod_wsgi is loaded into an Apache instance
 alongside other modules that link against system libraries
-Anaconda also bundles — ``mod_ssl`` against the Anaconda-bundled
+Anaconda also bundles: ``mod_ssl`` against the Anaconda-bundled
 SSL libraries, ``mod_php`` against image-manipulation libraries,
 and similar.
 
@@ -87,8 +87,8 @@ Build toolchain
 ---------------
 
 mod_wsgi compiles native C code that links against both Apache and
-Python. Building it — whether by running ``./configure && make`` on
-a source tarball, or by running ``pip install mod_wsgi`` — requires
+Python. Building it (whether by running ``./configure && make`` on
+a source tarball, or by running ``pip install mod_wsgi``) requires
 a working compile toolchain on the host:
 
 * Python development headers (``python3-dev`` on Debian/Ubuntu,

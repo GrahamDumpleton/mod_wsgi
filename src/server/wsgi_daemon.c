@@ -2102,7 +2102,7 @@ static void *wsgi_daemon_thread(apr_thread_t *thd, void *data)
     /*
      * Record the Python thread id of this worker so the monitor thread
      * can target it with PyThreadState_SetAsyncExc() when injecting a
-     * RequestTimeout exception. Safe to call without the GIL — this is
+     * RequestTimeout exception. Safe to call without the GIL, as this is
      * just a wrapper around the OS thread API.
      */
 
@@ -2393,7 +2393,7 @@ static void wsgi_inject_request_timeout(WSGIDaemonThread *thread)
  * in-flight request whose elapsed time has not yet exceeded the
  * "stale" cutoff (request-timeout + interrupt-timeout). A thread that
  * has been wedged for longer than that is treated as already-gone for
- * drain purposes — it will not unwind voluntarily, so waiting for it
+ * drain purposes: it will not unwind voluntarily, so waiting for it
  * before progressing to shutdown-timeout serves no purpose. Caller
  * MUST hold the monitor lock; thread->request mutations are guarded
  * by that same lock.
@@ -2513,7 +2513,7 @@ static void *wsgi_monitor_thread(apr_thread_t *thd, void *data)
          *
          *   interrupt-timeout > 0
          *       Inject mod_wsgi.RequestTimeout into the offending
-         *       thread (one inject per pass — multiple eligible
+         *       thread (one inject per pass; multiple eligible
          *       threads get picked up across consecutive passes, each
          *       with its own injected_at grace timer). If a thread
          *       has already been injected and its interrupt-timeout
@@ -3065,7 +3065,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
      * thread count by natural log: T_fire = request-timeout * (1 + ln(n)).
      * At n=1 this collapses to request-timeout. At higher thread counts
      * it grants more patience to absorb genuine outliers without
-     * letting the threshold run away — n=10 gives ~3.3x base, n=25
+     * letting the threshold run away: n=10 gives ~3.3x base, n=25
      * gives ~4.2x. Computed once here because it depends only on
      * init-time values.
      */

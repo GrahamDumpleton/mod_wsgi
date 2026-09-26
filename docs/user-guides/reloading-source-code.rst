@@ -154,8 +154,8 @@ the Python modules the script imports without restarting the process.
 
 The strong recommendation is to switch to daemon mode for any
 deployment where automatic code reloading matters. The daemon-mode
-behaviour described below — touch the script file, daemon process
-recycles, new code picked up — does not have an equivalent in
+behaviour described below (touch the script file, daemon process
+recycles, new code picked up) does not have an equivalent in
 embedded mode.
 
 If switching to daemon mode is not possible (for example on Windows,
@@ -240,8 +240,8 @@ ready for subsequent requests. On the restart it will pick up your new
 code. This way you can control a reload from your application through some
 special web page specifically for that purpose.
 
-The same signal can also be sent from outside the application — for
-example from a shell script, deployment tool, or operator command —
+The same signal can also be sent from outside the application (for
+example from a shell script, deployment tool, or operator command),
 in which case the harder part is identifying which processes to
 target. If the daemon process group is configured to run as a
 different user or group from Apache itself, and each application is

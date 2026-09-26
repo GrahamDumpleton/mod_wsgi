@@ -27,7 +27,7 @@ restarted as part of the graceful restart and the new processes
 listen on the new path.
 
 The wrinkle is that Apache's existing child worker processes are
-not killed immediately on a graceful restart — they are left to
+not killed immediately on a graceful restart: they are left to
 finish in-flight requests, and to honour any open ``Keep-Alive``
 connections, for up to the configured ``GracefulShutdownTimeout``
 (commonly 60 seconds). Within that window an old worker may
@@ -52,7 +52,7 @@ the *previous* Apache configuration, while the daemon process group
 they are now connecting to was restarted under the *new*
 configuration. In most cases the configuration change is small
 enough that nothing visible breaks, but the situation should be
-weighed against the alternative — particularly if a graceful
+weighed against the alternative, particularly if a graceful
 restart is being used to land changes that affect request handling
 in incompatible ways.
 
@@ -69,7 +69,7 @@ sockets. The errors involved are :ref:`WSGI0116` ("Unable to connect to
 WSGI daemon process '<group>' on '<path>' after multiple attempts
 as listener backlog limit was exceeded or the socket does not
 exist") and :ref:`WSGI0117` ("Unable to connect to WSGI daemon
-process '<group>' on '<path>' as user with uid=...") — depending
+process '<group>' on '<path>' as user with uid=..."), depending
 on whether the now-defunct socket file was cleaned up at restart
 or left behind on disk. If those errors line up with the system
 log-rotation schedule, ``WSGISocketRotation Off`` is usually the

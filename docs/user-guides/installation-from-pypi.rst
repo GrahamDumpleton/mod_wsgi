@@ -13,7 +13,7 @@ When to use this method
 
 Use ``pip install`` if any of the following applies:
 
-* You want the simplest path to running your WSGI application —
+* You want the simplest path to running your WSGI application:
   installing the package gives you the ``mod_wsgi-express`` command
   which can host your application without any manual Apache
   configuration.
@@ -26,7 +26,7 @@ and ``mod_wsgi-express start-server`` are not available there. See
 :doc:`../project-status` for the current Windows support situation.
 
 If instead you want mod_wsgi managed system-wide by your operating
-system's package manager, use a Linux distribution package — see
+system's package manager, use a Linux distribution package; see
 :doc:`installation-on-linux`. If you need a from-source build that
 installs into Apache the traditional way (``configure`` / ``make`` /
 ``make install``), see :doc:`quick-installation-guide`.
@@ -168,24 +168,27 @@ The bundled Apache is supplied by a companion ``mod_wsgi-httpd``
 package which builds and installs the httpd server inside the
 Python environment. You should never need to install
 ``mod_wsgi-httpd`` yourself: ``mod_wsgi-standalone`` declares it as
-a dependency and ``pip`` will pull in a compatible version
+a dependency and ``pip`` will pull in the required version
 automatically.
 
 This is a niche option, intended for environments where adding
-Apache as a system package is not practical. It can also be useful
-when building Docker images from a base image that does not include
-Apache, since installing ``mod_wsgi-standalone`` avoids having to
-add a system Apache to the image. Only ``mod_wsgi-express`` is
-usable from a ``mod_wsgi-standalone`` install: the bundled Apache
-cannot be used to host non-mod_wsgi workloads. ``mod_wsgi-standalone``
-follows the same release version numbering as the regular
-``mod_wsgi`` package on PyPI.
+Apache as a system package is not practical. Only
+``mod_wsgi-express`` is usable from a ``mod_wsgi-standalone``
+install.
+
+See :doc:`mod-wsgi-standalone-package` for when to use it, what the
+host needs in order to build it, how HTTPS support depends on what is
+on the host at build time, how its versions relate to those of
+Apache, and why ``mod_wsgi-httpd`` and ``mod_wsgi`` should not be
+listed as two separate dependencies.
 
 Where to go next
 ----------------
 
-* :doc:`../getting-started` — quick-start with ``mod_wsgi-express``.
-* :doc:`quick-configuration-guide` — manual Apache configuration
+* :doc:`../getting-started`: quick-start with ``mod_wsgi-express``.
+* :doc:`mod-wsgi-standalone-package`: the ``mod_wsgi-standalone``
+  and ``mod_wsgi-httpd`` packages in detail.
+* :doc:`quick-configuration-guide`: manual Apache configuration
   for hosting a WSGI application after wiring the module in.
-* :doc:`configuration-guidelines` — richer configuration examples.
-* :doc:`../configuration` — Apache directive reference.
+* :doc:`configuration-guidelines`: richer configuration examples.
+* :doc:`../configuration`: Apache directive reference.

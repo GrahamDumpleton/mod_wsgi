@@ -30,7 +30,7 @@ applications running in embedded mode. In daemon mode the option
 may have no effect.
 
 Note also that ``sendfile()`` is not safe to use on some
-filesystems — notably network mounts (NFS, SMB/CIFS), many
+filesystems, notably network mounts (NFS, SMB/CIFS), many
 FUSE-backed filesystems, and some encrypted or overlay filesystems.
 On those, the call may fail, return wrong content, or block
 unexpectedly. If files served via ``wsgi.file_wrapper`` may live

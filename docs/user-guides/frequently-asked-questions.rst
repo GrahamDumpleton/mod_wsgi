@@ -11,7 +11,7 @@ fault'?
 
 **A**: This is nearly always caused by one of two things.
 
-The first is a shared library version conflict — Apache or some
+The first is a shared library version conflict: Apache or some
 Apache module is linked against a different version of a shared
 library than what is loaded indirectly by a Python C extension. The
 classic example today is mod_ssl statically linked against one
@@ -43,7 +43,7 @@ This is the typical signature of a daemon-process crash mid-request.
 The related codes ``WSGI0144`` (response header line too long),
 ``WSGI0145`` (timeout reading response headers) and ``WSGI0147``
 (I/O error reading response headers) cover the other ways a daemon
-proxy connection can fail mid-response — see :doc:`../error-reference`.
+proxy connection can fail mid-response; see :doc:`../error-reference`.
 
 **Q**: Why am I seeing ``premature end of script headers`` in the
 Apache error logs?
@@ -51,7 +51,7 @@ Apache error logs?
 **A**: This message is emitted by Apache's ``mod_cgi`` module, not by
 mod_wsgi. Seeing it under what is supposed to be a mod_wsgi
 deployment means the WSGI script file is being executed as a CGI
-script — typically because a handler-mapping directive such as
+script, typically because a handler-mapping directive such as
 ``AddHandler cgi-script`` is matching the file ahead of mod_wsgi's
 own handler, or ``WSGIScriptAlias`` was not configured for the URL
 in question.
@@ -88,12 +88,12 @@ logged with the usual traceback.
 mod_wsgi only raises this exception when the application uses the
 legacy WSGI ``write()`` callable returned from ``start_response``.
 With the more common pattern of returning a response iterable,
-mod_wsgi silently aborts the response on a closed connection — no
+mod_wsgi silently aborts the response on a closed connection: no
 exception is raised into application code, and at the default
 ``LogLevel`` nothing is logged at all (the abort is recorded only at
 ``APLOG_TRACE1``).
 
-The underlying causes are typically benign — a user navigating away
+The underlying causes are typically benign: a user navigating away
 or force-reloading the page, or a benchmarking tool such as ``ab``
 over-committing and aborting some of its concurrent requests. The
 exception, if it does propagate, can normally be caught and ignored
@@ -120,7 +120,7 @@ static files and other applications, pays the recycle overhead)
 makes this only suitable as a development convenience.
 
 If using daemon mode, touching the WSGI script file (updating its
-modification time) is sufficient — the daemon processes will
+modification time) is sufficient: the daemon processes will
 automatically shut down and restart on the next request, picking up
 any code changes. This applies for any number of processes in the
 group. Alternatively, ``SIGINT`` can be sent directly to a daemon
@@ -186,8 +186,8 @@ do not raise.
 
 A portable WSGI application should still avoid writing to
 ``sys.stdout`` (use ``sys.stderr`` or ``wsgi.errors`` for logging),
-since some WSGI hosting mechanisms — CGI being the canonical
-example — use standard output as the response channel back to the
+since some WSGI hosting mechanisms (CGI being the canonical
+example) use standard output as the response channel back to the
 web server. See "Writing To Standard Output" in
 :doc:`../user-guides/application-issues` and "Apache Error Log
 Files" in :doc:`../user-guides/debugging-techniques` for the
@@ -199,6 +199,24 @@ recommended logging patterns.
 standard library or ``uv venv``; the older ``virtualenv`` package
 also continues to work. For setup details see
 :doc:`../user-guides/virtual-environments`.
+
+**Q**: Can a single Apache host WSGI applications which use different
+Python versions?
+
+**A**: No. Apache loads one mod_wsgi module and that module has a
+single Python library bound into it at build time, so every WSGI
+application hosted by that Apache runs under the same Python version.
+Virtual environments, the ``WSGIPythonHome`` directive and the
+``python-home`` option of ``WSGIDaemonProcess`` only select which
+packages are visible; none of them can change the Python version.
+
+The recommended solution is to run each application under its own
+``mod_wsgi-express`` instance, installed into a virtual environment
+created from the Python version that application needs, with Apache
+in front acting as a reverse proxy. See "Hosting Multiple Python
+Versions" in :doc:`../user-guides/virtual-environments` and
+"mod_wsgi-express behind a reverse proxy" in
+:doc:`../how-mod-wsgi-works`.
 
 Access Control Mechanisms
 -------------------------

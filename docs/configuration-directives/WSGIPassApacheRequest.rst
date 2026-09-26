@@ -26,7 +26,7 @@ it is not a portable Python object.
 This directive only applies in embedded mode. When the WSGI
 application is delegated to a daemon process group the capsule is
 not added, since the daemon process does not have direct access to
-the Apache parent's ``request_rec`` structure — the request is
+the Apache parent's ``request_rec`` structure: the request is
 proxied across the daemon socket and the structure on the daemon
 side is a reconstruction.
 

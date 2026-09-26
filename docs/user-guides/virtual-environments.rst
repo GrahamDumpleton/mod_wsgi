@@ -27,7 +27,7 @@ encounter it; ``virtualenvwrapper`` is no longer actively maintained
 but similarly works if you already use it.
 
 How you point mod_wsgi at the virtual environment depends on the
-deployment shape — daemon vs. embedded mode, single vs. multiple
+deployment shape: daemon vs. embedded mode, single vs. multiple
 WSGI applications. The common scenarios are covered below.
 
 Location of the Virtual Environment
@@ -44,8 +44,8 @@ examples on this page assume virtual environments are stored under
 
     /usr/local/venvs/example
 
-This must be the *root* directory of the virtual environment — the
-one containing ``bin/`` and ``lib/`` — not the path to the
+This must be the *root* directory of the virtual environment (the
+one containing ``bin/`` and ``lib/``), not the path to the
 ``python`` executable inside it. Pointing mod_wsgi at
 ``/usr/local/venvs/example/bin/python`` will not work.
 
@@ -78,6 +78,86 @@ resulting ABIs can differ in subtle ways. Mixing them is not safe.
 
 If you need to switch Python version or installation, rebuild
 mod_wsgi against the new Python.
+
+This restriction applies to the Apache instance as a whole and not
+just to one application. See `Hosting Multiple Python Versions`_
+below if applications on the same host need different Python
+versions.
+
+Hosting Multiple Python Versions
+--------------------------------
+
+The Python version is a property of the Apache instance, not of a
+virtual host, a daemon process group, or an individual WSGI
+application. Apache loads a single copy of the mod_wsgi module, and
+that module has one Python library bound into it, so every WSGI
+application hosted by that Apache runs under the same Python
+version.
+
+A single Apache therefore cannot host one application under Python
+3.10 and another under Python 3.12. Neither ``WSGIPythonHome``, nor
+the ``python-home`` option of ``WSGIDaemonProcess``, nor per
+application virtual environments change this. All they do is select
+which set of installed packages the one Python version sees.
+
+The recommended way to host applications needing different Python
+versions on the one host is to run each application under its own
+``mod_wsgi-express`` instance, listening on its own loopback port,
+with a front-end Apache acting as a reverse proxy. Each instance is
+an independent Apache plus mod_wsgi, built for the Python of the
+virtual environment it was installed into, so the Python versions
+never have to agree.
+
+Install ``mod_wsgi`` from PyPI into each virtual environment. This
+builds a separate module for that environment's Python::
+
+    /usr/local/venvs/legacy/bin/pip install mod_wsgi
+    /usr/local/venvs/current/bin/pip install mod_wsgi
+
+Start one instance per application, each run from its own virtual
+environment::
+
+    /usr/local/venvs/legacy/bin/mod_wsgi-express start-server \
+        /some/path/legacy/wsgi.py --host 127.0.0.1 --port 8001
+
+    /usr/local/venvs/current/bin/mod_wsgi-express start-server \
+        /some/path/current/wsgi.py --host 127.0.0.1 --port 8002
+
+Then map each application into the public site from the front-end
+Apache::
+
+    <VirtualHost *:80>
+        ServerName www.example.com
+
+        ProxyPass        /legacy/ http://127.0.0.1:8001/
+        ProxyPassReverse /legacy/ http://127.0.0.1:8001/
+
+        ProxyPass        / http://127.0.0.1:8002/
+        ProxyPassReverse / http://127.0.0.1:8002/
+    </VirtualHost>
+
+The front-end Apache does not need mod_wsgi loaded at all in this
+arrangement, as it only proxies. Because each back end is a separate
+Apache instance, the applications can also be owned by different
+users, be restarted independently, and be given different process
+and thread counts. Running each application in a container is a
+variation on the same pattern, with the container boundary replacing
+the process boundary.
+
+The mechanics of the reverse proxy setup, including ensuring the
+application sees the correct scheme, host name and client IP
+address, are covered in :doc:`running-behind-a-reverse-proxy`. The
+deployment pattern as a whole, and how it compares with hosting WSGI
+applications directly in the system Apache, is described under
+"mod_wsgi-express behind a reverse proxy" in
+:doc:`../how-mod-wsgi-works`. For running and supervising the
+instances see :doc:`mod-wsgi-express-quickstart`, and for installing
+mod_wsgi into a virtual environment see
+:doc:`installation-from-pypi`.
+
+If instead all applications on the host are to keep running inside
+the one Apache, they must be migrated to a common Python version and
+mod_wsgi rebuilt against it, as described in the previous section.
 
 Daemon Mode (Single Application)
 --------------------------------
@@ -116,7 +196,7 @@ Daemon Mode (Multiple Applications)
 -----------------------------------
 
 If multiple WSGI applications run in a single daemon process group
-(rather than each having its own — the recommended setup), the
+(rather than each having its own, the recommended setup), the
 configuration looks something like::
 
     WSGIDaemonProcess myapps
@@ -145,8 +225,8 @@ Or, if mounting the directory directly::
 
 ``WSGIApplicationGroup`` is deliberately omitted. Without it, each
 WSGI application runs in its own Python sub-interpreter context
-inside the daemon process. Many WSGI frameworks — Django is the
-canonical example — do not support multiple instances of an
+inside the daemon process. Many WSGI frameworks (Django is the
+canonical example) do not support multiple instances of an
 application running in the same Python interpreter context
 concurrently, so per-application sub-interpreters are necessary.
 
@@ -159,7 +239,7 @@ Because the environment is shared, all applications must agree on
 the version of any given package.
 
 If each application needs its own virtual environment,
-``python-home`` alone is not enough — only one ``python-home`` value
+``python-home`` alone is not enough: only one ``python-home`` value
 is allowed per daemon process group. In that case, activate the
 per-application virtual environment from inside the WSGI script
 itself.
@@ -193,7 +273,7 @@ no ``activate_this.py`` script is provided and you must add the
     site.addsitedir(site_packages)
 
 Whichever activation method is used, the underlying Python
-installation remains in view — anything installed against it is
+installation remains in view: anything installed against it is
 still importable from the WSGI application. This can lead to
 surprises: a missing entry in your ``requirements.txt`` may not
 produce an ``ImportError`` if the package happens to be installed
@@ -300,9 +380,9 @@ The ``python-home`` option to ``WSGIDaemonProcess`` and the
 virtual environment. They are not for adding other directories to
 Python's module search path.
 
-If you do need to add other directories — for example a directory
-containing application modules that aren't installed as a package
-— use ``python-path`` for daemon mode::
+If you do need to add other directories (for example a directory
+containing application modules that aren't installed as a package),
+use ``python-path`` for daemon mode::
 
     WSGIDaemonProcess myapp python-path=/some/path/project
 
@@ -323,6 +403,6 @@ directly in the WSGI script.
 
 A note on legacy practice: ``python-path`` and ``WSGIPythonPath``
 were sometimes used to bolt the ``site-packages`` directory of a
-virtual environment onto Python's search path. Don't do that —
+virtual environment onto Python's search path. Don't do that;
 use the ``python-home`` / ``WSGIPythonHome`` mechanism above
 instead.

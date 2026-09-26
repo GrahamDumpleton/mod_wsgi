@@ -4,7 +4,7 @@ Listens on a UNIX SOCK_DGRAM socket for TLV samples, decodes them, and
 keeps a bounded history per PID so connecting UI clients can fetch
 recent state immediately without waiting for the next tick.
 
-Remote (IPv4 UDP) listeners are not supported — telemetry is intended
+Remote (IPv4 UDP) listeners are not supported: telemetry is intended
 for a co-located ingester so MTU / IP-fragmentation / packet-loss are
 non-concerns. The reporter is allowed to emit datagrams that exceed
 the Ethernet MTU as a result.
@@ -107,7 +107,7 @@ class ProcessState:
     process_parent_pid: int = 0
     # Telemetry reporter's tick interval in seconds, as reported by the
     # process itself on each KIND_REQUEST sample. Used to size the
-    # slow-request TTLs — a reporter ticking every 10 s needs a longer
+    # slow-request TTLs: a reporter ticking every 10 s needs a longer
     # TTL than the default 5 s floor so heartbeats aren't aged out
     # between ticks.
     sample_period: float = 1.0
@@ -204,7 +204,7 @@ class SlowEntry:
     # comment for the full caveat.
     input_read_time: float = 0.0
     output_write_time: float = 0.0
-    # Concurrency context — wsgi_active_requests including this one
+    # Concurrency context: wsgi_active_requests including this one
     # at slot claim and at completion. active_at_completion is 0 for
     # active records by definition (the request hasn't finished).
     # Used together with the per-process request_threads_maximum
@@ -269,11 +269,11 @@ class LifecycleEvent:
     process_group: str = ""
     process_parent_pid: int = 0     # STARTED only
     shutdown_reason: str = ""       # STOPPING / STOPPED
-    process_uptime: float = 0.0     # STOPPED only — seconds
+    process_uptime: float = 0.0     # STOPPED only: seconds
     lifetime_request_count: int = 0  # STOPPED only
     active_requests_at_decision: int = 0  # STOPPING only
     active_requests_at_exit: int = 0      # STOPPED only
-    graceful_drain: int = 0          # STOPPED only — 1 if drain completed cleanly
+    graceful_drain: int = 0          # STOPPED only: 1 if drain completed cleanly
 
     def to_dict(self) -> dict:
         return {
@@ -309,7 +309,7 @@ class Ingester:
     # Completed records are kept long enough to support drill-down
     # from the Capacity heatmap (whose visible window can outlive the
     # 15 s display TTL the UI table uses). Initially set to match the
-    # client's SAMPLE_RETENTION_SEC (10 minutes) — kept as a separate
+    # client's SAMPLE_RETENTION_SEC (10 minutes), kept as a separate
     # constant so it can be adjusted independently from sample
     # retention if the trade-off ever changes.
     SLOW_ACTIVE_TTL_SECONDS = 5.0
@@ -364,7 +364,7 @@ class Ingester:
             return
 
         # Slow-request records are a separate stream. They don't share the
-        # per-process rolling sample window — they feed into slow_requests.
+        # per-process rolling sample window; they feed into slow_requests.
         if sample.kind_name == "slow_request":
             self._handle_slow(sample)
             self._gc_slow()
@@ -620,7 +620,7 @@ class Ingester:
             try:
                 q.put_nowait(payload)
             except asyncio.QueueFull:
-                # Slow consumer — drop the oldest to stay bounded.
+                # Slow consumer: drop the oldest to stay bounded.
                 try:
                     q.get_nowait()
                     q.put_nowait(payload)
@@ -642,7 +642,7 @@ class Ingester:
 
         Triggered by the Slow requests tab's Clear button. Drops every
         completed entry outright and every active entry whose pid has died
-        or whose last_seen is already past the active TTL — so the table
+        or whose last_seen is already past the active TTL, so the table
         snaps to "only requests the daemon is still actively heart-beating
         about". Live in-flight rows are preserved.
         """
@@ -677,7 +677,7 @@ class Ingester:
         user can still see recently-finished slow requests when they open
         the UI. Both TTLs scale with the reporting process's telemetry
         interval: a reporter ticking every 10 s only emits heartbeats
-        every 10 s, so a 5 s floor would flicker rows in and out — we
+        every 10 s, so a 5 s floor would flicker rows in and out; we
         bump TTL to 3x the sample period in that case. Also drops all
         entries for processes that have aged out of self.processes so
         the list stays in sync with the sidebar.

@@ -10,7 +10,7 @@ WSGISwitchInterval
 Sets the Python interpreter's GIL switch interval at process start by
 calling ``sys.setswitchinterval()`` once after the interpreter has been
 initialised. The argument is the same form ``sys.setswitchinterval()``
-accepts — a positive number of seconds expressed as a float. The
+accepts: a positive number of seconds expressed as a float. The
 interval controls how often the thread holding the GIL checks whether
 to release it for another waiting thread.
 

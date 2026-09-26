@@ -26,7 +26,7 @@ The Xcode Command Line Tools provide the C compiler. ``brew install
 httpd`` provides Apache 2.4, its development headers, and the
 ``apxs`` build tool. ``brew install python`` provides a Python
 installation suitable for embedding; skip this step if you already
-have a satisfactory Python installation from another source — a
+have a satisfactory Python installation from another source: a
 python.org installer, ``pyenv``, or ``uv``-managed Python all work.
 
 Homebrew installs to a different prefix depending on host
@@ -102,9 +102,9 @@ start httpd``.
 Where to go next
 ----------------
 
-* :doc:`../getting-started` — quick-start with ``mod_wsgi-express``.
-* :doc:`installation-from-pypi` — the full pip-install workflow.
-* :doc:`quick-installation-guide` — the full from-source workflow.
-* :doc:`quick-configuration-guide` — adding ``WSGIScriptAlias``
+* :doc:`../getting-started`: quick-start with ``mod_wsgi-express``.
+* :doc:`installation-from-pypi`: the full pip-install workflow.
+* :doc:`quick-installation-guide`: the full from-source workflow.
+* :doc:`quick-configuration-guide`: adding ``WSGIScriptAlias``
   directives for your application.
-* :doc:`installation-issues` — what to do if the build fails.
+* :doc:`installation-issues`: what to do if the build fails.

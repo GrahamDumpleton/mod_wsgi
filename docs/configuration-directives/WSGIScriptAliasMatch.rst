@@ -40,7 +40,7 @@ application as path information rather than having it stripped at the
 Apache layer.
 
 In both examples the choice of file extension (``.wsgi`` in the first,
-``.py`` in the second) is a convention only — ``WSGIScriptAliasMatch``
+``.py`` in the second) is a convention only: ``WSGIScriptAliasMatch``
 identifies the script by the full file path produced from the regex
 substitution and any extension (or none) is acceptable. The ``.wsgi``
 convention is used in many examples to avoid clashing with any

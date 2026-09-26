@@ -61,7 +61,7 @@ def _class_split(count: int) -> dict:
 
     Mostly 2xx, a smaller share of 3xx / 4xx, a small 5xx tail so the
     UI's error-rate panels exercise their colouring. 1xx stays at zero
-    (a WSGI app should never return 1xx — the counter is a tripwire,
+    (a WSGI app should never return 1xx; the counter is a tripwire,
     not a baseline). Sum equals `count` exactly.
     """
     if count <= 0:
@@ -111,7 +111,7 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
     # index for a duration ms is octave*4 + sub, where octave is
     # floor(log2(ms)) and sub is which quarter of [2^o, 2^(o+1)) the
     # value lands in. concentration here picks the centre bucket index
-    # to spread the gaussian around — e.g. concentration=18 centres
+    # to spread the gaussian around; e.g. concentration=18 centres
     # around the [20, 24) ms sub-bucket of the 16-32 ms octave.
     _N_BUCKETS = 65
 
@@ -142,7 +142,7 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
     # Per-slot capacity arrays. Each slot's base busy-fraction is a
     # blend of the process-wide capacity and per-slot jitter, so slots
     # diverge visibly on the heatmap even when the process average is
-    # steady. One slot may be "stuck" on a long request — its
+    # steady. One slot may be "stuck" on a long request: its
     # current_elapsed climbs across ticks and its busy-time saturates.
     if slot_state is None:
         slot_state = {}
@@ -218,7 +218,7 @@ def make_sample(pid: int, seq: int, phase: float, interval: float,
         "application_time": app_time,
         "request_time": request_time,
         # HDR concentrations: 18 ≈ [20, 24) ms, 14 ≈ [10, 12) ms,
-        # 22 ≈ [40, 48) ms — chosen to mirror the seconds_mean above.
+        # 22 ≈ [40, 48) ms (chosen to mirror the seconds_mean above).
         "application_time_buckets": bucketise(count, concentration=18),
         "server_time_buckets": bucketise(count, concentration=14),
         "queue_time_buckets":     bucketise(count, concentration=8),

@@ -323,7 +323,7 @@ cleanup() {
     fi
 
     # Wait up to 30s for httpd to exit cleanly. Fall back to SIGKILL on
-    # its own pid only — never use lsof on $PORT, since other processes
+    # its own pid only. Never use lsof on $PORT, since other processes
     # (e.g. the mod-wsgi-telemetry UI on the same default port) may also
     # be bound there and must not be disturbed.
     if [ -n "$httpd_pid" ]; then
@@ -389,7 +389,7 @@ elif [ -n "$SLOW_REQUESTS" ]; then
     exit 1
 fi
 
-# --telemetry-options is repeatable on both sides — each element of the
+# --telemetry-options is repeatable on both sides: each element of the
 # array becomes one mod_wsgi-express invocation, which in turn emits
 # one WSGITelemetryOptions line in the generated config so the +/- /
 # absolute / None / All forms compose verbatim.

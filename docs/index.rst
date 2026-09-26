@@ -9,7 +9,7 @@ maintained.
 
 mod_wsgi requires Python 3.10 or later and Apache 2.4. It is regularly
 used on Linux and macOS; Windows support under the 6.x line is
-provisional — see :doc:`project-status` for details.
+provisional; see :doc:`project-status` for details.
 
 Two ways to use mod_wsgi
 ------------------------

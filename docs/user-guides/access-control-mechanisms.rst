@@ -160,14 +160,14 @@ result should be 'None'. If the user does exist, the result should be
 As an alternative to returning ``True``, a non-empty string can be returned
 to indicate that authentication has succeeded. The returned string is then
 used as the authenticated user name in place of the value supplied by the
-client — it becomes ``REMOTE_USER`` for the WSGI application, and is also
+client: it becomes ``REMOTE_USER`` for the WSGI application, and is also
 what Apache records for the request in access logs and in any subsequent
 group authorisation checks. This is useful where the supplied user name
 needs canonicalising, or where an external credential (an email address,
 an LDAP attribute, a certificate subject) maps to a different internal
 user name.
 
-HTTP Digest authentication is uncommon in modern deployments — TLS plus
+HTTP Digest authentication is uncommon in modern deployments; TLS plus
 HTTP Basic authentication, or application-level authentication, is
 generally preferred. Digest support is documented here for completeness.
 

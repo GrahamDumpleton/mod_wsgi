@@ -21,14 +21,14 @@ the same expansion rules as the corresponding directive
 (``%{GLOBAL}``, ``%{ENV:variable}``, etc.). Returning ``None`` from a
 callable leaves the existing decision in place.
 
-* **process_group(environ)** — overrides which daemon process group
+* **process_group(environ)**: overrides which daemon process group
   the request will be dispatched to. Equivalent of the
   ``WSGIProcessGroup`` directive or the ``process-group`` option to
   ``WSGIScriptAlias``.
-* **application_group(environ)** — overrides which application
+* **application_group(environ)**: overrides which application
   group (Python sub interpreter) the WSGI application runs in.
   Equivalent of ``WSGIApplicationGroup``.
-* **callable_object(environ)** — overrides the name of the callable
+* **callable_object(environ)**: overrides the name of the callable
   in the WSGI script file that is treated as the WSGI entry point.
   Equivalent of ``WSGICallableObject``.
 
@@ -60,7 +60,7 @@ with ``dispatch.py``::
       return "web"
 
 The dispatch script itself is loaded in an Apache child process, not
-in the daemon process group — it runs in embedded mode. Script
+in the daemon process group: it runs in embedded mode. Script
 reloading applies to dispatch scripts: if the file's modification time
 changes, the script is re-imported on the next request that needs it.
 

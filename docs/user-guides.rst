@@ -11,6 +11,7 @@ Installation
    :maxdepth: 1
 
    user-guides/installation-from-pypi
+   user-guides/mod-wsgi-standalone-package
    user-guides/installation-on-linux
    user-guides/installation-on-macosx
    user-guides/installation-on-windows

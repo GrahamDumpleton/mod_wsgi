@@ -56,8 +56,8 @@ Error codes
 
 .. _WSGI0001:
 
-WSGI0001 — Python initialisation failed in Apache child process
----------------------------------------------------------------
+WSGI0001: Python initialisation failed in Apache child process
+--------------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/mod_wsgi.c``
@@ -90,8 +90,8 @@ WSGI0001 — Python initialisation failed in Apache child process
 
 .. _WSGI0002:
 
-WSGI0002 — Python child initialisation failed in Apache child process
----------------------------------------------------------------------
+WSGI0002: Python child initialisation failed in Apache child process
+--------------------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/mod_wsgi.c``
@@ -116,12 +116,12 @@ WSGI0002 — Python child initialisation failed in Apache child process
 :Operator action:
    Same as :ref:`WSGI0001`. If both messages fire from the same child,
    the underlying problem is the Python interpreter rather than mod_wsgi
-   per se — verify the Python installation independently.
+   per se. Verify the Python installation independently.
 
 .. _WSGI0003:
 
-WSGI0003 — Unable to change root directory for daemon process
--------------------------------------------------------------
+WSGI0003: Unable to change root directory for daemon process
+------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -151,8 +151,8 @@ WSGI0003 — Unable to change root directory for daemon process
 
 .. _WSGI0004:
 
-WSGI0004 — Unable to set group id for daemon process
-----------------------------------------------------
+WSGI0004: Unable to set group id for daemon process
+---------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -178,8 +178,8 @@ WSGI0004 — Unable to set group id for daemon process
 
 .. _WSGI0005:
 
-WSGI0005 — Unable to set supplementary groups for daemon process
-----------------------------------------------------------------
+WSGI0005: Unable to set supplementary groups for daemon process
+---------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -206,8 +206,8 @@ WSGI0005 — Unable to set supplementary groups for daemon process
 
 .. _WSGI0006:
 
-WSGI0006 — Unable to initialise default groups for daemon process
------------------------------------------------------------------
+WSGI0006: Unable to initialise default groups for daemon process
+----------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -233,8 +233,8 @@ WSGI0006 — Unable to initialise default groups for daemon process
 
 .. _WSGI0007:
 
-WSGI0007 — Unable to change to user id for daemon process
----------------------------------------------------------
+WSGI0007: Unable to change to user id for daemon process
+--------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -262,8 +262,8 @@ WSGI0007 — Unable to change to user id for daemon process
 
 .. _WSGI0008:
 
-WSGI0008 — Daemon process left in unspecified state after setuid failure
-------------------------------------------------------------------------
+WSGI0008: Daemon process left in unspecified state after setuid failure
+-----------------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -287,8 +287,8 @@ WSGI0008 — Daemon process left in unspecified state after setuid failure
 
 .. _WSGI0009:
 
-WSGI0009 — Unable to change working directory for daemon process
-----------------------------------------------------------------
+WSGI0009: Unable to change working directory for daemon process
+---------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -313,8 +313,8 @@ WSGI0009 — Unable to change working directory for daemon process
 
 .. _WSGI0010:
 
-WSGI0010 — Unable to change working directory to user home directory
---------------------------------------------------------------------
+WSGI0010: Unable to change working directory to user home directory
+-------------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -326,7 +326,7 @@ WSGI0010 — Unable to change working directory to user home directory
 :Cause:
    No explicit ``home=`` was given on ``WSGIDaemonProcess`` and the
    daemon attempted to fall back to the home directory of the user it
-   is running as. ``chdir()`` to that home directory failed — usually
+   is running as. ``chdir()`` to that home directory failed, usually
    because the home directory does not exist or is unreadable.
 
 :Outcome:
@@ -340,8 +340,8 @@ WSGI0010 — Unable to change working directory to user home directory
 
 .. _WSGI0011:
 
-WSGI0011 — Unable to determine home directory for daemon process user
----------------------------------------------------------------------
+WSGI0011: Unable to determine home directory for daemon process user
+--------------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -368,8 +368,8 @@ WSGI0011 — Unable to determine home directory for daemon process user
 
 .. _WSGI0012:
 
-WSGI0012 — Unable to create UNIX domain socket for daemon process
------------------------------------------------------------------
+WSGI0012: Unable to create UNIX domain socket for daemon process
+----------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -394,8 +394,8 @@ WSGI0012 — Unable to create UNIX domain socket for daemon process
 
 .. _WSGI0013:
 
-WSGI0013 — Unable to bind UNIX domain socket for daemon process
----------------------------------------------------------------
+WSGI0013: Unable to bind UNIX domain socket for daemon process
+--------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -423,8 +423,8 @@ WSGI0013 — Unable to bind UNIX domain socket for daemon process
 
 .. _WSGI0014:
 
-WSGI0014 — Unable to listen on UNIX domain socket for daemon process
---------------------------------------------------------------------
+WSGI0014: Unable to listen on UNIX domain socket for daemon process
+-------------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -448,8 +448,8 @@ WSGI0014 — Unable to listen on UNIX domain socket for daemon process
 
 .. _WSGI0015:
 
-WSGI0015 — Unable to change owner of UNIX domain socket for daemon process
---------------------------------------------------------------------------
+WSGI0015: Unable to change owner of UNIX domain socket for daemon process
+-------------------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -475,8 +475,8 @@ WSGI0015 — Unable to change owner of UNIX domain socket for daemon process
 
 .. _WSGI0016:
 
-WSGI0016 — Wait on worker thread wakeup condition variable failed
------------------------------------------------------------------
+WSGI0016: Wait on worker thread wakeup condition variable failed
+----------------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
@@ -499,12 +499,12 @@ WSGI0016 — Wait on worker thread wakeup condition variable failed
 
 :Operator action:
    Restart the daemon process. If this recurs, escalate as a likely
-   APR/pthreads bug — capture the daemon log and any kernel messages.
+   APR/pthreads bug: capture the daemon log and any kernel messages.
 
 .. _WSGI0017:
 
-WSGI0017 — Unable to acquire accept mutex; daemon shutting down
----------------------------------------------------------------
+WSGI0017: Unable to acquire accept mutex; daemon shutting down
+--------------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
@@ -524,14 +524,14 @@ WSGI0017 — Unable to acquire accept mutex; daemon shutting down
    pid, and exits. Apache respawns it.
 
 :Operator action:
-   Usually no action required — this fires during Apache restart or
+   Usually no action required: this fires during Apache restart or
    shutdown by design. If it fires unprompted, investigate whether
    the system's IPC tables are being cleared by other processes.
 
 .. _WSGI0018:
 
-WSGI0018 — Unable to poll daemon socket; daemon shutting down
--------------------------------------------------------------
+WSGI0018: Unable to poll daemon socket; daemon shutting down
+------------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
@@ -555,8 +555,8 @@ WSGI0018 — Unable to poll daemon socket; daemon shutting down
 
 .. _WSGI0019:
 
-WSGI0019 — Unable to release accept mutex
------------------------------------------
+WSGI0019: Unable to release accept mutex
+----------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
@@ -581,8 +581,8 @@ WSGI0019 — Unable to release accept mutex
 
 .. _WSGI0020:
 
-WSGI0020 — Unable to create worker thread condition variable
-------------------------------------------------------------
+WSGI0020: Unable to create worker thread condition variable
+-----------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -608,8 +608,8 @@ WSGI0020 — Unable to create worker thread condition variable
 
 .. _WSGI0021:
 
-WSGI0021 — Unable to create worker thread mutex
------------------------------------------------
+WSGI0021: Unable to create worker thread mutex
+----------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -633,8 +633,8 @@ WSGI0021 — Unable to create worker thread mutex
 
 .. _WSGI0022:
 
-WSGI0022 — Unable to create worker thread
------------------------------------------
+WSGI0022: Unable to create worker thread
+----------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -658,8 +658,8 @@ WSGI0022 — Unable to create worker thread
 
 .. _WSGI0023:
 
-WSGI0023 — Read failed on signal pipe in daemon process
--------------------------------------------------------
+WSGI0023: Read failed on signal pipe in daemon process
+------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -685,8 +685,8 @@ WSGI0023 — Read failed on signal pipe in daemon process
 
 .. _WSGI0024:
 
-WSGI0024 — Unable to spawn daemon process
------------------------------------------
+WSGI0024: Unable to spawn daemon process
+----------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -711,8 +711,8 @@ WSGI0024 — Unable to spawn daemon process
 
 .. _WSGI0025:
 
-WSGI0025 — Daemon process left in unspecified state after setup failure
------------------------------------------------------------------------
+WSGI0025: Daemon process left in unspecified state after setup failure
+----------------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -738,8 +738,8 @@ WSGI0025 — Daemon process left in unspecified state after setup failure
 
 .. _WSGI0026:
 
-WSGI0026 — Unable to initialise accept mutex in daemon process
---------------------------------------------------------------
+WSGI0026: Unable to initialise accept mutex in daemon process
+-------------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
@@ -766,8 +766,8 @@ WSGI0026 — Unable to initialise accept mutex in daemon process
 
 .. _WSGI0027:
 
-WSGI0027 — Unable to initialise signal pipe in daemon process
--------------------------------------------------------------
+WSGI0027: Unable to initialise signal pipe in daemon process
+------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -791,8 +791,8 @@ WSGI0027 — Unable to initialise signal pipe in daemon process
 
 .. _WSGI0028:
 
-WSGI0028 — Python initialisation failed in daemon process
----------------------------------------------------------
+WSGI0028: Python initialisation failed in daemon process
+--------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
@@ -816,8 +816,8 @@ WSGI0028 — Python initialisation failed in daemon process
 
 .. _WSGI0029:
 
-WSGI0029 — Python child initialisation failed in daemon process
----------------------------------------------------------------
+WSGI0029: Python child initialisation failed in daemon process
+--------------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
@@ -839,8 +839,8 @@ WSGI0029 — Python child initialisation failed in daemon process
 
 .. _WSGI0030:
 
-WSGI0030 — Unable to create accept lock for daemon group
---------------------------------------------------------
+WSGI0030: Unable to create accept lock for daemon group
+-------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
@@ -867,8 +867,8 @@ WSGI0030 — Unable to create accept lock for daemon group
 
 .. _WSGI0031:
 
-WSGI0031 — Unable to set permissions on sysvsem accept mutex
-------------------------------------------------------------
+WSGI0031: Unable to set permissions on sysvsem accept mutex
+-----------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
@@ -894,8 +894,8 @@ WSGI0031 — Unable to set permissions on sysvsem accept mutex
 
 .. _WSGI0032:
 
-WSGI0032 — Unable to set permissions on flock accept mutex
-----------------------------------------------------------
+WSGI0032: Unable to set permissions on flock accept mutex
+---------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_daemon.c``
@@ -919,8 +919,8 @@ WSGI0032 — Unable to set permissions on flock accept mutex
 
 .. _WSGI0033:
 
-WSGI0033 — Request origin could not be validated (no magic token)
------------------------------------------------------------------
+WSGI0033: Request origin could not be validated (no magic token)
+----------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -947,8 +947,8 @@ WSGI0033 — Request origin could not be validated (no magic token)
 
 .. _WSGI0034:
 
-WSGI0034 — Request origin could not be validated (magic token mismatch)
------------------------------------------------------------------------
+WSGI0034: Request origin could not be validated (magic token mismatch)
+----------------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -972,8 +972,8 @@ WSGI0034 — Request origin could not be validated (magic token mismatch)
 
 .. _WSGI0035:
 
-WSGI0035 — Unable to setup Python interpreter
----------------------------------------------
+WSGI0035: Unable to setup Python interpreter
+--------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_interp.c``
@@ -986,7 +986,7 @@ WSGI0035 — Unable to setup Python interpreter
 
 :Cause:
    ``newInterpreterObject()`` failed at any step of interpreter
-   construction — handle allocation, ``Py_NewInterpreter()``,
+   construction: handle allocation, ``Py_NewInterpreter()``,
    replacement of ``sys.std*`` streams, registering the ``mod_wsgi``
    / ``apache`` extension modules, applying ``WSGIPythonPath``
    entries, etc. Almost always a memory exhaustion, but a corrupted
@@ -1009,8 +1009,8 @@ WSGI0035 — Unable to setup Python interpreter
 
 .. _WSGI0036:
 
-WSGI0036 — Python interpreter configuration failed
---------------------------------------------------
+WSGI0036: Python interpreter configuration failed
+-------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_interp.c``
@@ -1038,8 +1038,8 @@ WSGI0036 — Python interpreter configuration failed
 
 .. _WSGI0037:
 
-WSGI0037 — (retired)
---------------------
+WSGI0037: (retired)
+-------------------
 
 Previously logged when ``PyType_Ready(&Interpreter_Type)`` failed
 during ``wsgi_python_child_init()``. ``InterpreterObject`` is no
@@ -1048,8 +1048,8 @@ so there is no ``PyType_Ready`` call left to fail.
 
 .. _WSGI0038:
 
-WSGI0038 — Python based handlers unavailable in process
--------------------------------------------------------
+WSGI0038: Python based handlers unavailable in process
+------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -1080,8 +1080,8 @@ WSGI0038 — Python based handlers unavailable in process
 
 .. _WSGI0039:
 
-WSGI0039 — (retired)
---------------------
+WSGI0039: (retired)
+-------------------
 
 Previously logged when ``PyDict_SetItemString()`` failed registering
 the main-interpreter wrapper in mod_wsgi's per-process interpreters
@@ -1092,8 +1092,8 @@ way, so the failure path no longer exists.
 
 .. _WSGI0040:
 
-WSGI0040 — Unable to acquire Python sub-interpreter during daemon startup script preload
-----------------------------------------------------------------------------------------
+WSGI0040: Unable to acquire Python sub-interpreter during daemon startup script preload
+---------------------------------------------------------------------------------------
 
 :Severity: CRIT
 :Source: ``src/server/wsgi_interp.c``
@@ -1126,8 +1126,8 @@ WSGI0040 — Unable to acquire Python sub-interpreter during daemon startup scri
 
 .. _WSGI0041:
 
-WSGI0041 — Location of WSGI user authentication script not provided
--------------------------------------------------------------------
+WSGI0041: Location of WSGI user authentication script not provided
+------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1154,8 +1154,8 @@ WSGI0041 — Location of WSGI user authentication script not provided
 
 .. _WSGI0042:
 
-WSGI0042 — Unable to acquire Python sub-interpreter for user authentication hook
---------------------------------------------------------------------------------
+WSGI0042: Unable to acquire Python sub-interpreter for user authentication hook
+-------------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1185,8 +1185,8 @@ WSGI0042 — Unable to acquire Python sub-interpreter for user authentication ho
 
 .. _WSGI0043:
 
-WSGI0043 — Target WSGI user authentication script does not provide 'Basic' auth provider
-----------------------------------------------------------------------------------------
+WSGI0043: Target WSGI user authentication script does not provide 'Basic' auth provider
+---------------------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1212,8 +1212,8 @@ WSGI0043 — Target WSGI user authentication script does not provide 'Basic' aut
 
 .. _WSGI0044:
 
-WSGI0044 — Location of WSGI user authentication script not provided (Digest)
-----------------------------------------------------------------------------
+WSGI0044: Location of WSGI user authentication script not provided (Digest)
+---------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1238,8 +1238,8 @@ WSGI0044 — Location of WSGI user authentication script not provided (Digest)
 
 .. _WSGI0045:
 
-WSGI0045 — Unable to acquire Python sub-interpreter for user authentication hook (Digest)
------------------------------------------------------------------------------------------
+WSGI0045: Unable to acquire Python sub-interpreter for user authentication hook (Digest)
+----------------------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1264,8 +1264,8 @@ WSGI0045 — Unable to acquire Python sub-interpreter for user authentication ho
 
 .. _WSGI0046:
 
-WSGI0046 — Target WSGI user authentication script does not provide 'Digest' auth provider
------------------------------------------------------------------------------------------
+WSGI0046: Target WSGI user authentication script does not provide 'Digest' auth provider
+----------------------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1289,8 +1289,8 @@ WSGI0046 — Target WSGI user authentication script does not provide 'Digest' au
 
 .. _WSGI0047:
 
-WSGI0047 — Location of WSGI group authentication script not provided
---------------------------------------------------------------------
+WSGI0047: Location of WSGI group authentication script not provided
+-------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1312,8 +1312,8 @@ WSGI0047 — Location of WSGI group authentication script not provided
 
 .. _WSGI0048:
 
-WSGI0048 — Unable to acquire Python sub-interpreter for group authentication hook
----------------------------------------------------------------------------------
+WSGI0048: Unable to acquire Python sub-interpreter for group authentication hook
+--------------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1336,8 +1336,8 @@ WSGI0048 — Unable to acquire Python sub-interpreter for group authentication h
 
 .. _WSGI0049:
 
-WSGI0049 — Item returned from groups_for_user contains non-latin-1 characters
------------------------------------------------------------------------------
+WSGI0049: Item returned from groups_for_user contains non-latin-1 characters
+----------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1363,8 +1363,8 @@ WSGI0049 — Item returned from groups_for_user contains non-latin-1 characters
 
 .. _WSGI0050:
 
-WSGI0050 — Item returned from groups_for_user is not a byte string
-------------------------------------------------------------------
+WSGI0050: Item returned from groups_for_user is not a byte string
+-----------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1388,8 +1388,8 @@ WSGI0050 — Item returned from groups_for_user is not a byte string
 
 .. _WSGI0051:
 
-WSGI0051 — Result of groups_for_user is not iterable
-----------------------------------------------------
+WSGI0051: Result of groups_for_user is not iterable
+---------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1417,8 +1417,8 @@ WSGI0051 — Result of groups_for_user is not iterable
 
 .. _WSGI0052:
 
-WSGI0052 — Target WSGI group authentication script does not provide 'groups_for_user' callable
-----------------------------------------------------------------------------------------------
+WSGI0052: Target WSGI group authentication script does not provide 'groups_for_user' callable
+---------------------------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1439,8 +1439,8 @@ WSGI0052 — Target WSGI group authentication script does not provide 'groups_fo
 
 .. _WSGI0053:
 
-WSGI0053 — Location of WSGI host access script not provided
------------------------------------------------------------
+WSGI0053: Location of WSGI host access script not provided
+----------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1462,8 +1462,8 @@ WSGI0053 — Location of WSGI host access script not provided
 
 .. _WSGI0054:
 
-WSGI0054 — Unable to acquire Python sub-interpreter for host access hook
-------------------------------------------------------------------------
+WSGI0054: Unable to acquire Python sub-interpreter for host access hook
+-----------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1486,8 +1486,8 @@ WSGI0054 — Unable to acquire Python sub-interpreter for host access hook
 
 .. _WSGI0055:
 
-WSGI0055 — Result of allow_access must be boolean or None
----------------------------------------------------------
+WSGI0055: Result of allow_access must be boolean or None
+--------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1508,8 +1508,8 @@ WSGI0055 — Result of allow_access must be boolean or None
 
 .. _WSGI0056:
 
-WSGI0056 — Target WSGI host access script does not provide 'allow_access' callable
-----------------------------------------------------------------------------------
+WSGI0056: Target WSGI host access script does not provide 'allow_access' callable
+---------------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1530,8 +1530,8 @@ WSGI0056 — Target WSGI host access script does not provide 'allow_access' call
 
 .. _WSGI0057:
 
-WSGI0057 — Client denied by server configuration
-------------------------------------------------
+WSGI0057: Client denied by server configuration
+-----------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1555,8 +1555,8 @@ WSGI0057 — Client denied by server configuration
 
 .. _WSGI0058:
 
-WSGI0058 — Location of WSGI group authorization script not provided
--------------------------------------------------------------------
+WSGI0058: Location of WSGI group authorization script not provided
+------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1580,8 +1580,8 @@ WSGI0058 — Location of WSGI group authorization script not provided
 
 .. _WSGI0059:
 
-WSGI0059 — Authorization failed: user is not a member of any groups
--------------------------------------------------------------------
+WSGI0059: Authorization failed: user is not a member of any groups
+------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1604,8 +1604,8 @@ WSGI0059 — Authorization failed: user is not a member of any groups
 
 .. _WSGI0060:
 
-WSGI0060 — Authorization failed: user not in designated groups
---------------------------------------------------------------
+WSGI0060: Authorization failed: user not in designated groups
+-------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -1627,8 +1627,8 @@ WSGI0060 — Authorization failed: user not in designated groups
 
 .. _WSGI0061:
 
-WSGI0061 — Unable to set process dumpable flag in Apache child
---------------------------------------------------------------
+WSGI0061: Unable to set process dumpable flag in Apache child
+-------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -1653,8 +1653,8 @@ WSGI0061 — Unable to set process dumpable flag in Apache child
 
 .. _WSGI0062:
 
-WSGI0062 — Unable to set send buffer size on daemon process socket
-------------------------------------------------------------------
+WSGI0062: Unable to set send buffer size on daemon process socket
+-----------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -1678,8 +1678,8 @@ WSGI0062 — Unable to set send buffer size on daemon process socket
 
 .. _WSGI0063:
 
-WSGI0063 — Unable to set receive buffer size on daemon process socket
----------------------------------------------------------------------
+WSGI0063: Unable to set receive buffer size on daemon process socket
+--------------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -1700,8 +1700,8 @@ WSGI0063 — Unable to set receive buffer size on daemon process socket
 
 .. _WSGI0064:
 
-WSGI0064 — Daemon process socket path will be truncated
--------------------------------------------------------
+WSGI0064: Daemon process socket path will be truncated
+------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -1727,8 +1727,8 @@ WSGI0064 — Daemon process socket path will be truncated
 
 .. _WSGI0065:
 
-WSGI0065 — Removing stale unix domain socket before re-binding
---------------------------------------------------------------
+WSGI0065: Removing stale unix domain socket before re-binding
+-------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -1754,8 +1754,8 @@ WSGI0065 — Removing stale unix domain socket before re-binding
 
 .. _WSGI0066:
 
-WSGI0066 — (retired)
---------------------
+WSGI0066: (retired)
+-------------------
 
 Previously logged when ``PyObject_GetIter`` on the threads dict
 returned by ``sys._current_frames()`` failed. The stack-trace dumper
@@ -1764,8 +1764,8 @@ and its unreachable failure branch were removed.
 
 .. _WSGI0067:
 
-WSGI0067 — Unable to obtain current frames for active threads
--------------------------------------------------------------
+WSGI0067: Unable to obtain current frames for active threads
+------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -1791,8 +1791,8 @@ WSGI0067 — Unable to obtain current frames for active threads
 
 .. _WSGI0068:
 
-WSGI0068 — Unable to create monitor thread in daemon process
-------------------------------------------------------------
+WSGI0068: Unable to create monitor thread in daemon process
+-----------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_daemon.c``
@@ -1818,8 +1818,8 @@ WSGI0068 — Unable to create monitor thread in daemon process
 
 .. _WSGI0069:
 
-WSGI0069 — Unable to create deadlock-detection thread in daemon process
------------------------------------------------------------------------
+WSGI0069: Unable to create deadlock-detection thread in daemon process
+----------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_daemon.c``
@@ -1841,8 +1841,8 @@ WSGI0069 — Unable to create deadlock-detection thread in daemon process
 
 .. _WSGI0070:
 
-WSGI0070 — Unable to create reaper thread during daemon shutdown
-----------------------------------------------------------------
+WSGI0070: Unable to create reaper thread during daemon shutdown
+---------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -1870,8 +1870,8 @@ WSGI0070 — Unable to create reaper thread during daemon shutdown
 
 .. _WSGI0071:
 
-WSGI0071 — Unable to join with worker thread during shutdown
-------------------------------------------------------------
+WSGI0071: Unable to join with worker thread during shutdown
+-----------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -1889,12 +1889,12 @@ WSGI0071 — Unable to join with worker thread during shutdown
    the process exits.
 
 :Operator action:
-   No action required — the daemon is exiting.
+   No action required: the daemon is exiting.
 
 .. _WSGI0072:
 
-WSGI0072 — Unable to close unix domain socket during cleanup
-------------------------------------------------------------
+WSGI0072: Unable to close unix domain socket during cleanup
+-----------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -1916,8 +1916,8 @@ WSGI0072 — Unable to close unix domain socket during cleanup
 
 .. _WSGI0073:
 
-WSGI0073 — Unable to unlink unix domain socket during cleanup
--------------------------------------------------------------
+WSGI0073: Unable to unlink unix domain socket during cleanup
+------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -1941,8 +1941,8 @@ WSGI0073 — Unable to unlink unix domain socket during cleanup
 
 .. _WSGI0074:
 
-WSGI0074 — Unable to unbind processor for daemon process
---------------------------------------------------------
+WSGI0074: Unable to unbind processor for daemon process
+-------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -1965,8 +1965,8 @@ WSGI0074 — Unable to unbind processor for daemon process
 
 .. _WSGI0075:
 
-WSGI0075 — Unable to set CPU priority for daemon process
---------------------------------------------------------
+WSGI0075: Unable to set CPU priority for daemon process
+-------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -1990,8 +1990,8 @@ WSGI0075 — Unable to set CPU priority for daemon process
 
 .. _WSGI0076:
 
-WSGI0076 — Unable to set CPU time limit for daemon process
-----------------------------------------------------------
+WSGI0076: Unable to set CPU time limit for daemon process
+---------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -2020,8 +2020,8 @@ WSGI0076 — Unable to set CPU time limit for daemon process
 
 .. _WSGI0077:
 
-WSGI0077 — Unable to set memory limit for daemon process
---------------------------------------------------------
+WSGI0077: Unable to set memory limit for daemon process
+-------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -2044,8 +2044,8 @@ WSGI0077 — Unable to set memory limit for daemon process
 
 .. _WSGI0078:
 
-WSGI0078 — Unable to set virtual memory limit for daemon process
-----------------------------------------------------------------
+WSGI0078: Unable to set virtual memory limit for daemon process
+---------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -2067,8 +2067,8 @@ WSGI0078 — Unable to set virtual memory limit for daemon process
 
 .. _WSGI0079:
 
-WSGI0079 — Unsupported locale setting for daemon process group
---------------------------------------------------------------
+WSGI0079: Unsupported locale setting for daemon process group
+-------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -2094,8 +2094,8 @@ WSGI0079 — Unsupported locale setting for daemon process group
 
 .. _WSGI0080:
 
-WSGI0080 — Unable to read incoming WSGI request from Apache child
------------------------------------------------------------------
+WSGI0080: Unable to read incoming WSGI request from Apache child
+----------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_daemon.c``
@@ -2115,13 +2115,13 @@ WSGI0080 — Unable to read incoming WSGI request from Apache child
    and returns ``HTTP_INTERNAL_SERVER_ERROR`` to the Apache child.
 
 :Operator action:
-   Generally none — this is per-request. If the failure is
+   Generally none: this is per-request. If the failure is
    sustained, investigate the unix socket or Apache child health.
 
 .. _WSGI0081:
 
-WSGI0081 — WSGI script not located within chroot directory
-----------------------------------------------------------
+WSGI0081: WSGI script not located within chroot directory
+---------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_daemon.c``
@@ -2145,8 +2145,8 @@ WSGI0081 — WSGI script not located within chroot directory
 
 .. _WSGI0082:
 
-WSGI0082 — Unable to stat target handler script
-------------------------------------------------
+WSGI0082: Unable to stat target handler script
+----------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -2169,8 +2169,8 @@ WSGI0082 — Unable to stat target handler script
 
 .. _WSGI0083:
 
-WSGI0083 — Unable to stat target WSGI script
---------------------------------------------
+WSGI0083: Unable to stat target WSGI script
+-------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -2190,8 +2190,8 @@ WSGI0083 — Unable to stat target WSGI script
 
 .. _WSGI0084:
 
-WSGI0084 — Queue timeout expired for WSGI daemon process
---------------------------------------------------------
+WSGI0084: Queue timeout expired for WSGI daemon process
+-------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_daemon.c``
@@ -2217,8 +2217,8 @@ WSGI0084 — Queue timeout expired for WSGI daemon process
 
 .. _WSGI0085:
 
-WSGI0085 — Location of WSGI dispatch script not provided
---------------------------------------------------------
+WSGI0085: Location of WSGI dispatch script not provided
+-------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_dispatch.c``
@@ -2239,8 +2239,8 @@ WSGI0085 — Location of WSGI dispatch script not provided
 
 .. _WSGI0086:
 
-WSGI0086 — Unable to acquire Python sub-interpreter for dispatch hook
----------------------------------------------------------------------
+WSGI0086: Unable to acquire Python sub-interpreter for dispatch hook
+--------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_dispatch.c``
@@ -2263,8 +2263,8 @@ WSGI0086 — Unable to acquire Python sub-interpreter for dispatch hook
 
 .. _WSGI0087:
 
-WSGI0087 — Unable to acquire Python sub-interpreter for WSGI request handler
-----------------------------------------------------------------------------
+WSGI0087: Unable to acquire Python sub-interpreter for WSGI request handler
+---------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_execute.c``
@@ -2289,8 +2289,8 @@ WSGI0087 — Unable to acquire Python sub-interpreter for WSGI request handler
 
 .. _WSGI0088:
 
-WSGI0088 — Unable to import handler via Python module reference
----------------------------------------------------------------
+WSGI0088: Unable to import handler via Python module reference
+--------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_execute.c``
@@ -2314,8 +2314,8 @@ WSGI0088 — Unable to import handler via Python module reference
 
 .. _WSGI0089:
 
-WSGI0089 — Target WSGI script does not contain WSGI application
----------------------------------------------------------------
+WSGI0089: Target WSGI script does not contain WSGI application
+--------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_execute.c``
@@ -2338,8 +2338,8 @@ WSGI0089 — Target WSGI script does not contain WSGI application
 
 .. _WSGI0090:
 
-WSGI0090 — signal.signal call failed when registering exit-function callback
-----------------------------------------------------------------------------
+WSGI0090: signal.signal call failed when registering exit-function callback
+---------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2370,8 +2370,8 @@ WSGI0090 — signal.signal call failed when registering exit-function callback
 
 .. _WSGI0091:
 
-WSGI0091 — Call to site.addsitedir() failed
--------------------------------------------
+WSGI0091: Call to site.addsitedir() failed
+------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2385,7 +2385,7 @@ WSGI0091 — Call to site.addsitedir() failed
 :Cause:
    When applying a ``WSGIPythonPath`` / ``python-path=`` directive,
    mod_wsgi calls ``site.addsitedir()`` once per delim-separated
-   entry. One of the calls failed — typically a missing or
+   entry. One of the calls failed, typically a missing or
    unreadable directory, a malformed ``.pth`` file, or a permission
    issue. The actual Python exception is logged immediately after
    this entry as :ref:`WSGI0188`.
@@ -2402,8 +2402,8 @@ WSGI0091 — Call to site.addsitedir() failed
 
 .. _WSGI0092:
 
-WSGI0092 — (retired)
---------------------
+WSGI0092: (retired)
+-------------------
 
 Previously logged a separate code for failures on subsequent
 ``python-path=`` entries. Consolidated into :ref:`WSGI0091`, which
@@ -2412,16 +2412,16 @@ being processed.
 
 .. _WSGI0093:
 
-WSGI0093 — (retired)
---------------------
+WSGI0093: (retired)
+-------------------
 
 Previously logged a separate code for failure on the final
 ``python-path=`` entry. Consolidated into :ref:`WSGI0091`.
 
 .. _WSGI0094:
 
-WSGI0094 — Unable to locate site.addsitedir
--------------------------------------------
+WSGI0094: Unable to locate site.addsitedir
+------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2444,8 +2444,8 @@ WSGI0094 — Unable to locate site.addsitedir
 
 .. _WSGI0095:
 
-WSGI0095 — Unable to import 'site' module
------------------------------------------
+WSGI0095: Unable to import 'site' module
+----------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2468,8 +2468,8 @@ WSGI0095 — Unable to import 'site' module
 
 .. _WSGI0096:
 
-WSGI0096 — Unable to look up sys.path attribute
-------------------------------------------------
+WSGI0096: Unable to look up sys.path attribute
+----------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2490,8 +2490,8 @@ WSGI0096 — Unable to look up sys.path attribute
 
 .. _WSGI0097:
 
-WSGI0097 — SystemExit from Python atexit functions ignored
-----------------------------------------------------------
+WSGI0097: SystemExit from Python atexit functions ignored
+---------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_logger.c``
@@ -2521,8 +2521,8 @@ WSGI0097 — SystemExit from Python atexit functions ignored
 
 .. _WSGI0098:
 
-WSGI0098 — Exception within Python atexit functions during shutdown
--------------------------------------------------------------------
+WSGI0098: Exception within Python atexit functions during shutdown
+------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_logger.c``
@@ -2544,8 +2544,8 @@ WSGI0098 — Exception within Python atexit functions during shutdown
 
 .. _WSGI0099:
 
-WSGI0099 — Compile-vs-runtime Python version mismatch
------------------------------------------------------
+WSGI0099: Compile-vs-runtime Python version mismatch
+----------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_interp.c``
@@ -2571,8 +2571,8 @@ WSGI0099 — Compile-vs-runtime Python version mismatch
 
 .. _WSGI0100:
 
-WSGI0100 — Unable to stat Python home
--------------------------------------
+WSGI0100: Unable to stat Python home
+------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_interp.c``
@@ -2596,8 +2596,8 @@ WSGI0100 — Unable to stat Python home
 
 .. _WSGI0101:
 
-WSGI0101 — Python home is not a directory
------------------------------------------
+WSGI0101: Python home is not a directory
+----------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_interp.c``
@@ -2621,8 +2621,8 @@ WSGI0101 — Python home is not a directory
 
 .. _WSGI0102:
 
-WSGI0102 — Python home is not accessible
-----------------------------------------
+WSGI0102: Python home is not accessible
+---------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_interp.c``
@@ -2645,8 +2645,8 @@ WSGI0102 — Python home is not accessible
 
 .. _WSGI0103:
 
-WSGI0103 — Python based handlers unavailable for sub-interpreter
-----------------------------------------------------------------
+WSGI0103: Python based handlers unavailable for sub-interpreter
+---------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2681,8 +2681,8 @@ WSGI0103 — Python based handlers unavailable for sub-interpreter
 
 .. _WSGI0104:
 
-WSGI0104 — Unable to publish process_stopping event
----------------------------------------------------
+WSGI0104: Unable to publish process_stopping event
+--------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2710,8 +2710,8 @@ WSGI0104 — Unable to publish process_stopping event
 
 .. _WSGI0105:
 
-WSGI0105 — Could not read or compile WSGI script (request context)
-------------------------------------------------------------------
+WSGI0105: Could not read or compile WSGI script (request context)
+-----------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2738,8 +2738,8 @@ WSGI0105 — Could not read or compile WSGI script (request context)
 
 .. _WSGI0106:
 
-WSGI0106 — Could not read or compile WSGI script (server context)
------------------------------------------------------------------
+WSGI0106: Could not read or compile WSGI script (server context)
+----------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2761,8 +2761,8 @@ WSGI0106 — Could not read or compile WSGI script (server context)
 
 .. _WSGI0107:
 
-WSGI0107 — SystemExit during Python script exec (request context)
------------------------------------------------------------------
+WSGI0107: SystemExit during Python script exec (request context)
+----------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2785,8 +2785,8 @@ WSGI0107 — SystemExit during Python script exec (request context)
 
 .. _WSGI0108:
 
-WSGI0108 — SystemExit during Python script exec (server context)
-----------------------------------------------------------------
+WSGI0108: SystemExit during Python script exec (server context)
+---------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2807,8 +2807,8 @@ WSGI0108 — SystemExit during Python script exec (server context)
 
 .. _WSGI0109:
 
-WSGI0109 — Unable to execute Python script file (request context)
------------------------------------------------------------------
+WSGI0109: Unable to execute Python script file (request context)
+----------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2817,7 +2817,7 @@ WSGI0109 — Unable to execute Python script file (request context)
    ``Unable to execute Python script file '<filename>'.``
 
 :Cause:
-   ``PyImport_ExecCodeModuleEx()`` returned ``NULL`` — the script
+   ``PyImport_ExecCodeModuleEx()`` returned ``NULL``: the script
    raised an unhandled exception during top-level execution. The
    Python traceback is logged immediately after.
 
@@ -2829,8 +2829,8 @@ WSGI0109 — Unable to execute Python script file (request context)
 
 .. _WSGI0110:
 
-WSGI0110 — Unable to execute Python script file (server context)
-----------------------------------------------------------------
+WSGI0110: Unable to execute Python script file (server context)
+---------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -2849,8 +2849,8 @@ WSGI0110 — Unable to execute Python script file (server context)
 
 .. _WSGI0111:
 
-WSGI0111 — Main interpreter reference missing during child cleanup
-------------------------------------------------------------------
+WSGI0111: Main interpreter reference missing during child cleanup
+-----------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_interp.c``
@@ -2878,8 +2878,8 @@ WSGI0111 — Main interpreter reference missing during child cleanup
 
 .. _WSGI0112:
 
-WSGI0112 — Exception within event callback
-------------------------------------------
+WSGI0112: Exception within event callback
+-----------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_logger.c``
@@ -2907,8 +2907,8 @@ WSGI0112 — Exception within event callback
 
 .. _WSGI0113:
 
-WSGI0113 — Unable to import mod_wsgi when publishing events
------------------------------------------------------------
+WSGI0113: Unable to import mod_wsgi when publishing events
+----------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_metrics.c``
@@ -2929,8 +2929,8 @@ WSGI0113 — Unable to import mod_wsgi when publishing events
 
 .. _WSGI0114:
 
-WSGI0114 — Unable to find event subscribers
--------------------------------------------
+WSGI0114: Unable to find event subscribers
+------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_metrics.c``
@@ -2951,8 +2951,8 @@ WSGI0114 — Unable to find event subscribers
 
 .. _WSGI0115:
 
-WSGI0115 — Unable to create socket to connect to WSGI daemon process
---------------------------------------------------------------------
+WSGI0115: Unable to create socket to connect to WSGI daemon process
+-------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -2978,8 +2978,8 @@ WSGI0115 — Unable to create socket to connect to WSGI daemon process
 
 .. _WSGI0116:
 
-WSGI0116 — Unable to connect to WSGI daemon (listener backlog or missing socket)
---------------------------------------------------------------------------------
+WSGI0116: Unable to connect to WSGI daemon (listener backlog or missing socket)
+-------------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3014,8 +3014,8 @@ WSGI0116 — Unable to connect to WSGI daemon (listener backlog or missing socke
 
 .. _WSGI0117:
 
-WSGI0117 — Unable to connect to WSGI daemon (other failure)
------------------------------------------------------------
+WSGI0117: Unable to connect to WSGI daemon (other failure)
+----------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3026,7 +3026,7 @@ WSGI0117 — Unable to connect to WSGI daemon (other failure)
 
 :Cause:
    ``connect()`` failed with an error other than ``ECONNREFUSED``
-   or ``EAGAIN`` — typically ``EACCES`` (Apache user lacks
+   or ``EAGAIN``, typically ``EACCES`` (Apache user lacks
    permission on the socket), ``ENOENT`` (path missing), or similar.
 
 :Outcome:
@@ -3036,7 +3036,7 @@ WSGI0117 — Unable to connect to WSGI daemon (other failure)
    Verify the socket file's permissions match the daemon group's
    ``user=`` and ``umask=``. Check that
    :doc:`configuration-directives/WSGISocketPrefix` is on a
-   filesystem the Apache user can traverse — restrictive Apache
+   filesystem the Apache user can traverse. Restrictive Apache
    runtime directories on RHEL/Fedora and similar are a common
    trigger for the EACCES variant; see
    :doc:`user-guides/configuration-issues` for the standard
@@ -3052,8 +3052,8 @@ WSGI0117 — Unable to connect to WSGI daemon (other failure)
 
 .. _WSGI0118:
 
-WSGI0118 — Unable to proxy response to client (read timeout)
-------------------------------------------------------------
+WSGI0118: Unable to proxy response to client (read timeout)
+-----------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3078,8 +3078,8 @@ WSGI0118 — Unable to proxy response to client (read timeout)
 
 .. _WSGI0119:
 
-WSGI0119 — Unable to proxy response from daemon to client
----------------------------------------------------------
+WSGI0119: Unable to proxy response from daemon to client
+--------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3102,8 +3102,8 @@ WSGI0119 — Unable to proxy response from daemon to client
 
 .. _WSGI0120:
 
-WSGI0120 — Unable to proxy response to client (write timeout)
--------------------------------------------------------------
+WSGI0120: Unable to proxy response to client (write timeout)
+------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3123,8 +3123,8 @@ WSGI0120 — Unable to proxy response to client (write timeout)
 
 .. _WSGI0121:
 
-WSGI0121 — Unable to send request details to WSGI daemon (initial)
-------------------------------------------------------------------
+WSGI0121: Unable to send request details to WSGI daemon (initial)
+-----------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3145,8 +3145,8 @@ WSGI0121 — Unable to send request details to WSGI daemon (initial)
 
 .. _WSGI0122:
 
-WSGI0122 — Unexpected status from WSGI daemon process (initial)
----------------------------------------------------------------
+WSGI0122: Unexpected status from WSGI daemon process (initial)
+--------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3168,8 +3168,8 @@ WSGI0122 — Unexpected status from WSGI daemon process (initial)
 
 .. _WSGI0123:
 
-WSGI0123 — Unexpected status from WSGI daemon process (during restart)
-----------------------------------------------------------------------
+WSGI0123: Unexpected status from WSGI daemon process (during restart)
+---------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3189,8 +3189,8 @@ WSGI0123 — Unexpected status from WSGI daemon process (during restart)
 
 .. _WSGI0124:
 
-WSGI0124 — Maximum number of WSGI daemon process restart attempts reached
--------------------------------------------------------------------------
+WSGI0124: Maximum number of WSGI daemon process restart attempts reached
+------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3213,8 +3213,8 @@ WSGI0124 — Maximum number of WSGI daemon process restart attempts reached
 
 .. _WSGI0125:
 
-WSGI0125 — Unable to send request details to WSGI daemon (after restart)
-------------------------------------------------------------------------
+WSGI0125: Unable to send request details to WSGI daemon (after restart)
+-----------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3234,8 +3234,8 @@ WSGI0125 — Unable to send request details to WSGI daemon (after restart)
 
 .. _WSGI0126:
 
-WSGI0126 — Request data read error proxying to daemon (initial)
----------------------------------------------------------------
+WSGI0126: Request data read error proxying to daemon (initial)
+--------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3253,13 +3253,13 @@ WSGI0126 — Request data read error proxying to daemon (initial)
    ``HTTP_INTERNAL_SERVER_ERROR``.
 
 :Operator action:
-   No action for occasional cases. Investigate if sustained — could
+   No action for occasional cases. Investigate if sustained: could
    indicate slow uploads or network issues.
 
 .. _WSGI0127:
 
-WSGI0127 — Request data write error proxying to daemon (closing chunk)
-----------------------------------------------------------------------
+WSGI0127: Request data write error proxying to daemon (closing chunk)
+---------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3281,8 +3281,8 @@ WSGI0127 — Request data write error proxying to daemon (closing chunk)
 
 .. _WSGI0128:
 
-WSGI0128 — Request data read error proxying to daemon (bucket read)
--------------------------------------------------------------------
+WSGI0128: Request data read error proxying to daemon (bucket read)
+------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3303,8 +3303,8 @@ WSGI0128 — Request data read error proxying to daemon (bucket read)
 
 .. _WSGI0129:
 
-WSGI0129 — Request data write error proxying to daemon (sendv)
---------------------------------------------------------------
+WSGI0129: Request data write error proxying to daemon (sendv)
+-------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3326,8 +3326,8 @@ WSGI0129 — Request data write error proxying to daemon (sendv)
 
 .. _WSGI0130:
 
-WSGI0130 — SystemExit raised by Python atexit/sys.exitfunc
-----------------------------------------------------------
+WSGI0130: SystemExit raised by Python atexit/sys.exitfunc
+---------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_shutdown.c``
@@ -3351,8 +3351,8 @@ WSGI0130 — SystemExit raised by Python atexit/sys.exitfunc
 
 .. _WSGI0131:
 
-WSGI0131 — Exception within Python atexit/sys.exitfunc during shutdown
-----------------------------------------------------------------------
+WSGI0131: Exception within Python atexit/sys.exitfunc during shutdown
+---------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_shutdown.c``
@@ -3374,8 +3374,8 @@ WSGI0131 — Exception within Python atexit/sys.exitfunc during shutdown
 
 .. _WSGI0132:
 
-WSGI0132 — Telemetry reporter could not open target
----------------------------------------------------
+WSGI0132: Telemetry reporter could not open target
+--------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_telemetry.c``
@@ -3395,13 +3395,13 @@ WSGI0132 — Telemetry reporter could not open target
 
 :Operator action:
    Verify the telemetry target is correct and reachable. Telemetry
-   is optional observability — disabling it does not affect
+   is optional observability: disabling it does not affect
    request handling.
 
 .. _WSGI0133:
 
-WSGI0133 — Unable to create telemetry reporter thread
------------------------------------------------------
+WSGI0133: Unable to create telemetry reporter thread
+----------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_telemetry.c``
@@ -3422,8 +3422,8 @@ WSGI0133 — Unable to create telemetry reporter thread
 
 .. _WSGI0134:
 
-WSGI0134 — Options ExecCGI is off in this directory
----------------------------------------------------
+WSGI0134: Options ExecCGI is off in this directory
+--------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/mod_wsgi.c``
@@ -3448,8 +3448,8 @@ WSGI0134 — Options ExecCGI is off in this directory
 
 .. _WSGI0135:
 
-WSGI0135 — Target WSGI script not found or unable to stat
----------------------------------------------------------
+WSGI0135: Target WSGI script not found or unable to stat
+--------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/mod_wsgi.c``
@@ -3472,8 +3472,8 @@ WSGI0135 — Target WSGI script not found or unable to stat
 
 .. _WSGI0136:
 
-WSGI0136 — Attempt to invoke directory as WSGI application
-----------------------------------------------------------
+WSGI0136: Attempt to invoke directory as WSGI application
+---------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/mod_wsgi.c``
@@ -3483,7 +3483,7 @@ WSGI0136 — Attempt to invoke directory as WSGI application
 
 :Cause:
    The resolved filename is a directory rather than a regular file.
-   This usually means the URL maps to a directory by mistake — for
+   This usually means the URL maps to a directory by mistake: for
    example a ``WSGIScriptAlias`` target points at the parent
    directory of the script, or a ``DirectoryIndex`` rule is matching
    a directory listing.
@@ -3497,8 +3497,8 @@ WSGI0136 — Attempt to invoke directory as WSGI application
 
 .. _WSGI0137:
 
-WSGI0137 — AcceptPathInfo off disallows user's path
----------------------------------------------------
+WSGI0137: AcceptPathInfo off disallows user's path
+--------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/mod_wsgi.c``
@@ -3519,8 +3519,8 @@ WSGI0137 — AcceptPathInfo off disallows user's path
 
 .. _WSGI0138:
 
-WSGI0138 — Unexpected value for Transfer-Encoding
--------------------------------------------------
+WSGI0138: Unexpected value for Transfer-Encoding
+------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/mod_wsgi.c``
@@ -3543,8 +3543,8 @@ WSGI0138 — Unexpected value for Transfer-Encoding
 
 .. _WSGI0139:
 
-WSGI0139 — Chunked transfer encoding not enabled
-------------------------------------------------
+WSGI0139: Chunked transfer encoding not enabled
+-----------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/mod_wsgi.c``
@@ -3569,8 +3569,8 @@ WSGI0139 — Chunked transfer encoding not enabled
 
 .. _WSGI0140:
 
-WSGI0140 — Unexpected Content-Length header with chunked encoding
------------------------------------------------------------------
+WSGI0140: Unexpected Content-Length header with chunked encoding
+----------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/mod_wsgi.c``
@@ -3591,8 +3591,8 @@ WSGI0140 — Unexpected Content-Length header with chunked encoding
 
 .. _WSGI0141:
 
-WSGI0141 — Invalid Content-Length header value
-----------------------------------------------
+WSGI0141: Invalid Content-Length header value
+---------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/mod_wsgi.c``
@@ -3613,8 +3613,8 @@ WSGI0141 — Invalid Content-Length header value
 
 .. _WSGI0142:
 
-WSGI0142 — Embedded mode of mod_wsgi disabled at compile time
--------------------------------------------------------------
+WSGI0142: Embedded mode of mod_wsgi disabled at compile time
+------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/mod_wsgi.c``
@@ -3637,8 +3637,8 @@ WSGI0142 — Embedded mode of mod_wsgi disabled at compile time
 
 .. _WSGI0143:
 
-WSGI0143 — Embedded mode of mod_wsgi disabled by runtime configuration
-----------------------------------------------------------------------
+WSGI0143: Embedded mode of mod_wsgi disabled by runtime configuration
+---------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/mod_wsgi.c``
@@ -3660,8 +3660,8 @@ WSGI0143 — Embedded mode of mod_wsgi disabled by runtime configuration
 
 .. _WSGI0144:
 
-WSGI0144 — Response header line too long from daemon process
-------------------------------------------------------------
+WSGI0144: Response header line too long from daemon process
+-----------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3690,8 +3690,8 @@ WSGI0144 — Response header line too long from daemon process
 
 .. _WSGI0145:
 
-WSGI0145 — Timeout reading response headers from daemon process
----------------------------------------------------------------
+WSGI0145: Timeout reading response headers from daemon process
+--------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3719,8 +3719,8 @@ WSGI0145 — Timeout reading response headers from daemon process
 
 .. _WSGI0146:
 
-WSGI0146 — Daemon process closed connection before sending headers
-------------------------------------------------------------------
+WSGI0146: Daemon process closed connection before sending headers
+-----------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3744,8 +3744,8 @@ WSGI0146 — Daemon process closed connection before sending headers
 
 .. _WSGI0147:
 
-WSGI0147 — Error reading response headers from daemon process
--------------------------------------------------------------
+WSGI0147: Error reading response headers from daemon process
+------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3769,8 +3769,8 @@ WSGI0147 — Error reading response headers from daemon process
 
 .. _WSGI0148:
 
-WSGI0148 — Malformed header from daemon process
------------------------------------------------
+WSGI0148: Malformed header from daemon process
+----------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3793,8 +3793,8 @@ WSGI0148 — Malformed header from daemon process
 
 .. _WSGI0149:
 
-WSGI0149 — Daemon process not member of allowed groups
-------------------------------------------------------
+WSGI0149: Daemon process not member of allowed groups
+-----------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3817,8 +3817,8 @@ WSGI0149 — Daemon process not member of allowed groups
 
 .. _WSGI0150:
 
-WSGI0150 — No WSGI daemon process configured (no daemon index)
---------------------------------------------------------------
+WSGI0150: No WSGI daemon process configured (no daemon index)
+-------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3840,8 +3840,8 @@ WSGI0150 — No WSGI daemon process configured (no daemon index)
 
 .. _WSGI0151:
 
-WSGI0151 — No WSGI daemon process configured (group lookup failed)
-------------------------------------------------------------------
+WSGI0151: No WSGI daemon process configured (group lookup failed)
+-----------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3862,8 +3862,8 @@ WSGI0151 — No WSGI daemon process configured (group lookup failed)
 
 .. _WSGI0152:
 
-WSGI0152 — Daemon process not accessible from this virtual host
----------------------------------------------------------------
+WSGI0152: Daemon process not accessible from this virtual host
+--------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3888,8 +3888,8 @@ WSGI0152 — Daemon process not accessible from this virtual host
 
 .. _WSGI0153:
 
-WSGI0153 — Group information not available for WSGI script file
----------------------------------------------------------------
+WSGI0153: Group information not available for WSGI script file
+--------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3906,13 +3906,13 @@ WSGI0153 — Group information not available for WSGI script file
    The request returns ``403 Forbidden``.
 
 :Operator action:
-   Check the filesystem on which the WSGI script lives — group
+   Check the filesystem on which the WSGI script lives: group
    metadata may be unavailable on certain remote filesystems.
 
 .. _WSGI0154:
 
-WSGI0154 — Unable to determine group of WSGI script file
---------------------------------------------------------
+WSGI0154: Unable to determine group of WSGI script file
+-------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3934,8 +3934,8 @@ WSGI0154 — Unable to determine group of WSGI script file
 
 .. _WSGI0155:
 
-WSGI0155 — WSGI script file group does not match daemon requirement
--------------------------------------------------------------------
+WSGI0155: WSGI script file group does not match daemon requirement
+------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3958,8 +3958,8 @@ WSGI0155 — WSGI script file group does not match daemon requirement
 
 .. _WSGI0156:
 
-WSGI0156 — World permissions not available for WSGI script file
----------------------------------------------------------------
+WSGI0156: World permissions not available for WSGI script file
+--------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3975,13 +3975,13 @@ WSGI0156 — World permissions not available for WSGI script file
    The request returns ``403 Forbidden``.
 
 :Operator action:
-   Check the filesystem hosting the script — permission metadata
+   Check the filesystem hosting the script: permission metadata
    may be unavailable on certain remote filesystems.
 
 .. _WSGI0157:
 
-WSGI0157 — WSGI script file is writable to world (script-group)
----------------------------------------------------------------
+WSGI0157: WSGI script file is writable to world (script-group)
+--------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -3992,7 +3992,7 @@ WSGI0157 — WSGI script file is writable to world (script-group)
 :Cause:
    ``WSGIDaemonProcess script-group=`` is in effect and the script
    file has world-write permission. mod_wsgi rejects this as a
-   security check — anyone with shell access to the host could
+   security check: anyone with shell access to the host could
    overwrite the script.
 
 :Outcome:
@@ -4004,8 +4004,8 @@ WSGI0157 — WSGI script file is writable to world (script-group)
 
 .. _WSGI0158:
 
-WSGI0158 — Unable to stat parent directory of WSGI script (script-group)
-------------------------------------------------------------------------
+WSGI0158: Unable to stat parent directory of WSGI script (script-group)
+-----------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4026,8 +4026,8 @@ WSGI0158 — Unable to stat parent directory of WSGI script (script-group)
 
 .. _WSGI0159:
 
-WSGI0159 — Unable to determine group of parent directory (script-group)
------------------------------------------------------------------------
+WSGI0159: Unable to determine group of parent directory (script-group)
+----------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4049,8 +4049,8 @@ WSGI0159 — Unable to determine group of parent directory (script-group)
 
 .. _WSGI0160:
 
-WSGI0160 — Parent directory group does not match daemon requirement
--------------------------------------------------------------------
+WSGI0160: Parent directory group does not match daemon requirement
+------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4072,8 +4072,8 @@ WSGI0160 — Parent directory group does not match daemon requirement
 
 .. _WSGI0161:
 
-WSGI0161 — Parent directory is writable to world (script-group)
----------------------------------------------------------------
+WSGI0161: Parent directory is writable to world (script-group)
+--------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4095,8 +4095,8 @@ WSGI0161 — Parent directory is writable to world (script-group)
 
 .. _WSGI0162:
 
-WSGI0162 — User information not available for WSGI script file
---------------------------------------------------------------
+WSGI0162: User information not available for WSGI script file
+-------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4113,13 +4113,13 @@ WSGI0162 — User information not available for WSGI script file
    The request returns ``403 Forbidden``.
 
 :Operator action:
-   Check the filesystem hosting the script — owner metadata may be
+   Check the filesystem hosting the script: owner metadata may be
    unavailable on certain remote filesystems.
 
 .. _WSGI0163:
 
-WSGI0163 — Unable to determine owner of WSGI script file
---------------------------------------------------------
+WSGI0163: Unable to determine owner of WSGI script file
+-------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4139,8 +4139,8 @@ WSGI0163 — Unable to determine owner of WSGI script file
 
 .. _WSGI0164:
 
-WSGI0164 — WSGI script file owner does not match daemon requirement
--------------------------------------------------------------------
+WSGI0164: WSGI script file owner does not match daemon requirement
+------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4162,8 +4162,8 @@ WSGI0164 — WSGI script file owner does not match daemon requirement
 
 .. _WSGI0165:
 
-WSGI0165 — Group permissions not available for WSGI script file
----------------------------------------------------------------
+WSGI0165: Group permissions not available for WSGI script file
+--------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4184,8 +4184,8 @@ WSGI0165 — Group permissions not available for WSGI script file
 
 .. _WSGI0166:
 
-WSGI0166 — WSGI script file is writable to group (script-user)
---------------------------------------------------------------
+WSGI0166: WSGI script file is writable to group (script-user)
+-------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4207,8 +4207,8 @@ WSGI0166 — WSGI script file is writable to group (script-user)
 
 .. _WSGI0167:
 
-WSGI0167 — World permissions not available for WSGI script file (script-user)
------------------------------------------------------------------------------
+WSGI0167: World permissions not available for WSGI script file (script-user)
+----------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4229,8 +4229,8 @@ WSGI0167 — World permissions not available for WSGI script file (script-user)
 
 .. _WSGI0168:
 
-WSGI0168 — WSGI script file is writable to world (script-user)
---------------------------------------------------------------
+WSGI0168: WSGI script file is writable to world (script-user)
+-------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4251,8 +4251,8 @@ WSGI0168 — WSGI script file is writable to world (script-user)
 
 .. _WSGI0169:
 
-WSGI0169 — Unable to stat parent directory of WSGI script (script-user)
------------------------------------------------------------------------
+WSGI0169: Unable to stat parent directory of WSGI script (script-user)
+----------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4272,8 +4272,8 @@ WSGI0169 — Unable to stat parent directory of WSGI script (script-user)
 
 .. _WSGI0170:
 
-WSGI0170 — Unable to determine owner of parent directory (script-user)
-----------------------------------------------------------------------
+WSGI0170: Unable to determine owner of parent directory (script-user)
+---------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4295,8 +4295,8 @@ WSGI0170 — Unable to determine owner of parent directory (script-user)
 
 .. _WSGI0171:
 
-WSGI0171 — Parent directory owner does not match daemon requirement
--------------------------------------------------------------------
+WSGI0171: Parent directory owner does not match daemon requirement
+------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4318,8 +4318,8 @@ WSGI0171 — Parent directory owner does not match daemon requirement
 
 .. _WSGI0172:
 
-WSGI0172 — Parent directory is writable to world (script-user)
---------------------------------------------------------------
+WSGI0172: Parent directory is writable to world (script-user)
+-------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4340,8 +4340,8 @@ WSGI0172 — Parent directory is writable to world (script-user)
 
 .. _WSGI0173:
 
-WSGI0173 — Parent directory is writable to group (script-user)
---------------------------------------------------------------
+WSGI0173: Parent directory is writable to group (script-user)
+-------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_remote.c``
@@ -4363,8 +4363,8 @@ WSGI0173 — Parent directory is writable to group (script-user)
 
 .. _WSGI0174:
 
-WSGI0174 — Exception raised processing WSGI script
---------------------------------------------------
+WSGI0174: Exception raised processing WSGI script
+-------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_logger.c``
@@ -4389,7 +4389,7 @@ WSGI0174 — Exception raised processing WSGI script
 :Outcome:
    For request handlers the request normally returns a 500 status
    to the client (the precise behaviour depends on whether headers
-   have already been sent — see related events
+   have already been sent; see related events
    :ref:`WSGI0042`-:ref:`WSGI0054` and :ref:`WSGI0086`-:ref:`WSGI0087`
    for hook-specific paths). The Apache child or daemon process
    continues running.
@@ -4404,8 +4404,8 @@ WSGI0174 — Exception raised processing WSGI script
 
 .. _WSGI0175:
 
-WSGI0175 — SystemExit raised by WSGI script ignored
----------------------------------------------------
+WSGI0175: SystemExit raised by WSGI script ignored
+--------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_logger.c``
@@ -4430,7 +4430,7 @@ WSGI0175 — SystemExit raised by WSGI script ignored
 :Outcome:
    The exception is caught and logged, then cleared. The request
    handling continues as if the application had returned normally
-   from the offending point — usually the request will complete
+   from the offending point: usually the request will complete
    with whatever response state had been set up before the
    ``SystemExit`` was raised, or fail with a 500 if no response
    was started.
@@ -4444,8 +4444,8 @@ WSGI0175 — SystemExit raised by WSGI script ignored
 
 .. _WSGI0176:
 
-WSGI0176 — Basic auth provider returned empty user name string
---------------------------------------------------------------
+WSGI0176: Basic auth provider returned empty user name string
+-------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -4476,8 +4476,8 @@ WSGI0176 — Basic auth provider returned empty user name string
 
 .. _WSGI0177:
 
-WSGI0177 — Basic auth provider returned unexpected type
--------------------------------------------------------
+WSGI0177: Basic auth provider returned unexpected type
+------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -4506,8 +4506,8 @@ WSGI0177 — Basic auth provider returned unexpected type
 
 .. _WSGI0178:
 
-WSGI0178 — Digest auth provider returned empty realm hash
----------------------------------------------------------
+WSGI0178: Digest auth provider returned empty realm hash
+--------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -4537,8 +4537,8 @@ WSGI0178 — Digest auth provider returned empty realm hash
 
 .. _WSGI0179:
 
-WSGI0179 — Digest auth provider returned unexpected type
---------------------------------------------------------
+WSGI0179: Digest auth provider returned unexpected type
+-------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_auth.c``
@@ -4563,8 +4563,8 @@ WSGI0179 — Digest auth provider returned unexpected type
 
 .. _WSGI0180:
 
-WSGI0180 — (retired)
---------------------
+WSGI0180: (retired)
+-------------------
 
 Previously logged when ``PyDict_SetItemString()`` failed registering
 a freshly created sub-interpreter in mod_wsgi's per-process
@@ -4575,8 +4575,8 @@ failure path no longer exists.
 
 .. _WSGI0181:
 
-WSGI0181 — Unable to install threading._shutdown wrapper
---------------------------------------------------------
+WSGI0181: Unable to install threading._shutdown wrapper
+-------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -4606,8 +4606,8 @@ WSGI0181 — Unable to install threading._shutdown wrapper
 
 .. _WSGI0182:
 
-WSGI0182 — Unable to create threading._shutdown wrapper
--------------------------------------------------------
+WSGI0182: Unable to create threading._shutdown wrapper
+------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -4631,8 +4631,8 @@ WSGI0182 — Unable to create threading._shutdown wrapper
 
 .. _WSGI0183:
 
-WSGI0183 — Unable to install signal.signal intercept
-----------------------------------------------------
+WSGI0183: Unable to install signal.signal intercept
+---------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -4660,8 +4660,8 @@ WSGI0183 — Unable to install signal.signal intercept
 
 .. _WSGI0184:
 
-WSGI0184 — Unable to create signal.signal intercept
----------------------------------------------------
+WSGI0184: Unable to create signal.signal intercept
+--------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -4685,8 +4685,8 @@ WSGI0184 — Unable to create signal.signal intercept
 
 .. _WSGI0185:
 
-WSGI0185 — Unable to replace sys.stderr with log object
--------------------------------------------------------
+WSGI0185: Unable to replace sys.stderr with log object
+------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -4712,8 +4712,8 @@ WSGI0185 — Unable to replace sys.stderr with log object
 
 .. _WSGI0186:
 
-WSGI0186 — Unable to replace sys.stdout
----------------------------------------
+WSGI0186: Unable to replace sys.stdout
+--------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -4740,8 +4740,8 @@ WSGI0186 — Unable to replace sys.stdout
 
 .. _WSGI0187:
 
-WSGI0187 — Unable to replace sys.stdin with restricted object
--------------------------------------------------------------
+WSGI0187: Unable to replace sys.stdin with restricted object
+------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -4768,8 +4768,8 @@ WSGI0187 — Unable to replace sys.stdin with restricted object
 
 .. _WSGI0188:
 
-WSGI0188 — Exception raised during Python interpreter initialisation
---------------------------------------------------------------------
+WSGI0188: Exception raised during Python interpreter initialisation
+-------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_logger.c``
@@ -4783,7 +4783,7 @@ WSGI0188 — Exception raised during Python interpreter initialisation
 
 :Cause:
    A Python exception (other than ``SystemExit``) was raised at any
-   step of interpreter construction in ``newInterpreterObject()`` —
+   step of interpreter construction in ``newInterpreterObject()``:
    sub-interpreter creation, optional ``mod_wsgi`` / ``apache``
    user-supplied module imports, ``WSGIPythonPath`` entry processing,
    etc. The traceback is emitted as continuation lines after this
@@ -4803,8 +4803,8 @@ WSGI0188 — Exception raised during Python interpreter initialisation
 
 .. _WSGI0189:
 
-WSGI0189 — SystemExit raised during Python interpreter initialisation
----------------------------------------------------------------------
+WSGI0189: SystemExit raised during Python interpreter initialisation
+--------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_logger.c``
@@ -4833,8 +4833,8 @@ WSGI0189 — SystemExit raised during Python interpreter initialisation
 
 .. _WSGI0190:
 
-WSGI0190 — SystemExit raised by event callback ignored
-------------------------------------------------------
+WSGI0190: SystemExit raised by event callback ignored
+-----------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_logger.c``
@@ -4862,8 +4862,8 @@ WSGI0190 — SystemExit raised by event callback ignored
 
 .. _WSGI0191:
 
-WSGI0191 — Unable to create thread state for request
-----------------------------------------------------
+WSGI0191: Unable to create thread state for request
+---------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -4894,8 +4894,8 @@ WSGI0191 — Unable to create thread state for request
 
 .. _WSGI0192:
 
-WSGI0192 — Unable to create thread state to destroy sub-interpreter
--------------------------------------------------------------------
+WSGI0192: Unable to create thread state to destroy sub-interpreter
+------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -4929,8 +4929,8 @@ WSGI0192 — Unable to create thread state to destroy sub-interpreter
 
 .. _WSGI0193:
 
-WSGI0193 — (retired)
---------------------
+WSGI0193: (retired)
+-------------------
 
 Previously logged when ``PyDict_New()`` returned ``NULL`` while
 constructing mod_wsgi's per-process interpreters dictionary in
@@ -4940,8 +4940,8 @@ no equivalent Python-level allocation that can fail at this point.
 
 .. _WSGI0194:
 
-WSGI0194 — Lookup of 'close' attribute on WSGI response iterable raised an exception
-------------------------------------------------------------------------------------
+WSGI0194: Lookup of 'close' attribute on WSGI response iterable raised an exception
+-----------------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_adapter.c``
@@ -4954,7 +4954,7 @@ WSGI0194 — Lookup of 'close' attribute on WSGI response iterable raised an exc
    After the response iterable was consumed, mod_wsgi attempted
    ``getattr(sequence, 'close')`` to invoke any WSGI ``close()``
    method on the iterable, and the attribute lookup itself raised
-   something other than ``AttributeError`` — typically a custom
+   something other than ``AttributeError``, typically a custom
    ``__getattribute__`` (or a descriptor protocol method) on the
    iterable that throws for some inputs. This message is a context
    preamble; the offending Python traceback is printed in the log
@@ -4976,8 +4976,8 @@ WSGI0194 — Lookup of 'close' attribute on WSGI response iterable raised an exc
 
 .. _WSGI0195:
 
-WSGI0195 — Failed to close source file after reading WSGI script (request)
----------------------------------------------------------------------------
+WSGI0195: Failed to close source file after reading WSGI script (request)
+-------------------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_interp.c``
@@ -5013,8 +5013,8 @@ WSGI0195 — Failed to close source file after reading WSGI script (request)
 
 .. _WSGI0196:
 
-WSGI0196 — Failed to close source file after reading WSGI script (server)
---------------------------------------------------------------------------
+WSGI0196: Failed to close source file after reading WSGI script (server)
+------------------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_interp.c``
@@ -5026,7 +5026,7 @@ WSGI0196 — Failed to close source file after reading WSGI script (server)
 
 :Cause:
    Same as :ref:`WSGI0195` but logged at server scope (the load was
-   not triggered by an in-flight request — typically
+   not triggered by an in-flight request, typically
    ``WSGIImportScript`` at startup or a script reload from a
    non-request context).
 
@@ -5038,8 +5038,8 @@ WSGI0196 — Failed to close source file after reading WSGI script (server)
 
 .. _WSGI0197:
 
-WSGI0197 — (retired)
---------------------
+WSGI0197: (retired)
+-------------------
 
 Previously logged at config load when ``WSGIPerInterpreterGIL On`` was
 set on a free-threaded Python build. With the addition of
@@ -5051,8 +5051,8 @@ not active. The new per-process conflict is reported by
 
 .. _WSGI0198:
 
-WSGI0198 — WSGIPerInterpreterGIL requires Python 3.12 or later
---------------------------------------------------------------
+WSGI0198: WSGIPerInterpreterGIL requires Python 3.12 or later
+-------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_config.c``
@@ -5077,8 +5077,8 @@ WSGI0198 — WSGIPerInterpreterGIL requires Python 3.12 or later
 
 .. _WSGI0199:
 
-WSGI0199 — Per-interpreter switch interval skipped because interpreter does not have its own GIL
-------------------------------------------------------------------------------------------------
+WSGI0199: Per-interpreter switch interval skipped because interpreter does not have its own GIL
+-----------------------------------------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_interp.c``
@@ -5111,8 +5111,8 @@ WSGI0199 — Per-interpreter switch interval skipped because interpreter does no
 
 .. _WSGI0200:
 
-WSGI0200 — WSGIFreeThreading On has no effect on this Python build
-------------------------------------------------------------------
+WSGI0200: WSGIFreeThreading On has no effect on this Python build
+-----------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_config.c``
@@ -5141,8 +5141,8 @@ WSGI0200 — WSGIFreeThreading On has no effect on this Python build
 
 .. _WSGI0201:
 
-WSGI0201 — WSGIFreeThreading inside container with application-group= is ignored
---------------------------------------------------------------------------------
+WSGI0201: WSGIFreeThreading inside container with application-group= is ignored
+-------------------------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_config.c``
@@ -5171,8 +5171,8 @@ WSGI0201 — WSGIFreeThreading inside container with application-group= is ignor
 
 .. _WSGI0202:
 
-WSGI0202 — Per-interpreter GIL skipped because free-threading is active
------------------------------------------------------------------------
+WSGI0202: Per-interpreter GIL skipped because free-threading is active
+----------------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_interp.c``
@@ -5202,8 +5202,8 @@ WSGI0202 — Per-interpreter GIL skipped because free-threading is active
 
 .. _WSGI0203:
 
-WSGI0203 — WSGISwitchInterval skipped in embedded process because free-threading is active
-------------------------------------------------------------------------------------------
+WSGI0203: WSGISwitchInterval skipped in embedded process because free-threading is active
+-----------------------------------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_interp.c``
@@ -5231,8 +5231,8 @@ WSGI0203 — WSGISwitchInterval skipped in embedded process because free-threadi
 
 .. _WSGI0204:
 
-WSGI0204 — Daemon-group switch-interval skipped because free-threading is active
---------------------------------------------------------------------------------
+WSGI0204: Daemon-group switch-interval skipped because free-threading is active
+-------------------------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_daemon.c``
@@ -5260,8 +5260,8 @@ WSGI0204 — Daemon-group switch-interval skipped because free-threading is acti
 
 .. _WSGI0205:
 
-WSGI0205 — Per-interpreter switch interval skipped because free-threading is active
------------------------------------------------------------------------------------
+WSGI0205: Per-interpreter switch interval skipped because free-threading is active
+----------------------------------------------------------------------------------
 
 :Severity: WARNING
 :Source: ``src/server/wsgi_interp.c``
@@ -5289,8 +5289,8 @@ WSGI0205 — Per-interpreter switch interval skipped because free-threading is a
 
 .. _WSGI0206:
 
-WSGI0206 — Unable to initialise signal event pipe in daemon process
--------------------------------------------------------------------
+WSGI0206: Unable to initialise signal event pipe in daemon process
+------------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -5318,8 +5318,8 @@ WSGI0206 — Unable to initialise signal event pipe in daemon process
 
 .. _WSGI0207:
 
-WSGI0207 — Unable to create signal dispatcher thread in daemon process
-----------------------------------------------------------------------
+WSGI0207: Unable to create signal dispatcher thread in daemon process
+---------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_daemon.c``
@@ -5351,8 +5351,8 @@ WSGI0207 — Unable to create signal dispatcher thread in daemon process
 
 .. _WSGI0208:
 
-WSGI0208 — Read failed on signal event pipe in daemon process
--------------------------------------------------------------
+WSGI0208: Read failed on signal event pipe in daemon process
+------------------------------------------------------------
 
 :Severity: ALERT
 :Source: ``src/server/wsgi_daemon.c``
@@ -5383,8 +5383,8 @@ WSGI0208 — Read failed on signal event pipe in daemon process
 
 .. _WSGI0209:
 
-WSGI0209 — Unable to publish 'process_signal' event for interpreter
--------------------------------------------------------------------
+WSGI0209: Unable to publish 'process_signal' event for interpreter
+------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/wsgi_interp.c``
@@ -5416,8 +5416,8 @@ WSGI0209 — Unable to publish 'process_signal' event for interpreter
 
 .. _WSGI0210:
 
-WSGI0210 — Embedded mode of mod_wsgi cannot be used as Python was not initialised
----------------------------------------------------------------------------------
+WSGI0210: Embedded mode of mod_wsgi cannot be used as Python was not initialised
+--------------------------------------------------------------------------------
 
 :Severity: ERR
 :Source: ``src/server/mod_wsgi.c``

@@ -42,6 +42,9 @@ lib
 httpd-test*
 httpd-benchmark
 
+# Temporary working files
+scratch
+
 # Documentation build output
 docs/_build/
 

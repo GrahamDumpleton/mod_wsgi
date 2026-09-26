@@ -191,9 +191,9 @@ already contains the first instance's settings module name. The second
 ``wsgi.py``'s ``setdefault`` call is therefore a no-op, and the second
 Django instance ends up loading the first instance's settings.
 
-The failure mode is sometimes obvious — an ``ImportError`` if the
+The failure mode is sometimes obvious (an ``ImportError`` if the
 first instance's settings module is not importable inside the second
-instance — but is often silent: requests for the second site are
+instance) but is often silent: requests for the second site are
 served using the first site's database, ``ALLOWED_HOSTS``, middleware
 and so on. Symptoms can include requests appearing to be served by the
 wrong project, sessions and CSRF tokens behaving inconsistently, and
@@ -232,7 +232,7 @@ As a consequence, because Django relies on
 two Django instances configured for different settings modules within
 a single Python sub interpreter. Where there are multiple instances of
 Django that need to run on the same web server, they must run in
-separate Python sub interpreters — and, given the ``setdefault`` issue
+separate Python sub interpreters and, given the ``setdefault`` issue
 described above, ideally in separate processes via daemon mode.
 
 The default behaviour of mod_wsgi is to run different WSGI application
@@ -558,8 +558,8 @@ server. This technique is for example used when WSGI is hosted within a
 CGI script.
 
 Under mod_wsgi the default behaviour is that ``sys.stdin`` is whatever
-the hosting process inherits — typically a closed or ``/dev/null``
-stream — so reads will return no data rather than raising an exception.
+the hosting process inherits (typically a closed or ``/dev/null``
+stream), so reads will return no data rather than raising an exception.
 The restriction that earlier mod_wsgi versions imposed (raising
 ``IOError: sys.stdin access restricted by mod_wsgi``) is off by default
 and has been since mod_wsgi 3.0. See
@@ -604,7 +604,7 @@ done, a message is logged to the Apache error log of the form::
 A Python stack traceback identifying where the registration was
 attempted is logged immediately after the message. Both the message
 and the traceback are emitted at ``info`` level, so the LogLevel needs
-to be raised for mod_wsgi to see them — for example ``LogLevel warn
+to be raised for mod_wsgi to see them, for example ``LogLevel warn
 wsgi:info``.
 
 If for some reason a WSGI application genuinely needs to install a signal
@@ -630,8 +630,8 @@ objects nor instances of classes which are defined in a WSGI application
 script file should be stored using the ``pickle`` module.
 
 In order to ensure that no strange problems are likely to occur, it is
-suggested that only basic builtin Python types — scalars, tuples, lists
-and dictionaries — be stored using the ``pickle`` module from a WSGI
+suggested that only basic builtin Python types (scalars, tuples, lists
+and dictionaries) be stored using the ``pickle`` module from a WSGI
 application script file. That is, avoid any type of object which has
 user-defined code associated with it.
 
@@ -675,7 +675,7 @@ interpreter has since been destroyed.
 
 The most prominent extensions affected today are NumPy, SciPy and
 modules built on top of them, but the issue is not limited to those
-packages — it can show up in any C extension whose author did not
+packages: it can show up in any C extension whose author did not
 explicitly design for sub interpreter use.
 
 The standard workaround is to force the affected WSGI application to
@@ -684,7 +684,7 @@ run in the main Python interpreter by setting::
     WSGIApplicationGroup %{GLOBAL}
 
 If multiple WSGI applications need this and need to remain isolated from
-each other, run each in its own daemon process group — the daemon
+each other, run each in its own daemon process group: the daemon
 process gets its own main interpreter. The full trade-off (single shared
 namespace versus per-application isolation) is described in the
 "WSGIApplicationGroup and C extension modules" section of

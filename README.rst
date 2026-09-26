@@ -40,7 +40,12 @@ Python Package Index:
 
 * `mod_wsgi-standalone`_ on PyPI additionally installs a private
   build of Apache into your Python environment, for use on
-  UNIX-like systems where no system Apache is available.
+  UNIX-like systems where no system Apache is available. It is the
+  same source code and version as ``mod_wsgi``, with an added
+  dependency on the separate ``mod_wsgi-httpd`` package, which
+  supplies that Apache. See `The mod_wsgi-standalone Package
+  <https://www.modwsgi.org/en/latest/user-guides/mod-wsgi-standalone-package.html>`_
+  in the documentation.
 
 * `mod_wsgi-telemetry`_ on PyPI is the out-of-process telemetry
   ingester and live UI that consume datagrams emitted when the

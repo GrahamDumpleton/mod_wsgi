@@ -2,8 +2,8 @@
 
 When a Python thread blocks waiting for the GIL, its wait time clusters
 at multiples of ``sys.setswitchinterval`` (default 5 ms): a head bucket
-below 1 ms for immediate handoffs, then bumps near s, 2*s, 3*s, ... — one
-extra switch-interval cycle per missed handoff. Under fair contention
+below 1 ms for immediate handoffs, then bumps near s, 2*s, 3*s, ... (one
+extra switch-interval cycle per missed handoff). Under fair contention
 the per-cycle handoff success probability `q` is roughly constant and
 the bump heights follow a geometric distribution::
 
@@ -45,7 +45,7 @@ def cycle_band_counts(
 
     A bucket is assigned to whichever band contains its midpoint. The
     head bucket (index 0) is treated as covering ``[0, bounds[0][1])``
-    regardless of the lower edge passed in — the HDR helper used for
+    regardless of the lower edge passed in: the HDR helper used for
     percentile interpolation reports the head bucket's lower bound as
     the bottom of the first octave (1 ms), but for band assignment the
     head bucket logically starts at zero.
@@ -133,7 +133,7 @@ def contention_coefficient(
 
     Primary path fits a geometric decay to cycle bands ``c1..c3``.
     Fallback path fits ``c2..c4plus`` when ``c1`` is contaminated by the
-    HDR head bucket — at switch intervals ≲ 1 ms the head bucket
+    HDR head bucket: at switch intervals ≲ 1 ms the head bucket
     (1.25 ms wide on the default HDR config) absorbs both ``k=0``
     (immediate) and ``k=1`` (one missed cycle), leaving ``c1`` holding
     only the spillover. The contamination signature is ``c1 < c2``.
@@ -187,7 +187,7 @@ def contention_coefficient(
     # Fallback: c2, c3, c4plus. c4plus aggregates the true k=4 cycle
     # band with the OS-stall tail beyond it, so the fit is somewhat
     # noisier and biased high in q (tail inflates c4plus); the R²
-    # check still applies. Only attempted when c1 is contaminated —
+    # check still applies. Only attempted when c1 is contaminated:
     # the primary fit is preferred whenever it can run.
     n_fit = bands[2] + bands[3] + bands[4]
     if n_fit < 100:
@@ -219,7 +219,7 @@ def decay_label(q: float) -> str:
     quickly (a missed cycle rarely chains into more), low ``q`` means
     they persist (the Beazley convoy signature). Whether ``q`` maps to
     "things are bad" depends on the absolute wall-clock cost per cycle
-    (the switch interval) and the ``gil_wait_time`` mean — combine the
+    (the switch interval) and the ``gil_wait_time`` mean; combine the
     two for a severity read.
     """
     if q >= 0.7:

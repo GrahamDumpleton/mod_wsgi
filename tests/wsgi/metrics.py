@@ -53,7 +53,7 @@ def event_handler(name, **kwargs):
         request_data["pid"] = os.getpid()
     elif name == "request_finished":
         # Filter out request_data which is always present and not a
-        # metric — we just want the lifecycle/metric keys here so the
+        # metric. We just want the lifecycle/metric keys here so the
         # test can assert which fields are exposed.
         for key in kwargs:
             if key != "request_data":

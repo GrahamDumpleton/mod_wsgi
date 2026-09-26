@@ -183,20 +183,20 @@ only ``process_signal``.
    Fires once per process when mod_wsgi is shutting it down.
    Payload key ``shutdown_reason`` is one of:
 
-   * ``"shutdown_signal"`` — SIGTERM (Apache stop or restart).
-   * ``"graceful_signal"`` — SIGUSR1 graceful drain.
-   * ``"eviction_signal"`` — operator-driven eviction.
-   * ``"maximum_requests"`` — ``maximum-requests`` limit reached.
-   * ``"restart_interval"`` — ``restart-interval`` reached.
-   * ``"inactivity_timeout"`` — ``inactivity-timeout`` expired.
-   * ``"request_timeout"`` — ``request-timeout`` triggered.
-   * ``"startup_timeout"`` — ``startup-timeout`` triggered.
-   * ``"deadlock_timeout"`` — ``deadlock-timeout`` triggered.
-   * ``"cpu_time_limit"`` — ``cpu-time-limit`` exceeded.
-   * ``"script_reload"`` — WSGI script reload.
+   * ``"shutdown_signal"``: SIGTERM (Apache stop or restart).
+   * ``"graceful_signal"``: SIGUSR1 graceful drain.
+   * ``"eviction_signal"``: operator-driven eviction.
+   * ``"maximum_requests"``: ``maximum-requests`` limit reached.
+   * ``"restart_interval"``: ``restart-interval`` reached.
+   * ``"inactivity_timeout"``: ``inactivity-timeout`` expired.
+   * ``"request_timeout"``: ``request-timeout`` triggered.
+   * ``"startup_timeout"``: ``startup-timeout`` triggered.
+   * ``"deadlock_timeout"``: ``deadlock-timeout`` triggered.
+   * ``"cpu_time_limit"``: ``cpu-time-limit`` exceeded.
+   * ``"script_reload"``: WSGI script reload.
 
 The ``request_id`` field shared across the request events is the
-same identifier Apache uses as the request log ID — the value
+same identifier Apache uses as the request log ID: the value
 substituted by ``%L`` in ``LogFormat`` and ``ErrorLogFormat``
 directives. Subscribers can use it to cross-correlate event data
 with Apache's access and error logs.
@@ -332,7 +332,7 @@ module attributes and adding per-request information.
    Same value as the module-level ``application_group``.
 
 ``mod_wsgi.request_id``
-   The Apache request log ID — the same identifier substituted by
+   The Apache request log ID: the same identifier substituted by
    ``%L`` in ``LogFormat`` and ``ErrorLogFormat``. Useful for
    cross-correlating application data with Apache's access and
    error logs. Same value as the ``request_id`` field on the

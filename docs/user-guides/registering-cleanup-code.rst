@@ -104,7 +104,7 @@ if necessary, and then call the supplied cleanup callback::
 Note that for a successfully completed request the cleanup task runs
 after the complete response has already been written back to the
 client. If the cleanup function itself raises an exception, the
-client will already have seen a successful response — the failure
+client will already have seen a successful response; the failure
 will be visible only in the Apache error log.
 
 Both of the solutions above are not specific to mod_wsgi and should

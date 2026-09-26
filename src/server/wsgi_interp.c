@@ -2414,7 +2414,7 @@ apr_status_t wsgi_python_init(apr_pool_t *p)
          * In daemon mode wsgi_python_init also runs inside the daemon
          * child after fork, but daemon processes pick up their value
          * from daemon->group->switch_interval after wsgi_python_child_init
-         * (see wsgi_daemon.c) — applying the server-config value here
+         * (see wsgi_daemon.c). Applying the server-config value here
          * would shadow that and emit a redundant INFO log line. */
 #if defined(MOD_WSGI_WITH_DAEMONS)
         if (wsgi_daemon_process == NULL &&
@@ -2627,7 +2627,7 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
          * The catch is that the simplified API is designed for
          * scoped use: the matching pair Ensure/Release tears the
          * thread state down again at the end of the outer
-         * Release. We do not want that — we want the thread
+         * Release. We do not want that. We want the thread
          * state, and therefore any thread local data Python or
          * extensions have attached to it (threading.local,
          * contextvars defaults, extension-side TLS via
@@ -2648,14 +2648,14 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
          * Release in wsgi_release_interpreter brings it back
          * down to 1, which is non-zero, so Release just drops
          * the GIL via PyEval_SaveThread() and leaves the thread
-         * state — and its TSS registration — in place for the
+         * state (and its TSS registration) in place for the
          * next request on this thread. We only do the bump on
          * the first Ensure (counter == 1); any nested Ensure
          * from inside the request leaves the counter alone so
          * pairing inside the request still balances normally.
          *
          * gilstate_counter is exposed via Include/cpython/
-         * pystate.h, which is the unstable CPython tier — the
+         * pystate.h, which is the unstable CPython tier: the
          * field is not part of the stable ABI and could in
          * principle be renamed or removed in a future release.
          * There is no public API equivalent for "extend the
@@ -3275,7 +3275,7 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
      * is shutting down here. For daemon we did it earlier
      * before trying to wait on request threads. The telemetry
      * lifecycle datagrams (STOPPING and the final-tick + STOPPED
-     * sequence) follow the same split — daemon mode emits them in
+     * sequence) follow the same split: daemon mode emits them in
      * wsgi_daemon_main; embedded mode emits both here back-to-back
      * since Apache has already drained worker requests by the time
      * this cleanup hook runs.

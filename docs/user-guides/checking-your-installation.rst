@@ -12,7 +12,7 @@ The primary purpose of the page is to give a single reference for
 the diagnostic data that maintainers ask for when responding to a
 GitHub issue. If you have been directed here to collect information
 for a bug report, include the *full* output of the checks rather
-than a summary — partial output makes it harder to rule out causes.
+than a summary: partial output makes it harder to rule out causes.
 
 Apache build information
 ------------------------
@@ -94,7 +94,7 @@ including ``mod_so.c``, which is the module that loads other
 modules dynamically.
 
 ``httpd -M`` lists every module that will be loaded for the current
-configuration — both the statically compiled modules and any
+configuration: both the statically compiled modules and any
 ``LoadModule`` directives in the active config files::
 
     $ httpd -M
@@ -133,7 +133,7 @@ neither explicitly designates a relative dispatch order.
 
 Confirm that ``wsgi_module`` is present in the list. If it isn't,
 either the ``LoadModule`` directive is missing or Apache is
-rejecting the load — check the Apache error log for a load-time
+rejecting the load; check the Apache error log for a load-time
 diagnostic.
 
 Cross-process mutex
@@ -143,8 +143,8 @@ Apache uses a global cross-process mutex to serialise which child
 process accepts the next incoming connection. mod_wsgi separately
 uses a similar mutex per daemon process group to serialise which
 daemon-process worker accepts the next request proxied to the
-group. The mutex mechanism — ``flock``, ``fcntl``, ``sysvsem``,
-``posixsem``, or ``pthread`` — varies by platform and can be
+group. The mutex mechanism (``flock``, ``fcntl``, ``sysvsem``,
+``posixsem``, or ``pthread``) varies by platform and can be
 overridden in configuration.
 
 Under normal circumstances the platform default is fine and you
@@ -153,7 +153,7 @@ when reporting an issue that involves stalls or deadlocks between
 Apache children and mod_wsgi daemon workers.
 
 Which mechanism Apache uses by default for the accept mutex can be
-read from the ``-D`` block in the ``httpd -V`` output above — the
+read from the ``-D`` block in the ``httpd -V`` output above: the
 ``APR_USE_*_SERIALIZE`` lines describe the platform default. In the
 example above the lines are::
 
@@ -210,7 +210,7 @@ will show a ``libpython3.X.so`` line in ``ldd`` output on Linux::
      libm.so.6 => /lib/libm.so.6 (0x00002adec0635000)
      /lib64/ld-linux-x86-64.so.2 (0x0000555555554000)
 
-When checking, unset ``LD_LIBRARY_PATH`` first — ``ldd`` honours
+When checking, unset ``LD_LIBRARY_PATH`` first: ``ldd`` honours
 it but Apache does not normally inherit it, so a check that
 relies on ``LD_LIBRARY_PATH`` may give a misleadingly clean
 result that doesn't match what Apache will see at startup.
@@ -235,7 +235,7 @@ Python installation in use
 --------------------------
 
 Even when ``mod_wsgi.so`` links to the right ``libpython``, the
-Python interpreter still needs to find the *installation* — the
+Python interpreter still needs to find the *installation*: the
 matching ``lib/pythonX.Y/`` directory containing the standard
 library and any installed packages.
 
@@ -268,9 +268,9 @@ Python finds its installation is in
 Diagnostic WSGI script
 ----------------------
 
-The remaining checks — what process group, application group, and
+The remaining checks (what process group, application group, and
 threading model the WSGI application is running under, plus the
-Python identity values from the previous section — can all be
+Python identity values from the previous section) can all be
 captured with one diagnostic WSGI script::
 
     import sys
@@ -295,7 +295,7 @@ captured with one diagnostic WSGI script::
 Mount the script and visit its URL. The output values are
 interpreted as follows.
 
-**mod_wsgi.process_group** — name of the daemon process group the
+**mod_wsgi.process_group**: name of the daemon process group the
 request was dispatched to. An empty string means embedded mode
 (the WSGI application is running inside an Apache child process,
 not a mod_wsgi daemon process). A non-empty string is the name of
@@ -303,23 +303,23 @@ the daemon process group named by the active ``WSGIDaemonProcess``
 / ``WSGIProcessGroup`` configuration. Embedded mode is also what
 ``WSGIProcessGroup %{GLOBAL}`` selects explicitly.
 
-**mod_wsgi.application_group** — name of the Python sub-interpreter
+**mod_wsgi.application_group**: name of the Python sub-interpreter
 the application is running in. An empty string means the main
 interpreter (``%{GLOBAL}``). The default when ``WSGIApplicationGroup``
 is not set is ``%{RESOURCE}``, which produces a value composed
 from the server name, the connection port (omitted for ports 80
-and 443), and the WSGI mount point — for example::
+and 443), and the WSGI mount point, for example::
 
     mod_wsgi.application_group = 'tests.example.com|/interpreter.wsgi'
 
-**wsgi.multithread** — ``True`` if the WSGI application is running
+**wsgi.multithread**: ``True`` if the WSGI application is running
 in a multithreaded environment, ``False`` if not. Daemon mode
 defaults to multithreaded. Embedded mode is multithreaded under
 the Event and Worker MPMs and single-threaded under the Prefork
 MPM. If ``True``, the application code and any framework it uses
 must be thread-safe.
 
-**wsgi.multiprocess** — ``True`` if multiple processes may be
+**wsgi.multiprocess**: ``True`` if multiple processes may be
 serving requests for the application. Daemon mode is multiprocess
 when ``processes=N`` is set with ``N>1``, otherwise single-process.
 Embedded mode is always multiprocess (each Apache child handles
@@ -327,16 +327,16 @@ requests independently). Application-state caches that need to be
 shared across requests must allow for both ``multithread`` and
 ``multiprocess`` being ``True`` simultaneously.
 
-**sys.version**, **sys.prefix**, **sys.path** — the Python
+**sys.version**, **sys.prefix**, **sys.path**: the Python
 installation and module search path actually in use at runtime,
 as discussed in the previous section.
 
 Where to go next
 ----------------
 
-* :doc:`installation-issues` — known build and runtime failure
+* :doc:`installation-issues`: known build and runtime failure
   modes if any of the checks above point at a problem.
-* :doc:`debugging-techniques` — broader debugging techniques for
+* :doc:`debugging-techniques`: broader debugging techniques for
   WSGI applications running under mod_wsgi.
-* :doc:`configuration-issues` — common Apache configuration
+* :doc:`configuration-issues`: common Apache configuration
   pitfalls.

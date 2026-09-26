@@ -33,24 +33,24 @@ Choosing a runtime shape
 How mod_wsgi runs your application is a separate choice from how
 it is installed:
 
-* :doc:`user-guides/embedded-and-daemon-mode` — embedded mode runs
+* :doc:`user-guides/embedded-and-daemon-mode`: embedded mode runs
   WSGI inside Apache worker processes; daemon mode runs it in
   separate mod_wsgi-managed processes that Apache forwards
   requests to. Daemon mode is the usual choice.
-* :doc:`user-guides/running-behind-a-reverse-proxy` — running
+* :doc:`user-guides/running-behind-a-reverse-proxy`: running
   mod_wsgi behind nginx, a load balancer, or another HTTP
   front-end.
-* :doc:`user-guides/mod-wsgi-express-quickstart` — for PyPI
+* :doc:`user-guides/mod-wsgi-express-quickstart`: for PyPI
   installs, ``mod_wsgi-express`` provides a single command-line
   interface that wraps both modes.
 
 Platform-specific notes
 -----------------------
 
-* :doc:`user-guides/installation-on-macosx` — Apple removed the
+* :doc:`user-guides/installation-on-macosx`: Apple removed the
   build tooling needed to use the system Apache, so macOS uses an
   Apache installed via Homebrew.
-* :doc:`user-guides/installation-on-windows` — Windows install is
+* :doc:`user-guides/installation-on-windows`: Windows install is
   via pip only; daemon mode and ``mod_wsgi-express start-server``
   are not available on Windows.
 
@@ -69,11 +69,11 @@ the project's overall version support policy.
 After installing
 ----------------
 
-* :doc:`getting-started` — first-run walkthrough using
+* :doc:`getting-started`: first-run walkthrough using
   ``mod_wsgi-express``.
-* :doc:`user-guides/quick-configuration-guide` — manual Apache
+* :doc:`user-guides/quick-configuration-guide`: manual Apache
   configuration for your WSGI application.
-* :doc:`user-guides/configuration-guidelines` — richer
+* :doc:`user-guides/configuration-guidelines`: richer
   configuration examples.
-* :doc:`configuration` — Apache directive reference.
-* :doc:`troubleshooting` — what to do if something doesn't work.
+* :doc:`configuration`: Apache directive reference.
+* :doc:`troubleshooting`: what to do if something doesn't work.

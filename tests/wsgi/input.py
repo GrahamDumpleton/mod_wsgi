@@ -31,7 +31,7 @@ Endpoints:
     Call readlines() with no hint.
 
   /test/wsgi/input/readlines-hint
-    Call readlines(1) — the hint is smaller than the first line
+    Call readlines(1). The hint is smaller than the first line
     so readlines() must stop after returning one entry.
 
   /test/wsgi/input/iterate
