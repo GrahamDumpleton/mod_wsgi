@@ -16,6 +16,26 @@ Features Changed
 Bugs Fixed
 ----------
 
+* Two threads of the same process could be handed the same per-thread
+  record when they started, or took their first request, at the same
+  moment. The records were allocated from an Apache memory pool shared
+  by every thread, without a lock, and APR pools are not thread safe.
+  Two threads sharing a record shared the ``mod_wsgi.thread_id`` value
+  and, for a named application group, the same Python thread state.
+  Concurrent requests on those threads then shared ``contextvars``
+  state, so a request could see and change the request context of
+  another, such as a web framework's current request and session, and
+  on Python 3.14 and later the process crashed. In daemon mode every
+  worker thread creates its record as the process starts, which made
+  the race likely on every process start since 6.0.0; in embedded mode
+  the first requests on a fresh Apache child could do the same. The
+  same lack of locking affected the table of Python thread states kept
+  for each sub interpreter, the creation of worker threads at daemon
+  process start, the lazily allocated metrics state, and messages
+  logged on error paths. Everything allocated once threads are running
+  now comes from a pool used under one lock or belonging to one
+  thread. Reported by hinohi as GHSA-q67r-wxfm-97hj.
+
 * The ``configure`` script used by the classic ``make`` based build now
   tests whether the linker can find ``libpython`` on its own, and adds
   the Python library directory to the linker search path only when it
