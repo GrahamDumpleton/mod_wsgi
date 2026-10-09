@@ -2442,7 +2442,6 @@ XCODE_BIN_PATTERN="${XCODE_PREFIX}.*/usr/bin/"
 if test -x "${APXS}"; then
     APXS_CC=`${APXS} -q CC`
     APXS_LIBTOOL=`${APXS} -q LIBTOOL | sed -e "s/ .*$//"`
-    APXS_LIBDIR=`${APXS} -q LIBDIR | sed -e "s/ .*$//"`
     case ${APXS_CC} in
         ${XCODE_PREFIX}*)
             if test ! -x ${XCODE_CC}; then
@@ -3694,10 +3693,6 @@ PYTHONFRAMEWORK=`${PYTHON} -c 'from sys import stdout; \
 
 if test "${PYTHONFRAMEWORKDIR}" = "no-framework" -o \
         "${ENABLE_FRAMEWORK}" != "yes"; then
-    if test "${PYTHONLIBDIR}" != "${APXS_LIBDIR}" ; then
-        LDFLAGS1="-L${PYTHONLIBDIR}"
-    fi
-
     LDLIBS1="-lpython${PYTHON_LDVERSION}"
 
     # MacOS X seems to be broken and doesn't use ABIFLAGS suffix
@@ -3713,6 +3708,45 @@ if test "${PYTHONFRAMEWORKDIR}" = "no-framework" -o \
     LDLIBS3=`${PYTHON} -c 'from sys import stdout; \
         import sysconfig; \
         stdout.write(sysconfig.get_config_var("SYSLIBS"))'`
+
+    # Only add the Python library directory to the linker search path
+    # when the linker cannot find libpython without it. The directory
+    # is a default search directory on many systems but not on all,
+    # for example /usr/local/lib on FreeBSD, and which it is cannot be
+    # told from the path alone. The module is linked through apxs and
+    # libtool, which can record a -L directory as an RPATH, and some
+    # distributions reject an RPATH naming a standard directory, so
+    # the flag is left out wherever the plain link succeeds. Any -L in
+    # the LDFLAGS given to configure takes part in the test.
+
+    { printf '%s\n' "$as_me:${as_lineno-$LINENO}: checking whether the linker finds ${LDLIBS1} without -L${PYTHONLIBDIR}" >&5
+printf %s "checking whether the linker finds ${LDLIBS1} without -L${PYTHONLIBDIR}... " >&6; }
+    save_LIBS="${LIBS}"
+    LIBS="${LDLIBS1} ${LDLIBS2} ${LDLIBS3} ${LIBS}"
+    cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+void Py_Initialize(void);
+int
+main (void)
+{
+Py_Initialize();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  { printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+printf '%s\n' "yes" >&6; }
+else case e in #(
+  e) { printf '%s\n' "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf '%s\n' "no" >&6; }
+         LDFLAGS1="-L${PYTHONLIBDIR}" ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+    LIBS="${save_LIBS}"
 else
     LDFLAGS1="-Wl,-F${PYTHONFRAMEWORKPREFIX} -framework ${PYTHONFRAMEWORK}"
 

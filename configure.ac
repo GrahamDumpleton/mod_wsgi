@@ -42,7 +42,6 @@ XCODE_BIN_PATTERN="${XCODE_PREFIX}.*/usr/bin/"
 if test -x "${APXS}"; then
     APXS_CC=`${APXS} -q CC`
     APXS_LIBTOOL=`${APXS} -q LIBTOOL | sed -e "s/ .*$//"`
-    APXS_LIBDIR=`${APXS} -q LIBDIR | sed -e "s/ .*$//"`
     case ${APXS_CC} in
         ${XCODE_PREFIX}*)
             if test ! -x ${XCODE_CC}; then
@@ -153,10 +152,6 @@ PYTHONFRAMEWORK=`${PYTHON} -c 'from sys import stdout; \
 
 if test "${PYTHONFRAMEWORKDIR}" = "no-framework" -o \
         "${ENABLE_FRAMEWORK}" != "yes"; then
-    if test "${PYTHONLIBDIR}" != "${APXS_LIBDIR}" ; then
-        LDFLAGS1="-L${PYTHONLIBDIR}"
-    fi
-
     LDLIBS1="-lpython${PYTHON_LDVERSION}"
 
     # MacOS X seems to be broken and doesn't use ABIFLAGS suffix
@@ -172,6 +167,26 @@ if test "${PYTHONFRAMEWORKDIR}" = "no-framework" -o \
     LDLIBS3=`${PYTHON} -c 'from sys import stdout; \
         import sysconfig; \
         stdout.write(sysconfig.get_config_var("SYSLIBS"))'`
+
+    # Only add the Python library directory to the linker search path
+    # when the linker cannot find libpython without it. The directory
+    # is a default search directory on many systems but not on all,
+    # for example /usr/local/lib on FreeBSD, and which it is cannot be
+    # told from the path alone. The module is linked through apxs and
+    # libtool, which can record a -L directory as an RPATH, and some
+    # distributions reject an RPATH naming a standard directory, so
+    # the flag is left out wherever the plain link succeeds. Any -L in
+    # the LDFLAGS given to configure takes part in the test.
+
+    AC_MSG_CHECKING([whether the linker finds ${LDLIBS1} without -L${PYTHONLIBDIR}])
+    save_LIBS="${LIBS}"
+    LIBS="${LDLIBS1} ${LDLIBS2} ${LDLIBS3} ${LIBS}"
+    AC_LINK_IFELSE([AC_LANG_PROGRAM([[void Py_Initialize(void);]],
+                                    [[Py_Initialize();]])],
+        [AC_MSG_RESULT([yes])],
+        [AC_MSG_RESULT([no])
+         LDFLAGS1="-L${PYTHONLIBDIR}"])
+    LIBS="${save_LIBS}"
 else
     LDFLAGS1="-Wl,-F${PYTHONFRAMEWORKPREFIX} -framework ${PYTHONFRAMEWORK}"
 
