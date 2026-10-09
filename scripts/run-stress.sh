@@ -253,6 +253,24 @@ if [ -f "$SERVER_ROOT/httpd.pid" ]; then
     sleep 1
 fi
 
+# An earlier server can still hold the port after its pid file has
+# gone, while its processes finish. Wait for it to be released.
+
+port_in_use() {
+    lsof -n -iTCP:"$PORT" -sTCP:LISTEN > /dev/null 2>&1
+}
+
+tries=0
+while port_in_use; do
+    tries=$((tries + 1))
+    if [ $tries -gt 30 ]; then
+        echo "ERROR: Port $PORT is still in use" >&2
+        lsof -n -iTCP:"$PORT" -sTCP:LISTEN >&2
+        exit 1
+    fi
+    sleep 1
+done
+
 rm -rf "$SERVER_ROOT"
 
 INCLUDE_FILE=$(mktemp)
@@ -287,11 +305,24 @@ if [ "$TELEMETRY" = "1" ]; then
     )
 fi
 
+SETUP_LOG=$(mktemp)
+
 if [ -n "$HTTPD_WRAPPER" ]; then
-    HTTPD="$HTTPD_WRAPPER" "$MOD_WSGI_EXPRESS" setup-server "${setup_args[@]}" > /dev/null
+    HTTPD="$HTTPD_WRAPPER" "$MOD_WSGI_EXPRESS" setup-server "${setup_args[@]}" \
+        > "$SETUP_LOG" 2>&1 || setup_failed=1
 else
-    "$MOD_WSGI_EXPRESS" setup-server "${setup_args[@]}" > /dev/null
+    "$MOD_WSGI_EXPRESS" setup-server "${setup_args[@]}" \
+        > "$SETUP_LOG" 2>&1 || setup_failed=1
 fi
+
+if [ -n "${setup_failed:-}" ]; then
+    echo "ERROR: mod_wsgi-express setup-server failed:" >&2
+    cat "$SETUP_LOG" >&2
+    rm -f "$SETUP_LOG"
+    exit 1
+fi
+
+rm -f "$SETUP_LOG"
 
 # The listener only drains the socket so that the reporter's sends
 # succeed. It exits on its own once the run is over.
@@ -338,10 +369,10 @@ done
 sleep 2
 
 for path in $PATHS; do
-    status=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT$path")
+    status=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT$path" || true)
     if [ "$status" != "200" ]; then
-        echo "ERROR: $path returned $status before the load started" >&2
-        tail -20 "$SERVER_ROOT/error_log"
+        echo "ERROR: $path returned '$status' before the load started" >&2
+        tail -20 "$SERVER_ROOT/error_log" >&2
         exit 1
     fi
 done
@@ -366,9 +397,9 @@ echo
 "$SERVER_ROOT/apachectl" stop
 
 tries=0
-while [ -f "$SERVER_ROOT/httpd.pid" ]; do
+while [ -f "$SERVER_ROOT/httpd.pid" ] || port_in_use; do
     tries=$((tries + 1))
-    if [ $tries -gt 15 ]; then
+    if [ $tries -gt 30 ]; then
         break
     fi
     sleep 1
