@@ -51,6 +51,8 @@ void wsgi_process_metrics_init(apr_pool_t *pool)
 
     apr_thread_mutex_create(&m->monitor_lock, APR_THREAD_MUTEX_UNNESTED, pool);
 
+    apr_pool_create(&m->pool, pool);
+
     /*
      * Phase aggregators need the UINT64_MAX sentinel on min_us so the
      * first sample's min comparison succeeds; pcalloc zeros leave them

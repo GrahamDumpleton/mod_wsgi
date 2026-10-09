@@ -178,8 +178,15 @@ typedef struct
      * look up (or lazily create) the per-thread WSGIThreadInfo block,
      * pushing newly created entries onto thread_details so the
      * snapshot/accessor paths can iterate the directory safely.
+     *
+     * The blocks and the directory are allocated from pool, which is
+     * only ever used with monitor_lock held. APR pools are not thread
+     * safe, and the threads of a process create their blocks at the
+     * same moment, so they cannot share a pool with anything that
+     * allocates under a different lock, or none.
      */
 
+    apr_pool_t *pool;
     int total_threads;
     int request_threads;
     apr_threadkey_t *thread_key;
@@ -198,8 +205,9 @@ extern apr_time_t wsgi_slow_threshold_us;
 
 /*
  * Allocate the WSGIProcessMetrics instance and create its monitor lock
- * from the supplied pool. Called once per child / daemon process at
- * child init, before any other metrics-touching code runs.
+ * and its own pool from the supplied pool. Called once per child /
+ * daemon process at child init, before any other metrics-touching code
+ * runs.
  */
 
 extern void wsgi_process_metrics_init(apr_pool_t *pool);
