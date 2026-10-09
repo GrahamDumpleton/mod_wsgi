@@ -146,7 +146,7 @@ static int wsgi_addsitedir_entry(PyObject *addsitedir, const char *start,
                           "path for %s.",
                           value,
                           wsgi_format_process_context(
-                              wsgi_server->process->pool));
+                              wsgi_interp_pool));
 
     args = Py_BuildValue("(O)", path_entry);
     if (!args)
@@ -208,7 +208,7 @@ static int wsgi_apply_python_path(const char *python_path,
                                   WSGI_APLOGNO(0095) "Unable to import 'site' module "
                                                      "in %s.",
                                   wsgi_format_process_context(
-                                      wsgi_server->process->pool));
+                                      wsgi_interp_pool));
         }
 
         if (!path)
@@ -217,7 +217,7 @@ static int wsgi_apply_python_path(const char *python_path,
                                   WSGI_APLOGNO(0096) "Unable to look up 'sys.path' "
                                                      "attribute on 'sys' module in %s.",
                                   wsgi_format_process_context(
-                                      wsgi_server->process->pool));
+                                      wsgi_interp_pool));
         }
 
         Py_XDECREF(module);
@@ -286,7 +286,7 @@ static int wsgi_apply_python_path(const char *python_path,
                                                          "added.",
                                       (int)entry_len, start,
                                       wsgi_format_process_context(
-                                          wsgi_server->process->pool));
+                                          wsgi_interp_pool));
                 wsgi_log_python_interp_init_error(name);
                 break;
             }
@@ -304,7 +304,7 @@ static int wsgi_apply_python_path(const char *python_path,
                               WSGI_APLOGNO(0094) "Unable to locate "
                                                  "'site.addsitedir()' in %s.",
                               wsgi_format_process_context(
-                                  wsgi_server->process->pool));
+                                  wsgi_interp_pool));
     }
 
     /*
@@ -629,7 +629,7 @@ InterpreterObject *newInterpreterObject(const char *name)
         wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                        "Attaching to Python main interpreter in %s.",
                        wsgi_format_process_context(
-                           wsgi_server->process->pool));
+                           wsgi_interp_pool));
 
         self->interp = interp;
 
@@ -689,10 +689,10 @@ InterpreterObject *newInterpreterObject(const char *name)
                                                   "process so there is no GIL to "
                                                   "allocate per interpreter.",
                                wsgi_format_interp_name(
-                                   wsgi_server->process->pool,
+                                   wsgi_interp_pool,
                                    name),
                                wsgi_format_process_context(
-                                   wsgi_server->process->pool));
+                                   wsgi_interp_pool));
                 use_own_gil = 0;
             }
 
@@ -728,9 +728,9 @@ InterpreterObject *newInterpreterObject(const char *name)
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
                               "Creating %s in %s%s.",
                               wsgi_format_interp_name(
-                                  wsgi_server->process->pool, name),
+                                  wsgi_interp_pool, name),
                               wsgi_format_process_context(
-                                  wsgi_server->process->pool),
+                                  wsgi_interp_pool),
                               use_own_gil ? " with own GIL" : "");
 
         self->interp = tstate->interp;
@@ -748,7 +748,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                                                      "switch interval to set.",
                                   resolved_options.switch_interval,
                                   wsgi_format_interp_name(
-                                      wsgi_server->process->pool, name));
+                                      wsgi_interp_pool, name));
         }
         else if (resolved_options.switch_interval_app_scoped && !use_own_gil &&
                  name && *name)
@@ -761,7 +761,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                                                      "interpreter does not have its own GIL.",
                                   resolved_options.switch_interval,
                                   wsgi_format_interp_name(
-                                      wsgi_server->process->pool, name));
+                                      wsgi_interp_pool, name));
         }
         else
         {
@@ -787,7 +787,7 @@ InterpreterObject *newInterpreterObject(const char *name)
                                       "Set switch interval %.6fs for %s.",
                                       resolved_options.switch_interval,
                                       wsgi_format_interp_name(
-                                          wsgi_server->process->pool,
+                                          wsgi_interp_pool,
                                           name));
             }
         }
@@ -865,10 +865,10 @@ InterpreterObject *newInterpreterObject(const char *name)
                                                                  "sub "
                                                                  "interpreters.",
                                               wsgi_format_interp_name(
-                                                  wsgi_server->process->pool,
+                                                  wsgi_interp_pool,
                                                   name),
                                               wsgi_format_process_context(
-                                                  wsgi_server->process->pool));
+                                                  wsgi_interp_pool));
                         PyErr_Clear();
                     }
                     Py_DECREF(wrapper);
@@ -887,10 +887,10 @@ InterpreterObject *newInterpreterObject(const char *name)
                                                              "in sub "
                                                              "interpreters.",
                                           wsgi_format_interp_name(
-                                              wsgi_server->process->pool,
+                                              wsgi_interp_pool,
                                               name),
                                           wsgi_format_process_context(
-                                              wsgi_server->process->pool));
+                                              wsgi_interp_pool));
                     PyErr_Clear();
                 }
             }
@@ -918,9 +918,9 @@ InterpreterObject *newInterpreterObject(const char *name)
                                                  "continuing with default "
                                                  "stream object.",
                               wsgi_format_interp_name(
-                                  wsgi_server->process->pool, name),
+                                  wsgi_interp_pool, name),
                               wsgi_format_process_context(
-                                  wsgi_server->process->pool));
+                                  wsgi_interp_pool));
         PyErr_Clear();
     }
     Py_XDECREF(object);
@@ -966,9 +966,9 @@ InterpreterObject *newInterpreterObject(const char *name)
                                                      "with default stream "
                                                      "object.",
                                   wsgi_format_interp_name(
-                                      wsgi_server->process->pool, name),
+                                      wsgi_interp_pool, name),
                                   wsgi_format_process_context(
-                                      wsgi_server->process->pool));
+                                      wsgi_interp_pool));
             PyErr_Clear();
         }
         Py_XDECREF(object);
@@ -989,10 +989,10 @@ InterpreterObject *newInterpreterObject(const char *name)
                                                          "default stream "
                                                          "object.",
                                       wsgi_format_interp_name(
-                                          wsgi_server->process->pool,
+                                          wsgi_interp_pool,
                                           name),
                                       wsgi_format_process_context(
-                                          wsgi_server->process->pool));
+                                          wsgi_interp_pool));
                 PyErr_Clear();
             }
             Py_XDECREF(object);
@@ -1101,10 +1101,10 @@ InterpreterObject *newInterpreterObject(const char *name)
                                                              "without "
                                                              "callback.",
                                           wsgi_format_interp_name(
-                                              wsgi_server->process->pool,
+                                              wsgi_interp_pool,
                                               name),
                                           wsgi_format_process_context(
-                                              wsgi_server->process->pool));
+                                              wsgi_interp_pool));
                     PyErr_Clear();
                 }
 
@@ -1158,10 +1158,10 @@ InterpreterObject *newInterpreterObject(const char *name)
                                                                  "handler "
                                                                  "restrictions.",
                                               wsgi_format_interp_name(
-                                                  wsgi_server->process->pool,
+                                                  wsgi_interp_pool,
                                                   name),
                                               wsgi_format_process_context(
-                                                  wsgi_server->process->pool));
+                                                  wsgi_interp_pool));
                         PyErr_Clear();
                     }
                     Py_DECREF(wrapper);
@@ -1178,10 +1178,10 @@ InterpreterObject *newInterpreterObject(const char *name)
                                                              "handler "
                                                              "restrictions.",
                                           wsgi_format_interp_name(
-                                              wsgi_server->process->pool,
+                                              wsgi_interp_pool,
                                               name),
                                           wsgi_format_process_context(
-                                              wsgi_server->process->pool));
+                                              wsgi_interp_pool));
                     PyErr_Clear();
                 }
             }
@@ -1654,9 +1654,9 @@ failure:
 
     wsgi_log_error_locked(APLOG_CRIT, 0, wsgi_server, WSGI_APLOGNO(0035) "Unable to setup %s in %s.",
                           wsgi_format_interp_name(
-                              wsgi_server->process->pool, name),
+                              wsgi_interp_pool, name),
                           wsgi_format_process_context(
-                              wsgi_server->process->pool));
+                              wsgi_interp_pool));
 
     /*
      * Surface any pending Python exception (the actual cause of
@@ -1681,7 +1681,8 @@ failure:
     return NULL;
 }
 
-static void wsgi_destroy_interpreter(InterpreterObject *self)
+static void wsgi_destroy_interpreter(InterpreterObject *self,
+                                     apr_pool_t *log_pool)
 {
     PyThreadState *tstate = NULL;
 
@@ -1722,9 +1723,9 @@ static void wsgi_destroy_interpreter(InterpreterObject *self)
                                                   "will not be shut "
                                                   "down cleanly.",
                                wsgi_format_interp_name(
-                                   wsgi_server->process->pool, self->name),
+                                   log_pool, self->name),
                                wsgi_format_process_context(
-                                   wsgi_server->process->pool));
+                                   log_pool));
 
                 return;
             }
@@ -1751,9 +1752,9 @@ static void wsgi_destroy_interpreter(InterpreterObject *self)
         wsgi_log_error_locked(APLOG_INFO, 0, wsgi_server,
                               "Destroying %s in %s.",
                               wsgi_format_interp_name(
-                                  wsgi_server->process->pool, self->name),
+                                  log_pool, self->name),
                               wsgi_format_process_context(
-                                  wsgi_server->process->pool));
+                                  log_pool));
     }
     else
     {
@@ -1761,7 +1762,7 @@ static void wsgi_destroy_interpreter(InterpreterObject *self)
                               "Releasing Python main interpreter wrapper "
                               "in %s.",
                               wsgi_format_process_context(
-                                  wsgi_server->process->pool));
+                                  log_pool));
     }
 
     if (is_sub)
@@ -1816,9 +1817,8 @@ static void wsgi_destroy_interpreter(InterpreterObject *self)
 
     /*
      * The struct and the duplicated name string are owned by the
-     * interpreters table pool, so no explicit free is required;
-     * the pool reclaims them when wsgi_python_child_cleanup
-     * returns.
+     * interpreter pool, which lives for the process, so no explicit
+     * free is required.
      */
 }
 
@@ -1854,16 +1854,19 @@ void wsgi_python_version(void)
 apr_status_t wsgi_python_term(void)
 {
     PyObject *module = NULL;
+    apr_pool_t *log_pool = NULL;
 
     /* Skip destruction of Python interpreter. */
 
     if (wsgi_server_config->destroy_interpreter == 0)
         return APR_SUCCESS;
 
+    apr_pool_create(&log_pool, NULL);
+
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                    "Terminating Python runtime in %s.",
                    wsgi_format_process_context(
-                       wsgi_server->process->pool));
+                       log_pool));
 
     /*
      * We should be executing in the main thread again at this
@@ -1932,7 +1935,9 @@ apr_status_t wsgi_python_term(void)
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                    "Python runtime has shut down in %s.",
                    wsgi_format_process_context(
-                       wsgi_server->process->pool));
+                       log_pool));
+
+    apr_pool_destroy(log_pool);
 
     return APR_SUCCESS;
 }
@@ -2522,9 +2527,9 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
                                                   "will not be available "
                                                   "for %s in %s.",
                                wsgi_format_interp_name(
-                                   wsgi_server->process->pool, name),
+                                   wsgi_interp_pool, name),
                                wsgi_format_process_context(
-                                   wsgi_server->process->pool));
+                                   wsgi_interp_pool));
 
                 apr_thread_mutex_unlock(wsgi_interp_lock);
                 return NULL;
@@ -2572,6 +2577,11 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
             if (!tstate)
             {
+                /*
+                 * The message is formatted in this thread's own
+                 * pool, which no other thread allocates from.
+                 */
+
                 wsgi_log_error(APLOG_ERR, 0, wsgi_server,
                                WSGI_APLOGNO(0191) "Unable to create "
                                                   "thread state for "
@@ -2579,9 +2589,9 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
                                                   "%s in %s.",
                                thread_handle->thread_id,
                                wsgi_format_interp_name(
-                                   wsgi_server->process->pool, name),
+                                   thread_handle->pool, name),
                                wsgi_format_process_context(
-                                   wsgi_server->process->pool));
+                                   thread_handle->pool));
 
                 return NULL;
             }
@@ -2786,12 +2796,17 @@ void wsgi_publish_process_stopping(char *reason)
         }
         else
         {
+            apr_pool_t *log_pool = NULL;
+
+            apr_pool_create(&log_pool, NULL);
+
             wsgi_log_error_locked(APLOG_ERR, 0, wsgi_server,
                                   WSGI_APLOGNO(0104) "Unable to publish 'process_stopping' "
                                                      "event for %s.",
                                   wsgi_format_interp_context(
-                                      wsgi_server->process->pool, NULL,
+                                      log_pool, NULL,
                                       (const char *)key));
+            apr_pool_destroy(log_pool);
             PyErr_Clear();
         }
 
@@ -2878,7 +2893,7 @@ void wsgi_publish_process_signal(int signum, const char *signame)
                                                      "'process_signal' event "
                                                      "for %s.",
                                   wsgi_format_interp_context(
-                                      wsgi_server->process->pool, NULL,
+                                      pool, NULL,
                                       name));
             PyErr_Clear();
         }
@@ -3269,6 +3284,8 @@ apr_thread_mutex_t *wsgi_module_lock = NULL;
 
 static apr_status_t wsgi_python_child_cleanup(void *data)
 {
+    apr_pool_t *log_pool = NULL;
+
     /*
      * If not a daemon process need to publish that process
      * is shutting down here. For daemon we did it earlier
@@ -3302,6 +3319,8 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     if (wsgi_server_config->destroy_interpreter == 0)
         return APR_SUCCESS;
 
+    apr_pool_create(&log_pool, NULL);
+
     /* In a multithreaded MPM must protect table. */
 
     apr_thread_mutex_lock(wsgi_interp_lock);
@@ -3326,7 +3345,7 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
     wsgi_log_error(APLOG_INFO, 0, wsgi_server,
                    "Destroying Python sub-interpreters in %s.",
                    wsgi_format_process_context(
-                       wsgi_server->process->pool));
+                       log_pool));
 
     {
         apr_hash_index_t *hi;
@@ -3339,19 +3358,19 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
             apr_hash_this(hi, NULL, NULL, &value);
 
             if (value != wsgi_main_interpreter)
-                wsgi_destroy_interpreter((InterpreterObject *)value);
+                wsgi_destroy_interpreter((InterpreterObject *)value, log_pool);
         }
     }
 
     apr_thread_mutex_unlock(wsgi_interp_lock);
 
     if (wsgi_main_interpreter)
-        wsgi_destroy_interpreter(wsgi_main_interpreter);
+        wsgi_destroy_interpreter(wsgi_main_interpreter, log_pool);
     else
         wsgi_log_error(APLOG_WARNING, 0, wsgi_server, WSGI_APLOGNO(0111) "Main interpreter reference is missing "
                                                                          "during cleanup in %s.",
                        wsgi_format_process_context(
-                           wsgi_server->process->pool));
+                           log_pool));
 
     /*
      * wsgi_python_term() drives Py_Finalize, which expects to be
@@ -3362,6 +3381,8 @@ static apr_status_t wsgi_python_child_cleanup(void *data)
 
     if (wsgi_python_initialized)
         wsgi_python_term();
+
+    apr_pool_destroy(log_pool);
 
     return APR_SUCCESS;
 }

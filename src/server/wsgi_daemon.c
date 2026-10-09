@@ -2297,6 +2297,11 @@ static void wsgi_inject_request_timeout(WSGIDaemonThread *thread)
     WSGIModuleState *state = NULL;
 
     /*
+     * Messages are formatted in the monitor thread's own pool, which
+     * no other thread allocates from.
+     */
+
+    /*
      * Discover which sub-interpreter the worker is currently servicing
      * a request in via the WSGIThreadInfo back-pointer published at
      * worker startup. If thread_info has not yet been published, or
@@ -2335,7 +2340,7 @@ static void wsgi_inject_request_timeout(WSGIDaemonThread *thread)
                        "Unable to acquire %s for RequestTimeout "
                        "injection into thread %d of daemon process "
                        "'%s'.",
-                       wsgi_format_interp_name(wsgi_server->process->pool,
+                       wsgi_format_interp_name(wsgi_thread_info(1, 0)->pool,
                                                application_group),
                        thread->id, wsgi_daemon_process->group->name);
         return;
@@ -2814,6 +2819,12 @@ static void wsgi_log_stack_traces(void)
     PyObject *threads = NULL;
 
     /*
+     * Messages are formatted in this thread's own pool, which no
+     * other thread allocates from. Dumps are rare, so the little the
+     * pool grows by each time does not matter.
+     */
+
+    /*
      * Walking interpreter thread frames via _PyThread_CurrentFrames
      * and PyFrame_GetBack relies on the GIL to keep frame chains
      * stable while this thread reads them. With free-threading
@@ -2858,7 +2869,7 @@ static void wsgi_log_stack_traces(void)
                        "Stack-trace dump skipped: %s no longer "
                        "exists in daemon process '%s'.",
                        wsgi_format_interp_name(
-                           wsgi_server->process->pool, group),
+                           wsgi_thread_info(1, 0)->pool, group),
                        wsgi_daemon_process->group->name);
         return;
     }
@@ -2870,7 +2881,7 @@ static void wsgi_log_stack_traces(void)
                        "Stack-trace dump skipped: unable to acquire "
                        "%s in daemon process '%s'.",
                        wsgi_format_interp_name(
-                           wsgi_server->process->pool, group),
+                           wsgi_thread_info(1, 0)->pool, group),
                        wsgi_daemon_process->group->name);
         return;
     }
@@ -2888,7 +2899,7 @@ static void wsgi_log_stack_traces(void)
                        "Dumping stack trace for active Python "
                        "threads of %s in daemon process '%s'.",
                        wsgi_format_interp_name(
-                           wsgi_server->process->pool, group),
+                           wsgi_thread_info(1, 0)->pool, group),
                        wsgi_daemon_process->group->name);
 
         while (PyDict_Next(threads, &i, &id, &frame))
@@ -2985,7 +2996,7 @@ static void wsgi_log_stack_traces(void)
                        "No active Python frames in %s of daemon "
                        "process '%s'; stack-trace dump skipped.",
                        wsgi_format_interp_name(
-                           wsgi_server->process->pool, group),
+                           wsgi_thread_info(1, 0)->pool, group),
                        wsgi_daemon_process->group->name);
     }
     else
@@ -3001,7 +3012,7 @@ static void wsgi_log_stack_traces(void)
                                           "'%s'; stack-trace dump "
                                           "skipped.",
                        wsgi_format_interp_name(
-                           wsgi_server->process->pool, group),
+                           wsgi_thread_info(1, 0)->pool, group),
                        wsgi_daemon_process->group->name);
 
         if (PyErr_Occurred())
