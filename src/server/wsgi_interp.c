@@ -77,6 +77,7 @@ static InterpreterObject *wsgi_main_interpreter = NULL;
  */
 
 apr_hash_t *wsgi_interpreters = NULL;
+apr_pool_t *wsgi_interp_pool = NULL;
 
 /*
  * Helper to set an environment variable in the os.environ dict.
@@ -535,7 +536,7 @@ static void wsgi_resolve_interpreter_options(
             if (!layer_collection)
             {
                 layer_collection = apr_array_make(
-                    wsgi_server->process->pool, 4,
+                    wsgi_interp_pool, 4,
                     sizeof(WSGIPythonPathLayer));
             }
 
@@ -553,7 +554,7 @@ static void wsgi_resolve_interpreter_options(
               wsgi_python_path_layer_compare);
 
         out->python_path_layers = apr_array_make(
-            wsgi_server->process->pool, layer_collection->nelts,
+            wsgi_interp_pool, layer_collection->nelts,
             sizeof(const char *));
 
         for (i = 0; i < layer_collection->nelts; i++)
@@ -609,16 +610,13 @@ InterpreterObject *newInterpreterObject(const char *name)
     wsgi_resolve_interpreter_options(name, &resolved_options);
 
     /*
-     * Allocate the handle from the same pool as the interpreters
-     * table so its lifetime is bounded by the Apache child. The
-     * pool reclaims the struct (and the duplicated name string) on
-     * child shutdown; no explicit free is required from the
+     * Allocate the handle from the interpreter pool, which lives for
+     * the process, so no explicit free is required from the
      * destructor or the failure path.
      */
 
-    self = apr_pcalloc(apr_hash_pool_get(wsgi_interpreters),
-                       sizeof(InterpreterObject));
-    self->name = apr_pstrdup(apr_hash_pool_get(wsgi_interpreters), name);
+    self = apr_pcalloc(wsgi_interp_pool, sizeof(InterpreterObject));
+    self->name = apr_pstrdup(wsgi_interp_pool, name);
 
     if (interp)
     {
@@ -1395,13 +1393,13 @@ InterpreterObject *newInterpreterObject(const char *name)
             delim[0] = DELIM;
             delim[1] = '\0';
 
-            wsgi_python_path = apr_pstrcat(wsgi_server->process->pool,
+            wsgi_python_path = apr_pstrcat(wsgi_interp_pool,
                                            python_home, "/Lib/site-packages", delim,
                                            wsgi_python_path, NULL);
         }
         else
         {
-            wsgi_python_path = apr_pstrcat(wsgi_server->process->pool,
+            wsgi_python_path = apr_pstrcat(wsgi_interp_pool,
                                            python_home, "/Lib/site-packages", NULL);
         }
     }
@@ -3384,12 +3382,18 @@ apr_status_t wsgi_python_child_init(apr_pool_t *p)
 
     /*
      * Create the interpreters table so lookups and iteration can
-     * run without needing the Python GIL. Allocated from the child
-     * pool so its lifetime matches the Apache child; every
-     * InterpreterObject is then allocated from the same pool.
+     * run without needing the Python GIL. It and every
+     * InterpreterObject come from the interpreter pool, which is only
+     * used under wsgi_interp_lock once worker threads are running.
+     * Interpreters are created lazily from request threads, so the
+     * table and the objects cannot live in a pool that anything else
+     * allocates from at the same time.
      */
 
-    wsgi_interpreters = apr_hash_make(p);
+    apr_pool_create(&wsgi_interp_pool, wsgi_server->process->pool);
+    apr_pool_tag(wsgi_interp_pool, "wsgi_interp");
+
+    wsgi_interpreters = apr_hash_make(wsgi_interp_pool);
 
     /*
      * Initialise the key for data related to a thread and force

@@ -26,6 +26,7 @@
 #include "wsgi_module.h"
 #include "wsgi_telemetry.h"
 #include "wsgi_server.h"
+#include "wsgi_interp.h"
 
 #include "apr_thread_mutex.h"
 #include "apr_time.h"
@@ -289,7 +290,14 @@ int wsgi_gc_init_state(PyObject *module)
         return 0;
     }
 
-    pool = wsgi_server->process->pool;
+    /*
+     * The state is created when the mod_wsgi module is initialised in
+     * an interpreter, which for a sub interpreter happens under
+     * wsgi_interp_lock on whichever thread first needs it, so it comes
+     * from the interpreter pool.
+     */
+
+    pool = wsgi_interp_pool;
 
     state = apr_pcalloc(pool, sizeof(*state));
     if (!state)
