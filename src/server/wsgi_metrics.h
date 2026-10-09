@@ -183,7 +183,9 @@ typedef struct
      * only ever used with monitor_lock held. APR pools are not thread
      * safe, and the threads of a process create their blocks at the
      * same moment, so they cannot share a pool with anything that
-     * allocates under a different lock, or none.
+     * allocates under a different lock, or none. The pool lives for
+     * the whole process, since the records are still read while
+     * Python is being shut down at process exit.
      */
 
     apr_pool_t *pool;
@@ -205,9 +207,9 @@ extern apr_time_t wsgi_slow_threshold_us;
 
 /*
  * Allocate the WSGIProcessMetrics instance and create its monitor lock
- * and its own pool from the supplied pool. Called once per child /
- * daemon process at child init, before any other metrics-touching code
- * runs.
+ * from the supplied pool, and its own pool from the process pool.
+ * Called once per child / daemon process at child init, before any
+ * other metrics-touching code runs.
  */
 
 extern void wsgi_process_metrics_init(apr_pool_t *pool);

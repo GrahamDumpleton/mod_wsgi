@@ -51,7 +51,17 @@ void wsgi_process_metrics_init(apr_pool_t *pool)
 
     apr_thread_mutex_create(&m->monitor_lock, APR_THREAD_MUTEX_UNNESTED, pool);
 
-    apr_pool_create(&m->pool, pool);
+    /*
+     * The pool for the thread directory hangs off the Apache process
+     * pool rather than the pool given here. In embedded mode that is
+     * the child pool, and the cleanup which shuts Python down runs
+     * from it; APR destroys a pool's children before it runs the
+     * pool's cleanups, so anything allocated from a child of it would
+     * be gone while the thread records are still being used.
+     */
+
+    apr_pool_create(&m->pool, wsgi_server->process->pool);
+    apr_pool_tag(m->pool, "wsgi_metrics");
 
     /*
      * Phase aggregators need the UINT64_MAX sentinel on min_us so the
