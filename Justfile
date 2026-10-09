@@ -66,6 +66,12 @@ test-all: test test-telemetry
 benchmark *args:
     ./scripts/run-benchmark.sh {{ args }}
 
+# The first run builds an APR with the pool concurrency check under
+# build/. Options are listed at the top of scripts/run-stress.sh.
+# Stress test process start under bursts of requests; extra args are passed through.
+stress *args:
+    ./scripts/run-stress.sh {{ args }}
+
 # Warnings are treated as errors.
 # Build the documentation into docs/_build/html.
 docs:

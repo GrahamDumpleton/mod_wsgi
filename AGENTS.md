@@ -60,8 +60,8 @@ will be committed.
 - The Justfile has targets for the common tasks. Prefer them over
   synthesizing the underlying commands, and run `just --list` to see
   them all. The main ones are `just build`, `just test`,
-  `just test-bounds`, `just test-telemetry`, `just docs` and
-  `just aplogno`.
+  `just test-bounds`, `just test-telemetry`, `just stress`,
+  `just docs` and `just aplogno`.
 
 - After editing anything under src/server/, rebuild with `just build`
   before testing. It runs `uv pip install -e . --no-cache`. Without

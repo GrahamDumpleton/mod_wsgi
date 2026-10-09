@@ -14,6 +14,7 @@ adding new ones. Read this before doing any test related work.
 | Telemetry unit tests | `just test-telemetry` | The separate `mod_wsgi-telemetry` package |
 | Documentation build | `just docs` | That the Sphinx docs build without warnings |
 | Benchmark | `just benchmark` | Throughput and latency. Not a pass or fail test |
+| Stress test | `just stress` | Process start under bursts of concurrent requests, with the APR pool concurrency check. Fails on a crash, an error response, shared per-thread state or a pool collision |
 
 The Justfile targets are thin wrappers around the scripts in
 `scripts/`, which can also be run directly. `just --list` shows them
@@ -62,6 +63,9 @@ of the repository. `scripts/run-tests.sh` runs
   versions.
 
 - `bombardier`, for the benchmark script only.
+
+- A C compiler, `make` and network access the first time the stress
+  test is run, to build its APR.
 
 ## Integration tests
 
@@ -190,6 +194,71 @@ first time.
 - Do not write the total number of passing assertions into any file.
   It changes whenever a test is added.
 
+## Stress test
+
+```
+just stress                        # the daemon scenario, 60 seconds
+just stress -s embedded            # the embedded scenario
+just stress --telemetry            # with the telemetry reporter on
+just stress -d 300 -t 50           # longer, with more threads
+```
+
+`just stress` runs `./scripts/run-stress.sh` with the same arguments.
+The options are listed at the top of the script.
+
+The integration tests apply one request at a time to a long lived
+process, so they never find a race at process start. The stress test
+exists for that: it recycles processes after a fixed number of
+requests and sends bursts of concurrent requests with a pause between
+them, so that every process start is hit with all of its threads busy
+at once. The pause is what lets the recycling happen, since a process
+only restarts once no request is in flight.
+
+How a run works:
+
+- The first run downloads the APR source and builds it under `build/`
+  with `--enable-pool-concurrency-check`, which makes a process abort
+  with a message in the error log the moment two threads use one APR
+  pool at the same time. A small patch adds a C backtrace to that
+  message. Later runs reuse the build. `--no-debug-apr` skips it and
+  runs the host's own APR, which still finds crashes and errors but
+  only when a race happens to corrupt something.
+
+- The server is set up with `mod_wsgi-express setup-server` into
+  `httpd-stress/` in the root of the repository, with the Apache httpd
+  run through a wrapper which loads the debug APR in place of the one
+  it was linked with. A scenario file from `tests/stress/` is included
+  into the configuration. It names its mode and the paths it mounts in
+  comment lines at the top, and gets the thread count and recycling
+  limit through `Define` variables.
+
+- `tests/stress/burst.py` sends the bursts, spread across the paths in
+  turn. `tests/stress/shared_state.py` is the application behind every
+  path: it records which native thread first used each mod_wsgi thread
+  id and each Python thread state, and reports to the error log when a
+  different native thread turns up with the same one.
+
+- The result is a count of process starts, process deaths, requests
+  not returning 200, shared state reports and pool concurrency aborts.
+  Anything but zero in the last four is a failure. The error log is
+  left in `httpd-stress/error_log`, and when the check fired, the
+  first abort's backtrace is printed. With the debug APR a collision
+  aborts the process before it can show up as anything else, so the
+  shared state count is normally zero in that mode and only becomes
+  the signal with `--no-debug-apr`.
+
+The two scenarios are `daemon`, with a sub interpreter preloaded at
+process start, the main interpreter, and a sub interpreter created on
+first request, and `embedded`, with the Apache children recycled
+through `MaxConnectionsPerChild`. `--telemetry` turns on the reporter
+with slow request records for either, which exercises the reporter
+thread and the metrics paths alongside the request threads.
+
+A new scenario is a `.conf` file in `tests/stress/` with the same two
+comment lines at the top. Keep the daemon socket path short: the
+server root is under the repository for that reason, and a long path
+is silently truncated.
+
 ## Changes that depend on the Python version
 
 When a change adds or alters a `#if PY_VERSION_HEX >= 0x...` guard
@@ -263,6 +332,10 @@ at it.
 
 - For a change involving a Python version guard: `just test-bounds`
   with no failures under either version.
+
+- For a change to how the module uses APR pools, threads or
+  interpreters: `just stress` and `just stress -s embedded`, each
+  with and without `--telemetry`, all passing.
 
 - For a change under `telemetry/`: `just test-telemetry`.
 
