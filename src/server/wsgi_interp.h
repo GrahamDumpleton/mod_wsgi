@@ -30,7 +30,6 @@ typedef struct
 {
     char *name;
     PyInterpreterState *interp;
-    apr_hash_t *tstate_table;
 } InterpreterObject;
 
 extern InterpreterObject *newInterpreterObject(const char *name);

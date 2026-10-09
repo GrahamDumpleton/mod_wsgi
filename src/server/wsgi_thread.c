@@ -80,6 +80,10 @@ WSGIThreadInfo *wsgi_thread_info(int create, int request)
 
         thread_handle->log_buffer = NULL;
 
+        apr_pool_create(&thread_handle->pool, m->pool);
+        apr_pool_tag(thread_handle->pool, "wsgi_thread");
+        thread_handle->thread_states = apr_hash_make(thread_handle->pool);
+
         if (!m->thread_details)
         {
             m->thread_details = apr_array_make(

@@ -180,19 +180,32 @@ typedef struct
 {
     /*
      * Per-process thread identity. thread_id is the 0-based slot
-     * assigned at first wsgi_thread_info() call (also keys the
-     * per-interpreter PyThreadState table in wsgi_interp.c).
-     * request_thread is set to 1 the first time wsgi_thread_info()
-     * is called with request=1, marking this thread as a worker
-     * that services requests (filters the directory iteration in
-     * the snapshot/accessor paths). request_count is the lifetime
-     * count of requests this thread has served, incremented once
-     * per request in the adapter.
+     * assigned at first wsgi_thread_info() call. request_thread is
+     * set to 1 the first time wsgi_thread_info() is called with
+     * request=1, marking this thread as a worker that services
+     * requests (filters the directory iteration in the
+     * snapshot/accessor paths). request_count is the lifetime count
+     * of requests this thread has served, incremented once per
+     * request in the adapter.
      */
 
     int thread_id;
     int request_thread;
     apr_int64_t request_count;
+
+    /*
+     * The thread's own pool, and the Python thread states this
+     * thread holds against named sub interpreters, keyed by
+     * interpreter name. Both are created with the block, under
+     * monitor_lock, and from then on are touched only by the thread
+     * the block belongs to, so no lock is needed to use them. A
+     * thread state is created the first time the thread acquires an
+     * interpreter and kept for the life of the thread, so that
+     * thread local data persists between requests.
+     */
+
+    apr_pool_t *pool;
+    apr_hash_t *thread_states;
 
     /*
      * Per-request Python objects, populated by wsgi_start_request

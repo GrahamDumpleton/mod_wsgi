@@ -1630,8 +1630,6 @@ InterpreterObject *newInterpreterObject(const char *name)
     {
         WSGIThreadInfo *thread_handle = NULL;
 
-        self->tstate_table = apr_hash_make(wsgi_server->process->pool);
-
         thread_handle = wsgi_thread_info(1, 0);
 
         wsgi_log_error_locked(APLOG_TRACE1, 0, wsgi_server,
@@ -1639,8 +1637,8 @@ InterpreterObject *newInterpreterObject(const char *name)
                               "interpreter '%s'.",
                               thread_handle->thread_id, self->name);
 
-        apr_hash_set(self->tstate_table, &thread_handle->thread_id,
-                     sizeof(thread_handle->thread_id), tstate);
+        apr_hash_set(thread_handle->thread_states, self->name,
+                     APR_HASH_KEY_STRING, tstate);
 
         PyThreadState_Swap(save_tstate);
     }
@@ -1709,8 +1707,8 @@ static void wsgi_destroy_interpreter(InterpreterObject *self)
 
         thread_handle = wsgi_thread_info(1, 0);
 
-        tstate = apr_hash_get(self->tstate_table, &thread_handle->thread_id,
-                              sizeof(thread_handle->thread_id));
+        tstate = apr_hash_get(thread_handle->thread_states, self->name,
+                              APR_HASH_KEY_STRING);
 
         if (!tstate)
         {
@@ -1738,8 +1736,8 @@ static void wsgi_destroy_interpreter(InterpreterObject *self)
                                   "against interpreter '%s'.",
                                   thread_handle->thread_id, self->name);
 
-            apr_hash_set(self->tstate_table, &thread_handle->thread_id,
-                         sizeof(thread_handle->thread_id), tstate);
+            apr_hash_set(thread_handle->thread_states, self->name,
+                         APR_HASH_KEY_STRING, tstate);
         }
 
         /*
@@ -1781,9 +1779,10 @@ static void wsgi_destroy_interpreter(InterpreterObject *self)
          * tstate against the sub interpreter via PyThreadState_New.
          *
          * The interpreter's full thread chain is walked rather than
-         * just our own tstate_table so any tstate that ended up on
-         * the chain by some path other than newInterpreterObject /
-         * wsgi_acquire_interpreter is still released. Each tstate
+         * the thread states recorded per thread so any tstate that
+         * ended up on the chain by some path other than
+         * newInterpreterObject / wsgi_acquire_interpreter is still
+         * released. Each tstate
          * is swapped in before being cleared so finalizers triggered
          * by the clear see that tstate as current, then current is
          * restored before delete because PyThreadState_Delete
@@ -2549,12 +2548,14 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
     interp = handle->interp;
 
     /*
-     * Create new thread state object. We should only be
-     * getting called where no current active thread
-     * state, so no need to remember the old one. When
-     * working with the main Python interpreter always
-     * use the simplified API for GIL locking so any
-     * extension modules which use that will still work.
+     * Find the thread state this thread holds against the sub
+     * interpreter, creating it on the first acquire. The record is
+     * on the thread's own WSGIThreadInfo block, which only this
+     * thread reads or writes, so no lock is needed and the request
+     * path shares nothing with other threads here. When working with
+     * the main Python interpreter always use the simplified API for
+     * GIL locking so any extension modules which use that will still
+     * work.
      */
 
     if (*name)
@@ -2564,8 +2565,8 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
 
         thread_handle = wsgi_thread_info(1, 0);
 
-        tstate = apr_hash_get(handle->tstate_table, &thread_handle->thread_id,
-                              sizeof(thread_handle->thread_id));
+        tstate = apr_hash_get(thread_handle->thread_states, handle->name,
+                              APR_HASH_KEY_STRING);
 
         if (!tstate)
         {
@@ -2592,8 +2593,8 @@ InterpreterObject *wsgi_acquire_interpreter(const char *name)
                                   "against interpreter '%s'.",
                                   thread_handle->thread_id, handle->name);
 
-            apr_hash_set(handle->tstate_table, &thread_handle->thread_id,
-                         sizeof(thread_handle->thread_id), tstate);
+            apr_hash_set(thread_handle->thread_states, handle->name,
+                         APR_HASH_KEY_STRING, tstate);
         }
 
         /* Time the narrow GIL acquire only: interpreter creation and
