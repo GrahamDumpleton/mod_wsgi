@@ -393,14 +393,18 @@ echo "Pool concurrency aborts:   $aborts"
 echo
 echo "Error log: $ERROR_LOG"
 
-# The backtrace frames follow the abort line in the error log, mixed
-# with log lines from other processes, which all start with a bracket.
-# Only the first abort is shown, up to the line of the next one.
+# The backtrace frames sit next to the abort line in the error log,
+# before or after it depending on how the two writes were ordered,
+# mixed with log lines from other processes, which all start with a
+# bracket. Only the first abort is shown, up to the line of the next.
 
 if [ "$aborts" -gt 0 ]; then
     echo
     echo "First pool concurrency abort:"
-    awk '/pool concurrency check/ { n++ } n == 1 && !/^\[/' "$ERROR_LOG" | \
+    first=$(grep -n -m 1 "pool concurrency check" "$ERROR_LOG" | cut -d: -f1)
+    from=$((first > 40 ? first - 40 : 1))
+    sed -n "${from},\$p" "$ERROR_LOG" | \
+        awk '/pool concurrency check/ { n++ } n <= 1 && !/^\[/' | \
         head -24 | sed 's/^/  /'
 fi
 
