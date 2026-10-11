@@ -22,18 +22,22 @@ Bugs Fixed
   by every thread, without a lock, and APR pools are not thread safe.
   Two threads sharing a record shared the ``mod_wsgi.thread_id`` value
   and, for a named application group, the same Python thread state.
-  Concurrent requests on those threads then shared ``contextvars``
-  state, so a request could see and change the request context of
-  another, such as a web framework's current request and session, and
-  on Python 3.14 and later the process crashed. In daemon mode every
-  worker thread creates its record as the process starts, which made
-  the race likely on every process start since 6.0.0; in embedded mode
-  the first requests on a fresh Apache child could do the same. The
-  same lack of locking affected the table of Python thread states kept
-  for each sub interpreter, the creation of worker threads at daemon
-  process start, the lazily allocated metrics state, and messages
-  logged on error paths. Everything allocated once threads are running
-  now comes from a pool used under one lock or belonging to one
+  Concurrent requests on those threads then shared the Python state kept
+  per thread, both context variables and ``threading.local`` data, so a
+  request could see and change the request context of another, such as a
+  web framework's current request and session or its per-thread database
+  connection, and on Python 3.14 and later the shared thread state
+  crashed the process. With ``WSGIApplicationGroup %{GLOBAL}`` the
+  thread state is not shared and no framework or application state
+  leaks, but the shared record could still crash the process. In daemon
+  mode every worker thread creates its record as the process starts,
+  which made the race likely on every process start since 6.0.0; in
+  embedded mode the first requests on a fresh Apache child could do the
+  same. The same lack of locking affected the table of Python thread
+  states kept for each sub interpreter, the creation of worker threads
+  at daemon process start, the lazily allocated metrics state, and
+  messages logged on error paths. Everything allocated once threads are
+  running now comes from a pool used under one lock or belonging to one
   thread. Reported by hinohi as GHSA-q67r-wxfm-97hj.
 
 * The ``configure`` script used by the classic ``make`` based build now
