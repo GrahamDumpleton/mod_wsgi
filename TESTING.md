@@ -220,9 +220,10 @@ How a run works:
   with `--enable-pool-concurrency-check`, which makes a process abort
   with a message in the error log the moment two threads use one APR
   pool at the same time. A small patch adds a C backtrace to that
-  message. Later runs reuse the build. `--no-debug-apr` skips it and
-  runs the host's own APR, which still finds crashes and errors but
-  only when a race happens to corrupt something.
+  message and writes both straight to the error log's file descriptor.
+  Later runs reuse the build. `--no-debug-apr` skips it and runs the
+  host's own APR, which still finds crashes and errors but only when a
+  race happens to corrupt something.
 
 - The server is set up with `mod_wsgi-express setup-server` into
   `httpd-stress/` in the root of the repository, with the Apache httpd

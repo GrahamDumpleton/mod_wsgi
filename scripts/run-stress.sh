@@ -113,7 +113,10 @@ fi
 # The APR is built once under build/ and reused. The pool concurrency
 # check prints the pool and the two thread ids involved; the small
 # patch applied to the source adds the C backtrace of the thread which
-# detected the collision, so the error log shows where it happened.
+# detected the collision, so the error log shows where it happened,
+# and writes both straight to file descriptor 2 rather than through
+# stdio, so the message reaches the error log the same way the
+# backtrace does.
 
 build_debug_apr() {
     local tarball="$BUILD_DIR/apr-$APR_VERSION.tar.gz"
@@ -149,39 +152,58 @@ source = open(path).read()
 # Several threads can detect the same collision at once, so the first
 # one to report takes a mutex and keeps it: its message and backtrace
 # come out whole, and the others block until the abort ends the process.
+# The message is formatted into a buffer and written to file descriptor
+# 2 directly, as the backtrace is, so that it does not depend on the
+# state of the C library's stderr stream in the aborting process.
 
-anchor = '    fprintf(stderr, "pool concurrency check: pool %p(%s), thread cur %lx "\n'
-replacement = '''#if defined(__APPLE__) || defined(__GLIBC__)
-    static pthread_mutex_t report_mutex = PTHREAD_MUTEX_INITIALIZER;
-    pthread_mutex_lock(&report_mutex);
-#endif
-''' + anchor
-
-abort_anchor = '                    in_use_string[old], in_use_string[new]);\n    abort();\n'
-abort_replacement = abort_anchor.replace('    abort();\n', '''#if defined(__APPLE__) || defined(__GLIBC__)
-    {
-        void *frames[64];
-        int count = backtrace(frames, 64);
-        backtrace_symbols_fd(frames, count, 2);
-    }
-#endif
+body = """    fprintf(stderr, "pool concurrency check: pool %p(%s), thread cur %lx "
+                    "in use by %lx, state %s -> %s \\n",
+                    pool, pool->tag, (unsigned long)apr_os_thread_current(),
+                    (unsigned long)pool->in_use_by,
+                    in_use_string[old], in_use_string[new]);
     abort();
-''')
+"""
+
+replacement = """#if defined(__APPLE__) || defined(__GLIBC__)
+    static pthread_mutex_t report_mutex = PTHREAD_MUTEX_INITIALIZER;
+    char message[256];
+    int length;
+    void *frames[64];
+    int count;
+
+    pthread_mutex_lock(&report_mutex);
+
+    length = snprintf(message, sizeof(message),
+                      "pool concurrency check: pool %p(%s), thread cur %lx "
+                      "in use by %lx, state %s -> %s \\n",
+                      pool, pool->tag, (unsigned long)apr_os_thread_current(),
+                      (unsigned long)pool->in_use_by,
+                      in_use_string[old], in_use_string[new]);
+    if (length > (int)sizeof(message) - 1)
+        length = (int)sizeof(message) - 1;
+    if (length > 0)
+        (void)write(2, message, (size_t)length);
+
+    count = backtrace(frames, 64);
+    backtrace_symbols_fd(frames, count, 2);
+#else
+""" + body.replace("    abort();\n", "") + """#endif
+    abort();
+"""
 
 include = '#if APR_POOL_CONCURRENCY_CHECK\n\nstatic const char * const in_use_string'
-include_replacement = '''#if APR_POOL_CONCURRENCY_CHECK
+include_replacement = """#if APR_POOL_CONCURRENCY_CHECK
 
 #if defined(__APPLE__) || defined(__GLIBC__)
 #include <execinfo.h>
 #include <pthread.h>
+#include <unistd.h>
 #endif
 
-static const char * const in_use_string'''
+static const char * const in_use_string"""
 
-if (source.count(anchor) == 1 and source.count(abort_anchor) == 1
-        and source.count(include) == 1):
-    source = source.replace(anchor, replacement)
-    source = source.replace(abort_anchor, abort_replacement)
+if source.count(body) == 1 and source.count(include) == 1:
+    source = source.replace(body, replacement)
     source = source.replace(include, include_replacement)
     open(path, 'w').write(source)
 else:
@@ -412,12 +434,18 @@ ERROR_LOG="$SERVER_ROOT/error_log"
 errors=$(sed -n 's/^TOTAL .*errors=\([0-9]*\).*/\1/p' "$SERVER_ROOT/burst.log")
 starts=$(grep -c "Initializing Python runtime" "$ERROR_LOG" || true)
 deaths=$(grep -c "exit signal" "$ERROR_LOG" || true)
+abort_deaths=$(grep -c "exit signal Abort" "$ERROR_LOG" || true)
 shared=$(grep -c "^STRESS shared" "$ERROR_LOG" || true)
 aborts=$(grep -c "pool concurrency check" "$ERROR_LOG" || true)
+
+# A death by the abort signal without a matching pool concurrency check
+# line means the check fired but its message did not reach the error
+# log, so the two counts are shown side by side.
 
 echo
 echo "Process starts:            $starts"
 echo "Process deaths:            $deaths"
+echo "Deaths by abort signal:    $abort_deaths"
 echo "Requests not returning 200: $errors"
 echo "Shared per-thread state:   $shared"
 echo "Pool concurrency aborts:   $aborts"
