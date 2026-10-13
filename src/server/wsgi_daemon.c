@@ -2297,6 +2297,11 @@ static void wsgi_inject_request_timeout(WSGIDaemonThread *thread)
     WSGIModuleState *state = NULL;
 
     /*
+     * Messages are formatted in the monitor thread's own pool, which
+     * no other thread allocates from.
+     */
+
+    /*
      * Discover which sub-interpreter the worker is currently servicing
      * a request in via the WSGIThreadInfo back-pointer published at
      * worker startup. If thread_info has not yet been published, or
@@ -2335,7 +2340,7 @@ static void wsgi_inject_request_timeout(WSGIDaemonThread *thread)
                        "Unable to acquire %s for RequestTimeout "
                        "injection into thread %d of daemon process "
                        "'%s'.",
-                       wsgi_format_interp_name(wsgi_server->process->pool,
+                       wsgi_format_interp_name(wsgi_thread_info(1, 0)->pool,
                                                application_group),
                        thread->id, wsgi_daemon_process->group->name);
         return;
@@ -2814,6 +2819,12 @@ static void wsgi_log_stack_traces(void)
     PyObject *threads = NULL;
 
     /*
+     * Messages are formatted in this thread's own pool, which no
+     * other thread allocates from. Dumps are rare, so the little the
+     * pool grows by each time does not matter.
+     */
+
+    /*
      * Walking interpreter thread frames via _PyThread_CurrentFrames
      * and PyFrame_GetBack relies on the GIL to keep frame chains
      * stable while this thread reads them. With free-threading
@@ -2858,7 +2869,7 @@ static void wsgi_log_stack_traces(void)
                        "Stack-trace dump skipped: %s no longer "
                        "exists in daemon process '%s'.",
                        wsgi_format_interp_name(
-                           wsgi_server->process->pool, group),
+                           wsgi_thread_info(1, 0)->pool, group),
                        wsgi_daemon_process->group->name);
         return;
     }
@@ -2870,7 +2881,7 @@ static void wsgi_log_stack_traces(void)
                        "Stack-trace dump skipped: unable to acquire "
                        "%s in daemon process '%s'.",
                        wsgi_format_interp_name(
-                           wsgi_server->process->pool, group),
+                           wsgi_thread_info(1, 0)->pool, group),
                        wsgi_daemon_process->group->name);
         return;
     }
@@ -2888,7 +2899,7 @@ static void wsgi_log_stack_traces(void)
                        "Dumping stack trace for active Python "
                        "threads of %s in daemon process '%s'.",
                        wsgi_format_interp_name(
-                           wsgi_server->process->pool, group),
+                           wsgi_thread_info(1, 0)->pool, group),
                        wsgi_daemon_process->group->name);
 
         while (PyDict_Next(threads, &i, &id, &frame))
@@ -2985,7 +2996,7 @@ static void wsgi_log_stack_traces(void)
                        "No active Python frames in %s of daemon "
                        "process '%s'; stack-trace dump skipped.",
                        wsgi_format_interp_name(
-                           wsgi_server->process->pool, group),
+                           wsgi_thread_info(1, 0)->pool, group),
                        wsgi_daemon_process->group->name);
     }
     else
@@ -3001,7 +3012,7 @@ static void wsgi_log_stack_traces(void)
                                           "'%s'; stack-trace dump "
                                           "skipped.",
                        wsgi_format_interp_name(
-                           wsgi_server->process->pool, group),
+                           wsgi_thread_info(1, 0)->pool, group),
                        wsgi_daemon_process->group->name);
 
         if (PyErr_Occurred())
@@ -3015,6 +3026,7 @@ static void wsgi_log_stack_traces(void)
 
 static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 {
+    apr_pool_t *thread_pool = NULL;
     apr_threadattr_t *thread_attr;
     apr_thread_t *reaper = NULL;
 
@@ -3039,9 +3051,23 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     if (daemon->group->maximum_requests)
         wsgi_request_count = daemon->group->maximum_requests;
 
+    /*
+     * Every thread of the daemon process, and the mutexes and
+     * condition variables that go with the worker threads, come from
+     * a pool of their own which only this thread uses. The worker
+     * threads are started one at a time and the first of them serve
+     * requests while the rest are still being created, so the main
+     * thread must not allocate from a pool that request threads
+     * could be allocating from at the same time. APR pools are not
+     * thread safe.
+     */
+
+    apr_pool_create(&thread_pool, p);
+    apr_pool_tag(thread_pool, "wsgi_daemon_threads");
+
     /* Ensure that threads are joinable. */
 
-    apr_threadattr_create(&thread_attr, p);
+    apr_threadattr_create(&thread_attr, thread_pool);
     apr_threadattr_detach_set(thread_attr, 0);
 
 #if (APR_MAJOR_VERSION >= 1)
@@ -3086,7 +3112,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     if (wsgi_deadlock_timeout || wsgi_idle_timeout)
     {
         rv = apr_thread_create(&reaper, thread_attr, wsgi_monitor_thread,
-                               daemon, p);
+                               daemon, thread_pool);
 
         if (rv != APR_SUCCESS)
         {
@@ -3100,7 +3126,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     if (wsgi_deadlock_timeout)
     {
         rv = apr_thread_create(&reaper, thread_attr, wsgi_deadlock_thread,
-                               daemon, p);
+                               daemon, thread_pool);
 
         if (rv != APR_SUCCESS)
         {
@@ -3119,7 +3145,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
      */
 
     rv = apr_thread_create(&wsgi_signal_dispatcher, thread_attr,
-                           wsgi_signal_dispatcher_thread, daemon, p);
+                           wsgi_signal_dispatcher_thread, daemon, thread_pool);
 
     if (rv != APR_SUCCESS)
     {
@@ -3138,17 +3164,17 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
      */
 
     if (daemon->group->threads != 0)
-        wsgi_telemetry_start_reporter(p);
+        wsgi_telemetry_start_reporter(thread_pool);
 
     /* Initialise worker stack. */
 
-    wsgi_worker_stack = (WSGIThreadStack *)apr_palloc(p,
+    wsgi_worker_stack = (WSGIThreadStack *)apr_palloc(thread_pool,
                                                       sizeof(WSGIThreadStack));
     wsgi_worker_stack->state = WSGI_STACK_NO_LISTENER | WSGI_STACK_LAST;
 
     /* Start the required number of threads. */
 
-    wsgi_worker_threads = (WSGIDaemonThread *)apr_pcalloc(p,
+    wsgi_worker_threads = (WSGIDaemonThread *)apr_pcalloc(thread_pool,
                                                           daemon->group->threads * sizeof(WSGIDaemonThread));
 
     wsgi_log_error(APLOG_DEBUG, 0, wsgi_server,
@@ -3165,7 +3191,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
 
         /* Create the mutex and condition variable for this thread. */
 
-        rv = apr_thread_cond_create(&thread->condition, p);
+        rv = apr_thread_cond_create(&thread->condition, thread_pool);
 
         if (rv != APR_SUCCESS)
         {
@@ -3179,7 +3205,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
         }
 
         rv = apr_thread_mutex_create(&thread->mutex,
-                                     APR_THREAD_MUTEX_DEFAULT, p);
+                                     APR_THREAD_MUTEX_DEFAULT, thread_pool);
 
         if (rv != APR_SUCCESS)
         {
@@ -3199,7 +3225,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
         thread->request = 0;
 
         rv = apr_thread_create(&thread->thread, thread_attr,
-                               wsgi_daemon_thread, thread, p);
+                               wsgi_daemon_thread, thread, thread_pool);
 
         if (rv != APR_SUCCESS)
         {
@@ -3382,7 +3408,7 @@ static void wsgi_daemon_main(apr_pool_t *p, WSGIDaemonProcess *daemon)
     if (daemon->group->shutdown_timeout)
     {
         rv = apr_thread_create(&reaper, thread_attr, wsgi_reaper_thread,
-                               daemon, p);
+                               daemon, thread_pool);
 
         if (rv != APR_SUCCESS)
         {

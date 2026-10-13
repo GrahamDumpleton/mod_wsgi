@@ -30,7 +30,6 @@ typedef struct
 {
     char *name;
     PyInterpreterState *interp;
-    apr_hash_t *tstate_table;
 } InterpreterObject;
 
 extern InterpreterObject *newInterpreterObject(const char *name);
@@ -57,6 +56,17 @@ extern apr_thread_mutex_t *wsgi_shutdown_lock;
  */
 
 extern apr_hash_t *wsgi_interpreters;
+
+/*
+ * Pool for the interpreters table, the InterpreterObject structs and
+ * everything else allocated when an interpreter is created. It is only
+ * used with wsgi_interp_lock held, or while the process is single
+ * threaded at child init and child cleanup. It is a child of the
+ * Apache process pool so that it is still there when the child pool's
+ * cleanup shuts Python down.
+ */
+
+extern apr_pool_t *wsgi_interp_pool;
 
 extern char *wsgi_module_name(apr_pool_t *pool, const char *filename);
 

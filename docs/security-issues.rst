@@ -37,9 +37,19 @@ support policy.
 Known advisories
 ----------------
 
-The following CVEs have been issued against past versions of
-mod_wsgi. All of them have been fixed; running a current release of
-mod_wsgi means none of them apply.
+The following advisories have been issued against past versions of
+mod_wsgi, with the CVE number where one has been assigned. All of
+them have been fixed; running a current release of mod_wsgi means
+none of them apply.
+
+* **GHSA-q67r-wxfm-97hj**: Shared per-thread state at process start.
+  A race when a process started, or took its first requests, could
+  leave two request threads sharing one per-thread record and, in a
+  named application group, one Python thread state. Concurrent
+  requests on those threads could then see and change each other's
+  request context, such as a web framework's current request and
+  session, and the process could crash. Affected all versions prior
+  to 6.1.1; fixed in 6.1.1.
 
 * **CVE-2022-2255**: Trusted proxy header bypass. The
   ``X-Client-IP`` request header was not stripped from requests

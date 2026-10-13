@@ -37,8 +37,21 @@
 
 WSGIProcessMetrics *wsgi_process_metrics = NULL;
 
+/*
+ * Per-slot scratch arrays for the request metrics accessor, one entry
+ * per request thread, allocated at process init so the accessor never
+ * allocates while running.
+ */
+
+static int *wsgi_slot_completed_snap = NULL;
+static apr_time_t *wsgi_slot_busy_time_us_snap = NULL;
+static apr_time_t *wsgi_slot_cpu_time_us_snap = NULL;
+static apr_time_t *wsgi_slot_current_elapsed_us_snap = NULL;
+static apr_time_t *wsgi_slot_max_duration_us_snap = NULL;
+
 static void wsgi_phase_aggregate_reset(WSGIPhaseAggregate *p);
 static int wsgi_query_request_threads_maximum(void);
+static void wsgi_slow_ring_create(WSGIProcessMetrics *m);
 
 static inline apr_uint64_t wsgi_clamp_us_delta(apr_time_t a, apr_time_t b)
 {
@@ -50,6 +63,18 @@ void wsgi_process_metrics_init(apr_pool_t *pool)
     WSGIProcessMetrics *m = apr_pcalloc(pool, sizeof(*m));
 
     apr_thread_mutex_create(&m->monitor_lock, APR_THREAD_MUTEX_UNNESTED, pool);
+
+    /*
+     * The pool for the thread directory hangs off the Apache process
+     * pool rather than the pool given here. In embedded mode that is
+     * the child pool, and the cleanup which shuts Python down runs
+     * from it; APR destroys a pool's children before it runs the
+     * pool's cleanups, so anything allocated from a child of it would
+     * be gone while the thread records are still being used.
+     */
+
+    apr_pool_create(&m->pool, wsgi_server->process->pool);
+    apr_pool_tag(m->pool, "wsgi_metrics");
 
     /*
      * Phase aggregators need the UINT64_MAX sentinel on min_us so the
@@ -67,6 +92,25 @@ void wsgi_process_metrics_init(apr_pool_t *pool)
     wsgi_phase_aggregate_reset(&m->output_write_time);
 
     m->request_threads_maximum = wsgi_query_request_threads_maximum();
+
+    /*
+     * Everything sized from the thread count is allocated here, while
+     * the process is still single threaded, rather than on first use
+     * from a request thread.
+     */
+
+    wsgi_slow_ring_create(m);
+
+    wsgi_slot_completed_snap = (int *)apr_pcalloc(
+        m->pool, m->request_threads_maximum * sizeof(int));
+    wsgi_slot_busy_time_us_snap = (apr_time_t *)apr_pcalloc(
+        m->pool, m->request_threads_maximum * sizeof(apr_time_t));
+    wsgi_slot_cpu_time_us_snap = (apr_time_t *)apr_pcalloc(
+        m->pool, m->request_threads_maximum * sizeof(apr_time_t));
+    wsgi_slot_current_elapsed_us_snap = (apr_time_t *)apr_pcalloc(
+        m->pool, m->request_threads_maximum * sizeof(apr_time_t));
+    wsgi_slot_max_duration_us_snap = (apr_time_t *)apr_pcalloc(
+        m->pool, m->request_threads_maximum * sizeof(apr_time_t));
 
 #ifdef HAVE_TIMES
 #ifdef _SC_CLK_TCK
@@ -145,7 +189,6 @@ extern double wsgi_telemetry_interval;
  * Forward declarations; implementations live after wsgi_metrics_snapshot.
  */
 
-static void wsgi_slow_ring_ensure_locked(void);
 static void wsgi_slow_snapshot_fields(wsgi_slow_request_t *rec, request_rec *r);
 static void wsgi_slow_push_completed_locked(const wsgi_slow_request_t *rec);
 static void wsgi_slow_fill_phase_durations(wsgi_slow_request_t *rec,
@@ -634,8 +677,6 @@ WSGIThreadInfo *wsgi_start_request(request_rec *r)
         WSGIActiveSlot *slot = &thread_info->slot;
         apr_time_t now = apr_time_now();
 
-        wsgi_slow_ring_ensure_locked();
-
         slot->in_use = 1;
         slot->r = r;
         slot->start_us = now;
@@ -1038,14 +1079,6 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
                                                           &stop_request_count);
 
     /*
-     * Ensure slot arrays exist even before the first request so a tick
-     * that fires on an idle worker can still emit a well-formed
-     * (all-zero) slot payload. Idempotent.
-     */
-
-    wsgi_slow_ring_ensure_locked();
-
-    /*
      * First call seeds counters and returns a not-yet-seeded sample.
      */
 
@@ -1316,38 +1349,16 @@ int wsgi_metrics_snapshot(wsgi_telemetry_sample_t *out)
 /* ------------------------------------------------------------------------- */
 
 /*
- * Slow-request helpers. Lazy-allocate the completion ring on first
- * request so there is no cost when the feature is off. Copy strings
- * out of a live request_rec under the monitor lock, truncating each
- * field with an "..." suffix so the UI can show where the cut was
- * made.
+ * Slow-request helpers. The completion ring is sized and allocated at
+ * process init. Copy strings out of a live request_rec under the
+ * monitor lock, truncating each field with an "..." suffix so the UI
+ * can show where the cut was made.
  */
 
-static void wsgi_slow_ring_ensure_locked(void)
+static void wsgi_slow_ring_create(WSGIProcessMetrics *m)
 {
-    int max = 0;
-    int is_threaded = 0;
+    int max = m->request_threads_maximum;
     int ring = WSGI_SLOW_RING_FLOOR;
-
-    if (wsgi_process_metrics->slow_completed_ring)
-        return;
-
-#if defined(MOD_WSGI_WITH_DAEMONS)
-    if (wsgi_daemon_process)
-    {
-        max = wsgi_daemon_process->group->threads;
-    }
-    else
-    {
-        ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
-        if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
-            ap_mpm_query(AP_MPMQ_MAX_THREADS, &max);
-    }
-#else
-    ap_mpm_query(AP_MPMQ_IS_THREADED, &is_threaded);
-    if (is_threaded != AP_MPMQ_NOT_SUPPORTED)
-        ap_mpm_query(AP_MPMQ_MAX_THREADS, &max);
-#endif
 
     if (max <= 0)
         max = 1;
@@ -1382,9 +1393,9 @@ static void wsgi_slow_ring_ensure_locked(void)
         }
     }
 #endif
-    wsgi_process_metrics->slow_completed_ring = (wsgi_slow_request_t *)apr_pcalloc(
-        wsgi_server_config->pool, ring * sizeof(*wsgi_process_metrics->slow_completed_ring));
-    wsgi_process_metrics->slow_completed_ring_size = ring;
+    m->slow_completed_ring = (wsgi_slow_request_t *)apr_pcalloc(
+        m->pool, ring * sizeof(*m->slow_completed_ring));
+    m->slow_completed_ring_size = ring;
 }
 
 /*
@@ -2085,11 +2096,11 @@ static PyObject *wsgi_request_metrics(void)
     double total_cpu_time = 0.0;
 
     int request_threads_maximum = wsgi_process_metrics->request_threads_maximum;
-    static int *slot_completed_snap = NULL;
-    static apr_time_t *slot_busy_time_us_snap = NULL;
-    static apr_time_t *slot_cpu_time_us_snap = NULL;
-    static apr_time_t *slot_current_elapsed_us_snap = NULL;
-    static apr_time_t *slot_max_duration_us_snap = NULL;
+    int *slot_completed_snap = wsgi_slot_completed_snap;
+    apr_time_t *slot_busy_time_us_snap = wsgi_slot_busy_time_us_snap;
+    apr_time_t *slot_cpu_time_us_snap = wsgi_slot_cpu_time_us_snap;
+    apr_time_t *slot_current_elapsed_us_snap = wsgi_slot_current_elapsed_us_snap;
+    apr_time_t *slot_max_duration_us_snap = wsgi_slot_max_duration_us_snap;
 
     apr_uint64_t interval_requests = 0;
     double server_time_total = 0;
@@ -2167,25 +2178,6 @@ static PyObject *wsgi_request_metrics(void)
         return NULL;
     }
 
-    if (!slot_completed_snap)
-    {
-        slot_completed_snap = (int *)apr_pcalloc(
-            wsgi_server_config->pool,
-            request_threads_maximum * sizeof(slot_completed_snap[0]));
-        slot_busy_time_us_snap = (apr_time_t *)apr_pcalloc(
-            wsgi_server_config->pool,
-            request_threads_maximum * sizeof(slot_busy_time_us_snap[0]));
-        slot_cpu_time_us_snap = (apr_time_t *)apr_pcalloc(
-            wsgi_server_config->pool,
-            request_threads_maximum * sizeof(slot_cpu_time_us_snap[0]));
-        slot_current_elapsed_us_snap = (apr_time_t *)apr_pcalloc(
-            wsgi_server_config->pool,
-            request_threads_maximum * sizeof(slot_current_elapsed_us_snap[0]));
-        slot_max_duration_us_snap = (apr_time_t *)apr_pcalloc(
-            wsgi_server_config->pool,
-            request_threads_maximum * sizeof(slot_max_duration_us_snap[0]));
-    }
-
     result = PyDict_New();
     if (!result)
         return NULL;
@@ -2208,13 +2200,6 @@ static PyObject *wsgi_request_metrics(void)
 
     stop_request_busy_time = wsgi_utilization_time_locked(0,
                                                           &stop_request_count);
-
-    /*
-     * Ensure slow-completion ring exists even if no request has been
-     * served yet.
-     */
-
-    wsgi_slow_ring_ensure_locked();
 
     interval_requests = wsgi_process_metrics->sample_requests;
     server_time_total = wsgi_process_metrics->server_time.total;

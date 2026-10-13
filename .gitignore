@@ -56,3 +56,4 @@ src/packages
 
 # Bundled Apache tools
 apxs
+httpd-stress

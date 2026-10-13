@@ -457,6 +457,6 @@ setup(name = package_name,
     entry_points = { 'console_scripts':
         ['mod_wsgi-express = mod_wsgi.express.cli:main'],},
     zip_safe = False,
-    install_requires = standalone and ['mod_wsgi-httpd==2.4.68.2'] or [],
+    install_requires = standalone and ['mod_wsgi-httpd==2.4.69.1'] or [],
     python_requires='>=3.10',
 )

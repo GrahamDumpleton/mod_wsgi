@@ -50,12 +50,16 @@
  * never come back NULL under Apache's default abort handler), so
  * callers passing create=1 may dereference the result unconditionally.
  *
- * The lazy-create path takes the monitor lock around the directory
- * allocation, the directory push, and the total_threads counter
- * increment so two threads first-touching simultaneously cannot race
- * the apr_array_make / apr_array_push or read a torn counter. The
- * request_thread promotion takes the same lock around the
- * request_threads counter increment.
+ * The lazy-create path takes the monitor lock around the block
+ * allocation, the directory allocation, the directory push, and the
+ * total_threads counter increment. The block and the directory come
+ * from the metrics pool, which is only used under that lock, so two
+ * threads first-touching simultaneously cannot race the pool, the
+ * apr_array_make / apr_array_push, or read a torn counter. In daemon
+ * mode every worker thread first-touches at the moment it starts, so
+ * that case is the rule rather than the exception. The request_thread
+ * promotion takes the same lock around the request_threads counter
+ * increment.
  */
 
 WSGIThreadInfo *wsgi_thread_info(int create, int request)
@@ -69,17 +73,21 @@ WSGIThreadInfo *wsgi_thread_info(int create, int request)
     {
         WSGIThreadInfo **entry = NULL;
 
+        apr_thread_mutex_lock(m->monitor_lock);
+
         thread_handle = (WSGIThreadInfo *)apr_pcalloc(
-            wsgi_server->process->pool, sizeof(WSGIThreadInfo));
+            m->pool, sizeof(WSGIThreadInfo));
 
         thread_handle->log_buffer = NULL;
 
-        apr_thread_mutex_lock(m->monitor_lock);
+        apr_pool_create(&thread_handle->pool, m->pool);
+        apr_pool_tag(thread_handle->pool, "wsgi_thread");
+        thread_handle->thread_states = apr_hash_make(thread_handle->pool);
 
         if (!m->thread_details)
         {
             m->thread_details = apr_array_make(
-                wsgi_server->process->pool, 3, sizeof(WSGIThreadInfo *));
+                m->pool, 3, sizeof(WSGIThreadInfo *));
         }
 
         thread_handle->thread_id = m->total_threads++;
