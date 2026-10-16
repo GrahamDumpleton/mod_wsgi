@@ -4455,6 +4455,24 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     /* Create and populate our own request object. */
 
+#if AP_MODULE_MAGIC_AT_LEAST(20120211, 106)
+    r = ap_create_request(c);
+    p = r->pool;
+
+    /*
+     * ap_create_request() runs the create_request hook, through which
+     * the HTTP protocol output filters are inserted. The daemon process
+     * writes its response in CGI script style for the Apache child
+     * process to parse, so those filters must not be present. Reset the
+     * filter chains to the connection filters to discard anything the
+     * hook added, leaving the state the daemon request requires.
+     */
+
+    r->proto_output_filters = c->output_filters;
+    r->output_filters = r->proto_output_filters;
+    r->proto_input_filters = c->input_filters;
+    r->input_filters = r->proto_input_filters;
+#else
     apr_pool_create(&p, c->pool);
 
     r = apr_pcalloc(p, sizeof(request_rec));
@@ -4486,6 +4504,18 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     r->per_dir_config = r->server->lookup_defaults;
 
+    r->sent_bodyct = 0;
+
+    r->read_length = 0;
+    r->read_body = REQUEST_NO_BODY;
+
+    r->status = HTTP_OK;
+    r->status_line = NULL;
+    r->the_request = NULL;
+
+    r->used_path_info = AP_REQ_DEFAULT_PATH_INFO;
+#endif
+
     /*
      * Try and ensure that request body limit in daemon mode process
      * is unlimited as Apache 2.4.54 changed rules for limit and if
@@ -4502,17 +4532,6 @@ int wsgi_hook_daemon_handler(conn_rec *c)
     d = (core_dir_config *)ap_get_core_module_config(r->per_dir_config);
 
     d->limit_req_body = 0;
-
-    r->sent_bodyct = 0;
-
-    r->read_length = 0;
-    r->read_body = REQUEST_NO_BODY;
-
-    r->status = HTTP_OK;
-    r->status_line = NULL;
-    r->the_request = NULL;
-
-    r->used_path_info = AP_REQ_DEFAULT_PATH_INFO;
 
     /*
      * Install our own output filter for writing back headers in
