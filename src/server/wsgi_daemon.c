@@ -4411,6 +4411,19 @@ int wsgi_deferred_start_daemons(apr_pool_t *p, ap_scoreboard_e sb_type)
     return wsgi_start_daemons(wsgi_pconf_pool);
 }
 
+#if AP_MODULE_MAGIC_AT_LEAST(20120211, 106)
+void wsgi_clear_create_request_hook(void)
+{
+    /* Use the API-provided getter function rather than internal struct naming */
+    apr_array_header_t *hooks = ap_hook_get_create_request();
+
+    if (hooks != NULL) {
+        /* Truncate the elements array to 0 */
+        hooks->nelts = 0;
+    }
+}
+#endif
+
 int wsgi_hook_daemon_handler(conn_rec *c)
 {
     apr_socket_t *csd;
@@ -4455,6 +4468,12 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     /* Create and populate our own request object. */
 
+#if AP_MODULE_MAGIC_AT_LEAST(20120211, 106)
+    wsgi_clear_create_request_hook();
+
+    r = ap_create_request(c);
+    p = r->pool;
+#else
     apr_pool_create(&p, c->pool);
 
     r = apr_pcalloc(p, sizeof(request_rec));
@@ -4486,6 +4505,18 @@ int wsgi_hook_daemon_handler(conn_rec *c)
 
     r->per_dir_config = r->server->lookup_defaults;
 
+    r->sent_bodyct = 0;
+
+    r->read_length = 0;
+    r->read_body = REQUEST_NO_BODY;
+
+    r->status = HTTP_OK;
+    r->status_line = NULL;
+    r->the_request = NULL;
+
+    r->used_path_info = AP_REQ_DEFAULT_PATH_INFO;
+#endif
+
     /*
      * Try and ensure that request body limit in daemon mode process
      * is unlimited as Apache 2.4.54 changed rules for limit and if
@@ -4502,17 +4533,6 @@ int wsgi_hook_daemon_handler(conn_rec *c)
     d = (core_dir_config *)ap_get_core_module_config(r->per_dir_config);
 
     d->limit_req_body = 0;
-
-    r->sent_bodyct = 0;
-
-    r->read_length = 0;
-    r->read_body = REQUEST_NO_BODY;
-
-    r->status = HTTP_OK;
-    r->status_line = NULL;
-    r->the_request = NULL;
-
-    r->used_path_info = AP_REQ_DEFAULT_PATH_INFO;
 
     /*
      * Install our own output filter for writing back headers in
